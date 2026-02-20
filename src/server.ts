@@ -14,6 +14,7 @@ import { register as registerSendPhoto } from "./tools/send_photo.js";
 import { register as registerForwardMessage } from "./tools/forward_message.js";
 import { register as registerPinMessage } from "./tools/pin_message.js";
 import { register as registerDeleteMessage } from "./tools/delete_message.js";
+import { register as registerSendChatAction } from "./tools/send_chat_action.js";
 import { register as registerWaitForCallbackQuery } from "./tools/wait_for_callback_query.js";
 import { register as registerWaitForMessage } from "./tools/wait_for_message.js";
 
@@ -43,6 +44,7 @@ export function createServer(): McpServer {
   registerAnswerCallbackQuery(server);
 
   // ── Messaging ───────────────────────────────────────────────────────────
+  registerSendChatAction(server);
   registerSendMessage(server);
   registerEditMessageText(server);
   registerSendPhoto(server);
@@ -62,6 +64,10 @@ export function createServer(): McpServer {
     join(__dirname, "..", "SETUP.md"),
     "utf-8"
   );
+  const formattingContent = readFileSync(
+    join(__dirname, "..", "FORMATTING.md"),
+    "utf-8"
+  );
 
   server.resource(
     "setup-guide",
@@ -73,6 +79,21 @@ export function createServer(): McpServer {
           uri: "telegram-mcp://setup-guide",
           mimeType: "text/markdown",
           text: setupContent,
+        },
+      ],
+    })
+  );
+
+  server.resource(
+    "formatting-guide",
+    "telegram-mcp://formatting-guide",
+    { mimeType: "text/markdown" },
+    async () => ({
+      contents: [
+        {
+          uri: "telegram-mcp://formatting-guide",
+          mimeType: "text/markdown",
+          text: formattingContent,
         },
       ],
     })
