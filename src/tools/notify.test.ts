@@ -35,18 +35,18 @@ describe("notify tool", () => {
     expect(text).toContain("*Oops*");
   });
 
-  it("includes body when provided", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0, text: "" });
-    await call({ title: "T", body: "Details here", severity: "info" });
-    const [, text] = mocks.sendMessage.mock.calls[0];
-    expect(text).toContain("Details here");
-  });
-
-  it("defaults to MarkdownV2 parse_mode", async () => {
+  it("defaults to Markdown mode and sends as MarkdownV2", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0, text: "" });
     await call({ title: "T", severity: "info" });
     const [, , opts] = mocks.sendMessage.mock.calls[0];
     expect(opts.parse_mode).toBe("MarkdownV2");
+  });
+
+  it("auto-converts Markdown body", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0, text: "" });
+    await call({ title: "T", body: "Done. **v1**", severity: "info" });
+    const [, text] = mocks.sendMessage.mock.calls[0];
+    expect(text).toContain("Done\\. *v1*");
   });
 
   it("uses HTML bold for title when parse_mode is HTML", async () => {
@@ -55,6 +55,13 @@ describe("notify tool", () => {
     const [, text, opts] = mocks.sendMessage.mock.calls[0];
     expect(text).toContain("<b>Done</b>");
     expect(opts.parse_mode).toBe("HTML");
+  });
+
+  it("includes body when provided", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0, text: "" });
+    await call({ title: "T", body: "Details here", severity: "info" });
+    const [, text] = mocks.sendMessage.mock.calls[0];
+    expect(text).toContain("Details here");
   });
 
   it("defaults to info severity", async () => {

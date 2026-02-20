@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat } from "../telegram.js";
+import { markdownToV2 } from "../markdown.js";
 
 const SEVERITY_PREFIX: Record<string, string> = {
   info: "ℹ️",
@@ -22,7 +23,7 @@ function escapeHtml(s: string) {
 export function register(server: McpServer) {
   server.tool(
     "notify",
-    "Sends a formatted notification message to a chat. Handles severity styling (info/success/warning/error) automatically with emoji prefixes and bold titles. The most common agent tool — use for build results, progress updates, and status changes. Default parse_mode is MarkdownV2. Use HTML if your body content has heavy punctuation and escaping is inconvenient.",
+    "Sends a formatted notification message to a chat. Handles severity styling (info/success/warning/error) automatically with emoji prefixes and bold titles. The most common agent tool — use for build results, progress updates, and status changes. Default parse_mode is Markdown — write standard Markdown in the body and it is auto-converted, no escaping needed.",
     {
       title: z.string().describe("Short bold heading, e.g. \"Build Failed\""),
       body: z.string().optional().describe("Optional detail paragraph"),
@@ -31,9 +32,9 @@ export function register(server: McpServer) {
         .default("info")
         .describe("Controls the emoji prefix"),
       parse_mode: z
-        .enum(["HTML", "MarkdownV2"])
-        .default("MarkdownV2")
-        .describe("Text formatting mode for the body (and title bold)"),
+        .enum(["Markdown", "HTML", "MarkdownV2"])
+        .default("Markdown")
+        .describe("Markdown = standard Markdown auto-converted (default); MarkdownV2 = raw; HTML = HTML tags"),
       disable_notification: z
         .boolean()
         .optional()
@@ -44,18 +45,23 @@ export function register(server: McpServer) {
       if (typeof chatId !== "string") return toError(chatId);
       try {
         const prefix = SEVERITY_PREFIX[severity];
-        const titleFormatted = parse_mode === "HTML"
-          ? `<b>${escapeHtml(title)}</b>`
-          : `*${escapeMd(title)}*`;
+        const useV2 = parse_mode === "Markdown" || parse_mode === "MarkdownV2";
+        const titleFormatted = useV2
+          ? `*${escapeMd(title)}*`
+          : `<b>${escapeHtml(title)}</b>`;
         const lines = [`${prefix} ${titleFormatted}`];
-        if (body?.trim()) lines.push("", body.trim());
+        if (body?.trim()) {
+          const bodyText = parse_mode === "Markdown" ? markdownToV2(body.trim()) : body.trim();
+          lines.push("", bodyText);
+        }
         const text = lines.join("\n");
+        const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
 
         const err = validateText(text);
         if (err) return toError(err);
 
         const msg = await getApi().sendMessage(chatId, text, {
-          parse_mode,
+          parse_mode: finalMode,
           disable_notification,
         });
         return toResult({ message_id: msg.message_id });

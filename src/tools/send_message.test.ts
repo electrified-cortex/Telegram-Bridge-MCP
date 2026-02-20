@@ -29,18 +29,33 @@ describe("send_message tool", () => {
     expect(data.chat_id).toBeUndefined();
   });
 
-  it("defaults parse_mode to MarkdownV2", async () => {
+  it("defaults parse_mode to Markdown, sends as MarkdownV2", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "x" });
-    await call({ text: "x" });
+    await call({ text: "hello world" });
     const [, , opts] = mocks.sendMessage.mock.calls[0];
     expect(opts.parse_mode).toBe("MarkdownV2");
   });
 
-  it("passes explicit parse_mode to API", async () => {
+  it("auto-escapes plain text in Markdown mode", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "" });
+    await call({ text: "Done. Save!" });
+    const [, sentText] = mocks.sendMessage.mock.calls[0];
+    expect(sentText).toBe("Done\\. Save\\!");
+  });
+
+  it("passes explicit parse_mode HTML to API", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "x" });
     await call({ text: "x", parse_mode: "HTML" });
     const [, , opts] = mocks.sendMessage.mock.calls[0];
     expect(opts.parse_mode).toBe("HTML");
+  });
+
+  it("passes explicit parse_mode MarkdownV2 unchanged", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "x" });
+    await call({ text: "*hi*", parse_mode: "MarkdownV2" });
+    const [, sentText, opts] = mocks.sendMessage.mock.calls[0];
+    expect(sentText).toBe("*hi*");
+    expect(opts.parse_mode).toBe("MarkdownV2");
   });
 
   it("returns EMPTY_MESSAGE without calling API", async () => {
