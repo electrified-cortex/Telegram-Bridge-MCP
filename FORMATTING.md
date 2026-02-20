@@ -82,7 +82,7 @@ Omit `parse_mode` entirely. No escaping, no formatting rendered. Use for simple 
 
 ## notify tool
 
-The `notify` tool accepts an optional `parse_mode` parameter. Default is plain text.
+The `notify` tool accepts an optional `parse_mode` parameter. Default is `MarkdownV2`.
 To render Markdown in the body:
 
 ```json
@@ -94,4 +94,4 @@ To render Markdown in the body:
 }
 ```
 
-Note: the `title` is always rendered as bold plain text by `notify` regardless of `parse_mode`.
+Note: the `title` is always rendered bold by `notify` regardless of `parse_mode`.
