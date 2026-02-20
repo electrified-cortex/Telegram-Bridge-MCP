@@ -30,6 +30,14 @@ export function markdownToV2(input: string): string {
     return `\x00CB${idx}\x00`;
   });
 
+  // ── 1b. Extract blockquote lines so > is never re-escaped ───────────────
+  const blockquotes: string[] = [];
+  text = text.replace(/^> ?(.+)$/gm, (_m, content) => {
+    const idx = blockquotes.length;
+    blockquotes.push(">" + escapeV2(content));
+    return `\x00BQ${idx}\x00`;
+  });
+
   // ── 2. Convert ATX headings to bold ─────────────────────────────────────
   text = text.replace(/^#{1,6} +(.+)$/gm, (_m, content) => `*${escapeV2(content)}*`);
 
@@ -39,11 +47,16 @@ export function markdownToV2(input: string): string {
 
   while (i < text.length) {
 
-    // Code-block placeholder
+    // Code-block / blockquote placeholder
     if (text[i] === "\x00") {
       const end = text.indexOf("\x00", i + 1);
+      const tag = text.slice(i + 1, i + 3);
       const idx = parseInt(text.slice(i + 3, end), 10);
-      out.push(codeBlocks[idx]);
+      if (tag === "CB") {
+        out.push(codeBlocks[idx]);
+      } else {
+        out.push(blockquotes[idx]);
+      }
       i = end + 1;
       continue;
     }
@@ -56,6 +69,16 @@ export function markdownToV2(input: string): string {
         const inner = text.slice(i + 1, end).replace(/[\\`]/g, "\\$&");
         out.push("`" + inner + "`");
         i = end + 1;
+        continue;
+      }
+    }
+
+    // Strikethrough  ~~text~~
+    if (text[i] === "~" && text[i + 1] === "~") {
+      const end = text.indexOf("~~", i + 2);
+      if (end !== -1) {
+        out.push(`~${escapeV2(text.slice(i + 2, end))}~`);
+        i = end + 2;
         continue;
       }
     }

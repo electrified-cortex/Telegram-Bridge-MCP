@@ -49,4 +49,25 @@ describe("markdownToV2", () => {
     const out = markdownToV2("Done. **v1.2** saved to `out.json`!");
     expect(out).toBe("Done\\. *v1\\.2* saved to `out.json`\\!");
   });
+
+  it("converts ~~strikethrough~~ to ~strikethrough~", () => {
+    expect(markdownToV2("~~deleted~~")).toBe("~deleted~");
+  });
+
+  it("escapes plain text inside strikethrough", () => {
+    expect(markdownToV2("~~foo.bar~~")).toBe("~foo\\.bar~");
+  });
+
+  it("converts > blockquote", () => {
+    expect(markdownToV2("> Hello world")).toBe(">Hello world");
+  });
+
+  it("escapes special chars inside blockquote", () => {
+    expect(markdownToV2("> Hello. World!")).toBe(">Hello\\. World\\!");
+  });
+
+  it("handles blockquote alongside regular text", () => {
+    const out = markdownToV2("Intro.\n\n> A quoted line.\n\nOutro.");
+    expect(out).toBe("Intro\\.\n\n>A quoted line\\.\n\nOutro\\.");
+  });
 });

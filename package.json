@@ -14,10 +14,17 @@
     "coverage": "vitest run --coverage"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "onnxruntime-node",
+      "protobufjs",
+      "sharp"
+    ]
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "audio-decode": "^2.2.3",
     "dotenv": "^16.4.5",
     "grammy": "^1.40.0",
     "zod": "^3.23.8"

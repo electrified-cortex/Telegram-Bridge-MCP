@@ -5,19 +5,33 @@ const mocks = vi.hoisted(() => ({ getUpdates: vi.fn() }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
+  const filterFn = (updates: any[]) => {
+    return updates.filter((u: any) => {
+      const chatId = u.message?.chat?.id ?? u.callback_query?.message?.chat?.id;
+      return chatId === undefined || String(chatId) === "42";
+    });
+  };
   return {
     ...actual,
     getApi: () => mocks,
     getOffset: () => 0,
     advanceOffset: vi.fn(),
-    filterAllowedUpdates: (updates: any[]) => {
-      return updates.filter((u: any) => {
-        const chatId = u.message?.chat?.id ?? u.callback_query?.message?.chat?.id;
-        return chatId === undefined || String(chatId) === "42";
-      });
+    filterAllowedUpdates: filterFn,
+    pollUntil: async (matcher: any, _timeout: number) => {
+      const updates = await mocks.getUpdates();
+      const allowed = filterFn(updates);
+      const result = matcher(allowed);
+      const missed = result !== undefined
+        ? allowed.filter((u: any) => matcher([u]) === undefined)
+        : [...allowed];
+      return { match: result, missed };
     },
   };
 });
+
+vi.mock("../transcribe.js", () => ({
+  transcribeVoice: vi.fn().mockResolvedValue("hello from voice"),
+}));
 
 import { register } from "./wait_for_message.js";
 

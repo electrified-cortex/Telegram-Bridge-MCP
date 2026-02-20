@@ -1,10 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Update } from "grammy/types";
 import { z } from "zod";
 import {
-  getApi, getOffset, advanceOffset,
-  filterAllowedUpdates, resolveChat,
+  getApi, resolveChat,
   toResult, toError, validateText, validateCallbackData, LIMITS,
+  pollUntil,
 } from "../telegram.js";
+import { markdownToV2 } from "../markdown.js";
 
 /**
  * Sends a question with labeled option buttons and blocks until one is pressed.
@@ -73,41 +75,82 @@ export function register(server: McpServer) {
       }
 
       try {
-        const sent = await getApi().sendMessage(chatId, question, {
+        const sent = await getApi().sendMessage(chatId, markdownToV2(question), {
+          parse_mode: "MarkdownV2",
           reply_markup: { inline_keyboard: rows },
         });
 
-        // Long-poll for the callback_query from this message
-        const updates = await getApi().getUpdates({
-          offset: getOffset(),
-          limit: 100,
-          timeout: timeout_seconds,
-        });
+        // Poll with 1 s ticks until EITHER a callback_query for this message
+        // OR a text message arrives — whichever comes first.
+        const { match } = await pollUntil<
+          | { kind: "button"; cq: NonNullable<Update["callback_query"]> }
+          | { kind: "text"; message_id: number; text: string }
+        >(
+          (updates) => {
+            // Check for a callback_query on our message first
+            const cq = updates.find(
+              (u) =>
+                u.callback_query &&
+                u.callback_query.message?.message_id === sent.message_id &&
+                String(u.callback_query.message?.chat.id) === chatId
+            );
+            if (cq?.callback_query) return { kind: "button", cq: cq.callback_query };
 
-        advanceOffset(updates);
+            // Check for a text message (user typed instead of pressing a button)
+            const tm = updates.find((u) => u.message?.text);
+            if (tm?.message) return { kind: "text", message_id: tm.message.message_id, text: tm.message.text! };
 
-        const allowed = filterAllowedUpdates(updates);
-        const match = allowed.find(
-          (u) =>
-            u.callback_query &&
-            u.callback_query.message?.message_id === sent.message_id &&
-            String(u.callback_query.message?.chat.id) === chatId
+            return undefined;
+          },
+          timeout_seconds,
         );
 
-        if (!match?.callback_query) {
-          return toResult({ timed_out: true, message_id: sent.message_id });
+        if (!match) {
+          // Timeout — keep buttons active (no edit), let user press later
+          return toResult({
+            timed_out: true,
+            message_id: sent.message_id,
+          });
         }
 
-        const cq = match.callback_query;
-        const chosen = options.find((o) => o.value === cq.data);
+        if (match.kind === "text") {
+          // User typed text instead of pressing a button — choice is skipped
+          // Edit message to show "⏭ Skipped" and remove the now-irrelevant buttons
+          await getApi()
+            .editMessageText(chatId, sent.message_id, markdownToV2(`${question}\n\n⏭ _Skipped_`), {
+              parse_mode: "MarkdownV2",
+              reply_markup: { inline_keyboard: [] },
+            })
+            .catch((e) => { console.error("[choose] editMessageText (skipped) failed:", e); });
+
+          return toResult({
+            skipped: true,
+            text_response: match.text,
+            text_message_id: match.message_id,
+            message_id: sent.message_id,
+          });
+        }
+
+        // Button was pressed
+        const chosen = options.find((o) => o.value === match.cq.data);
+        const chosenLabel = chosen?.label ?? match.cq.data;
 
         // Acknowledge the callback so Telegram removes the loading spinner
-        await getApi().answerCallbackQuery(cq.id).catch(() => {/* non-fatal */});
+        await getApi().answerCallbackQuery(match.cq.id).catch(() => {/* non-fatal */});
+
+        // Replace the buttons with a text confirmation of the choice
+        const updatedText = `${question}\n\n▸ *${chosenLabel}*`;
+        await getApi()
+          .editMessageText(chatId, sent.message_id, markdownToV2(updatedText), {
+            parse_mode: "MarkdownV2",
+            reply_markup: { inline_keyboard: [] },
+          })
+          .catch((e) => { console.error("[choose] editMessageText failed:", e); });
 
         return toResult({
           timed_out: false,
-          label: chosen?.label ?? cq.data,
-          value: cq.data,
+          label: chosenLabel,
+          value: match.cq.data,
           message_id: sent.message_id,
         });
       } catch (err) {

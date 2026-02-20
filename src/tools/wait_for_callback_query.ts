@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, getOffset, advanceOffset, filterAllowedUpdates, toResult, toError } from "../telegram.js";
+import { toResult, toError, pollUntil } from "../telegram.js";
 
 /**
  * Long-polls for a callback_query update (inline button press).
@@ -34,36 +34,27 @@ export function register(server: McpServer) {
     },
     async ({ timeout_seconds, message_id }) => {
       try {
-        const updates = await getApi().getUpdates({
-          offset: getOffset(),
-          limit: 100,
-          timeout: timeout_seconds,
-        });
+        const { match } = await pollUntil(
+          (updates) => {
+            const cq = updates.find((u) => {
+              if (!u.callback_query) return false;
+              if (message_id !== undefined && u.callback_query.message?.message_id !== message_id) return false;
+              return true;
+            });
+            return cq?.callback_query;
+          },
+          timeout_seconds,
+        );
 
-        // Always advance offset so future calls don't re-process these updates
-        advanceOffset(updates);
-
-        const allowed = filterAllowedUpdates(updates);
-        const match = allowed.find((u) => {
-          if (!u.callback_query) return false;
-          if (
-            message_id !== undefined &&
-            u.callback_query.message?.message_id !== message_id
-          )
-            return false;
-          return true;
-        });
-
-        if (!match?.callback_query) {
+        if (!match) {
           return toResult({ timed_out: true });
         }
 
-        const cq = match.callback_query;
         return toResult({
           timed_out: false,
-          callback_query_id: cq.id,
-          data: cq.data,
-          message_id: cq.message?.message_id,
+          callback_query_id: match.id,
+          data: match.data,
+          message_id: match.message?.message_id,
         });
       } catch (err) {
         return toError(err);

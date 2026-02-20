@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, getOffset, advanceOffset, resetOffset, filterAllowedUpdates, toResult, toError } from "../telegram.js";
+import { getApi, getOffset, advanceOffset, resetOffset, filterAllowedUpdates, toResult, toError, DEFAULT_ALLOWED_UPDATES } from "../telegram.js";
+import { transcribeWithIndicator } from "../transcribe.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -42,16 +43,20 @@ export function register(server: McpServer) {
           offset: getOffset(),
           limit,
           timeout,
-          ...(allowed_updates ? { allowed_updates: allowed_updates as any } : {}),
+          allowed_updates: (allowed_updates ?? DEFAULT_ALLOWED_UPDATES) as any,
         });
 
         advanceOffset(updates);
         const allowed = filterAllowedUpdates(updates);
-        const sanitized = allowed.map((u) => {
+        const sanitized = await Promise.all(allowed.map(async (u) => {
+          if (u.message?.voice) {
+            const text = await transcribeWithIndicator(u.message.voice.file_id).catch((e) => `[transcription failed: ${e.message}]`);
+            return { type: "message", message_id: u.message.message_id, text, voice: true };
+          }
           if (u.message?.text) return { type: "message", message_id: u.message.message_id, text: u.message.text };
           if (u.callback_query) return { type: "callback_query", callback_query_id: u.callback_query.id, data: u.callback_query.data, message_id: u.callback_query.message?.message_id };
           return { type: "other" };
-        });
+        }));
         return toResult(sanitized);
       } catch (err) {
         return toError(err);

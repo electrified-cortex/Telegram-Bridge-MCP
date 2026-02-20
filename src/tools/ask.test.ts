@@ -14,6 +14,14 @@ vi.mock("../telegram.js", async (importActual) => {
     getOffset: () => 0,
     advanceOffset: vi.fn(),
     resolveChat: () => "42",
+    pollUntil: async (matcher: any, _timeout: number) => {
+      const updates = await mocks.getUpdates();
+      const result = matcher(updates);
+      const missed = result !== undefined
+        ? updates.filter((u: any) => matcher([u]) === undefined)
+        : [...updates];
+      return { match: result, missed };
+    },
   };
 });
 

@@ -1,18 +1,18 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, getOffset, advanceOffset, filterAllowedUpdates, toResult, toError } from "../telegram.js";
+import { toResult, toError, pollUntil } from "../telegram.js";
+import { transcribeWithIndicator } from "../transcribe.js";
 
 /**
- * Long-polls for the next text message in a chat.
+ * Long-polls for the next text or voice message in a chat.
  *
- * Useful for free-form responses after the agent has asked an open question.
- * All received updates advance the offset, so non-message updates are
- * consumed cleanly from the queue.
+ * Voice messages are automatically transcribed via local Whisper and returned
+ * as plain text — transparent to the caller.
  */
 export function register(server: McpServer) {
   server.tool(
     "wait_for_message",
-    "Blocks (long-poll) until a text message is received, then returns it. Optionally filter by sender user_id. Returns { timed_out: true } on expiry. Use for open-ended questions where the user types a reply.",
+    "Blocks (long-poll) until a text or voice message is received, then returns it. Voice messages are auto-transcribed. Optionally filter by sender user_id. Returns { timed_out: true } on expiry.",
     {
       timeout_seconds: z
         .number()
@@ -29,31 +29,30 @@ export function register(server: McpServer) {
     },
     async ({ timeout_seconds, user_id }) => {
       try {
-        const updates = await getApi().getUpdates({
-          offset: getOffset(),
-          limit: 100,
-          timeout: timeout_seconds,
-        });
+        const { match } = await pollUntil(
+          (updates) => {
+            const msg = updates.find((u) => {
+              if (!u.message?.text && !u.message?.voice) return false;
+              if (user_id !== undefined && u.message.from?.id !== user_id) return false;
+              return true;
+            });
+            return msg?.message;
+          },
+          timeout_seconds,
+        );
 
-        advanceOffset(updates);
-
-        const allowed = filterAllowedUpdates(updates);
-        const match = allowed.find((u) => {
-          if (!u.message?.text) return false;
-          if (user_id !== undefined && u.message.from?.id !== user_id)
-            return false;
-          return true;
-        });
-
-        if (!match?.message) {
+        if (!match) {
           return toResult({ timed_out: true });
         }
 
-        const msg = match.message;
+        if (match.voice) {
+          const text = await transcribeWithIndicator(match.voice.file_id).catch((e) => `[transcription failed: ${e.message}]`);
+          return toResult({ timed_out: false, message_id: match.message_id, text, voice: true });
+        }
         return toResult({
           timed_out: false,
-          message_id: msg.message_id,
-          text: msg.text,
+          message_id: match.message_id,
+          text: match.text,
         });
       } catch (err) {
         return toError(err);

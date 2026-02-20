@@ -14,6 +14,17 @@ export const LIMITS = {
   INLINE_KEYBOARD_COLS: 8,
 } as const;
 
+/**
+ * Default update types to request from Telegram.  Telegram *remembers* the
+ * last `allowed_updates` value across `getUpdates` calls, so every call
+ * should pass this to avoid accidentally filtering out callback_query, etc.
+ */
+export const DEFAULT_ALLOWED_UPDATES = [
+  "message",
+  "callback_query",
+  "my_chat_member",
+] as const;
+
 // ---------------------------------------------------------------------------
 // Structured error type agents can act on
 // ---------------------------------------------------------------------------
@@ -316,4 +327,50 @@ export function toError(err: unknown) {
     content: [{ type: "text" as const, text: JSON.stringify(telegramError, null, 2) }],
     isError: true as const,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Shared polling helper — 1 s ticks for responsive waiting
+// ---------------------------------------------------------------------------
+
+/**
+ * Polls `getUpdates` with 1-second ticks until `matcher` returns a truthy
+ * value from the allowed updates, or `timeoutSeconds` expires.
+ *
+ * Returns `{ match, missed }` — `match` is the matcher result (or undefined
+ * on timeout), `missed` collects all non-matching allowed updates so the
+ * caller can surface them (e.g. text messages during a `choose`).
+ */
+export async function pollUntil<T>(
+  matcher: (updates: Update[]) => T | undefined,
+  timeoutSeconds: number,
+): Promise<{ match: T | undefined; missed: Update[] }> {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  const missed: Update[] = [];
+
+  while (Date.now() < deadline) {
+    const updates = await getApi().getUpdates({
+      offset: getOffset(),
+      limit: 100,
+      timeout: 1,
+      allowed_updates: [...DEFAULT_ALLOWED_UPDATES] as any,
+    });
+
+    advanceOffset(updates);
+    const allowed = filterAllowedUpdates(updates);
+
+    const result = matcher(allowed);
+    if (result !== undefined) {
+      // Collect remaining non-matching updates as missed
+      for (const u of allowed) {
+        if (!matcher([u])) missed.push(u);
+      }
+      return { match: result, missed };
+    }
+
+    // No match — everything in this batch is missed
+    missed.push(...allowed);
+  }
+
+  return { match: undefined, missed };
 }

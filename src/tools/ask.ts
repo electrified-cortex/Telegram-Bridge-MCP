@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, getOffset, advanceOffset, filterAllowedUpdates, resolveChat, toResult, toError, validateText } from "../telegram.js";
+import { getApi, resolveChat, toResult, toError, validateText, pollUntil } from "../telegram.js";
+import { markdownToV2 } from "../markdown.js";
 
 /**
  * Sends a question and blocks until the user types a reply.
@@ -29,31 +30,27 @@ export function register(server: McpServer) {
 
       try {
         // Send the question
-        await getApi().sendMessage(chatId, question);
+        await getApi().sendMessage(chatId, markdownToV2(question), { parse_mode: "MarkdownV2" });
 
-        // Long-poll for the reply from the same chat
-        const updates = await getApi().getUpdates({
-          offset: getOffset(),
-          limit: 100,
-          timeout: timeout_seconds,
-        });
-
-        advanceOffset(updates);
-
-        const allowed = filterAllowedUpdates(updates);
-        const match = allowed.find(
-          (u) => u.message?.text && String(u.message.chat.id) === chatId
+        // Poll with 1 s ticks for the reply
+        const { match } = await pollUntil(
+          (updates) => {
+            const msg = updates.find(
+              (u) => u.message?.text && String(u.message.chat.id) === chatId
+            );
+            return msg?.message;
+          },
+          timeout_seconds,
         );
 
-        if (!match?.message) {
+        if (!match) {
           return toResult({ timed_out: true });
         }
 
-        const msg = match.message;
         return toResult({
           timed_out: false,
-          text: msg.text,
-          message_id: msg.message_id,
+          text: match.text,
+          message_id: match.message_id,
         });
       } catch (err) {
         return toError(err);
