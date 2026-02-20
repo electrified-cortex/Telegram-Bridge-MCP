@@ -29,7 +29,14 @@ describe("send_message tool", () => {
     expect(data.chat_id).toBeUndefined();
   });
 
-  it("passes parse_mode to API", async () => {
+  it("defaults parse_mode to MarkdownV2", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "x" });
+    await call({ text: "x" });
+    const [, , opts] = mocks.sendMessage.mock.calls[0];
+    expect(opts.parse_mode).toBe("MarkdownV2");
+  });
+
+  it("passes explicit parse_mode to API", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "x" });
     await call({ text: "x", parse_mode: "HTML" });
     const [, , opts] = mocks.sendMessage.mock.calls[0];

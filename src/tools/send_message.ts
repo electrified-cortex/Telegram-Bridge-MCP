@@ -10,7 +10,7 @@ export function register(server: McpServer) {
       text: z.string().describe("Message text"),
       parse_mode: z
         .enum(["HTML", "MarkdownV2"])
-        .optional()
+        .default("MarkdownV2")
         .describe("Text formatting mode"),
       disable_notification: z
         .boolean()
