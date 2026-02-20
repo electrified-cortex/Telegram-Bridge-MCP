@@ -22,3 +22,4 @@ Rules:
 - If a task is ambiguous, ask for clarification via Telegram and return to step 2.
 - Before any action that could block, require confirmation, or take significant time — such as running terminal commands, committing code, installing packages, deleting files, or making network requests — send a Telegram notification describing what you are about to do. You do not need to wait for approval; VS Code will surface any required confirmations. The notification is so I know to check VS Code if needed.
 - If an action fails or produces unexpected output, report it via Telegram before deciding what to do next.
+- After running `pnpm build` to compile code changes, call `restart_server` immediately afterward to reload the MCP process with the new code. VS Code will relaunch it automatically — notify me via Telegram before doing so, then continue the loop once the server is back.
