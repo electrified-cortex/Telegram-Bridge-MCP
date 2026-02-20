@@ -1,0 +1,121 @@
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
+
+const mocks = vi.hoisted(() => ({
+  sendMessage: vi.fn(),
+  getUpdates: vi.fn(),
+  answerCallbackQuery: vi.fn(),
+}));
+
+vi.mock("../telegram.js", async (importActual) => {
+  const actual = await importActual<typeof import("../telegram.js")>();
+  return {
+    ...actual,
+    getApi: () => mocks,
+    getOffset: () => 0,
+    advanceOffset: vi.fn(),
+  };
+});
+
+import { register } from "./choose.js";
+
+const SENT_MSG = { message_id: 7, chat: { id: 42 }, date: 0 };
+
+const makeCallbackUpdate = (data: string) => ({
+  update_id: 1,
+  callback_query: {
+    id: "cq1",
+    data,
+    from: { id: 1, first_name: "Alice", username: "alice" },
+    message: { message_id: 7, chat: { id: 42 } },
+  },
+});
+
+describe("choose tool", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  const OPTIONS = [
+    { label: "Option A", value: "opt_a" },
+    { label: "Option B", value: "opt_b" },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.answerCallbackQuery.mockResolvedValue(true);
+    const server = createMockServer();
+    register(server as any);
+    call = server.getHandler("choose");
+  });
+
+  it("returns chosen label and value", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.getUpdates.mockResolvedValue([makeCallbackUpdate("opt_a")]);
+    const result = await call({ chat_id: "42", question: "Pick one", options: OPTIONS });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result) as any;
+    expect(data.timed_out).toBe(false);
+    expect(data.value).toBe("opt_a");
+    expect(data.label).toBe("Option A");
+  });
+
+  it("answers the callback_query automatically", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.getUpdates.mockResolvedValue([makeCallbackUpdate("opt_b")]);
+    await call({ chat_id: "42", question: "Pick", options: OPTIONS });
+    expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("cq1");
+  });
+
+  it("returns timed_out when no button is pressed", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.getUpdates.mockResolvedValue([]);
+    const result = await call({ chat_id: "42", question: "Pick", options: OPTIONS });
+    expect((parseResult(result) as any).timed_out).toBe(true);
+  });
+
+  it("filters callback_queries from different messages", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    // Callback from a different message_id (999 ≠ 7)
+    const foreignUpdate = {
+      update_id: 2,
+      callback_query: {
+        id: "cq2",
+        data: "opt_a",
+        from: { id: 1 },
+        message: { message_id: 999, chat: { id: 42 } },
+      },
+    };
+    mocks.getUpdates.mockResolvedValue([foreignUpdate]);
+    const result = await call({ chat_id: "42", question: "Pick", options: OPTIONS });
+    expect((parseResult(result) as any).timed_out).toBe(true);
+  });
+
+  it("validates question text", async () => {
+    const result = await call({ chat_id: "1", question: "", options: OPTIONS });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("EMPTY_MESSAGE");
+  });
+
+  it("rejects callback_data over 64 bytes", async () => {
+    const badOptions = [
+      { label: "A", value: "a".repeat(65) },
+      { label: "B", value: "b" },
+    ];
+    const result = await call({ chat_id: "1", question: "Pick", options: badOptions });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("CALLBACK_DATA_TOO_LONG");
+  });
+
+  it("builds keyboard rows with correct column count", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.getUpdates.mockResolvedValue([]);
+    const threeOptions = [
+      { label: "A", value: "a" },
+      { label: "B", value: "b" },
+      { label: "C", value: "c" },
+    ];
+    await call({ chat_id: "1", question: "Pick", options: threeOptions, columns: 3 });
+    const [, , opts] = mocks.sendMessage.mock.calls[0];
+    // All 3 options in a single row when columns=3
+    expect(opts.reply_markup.inline_keyboard[0]).toHaveLength(3);
+  });
+});
