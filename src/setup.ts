@@ -1,7 +1,7 @@
 /**
  * Telegram MCP — Pairing Setup Script
  *
- * Usage: pnpm setup   (or: node dist/setup.js)
+ * Usage: pnpm pair   (or: node dist/setup.js)
  *
  * 1. Reads BOT_TOKEN from environment / .env
  * 2. Verifies the token with getMe()
@@ -89,7 +89,7 @@ async function main() {
     console.error(red("  ✗ BOT_TOKEN is not set."));
     console.error("    Create a bot with @BotFather, then either:");
     console.error("      • Add  BOT_TOKEN=<token>  to a .env file in this directory");
-    console.error("      • Or set it as an environment variable before running pnpm setup");
+    console.error("      • Or set it as an environment variable before running pnpm pair");
     process.exit(1);
   }
 
@@ -220,7 +220,7 @@ async function main() {
         if (wrongAttempts >= MAX_WRONG_ATTEMPTS) {
           clearInterval(countdownInterval);
           console.log(red(`\n  ✗ ${MAX_WRONG_ATTEMPTS} incorrect attempts — pairing aborted for security.`));
-          console.log("    Run  pnpm setup  again to get a new code.");
+          console.log("    Run  pnpm pair  again to get a new code.");
           process.exit(1);
         }
         console.log(yellow(`  ✗ Wrong message (attempt ${wrongAttempts}/${MAX_WRONG_ATTEMPTS}). Expected the pairing code.`));
@@ -231,7 +231,7 @@ async function main() {
   clearInterval(countdownInterval);
   process.stdout.write("\r" + " ".repeat(40) + "\r");
   console.log(red("  ✗ Timed out — pairing code expired after 30 seconds."));
-  console.log("    Run  pnpm setup  again to get a new code.");
+  console.log("    Run  pnpm pair  again to get a new code.");
   process.exit(1);
 }
 
