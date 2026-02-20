@@ -53,16 +53,7 @@ export function register(server: McpServer) {
         return toResult({
           timed_out: false,
           message_id: msg.message_id,
-          chat_id: msg.chat.id,
           text: msg.text,
-          from: msg.from
-            ? {
-                id: msg.from.id,
-                username: msg.from.username,
-                first_name: msg.from.first_name,
-              }
-            : null,
-          date: msg.date,
         });
       } catch (err) {
         return toError(err);

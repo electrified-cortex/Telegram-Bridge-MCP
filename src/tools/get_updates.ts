@@ -46,7 +46,13 @@ export function register(server: McpServer) {
         });
 
         advanceOffset(updates);
-        return toResult(filterAllowedUpdates(updates));
+        const allowed = filterAllowedUpdates(updates);
+        const sanitized = allowed.map((u) => {
+          if (u.message?.text) return { type: "message", message_id: u.message.message_id, text: u.message.text };
+          if (u.callback_query) return { type: "callback_query", callback_query_id: u.callback_query.id, data: u.callback_query.data, message_id: u.callback_query.message?.message_id };
+          return { type: "other" };
+        });
+        return toResult(sanitized);
       } catch (err) {
         return toError(err);
       }

@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ getChat: vi.fn() }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks };
+  return { ...actual, getApi: () => mocks, resolveChat: () => "99" };
 });
 
 import { register } from "./get_chat.js";
@@ -21,17 +21,17 @@ describe("get_chat tool", () => {
   });
 
   it("returns chat info", async () => {
-    const chat = { id: -100, type: "group", title: "Dev Chat" };
-    mocks.getChat.mockResolvedValue(chat);
-    const result = await call({ chat_id: "-100" });
+    const chat = { type: "group", title: "Dev Chat", description: undefined };
+    mocks.getChat.mockResolvedValue({ id: 99, type: "group", title: "Dev Chat" });
+    const result = await call({});
     expect(isError(result)).toBe(false);
     expect(parseResult(result)).toEqual(chat);
   });
 
-  it("passes chat_id to API", async () => {
-    mocks.getChat.mockResolvedValue({ id: 1, type: "private" });
-    await call({ chat_id: "@username" });
-    expect(mocks.getChat).toHaveBeenCalledWith("@username");
+  it("uses the configured chat id", async () => {
+    mocks.getChat.mockResolvedValue({ id: 99, type: "private" });
+    await call({});
+    expect(mocks.getChat).toHaveBeenCalledWith("99");
   });
 
   it("returns error when chat not found", async () => {

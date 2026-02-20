@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ pinChatMessage: vi.fn() }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks };
+  return { ...actual, getApi: () => mocks, resolveChat: () => "1" };
 });
 
 import { register } from "./pin_message.js";
@@ -22,14 +22,14 @@ describe("pin_message tool", () => {
 
   it("returns ok: true on success", async () => {
     mocks.pinChatMessage.mockResolvedValue(true);
-    const result = await call({ chat_id: "1", message_id: 5 });
+    const result = await call({ message_id: 5 });
     expect(isError(result)).toBe(false);
     expect((parseResult(result) as any).ok).toBe(true);
   });
 
   it("passes disable_notification option", async () => {
     mocks.pinChatMessage.mockResolvedValue(true);
-    await call({ chat_id: "1", message_id: 5, disable_notification: true });
+    await call({ message_id: 5, disable_notification: true });
     const [, , opts] = mocks.pinChatMessage.mock.calls[0];
     expect(opts.disable_notification).toBe(true);
   });
@@ -39,7 +39,7 @@ describe("pin_message tool", () => {
     mocks.pinChatMessage.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: not enough rights" }, "pinChatMessage", {})
     );
-    const result = await call({ chat_id: "1", message_id: 5 });
+    const result = await call({ message_id: 5 });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("NOT_ENOUGH_RIGHTS");
   });

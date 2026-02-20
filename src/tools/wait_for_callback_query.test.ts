@@ -10,6 +10,12 @@ vi.mock("../telegram.js", async (importActual) => {
     getApi: () => mocks,
     getOffset: () => 0,
     advanceOffset: vi.fn(),
+    filterAllowedUpdates: (updates: any[]) => {
+      return updates.filter((u: any) => {
+        const chatId = u.callback_query?.message?.chat?.id;
+        return chatId === undefined || String(chatId) === "42";
+      });
+    },
   };
 });
 
@@ -43,6 +49,8 @@ describe("wait_for_callback_query tool", () => {
     expect(data.timed_out).toBe(false);
     expect(data.data).toBe("action_yes");
     expect(data.callback_query_id).toBe("cq1");
+    expect(data.chat_id).toBeUndefined();
+    expect(data.from).toBeUndefined();
   });
 
   it("returns timed_out when no callback_query arrives", async () => {
@@ -53,7 +61,7 @@ describe("wait_for_callback_query tool", () => {
 
   it("filters by chat_id", async () => {
     mocks.getUpdates.mockResolvedValue([makeUpdate(999, 1, "data")]);
-    const result = await call({ timeout_seconds: 1, chat_id: "42" });
+    const result = await call({ timeout_seconds: 1 });
     expect((parseResult(result) as any).timed_out).toBe(true);
   });
 

@@ -13,12 +13,8 @@ export function register(server: McpServer) {
         .enum(["HTML", "MarkdownV2"])
         .optional()
         .describe("Text formatting mode"),
-      reply_markup: z
-        .any()
-        .optional()
-        .describe("Updated InlineKeyboardMarkup, or omit to remove keyboard"),
     },
-    async ({ message_id, text, parse_mode, reply_markup }) => {
+    async ({ message_id, text, parse_mode }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
       try {
@@ -26,9 +22,10 @@ export function register(server: McpServer) {
           chatId,
           message_id,
           text,
-          { parse_mode, reply_markup },
+          { parse_mode },
         );
-        return toResult(result);
+        const editedId = typeof result === "boolean" ? message_id : result.message_id;
+        return toResult({ message_id: editedId });
       } catch (err) {
         return toError(err);
       }

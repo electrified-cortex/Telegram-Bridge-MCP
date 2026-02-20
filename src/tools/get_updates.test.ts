@@ -33,11 +33,11 @@ describe("get_updates tool", () => {
   });
 
   it("returns updates and advances offset", async () => {
-    const updates = [{ update_id: 1, message: { text: "hi" } }];
+    const updates = [{ update_id: 1, message: { message_id: 1, text: "hi", chat: { id: 42 } } }];
     mocks.getUpdates.mockResolvedValue(updates);
     const result = await call({ limit: 10, timeout: 0 });
     expect(isError(result)).toBe(false);
-    expect(parseResult(result)).toEqual(updates);
+    expect(parseResult(result)).toEqual([{ type: "message", message_id: 1, text: "hi" }]);
     expect(offsetMocks.advance).toHaveBeenCalledWith(updates);
   });
 

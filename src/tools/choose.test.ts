@@ -14,6 +14,7 @@ vi.mock("../telegram.js", async (importActual) => {
     getApi: () => mocks,
     getOffset: () => 0,
     advanceOffset: vi.fn(),
+    resolveChat: () => "42",
   };
 });
 
@@ -50,7 +51,7 @@ describe("choose tool", () => {
   it("returns chosen label and value", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.getUpdates.mockResolvedValue([makeCallbackUpdate("opt_a")]);
-    const result = await call({ chat_id: "42", question: "Pick one", options: OPTIONS });
+    const result = await call({ question: "Pick one", options: OPTIONS });
     expect(isError(result)).toBe(false);
     const data = parseResult(result) as any;
     expect(data.timed_out).toBe(false);
@@ -61,14 +62,14 @@ describe("choose tool", () => {
   it("answers the callback_query automatically", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.getUpdates.mockResolvedValue([makeCallbackUpdate("opt_b")]);
-    await call({ chat_id: "42", question: "Pick", options: OPTIONS });
+    await call({ question: "Pick", options: OPTIONS });
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("cq1");
   });
 
   it("returns timed_out when no button is pressed", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.getUpdates.mockResolvedValue([]);
-    const result = await call({ chat_id: "42", question: "Pick", options: OPTIONS });
+    const result = await call({ question: "Pick", options: OPTIONS });
     expect((parseResult(result) as any).timed_out).toBe(true);
   });
 
@@ -85,12 +86,12 @@ describe("choose tool", () => {
       },
     };
     mocks.getUpdates.mockResolvedValue([foreignUpdate]);
-    const result = await call({ chat_id: "42", question: "Pick", options: OPTIONS });
+    const result = await call({ question: "Pick", options: OPTIONS });
     expect((parseResult(result) as any).timed_out).toBe(true);
   });
 
   it("validates question text", async () => {
-    const result = await call({ chat_id: "1", question: "", options: OPTIONS });
+    const result = await call({ question: "", options: OPTIONS });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
   });
@@ -100,7 +101,7 @@ describe("choose tool", () => {
       { label: "A", value: "a".repeat(65) },
       { label: "B", value: "b" },
     ];
-    const result = await call({ chat_id: "1", question: "Pick", options: badOptions });
+    const result = await call({ question: "Pick", options: badOptions });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CALLBACK_DATA_TOO_LONG");
   });
@@ -113,7 +114,7 @@ describe("choose tool", () => {
       { label: "B", value: "b" },
       { label: "C", value: "c" },
     ];
-    await call({ chat_id: "1", question: "Pick", options: threeOptions, columns: 3 });
+    await call({ question: "Pick", options: threeOptions, columns: 3 });
     const [, , opts] = mocks.sendMessage.mock.calls[0];
     // All 3 options in a single row when columns=3
     expect(opts.reply_markup.inline_keyboard[0]).toHaveLength(3);

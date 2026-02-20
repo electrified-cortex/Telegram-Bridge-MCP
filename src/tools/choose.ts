@@ -108,11 +108,6 @@ export function register(server: McpServer) {
           timed_out: false,
           label: chosen?.label ?? cq.data,
           value: cq.data,
-          from: {
-            id: cq.from.id,
-            username: cq.from.username,
-            first_name: cq.from.first_name,
-          },
           message_id: sent.message_id,
         });
       } catch (err) {

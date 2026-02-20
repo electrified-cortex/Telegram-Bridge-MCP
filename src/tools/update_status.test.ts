@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks };
+  return { ...actual, getApi: () => mocks, resolveChat: () => "1" };
 });
 
 import { register } from "./update_status.js";
@@ -31,7 +31,7 @@ describe("update_status tool", () => {
 
   it("creates a new message when no message_id is given", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 10, chat: { id: 1 }, date: 0 });
-    const result = await call({ chat_id: "1", title: "CI Pipeline", steps: STEPS });
+    const result = await call({ title: "CI Pipeline", steps: STEPS });
     expect(isError(result)).toBe(false);
     const data = parseResult(result) as any;
     expect(data.message_id).toBe(10);
@@ -42,7 +42,7 @@ describe("update_status tool", () => {
 
   it("edits in-place when message_id is provided", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    const result = await call({ chat_id: "1", title: "CI Pipeline", steps: STEPS, message_id: 10 });
+    const result = await call({ title: "CI Pipeline", steps: STEPS, message_id: 10 });
     expect(isError(result)).toBe(false);
     expect((parseResult(result) as any).updated).toBe(true);
     expect(mocks.editMessageText).toHaveBeenCalledOnce();
@@ -51,7 +51,7 @@ describe("update_status tool", () => {
 
   it("renders step statuses with appropriate icons", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
-    await call({ chat_id: "1", title: "T", steps: STEPS });
+    await call({ title: "T", steps: STEPS });
     const [, text] = mocks.sendMessage.mock.calls[0];
     expect(text).toContain("✅");   // done
     expect(text).toContain("🔄");   // running
@@ -60,7 +60,7 @@ describe("update_status tool", () => {
 
   it("includes title in HTML bold", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
-    await call({ chat_id: "1", title: "Pipeline", steps: [{ label: "X", status: "done" }] });
+    await call({ title: "Pipeline", steps: [{ label: "X", status: "done" }] });
     const [, text] = mocks.sendMessage.mock.calls[0];
     expect(text).toContain("<b>Pipeline</b>");
   });
@@ -68,7 +68,7 @@ describe("update_status tool", () => {
   it("renders optional detail text as italic", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
     await call({
-      chat_id: "1", title: "T",
+      title: "T",
       steps: [{ label: "Build", status: "failed", detail: "exit code 1" }],
     });
     const [, text] = mocks.sendMessage.mock.calls[0];

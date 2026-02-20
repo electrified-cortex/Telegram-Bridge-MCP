@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ forwardMessage: vi.fn() }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks };
+  return { ...actual, getApi: () => mocks, resolveChat: () => "2" };
 });
 
 import { register } from "./forward_message.js";
@@ -22,14 +22,14 @@ describe("forward_message tool", () => {
 
   it("forwards and returns message_id", async () => {
     mocks.forwardMessage.mockResolvedValue({ message_id: 20, chat: { id: 2 }, date: 0 });
-    const result = await call({ chat_id: "2", from_chat_id: "1", message_id: 10 });
+    const result = await call({ from_chat_id: "1", message_id: 10 });
     expect(isError(result)).toBe(false);
     expect((parseResult(result) as any).message_id).toBe(20);
   });
 
   it("passes args to API in correct order", async () => {
     mocks.forwardMessage.mockResolvedValue({ message_id: 1, chat: { id: 2 }, date: 0 });
-    await call({ chat_id: "2", from_chat_id: "1", message_id: 10 });
+    await call({ from_chat_id: "1", message_id: 10 });
     expect(mocks.forwardMessage).toHaveBeenCalledWith("2", "1", 10, expect.any(Object));
   });
 
@@ -38,7 +38,7 @@ describe("forward_message tool", () => {
     mocks.forwardMessage.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: chat not found" }, "forwardMessage", {})
     );
-    const result = await call({ chat_id: "bad", from_chat_id: "1", message_id: 1 });
+    const result = await call({ from_chat_id: "1", message_id: 1 });
     expect(isError(result)).toBe(true);
   });
 });

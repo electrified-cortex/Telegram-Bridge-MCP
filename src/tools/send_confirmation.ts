@@ -56,7 +56,6 @@ export function register(server: McpServer) {
         });
         return toResult({
           message_id: msg.message_id,
-          chat_id: msg.chat.id,
           hint: "Pass message_id to wait_for_callback_query to block until the user responds.",
         });
       } catch (err) {

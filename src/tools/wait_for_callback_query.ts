@@ -63,13 +63,7 @@ export function register(server: McpServer) {
           timed_out: false,
           callback_query_id: cq.id,
           data: cq.data,
-          from: {
-            id: cq.from.id,
-            username: cq.from.username,
-            first_name: cq.from.first_name,
-          },
           message_id: cq.message?.message_id,
-          chat_id: cq.message?.chat.id,
         });
       } catch (err) {
         return toError(err);

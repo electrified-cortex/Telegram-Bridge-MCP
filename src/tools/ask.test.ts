@@ -13,6 +13,7 @@ vi.mock("../telegram.js", async (importActual) => {
     getApi: () => mocks,
     getOffset: () => 0,
     advanceOffset: vi.fn(),
+    resolveChat: () => "42",
   };
 });
 
@@ -35,7 +36,7 @@ describe("ask tool", () => {
     mocks.getUpdates.mockResolvedValue([
       { update_id: 1, message: { ...BASE_MSG, text: "sure", from: null, chat: { id: 42 } } },
     ]);
-    const result = await call({ chat_id: "42", question: "Continue?" });
+    const result = await call({ question: "Continue?" });
     expect(isError(result)).toBe(false);
     const data = parseResult(result) as any;
     expect(data.timed_out).toBe(false);
@@ -45,7 +46,7 @@ describe("ask tool", () => {
   it("returns timed_out when no matching update arrives", async () => {
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     mocks.getUpdates.mockResolvedValue([]);
-    const result = await call({ chat_id: "42", question: "Continue?" });
+    const result = await call({ question: "Continue?" });
     const data = parseResult(result) as any;
     expect(data.timed_out).toBe(true);
   });
@@ -56,12 +57,12 @@ describe("ask tool", () => {
     mocks.getUpdates.mockResolvedValue([
       { update_id: 1, message: { ...BASE_MSG, text: "hi", chat: { id: 999 } } },
     ]);
-    const result = await call({ chat_id: "42", question: "Hello?" });
+    const result = await call({ question: "Hello?" });
     expect((parseResult(result) as any).timed_out).toBe(true);
   });
 
   it("validates question text before sending", async () => {
-    const result = await call({ chat_id: "42", question: "" });
+    const result = await call({ question: "" });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
     expect(mocks.sendMessage).not.toHaveBeenCalled();

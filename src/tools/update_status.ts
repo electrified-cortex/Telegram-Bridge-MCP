@@ -74,7 +74,6 @@ export function register(server: McpServer) {
           });
           return toResult({
             message_id: msg.message_id,
-            chat_id: msg.chat.id,
             hint: "Pass this message_id to future update_status calls to edit in-place.",
           });
         }

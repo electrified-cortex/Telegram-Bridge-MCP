@@ -45,7 +45,7 @@ export function register(server: McpServer) {
           parse_mode: "HTML",
           disable_notification,
         });
-        return toResult({ message_id: msg.message_id, chat_id: msg.chat.id });
+        return toResult({ message_id: msg.message_id });
       } catch (err) {
         return toError(err);
       }

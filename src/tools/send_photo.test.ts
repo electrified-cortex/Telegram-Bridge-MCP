@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ sendPhoto: vi.fn() }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks };
+  return { ...actual, getApi: () => mocks, resolveChat: () => "1" };
 });
 
 import { register } from "./send_photo.js";
@@ -22,14 +22,13 @@ describe("send_photo tool", () => {
 
   it("sends a photo and returns message_id", async () => {
     mocks.sendPhoto.mockResolvedValue({ message_id: 3, chat: { id: 1 }, date: 0 });
-    const result = await call({ chat_id: "1", photo: "https://example.com/img.jpg" });
+    const result = await call({ photo: "https://example.com/img.jpg" });
     expect(isError(result)).toBe(false);
     expect((parseResult(result) as any).message_id).toBe(3);
   });
 
   it("validates caption length pre-send", async () => {
     const result = await call({
-      chat_id: "1",
       photo: "https://example.com/img.jpg",
       caption: "c".repeat(1025),
     });
@@ -40,7 +39,7 @@ describe("send_photo tool", () => {
 
   it("passes caption and parse_mode to API", async () => {
     mocks.sendPhoto.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
-    await call({ chat_id: "1", photo: "https://x.com/p.jpg", caption: "cap", parse_mode: "HTML" });
+    await call({ photo: "https://x.com/p.jpg", caption: "cap", parse_mode: "HTML" });
     const [, , opts] = mocks.sendPhoto.mock.calls[0];
     expect(opts.caption).toBe("cap");
     expect(opts.parse_mode).toBe("HTML");

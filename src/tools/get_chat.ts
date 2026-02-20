@@ -1,19 +1,21 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { getApi, toResult, toError } from "../telegram.js";
+import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 
 export function register(server: McpServer) {
   server.tool(
     "get_chat",
-    "Returns detailed information about a chat (id, type, title, username, member count, etc.).",
-    {
-      chat_id: z
-        .string()
-        .describe("Chat ID (number as string) or @username"),
-    },
-    async ({ chat_id }) => {
+    "Returns detailed information about the configured chat (id, type, title, username, member count, etc.).",
+    {},
+    async () => {
+      const chatId = resolveChat();
+      if (typeof chatId !== "string") return toError(chatId);
       try {
-        return toResult(await getApi().getChat(chat_id));
+        const chat = await getApi().getChat(chatId);
+        return toResult({
+          type: chat.type,
+          title: (chat as any).title,
+          description: (chat as any).description,
+        });
       } catch (err) {
         return toError(err);
       }

@@ -53,11 +53,7 @@ export function register(server: McpServer) {
         return toResult({
           timed_out: false,
           text: msg.text,
-          from: msg.from
-            ? { id: msg.from.id, username: msg.from.username, first_name: msg.from.first_name }
-            : null,
           message_id: msg.message_id,
-          date: msg.date,
         });
       } catch (err) {
         return toError(err);

@@ -20,8 +20,6 @@ export function register(server: McpServer) {
         });
         return toResult({
           message_id: msg.message_id,
-          chat_id: msg.chat.id,
-          date: msg.date,
         });
       } catch (err) {
         return toError(err);

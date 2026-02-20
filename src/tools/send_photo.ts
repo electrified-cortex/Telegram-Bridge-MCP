@@ -15,16 +15,12 @@ export function register(server: McpServer) {
         .enum(["HTML", "MarkdownV2"])
         .optional()
         .describe("Caption formatting mode"),
-      reply_markup: z
-        .any()
-        .optional()
-        .describe("InlineKeyboardMarkup or ReplyKeyboardMarkup"),
       disable_notification: z
         .boolean()
         .optional()
         .describe("Send silently"),
     },
-    async ({ photo, caption, parse_mode, reply_markup, disable_notification }) => {
+    async ({ photo, caption, parse_mode, disable_notification }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
       if (caption) {
@@ -35,13 +31,10 @@ export function register(server: McpServer) {
         const msg = await getApi().sendPhoto(chatId, photo, {
           caption,
           parse_mode,
-          reply_markup,
           disable_notification,
         });
         return toResult({
           message_id: msg.message_id,
-          chat_id: msg.chat.id,
-          date: msg.date,
           caption: msg.caption,
         });
       } catch (err) {
