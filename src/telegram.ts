@@ -10,6 +10,10 @@ export const LIMITS = {
   CAPTION: 1024,
   CALLBACK_DATA: 64,
   BUTTON_TEXT: 64,
+  /** Mobile display limit — labels longer than this are cut off in multi-column layouts */
+  BUTTON_DISPLAY_MULTI_COL: 20,
+  /** Mobile display limit for single-column (full-width) buttons */
+  BUTTON_DISPLAY_SINGLE_COL: 35,
   INLINE_KEYBOARD_ROWS: 8,
   INLINE_KEYBOARD_COLS: 8,
 } as const;
@@ -45,6 +49,7 @@ export type TelegramErrorCode =
   | "MESSAGE_CANT_BE_DELETED"
   | "RATE_LIMITED"
   | "BUTTON_DATA_INVALID"
+  | "BUTTON_LABEL_TOO_LONG"
   | "UNAUTHORIZED_SENDER"
   | "UNAUTHORIZED_CHAT"
   | "UNKNOWN";

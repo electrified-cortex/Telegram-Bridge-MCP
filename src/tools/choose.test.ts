@@ -139,6 +139,27 @@ describe("choose tool", () => {
     expect(errorCode(result)).toBe("CALLBACK_DATA_TOO_LONG");
   });
 
+  it("rejects label over 20 chars for 2-column layout", async () => {
+    const longOptions = [
+      { label: "A very long label text", value: "a" },
+      { label: "B", value: "b" },
+    ];
+    const result = await call({ question: "Pick", options: longOptions, columns: 2 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("BUTTON_LABEL_TOO_LONG");
+  });
+
+  it("allows label up to 35 chars for single-column layout", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.getUpdates.mockResolvedValue([]);
+    const longOptions = [
+      { label: "A somewhat longer label text ok", value: "a" },
+      { label: "B", value: "b" },
+    ];
+    const result = await call({ question: "Pick", options: longOptions, columns: 1, timeout_seconds: 1 });
+    expect(isError(result)).toBe(false);
+  });
+
   it("builds keyboard rows with correct column count", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.getUpdates.mockResolvedValue([]);

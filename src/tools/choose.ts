@@ -25,7 +25,7 @@ export function register(server: McpServer) {
       options: z
         .array(
           z.object({
-            label: z.string().describe(`Button label (max ${LIMITS.BUTTON_TEXT} chars)`),
+            label: z.string().describe(`Button label. Keep under ${LIMITS.BUTTON_DISPLAY_MULTI_COL} chars for 2-col layout, or ${LIMITS.BUTTON_DISPLAY_SINGLE_COL} chars for single-column. API hard limit is ${LIMITS.BUTTON_TEXT} chars but labels over the display limit are cut off on mobile.`),
             value: z.string().describe(`Callback data (max ${LIMITS.CALLBACK_DATA} bytes)`),
           })
         )
@@ -54,6 +54,9 @@ export function register(server: McpServer) {
       if (textErr) return toError(textErr);
 
       // Validate all callback data up front
+      const displayMax = columns >= 2
+        ? LIMITS.BUTTON_DISPLAY_MULTI_COL
+        : LIMITS.BUTTON_DISPLAY_SINGLE_COL;
       for (const opt of options) {
         const dataErr = validateCallbackData(opt.value);
         if (dataErr) return toError(dataErr);
@@ -61,6 +64,11 @@ export function register(server: McpServer) {
           return toError({
             code: "BUTTON_DATA_INVALID" as const,
             message: `Button label "${opt.label}" is ${opt.label.length} chars but the Telegram limit is ${LIMITS.BUTTON_TEXT}.`,
+          });
+        if (opt.label.length > displayMax)
+          return toError({
+            code: "BUTTON_LABEL_TOO_LONG" as const,
+            message: `Button label "${opt.label}" (${opt.label.length} chars) will be cut off on mobile. With columns=${columns}, keep labels under ${displayMax} chars. Use columns=1 for longer labels (max ${LIMITS.BUTTON_DISPLAY_SINGLE_COL} chars).`,
           });
       }
 

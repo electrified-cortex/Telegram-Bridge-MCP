@@ -70,4 +70,11 @@ describe("markdownToV2", () => {
     const out = markdownToV2("Intro.\n\n> A quoted line.\n\nOutro.");
     expect(out).toBe("Intro\\.\n\n>A quoted line\\.\n\nOutro\\.");
   });
+
+  it("normalizes literal \\n sequences to real newlines", () => {
+    // When parameters arrive through XML/MCP, \n is a 2-char sequence, not a real newline
+    const input = "Line one.\\nLine two.\\n\\nParagraph two.";
+    const out = markdownToV2(input);
+    expect(out).toBe("Line one\\.\nLine two\\.\n\nParagraph two\\.");
+  });
 });
