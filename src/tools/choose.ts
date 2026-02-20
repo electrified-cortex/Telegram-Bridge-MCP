@@ -46,8 +46,13 @@ export function register(server: McpServer) {
         .max(4)
         .default(2)
         .describe("Buttons per row (default 2)"),
+      reply_to_message_id: z
+        .number()
+        .int()
+        .optional()
+        .describe("Reply to this message ID — shows quoted message above the question"),
     },
-    async ({ question, options, timeout_seconds, columns }) => {
+    async ({ question, options, timeout_seconds, columns, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
       const textErr = validateText(question);
@@ -87,14 +92,15 @@ export function register(server: McpServer) {
         const sent = await getApi().sendMessage(chatId, markdownToV2(question), {
           parse_mode: "MarkdownV2",
           reply_markup: { inline_keyboard: rows },
+          reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
         });
 
         // Poll with 1 s ticks until EITHER a callback_query for this message
         // OR a text/voice message arrives — whichever comes first.
         const { match } = await pollUntil<
           | { kind: "button"; cq: NonNullable<Update["callback_query"]> }
-          | { kind: "text"; message_id: number; text: string }
-          | { kind: "voice"; message_id: number; fileId: string }
+          | { kind: "text"; message_id: number; text: string; reply_to_message_id?: number }
+          | { kind: "voice"; message_id: number; fileId: string; reply_to_message_id?: number }
         >(
           (updates) => {
             // Check for a callback_query on our message first
@@ -108,11 +114,11 @@ export function register(server: McpServer) {
 
             // Check for a text message (user typed instead of pressing a button)
             const tm = updates.find((u) => u.message?.text);
-            if (tm?.message) return { kind: "text", message_id: tm.message.message_id, text: tm.message.text! };
+            if (tm?.message) return { kind: "text" as const, message_id: tm.message.message_id, text: tm.message.text!, reply_to_message_id: tm.message.reply_to_message?.message_id };
 
             // Check for a voice message (user spoke instead of pressing a button)
             const vm = updates.find((u) => u.message?.voice);
-            if (vm?.message?.voice) return { kind: "voice", message_id: vm.message.message_id, fileId: vm.message.voice.file_id };
+            if (vm?.message?.voice) return { kind: "voice" as const, message_id: vm.message.message_id, fileId: vm.message.voice.file_id, reply_to_message_id: vm.message.reply_to_message?.message_id };
 
             return undefined;
           },
@@ -141,6 +147,7 @@ export function register(server: McpServer) {
             skipped: true,
             text_response: match.text,
             text_message_id: match.message_id,
+            reply_to_message_id: match.reply_to_message_id,
             message_id: sent.message_id,
           });
         }
@@ -159,6 +166,7 @@ export function register(server: McpServer) {
             skipped: true,
             text_response: text,
             text_message_id: match.message_id,
+            reply_to_message_id: match.reply_to_message_id,
             message_id: sent.message_id,
             voice: true,
           });

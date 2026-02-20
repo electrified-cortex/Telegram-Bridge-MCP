@@ -51,9 +51,9 @@ export function register(server: McpServer) {
         const sanitized = await Promise.all(allowed.map(async (u) => {
           if (u.message?.voice) {
             const text = await transcribeWithIndicator(u.message.voice.file_id, u.message.message_id).catch((e) => `[transcription failed: ${e.message}]`);
-            return { type: "message", message_id: u.message.message_id, text, voice: true };
+            return { type: "message", message_id: u.message.message_id, text, voice: true, reply_to_message_id: u.message.reply_to_message?.message_id };
           }
-          if (u.message?.text) return { type: "message", message_id: u.message.message_id, text: u.message.text };
+          if (u.message?.text) return { type: "message", message_id: u.message.message_id, text: u.message.text, reply_to_message_id: u.message.reply_to_message?.message_id };
           if (u.callback_query) return { type: "callback_query", callback_query_id: u.callback_query.id, data: u.callback_query.data, message_id: u.callback_query.message?.message_id };
           if ((u as any).message_reaction) {
             const mr = (u as any).message_reaction;

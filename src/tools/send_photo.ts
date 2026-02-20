@@ -20,8 +20,13 @@ export function register(server: McpServer) {
         .boolean()
         .optional()
         .describe("Send silently"),
+      reply_to_message_id: z
+        .number()
+        .int()
+        .optional()
+        .describe("Reply to this message ID — shows quoted message above the photo"),
     },
-    async ({ photo, caption, parse_mode, disable_notification }) => {
+    async ({ photo, caption, parse_mode, disable_notification, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
       if (caption) {
@@ -34,6 +39,7 @@ export function register(server: McpServer) {
           caption: resolved.text,
           parse_mode: resolved.parse_mode,
           disable_notification,
+          reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
         });
         return toResult({
           message_id: msg.message_id,

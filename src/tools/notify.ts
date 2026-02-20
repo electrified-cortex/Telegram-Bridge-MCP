@@ -33,8 +33,13 @@ export function register(server: McpServer) {
         .boolean()
         .optional()
         .describe("Send silently (no phone notification)"),
+      reply_to_message_id: z
+        .number()
+        .int()
+        .optional()
+        .describe("Reply to this message ID — shows quoted message above the notification"),
     },
-    async ({ title, body, severity, parse_mode, disable_notification }) => {
+    async ({ title, body, severity, parse_mode, disable_notification, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
       try {
@@ -57,6 +62,7 @@ export function register(server: McpServer) {
         const msg = await getApi().sendMessage(chatId, text, {
           parse_mode: finalMode,
           disable_notification,
+          reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
         });
         return toResult({ message_id: msg.message_id });
       } catch (err) {

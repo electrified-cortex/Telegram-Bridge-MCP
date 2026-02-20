@@ -44,8 +44,13 @@ export function register(server: McpServer) {
         .enum(["Markdown", "HTML", "MarkdownV2"])
         .default("Markdown")
         .describe("Markdown = standard Markdown auto-converted (default); MarkdownV2 = raw; HTML = HTML tags"),
+      reply_to_message_id: z
+        .number()
+        .int()
+        .optional()
+        .describe("Reply to this message ID — shows quoted message above the confirmation"),
     },
-    async ({ text, yes_text, no_text, yes_data, no_data, parse_mode }) => {
+    async ({ text, yes_text, no_text, yes_data, no_data, parse_mode, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
       const resolved = resolveParseMode(text, parse_mode);
@@ -54,6 +59,7 @@ export function register(server: McpServer) {
       try {
         const msg = await getApi().sendMessage(chatId, resolved.text, {
           parse_mode: resolved.parse_mode,
+          reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
           reply_markup: {
             inline_keyboard: [
               [

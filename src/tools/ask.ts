@@ -22,8 +22,13 @@ export function register(server: McpServer) {
         .max(55)
         .default(30)
         .describe("Seconds to wait for a reply before returning timed_out: true"),
+      reply_to_message_id: z
+        .number()
+        .int()
+        .optional()
+        .describe("Reply to this message ID — shows quoted message above the question"),
     },
-    async ({ question, timeout_seconds }) => {
+    async ({ question, timeout_seconds, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
       const chatErr = validateText(question);
@@ -31,7 +36,10 @@ export function register(server: McpServer) {
 
       try {
         // Send the question
-        await getApi().sendMessage(chatId, markdownToV2(question), { parse_mode: "MarkdownV2" });
+        await getApi().sendMessage(chatId, markdownToV2(question), {
+          parse_mode: "MarkdownV2",
+          reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
+        });
 
         // Poll with 1 s ticks for the reply (text or voice)
         const { match } = await pollUntil(
@@ -50,13 +58,14 @@ export function register(server: McpServer) {
 
         if (match.voice) {
           const text = await transcribeWithIndicator(match.voice.file_id, match.message_id).catch((e) => `[transcription failed: ${e.message}]`);
-          return toResult({ timed_out: false, text, message_id: match.message_id, voice: true });
+          return toResult({ timed_out: false, text, message_id: match.message_id, voice: true, reply_to_message_id: match.reply_to_message?.message_id ?? undefined });
         }
 
         return toResult({
           timed_out: false,
           text: match.text,
           message_id: match.message_id,
+          reply_to_message_id: match.reply_to_message?.message_id ?? undefined,
         });
       } catch (err) {
         return toError(err);
