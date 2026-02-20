@@ -1,7 +1,7 @@
-# Telegram Bot Setup Guide for Coding Agents
+# Telegram Bridge MCP — Setup Guide
 
-This guide helps you configure a Telegram bot for use with the Telegram MCP server.
-A coding agent can read this resource and walk users through setup step-by-step.
+This guide walks you through creating a Telegram bot and configuring it for use with Telegram Bridge MCP.
+An AI assistant can read this resource (`telegram-bridge-mcp://setup-guide`) and walk you through setup step-by-step.
 
 ---
 
@@ -58,7 +58,7 @@ The chat ID this bot is permitted to operate in. When set:
 
 ## Step 2 — Set the BOT_TOKEN
 
-Create a `.env` file in the project root (already git-ignored):
+Copy `.env.example` to `.env` in the project root (already git-ignored), then fill in your values:
 
 ```env
 BOT_TOKEN=123456789:AABBCCDDEEFFaabbccddeeff-1234567890
@@ -126,11 +126,11 @@ Add to your `.vscode/mcp.json` (or user settings):
 ```json
 {
   "servers": {
-    "telegram": {
+    "telegram-bridge-mcp": {
       "type": "stdio",
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/path/to/telegram-mcp",
+      "cwd": "/path/to/telegram-bridge-mcp",
       "env": {
         "BOT_TOKEN": "YOUR_TOKEN_HERE",
         "ALLOWED_USER_ID": "123456789",
@@ -148,9 +148,9 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "telegram": {
+    "telegram-bridge-mcp": {
       "command": "node",
-      "args": ["/absolute/path/to/telegram-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
       "env": {
         "BOT_TOKEN": "YOUR_TOKEN_HERE",
         "ALLOWED_USER_ID": "123456789",

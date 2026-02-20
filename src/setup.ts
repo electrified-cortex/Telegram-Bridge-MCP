@@ -1,5 +1,5 @@
 /**
- * Telegram MCP — Pairing Setup Script
+ * Telegram Bridge MCP — Pairing Setup Script
  *
  * Usage: pnpm pair   (or: node dist/setup.js)
  *
@@ -79,7 +79,7 @@ function dim(s: string) { return `\x1b[2m${s}\x1b[0m`; }
 
 async function main() {
   console.log("");
-  console.log(bold("  Telegram MCP — Pairing Setup"));
+  console.log(bold("  Telegram Bridge MCP — Pairing Setup"));
   console.log(dim("  ─────────────────────────────────────────────"));
   console.log("");
 
@@ -190,7 +190,7 @@ async function main() {
         console.log("");
         console.log(dim('    "mcp": {'));
         console.log(dim('      "servers": {'));
-        console.log(dim('        "telegram": {'));
+        console.log(dim('        "telegram-bridge-mcp": {'));
         console.log(dim('          "type": "stdio",'));
         console.log(dim(`          "command": "node",`));
         console.log(dim(`          "args": ["${resolve(__dirname, "..", "dist", "index.js").replace(/\\/g, "\\\\")}"],`));
@@ -207,7 +207,7 @@ async function main() {
         console.log("");
 
         // Send confirmation back to the user
-        await api.sendMessage(chatId, "✅ *Pairing complete\\!*\n\nThis bot is now secured to your user ID\\.\nYou can use the Telegram MCP tools\\.", {
+        await api.sendMessage(chatId, "✅ *Pairing complete\\!*\n\nThis bot is now secured to your user ID\\.\nYou can now use Telegram Bridge MCP\\.", {
           parse_mode: "MarkdownV2",
         }).catch(() => {/* non-fatal */});
 

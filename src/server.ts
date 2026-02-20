@@ -27,19 +27,23 @@ import { register as registerAsk } from "./tools/ask.js";
 import { register as registerChoose } from "./tools/choose.js";
 import { register as registerUpdateStatus } from "./tools/update_status.js";
 import { register as registerGetAgentGuide } from "./tools/get_agent_guide.js";
+import { register as registerSendConfirmation } from "./tools/send_confirmation.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function createServer(): McpServer {
   const server = new McpServer({
-    name: "telegram-mcp",
+    name: "telegram-bridge-mcp",
     version: "1.0.0",
   });
 
-  // ── High-level agent tools (use these 99% of the time) ─────────────────  registerGetAgentGuide(server);  registerNotify(server);
+  // ── High-level agent tools (use these 99% of the time) ─────────────────
+  registerGetAgentGuide(server);
+  registerNotify(server);
   registerAsk(server);
   registerChoose(server);
   registerUpdateStatus(server);
+  registerSendConfirmation(server);
 
   // ── Interaction primitives ───────────────────────────────────────────────
   registerWaitForCallbackQuery(server);
@@ -83,12 +87,12 @@ export function createServer(): McpServer {
 
   server.resource(
     "agent-guide",
-    "telegram-mcp://agent-guide",
+    "telegram-bridge-mcp://agent-guide",
     { mimeType: "text/markdown", description: "Agent behavior guide for this MCP server. Read this at session start to understand how to communicate with the user and which tools to use." },
     async () => ({
       contents: [
         {
-          uri: "telegram-mcp://agent-guide",
+          uri: "telegram-bridge-mcp://agent-guide",
           mimeType: "text/markdown",
           text: agentGuideContent,
         },
@@ -98,12 +102,12 @@ export function createServer(): McpServer {
 
   server.resource(
     "setup-guide",
-    "telegram-mcp://setup-guide",
-    { mimeType: "text/markdown" },
+    "telegram-bridge-mcp://setup-guide",
+    { mimeType: "text/markdown", description: "Step-by-step guide to creating a Telegram bot and running pnpm pair to configure this MCP server." },
     async () => ({
       contents: [
         {
-          uri: "telegram-mcp://setup-guide",
+          uri: "telegram-bridge-mcp://setup-guide",
           mimeType: "text/markdown",
           text: setupContent,
         },
@@ -113,12 +117,12 @@ export function createServer(): McpServer {
 
   server.resource(
     "formatting-guide",
-    "telegram-mcp://formatting-guide",
-    { mimeType: "text/markdown" },
+    "telegram-bridge-mcp://formatting-guide",
+    { mimeType: "text/markdown", description: "Reference for Markdown/HTML/MarkdownV2 formatting in Telegram messages. Consult this when unsure how to format text." },
     async () => ({
       contents: [
         {
-          uri: "telegram-mcp://formatting-guide",
+          uri: "telegram-bridge-mcp://formatting-guide",
           mimeType: "text/markdown",
           text: formattingContent,
         },

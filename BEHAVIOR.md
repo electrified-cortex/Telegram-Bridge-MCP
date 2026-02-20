@@ -1,8 +1,8 @@
-# Agent Guide: Telegram MCP
+# Agent Guide: Telegram Bridge MCP
 
 ## What is this server?
 
-This is a **Telegram MCP server** — a Model Context Protocol server that connects you (the AI agent) to a Telegram bot. Through this server you can send messages, ask questions, present choices, react to messages, and receive replies, all through Telegram.
+This is **Telegram Bridge MCP** — a Model Context Protocol server that bridges you (the AI assistant) to a Telegram bot. Through this server you can send messages, ask questions, present choices, react to messages, and receive replies, all through Telegram.
 
 **Your role:** You are the bot. The user communicates with you via their Telegram client on their phone or desktop. Everything you send appears instantly in their chat. Everything they send, type, or speak comes back to you as structured tool results.
 
@@ -117,7 +117,7 @@ Keep labels short and descriptive. Use `columns=1` for longer option text. Both 
 `send_message`, `notify`, `edit_message_text`, `send_photo`, and `send_confirmation` all default to `"Markdown"`.
 Standard Markdown (bold, italic, code, links, headings) is auto-converted to Telegram MarkdownV2. No manual escaping needed.
 
-See the `formatting-guide` resource (`telegram-mcp://formatting-guide`) for the full reference.
+See the `formatting-guide` resource (`telegram-bridge-mcp://formatting-guide`) for the full reference.
 
 ---
 

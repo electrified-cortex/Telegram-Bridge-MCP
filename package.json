@@ -1,7 +1,9 @@
 {
-  "name": "telegram-mcp",
+  "name": "telegram-bridge-mcp",
   "version": "1.0.0",
-  "description": "MCP server for the Telegram Bot API",
+  "description": "Telegram Bridge MCP — An MCP server that bridges AI assistants to a Telegram bot for two-way messaging, confirmations, status updates, and voice transcription.",
+  "license": "MIT",
+  "keywords": ["mcp", "telegram", "bot", "bridge", "ai", "llm", "copilot", "claude", "model-context-protocol"],
   "main": "dist/index.js",
   "type": "module",
   "scripts": {

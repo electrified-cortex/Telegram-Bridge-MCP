@@ -1,8 +1,6 @@
-# Telegram MCP — Design Document
+# Telegram Bridge MCP — Design Document
 
-## Overview
-
-A Model Context Protocol (MCP) server that exposes Telegram Bot API actions as MCP tools, allowing AI assistants (e.g. Claude, Copilot) to send and receive messages via a Telegram bot.
+**Telegram Bridge MCP** is a Model Context Protocol server that bridges AI assistants to a Telegram bot for two-way communication: messaging, confirmations, status updates, and voice transcription.
 
 ---
 
@@ -12,10 +10,11 @@ A Model Context Protocol (MCP) server that exposes Telegram Bot API actions as M
 AI Assistant (MCP Client)
         │  MCP over stdio
         ▼
-┌─────────────────────┐
-│   Telegram MCP      │  (Node.js / TypeScript)
-│   @modelcontextprotocol/sdk │
-└────────┬────────────┘
+┌──────────────────────────┐
+│  Telegram Bridge MCP     │  (Node.js / TypeScript)
+│  @modelcontextprotocol/  │
+│           sdk            │
+└────────────┬─────────────┘
          │  HTTPS REST
          ▼
   Telegram Bot API
@@ -40,125 +39,163 @@ Set via environment variable, or a `.env` file (loaded with `dotenv`).
 
 ---
 
-## Tools
+## Tool Catalogue
 
-### `get_me`
+Tools are grouped by abstraction level.
 
-Returns basic information about the bot.
+### High-level tools (use these first)
 
-**Input:** _(none)_
+| Tool | Description |
+|------|-------------|
+| `get_agent_guide` | Returns BEHAVIOR.md — the behavioral guide for this server. Call at session start. |
+| `notify` | Sends a titled, severity-coded notification with optional body. Supports silent delivery. |
+| `ask` | Sends a question and blocks until the user replies with free text. |
+| `choose` | Sends a question with labeled inline keyboard buttons; blocks until a button is pressed. |
+| `send_confirmation` | Sends a Yes/No inline keyboard; returns `message_id` for use with `wait_for_callback_query`. |
+| `update_status` | Creates or edits a live task checklist message with per-step status indicators. |
 
-**Output:** `{ id, first_name, username, can_join_groups, can_read_all_group_messages }`
+### Interaction primitives
+
+| Tool | Description |
+|------|-------------|
+| `wait_for_message` | Long-polls until a text or voice message is received. Transcribes voice automatically. |
+| `wait_for_callback_query` | Long-polls until an inline button is pressed on a specific message. |
+| `answer_callback_query` | Dismisses the loading spinner after a button press. Required after `wait_for_callback_query`. |
+
+### Messaging
+
+| Tool | Description |
+|------|-------------|
+| `send_message` | Sends a text message. Supports Markdown, MarkdownV2, HTML. |
+| `edit_message_text` | Edits the text of a previously sent message. |
+| `send_photo` | Sends a photo by public URL or Telegram `file_id`. |
+| `forward_message` | Forwards a message from another chat into the configured chat. |
+| `delete_message` | Deletes a message by ID. |
+| `pin_message` | Pins a message in the chat. |
+| `send_chat_action` | Sends a one-shot action indicator (typing, upload_photo, etc.) that lasts ~5 s. |
+| `start_typing` | Sends repeated typing indicators for the duration of a task. |
+
+### Bot / chat info
+
+| Tool | Description |
+|------|-------------|
+| `get_me` | Returns basic information about the bot (id, username, capabilities). |
+| `get_chat` | Returns information about the configured chat. |
+
+### Reactions
+
+| Tool | Description |
+|------|-------------|
+| `set_reaction` | Sets an emoji reaction on a message. |
+
+### Polling
+
+| Tool | Description |
+|------|-------------|
+| `get_updates` | One-shot poll for pending updates. Manages offset automatically. Returns messages and reactions. |
+
+### Server management
+
+| Tool | Description |
+|------|-------------|
+| `restart_server` | Exits the process cleanly; VS Code restarts it automatically to pick up new builds. |
 
 ---
 
-### `send_message`
+## MCP Resources
 
-Sends a text message to a chat.
+Three Markdown documents are exposed as MCP resources and via `get_agent_guide`:
 
-**Input:**
-
-| Field        | Type   | Required | Description                        |
-|--------------|--------|----------|------------------------------------|\n| `chat_id`    | string | Yes      | Target chat/user ID or `@username` |
-| `text`       | string | Yes      | Message text                       |
-| `parse_mode` | string | No       | `"HTML"` or `"Markdown"`           |
-
-**Output:** Sent message object (id, date, text).
+| URI | File | Description |
+|-----|------|-------------|
+| `telegram-bridge-mcp://agent-guide` | `BEHAVIOR.md` | Behavioral guide: personality, tool conventions, formatting rules |
+| `telegram-bridge-mcp://setup-guide` | `SETUP.md` | Step-by-step setup guide for new users |
+| `telegram-bridge-mcp://formatting-guide` | `FORMATTING.md` | Markdown/MarkdownV2/HTML formatting reference |
 
 ---
 
-### `get_updates`
+## Error Handling
 
-Retrieves recent incoming messages (polling, one-shot).
+All Telegram API errors are caught and returned as structured MCP tool errors:
 
-**Input:**
+```ts
+{
+  code: TelegramErrorCode,   // e.g. "MESSAGE_TOO_LONG", "RATE_LIMITED"
+  message: string,           // Human-readable description with remediation hint
+  retry_after?: number,      // Seconds to wait (RATE_LIMITED only)
+  raw?: string               // Raw Telegram error description for debugging
+}
+```
 
-| Field    | Type   | Required | Description                               |
-|----------|--------|----------|-------------------------------------------|
-| `offset` | number | No       | Update ID offset (exclusive lower bound)  |
-| `limit`  | number | No       | Max updates to return (1–100, default 10) |
-
-**Output:** Array of update objects (update_id, message.from, message.chat, message.text, message.date).
-
----
-
-### `get_chat`
-
-Gets detailed information about a chat.
-
-**Input:**
-
-| Field     | Type   | Required | Description            |
-|-----------|--------|----------|------------------------|
-| `chat_id` | string | Yes      | Chat ID or `@username` |
-
-**Output:** Chat object (id, type, title/first_name, username).
+Pre-send validators run before hitting the API for text length, caption length, and callback data byte size. Missing `BOT_TOKEN` at startup causes an immediate fatal exit with a clear message to stderr.
 
 ---
 
-### `send_photo`
+## Formatting
 
-Sends a photo by URL.
+All tools that send text default to `parse_mode: "Markdown"`. The server auto-converts standard Markdown syntax to Telegram MarkdownV2 — no manual escaping needed.
 
-**Input:**
+Explicit `parse_mode: "MarkdownV2"` and `parse_mode: "HTML"` are also supported for full control.
 
-| Field     | Type   | Required | Description                   |
-|-----------|--------|----------|-------------------------------|
-| `chat_id` | string | Yes      | Target chat ID or `@username` |
-| `photo`   | string | Yes      | Public URL of the photo       |
-| `caption` | string | No       | Optional caption              |
-
-**Output:** Sent message object.
+See `FORMATTING.md` (or the `telegram-bridge-mcp://formatting-guide` resource) for the full reference.
 
 ---
 
 ## Project Structure
 
 ```text
-telegram-mcp/
+telegram-bridge-mcp/
 ├── src/
-│   ├── index.ts             # Entry point — creates and starts MCP server
-│   ├── server.ts            # MCP server definition and tool registration
-│   ├── telegram.ts          # grammy Api wrapper + offset state management
+│   ├── index.ts              # Entry point — starts MCP server over stdio
+│   ├── server.ts             # McpServer definition, tool registration, resource registration
+│   ├── telegram.ts           # grammy Api wrapper, security enforcement, offset state,
+│   │                         #   pre-send validators, error classification, pollUntil helper
+│   ├── transcribe.ts         # Local Whisper voice transcription (HuggingFace ONNX)
+│   ├── markdown.ts           # Markdown → MarkdownV2 auto-conversion
+│   ├── setup.ts              # pnpm pair wizard — writes .env from live bot pairing
 │   └── tools/
-│       ├── get_me.ts
-│       ├── send_message.ts
-│       ├── get_updates.ts        # Manages persistent offset for polling
+│       ├── get_agent_guide.ts
+│       ├── notify.ts
+│       ├── ask.ts
+│       ├── choose.ts
+│       ├── send_confirmation.ts
+│       ├── update_status.ts
+│       ├── wait_for_message.ts
+│       ├── wait_for_callback_query.ts
 │       ├── answer_callback_query.ts
+│       ├── send_message.ts
 │       ├── edit_message_text.ts
-│       ├── get_chat.ts
 │       ├── send_photo.ts
 │       ├── forward_message.ts
+│       ├── delete_message.ts
 │       ├── pin_message.ts
-│       └── delete_message.ts
-├── .env.example
+│       ├── send_chat_action.ts
+│       ├── start_typing.ts
+│       ├── get_me.ts
+│       ├── get_chat.ts
+│       ├── set_reaction.ts
+│       ├── get_updates.ts
+│       └── restart_server.ts
+├── BEHAVIOR.md               # Agent behavioral guide (also served as MCP resource)
+├── FORMATTING.md             # Formatting reference (also served as MCP resource)
+├── SETUP.md                  # Setup guide (also served as MCP resource)
+├── LOOP-PROMPT.md            # Sample loop prompt for VS Code Copilot agent sessions
+├── LICENSE                   # MIT
 ├── package.json
-├── tsconfig.json
-└── DESIGN.md
+└── tsconfig.json
 ```
 
 ---
 
-## MCP Server Registration (example `mcp.json`)
+## Key Design Decisions
 
-```json
-{
-  "servers": {
-    "telegram": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["dist/index.js"],
-      "env": {
-        "BOT_TOKEN": "<your-token>"
-      }
-    }
-  }
-}
-```
+**Single-chat, single-user by design.** The server is locked to one `ALLOWED_CHAT_ID` and one `ALLOWED_USER_ID` via config. Tools do not accept `chat_id` parameters — the target is resolved transparently from config. This eliminates an entire class of misdirected-message bugs and simplifies tool signatures.
 
----
+**Polling over webhooks.** The server uses long-polling (up to 55 s timeout). No public URL, no TLS cert, no webhook registration required. Works out of the box behind NAT and in local development.
 
-## Error Handling
+**Persistent offset in memory.** The `_offset` variable in `telegram.ts` persists across tool calls for the lifetime of the process, so `get_updates` and `wait_for_*` tools never re-deliver the same message.
 
-- All Telegram API errors are caught and returned as MCP tool errors (non-fatal).
-- Missing `BOT_TOKEN` at startup causes an immediate fatal exit with a clear message.
+**Voice transcription is transparent.** `wait_for_message`, `ask`, `choose`, and `get_updates` all detect voice messages and transcribe them automatically using a local Whisper model. The result is returned as `{ text, voice: true }` — callers do not need to handle voice separately.
+
+**Structured errors over exceptions.** All Telegram API errors are classified into typed `TelegramErrorCode` values with actionable messages. The assistant can branch on `code` rather than parsing raw error strings.
+

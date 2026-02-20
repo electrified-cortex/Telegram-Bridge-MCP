@@ -122,7 +122,7 @@ export function getApi(): Api {
     const token = process.env.BOT_TOKEN;
     if (!token) {
       console.error(
-        "[telegram-mcp] Fatal: BOT_TOKEN environment variable is not set.\n" +
+        "[telegram-bridge-mcp] Fatal: BOT_TOKEN environment variable is not set.\n" +
           "Set it in a .env file or pass it via the MCP server env config."
       );
       process.exit(1);
@@ -167,7 +167,7 @@ export function getSecurityConfig(): SecurityConfig {
   let userId: number | null = rawUser ? parseInt(rawUser, 10) : null;
   if (userId !== null && isNaN(userId)) {
     console.warn(
-      `[telegram-mcp] WARNING: ALLOWED_USER_ID "${rawUser}" is not a valid integer — user filter disabled. ` +
+      `[telegram-bridge-mcp] WARNING: ALLOWED_USER_ID "${rawUser}" is not a valid integer — user filter disabled. ` +
         "Set ALLOWED_USER_ID to your numeric Telegram user ID."
     );
     userId = null;
@@ -176,7 +176,7 @@ export function getSecurityConfig(): SecurityConfig {
 
   if (!userId) {
     console.warn(
-      "[telegram-mcp] WARNING: ALLOWED_USER_ID is not set. " +
+      "[telegram-bridge-mcp] WARNING: ALLOWED_USER_ID is not set. " +
         "Any Telegram user who messages the bot can inject updates. " +
         "Set ALLOWED_USER_ID to your numeric Telegram user ID."
     );
