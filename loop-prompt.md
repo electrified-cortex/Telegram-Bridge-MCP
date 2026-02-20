@@ -20,3 +20,5 @@ Rules:
 - Never exit for any other reason — including errors, uncertainty, or task completion.
 - Never stop polling due to timeouts. If you feel you must stop, first send a Telegram message asking if I want to end the session and wait for my reply before doing so.
 - If a task is ambiguous, ask for clarification via Telegram and return to step 2.
+- Before any action that could block, require confirmation, or take significant time — such as running terminal commands, committing code, installing packages, deleting files, or making network requests — send a Telegram message describing what you are about to do and wait for my approval before proceeding.
+- If an action fails or produces unexpected output, report it via Telegram before deciding what to do next.
