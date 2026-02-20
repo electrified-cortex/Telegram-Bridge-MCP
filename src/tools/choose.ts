@@ -139,7 +139,7 @@ export function register(server: McpServer) {
 
         if (match.kind === "voice") {
           // User sent a voice message instead of pressing a button — transcribe and treat as text skip
-          const text = await transcribeWithIndicator(match.fileId).catch((e) => `[transcription failed: ${e.message}]`);
+          const text = await transcribeWithIndicator(match.fileId, match.message_id).catch((e) => `[transcription failed: ${e.message}]`);
           await getApi()
             .editMessageText(chatId, sent.message_id, markdownToV2(`${question}\n\n⏭ _Skipped_`), {
               parse_mode: "MarkdownV2",

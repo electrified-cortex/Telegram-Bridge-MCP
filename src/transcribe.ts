@@ -85,28 +85,26 @@ export async function transcribeVoice(fileId: string): Promise<string> {
 }
 
 /**
- * Sends a "Transcribing…" indicator message, transcribes the voice message,
- * then deletes the indicator. Returns the transcribed text.
- * If the indicator send/delete fails, transcription still proceeds.
+ * Reacts to the voice message with 📝, transcribes it, then swaps the
+ * reaction to 🫡. Returns the transcribed text.
+ * If reactions fail, transcription still proceeds.
  */
-export async function transcribeWithIndicator(fileId: string): Promise<string> {
+export async function transcribeWithIndicator(fileId: string, messageId?: number): Promise<string> {
   const chatId = resolveChat();
-  let indicatorId: number | undefined;
 
-  // Send "Transcribing…" indicator (best-effort)
-  if (typeof chatId === "string") {
-    try {
-      const msg = await getApi().sendMessage(chatId, "📝 Transcribing\u2026");
-      indicatorId = msg.message_id;
-    } catch { /* non-fatal */ }
+  // React with 📝 to signal transcription in progress (best-effort)
+  if (typeof chatId === "string" && messageId !== undefined) {
+    getApi().setMessageReaction(chatId, messageId, [{ type: "emoji", emoji: "✍" }])
+      .catch(() => {/* non-fatal */});
   }
 
   try {
     return await transcribeVoice(fileId);
   } finally {
-    // Delete the indicator (best-effort)
-    if (typeof chatId === "string" && indicatorId !== undefined) {
-      getApi().deleteMessage(chatId, indicatorId).catch(() => {/* non-fatal */});
+    // Swap reaction to 🫡 when done (best-effort)
+    if (typeof chatId === "string" && messageId !== undefined) {
+      getApi().setMessageReaction(chatId, messageId, [{ type: "emoji", emoji: "🫡" }])
+        .catch(() => {/* non-fatal */});
     }
   }
 }

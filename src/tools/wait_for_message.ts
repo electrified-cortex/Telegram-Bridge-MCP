@@ -46,7 +46,7 @@ export function register(server: McpServer) {
         }
 
         if (match.voice) {
-          const text = await transcribeWithIndicator(match.voice.file_id).catch((e) => `[transcription failed: ${e.message}]`);
+          const text = await transcribeWithIndicator(match.voice.file_id, match.message_id).catch((e) => `[transcription failed: ${e.message}]`);
           return toResult({ timed_out: false, message_id: match.message_id, text, voice: true });
         }
         return toResult({

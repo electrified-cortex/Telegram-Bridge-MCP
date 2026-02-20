@@ -50,7 +50,7 @@ export function register(server: McpServer) {
         const allowed = filterAllowedUpdates(updates);
         const sanitized = await Promise.all(allowed.map(async (u) => {
           if (u.message?.voice) {
-            const text = await transcribeWithIndicator(u.message.voice.file_id).catch((e) => `[transcription failed: ${e.message}]`);
+            const text = await transcribeWithIndicator(u.message.voice.file_id, u.message.message_id).catch((e) => `[transcription failed: ${e.message}]`);
             return { type: "message", message_id: u.message.message_id, text, voice: true };
           }
           if (u.message?.text) return { type: "message", message_id: u.message.message_id, text: u.message.text };
