@@ -55,6 +55,13 @@ export function register(server: McpServer) {
           }
           if (u.message?.text) return { type: "message", message_id: u.message.message_id, text: u.message.text };
           if (u.callback_query) return { type: "callback_query", callback_query_id: u.callback_query.id, data: u.callback_query.data, message_id: u.callback_query.message?.message_id };
+          if ((u as any).message_reaction) {
+            const mr = (u as any).message_reaction;
+            const newEmoji = (mr.new_reaction ?? []).filter((r: any) => r.type === "emoji").map((r: any) => r.emoji);
+            const oldEmoji = (mr.old_reaction ?? []).filter((r: any) => r.type === "emoji").map((r: any) => r.emoji);
+            const user = mr.user ? { id: mr.user.id, name: [mr.user.first_name, mr.user.last_name].filter(Boolean).join(" "), username: mr.user.username } : undefined;
+            return { type: "message_reaction", message_id: mr.message_id, user, emoji_added: newEmoji, emoji_removed: oldEmoji };
+          }
           return { type: "other" };
         }));
         return toResult(sanitized);

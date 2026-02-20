@@ -10,6 +10,7 @@ import { register as registerGetUpdates } from "./tools/get_updates.js";
 import { register as registerAnswerCallbackQuery } from "./tools/answer_callback_query.js";
 import { register as registerEditMessageText } from "./tools/edit_message_text.js";
 import { register as registerGetChat } from "./tools/get_chat.js";
+import { register as registerSetReaction } from "./tools/set_reaction.js";
 import { register as registerSendPhoto } from "./tools/send_photo.js";
 import { register as registerForwardMessage } from "./tools/forward_message.js";
 import { register as registerPinMessage } from "./tools/pin_message.js";
@@ -59,6 +60,9 @@ export function createServer(): McpServer {
   // ── Bot / chat info ──────────────────────────────────────────────────────
   registerGetMe(server);
   registerGetChat(server);
+
+  // ── Reactions ────────────────────────────────────────────────────────────
+  registerSetReaction(server);
 
   // ── Polling ──────────────────────────────────────────────────────────────
   registerGetUpdates(server);

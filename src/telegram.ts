@@ -23,6 +23,7 @@ export const DEFAULT_ALLOWED_UPDATES = [
   "message",
   "callback_query",
   "my_chat_member",
+  "message_reaction",
 ] as const;
 
 // ---------------------------------------------------------------------------
