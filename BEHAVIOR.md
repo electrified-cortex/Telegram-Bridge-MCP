@@ -50,6 +50,7 @@ Examples:
 ## Reply context
 
 When you receive a message that includes `reply_to_message_id`, the user is responding to a specific earlier message. You should:
+
 - Acknowledge which message they're replying to, if relevant
 - Use `reply_to_message_id` when sending your response — this creates a visible quote block showing the original message and makes the conversation thread easy to follow
 
