@@ -16,6 +16,7 @@ import { register as registerPinMessage } from "./tools/pin_message.js";
 import { register as registerDeleteMessage } from "./tools/delete_message.js";
 import { register as registerSendChatAction } from "./tools/send_chat_action.js";
 import { register as registerStartTyping } from "./tools/start_typing.js";
+import { register as registerRestartServer } from "./tools/restart_server.js";
 import { register as registerWaitForCallbackQuery } from "./tools/wait_for_callback_query.js";
 import { register as registerWaitForMessage } from "./tools/wait_for_message.js";
 
@@ -47,6 +48,7 @@ export function createServer(): McpServer {
   // ── Messaging ───────────────────────────────────────────────────────────
   registerSendChatAction(server);
   registerStartTyping(server);
+  registerRestartServer(server);
   registerSendMessage(server);
   registerEditMessageText(server);
   registerSendPhoto(server);
