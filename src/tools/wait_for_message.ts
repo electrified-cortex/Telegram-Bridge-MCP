@@ -21,9 +21,9 @@ export function register(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(55)
-        .default(30)
-        .describe("How long to wait for a message (1–55 s)"),
+        .max(300)
+        .default(300)
+        .describe("How long to wait for a message (1–300 s)"),
       user_id: z
         .number()
         .int()

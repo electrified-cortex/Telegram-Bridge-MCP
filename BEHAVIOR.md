@@ -97,6 +97,19 @@ Only call `start_typing` **after receiving a message**, before doing work. Do no
 
 ---
 
+## Tool usage: timeout strategy
+
+**Default timeouts are optimized for minimal token usage during idle polling:**
+
+- `wait_for_message`: 300 s (5 min) — use default when polling for next task
+- `ask`, `choose`, `wait_for_callback_query`: 60 s — reasonable wait when expecting a response
+
+All tools support up to 300 s max. You can use shorter timeouts (e.g., 30–60 s) when you want more responsive feedback loops, or longer timeouts when idle to minimize repeated polling overhead.
+
+Internal Telegram API long-polling uses 25 s intervals — one `wait_for_message(300)` makes ~12 API calls vs. 300+ calls with the old 1 s interval and 30 s timeout loop.
+
+---
+
 ## Tool usage: `choose` confirmation display
 
 When the user selects an option in `choose`, the confirmation edit uses `▸` (triangle), not ✅. This is intentional — checkmarks imply "correct" which is wrong for neutral choices.

@@ -365,7 +365,7 @@ export async function pollUntil<T>(
     const updates = await getApi().getUpdates({
       offset: getOffset(),
       limit: 100,
-      timeout: 1,
+      timeout: 25,
       allowed_updates: [...DEFAULT_ALLOWED_UPDATES] as any,
     });
 

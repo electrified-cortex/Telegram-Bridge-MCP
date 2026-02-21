@@ -36,8 +36,8 @@ export function register(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(55)
-        .default(30)
+        .max(300)
+        .default(60)
         .describe("Seconds to wait for a button press before returning timed_out: true"),
       columns: z
         .number()

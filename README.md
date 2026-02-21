@@ -1,5 +1,7 @@
 # Telegram Bridge MCP
 
+> Unblock your agent workflow through Telegram
+
 ![Telegram Bridge MCP](logo.png)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that bridges AI assistants to a Telegram bot — enabling two-way messaging, interactive confirmations, live status updates, and automatic voice transcription.

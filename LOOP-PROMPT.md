@@ -9,7 +9,7 @@ Then call `get_updates` once to drain any stale messages from previous sessions 
 Then proceed with the loop:
 
 1. Send a message via Telegram saying you are ready and waiting for instructions.
-2. Call `wait_for_message` to wait for my reply. If it times out with no message, call it again — keep polling until a message arrives.
+2. Call `wait_for_message` to wait for my reply. The default timeout is 300 s (5 min), optimized to minimize token usage during idle polling. If it times out with no message, call it again — keep polling until a message arrives.
 3. Call `start_typing` to signal you are working — it keeps the indicator alive for the duration of the task.
 4. Treat the received message as your next task. Complete it.
 5. Return to step 1.
