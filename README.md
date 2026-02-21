@@ -29,8 +29,8 @@ Once configured, your AI assistant can:
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-org/telegram-bridge-mcp.git
-cd telegram-bridge-mcp
+git clone https://github.com/electricessence/Telegram-Bridge-MCP.git
+cd Telegram-Bridge-MCP
 pnpm install
 pnpm build
 ```
