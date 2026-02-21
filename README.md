@@ -115,7 +115,7 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 ### High-level (use these 99% of the time)
 
 | Tool | What it does |
-|------|-------------|
+| ------ | ------------- |
 | `get_agent_guide` | Loads the behavioral guide — call this at session start |
 | `notify` | Silent or audible notification with title, body, and severity |
 | `ask` | Sends a question; blocks until you reply with text |
@@ -142,7 +142,7 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 Three guides are available as MCP resources — any MCP client can read them directly:
 
 | Resource URI | Contents |
-|---|---|
+| --- | --- |
 | `telegram-bridge-mcp://agent-guide` | Behavioral guide for AI assistants |
 | `telegram-bridge-mcp://setup-guide` | Full bot setup walkthrough |
 | `telegram-bridge-mcp://formatting-guide` | Markdown/MarkdownV2/HTML reference |
