@@ -190,7 +190,7 @@ async function main() {
         console.log("");
         console.log(dim('    "mcp": {'));
         console.log(dim('      "servers": {'));
-        console.log(dim('        "telegram-bridge-mcp": {'));
+        console.log(dim('        "telegram": {'));
         console.log(dim('          "type": "stdio",'));
         console.log(dim(`          "command": "node",`));
         console.log(dim(`          "args": ["${resolve(__dirname, "..", "dist", "index.js").replace(/\\/g, "\\\\")}"],`));

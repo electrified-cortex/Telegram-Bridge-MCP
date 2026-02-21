@@ -55,7 +55,7 @@ This interactive wizard:
 ```json
 {
   "servers": {
-    "telegram-bridge-mcp": {
+    "telegram": {
       "type": "stdio",
       "command": "node",
       "args": ["dist/index.js"],
@@ -75,7 +75,7 @@ This interactive wizard:
 ```json
 {
   "mcpServers": {
-    "telegram-bridge-mcp": {
+    "telegram": {
       "command": "node",
       "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
       "env": {

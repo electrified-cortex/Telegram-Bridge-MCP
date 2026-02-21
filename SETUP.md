@@ -126,7 +126,7 @@ Add to your `.vscode/mcp.json` (or user settings):
 ```json
 {
   "servers": {
-    "telegram-bridge-mcp": {
+    "telegram": {
       "type": "stdio",
       "command": "node",
       "args": ["dist/index.js"],
@@ -148,7 +148,7 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "telegram-bridge-mcp": {
+    "telegram": {
       "command": "node",
       "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
       "env": {
