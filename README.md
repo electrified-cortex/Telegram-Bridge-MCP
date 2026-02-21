@@ -6,6 +6,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that bridges 
 
 Works with any MCP-compatible AI host: VS Code Copilot, Claude Desktop, and others.
 
+> [!NOTE]
+> **Pre-release:** This project is functional but has not yet been widely tested in production. Expect rough edges and possible breaking changes.
+
 ---
 
 ## What it does
