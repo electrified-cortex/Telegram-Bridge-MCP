@@ -21,8 +21,8 @@ describe("isTtsEnabled", () => {
     delete process.env.TTS_PROVIDER;
   });
 
-  it("returns false when TTS_PROVIDER is not set", () => {
-    expect(isTtsEnabled()).toBe(false);
+  it("returns true when TTS_PROVIDER is not set (defaults to local)", () => {
+    expect(isTtsEnabled()).toBe(true);
   });
 
   it("returns true when TTS_PROVIDER=openai", () => {
@@ -144,10 +144,6 @@ describe("stripForTts", () => {
 describe("synthesizeToOgg input guards", () => {
   afterEach(() => {
     delete process.env.TTS_PROVIDER;
-  });
-
-  it("throws when TTS_PROVIDER is not set", async () => {
-    await expect(synthesizeToOgg("hello")).rejects.toThrow("No TTS provider");
   });
 
   it("throws for empty text (before provider check)", async () => {
@@ -284,5 +280,19 @@ describe("synthesizeToOgg (local provider)", () => {
     expect(pipeline).toHaveBeenCalledTimes(1);
     // but the synthesizer itself is called once per synthesis
     expect(fakeSynthesizer).toHaveBeenCalledTimes(2);
+  });
+
+  it("defaults to local provider when TTS_PROVIDER is not set", async () => {
+    delete process.env.TTS_PROVIDER; // override beforeEach
+    const { pipeline } = await import("@huggingface/transformers");
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+
+    const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: new Float32Array(1), sampling_rate: 16000 });
+    vi.mocked(pipeline as any).mockResolvedValue(fakeSynthesizer);
+    vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
+
+    const result = await synthesizeToOgg("hello");
+    expect(fakeSynthesizer).toHaveBeenCalledWith("hello");
+    expect(Buffer.isBuffer(result)).toBe(true);
   });
 });

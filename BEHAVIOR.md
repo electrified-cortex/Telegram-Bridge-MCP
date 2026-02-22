@@ -192,6 +192,34 @@ All message-receiving tools (`wait_for_message`, `ask`, `choose`, `get_updates`)
 
 Transcription is transparent — returned as `text` with `voice: true` in the result.
 
+### TTS delivery error: "user restricted receiving of voice note messages"
+
+If `send_message` (or `send_voice`) returns:
+
+```
+Bad Request: user restricted receiving of voice note messages
+```
+
+This is a **Telegram account privacy setting** on the user's personal account — not a bot or server issue. The synthesis worked; Telegram blocked delivery.
+
+**Root cause:** The user's Voice Messages privacy is set to "Nobody" (or "My Contacts") without the bot in the exceptions list.
+
+**Fix — guide the user to add the bot as an Agent exception:**
+
+> Telegram → Settings → Privacy and Security → Voice Messages → Add Exceptions → **Always Allow** → add this bot.
+
+Step by step on mobile:
+1. Open Telegram → Settings (gear icon)
+2. Privacy and Security → Voice Messages
+3. Tap **Add Exceptions** → **Always Allow**
+4. Search for the bot by name and add it
+
+On desktop: same path — Settings → Privacy and Security → Voice Messages → Add Exceptions → Always Allow → select the bot.
+
+The base setting ("Nobody", "My Contacts", etc.) can stay as-is. Adding the bot to the **Always Allow** exceptions list is sufficient.
+
+Once the exception is added, retry the voice send — no server restart needed.
+
 ---
 
 ## Reactions from the user

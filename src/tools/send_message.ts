@@ -71,6 +71,17 @@ export function register(server: McpServer) {
           }
           return toResult({ message_ids, chunks: message_ids.length, split: true, voice: true });
         } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("user restricted receiving of voice note messages")) {
+            return toError({
+              code: "VOICE_RESTRICTED",
+              message:
+                "Telegram blocked voice delivery — the user's privacy settings restrict voice notes from bots. " +
+                "To fix: Telegram → Settings → Privacy and Security → Voice Messages → " +
+                "Add Exceptions → Always Allow → add this bot. " +
+                "The base setting can remain as-is; the 'Always Allow' exception is sufficient.",
+            } as const);
+          }
           return toError(err);
         }
       }

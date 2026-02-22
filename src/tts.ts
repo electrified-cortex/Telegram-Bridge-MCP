@@ -29,10 +29,11 @@ import { pipeline, env } from "@huggingface/transformers";
 /** Maximum characters accepted per TTS request (matches Telegram text limit). */
 export const TTS_LIMIT = 4096;
 
-/** Returns true when TTS delivery is globally configured via env vars. */
+/** Returns true when TTS delivery is globally configured via env vars.
+ *  When TTS_PROVIDER is not set, defaults to the free local provider. */
 export function isTtsEnabled(): boolean {
   const p = process.env.TTS_PROVIDER?.toLowerCase();
-  return p === "openai" || p === "local";
+  return !p || p === "openai" || p === "local";
 }
 
 /**
@@ -193,9 +194,6 @@ export async function synthesizeToOgg(text: string): Promise<Buffer> {
   const provider = process.env.TTS_PROVIDER?.toLowerCase();
 
   if (provider === "openai") return synthesizeOpenAiToOgg(text);
-  if (provider === "local") return synthesizeLocalToOgg(text);
-
-  throw new Error(
-    "No TTS provider configured. Set TTS_PROVIDER=local (free, no API key) or TTS_PROVIDER=openai.",
-  );
+  // "local" or unset — default to the free local provider
+  return synthesizeLocalToOgg(text);
 }
