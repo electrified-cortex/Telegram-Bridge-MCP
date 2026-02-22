@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(), sendVoice: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(), sendVoiceDirect: vi.fn() }));
 const ttsMocks = vi.hoisted(() => ({
   isTtsEnabled: vi.fn(() => false),
   synthesizeToOgg: vi.fn(),
@@ -10,7 +10,7 @@ const ttsMocks = vi.hoisted(() => ({
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, resolveChat: () => "123" };
+  return { ...actual, getApi: () => mocks, sendVoiceDirect: mocks.sendVoiceDirect, resolveChat: () => "123" };
 });
 
 vi.mock("../tts.js", () => ({
@@ -111,16 +111,16 @@ describe("send_message tool — voice mode", () => {
     ttsMocks.isTtsEnabled.mockReturnValue(false);
     ttsMocks.stripForTts.mockImplementation((t: string) => t);
     ttsMocks.synthesizeToOgg.mockResolvedValue(Buffer.from("fakeaudio"));
-    mocks.sendVoice.mockResolvedValue({ message_id: 99, chat: { id: 1 }, date: 0, voice: { file_id: "f1", duration: 1, file_size: 9, mime_type: "audio/ogg" } });
+    mocks.sendVoiceDirect.mockResolvedValue({ message_id: 99, voice: { file_id: "f1", duration: 1, file_size: 9, mime_type: "audio/ogg" } });
     const server = createMockServer();
     register(server as any);
     call = server.getHandler("send_message");
   });
 
-  it("sends via sendVoice when voice:true is explicitly passed", async () => {
+  it("sends via sendVoiceDirect when voice:true is explicitly passed", async () => {
     const result = await call({ text: "Hello!", voice: true });
     expect(isError(result)).toBe(false);
-    expect(mocks.sendVoice).toHaveBeenCalledTimes(1);
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledTimes(1);
     expect(mocks.sendMessage).not.toHaveBeenCalled();
     const data = parseResult(result) as any;
     expect(data.message_id).toBe(99);
@@ -133,14 +133,14 @@ describe("send_message tool — voice mode", () => {
     const result = await call({ text: "hi", voice: false });
     expect(isError(result)).toBe(false);
     expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.sendVoice).not.toHaveBeenCalled();
+    expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
   });
 
-  it("uses sendVoice by default when isTtsEnabled returns true", async () => {
+  it("uses sendVoiceDirect by default when isTtsEnabled returns true", async () => {
     ttsMocks.isTtsEnabled.mockReturnValue(true);
     const result = await call({ text: "hello" });
     expect(isError(result)).toBe(false);
-    expect(mocks.sendVoice).toHaveBeenCalledTimes(1);
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledTimes(1);
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -156,7 +156,7 @@ describe("send_message tool — voice mode", () => {
     const result = await call({ text: "**formatting only**", voice: true });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
-    expect(mocks.sendVoice).not.toHaveBeenCalled();
+    expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
   });
 
   it("propagates synthesis errors", async () => {

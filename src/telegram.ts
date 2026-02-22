@@ -1,5 +1,6 @@
 import { Api, GrammyError, HttpError } from "grammy";
 import type { Update } from "grammy/types";
+import { readFileSync, existsSync } from "fs";
 
 // ---------------------------------------------------------------------------
 // Telegram limits (for pre-validation before hitting the API)
@@ -52,6 +53,7 @@ export type TelegramErrorCode =
   | "BUTTON_LABEL_TOO_LONG"
   | "UNAUTHORIZED_SENDER"
   | "UNAUTHORIZED_CHAT"
+  | "VOICE_RESTRICTED"
   | "UNKNOWN";
 
 export interface TelegramError {
@@ -341,6 +343,71 @@ export function splitMessage(text: string): string[] {
 
   if (remaining.length > 0) chunks.push(remaining);
   return chunks;
+}
+
+/**
+ * Sends a voice note directly via the Telegram Bot API using fetch + FormData,
+ * bypassing grammY to ensure correct multipart MIME typing (audio/ogg).
+ * Accepts a Buffer (TTS-generated OGG), a local file path, a public URL, or a Telegram file_id.
+ */
+export async function sendVoiceDirect(
+  chatId: string,
+  voice: Buffer | string,
+  options: {
+    caption?: string;
+    parse_mode?: string;
+    duration?: number;
+    disable_notification?: boolean;
+    reply_to_message_id?: number;
+  } = {}
+): Promise<{ message_id: number; voice?: Record<string, unknown> }> {
+  const token = process.env.BOT_TOKEN;
+  if (!token) throw new Error("BOT_TOKEN not set");
+
+  const form = new FormData();
+  form.append("chat_id", chatId);
+
+  if (voice instanceof Buffer) {
+    form.append("voice", new Blob([voice], { type: "audio/ogg" }), "voice.ogg");
+  } else if (typeof voice === "string" && !voice.startsWith("http") && existsSync(voice)) {
+    const data = readFileSync(voice);
+    form.append("voice", new Blob([data], { type: "audio/ogg" }), "voice.ogg");
+  } else {
+    // URL or Telegram file_id
+    form.append("voice", voice);
+  }
+
+  if (options.caption) form.append("caption", options.caption);
+  if (options.parse_mode) form.append("parse_mode", options.parse_mode);
+  if (options.duration != null) form.append("duration", String(options.duration));
+  if (options.disable_notification) form.append("disable_notification", "true");
+  if (options.reply_to_message_id != null)
+    form.append("reply_parameters", JSON.stringify({ message_id: options.reply_to_message_id }));
+
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
+    method: "POST",
+    body: form,
+  });
+
+  const json = (await res.json()) as {
+    ok: boolean;
+    result?: { message_id: number; voice?: Record<string, unknown> };
+    description?: string;
+    error_code?: number;
+  };
+
+  if (!json.ok) {
+    const desc = json.description ?? `Telegram API error ${json.error_code}`;
+    // Throw as GrammyError so classifyGrammyError in toError() can classify it
+    throw new GrammyError(
+      desc,
+      { ok: false, error_code: json.error_code ?? 0, description: desc } as any,
+      "sendVoice",
+      {}
+    );
+  }
+
+  return json.result!;
 }
 
 /**

@@ -1,8 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InputFile } from "grammy";
-import { existsSync } from "fs";
 import { z } from "zod";
-import { getApi, toResult, toError, validateCaption, resolveChat, callApi } from "../telegram.js";
+import { toResult, toError, validateCaption, resolveChat, sendVoiceDirect } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
 import { cancelTyping } from "../typing-state.js";
 
@@ -50,34 +48,21 @@ export function register(server: McpServer) {
         ? resolveParseMode(caption, parse_mode)
         : { text: undefined, parse_mode: undefined };
 
-      let voiceSource: string | InputFile;
-      if (voice.startsWith("http://") || voice.startsWith("https://")) {
-        voiceSource = voice;
-      } else if (existsSync(voice)) {
-        voiceSource = new InputFile(voice);
-      } else {
-        voiceSource = voice; // Assume Telegram file_id
-      }
-
       try {
         cancelTyping();
-        const msg = await callApi(() =>
-          getApi().sendVoice(chatId, voiceSource, {
-            caption: resolved.text,
-            parse_mode: resolved.parse_mode,
-            duration,
-            disable_notification,
-            reply_parameters: reply_to_message_id
-              ? { message_id: reply_to_message_id }
-              : undefined,
-          })
-        );
+        const msg = await sendVoiceDirect(chatId, voice, {
+          caption: resolved.text,
+          parse_mode: resolved.parse_mode,
+          duration,
+          disable_notification,
+          reply_to_message_id,
+        });
         return toResult({
           message_id: msg.message_id,
-          file_id: msg.voice?.file_id,
-          mime_type: msg.voice?.mime_type,
-          file_size: msg.voice?.file_size,
-          duration: msg.voice?.duration,
+          file_id: (msg.voice as any)?.file_id,
+          mime_type: (msg.voice as any)?.mime_type,
+          file_size: (msg.voice as any)?.file_size,
+          duration: (msg.voice as any)?.duration,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

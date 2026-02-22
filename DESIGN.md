@@ -46,7 +46,7 @@ Tools are grouped by abstraction level.
 ### High-level tools (use these first)
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `get_agent_guide` | Returns BEHAVIOR.md — the behavioral guide for this server. Call at session start. |
 | `set_topic` | Sets a default title prepended to all outbound messages as `[Title]`. Useful when multiple VS Code windows share the same Telegram chat — each process labels its messages so you can tell which agent sent what. Pass empty string to clear. Scoped to this server process. |
 | `notify` | Sends a titled, severity-coded notification with optional body. Supports silent delivery. |
@@ -58,7 +58,7 @@ Tools are grouped by abstraction level.
 ### Interaction primitives
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `wait_for_message` | Long-polls until a text or voice message is received. Transcribes voice automatically. |
 | `wait_for_callback_query` | Long-polls until an inline button is pressed on a specific message. |
 | `answer_callback_query` | Dismisses the loading spinner after a button press. Required after `wait_for_callback_query`. |
@@ -66,7 +66,7 @@ Tools are grouped by abstraction level.
 ### Messaging
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `send_message` | Sends a text message. Supports Markdown, MarkdownV2, HTML. Messages over 4096 chars are automatically split into sequential chunks. Set `voice: true` (or configure `TTS_PROVIDER`) to send as a spoken voice note via TTS instead. |
 | `edit_message_text` | Edits the text of a previously sent message. |
 | `send_photo` | Sends a photo by public URL or Telegram `file_id`. |
@@ -85,7 +85,7 @@ Tools are grouped by abstraction level.
 ### Bot / chat info
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `get_me` | Returns basic information about the bot (id, username, capabilities). |
 | `get_chat` | Returns information about the configured chat. |
 | `set_commands` | Registers (or clears) the Telegram slash-command menu for the active chat or globally. Pass `[]` to remove the menu. Useful for surfacing escape-hatch commands like `/cancel` during long-running tasks. |
@@ -93,19 +93,19 @@ Tools are grouped by abstraction level.
 ### Reactions
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `set_reaction` | Sets an emoji reaction on a message. |
 
 ### Polling
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `get_updates` | One-shot poll for pending updates. Manages offset automatically. Returns messages and reactions. |
 
 ### Server management
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `restart_server` | Exits the process cleanly; VS Code restarts it automatically to pick up new builds. |
 
 ---
@@ -115,7 +115,7 @@ Tools are grouped by abstraction level.
 Three Markdown documents are exposed as MCP resources and via `get_agent_guide`:
 
 | URI | File | Description |
-|-----|------|-------------|
+| --- | --- | --- |
 | `telegram-bridge-mcp://agent-guide` | `BEHAVIOR.md` | Behavioral guide: personality, tool conventions, formatting rules |
 | `telegram-bridge-mcp://setup-guide` | `SETUP.md` | Step-by-step setup guide for new users |
 | `telegram-bridge-mcp://formatting-guide` | `FORMATTING.md` | Markdown/MarkdownV2/HTML formatting reference |

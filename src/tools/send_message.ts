@@ -1,7 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { InputFile } from "grammy";
 import { z } from "zod";
-import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi } from "../telegram.js";
+import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { cancelTyping } from "../typing-state.js";
 import { applyTopicToText } from "../topic-state.js";
@@ -55,15 +54,10 @@ export function register(server: McpServer) {
           const message_ids: number[] = [];
           for (let i = 0; i < voiceChunks.length; i++) {
             const ogg = await synthesizeToOgg(voiceChunks[i]);
-            const inputFile = new InputFile(ogg, "voice.ogg");
-            const msg = await callApi(() =>
-              getApi().sendVoice(chatId, inputFile, {
-                disable_notification,
-                reply_parameters: i === 0 && reply_to_message_id
-                  ? { message_id: reply_to_message_id }
-                  : undefined,
-              })
-            );
+            const msg = await sendVoiceDirect(chatId, ogg, {
+              disable_notification,
+              reply_to_message_id: i === 0 ? reply_to_message_id : undefined,
+            });
             message_ids.push(msg.message_id);
           }
           if (message_ids.length === 1) {
