@@ -1,5 +1,16 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { isTtsEnabled, stripForTts, synthesizeToOgg, TTS_LIMIT } from "./tts.js";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { isTtsEnabled, stripForTts, synthesizeToOgg, TTS_LIMIT, _resetLocalPipeline } from "./tts.js";
+
+// Mock @huggingface/transformers so no model is downloaded during tests
+vi.mock("@huggingface/transformers", () => ({
+  pipeline: vi.fn(),
+  env: {},
+}));
+
+// Mock the OGG encoder to avoid WASM loading in tests
+vi.mock("./ogg-opus-encoder.js", () => ({
+  pcmToOggOpus: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // isTtsEnabled
@@ -19,10 +30,19 @@ describe("isTtsEnabled", () => {
     expect(isTtsEnabled()).toBe(true);
   });
 
-  it("is case-insensitive (OpenAI, OPENAI)", () => {
+  it("returns true when TTS_PROVIDER=local", () => {
+    process.env.TTS_PROVIDER = "local";
+    expect(isTtsEnabled()).toBe(true);
+  });
+
+  it("is case-insensitive (OpenAI, OPENAI, LOCAL, Local)", () => {
     process.env.TTS_PROVIDER = "OpenAI";
     expect(isTtsEnabled()).toBe(true);
     process.env.TTS_PROVIDER = "OPENAI";
+    expect(isTtsEnabled()).toBe(true);
+    process.env.TTS_PROVIDER = "LOCAL";
+    expect(isTtsEnabled()).toBe(true);
+    process.env.TTS_PROVIDER = "Local";
     expect(isTtsEnabled()).toBe(true);
   });
 
@@ -118,34 +138,49 @@ describe("stripForTts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// synthesizeToOgg — error guards (no network calls)
+// synthesizeToOgg — shared input guards (provider-agnostic)
 // ---------------------------------------------------------------------------
 
-describe("synthesizeToOgg error guards", () => {
+describe("synthesizeToOgg input guards", () => {
   afterEach(() => {
-    delete process.env.OPENAI_API_KEY;
+    delete process.env.TTS_PROVIDER;
   });
 
-  it("throws when OPENAI_API_KEY is not set", async () => {
-    await expect(synthesizeToOgg("hello")).rejects.toThrow("OPENAI_API_KEY");
+  it("throws when TTS_PROVIDER is not set", async () => {
+    await expect(synthesizeToOgg("hello")).rejects.toThrow("No TTS provider");
   });
 
-  it("throws for empty text", async () => {
-    process.env.OPENAI_API_KEY = "sk-test";
-    await expect(synthesizeToOgg("")).rejects.toThrow();
+  it("throws for empty text (before provider check)", async () => {
+    await expect(synthesizeToOgg("")).rejects.toThrow("must not be empty");
   });
 
   it("throws for whitespace-only text", async () => {
-    process.env.OPENAI_API_KEY = "sk-test";
-    await expect(synthesizeToOgg("   ")).rejects.toThrow();
+    await expect(synthesizeToOgg("   ")).rejects.toThrow("must not be empty");
   });
 
   it(`throws when text exceeds TTS_LIMIT (${TTS_LIMIT} chars)`, async () => {
-    process.env.OPENAI_API_KEY = "sk-test";
     await expect(synthesizeToOgg("a".repeat(TTS_LIMIT + 1))).rejects.toThrow("TTS input too long");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// synthesizeToOgg — OpenAI provider (no network calls)
+// ---------------------------------------------------------------------------
+
+describe("synthesizeToOgg (openai provider)", () => {
+  afterEach(() => {
+    delete process.env.TTS_PROVIDER;
+    delete process.env.OPENAI_API_KEY;
+    vi.unstubAllGlobals();
+  });
+
+  it("throws when OPENAI_API_KEY is not set", async () => {
+    process.env.TTS_PROVIDER = "openai";
+    await expect(synthesizeToOgg("hello")).rejects.toThrow("OPENAI_API_KEY");
   });
 
   it("calls OpenAI API with correct parameters", async () => {
+    process.env.TTS_PROVIDER = "openai";
     process.env.OPENAI_API_KEY = "sk-test";
     process.env.TTS_VOICE = "nova";
     process.env.TTS_MODEL = "tts-1-hd";
@@ -168,12 +203,12 @@ describe("synthesizeToOgg error guards", () => {
     expect(body.model).toBe("tts-1-hd");
     expect(body.response_format).toBe("opus");
 
-    vi.unstubAllGlobals();
     delete process.env.TTS_VOICE;
     delete process.env.TTS_MODEL;
   });
 
   it("throws a descriptive error when API returns non-ok status", async () => {
+    process.env.TTS_PROVIDER = "openai";
     process.env.OPENAI_API_KEY = "sk-test";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false,
@@ -182,6 +217,72 @@ describe("synthesizeToOgg error guards", () => {
     }));
 
     await expect(synthesizeToOgg("hello")).rejects.toThrow("401");
-    vi.unstubAllGlobals();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// synthesizeToOgg — local provider (mocked HF + OGG encoder)
+// ---------------------------------------------------------------------------
+
+describe("synthesizeToOgg (local provider)", () => {
+  beforeEach(() => {
+    process.env.TTS_PROVIDER = "local";
+    _resetLocalPipeline();
+  });
+
+  afterEach(() => {
+    delete process.env.TTS_PROVIDER;
+    delete process.env.TTS_MODEL_LOCAL;
+    _resetLocalPipeline();
+    vi.clearAllMocks();
+  });
+
+  it("calls HuggingFace pipeline and pcmToOggOpus, returns a Buffer", async () => {
+    const { pipeline } = await import("@huggingface/transformers");
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+
+    const fakePcm = new Float32Array([0.1, -0.1, 0.0]);
+    const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: fakePcm, sampling_rate: 16000 });
+    vi.mocked(pipeline).mockResolvedValue(fakeSynthesizer as any);
+
+    const fakeOgg = Buffer.from("fake-ogg");
+    vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
+
+    const result = await synthesizeToOgg("hello");
+
+    expect(fakeSynthesizer).toHaveBeenCalledWith("hello");
+    expect(pcmToOggOpus).toHaveBeenCalledWith(fakePcm, 16000);
+    expect(result).toBe(fakeOgg);
+  });
+
+  it("passes TTS_MODEL_LOCAL to the pipeline constructor", async () => {
+    process.env.TTS_MODEL_LOCAL = "custom/model";
+    const { pipeline } = await import("@huggingface/transformers");
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+
+    const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: new Float32Array(1), sampling_rate: 22050 });
+    vi.mocked(pipeline).mockResolvedValue(fakeSynthesizer as any);
+    vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
+
+    await synthesizeToOgg("test");
+
+    expect(pipeline).toHaveBeenCalledWith("text-to-speech", "custom/model");
+  });
+
+  it("reuses the pipeline singleton across calls", async () => {
+    const { pipeline } = await import("@huggingface/transformers");
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+
+    const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: new Float32Array(1), sampling_rate: 16000 });
+    vi.mocked(pipeline).mockResolvedValue(fakeSynthesizer as any);
+    vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
+
+    await synthesizeToOgg("first call");
+    await synthesizeToOgg("second call");
+
+    // pipeline() constructor must be called only once (singleton)
+    expect(pipeline).toHaveBeenCalledTimes(1);
+    // but the synthesizer itself is called once per synthesis
+    expect(fakeSynthesizer).toHaveBeenCalledTimes(2);
   });
 });

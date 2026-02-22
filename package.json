@@ -1,7 +1,9 @@
 {
   "name": "telegram-bridge-mcp",
-  "author": { "name": "electricessence" },
-  "version": "1.4.0",
+  "author": {
+    "name": "electricessence"
+  },
+  "version": "1.5.0",
   "description": "Telegram Bridge MCP — An MCP server that bridges AI assistants to a Telegram bot for two-way messaging, confirmations, status updates, and voice transcription.",
   "license": "MIT",
   "homepage": "https://github.com/electricessence/Telegram-Bridge-MCP",
@@ -9,7 +11,17 @@
     "type": "git",
     "url": "https://github.com/electricessence/Telegram-Bridge-MCP.git"
   },
-  "keywords": ["mcp", "telegram", "bot", "bridge", "ai", "llm", "copilot", "claude", "model-context-protocol"],
+  "keywords": [
+    "mcp",
+    "telegram",
+    "bot",
+    "bridge",
+    "ai",
+    "llm",
+    "copilot",
+    "claude",
+    "model-context-protocol"
+  ],
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -36,6 +48,7 @@
     "audio-decode": "^2.2.3",
     "dotenv": "^16.4.5",
     "grammy": "^1.40.0",
+    "opusscript": "^0.1.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

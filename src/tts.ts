@@ -1,14 +1,22 @@
 /**
  * Text-to-speech synthesis module.
  *
- * Provider:  OpenAI TTS API (native fetch — no extra packages required)
- * Output:    OGG/Opus container — natively supported by Telegram sendVoice
+ * Supported providers (TTS_PROVIDER env var):
  *
- * Env vars:
- *   TTS_PROVIDER  = openai            (required to enable TTS; "openai" is the only supported value)
- *   TTS_VOICE     = alloy             (default: "alloy"; options: alloy, echo, fable, onyx, nova, shimmer)
- *   TTS_MODEL     = tts-1             (default: "tts-1"; use "tts-1-hd" for higher quality)
- *   OPENAI_API_KEY                    (required when TTS_PROVIDER=openai)
+ *   local   — Free, zero configuration.  Uses @huggingface/transformers (ONNX)
+ *             with opusscript (WASM libopus) for OGG/Opus encoding.
+ *             Model is downloaded once on first use and cached locally.
+ *             Env vars:
+ *               TTS_MODEL_LOCAL  (default: Xenova/mms-tts-eng)
+ *               TTS_CACHE_DIR    (optional cache directory override)
+ *
+ *   openai  — High quality.  Requires an OpenAI account and API key.
+ *             Env vars:
+ *               OPENAI_API_KEY (required)
+ *               TTS_VOICE      (default: alloy — alloy/echo/fable/onyx/nova/shimmer)
+ *               TTS_MODEL      (default: tts-1 — use tts-1-hd for higher quality)
+ *
+ * Output:  OGG/Opus container — natively supported by Telegram sendVoice.
  *
  * Usage flow in send_message:
  *   1. stripForTts(originalText) → plain text (no markdown/HTML)
@@ -16,12 +24,15 @@
  *   3. new InputFile(buffer, "voice.ogg") → pass to grammy sendVoice
  */
 
-/** Maximum characters accepted by OpenAI TTS per request (same as Telegram text limit). */
+import { pipeline, env } from "@huggingface/transformers";
+
+/** Maximum characters accepted per TTS request (matches Telegram text limit). */
 export const TTS_LIMIT = 4096;
 
 /** Returns true when TTS delivery is globally configured via env vars. */
 export function isTtsEnabled(): boolean {
-  return process.env.TTS_PROVIDER?.toLowerCase() === "openai";
+  const p = process.env.TTS_PROVIDER?.toLowerCase();
+  return p === "openai" || p === "local";
 }
 
 /**
@@ -80,29 +91,47 @@ export function stripForTts(text: string): string {
   );
 }
 
-/**
- * Synthesizes plain text to an OGG/Opus audio buffer via the OpenAI TTS API.
- *
- * - Requires `TTS_PROVIDER=openai` and `OPENAI_API_KEY` env vars.
- * - Input `text` should already be stripped of formatting (call `stripForTts` first).
- * - Input length must be ≤ `TTS_LIMIT` (4096) characters.
- * - Returns a raw Buffer containing the OGG/Opus audio — pass directly to grammy
- *   `sendVoice` via `new InputFile(buffer, "voice.ogg")`.
- *
- * @throws If the API key is missing, input is empty/oversized, or the API call fails.
- */
-export async function synthesizeToOgg(text: string): Promise<Buffer> {
+// ---------------------------------------------------------------------------
+// Local provider (TTS_PROVIDER=local)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_LOCAL_MODEL = "Xenova/mms-tts-eng";
+
+// Singleton — model is loaded once and reused across calls.
+let _localPipeline: Promise<(text: string) => Promise<{ audio: Float32Array; sampling_rate: number }>> | null = null;
+
+/** @internal Exposed for testing — resets the local pipeline singleton. */
+export function _resetLocalPipeline(): void {
+  _localPipeline = null;
+}
+
+function getLocalPipeline() {
+  if (!_localPipeline) {
+    const model = process.env.TTS_MODEL_LOCAL ?? DEFAULT_LOCAL_MODEL;
+    if (process.env.TTS_CACHE_DIR) {
+      env.cacheDir = process.env.TTS_CACHE_DIR;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _localPipeline = pipeline("text-to-speech", model) as any;
+  }
+  return _localPipeline!;
+}
+
+async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
+  const synthesizer = await getLocalPipeline();
+  const result = await synthesizer(text);
+  const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+  return pcmToOggOpus(result.audio, result.sampling_rate);
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI provider (TTS_PROVIDER=openai)
+// ---------------------------------------------------------------------------
+
+async function synthesizeOpenAiToOgg(text: string): Promise<Buffer> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("TTS_PROVIDER=openai requires the OPENAI_API_KEY environment variable to be set.");
-  }
-
-  if (!text || text.trim().length === 0) {
-    throw new Error("TTS input text must not be empty.");
-  }
-
-  if (text.length > TTS_LIMIT) {
-    throw new Error(`TTS input too long (${text.length} chars, limit ${TTS_LIMIT}). Split the text first.`);
   }
 
   const voice = process.env.TTS_VOICE ?? "alloy";
@@ -128,4 +157,45 @@ export async function synthesizeToOgg(text: string): Promise<Buffer> {
   }
 
   return Buffer.from(await res.arrayBuffer());
+}
+
+// ---------------------------------------------------------------------------
+// Public synthesis entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Validates common TTS input guards (empty / oversized text).
+ * Called by both providers before synthesis.
+ */
+function validateTtsInput(text: string): void {
+  if (!text || text.trim().length === 0) {
+    throw new Error("TTS input text must not be empty.");
+  }
+  if (text.length > TTS_LIMIT) {
+    throw new Error(`TTS input too long (${text.length} chars, limit ${TTS_LIMIT}). Split the text first.`);
+  }
+}
+
+/**
+ * Synthesizes plain text to an OGG/Opus audio buffer.
+ *
+ * - Dispatches to the provider selected by `TTS_PROVIDER`.
+ * - Input `text` should already be stripped of formatting (call `stripForTts` first).
+ * - Input length must be ≤ `TTS_LIMIT` (4096) characters.
+ * - Returns a raw Buffer containing the OGG/Opus audio — pass directly to grammy
+ *   `sendVoice` via `new InputFile(buffer, "voice.ogg")`.
+ *
+ * @throws If no provider is configured, input is empty/oversized, or synthesis fails.
+ */
+export async function synthesizeToOgg(text: string): Promise<Buffer> {
+  validateTtsInput(text);
+
+  const provider = process.env.TTS_PROVIDER?.toLowerCase();
+
+  if (provider === "openai") return synthesizeOpenAiToOgg(text);
+  if (provider === "local") return synthesizeLocalToOgg(text);
+
+  throw new Error(
+    "No TTS provider configured. Set TTS_PROVIDER=local (free, no API key) or TTS_PROVIDER=openai.",
+  );
 }
