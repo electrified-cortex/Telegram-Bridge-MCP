@@ -10,7 +10,7 @@ Then proceed with the loop:
 
 1. Send a message via Telegram saying you are ready and waiting for instructions.
 2. Call `wait_for_message` to wait for my reply. The default timeout is 300 s (5 min), optimized to minimize token usage during idle polling. If it times out with no message, call it again — keep polling until a message arrives.
-3. Call `start_typing` to signal you are working — it keeps the indicator alive for the duration of the task.
+3. Call `show_typing` **only after a message is received** and right before you start work. It is idempotent — safe to call multiple times without spamming Telegram. Never call it while idle.
 4. Treat the received message as your next task. Complete it.
 5. Return to step 1.
 
@@ -19,6 +19,7 @@ This is the **Telegram Bridge MCP** repo — a Node.js/TypeScript MCP server. Ch
 Rules:
 
 - After calling `restart_server`, immediately drain stale updates and re-engage the loop — send a "back online" message and return to step 2.
+- Do **not** use `get_updates` for ongoing polling. It is only for the initial stale-message drain (or explicit debugging when asked). Use `wait_for_message` for the loop.
 - Only break the loop when I send exactly: `exit`
 - On `exit`, send a goodbye message via Telegram, then stop.
 - Never exit for any other reason — including errors, uncertainty, or task completion.

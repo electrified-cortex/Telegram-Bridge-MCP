@@ -1,13 +1,164 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Message } from "grammy/types";
 import { z } from "zod";
 import { toResult, toError, pollUntil } from "../telegram.js";
 import { transcribeWithIndicator } from "../transcribe.js";
 
 /**
- * Long-polls for the next text or voice message in a chat.
+ * Builds a structured payload from any Telegram message type.
+ * Handles text, voice, document, photo, audio, video, animation, sticker,
+ * contact, location, and unknown types gracefully.
+ */
+async function serializeMessage(msg: Message): Promise<Record<string, unknown>> {
+  const base = {
+    message_id: msg.message_id,
+    reply_to_message_id: msg.reply_to_message?.message_id ?? undefined,
+  };
+
+  if (msg.text) {
+    return { ...base, type: "text", text: msg.text };
+  }
+
+  if (msg.voice) {
+    const text = await transcribeWithIndicator(msg.voice.file_id, msg.message_id).catch(
+      (e) => `[transcription failed: ${e.message}]`,
+    );
+    return { ...base, type: "voice", text, voice: true };
+  }
+
+  if (msg.document) {
+    return {
+      ...base,
+      type: "document",
+      file_id: msg.document.file_id,
+      file_unique_id: msg.document.file_unique_id,
+      file_name: msg.document.file_name,
+      mime_type: msg.document.mime_type,
+      file_size: msg.document.file_size,
+      caption: msg.caption,
+    };
+  }
+
+  if (msg.photo) {
+    // Telegram sends multiple sizes; last is the largest
+    const largest = msg.photo[msg.photo.length - 1];
+    return {
+      ...base,
+      type: "photo",
+      file_id: largest.file_id,
+      file_unique_id: largest.file_unique_id,
+      width: largest.width,
+      height: largest.height,
+      file_size: largest.file_size,
+      caption: msg.caption,
+    };
+  }
+
+  if (msg.audio) {
+    return {
+      ...base,
+      type: "audio",
+      file_id: msg.audio.file_id,
+      file_unique_id: msg.audio.file_unique_id,
+      title: msg.audio.title,
+      performer: msg.audio.performer,
+      duration: msg.audio.duration,
+      mime_type: msg.audio.mime_type,
+      file_size: msg.audio.file_size,
+      caption: msg.caption,
+    };
+  }
+
+  if (msg.video) {
+    return {
+      ...base,
+      type: "video",
+      file_id: msg.video.file_id,
+      file_unique_id: msg.video.file_unique_id,
+      width: msg.video.width,
+      height: msg.video.height,
+      duration: msg.video.duration,
+      mime_type: msg.video.mime_type,
+      file_size: msg.video.file_size,
+      caption: msg.caption,
+    };
+  }
+
+  if (msg.animation) {
+    return {
+      ...base,
+      type: "animation",
+      file_id: msg.animation.file_id,
+      file_unique_id: msg.animation.file_unique_id,
+      width: msg.animation.width,
+      height: msg.animation.height,
+      duration: msg.animation.duration,
+      file_name: msg.animation.file_name,
+      mime_type: msg.animation.mime_type,
+      file_size: msg.animation.file_size,
+    };
+  }
+
+  if (msg.sticker) {
+    return {
+      ...base,
+      type: "sticker",
+      file_id: msg.sticker.file_id,
+      file_unique_id: msg.sticker.file_unique_id,
+      emoji: msg.sticker.emoji,
+      set_name: msg.sticker.set_name,
+      is_animated: msg.sticker.is_animated,
+      is_video: msg.sticker.is_video,
+    };
+  }
+
+  if (msg.contact) {
+    return {
+      ...base,
+      type: "contact",
+      phone_number: msg.contact.phone_number,
+      first_name: msg.contact.first_name,
+      last_name: msg.contact.last_name,
+    };
+  }
+
+  if (msg.location) {
+    return {
+      ...base,
+      type: "location",
+      latitude: msg.location.latitude,
+      longitude: msg.location.longitude,
+    };
+  }
+
+  if (msg.poll) {
+    return {
+      ...base,
+      type: "poll",
+      question: msg.poll.question,
+      options: msg.poll.options.map((o) => o.text),
+    };
+  }
+
+  // Fallback: unknown content — describe what we got and ask for direction
+  const keys = Object.keys(msg).filter(
+    (k) => !["message_id", "from", "chat", "date", "reply_to_message"].includes(k),
+  );
+  return {
+    ...base,
+    type: "unknown",
+    content_keys: keys,
+    note: "Received a message with unrecognized content. What would you like me to do with it?",
+  };
+}
+
+/**
+ * Long-polls for the next message of any type in the chat.
  *
- * Voice messages are automatically transcribed via local Whisper and returned
- * as plain text — transparent to the caller.
+ * Handles text, voice (auto-transcribed), documents, photos, audio, video,
+ * animations, stickers, contacts, locations, polls, and unknown types.
+ * Returns structured data for each type. Unknown types include a `note`
+ * field describing the situation.
  *
  * Any message_reaction updates seen while waiting are returned alongside the
  * message as `reactions[]` so they are never silently discarded.
@@ -15,7 +166,7 @@ import { transcribeWithIndicator } from "../transcribe.js";
 export function register(server: McpServer) {
   server.tool(
     "wait_for_message",
-    "Blocks (long-poll) until a text or voice message is received, then returns it. Voice messages are auto-transcribed. Optionally filter by sender user_id. Returns { timed_out: true } on expiry. Any message_reaction updates seen while waiting are included in the result as reactions[].",
+    "Blocks (long-poll) until any message is received (text, voice, document, photo, audio, video, sticker, etc.), then returns structured data. Voice messages are auto-transcribed. Optionally filter by sender user_id. Returns { timed_out: true } on expiry. Unknown message types return a note asking what to do. Any message_reaction updates seen while waiting are included in the result as reactions[].",
     {
       timeout_seconds: z
         .number()
@@ -35,7 +186,7 @@ export function register(server: McpServer) {
         const { match, missed } = await pollUntil(
           (updates) => {
             const msg = updates.find((u) => {
-              if (!u.message?.text && !u.message?.voice) return false;
+              if (!u.message) return false;
               if (user_id !== undefined && u.message.from?.id !== user_id) return false;
               return true;
             });
@@ -59,15 +210,10 @@ export function register(server: McpServer) {
           return toResult({ timed_out: true, reactions: reactions.length ? reactions : undefined });
         }
 
-        if (match.voice) {
-          const text = await transcribeWithIndicator(match.voice.file_id, match.message_id).catch((e) => `[transcription failed: ${e.message}]`);
-          return toResult({ timed_out: false, message_id: match.message_id, text, voice: true, reply_to_message_id: match.reply_to_message?.message_id ?? undefined, reactions: reactions.length ? reactions : undefined });
-        }
+        const payload = await serializeMessage(match);
         return toResult({
           timed_out: false,
-          message_id: match.message_id,
-          text: match.text,
-          reply_to_message_id: match.reply_to_message?.message_id ?? undefined,
+          ...payload,
           reactions: reactions.length ? reactions : undefined,
         });
       } catch (err) {

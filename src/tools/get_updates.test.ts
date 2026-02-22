@@ -36,13 +36,55 @@ describe("get_updates tool", () => {
     call = server.getHandler("get_updates");
   });
 
-  it("returns updates and advances offset", async () => {
+  it("returns text updates and advances offset", async () => {
     const updates = [{ update_id: 1, message: { message_id: 1, text: "hi", chat: { id: 42 } } }];
     mocks.getUpdates.mockResolvedValue(updates);
     const result = await call({ limit: 10, timeout: 0 });
     expect(isError(result)).toBe(false);
-    expect(parseResult(result)).toEqual([{ type: "message", message_id: 1, text: "hi" }]);
+    const data = parseResult(result) as any[];
+    expect(data[0].type).toBe("message");
+    expect(data[0].content_type).toBe("text");
+    expect(data[0].text).toBe("hi");
     expect(offsetMocks.advance).toHaveBeenCalledWith(updates);
+  });
+
+  it("returns document messages with content_type=document", async () => {
+    const updates = [{
+      update_id: 2,
+      message: {
+        message_id: 2,
+        document: { file_id: "f1", file_unique_id: "u1", file_name: "test.pdf", mime_type: "application/pdf", file_size: 1234 },
+        caption: "Here",
+        chat: { id: 42 },
+      },
+    }];
+    mocks.getUpdates.mockResolvedValue(updates);
+    const result = await call({ limit: 10, timeout_seconds: 0 });
+    const data = parseResult(result) as any[];
+    expect(data[0].content_type).toBe("document");
+    expect(data[0].file_id).toBe("f1");
+    expect(data[0].file_name).toBe("test.pdf");
+    expect(data[0].caption).toBe("Here");
+  });
+
+  it("returns photo messages with content_type=photo using largest size", async () => {
+    const updates = [{
+      update_id: 3,
+      message: {
+        message_id: 3,
+        photo: [
+          { file_id: "small", file_unique_id: "s1", width: 100, height: 100 },
+          { file_id: "large", file_unique_id: "l1", width: 800, height: 600 },
+        ],
+        chat: { id: 42 },
+      },
+    }];
+    mocks.getUpdates.mockResolvedValue(updates);
+    const result = await call({ limit: 10, timeout_seconds: 0 });
+    const data = parseResult(result) as any[];
+    expect(data[0].content_type).toBe("photo");
+    expect(data[0].file_id).toBe("large");
+    expect(data[0].width).toBe(800);
   });
 
   it("calls resetOffset when reset_offset is true", async () => {

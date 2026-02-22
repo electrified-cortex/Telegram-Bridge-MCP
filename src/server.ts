@@ -12,11 +12,14 @@ import { register as registerEditMessageText } from "./tools/edit_message_text.j
 import { register as registerGetChat } from "./tools/get_chat.js";
 import { register as registerSetReaction } from "./tools/set_reaction.js";
 import { register as registerSendPhoto } from "./tools/send_photo.js";
+import { register as registerSendDocument } from "./tools/send_document.js";
+import { register as registerDownloadFile } from "./tools/download_file.js";
 import { register as registerForwardMessage } from "./tools/forward_message.js";
 import { register as registerPinMessage } from "./tools/pin_message.js";
 import { register as registerDeleteMessage } from "./tools/delete_message.js";
 import { register as registerSendChatAction } from "./tools/send_chat_action.js";
-import { register as registerStartTyping } from "./tools/start_typing.js";
+import { register as registerShowTyping } from "./tools/show_typing.js";
+import { register as registerCancelTyping } from "./tools/cancel_typing.js";
 import { register as registerRestartServer } from "./tools/restart_server.js";
 import { register as registerWaitForCallbackQuery } from "./tools/wait_for_callback_query.js";
 import { register as registerWaitForMessage } from "./tools/wait_for_message.js";
@@ -52,11 +55,14 @@ export function createServer(): McpServer {
 
   // ── Messaging ───────────────────────────────────────────────────────────
   registerSendChatAction(server);
-  registerStartTyping(server);
+  registerShowTyping(server);
+  registerCancelTyping(server);
   registerRestartServer(server);
   registerSendMessage(server);
   registerEditMessageText(server);
   registerSendPhoto(server);
+  registerSendDocument(server);
+  registerDownloadFile(server);
   registerForwardMessage(server);
   registerDeleteMessage(server);
   registerPinMessage(server);

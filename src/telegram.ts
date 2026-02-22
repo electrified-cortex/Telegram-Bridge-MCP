@@ -364,7 +364,7 @@ export async function pollUntil<T>(
   while (Date.now() < deadline) {
     const updates = await getApi().getUpdates({
       offset: getOffset(),
-      limit: 100,
+      limit: 1,   // one at a time — prevents batch-drop when multiple messages arrive simultaneously
       timeout: 25,
       allowed_updates: [...DEFAULT_ALLOWED_UPDATES] as any,
     });

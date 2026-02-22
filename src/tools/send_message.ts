@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
+import { cancelTyping } from "../typing-state.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -31,6 +32,7 @@ export function register(server: McpServer) {
       const textErr = validateText(finalText);
       if (textErr) return toError(textErr);
       try {
+        cancelTyping();
         const msg = await getApi().sendMessage(chatId, finalText, {
           parse_mode: finalMode,
           disable_notification,

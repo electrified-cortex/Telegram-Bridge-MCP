@@ -29,6 +29,8 @@ When starting a new session with this MCP:
 3. Send a brief **silent** `notify` that you're online and ready.
 4. Enter the `wait_for_message` loop.
 
+**Do not use `get_updates` for ongoing polling.** After the single startup drain, always use `wait_for_message` for the loop. `get_updates` is only for startup drain or targeted debugging when explicitly requested.
+
 ---
 
 ## Proactive silent notifications
@@ -91,9 +93,14 @@ Only use `ask` or `wait_for_message` for truly open-ended free-text input where 
 
 ---
 
-## Tool usage: `start_typing`
+## Tool usage: `show_typing`
 
-Only call `start_typing` **after receiving a message**, before doing work. Do not call it while idle/polling — the indicator expires in ~5 s and Telegram's own behavior shows "typing" while `wait_for_message` is long-polling anyway.
+Call `show_typing` **after receiving a message**, right before doing actual work. It is idempotent — you can call it multiple times and only one interval runs; repeated calls just extend the deadline without spamming Telegram.
+
+- **Default timeout:** 20 s — enough for most tasks. Pass a longer value for slow operations.
+- **Auto-cancelled** when any message-sending tool (`send_message`, `notify`, `send_photo`, etc.) is called. You don't need to manually cancel on normal send paths.
+- Use `cancel_typing` only if you decide not to send a message after all.
+- Do **not** call `show_typing` while idle/polling. The indicator is for signalling active work to the user.
 
 ---
 
@@ -174,6 +181,91 @@ Transcription is transparent — returned as `text` with `voice: true` in the re
 - `get_updates` returns `{ type: "message_reaction", message_id, user, emoji_added, emoji_removed }` for reaction updates.
 
 Use this to acknowledge what the user reacted to and adapt behavior accordingly.
+
+---
+
+## Received file handling
+
+When `wait_for_message` or `get_updates` returns a message with a non-text `type`, **always ask the user what to do — never read or process the file automatically.**
+
+React with 👀 immediately on receipt, then use `choose` with inferred action buttons based on file type.
+
+### Core rule: always ask first, download only when needed
+
+Do **not** call `download_file` until the user has selected an action that requires it. The metadata returned by `wait_for_message` (file name, MIME type, size) is sufficient to ask the question — no download needed to present the choice.
+
+Never silently download, read, or process a received file without explicit instruction. The user may have sent it for a purpose you can't know — always confirm intent first.
+
+### Handling batched file uploads
+
+Users may send multiple files at once (e.g., drag-drop in Telegram desktop). The server processes one message at a time, so each file arrives as a separate `wait_for_message` result.
+
+**No special handling needed** — just process each file and return to the loop. The next `wait_for_message` call will naturally pick up the next queued file.
+
+Do **not** call `get_updates` between files — it advances the offset and can consume queued messages before the loop reaches them.
+
+**Format for the `choose` prompt:**
+
+- State what arrived: file name, type, size (if available)
+- Offer 2–4 relevant actions as buttons, inferred from the file type
+- Always include a free-text escape: ask `ask` after `choose` if the user selects "Other"
+
+**Example — receiving `report.xlsx`:**
+```
+Received report.xlsx (Excel spreadsheet, 42 KB).
+What would you like me to do with it?
+[Download & parse]  [Save to disk]
+[Describe it]       [Nothing]
+```
+
+**Example — receiving `logo.png` (photo):**
+```
+Received a photo (800×600, 50 KB).
+What would you like me to do with it?
+[Save to disk]  [Nothing]
+```
+
+### Inferred button sets by file type
+
+| Type | Inferred buttons |
+|---|---|
+| `.txt .md .log .csv .env .yaml .json .xml` (text) | `Read it`, `Save to disk`, `Nothing` |
+| `.ts .js .py .go` etc (source code) | `Read it`, `Apply to project`, `Save to disk`, `Nothing` |
+| `.xlsx .ods .xls` (spreadsheet) | `Download & parse`, `Save to disk`, `Nothing` |
+| `.docx .pptx .odt` (office doc) | `Download it`, `Save to disk`, `Nothing` |
+| `.zip .tar .gz .7z` (archive) | `Download it`, `Extract contents`, `Nothing` |
+| `.pdf` | `Download it`, `Save to disk`, `Nothing` |
+| Photo / image | `Save to disk`, `Nothing` |
+| Audio / video | `Download it`, `Nothing` |
+| Sticker | _(react with the sticker emoji; no action needed)_ |
+| Unknown | `Download it`, `Describe it`, `Nothing` |
+
+Labels must respect `choose` button length limits (≤20 chars for 2-col, ≤35 for 1-col).
+
+### After the user chooses
+
+Act based on the selected option:
+
+- **Read it / parse** → Call `download_file` → read `text` (if returned) and report.
+- **Save to disk** → Call `download_file` → confirm saved (don't announce full path).
+- **Download it** → Call `download_file` → confirm saved (don't announce full path).
+- **Extract contents** → Call `download_file` → unzip/extract using available tools.
+- **Apply to project** → Call `download_file` → read text, then ask where/how to apply it.
+- **Describe it** → No download needed. Describe using metadata already in hand: name, size, MIME, inferred type.
+- **Nothing** → Acknowledge and move on. No download.
+
+### Downloading files
+
+Use the `download_file` tool with the `file_id` from the received message. It returns:
+- `local_path` — absolute path to the downloaded file on disk
+- `file_name` — original filename
+- `mime_type` — detected MIME type
+- `file_size` — bytes
+- `text` — file contents (only for text-based files under 100 KB)
+
+### Never silently discard received files
+
+Always acknowledge receipt. Even for stickers or types you can't process, confirm you saw it.
 
 ---
 

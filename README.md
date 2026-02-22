@@ -22,6 +22,7 @@ Once configured, your AI assistant can:
 - **Post live status updates** — an in-place checklist that updates as tasks progress
 - **React to messages** — emoji reactions instead of noise text
 - **Transcribe voice messages** — speak your reply; it arrives as text
+- **Send and receive files** — send documents/photos from disk or URL; receive any file type and download on demand
 - **Receive all of this in real time** — long-polling, no webhooks, no public URL needed
 
 ---
@@ -125,7 +126,11 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 
 ### Messaging
 
-`send_message` · `edit_message_text` · `forward_message` · `delete_message` · `pin_message` · `send_chat_action` · `start_typing`
+`send_message` · `edit_message_text` · `forward_message` · `delete_message` · `pin_message` · `send_chat_action` · `show_typing` · `cancel_typing`
+
+### Files
+
+`send_document` · `send_photo` · `download_file`
 
 ### Interaction primitives
 

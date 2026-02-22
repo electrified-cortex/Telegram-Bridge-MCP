@@ -4,6 +4,7 @@ coverage/
 .env
 *.js.map
 node_modules
+temp/
 # Session state files — regenerated each session by the agent
 HANDOFF.md
 memory.md

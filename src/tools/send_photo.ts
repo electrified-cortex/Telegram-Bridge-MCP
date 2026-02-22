@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateCaption, resolveChat } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
+import { cancelTyping } from "../typing-state.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -35,6 +36,7 @@ export function register(server: McpServer) {
       }
       const resolved = caption ? resolveParseMode(caption, parse_mode) : { text: undefined, parse_mode: undefined };
       try {
+        cancelTyping();
         const msg = await getApi().sendPhoto(chatId, photo, {
           caption: resolved.text,
           parse_mode: resolved.parse_mode,

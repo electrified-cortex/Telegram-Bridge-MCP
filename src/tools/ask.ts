@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, resolveChat, toResult, toError, validateText, pollUntil } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { transcribeWithIndicator } from "../transcribe.js";
+import { cancelTyping } from "../typing-state.js";
 
 /**
  * Sends a question and blocks until the user types a reply.
@@ -35,6 +36,7 @@ export function register(server: McpServer) {
       if (chatErr) return toError(chatErr);
 
       try {
+        cancelTyping();
         // Send the question
         const sent = await getApi().sendMessage(chatId, markdownToV2(question), {
           parse_mode: "MarkdownV2",

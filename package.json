@@ -1,7 +1,7 @@
 {
   "name": "telegram-bridge-mcp",
   "author": { "name": "electricessence" },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Telegram Bridge MCP — An MCP server that bridges AI assistants to a Telegram bot for two-way messaging, confirmations, status updates, and voice transcription.",
   "license": "MIT",
   "homepage": "https://github.com/electricessence/Telegram-Bridge-MCP",
@@ -14,6 +14,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "pair": "node dist/setup.js",
     "start": "node dist/index.js",
     "dev": "tsc --watch",

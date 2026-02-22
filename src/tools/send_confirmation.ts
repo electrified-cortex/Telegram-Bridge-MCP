@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
+import { cancelTyping } from "../typing-state.js";
 
 /**
  * Convenience tool for agent→human confirmation flows.
@@ -57,6 +58,7 @@ export function register(server: McpServer) {
       const textErr = validateText(resolved.text);
       if (textErr) return toError(textErr);
       try {
+        cancelTyping();
         const msg = await getApi().sendMessage(chatId, resolved.text, {
           parse_mode: resolved.parse_mode,
           reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,

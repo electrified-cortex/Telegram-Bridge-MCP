@@ -5,7 +5,7 @@ import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 export function register(server: McpServer) {
   server.tool(
     "send_chat_action",
-    'Sends a one-shot chat action indicator (e.g. "typing…") that lasts ~5 s. For sustained typing, use start_typing instead.',
+    'Sends a one-shot chat action indicator (e.g. "typing…") that lasts ~5 s. For sustained typing, use show_typing instead.',
     {
       action: z
         .enum([

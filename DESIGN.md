@@ -73,7 +73,8 @@ Tools are grouped by abstraction level.
 | `delete_message` | Deletes a message by ID. |
 | `pin_message` | Pins a message in the chat. |
 | `send_chat_action` | Sends a one-shot action indicator (typing, upload_photo, etc.) that lasts ~5 s. |
-| `start_typing` | Sends repeated typing indicators for the duration of a task. |
+| `show_typing` | Idempotent sustained typing indicator — starts or extends a 4 s interval loop. |
+| `cancel_typing` | Explicitly cancels the active typing indicator. |
 
 ### Bot / chat info
 
@@ -170,7 +171,8 @@ telegram-bridge-mcp/
 │       ├── delete_message.ts
 │       ├── pin_message.ts
 │       ├── send_chat_action.ts
-│       ├── start_typing.ts
+│       ├── show_typing.ts
+│       ├── cancel_typing.ts
 │       ├── get_me.ts
 │       ├── get_chat.ts
 │       ├── set_reaction.ts

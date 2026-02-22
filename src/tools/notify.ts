@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat } from "../telegram.js";
 import { markdownToV2, escapeV2, escapeHtml } from "../markdown.js";
+import { cancelTyping } from "../typing-state.js";
 
 const SEVERITY_PREFIX: Record<string, string> = {
   info: "ℹ️",
@@ -58,6 +59,7 @@ export function register(server: McpServer) {
 
         const err = validateText(text);
         if (err) return toError(err);
+        cancelTyping();
 
         const msg = await getApi().sendMessage(chatId, text, {
           parse_mode: finalMode,

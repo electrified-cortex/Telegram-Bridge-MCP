@@ -8,6 +8,7 @@ import {
 } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { transcribeWithIndicator } from "../transcribe.js";
+import { cancelTyping } from "../typing-state.js";
 
 /**
  * Sends a question with labeled option buttons and blocks until one is pressed.
@@ -89,6 +90,7 @@ export function register(server: McpServer) {
       }
 
       try {
+        cancelTyping();
         const sent = await getApi().sendMessage(chatId, markdownToV2(question), {
           parse_mode: "MarkdownV2",
           reply_markup: { inline_keyboard: rows },
