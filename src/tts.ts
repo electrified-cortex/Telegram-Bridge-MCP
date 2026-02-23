@@ -148,7 +148,7 @@ async function synthesizeOpenAiToOgg(text: string): Promise<Buffer> {
       model,
       input: text,
       voice,
-      response_format: "opus", // OGG container with Opus codec — Telegram-native
+      response_format: "wav", // Convert locally to guaranteed OGG/Opus container
     }),
   });
 
@@ -157,7 +157,12 @@ async function synthesizeOpenAiToOgg(text: string): Promise<Buffer> {
     throw new Error(`OpenAI TTS API error ${res.status}: ${body}`);
   }
 
-  return Buffer.from(await res.arrayBuffer());
+  const wav = Buffer.from(await res.arrayBuffer());
+  const { default: decode } = await import("audio-decode");
+  const decoded = await decode(wav);
+  const channelData = decoded.getChannelData(0);
+  const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+  return pcmToOggOpus(channelData, decoded.sampleRate);
 }
 
 // ---------------------------------------------------------------------------

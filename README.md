@@ -187,6 +187,21 @@ WHISPER_CACHE_DIR=/path/to/cache            # optional
 
 ---
 
+## Voice Output (TTS)
+
+`send_message` can deliver spoken voice notes (`voice: true`) via TTS.
+
+- OpenAI TTS path synthesizes audio, converts to Telegram-compatible OGG/Opus, and sends as a voice note
+- Local TTS path uses `@huggingface/transformers` + local OGG/Opus encoding
+
+If a voice note appears but has no audible audio:
+
+- Check returned Telegram metadata (`send_voice`/`send_message` result): `duration` should be non-zero
+- Rebuild and restart MCP server (`pnpm build`, then restart MCP host)
+- Re-test with a short phrase first
+
+---
+
 ## Development
 
 ```bash

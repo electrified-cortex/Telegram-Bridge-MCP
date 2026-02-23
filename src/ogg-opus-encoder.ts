@@ -10,15 +10,21 @@
 import { createRequire } from "module";
 
 // ---------------------------------------------------------------------------
-// CRC-32 table — polynomial 0x04C11DB7 in bit-reversed form (RFC 3533 §A)
+// CRC-32 table — polynomial 0x04C11DB7 (RFC 3533 §A)
 // ---------------------------------------------------------------------------
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
-    let r = i;
-    for (let j = 0; j < 8; j++) r = r & 1 ? 0xedb88320 ^ (r >>> 1) : r >>> 1;
-    t[i] = r;
+    let r = (i << 24) >>> 0;
+    for (let j = 0; j < 8; j++) {
+      if (r & 0x80000000) {
+        r = ((r << 1) ^ 0x04c11db7) >>> 0;
+      } else {
+        r = (r << 1) >>> 0;
+      }
+    }
+    t[i] = r >>> 0;
   }
   return t;
 })();
@@ -26,7 +32,7 @@ const CRC_TABLE = (() => {
 function crc32ogg(data: Buffer): number {
   let crc = 0;
   for (let i = 0; i < data.length; i++) {
-    crc = (CRC_TABLE[(crc ^ data[i]) & 0xff] ^ (crc >>> 8)) >>> 0;
+    crc = ((crc << 8) ^ CRC_TABLE[((crc >>> 24) ^ data[i]) & 0xff]) >>> 0;
   }
   return crc;
 }

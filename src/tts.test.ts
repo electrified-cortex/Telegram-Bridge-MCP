@@ -12,6 +12,10 @@ vi.mock("./ogg-opus-encoder.js", () => ({
   pcmToOggOpus: vi.fn(),
 }));
 
+vi.mock("audio-decode", () => ({
+  default: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // isTtsEnabled
 // ---------------------------------------------------------------------------
@@ -181,6 +185,17 @@ describe("synthesizeToOgg (openai provider)", () => {
     process.env.TTS_VOICE = "nova";
     process.env.TTS_MODEL = "tts-1-hd";
 
+    const { default: decode } = await import("audio-decode");
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+
+    const fakePcm = new Float32Array([0.05, -0.05, 0.0]);
+    vi.mocked(decode as any).mockResolvedValue({
+      sampleRate: 24000,
+      getChannelData: () => fakePcm,
+    });
+    const fakeOgg = Buffer.from("fake-ogg");
+    vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
+
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new ArrayBuffer(8),
@@ -188,7 +203,8 @@ describe("synthesizeToOgg (openai provider)", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     const result = await synthesizeToOgg("hello");
-    expect(Buffer.isBuffer(result)).toBe(true);
+    expect(result).toBe(fakeOgg);
+    expect(pcmToOggOpus).toHaveBeenCalledWith(fakePcm, 24000);
 
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("https://api.openai.com/v1/audio/speech");
@@ -197,7 +213,7 @@ describe("synthesizeToOgg (openai provider)", () => {
     expect(body.input).toBe("hello");
     expect(body.voice).toBe("nova");
     expect(body.model).toBe("tts-1-hd");
-    expect(body.response_format).toBe("opus");
+    expect(body.response_format).toBe("wav");
 
     delete process.env.TTS_VOICE;
     delete process.env.TTS_MODEL;
