@@ -60,6 +60,10 @@ export function isTtsEnabled(): boolean {
 export function stripForTts(text: string): string {
   return (
     text
+      // Normalize MCP transport escape sequences before any other processing
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\")
       // Fenced code blocks — keep inner content, strip fence lines
       .replace(/```[\w]*\n?([\s\S]*?)```/g, "$1")
       // Inline code — remove backtick delimiters

@@ -148,6 +148,15 @@ describe("stripForTts", () => {
   it("returns empty string for whitespace-only input", () => {
     expect(stripForTts("   ")).toBe("");
   });
+
+  it("normalizes literal \\n sequences to real newlines (MCP transport)", () => {
+    // When text arrives over MCP with literal backslash-n, it should become a space/newline, not be spoken as "backslash n"
+    expect(stripForTts("line one\\nline two")).toBe("line one\nline two");
+  });
+
+  it("normalizes backslash-escaped quotes (MCP transport)", () => {
+    expect(stripForTts('use \\"claw\\" and \\"provisioner\\"')).toBe('use "claw" and "provisioner"');
+  });
 });
 
 // ---------------------------------------------------------------------------

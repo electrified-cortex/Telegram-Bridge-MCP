@@ -30,8 +30,7 @@ export function register(server: McpServer) {
         .optional()
         .describe(
           "Send as a spoken voice note via TTS instead of text. " +
-          "Defaults to true when TTS_PROVIDER is globally configured; " +
-          "pass false to force plain text even when TTS is active. " +
+          "Requires TTS_PROVIDER to be configured. " +
           "Formatting is stripped to plain text before synthesis — no markdown in audio."
         ),
     },
@@ -40,7 +39,7 @@ export function register(server: McpServer) {
       if (typeof chatId !== "string") return toError(chatId);
 
       // ── Voice (TTS) mode ────────────────────────────────────────────────
-      const useVoice = voice ?? isTtsEnabled();
+      const useVoice = voice === true && isTtsEnabled();
       if (useVoice) {
         const textErr = validateText(text);
         if (textErr) return toError(textErr);

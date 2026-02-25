@@ -117,7 +117,8 @@ describe("send_message tool — voice mode", () => {
     call = server.getHandler("send_message");
   });
 
-  it("sends via sendVoiceDirect when voice:true is explicitly passed", async () => {
+  it("sends via sendVoiceDirect when voice:true and TTS is enabled", async () => {
+    ttsMocks.isTtsEnabled.mockReturnValue(true);
     const result = await call({ text: "Hello!", voice: true });
     expect(isError(result)).toBe(false);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledTimes(1);
@@ -127,24 +128,17 @@ describe("send_message tool — voice mode", () => {
     expect(data.voice).toBe(true);
   });
 
-  it("uses sendMessage (not sendVoice) when voice:false overrides TTS default", async () => {
+  it("sends text by default even when isTtsEnabled returns true (voice is opt-in)", async () => {
     ttsMocks.isTtsEnabled.mockReturnValue(true);
     mocks.sendMessage.mockResolvedValue({ message_id: 5, chat: { id: 1 }, date: 0, text: "x" });
-    const result = await call({ text: "hi", voice: false });
+    const result = await call({ text: "hello" });
     expect(isError(result)).toBe(false);
     expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
     expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
   });
 
-  it("uses sendVoiceDirect by default when isTtsEnabled returns true", async () => {
-    ttsMocks.isTtsEnabled.mockReturnValue(true);
-    const result = await call({ text: "hello" });
-    expect(isError(result)).toBe(false);
-    expect(mocks.sendVoiceDirect).toHaveBeenCalledTimes(1);
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
-  });
-
   it("strips formatting before synthesis", async () => {
+    ttsMocks.isTtsEnabled.mockReturnValue(true);
     ttsMocks.stripForTts.mockReturnValue("plain stripped text");
     await call({ text: "**bold** _text_", voice: true });
     expect(ttsMocks.stripForTts).toHaveBeenCalledWith("**bold** _text_");
@@ -152,6 +146,7 @@ describe("send_message tool — voice mode", () => {
   });
 
   it("returns EMPTY_MESSAGE when stripped text is empty", async () => {
+    ttsMocks.isTtsEnabled.mockReturnValue(true);
     ttsMocks.stripForTts.mockReturnValue("");
     const result = await call({ text: "**formatting only**", voice: true });
     expect(isError(result)).toBe(true);
@@ -160,6 +155,7 @@ describe("send_message tool — voice mode", () => {
   });
 
   it("propagates synthesis errors", async () => {
+    ttsMocks.isTtsEnabled.mockReturnValue(true);
     ttsMocks.synthesizeToOgg.mockRejectedValue(new Error("OPENAI_API_KEY"));
     const result = await call({ text: "hi", voice: true });
     expect(isError(result)).toBe(true);
