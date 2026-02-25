@@ -40,9 +40,14 @@ export function resolveParseMode(
 }
 
 export function markdownToV2(input: string): string {
-  // Normalize literal \n sequences (two chars: backslash + n) to real newlines.
-  // When tool parameters are passed through XML/MCP, \n is not auto-decoded.
-  const inputNorm = input.replace(/\\n/g, "\n");
+  // Normalize literal escape sequences that arrive unprocessed through MCP/XML transport:
+  //   \n  (two chars) → real newline
+  //   \"  (two chars) → real double-quote  (agents JSON-escape quotes before passing)
+  //   \\  (two chars) → real backslash     (agents double-escape backslashes)
+  const inputNorm = input
+    .replace(/\\n/g, "\n")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
 
   // ── 1. Extract fenced code blocks so they are never modified ───────────
   const codeBlocks: string[] = [];

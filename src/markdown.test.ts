@@ -77,4 +77,32 @@ describe("markdownToV2", () => {
     const out = markdownToV2(input);
     expect(out).toBe("Line one\\.\nLine two\\.\n\nParagraph two\\.");
   });
+
+  it("normalizes backslash-escaped quotes (as sent by agents over MCP)", () => {
+    // Agents JSON-encode their output, so "claw" arrives as \"claw\" (literal backslash + quote)
+    // The fix must strip the backslash so Telegram sees clean double-quotes.
+    const input = 'rename all docs to use \\"claw/claws\\" and \\"the provisioner\\"';
+    const out = markdownToV2(input);
+    // Should contain plain double-quote, NOT backslash+quote artifacts
+    expect(out).toContain('"claw');
+    expect(out).not.toContain('\\"claw');
+    expect(out).not.toContain('\\\\"claw');
+  });
+
+  it("normalizes double-backslash to single backslash", () => {
+    // Agents sometimes double-escape backslashes: \\ → \
+    const input = "a path like C:\\\\Users\\\\name";
+    const out = markdownToV2(input);
+    expect(out).toContain("C:\\");
+    expect(out).not.toContain("C:\\\\\\\\");
+  });
+
+  it("real-world: confirmation text with escaped quotes passes through cleanly", () => {
+    // The exact scenario reported: agent sends a confirmation with \"quoted terms\"
+    const input = 'Do a terminology pass now (rename all docs/comments to use \\"claw/claws\\" and \\"the provisioner\\" consistently)?';
+    const out = markdownToV2(input);
+    expect(out).toContain('"claw/claws"');
+    expect(out).toContain('"the provisioner"');
+    expect(out).not.toMatch(/\\"/);
+  });
 });
