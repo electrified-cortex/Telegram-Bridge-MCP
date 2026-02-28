@@ -96,6 +96,10 @@ export function createServer(): McpServer {
     join(__dirname, "..", "BEHAVIOR.md"),
     "utf-8"
   );
+  const communicationContent = readFileSync(
+    join(__dirname, "..", "COMMUNICATION.md"),
+    "utf-8"
+  );
   const setupContent = readFileSync(
     join(__dirname, "..", "SETUP.md"),
     "utf-8"
@@ -115,6 +119,21 @@ export function createServer(): McpServer {
           uri: "telegram-bridge-mcp://agent-guide",
           mimeType: "text/markdown",
           text: agentGuideContent,
+        },
+      ],
+    })
+  );
+
+  server.resource(
+    "communication-guide",
+    "telegram-bridge-mcp://communication-guide",
+    { mimeType: "text/markdown", description: "Compact Telegram communication patterns: tool selection, hard rules, commit/push flow, multi-step tasks, and loop behavior." },
+    async () => ({
+      contents: [
+        {
+          uri: "telegram-bridge-mcp://communication-guide",
+          mimeType: "text/markdown",
+          text: communicationContent,
         },
       ],
     })

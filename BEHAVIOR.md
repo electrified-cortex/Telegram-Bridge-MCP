@@ -25,9 +25,10 @@ This is **Telegram Bridge MCP** — a Model Context Protocol server that bridges
 When starting a new session with this MCP:
 
 1. Call `get_agent_guide` (this tool) to load behavioral rules.
-2. Call `get_updates` once to drain any stale messages from the queue — discard results.
-3. Send a brief **silent** `notify` that you're online and ready.
-4. Enter the `wait_for_message` loop.
+2. Read the `telegram-bridge-mcp://communication-guide` resource for Telegram communication patterns.
+3. Call `get_updates` once to drain any stale messages from the queue — discard results.
+4. Send a brief **silent** `notify` that you're online and ready.
+5. Enter the `wait_for_message` loop.
 
 **Do not use `get_updates` for ongoing polling.** After the single startup drain, always use `wait_for_message` for the loop. `get_updates` is only for startup drain or targeted debugging when explicitly requested.
 

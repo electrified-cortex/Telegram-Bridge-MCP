@@ -145,6 +145,19 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 
 ---
 
+## Agent Instruction Files
+
+Pre-built instruction files are included for common agent hosts:
+
+| File | Host | How it works |
+| --- | --- | --- |
+| `.github/copilot-instructions.md` | VS Code Copilot / GitHub Copilot | Auto-injected into every session |
+| `.github/instructions/telegram-communication.instructions.md` | VS Code Copilot (`applyTo: "**"`) | Auto-injected communication rules |
+| `CLAUDE.md` | Claude Code | Auto-read at session start |
+| `COMMUNICATION.md` | Any agent | Read explicitly or via MCP resource |
+
+---
+
 ## Resources
 
 Three guides are available as MCP resources — any MCP client can read them directly:
@@ -152,6 +165,7 @@ Three guides are available as MCP resources — any MCP client can read them dir
 | Resource URI | Contents |
 | --- | --- |
 | `telegram-bridge-mcp://agent-guide` | Behavioral guide for AI assistants |
+| `telegram-bridge-mcp://communication-guide` | Telegram communication patterns, tool selection, and loop rules |
 | `telegram-bridge-mcp://setup-guide` | Full bot setup walkthrough |
 | `telegram-bridge-mcp://formatting-guide` | Markdown/MarkdownV2/HTML reference |
 
