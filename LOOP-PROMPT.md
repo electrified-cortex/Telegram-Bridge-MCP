@@ -36,7 +36,3 @@ Send a silent `notify` (title + intent) before:
 - Running `pnpm build`, `pnpm test`, or any `vitest` command.
 - Any `git` command (commit, push, branch, reset).
 - Installing or removing packages, or deleting any file.
-
-## This Repo
-
-This is the **Telegram Bridge MCP** server — edits to `src/` directly change the running server.
