@@ -100,6 +100,12 @@ export function createServer(): McpServer {
     join(__dirname, "..", "COMMUNICATION.md"),
     "utf-8"
   );
+  // Strip YAML frontmatter (--- ... ---) before serving as a resource
+  const quickReferenceRaw = readFileSync(
+    join(__dirname, "..", ".github", "instructions", "telegram-communication.instructions.md"),
+    "utf-8"
+  );
+  const quickReferenceContent = quickReferenceRaw.replace(/^---[\s\S]*?---\n/, "").trimStart();
   const setupContent = readFileSync(
     join(__dirname, "..", "SETUP.md"),
     "utf-8"
@@ -134,6 +140,21 @@ export function createServer(): McpServer {
           uri: "telegram-bridge-mcp://communication-guide",
           mimeType: "text/markdown",
           text: communicationContent,
+        },
+      ],
+    })
+  );
+
+  server.resource(
+    "quick-reference",
+    "telegram-bridge-mcp://quick-reference",
+    { mimeType: "text/markdown", description: "Hard rules + tool selection table for Telegram communication. Minimal injected rules card — full detail in communication-guide." },
+    async () => ({
+      contents: [
+        {
+          uri: "telegram-bridge-mcp://quick-reference",
+          mimeType: "text/markdown",
+          text: quickReferenceContent,
         },
       ],
     })

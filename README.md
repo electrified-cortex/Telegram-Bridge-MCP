@@ -166,6 +166,7 @@ Three guides are available as MCP resources — any MCP client can read them dir
 | --- | --- |
 | `telegram-bridge-mcp://agent-guide` | Behavioral guide for AI assistants |
 | `telegram-bridge-mcp://communication-guide` | Telegram communication patterns, tool selection, and loop rules |
+| `telegram-bridge-mcp://quick-reference` | Hard rules + tool selection table — compact injected rules card |
 | `telegram-bridge-mcp://setup-guide` | Full bot setup walkthrough |
 | `telegram-bridge-mcp://formatting-guide` | Markdown/MarkdownV2/HTML reference |
 

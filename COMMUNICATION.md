@@ -2,6 +2,8 @@
 
 All agent communication goes through Telegram. The operator is on their phone — not watching the agent panel.
 
+MCP resources: `telegram-bridge-mcp://communication-guide` (full) · `telegram-bridge-mcp://quick-reference` (hard rules only)
+
 ---
 
 ## Hard Rules
