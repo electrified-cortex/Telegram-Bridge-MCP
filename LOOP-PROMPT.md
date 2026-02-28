@@ -1,55 +1,43 @@
 # Loop Prompt
 
-Initiate a chat loop using the available Telegram Bridge MCP tools.
+Start a persistent Telegram chat loop using the available Telegram Bridge MCP tools.
 
-First, check which Telegram Bridge MCP tools are available to you.
-Call `get_agent_guide` to load the agent behavior guide — this tells you how to communicate with the user, which tools to use, and all behavioral conventions. The same content is also available as the `telegram-bridge-mcp://agent-guide` resource.
-Read the `formatting-guide` MCP resource so you know how to correctly format messages.
-Then call `get_updates` once to drain any stale messages from previous sessions — discard everything returned.
-Then proceed with the loop:
+## Setup (once)
 
-1. Send a message via Telegram saying you are ready and waiting for instructions.
-2. Call `wait_for_message` to wait for my reply. The default timeout is 300 s (5 min), optimized to minimize token usage during idle polling. If it times out with no message, call it again — keep polling until a message arrives.
-3. Call `show_typing` **only after a message is received** and right before you start work. It is idempotent — safe to call multiple times without spamming Telegram. Never call it while idle.
-4. Treat the received message as your next task. Complete it.
-5. Return to step 1.
+1. Call `get_agent_guide` — loads behavior rules and communication conventions.
+2. Read `telegram-bridge-mcp://quick-reference` — tool selection and hard rules.
+3. Call `get_updates` once — drain stale messages from previous sessions, discard all.
 
-This is the **Telegram Bridge MCP** repo — a Node.js/TypeScript MCP server. Changes here directly affect the running MCP server and its tools. Apply the following rules carefully.
+## The Loop
 
-Rules:
+```
+notify "ready" → wait_for_message → show_typing → do work → repeat
+```
 
-- After calling `restart_server`, immediately drain stale updates and re-engage the loop — send a "back online" message and return to step 2.
-- Do **not** use `get_updates` for ongoing polling. It is only for the initial stale-message drain (or explicit debugging when asked). Use `wait_for_message` for the loop.
-- Only break the loop when I send exactly: `exit`
-- On `exit`, send a goodbye message via Telegram, then stop.
-- Never exit for any other reason — including errors, uncertainty, or task completion.
-- Never stop polling due to timeouts. If you feel you must stop, first send a Telegram message asking if I want to end the session and wait for my reply before doing so.
-- If a task is ambiguous, ask for clarification via Telegram and return to step 2.
+4. Send a silent `notify` that you're online and ready.
+5. Call `wait_for_message` (default 300 s). On timeout, call it again immediately.
+6. Call `show_typing` as soon as a message arrives, before starting work.
+7. Complete the task. Send results via Telegram.
+8. Return to step 5.
 
-## Pre-action announcements
+## Rules
 
-Before **any** of the following, send a silent `notify` (title + brief description) via Telegram. Do not wait for a reply; just announce first.
+- **Loop exits only on:** operator sends exactly `exit` → send goodbye, then stop.
+- **On ambiguity or uncertainty:** ask via Telegram, wait for the answer, then continue.
+- **On error:** report via Telegram before taking further action.
+- **After `restart_server`:** drain stale updates, send "back online", return to step 5.
+- **All status, questions, and output:** send through Telegram — the operator is on their phone.
 
-**File edits — announce before editing any of these:**
+## Pre-action Announcements
 
-- Any source file: `src/*.ts`, `src/tools/*.ts`
-- Any test file: `src/*.test.ts`, `src/tools/*.test.ts`
-- Config/build files: `package.json`, `tsconfig.json`, `vitest.config.ts`, `pnpm-lock.yaml`, any `*.config.*` or `.env*`
-- All documentation and prompt files: `LOOP-PROMPT.md`, `BEHAVIOR.md`, `SETUP.md`, `DESIGN.md`, `FORMATTING.md`
+Send a silent `notify` (title + intent) before:
 
-**MCP API surface — extra scrutiny:**
+- Editing any `src/` file, test, config, or doc — for `src/tools/` changes, name the tool and what changes.
+- Running `pnpm build`, `pnpm test`, or any `vitest` command.
+- Any `git` command (commit, push, branch, reset).
+- Installing or removing packages, or deleting any file.
 
-- Any edit to a file under `src/tools/` changes which MCP tools are available and what they do. Note this in the announcement and confirm the tool name and what behavior is changing.
+## This Repo
 
-**Commands — announce before running:**
+This is the **Telegram Bridge MCP** server — edits to `src/` directly change the running server.
 
-- `pnpm build` — rebuilds the server; note what triggered the build
-- `pnpm test` or any `vitest` invocation — note which tests and why
-- Any `git` command (commit, push, branch, reset, etc.) — include the full command and intent
-- Installing or removing packages (`pnpm add`, `pnpm remove`)
-- Deleting any file
-
-## Error handling
-
-- If any command exits with a non-zero code, or produces unexpected output, report the full error via Telegram before deciding what to do next.
-- If a build or test fails after an edit, do not attempt further edits until you have reported the failure and received direction.
