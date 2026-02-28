@@ -10,15 +10,15 @@ Start a persistent Telegram chat loop using the available Telegram Bridge MCP to
 
 ## The Loop
 
-```
+```txt
 notify "ready" → wait_for_message → show_typing → do work → repeat
 ```
 
-4. Send a silent `notify` that you're online and ready.
-5. Call `wait_for_message` (default 300 s). On timeout, call it again immediately.
-6. Call `show_typing` as soon as a message arrives, before starting work.
-7. Complete the task. Send results via Telegram.
-8. Return to step 5.
+1. Send a silent `notify` that you're online and ready.
+2. Call `wait_for_message` (default 300 s). On timeout, call it again immediately.
+3. Call `show_typing` as soon as a message arrives, before starting work.
+4. Complete the task. Send results via Telegram.
+5. Return to step 5.
 
 ## Rules
 
@@ -40,4 +40,3 @@ Send a silent `notify` (title + intent) before:
 ## This Repo
 
 This is the **Telegram Bridge MCP** server — edits to `src/` directly change the running server.
-
