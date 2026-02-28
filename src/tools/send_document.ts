@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import { z } from "zod";
 import { getApi, toResult, toError, validateCaption, resolveChat, callApi } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
+import { cancelTyping, showTyping } from "../typing-state.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -63,7 +63,7 @@ export function register(server: McpServer) {
       }
 
       try {
-        cancelTyping();
+        await showTyping(60, "upload_document");
         const msg = await callApi(() => getApi().sendDocument(chatId, docSource, {
           caption: resolved.text,
           parse_mode: resolved.parse_mode,
@@ -72,6 +72,7 @@ export function register(server: McpServer) {
             ? { message_id: reply_to_message_id }
             : undefined,
         }));
+        cancelTyping();
         return toResult({
           message_id: msg.message_id,
           file_id: msg.document?.file_id,
@@ -80,6 +81,7 @@ export function register(server: McpServer) {
           file_size: msg.document?.file_size,
         });
       } catch (err) {
+        cancelTyping();
         return toError(err);
       }
     }

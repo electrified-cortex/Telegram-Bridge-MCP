@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join, extname } from "path";
 import { z } from "zod";
 import { getApi, toResult, toError } from "../telegram.js";
+import { cancelTyping, showTyping } from "../typing-state.js";
 
 /** Text-based MIME types and extensions that are safe to read as UTF-8 */
 const TEXT_MIME_PREFIXES = ["text/"];
@@ -45,6 +46,7 @@ export function register(server: McpServer) {
     },
     async ({ file_id, file_name, mime_type }) => {
       try {
+        await showTyping(30);
         const token = process.env.BOT_TOKEN;
         if (!token) {
           return toError({ code: "UNKNOWN" as const, message: "BOT_TOKEN not set — cannot download file." });
@@ -81,6 +83,7 @@ export function register(server: McpServer) {
           text = bytes.toString("utf-8");
         }
 
+        cancelTyping();
         return toResult({
           local_path: localPath,
           file_name: resolvedName,
@@ -89,6 +92,7 @@ export function register(server: McpServer) {
           ...(text !== undefined ? { text } : {}),
         });
       } catch (err) {
+        cancelTyping();
         return toError(err);
       }
     }

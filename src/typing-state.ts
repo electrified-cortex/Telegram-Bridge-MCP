@@ -46,7 +46,7 @@ export function cancelTyping(): boolean {
 /**
  * Returns true if the indicator was newly started, false if an existing one was just extended.
  */
-export async function showTyping(timeoutSeconds: number): Promise<boolean> {
+export async function showTyping(timeoutSeconds: number, action: "typing" | "record_voice" | "upload_voice" | "upload_photo" | "upload_document" | "upload_video" = "typing"): Promise<boolean> {
   const timeoutMs = timeoutSeconds * 1000;
   const newDeadline = Date.now() + timeoutMs;
 
@@ -68,7 +68,7 @@ export async function showTyping(timeoutSeconds: number): Promise<boolean> {
 
   // Send immediately so there's no visible delay
   try {
-    await getApi().sendChatAction(chatId, "typing");
+    await getApi().sendChatAction(chatId, action);
   } catch {
     // Best-effort — never throw from a typing indicator
     return false;
@@ -80,7 +80,7 @@ export async function showTyping(timeoutSeconds: number): Promise<boolean> {
       return;
     }
     try {
-      await getApi().sendChatAction(chatId, "typing");
+      await getApi().sendChatAction(chatId, action);
     } catch {
       cancelTyping();
     }

@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import { z } from "zod";
 import { getApi, toResult, toError, validateCaption, resolveChat, callApi } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
+import { cancelTyping, showTyping } from "../typing-state.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -70,7 +70,7 @@ export function register(server: McpServer) {
       }
 
       try {
-        cancelTyping();
+        await showTyping(120, "upload_video");
         const msg = await callApi(() =>
           getApi().sendVideo(chatId, videoSource, {
             caption: resolved.text,
@@ -84,6 +84,7 @@ export function register(server: McpServer) {
               : undefined,
           })
         );
+        cancelTyping();
         return toResult({
           message_id: msg.message_id,
           file_id: msg.video?.file_id,
@@ -95,6 +96,7 @@ export function register(server: McpServer) {
           duration: msg.video?.duration,
         });
       } catch (err) {
+        cancelTyping();
         return toError(err);
       }
     }

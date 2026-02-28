@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, validateCaption, resolveChat, sendVoiceDirect } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
+import { cancelTyping, showTyping } from "../typing-state.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -49,7 +49,7 @@ export function register(server: McpServer) {
         : { text: undefined, parse_mode: undefined };
 
       try {
-        cancelTyping();
+        await showTyping(30, "upload_voice");
         const msg = await sendVoiceDirect(chatId, voice, {
           caption: resolved.text,
           parse_mode: resolved.parse_mode,
@@ -57,6 +57,7 @@ export function register(server: McpServer) {
           disable_notification,
           reply_to_message_id,
         });
+        cancelTyping();
         return toResult({
           message_id: msg.message_id,
           file_id: (msg.voice as any)?.file_id,
@@ -65,6 +66,7 @@ export function register(server: McpServer) {
           duration: (msg.voice as any)?.duration,
         });
       } catch (err) {
+        cancelTyping();
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes("user restricted receiving of voice note messages")) {
           return toError({

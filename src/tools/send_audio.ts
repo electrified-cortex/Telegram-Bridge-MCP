@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import { z } from "zod";
 import { getApi, toResult, toError, validateCaption, resolveChat, callApi } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
+import { cancelTyping, showTyping } from "../typing-state.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -68,7 +68,7 @@ export function register(server: McpServer) {
       }
 
       try {
-        cancelTyping();
+        await showTyping(60, "upload_document");
         const msg = await callApi(() =>
           getApi().sendAudio(chatId, audioSource, {
             caption: resolved.text,
@@ -82,6 +82,7 @@ export function register(server: McpServer) {
               : undefined,
           })
         );
+        cancelTyping();
         return toResult({
           message_id: msg.message_id,
           file_id: msg.audio?.file_id,
@@ -93,6 +94,7 @@ export function register(server: McpServer) {
           title: msg.audio?.title,
         });
       } catch (err) {
+        cancelTyping();
         return toError(err);
       }
     }

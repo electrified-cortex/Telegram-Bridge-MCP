@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
+import { cancelTyping, showTyping } from "../typing-state.js";
 import { applyTopicToText } from "../topic-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 
@@ -49,7 +49,10 @@ export function register(server: McpServer) {
 
         const voiceChunks = splitMessage(plainText);
         try {
-          cancelTyping();
+          // Show record_voice indicator proportional to text length:
+          // ~5 s base + 1 s per 20 chars, capped at 120 s
+          const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
+          await showTyping(typingSeconds, "record_voice");
           const message_ids: number[] = [];
           for (let i = 0; i < voiceChunks.length; i++) {
             const ogg = await synthesizeToOgg(voiceChunks[i]);
@@ -59,6 +62,7 @@ export function register(server: McpServer) {
             });
             message_ids.push(msg.message_id);
           }
+          cancelTyping();
           if (message_ids.length === 1) {
             return toResult({ message_id: message_ids[0], voice: true });
           }
