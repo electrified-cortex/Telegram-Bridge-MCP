@@ -34,6 +34,8 @@ Once configured, your AI assistant can:
 
 If you prefer `npm`, you can substitute all `pnpm` commands with their `npm` equivalents (`npm install`, `npm run build`, etc.). The project works with either.
 
+Or use the pre-built **Docker image** — no Node.js or pnpm required (see [Docker](#docker) below).
+
 ---
 
 ## Quick Start
@@ -241,6 +243,58 @@ pnpm test           # Run tests
 pnpm coverage       # Test coverage report
 pnpm pair           # Re-run pairing wizard
 ```
+
+---
+
+## Docker
+
+A pre-built image is published to the GitHub Container Registry on every push to `master` and on every version tag:
+
+```
+ghcr.io/electricessence/telegram-bridge-mcp:latest
+ghcr.io/electricessence/telegram-bridge-mcp:1.7.9
+```
+
+Create a `.env` file with your credentials (see `.env.example`), then configure your MCP host to use Docker instead of Node:
+
+**VS Code** — `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "telegram": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "--env-file", "/absolute/path/to/.env",
+        "-v", "telegram-mcp-cache:/root/.cache",
+        "ghcr.io/electricessence/telegram-bridge-mcp:latest"
+      ]
+    }
+  }
+}
+```
+
+**Claude Desktop** — `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "--env-file", "/absolute/path/to/.env",
+        "-v", "telegram-mcp-cache:/root/.cache",
+        "ghcr.io/electricessence/telegram-bridge-mcp:latest"
+      ]
+    }
+  }
+}
+```
+
+The `-v telegram-mcp-cache:/root/.cache` volume persists downloaded Whisper/TTS model weights across container restarts.
 
 ---
 
