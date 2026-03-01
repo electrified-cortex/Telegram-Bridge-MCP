@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+temp/
+.env
+*.env
+.git/
+.github/
+*.test.ts
+vitest.config.ts
+HANDOFF.md
+memory.md
