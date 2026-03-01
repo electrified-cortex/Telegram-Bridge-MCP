@@ -45,7 +45,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export function createServer(): McpServer {
   const server = new McpServer({
     name: "telegram-bridge-mcp",
-    version: "1.9.0",
+    version: "1.9.1",
   });
 
   // ── High-level agent tools (use these 99% of the time) ─────────────────
