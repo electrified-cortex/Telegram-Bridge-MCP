@@ -175,7 +175,9 @@ describe("wait_for_message tool", () => {
     expect(data.voice).toBe(true);
   });
 
-  it("returns message_reaction updates alongside the message", async () => {
+  it("non-matching updates (e.g. reactions) are buffered, not dropped", async () => {
+    // reaction arrives in the same batch as the message — the reaction should
+    // not be silently dropped; it goes to the update buffer instead.
     const reactionUpdate = {
       update_id: 2,
       message_reaction: {
@@ -193,9 +195,7 @@ describe("wait_for_message tool", () => {
     const data = parseResult(result) as any;
     expect(data.timed_out).toBe(false);
     expect(data.text).toBe("hello");
-    expect(data.reactions).toHaveLength(1);
-    expect(data.reactions[0].message_id).toBe(50);
-    expect(data.reactions[0].emoji_added).toEqual(["👍"]);
-    expect(data.reactions[0].user.username).toBe("alice");
+    // reactions are no longer inlined — they are buffered for later consumption
+    expect(data.reactions).toBeUndefined();
   });
 });

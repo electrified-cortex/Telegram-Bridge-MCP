@@ -166,7 +166,7 @@ async function serializeMessage(msg: Message): Promise<Record<string, unknown>> 
 export function register(server: McpServer) {
   server.tool(
     "wait_for_message",
-    "Blocks (long-poll) until any message is received (text, voice, document, photo, audio, video, sticker, etc.), then returns structured data. Voice messages are auto-transcribed. Optionally filter by sender user_id. Returns { timed_out: true } on expiry. Unknown message types return a note asking what to do. Any message_reaction updates seen while waiting are included in the result as reactions[].",
+    "Blocks (long-poll) until any message is received (text, voice, document, photo, audio, video, sticker, etc.), then returns structured data. Voice messages are auto-transcribed. Optionally filter by sender user_id. Returns { timed_out: true } on expiry. Unknown message types return a note asking what to do. Non-matching updates (reactions, callback queries, etc.) are buffered and available via get_updates — nothing is ever dropped.",
     {
       timeout_seconds: z
         .number()
@@ -183,7 +183,7 @@ export function register(server: McpServer) {
     },
     async ({ timeout_seconds, user_id }) => {
       try {
-        const { match, missed } = await pollUntil(
+        const { match } = await pollUntil(
           (updates) => {
             const msg = updates.find((u) => {
               if (!u.message) return false;
@@ -195,27 +195,12 @@ export function register(server: McpServer) {
           timeout_seconds,
         );
 
-        // Collect message_reaction updates from the missed array
-        const reactions = missed
-          .filter((u) => !!(u as any).message_reaction)
-          .map((u) => {
-            const mr = (u as any).message_reaction;
-            const newEmoji = (mr.new_reaction ?? []).filter((r: any) => r.type === "emoji").map((r: any) => r.emoji);
-            const oldEmoji = (mr.old_reaction ?? []).filter((r: any) => r.type === "emoji").map((r: any) => r.emoji);
-            const user = mr.user ? { id: mr.user.id, name: [mr.user.first_name, mr.user.last_name].filter(Boolean).join(" "), username: mr.user.username } : undefined;
-            return { message_id: mr.message_id, user, emoji_added: newEmoji, emoji_removed: oldEmoji };
-          });
-
         if (!match) {
-          return toResult({ timed_out: true, reactions: reactions.length ? reactions : undefined });
+          return toResult({ timed_out: true });
         }
 
         const payload = await serializeMessage(match);
-        return toResult({
-          timed_out: false,
-          ...payload,
-          reactions: reactions.length ? reactions : undefined,
-        });
+        return toResult({ timed_out: false, ...payload });
       } catch (err) {
         return toError(err);
       }

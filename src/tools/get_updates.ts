@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, getOffset, advanceOffset, resetOffset, filterAllowedUpdates, toResult, toError, DEFAULT_ALLOWED_UPDATES } from "../telegram.js";
 import { transcribeWithIndicator } from "../transcribe.js";
+import { drainBuffer } from "../update-buffer.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -39,16 +40,26 @@ export function register(server: McpServer) {
       try {
         if (reset_offset) resetOffset();
 
-        const updates = await getApi().getUpdates({
-          offset: getOffset(),
-          limit,
-          timeout: timeout_seconds,
-          allowed_updates: (allowed_updates ?? DEFAULT_ALLOWED_UPDATES) as any,
-        });
+        // Drain any updates buffered by pollUntil (wait_for_message, etc.)
+        // before hitting the Telegram API — nothing is ever lost.
+        const buffered = drainBuffer();
+        const filteredBuffered = filterAllowedUpdates(buffered);
 
-        advanceOffset(updates);
-        const allowed = filterAllowedUpdates(updates);
-        const sanitized = await Promise.all(allowed.map(async (u) => {
+        // Only fetch from Telegram if buffer didn't already satisfy the limit.
+        let fresh: typeof buffered = [];
+        if (filteredBuffered.length < limit) {
+          const fetched = await getApi().getUpdates({
+            offset: getOffset(),
+            limit: limit - filteredBuffered.length,
+            timeout: timeout_seconds,
+            allowed_updates: (allowed_updates ?? DEFAULT_ALLOWED_UPDATES) as any,
+          });
+          advanceOffset(fetched);
+          fresh = filterAllowedUpdates(fetched);
+        }
+
+        const allUpdates = [...filteredBuffered, ...fresh];
+        const sanitized = await Promise.all(allUpdates.map(async (u) => {
           if (u.message) {
             const msg = u.message;
             const base = { message_id: msg.message_id, reply_to_message_id: msg.reply_to_message?.message_id };

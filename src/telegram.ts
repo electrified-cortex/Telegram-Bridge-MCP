@@ -1,6 +1,7 @@
 import { Api, GrammyError, HttpError } from "grammy";
 import type { Update } from "grammy/types";
 import { readFileSync, existsSync } from "fs";
+import { enqueueUpdates, dequeueMatch } from "./update-buffer.js";
 
 // ---------------------------------------------------------------------------
 // Telegram limits (for pre-validation before hitting the API)
@@ -493,7 +494,13 @@ export async function pollUntil<T>(
   timeoutSeconds: number,
 ): Promise<{ match: T | undefined; missed: Update[] }> {
   const deadline = Date.now() + timeoutSeconds * 1000;
-  const missed: Update[] = [];
+
+  // 1. Check the shared buffer — a previous poll may have already fetched the
+  //    update we need. Consume it from the buffer without hitting Telegram.
+  const buffered = dequeueMatch((u) => matcher([u]));
+  if (buffered !== undefined) {
+    return { match: buffered, missed: [] };
+  }
 
   while (Date.now() < deadline) {
     const updates = await getApi().getUpdates({
@@ -508,16 +515,16 @@ export async function pollUntil<T>(
 
     const result = matcher(allowed);
     if (result !== undefined) {
-      // Collect remaining non-matching updates as missed
-      for (const u of allowed) {
-        if (!matcher([u])) missed.push(u);
-      }
-      return { match: result, missed };
+      // Buffer any non-matching updates from the same batch — nothing is dropped.
+      const rest = allowed.filter((u) => matcher([u]) === undefined);
+      if (rest.length > 0) enqueueUpdates(rest);
+      return { match: result, missed: [] };
     }
 
-    // No match — everything in this batch is missed
-    missed.push(...allowed);
+    // No match — buffer these updates so other tools can consume them later.
+    // Nothing is ever dropped.
+    if (allowed.length > 0) enqueueUpdates(allowed);
   }
 
-  return { match: undefined, missed };
+  return { match: undefined, missed: [] };
 }
