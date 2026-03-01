@@ -75,9 +75,11 @@ Tools are grouped by abstraction level.
 | `send_audio` | Sends an audio track by local path, public URL, or Telegram `file_id`. Shown as a playable track with title/performer. |
 | `send_voice` | Sends a voice note (OGG/Opus) by local path, public URL, or Telegram `file_id`. Displayed with waveform playback. |
 | `download_file` | Downloads a received file to local disk by `file_id`. Returns text content for text-based files under 100 KB. |
+| `transcribe_voice` | Re-transcribes a voice message by `file_id`. Use when the update was consumed before transcription was read, or if transcription failed previously. |
 | `forward_message` | Forwards a message from another chat into the configured chat. |
 | `delete_message` | Deletes a message by ID. |
 | `pin_message` | Pins a message in the chat. |
+| `unpin_message` | Unpins a message in the chat. |
 | `send_chat_action` | Sends a one-shot action indicator (typing, upload_photo, etc.) that lasts ~5 s. |
 | `show_typing` | Idempotent sustained typing indicator — starts or extends a 4 s interval loop. |
 | `cancel_typing` | Explicitly cancels the active typing indicator. |
@@ -159,7 +161,12 @@ telegram-bridge-mcp/
 │   ├── telegram.ts           # grammy Api wrapper, security enforcement, offset state,
 │   │                         #   pre-send validators, error classification, pollUntil helper
 │   ├── transcribe.ts         # Local Whisper voice transcription (HuggingFace ONNX)
-│   ├── tts.ts                # OpenAI TTS synthesis → OGG/Opus for sendVoice
+│   ├── tts.ts                # TTS synthesis → OGG/Opus. Provider auto-selected from env:
+│   │                         #   TTS_HOST → any OpenAI-compatible server; OPENAI_API_KEY → OpenAI;
+│   │                         #   neither → free local ONNX (HuggingFace transformers)
+│   ├── ogg-opus-encoder.ts   # Pure TypeScript OGG/Opus encoder (PCM → OGG container)
+│   ├── topic-state.ts        # Per-process topic prefix state (set_topic)
+│   ├── typing-state.ts       # Sustained typing indicator loop (show_typing / cancel_typing)
 │   ├── markdown.ts           # Markdown → MarkdownV2 auto-conversion
 │   ├── setup.ts              # pnpm pair wizard — writes .env from live bot pairing
 │   └── tools/
@@ -181,11 +188,13 @@ telegram-bridge-mcp/
 │       ├── forward_message.ts
 │       ├── delete_message.ts
 │       ├── pin_message.ts
+│       ├── unpin_message.ts
 │       ├── send_chat_action.ts
 │       ├── show_typing.ts
 │       ├── cancel_typing.ts
 │       ├── send_document.ts
 │       ├── download_file.ts
+│       ├── transcribe_voice.ts
 │       ├── set_topic.ts
 │       ├── set_commands.ts
 │       ├── get_me.ts
@@ -215,4 +224,3 @@ telegram-bridge-mcp/
 **Voice transcription is transparent.** `wait_for_message`, `ask`, `choose`, and `get_updates` all detect voice messages and transcribe them automatically using a local Whisper model. The result is returned as `{ text, voice: true }` — callers do not need to handle voice separately.
 
 **Structured errors over exceptions.** All Telegram API errors are classified into typed `TelegramErrorCode` values with actionable messages. The assistant can branch on `code` rather than parsing raw error strings.
-
