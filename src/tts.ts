@@ -6,7 +6,7 @@
  *   TTS_HOST set       — Any OpenAI-compatible /v1/audio/speech server.
  *                        No API key required unless the server demands one.
  *                        Env vars:
- *                          TTS_HOST    (required — e.g. http://voice.cortex.lan)
+ *                          TTS_HOST    (required — e.g. http://your-tts-host)
  *                          TTS_MODEL   (optional — sent only if set)
  *                          TTS_VOICE   (optional — sent only if set)
  *                          TTS_FORMAT  (default: wav — set to opus or ogg if the

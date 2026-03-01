@@ -345,6 +345,36 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     const [, opts] = mockFetch.mock.calls[0];
     expect(JSON.parse(opts.body).response_format).toBe("ogg");
   });
+
+  it("works with Kokoro: base path in TTS_HOST, ogg format, voice, no model", async () => {
+    // Mirrors a Kokoro config:
+    //   TTS_HOST=http://your-kokoro-server/kokoro
+    //   TTS_FORMAT=ogg
+    //   TTS_VOICE=af_heart
+    // Expected URL: POST http://your-kokoro-server/kokoro/v1/audio/speech
+    // Expected body: { input, response_format: "ogg", voice: "af_heart" }  — no model field
+    process.env.TTS_HOST = "http://your-kokoro-server/kokoro";
+    process.env.TTS_FORMAT = "ogg";
+    process.env.TTS_VOICE = "af_heart";
+
+    const bytes = Buffer.from("fake-kokoro-ogg");
+    const arrBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => arrBuf });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await synthesizeToOgg("hello kokoro");
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("http://your-kokoro-server/kokoro/v1/audio/speech");
+    const body = JSON.parse(opts.body);
+    expect(body.input).toBe("hello kokoro");
+    expect(body.response_format).toBe("ogg");
+    expect(body.voice).toBe("af_heart");
+    expect(body.model).toBeUndefined();
+    expect(opts.headers["Authorization"]).toBeUndefined();
+    // OGG passthrough — result is the raw buffer from the server
+    expect(result).toEqual(Buffer.from(arrBuf));
+  });
 });
 
 // ---------------------------------------------------------------------------
