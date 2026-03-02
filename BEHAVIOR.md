@@ -26,11 +26,32 @@ When starting a new session with this MCP:
 
 1. Call `get_agent_guide` (this tool) to load behavioral rules.
 2. Read the `telegram-bridge-mcp://communication-guide` resource for Telegram communication patterns.
-3. Call `get_updates` once to drain any stale messages from the queue — discard results.
+3. Call `get_updates` once (limit 100, timeout 0) to drain any stale messages from the queue — discard results.
 4. Send a brief **silent** `notify` that you're online and ready.
 5. Enter the `wait_for_message` loop.
 
-**Do not use `get_updates` for ongoing polling.** After the single startup drain, always use `wait_for_message` for the loop. `get_updates` is only for startup drain or targeted debugging when explicitly requested.
+**`get_update` is the default tool for receiving messages.** Use it for all ongoing message handling.
+
+### `get_update` loop pattern
+
+After any task completes, drain the buffer before blocking:
+
+```
+1. Call get_update()               — handle the returned update.
+2. If remaining > 0, repeat step 1 — do not skip to wait_for_message.
+3. When updates=[] and remaining=0, call wait_for_message to block.
+```
+
+`remaining` is the count still buffered after the call. Ignoring it means messages queued while you were busy get silently dropped.
+
+### When to use `get_updates` (plural)
+
+Only use `get_updates` when you are **prepared to store and respond to every update it returns**. It dumps all pending updates at once with no `remaining` signal — if you handle only the first and move on, the rest are gone.
+
+Acceptable uses:
+- Startup drain (step 3 above) — call once, discard everything.
+- Explicit bulk replay where you will iterate and process the full returned array.
+- Targeted debugging when explicitly asked.
 
 ---
 
@@ -215,7 +236,7 @@ Do not use `\\n` (double backslash) — that would produce a visible backslash i
 
 ## Voice message handling
 
-All message-receiving tools (`wait_for_message`, `ask`, `choose`, `get_updates`) support voice messages with automatic transcription via local Whisper. While transcribing, a `✍` reaction is applied to the voice message; when done, it swaps to `🫡`.
+All message-receiving tools (`wait_for_message`, `ask`, `choose`, `get_updates`, `get_update`) support voice messages with automatic transcription via local Whisper. While transcribing, a `✍` reaction is applied to the voice message; when done, it swaps to `🫡`.
 
 Transcription is transparent — returned as `text` with `voice: true` in the result.
 
@@ -353,6 +374,6 @@ Always acknowledge receipt. Even for stickers or types you can't process, confir
 
 After calling `restart_server` (or the server restarts for any reason):
 
-1. Call `get_updates` (twice if needed) to drain stale messages — discard everything
+1. Call `get_updates` once (limit 100, timeout 0) to drain stale messages — discard everything
 2. Send a "back online" message via `notify` describing what changed
 3. Return to `wait_for_message` loop

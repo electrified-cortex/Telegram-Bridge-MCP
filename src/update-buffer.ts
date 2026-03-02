@@ -65,6 +65,20 @@ export function peekBuffer(): Update[] {
   return [..._queue];
 }
 
+/** Returns the number of updates currently in the buffer. */
+export function bufferSize(): number {
+  return _queue.length;
+}
+
+/**
+ * Remove and return up to `n` updates from the front of the buffer.
+ * Remaining updates stay buffered for the next call.
+ */
+export function drainN(n: number): Update[] {
+  const taken = _queue.splice(0, n);
+  return taken;
+}
+
 /** For testing only — resets buffer state between tests. */
 export function resetBufferForTest(): void {
   _queue = [];

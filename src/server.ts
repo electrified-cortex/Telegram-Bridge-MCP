@@ -8,6 +8,7 @@ import { register as registerGetMe } from "./tools/get_me.js";
 import { register as registerSendMessage } from "./tools/send_message.js";
 import { register as registerSendMessageDraft } from "./tools/send_message_draft.js";
 import { register as registerGetUpdates } from "./tools/get_updates.js";
+import { register as registerGetUpdate } from "./tools/get_update.js";
 import { register as registerAnswerCallbackQuery } from "./tools/answer_callback_query.js";
 import { register as registerEditMessageText } from "./tools/edit_message_text.js";
 import { register as registerGetChat } from "./tools/get_chat.js";
@@ -46,7 +47,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export function createServer(): McpServer {
   const server = new McpServer({
     name: "telegram-bridge-mcp",
-    version: "1.10.1",
+    version: "1.11.1",
   });
 
   // ── High-level agent tools (use these 99% of the time) ─────────────────
@@ -93,6 +94,7 @@ export function createServer(): McpServer {
   registerSetReaction(server);
 
   // ── Polling ──────────────────────────────────────────────────────────────
+  registerGetUpdate(server);
   registerGetUpdates(server);
 
   // ── Resources ────────────────────────────────────────────────────────────
