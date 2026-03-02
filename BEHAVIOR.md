@@ -127,6 +127,31 @@ Call `show_typing` **after receiving a message**, right before doing actual work
 
 ---
 
+## Tool usage: `send_temp_message`
+
+Sends a short placeholder that is **automatically deleted** the moment any outbound tool fires, or after the TTL expires (default 30 s). Zero cleanup required.
+
+**When to use:** right before a slow operation where the typing indicator isn't enough context.
+
+```
+send_temp_message("Analyzing 47 files…")   // user sees this immediately
+// ... do the work ...
+notify("Analysis complete", ...)            // temp message deleted automatically
+```
+
+```
+send_temp_message("Setting up…", ttl_seconds: 10)
+update_status(...)                          // replaces the placeholder
+```
+
+**Rules:**
+- Only one pending temp at a time — a second call replaces the first.
+- Do **not** delete it manually; the next outbound tool handles it.
+- Prefer `update_status` for tasks with 3+ visible steps. Use `send_temp_message` for a quick "I'm on it" with no structured progress to show.
+- Plain text only — no Markdown.
+
+---
+
 ## Tool usage: timeout strategy
 
 **Default timeouts are optimized for minimal token usage during idle polling:**

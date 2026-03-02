@@ -27,6 +27,7 @@ MCP resources: `telegram-bridge-mcp://communication-guide` (full) · `telegram-b
 | Fixed options | `choose` |
 | Open-ended input | `ask` |
 | Short status (1–2 sentences) | `notify` |
+| Ephemeral placeholder ("Thinking…") | `send_temp_message` |
 | Structured result / explanation | `send_message` (Markdown) |
 | Build / deploy / error event | `notify` with severity |
 | Multi-step task (3+ steps) | `update_status` checklist |
