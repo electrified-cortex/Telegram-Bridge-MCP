@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat } from "../telegram.js";
 import { markdownToV2, escapeV2, escapeHtml } from "../markdown.js";
 import { cancelTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToTitle } from "../topic-state.js";
 
 const SEVERITY_PREFIX: Record<string, string> = {
@@ -62,6 +63,7 @@ export function register(server: McpServer) {
         const err = validateText(text);
         if (err) return toError(err);
         cancelTyping();
+        await clearPendingTemp();
 
         const msg = await getApi().sendMessage(chatId, text, {
           parse_mode: finalMode,

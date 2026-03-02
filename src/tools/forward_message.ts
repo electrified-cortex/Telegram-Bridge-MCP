@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { cancelTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -16,6 +17,7 @@ export function register(server: McpServer) {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
       cancelTyping();
+      await clearPendingTemp();
       try {
         const msg = await getApi().forwardMessage(chatId, from_chat_id, message_id, {
           disable_notification,

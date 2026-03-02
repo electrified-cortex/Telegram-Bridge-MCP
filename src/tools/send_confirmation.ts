@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { cancelTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToText } from "../topic-state.js";
 import { pollButtonPress, ackAndEditSelection, editWithTimedOut } from "./button-helpers.js";
 
@@ -72,6 +73,7 @@ export function register(server: McpServer) {
 
       try {
         cancelTyping();
+        await clearPendingTemp();
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {
           parse_mode: "MarkdownV2",
           reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,

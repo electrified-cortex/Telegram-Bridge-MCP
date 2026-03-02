@@ -4,6 +4,7 @@ import { getApi, resolveChat, toResult, toError, validateText, pollUntil } from 
 import { markdownToV2 } from "../markdown.js";
 import { transcribeWithIndicator } from "../transcribe.js";
 import { cancelTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToText } from "../topic-state.js";
 
 /**
@@ -38,6 +39,7 @@ export function register(server: McpServer) {
 
       try {
         cancelTyping();
+        await clearPendingTemp();
         // Send the question
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown")), {
           parse_mode: "MarkdownV2",

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { escapeHtml } from "../markdown.js";
 import { cancelTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToTitle } from "../topic-state.js";
 
 const STATUS_ICON: Record<string, string> = {
@@ -64,6 +65,7 @@ export function register(server: McpServer) {
         const textErr = validateText(text);
         if (textErr) return toError(textErr);
         cancelTyping();
+        await clearPendingTemp();
 
         if (message_id !== undefined) {
           const result = await getApi().editMessageText(

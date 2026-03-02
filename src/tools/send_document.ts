@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateCaption, resolveChat, callApi } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
 import { cancelTyping, showTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -62,6 +63,7 @@ export function register(server: McpServer) {
         docSource = document;
       }
 
+      await clearPendingTemp();
       try {
         await showTyping(60, "upload_document");
         const msg = await callApi(() => getApi().sendDocument(chatId, docSource, {

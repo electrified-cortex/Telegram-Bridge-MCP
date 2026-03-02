@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { cancelTyping, showTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToText } from "../topic-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 
@@ -37,6 +38,7 @@ export function register(server: McpServer) {
     async ({ text, parse_mode, disable_notification, reply_to_message_id, voice }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "string") return toError(chatId);
+      await clearPendingTemp();
 
       // ── Voice (TTS) mode ────────────────────────────────────────────────
       const useVoice = voice === true && isTtsEnabled();

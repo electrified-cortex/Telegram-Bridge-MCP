@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateCaption, resolveChat, callApi } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
 import { cancelTyping, showTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -35,6 +36,7 @@ export function register(server: McpServer) {
         if (capErr) return toError(capErr);
       }
       const resolved = caption ? resolveParseMode(caption, parse_mode) : { text: undefined, parse_mode: undefined };
+      await clearPendingTemp();
       try {
         await showTyping(30, "upload_photo");
         const msg = await callApi(() => getApi().sendPhoto(chatId, photo, {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toResult, toError, validateCaption, resolveChat, sendVoiceDirect } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
 import { cancelTyping, showTyping } from "../typing-state.js";
+import { clearPendingTemp } from "../temp-message.js";
 
 export function register(server: McpServer) {
   server.tool(
@@ -48,6 +49,7 @@ export function register(server: McpServer) {
         ? resolveParseMode(caption, parse_mode)
         : { text: undefined, parse_mode: undefined };
 
+      await clearPendingTemp();
       try {
         await showTyping(30, "upload_voice");
         const msg = await sendVoiceDirect(chatId, voice, {
