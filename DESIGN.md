@@ -52,7 +52,7 @@ Tools are grouped by abstraction level.
 | `notify` | Sends a titled, severity-coded notification with optional body. Supports silent delivery. |
 | `ask` | Sends a question and blocks until the user replies with free text. |
 | `choose` | Sends a question with labeled inline keyboard buttons; blocks until a button is pressed. |
-| `send_confirmation` | Sends a Yes/No inline keyboard and blocks until a button is pressed. Returns `{ confirmed: true\|false }`, or `{ timed_out: true }` if the timeout expires without input. |
+| `send_confirmation` | Sends a Yes/No inline keyboard and blocks until a button is pressed. Returns `{ confirmed: true | false }`, or `{ timed_out: true }` if the timeout expires without input. |
 | `send_temp_message` | Sends a temporary placeholder (e.g. "Thinking…") that is automatically deleted when the next outbound tool fires, or after the TTL. |
 | `update_status` | Creates or edits a live task checklist message with per-step status indicators. |
 

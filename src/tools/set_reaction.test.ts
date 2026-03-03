@@ -52,14 +52,32 @@ describe("set_reaction tool", () => {
     expect(opts.is_big).toBe(true);
   });
 
-  it("rejects an emoji not in the allowed list", async () => {
-    // Zod refine throws synchronously from parse() before the handler runs
-    expect(() => call({ message_id: 1, emoji: "🚀" })).toThrow();
+  it("resolves aliases to canonical emoji", async () => {
+    const result = await call({ message_id: 100, emoji: "rocket" });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result) as any;
+    expect(data.ok).toBe(true);
+    expect(data.emoji).toBe("🚀");
+    expect(mocks.setMessageReaction).toHaveBeenCalledWith(
+      "42",
+      100,
+      [{ type: "emoji", emoji: "🚀" }],
+      { is_big: undefined },
+    );
+  });
+
+  it("rejects an emoji not in the allowed list (returns error)", async () => {
+    // 💀 is not in ALLOWED_EMOJI and not an alias
+    const result = await call({ message_id: 1, emoji: "💀" });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("BUTTON_DATA_INVALID");
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
   });
 
-  it("rejects an arbitrary string that is not an emoji", async () => {
-    expect(() => call({ message_id: 1, emoji: "notanemoji" })).toThrow();
+  it("rejects an arbitrary string that is not an emoji or alias (returns error)", async () => {
+    const result = await call({ message_id: 1, emoji: "notanemoji" });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("BUTTON_DATA_INVALID");
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
   });
 
