@@ -103,8 +103,9 @@ Tools are grouped by abstraction level.
 
 | Tool | Description |
 | --- | --- |
-| `get_update` | **Default polling tool.** Returns up to `max` updates from the local buffer, fetches from Telegram if needed. Always returns `remaining` — call again if > 0 before blocking. |
-| `get_updates` | Bulk poll for all pending updates. Use only when prepared to iterate and respond to every returned update. No `remaining` signal. |
+| `get_update` | **Default polling tool.** Returns the next available update(s) from the buffer. Optional `update_id` to jump to a specific update; `from_update_id` to start from a known point. Filter by sender: `"all"` (default), `"user"`, `"bot"`, or specific user ID (number). Always returns `remaining` — call again if > 0 before blocking. |
+| `get_prior_update` | Navigate backwards through update history. `offset` controls how many updates back (default 1 = most recent). Same filter options as `get_update`. Returns `update_id`, full update content, and `available_before` count. Useful for agents recovering lost context. |
+| `get_updates` | Bulk poll for all pending updates — or replay from a known point if `from_update_id` is set. Use only when prepared to iterate and respond to every returned update. No `remaining` signal. Supports same filters. |
 
 ### Server management
 
@@ -210,6 +211,7 @@ telegram-bridge-mcp/
 │       ├── get_chat.ts
 │       ├── set_reaction.ts
 │       ├── get_update.ts
+│       ├── get_prior_update.ts
 │       ├── get_updates.ts
 │       └── restart_server.ts
 ├── BEHAVIOR.md               # Agent behavioral guide (also served as MCP resource)

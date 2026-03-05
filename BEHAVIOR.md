@@ -32,6 +32,23 @@ When starting a new session with this MCP:
 
 **`get_update` is the default tool for receiving messages.** Use it for all ongoing message handling.
 
+### Recovering lost context with `get_prior_update`
+
+If your context compacts or you lose track of conversation state, use `get_prior_update` to navigate backward through update history one at a time:
+
+```text
+1. Call get_prior_update(offset: 1)      — get the most recent update
+2. Read it. Decide: is this the start of what I need to replay?
+3. If yes: call get_update(from_update_id: <that ID>) to read forward from there
+4. Or increase offset: get_prior_update(offset: 2) to go further back
+```
+
+Ring buffer stores the last 100 updates (all types: messages, reactions, callbacks, etc.). Use `filter` to focus on specific senders:
+- `"user"` — updates from the operator only
+- `"bot"` — updates from the bot (echoes, confirmations)
+- A specific user ID (number) — updates from that exact user
+- `"all"` (default) — everything
+
 ### `get_update` loop pattern
 
 After any task completes, drain the buffer before blocking:
@@ -44,14 +61,24 @@ After any task completes, drain the buffer before blocking:
 
 `remaining` is the count still buffered after the call. Ignoring it means messages queued while you were busy get silently dropped.
 
+**Optional parameters:**
+- `update_id <number>` — jump directly to a specific update ID (if you know it)
+- `from_update_id <number>` — start reading from this ID forward (useful with `get_prior_update` to replay a section)
+- `filter` — limit to `"user"` (operator only), `"bot"` (bot's own messages), `<user ID>` (exact user), or `"all"` (default)
+
 ### When to use `get_updates` (plural)
 
 Only use `get_updates` when you are **prepared to store and respond to every update it returns**. It dumps all pending updates at once with no `remaining` signal — if you handle only the first and move on, the rest are gone.
 
+Optional parameters (for replay):
+- `from_update_id <number>` — read all updates from this ID forward (useful for bulk replay after recovering context with `get_prior_update`)
+- `limit <number>` — max updates to return (default all available)
+- `filter` — same filter options as `get_update`
+
 Acceptable uses:
 
-- Startup drain (step 3 above) — call once, discard everything.
-- Explicit bulk replay where you will iterate and process the full returned array.
+- Startup drain (draining stale queue) — call once with no params, discard everything.
+- Explicit bulk replay where you will iterate and process the full returned array — use `from_update_id` to start from a known point.
 - Targeted debugging when explicitly asked.
 
 ---
