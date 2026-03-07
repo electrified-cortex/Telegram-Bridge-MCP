@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-03-07
+
 ### Added
 
 - **ESLint v10 + typescript-eslint** — `eslint.config.js` (flat config) with `no-explicit-any`, `no-non-null-assertion`, and `no-unused-vars` (with `_` prefix ignore pattern); `pnpm lint` script added to `package.json`
