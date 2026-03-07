@@ -46,7 +46,7 @@
     "@huggingface/transformers": "^3.8.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "audio-decode": "^2.2.3",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.3.1",
     "grammy": "^1.40.1",
     "opusscript": "^0.1.1",
     "zod": "^4.3.6"

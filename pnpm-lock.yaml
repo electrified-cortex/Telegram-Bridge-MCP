@@ -18,8 +18,8 @@ importers:
         specifier: ^2.2.3
         version: 2.2.3
       dotenv:
-        specifier: ^16.4.5
-        version: 16.6.1
+        specifier: ^17.3.1
+        version: 17.3.1
       grammy:
         specifier: ^1.40.1
         version: 1.40.1
@@ -752,8 +752,8 @@ packages:
   detect-node@2.1.0:
     resolution: {integrity: sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==}
 
-  dotenv@16.6.1:
-    resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
+  dotenv@17.3.1:
+    resolution: {integrity: sha512-IO8C/dzEb6O3F9/twg6ZLXz164a2fhTnEWb95H23Dm4OuN+92NmEAlTrupP9VW6Jm3sO26tQlqyvyi4CsnY9GA==}
     engines: {node: '>=12'}
 
   dunder-proto@1.0.1:
@@ -1954,7 +1954,7 @@ snapshots:
 
   detect-node@2.1.0: {}
 
-  dotenv@16.6.1: {}
+  dotenv@17.3.1: {}
 
   dunder-proto@1.0.1:
     dependencies:
