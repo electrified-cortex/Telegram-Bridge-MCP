@@ -4,13 +4,17 @@ import { createMockServer, parseResult, isError } from "./test-utils.js";
 // ---------------------------------------------------------------------------
 // Hoisted mocks - must be at top
 // ---------------------------------------------------------------------------
+const FAKE_TMPDIR = vi.hoisted(() => "/tmp/fake");
+
 const mocks = vi.hoisted(() => ({
   getFile: vi.fn(),
   writeFile: vi.fn(),
   mkdir: vi.fn(),
 }));
 
-const FAKE_TMPDIR = "/tmp/fake";
+vi.mock("os", () => ({
+  tmpdir: () => FAKE_TMPDIR,
+}));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
@@ -22,24 +26,23 @@ vi.mock("fs/promises", () => ({
   mkdir: mocks.mkdir,
 }));
 
-vi.mock("os", () => ({
-  tmpdir: () => FAKE_TMPDIR,
-}));
-
 // Mock global fetch
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
 import { register } from "./download_file.js";
+import { resetSecurityConfig } from "../telegram.js";
 
 describe("download_file tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
 
-  const tokenBefore = process.env.BOT_TOKEN;
+  const envBefore = { BOT_TOKEN: process.env.BOT_TOKEN, ALLOWED_USER_ID: process.env.ALLOWED_USER_ID };
 
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.BOT_TOKEN = "testtoken123";
+    process.env.ALLOWED_USER_ID = "12345";
+    resetSecurityConfig();
     mocks.mkdir.mockResolvedValue(undefined);
     mocks.writeFile.mockResolvedValue(undefined);
 
@@ -49,7 +52,9 @@ describe("download_file tool", () => {
   });
 
   afterEach(() => {
-    process.env.BOT_TOKEN = tokenBefore;
+    process.env.BOT_TOKEN = envBefore.BOT_TOKEN;
+    process.env.ALLOWED_USER_ID = envBefore.ALLOWED_USER_ID;
+    resetSecurityConfig();
   });
 
   // -------------------------------------------------------------------------
@@ -59,6 +64,7 @@ describe("download_file tool", () => {
     const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46]); // %PDF
     fetchMock.mockResolvedValue({
       ok: true,
+      headers: new Headers({ "content-length": String(pdfBytes.byteLength) }),
       arrayBuffer: () => Promise.resolve(pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength)),
     });
 
@@ -84,6 +90,7 @@ describe("download_file tool", () => {
     const jpgBytes = Buffer.from([0xff, 0xd8]);
     fetchMock.mockResolvedValue({
       ok: true,
+      headers: new Headers({ "content-length": String(jpgBytes.byteLength) }),
       arrayBuffer: () => Promise.resolve(jpgBytes.buffer.slice(jpgBytes.byteOffset, jpgBytes.byteOffset + jpgBytes.byteLength)),
     });
 
@@ -99,6 +106,7 @@ describe("download_file tool", () => {
     const txtBuf = Buffer.from(content, "utf-8");
     fetchMock.mockResolvedValue({
       ok: true,
+      headers: new Headers({ "content-length": String(txtBuf.byteLength) }),
       arrayBuffer: () => Promise.resolve(txtBuf.buffer.slice(txtBuf.byteOffset, txtBuf.byteOffset + txtBuf.byteLength)),
     });
 
@@ -114,6 +122,7 @@ describe("download_file tool", () => {
     const csvBuf = Buffer.from(content, "utf-8");
     fetchMock.mockResolvedValue({
       ok: true,
+      headers: new Headers({ "content-length": String(csvBuf.byteLength) }),
       arrayBuffer: () => Promise.resolve(csvBuf.buffer.slice(csvBuf.byteOffset, csvBuf.byteOffset + csvBuf.byteLength)),
     });
 
@@ -129,6 +138,7 @@ describe("download_file tool", () => {
     const bigBuf = Buffer.from(bigContent, "utf-8");
     fetchMock.mockResolvedValue({
       ok: true,
+      headers: new Headers({ "content-length": String(bigBuf.byteLength) }),
       arrayBuffer: () => Promise.resolve(bigBuf.buffer.slice(bigBuf.byteOffset, bigBuf.byteOffset + bigBuf.byteLength)),
     });
 
