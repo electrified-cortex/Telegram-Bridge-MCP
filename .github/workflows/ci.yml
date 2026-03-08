@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # required for Codecov OIDC upload (public repos, no token needed)
 
     steps:
       - name: Checkout
@@ -41,4 +40,3 @@ jobs:
         with:
           files: ./coverage/lcov.info
           fail_ci_if_error: true  # surface upload failures rather than silently skipping
-          use_oidc: true
