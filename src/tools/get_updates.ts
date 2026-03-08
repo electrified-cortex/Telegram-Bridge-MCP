@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Update } from "grammy/types";
 import { z } from "zod";
-import { getApi, getOffset, advanceOffset, resetOffset, filterAllowedUpdates, hijackNotifyAgent, toResult, toError, DEFAULT_ALLOWED_UPDATES } from "../telegram.js";
+import { getApi, getOffset, advanceOffset, resetOffset, filterAllowedUpdates, hijackNotifyAgent, fireHijackNotification, toResult, toError, DEFAULT_ALLOWED_UPDATES } from "../telegram.js";
 import { drainBuffer } from "../update-buffer.js";
 import { sanitizeUpdates } from "../update-sanitizer.js";
 
@@ -71,6 +71,15 @@ export function register(server: McpServer) {
         const sanitized = await sanitizeUpdates(allUpdates);
         return toResult(sanitized);
       } catch (err) {
+        // 409 Conflict = another instance is polling — fire same hijack channels as gap detection
+        if (err instanceof Error && "error_code" in err && (err as { error_code: number }).error_code === 409) {
+          const msg =
+            "⚠️ Telegram 409 Conflict — another getUpdates call is already active for this bot token. " +
+            "Ensure only one MCP instance is running against this bot token.";
+          fireHijackNotification(msg);
+          if (hijackNotifyAgent())
+            return toResult({ hijack_warning: msg, updates: [] });
+        }
         return toError(err);
       }
     }

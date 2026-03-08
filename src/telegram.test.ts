@@ -157,6 +157,7 @@ describe("toError with GrammyError", () => {
     ["message cant be edited",  400, "Bad Request: message can't be edited",         "MESSAGE_CANT_BE_EDITED"],
     ["message cant be deleted", 400, "Bad Request: message can't be deleted",        "MESSAGE_CANT_BE_DELETED"],
     ["button data invalid",     400, "Bad Request: BUTTON_DATA_INVALID",             "BUTTON_DATA_INVALID"],
+    ["409 Conflict",            409, "Conflict: terminated by other getUpdates request; make sure that only one bot instance is running", "DUAL_INSTANCE_CONFLICT"],
   ];
 
   it.each(cases)("%s → %s", (_label, httpCode, description, expectedCode) => {

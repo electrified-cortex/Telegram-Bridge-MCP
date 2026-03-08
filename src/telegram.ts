@@ -80,6 +80,7 @@ export type TelegramErrorCode =
   | "UNAUTHORIZED_SENDER"
   | "UNAUTHORIZED_CHAT"
   | "VOICE_RESTRICTED"
+  | "DUAL_INSTANCE_CONFLICT"
   | "UNKNOWN";
 
 export interface TelegramError {
@@ -161,6 +162,15 @@ function classifyGrammyError(err: GrammyError): TelegramError {
     return {
       code: "MESSAGE_CANT_BE_DELETED",
       message: "This message cannot be deleted. The bot may lack permissions, or the message is too old.",
+      raw,
+    };
+
+  if (err.error_code === 409)
+    return {
+      code: "DUAL_INSTANCE_CONFLICT",
+      message:
+        "Telegram rejected the poll: another getUpdates request is already active for this bot token. " +
+        "Ensure only one MCP instance is running against this bot token.",
       raw,
     };
 
@@ -369,6 +379,22 @@ function getHijackNotifyConfig(): { console: boolean; telegram: boolean; agent: 
 }
 
 /**
+ * Fires hijack notifications on the configured channels (console + telegram).
+ * Does NOT handle the `agent` channel — callers decide whether to surface the
+ * message to the agent based on `hijackNotifyAgent()`.
+ */
+export function fireHijackNotification(message: string): void {
+  const notify = getHijackNotifyConfig();
+  if (notify.console)
+    console.error(`[telegram-bridge-mcp] WARNING: ${message}`);
+  if (notify.telegram) {
+    const { chatId } = getSecurityConfig();
+    if (chatId)
+      getApi().sendMessage(chatId, message).catch(() => {}); // best-effort
+  }
+}
+
+/**
  * Advances the polling offset and checks for update_id gaps that indicate
  * another MCP instance is consuming the same bot's update queue.
  * Returns a warning string if a gap was detected (for agent notification),
@@ -384,14 +410,7 @@ export function advanceOffset(updates: Update[]): string | null {
       `⚠️ Update ID gap detected — expected ${_offset}, got ${minId}. ` +
       `${gap} update(s) may have been consumed by another process. ` +
       "Ensure only one MCP instance is running against this bot token.";
-    const notify = getHijackNotifyConfig();
-    if (notify.console)
-      console.error(`[telegram-bridge-mcp] WARNING: ${warning}`);
-    if (notify.telegram) {
-      const { chatId } = getSecurityConfig();
-      if (chatId)
-        getApi().sendMessage(chatId, warning).catch(() => {}); // best-effort
-    }
+    fireHijackNotification(warning);
   }
   _offset = Math.max(...updates.map((u) => u.update_id)) + 1;
   for (const u of updates) recordUpdate(u);
