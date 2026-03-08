@@ -29,7 +29,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ### Changed
 
-- README badges replaced with live dynamic badges (CI status, Docker publish status, Codecov coverage, npm version, GHCR link, MIT license)
+- README badges replaced with live dynamic badges (CI status, Docker publish status, Codecov coverage, npm version, GHCR link, license)
 - `publish.yml` permissions expanded with `id-token: write` and `attestations: write`
 
 ## [2.0.0] — 2026-03-07

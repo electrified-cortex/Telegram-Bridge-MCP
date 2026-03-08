@@ -219,7 +219,7 @@ telegram-bridge-mcp/
 ├── FORMATTING.md             # Formatting reference (also served as MCP resource)
 ├── SETUP.md                  # Setup guide (also served as MCP resource)
 ├── LOOP-PROMPT.md            # Sample loop prompt for VS Code Copilot agent sessions
-├── LICENSE                   # MIT
+├── LICENSE                   # AGPL-3.0
 ├── package.json
 └── tsconfig.json
 ```
