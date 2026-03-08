@@ -157,6 +157,7 @@ describe("toError with GrammyError", () => {
     ["message cant be edited",  400, "Bad Request: message can't be edited",         "MESSAGE_CANT_BE_EDITED"],
     ["message cant be deleted", 400, "Bad Request: message can't be deleted",        "MESSAGE_CANT_BE_DELETED"],
     ["button data invalid",     400, "Bad Request: BUTTON_DATA_INVALID",             "BUTTON_DATA_INVALID"],
+    ["409 Conflict",            409, "Conflict: terminated by other getUpdates request; make sure that only one bot instance is running", "DUAL_INSTANCE_CONFLICT"],
   ];
 
   it.each(cases)("%s → %s", (_label, httpCode, description, expectedCode) => {
@@ -514,8 +515,14 @@ describe("resolveChat", () => {
 // ---------------------------------------------------------------------------
 
 describe("offset management", () => {
-  beforeEach(() => resetOffset());
-  afterEach(() => resetOffset());
+  beforeEach(() => {
+    resetOffset();
+    process.env.HIJACK_NOTIFY = "console"; // pin to console-only for deterministic spy assertions
+  });
+  afterEach(() => {
+    resetOffset();
+    delete process.env.HIJACK_NOTIFY;
+  });
 
   it("getOffset returns 0 initially", () => {
     expect(getOffset()).toBe(0);
@@ -527,7 +534,7 @@ describe("offset management", () => {
   });
 
   it("advanceOffset is a no-op for empty array", () => {
-    advanceOffset([]);
+    expect(advanceOffset([])).toBeNull();
     expect(getOffset()).toBe(0);
   });
 
@@ -535,6 +542,35 @@ describe("offset management", () => {
     advanceOffset([{ update_id: 10 } as unknown as Update]);
     resetOffset();
     expect(getOffset()).toBe(0);
+  });
+
+  it("returns warning string when update_id gap is detected", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    advanceOffset([{ update_id: 10 } as unknown as Update]); // offset → 11
+    const result = advanceOffset([{ update_id: 15 } as unknown as Update]); // gap
+    expect(result).not.toBeNull();
+    expect(result).toContain("Update ID gap detected");
+    expect(result).toContain("may have been consumed");
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0]).toContain("Update ID gap detected");
+    spy.mockRestore();
+  });
+
+  it("returns null on the first poll (offset = 0)", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = advanceOffset([{ update_id: 50 } as unknown as Update]);
+    expect(result).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("returns null for a contiguous batch", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    advanceOffset([{ update_id: 10 } as unknown as Update]); // offset → 11
+    const result = advanceOffset([{ update_id: 11 } as unknown as Update]);
+    expect(result).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });
 
