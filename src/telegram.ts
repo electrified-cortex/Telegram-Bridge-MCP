@@ -354,30 +354,57 @@ export function getOffset(): number {
   return _offset;
 }
 
-export function advanceOffset(updates: Update[]): void {
-  if (updates.length === 0) return;
+/**
+ * Channels for dual-instance hijack warnings.
+ * Set HIJACK_NOTIFY to a comma-separated list of: console, telegram, agent
+ * Default: "console,telegram"
+ */
+function getHijackNotifyConfig(): { console: boolean; telegram: boolean; agent: boolean } {
+  const raw = (process.env.HIJACK_NOTIFY ?? "console,telegram").toLowerCase();
+  return {
+    console: raw.includes("console"),
+    telegram: raw.includes("telegram"),
+    agent: raw.includes("agent"),
+  };
+}
+
+/**
+ * Advances the polling offset and checks for update_id gaps that indicate
+ * another MCP instance is consuming the same bot's update queue.
+ * Returns a warning string if a gap was detected (for agent notification),
+ * or null if everything is contiguous.
+ */
+export function advanceOffset(updates: Update[]): string | null {
+  if (updates.length === 0) return null;
   const minId = Math.min(...updates.map((u) => u.update_id));
+  let warning: string | null = null;
   if (_offset > 0 && minId > _offset) {
     const gap = minId - _offset;
-    const warning =
+    warning =
       `⚠️ Update ID gap detected — expected ${_offset}, got ${minId}. ` +
       `${gap} update(s) may have been consumed by another process. ` +
       "Ensure only one MCP instance is running against this bot token.";
-    console.error(`[telegram-bridge-mcp] WARNING: ${warning}`);
-    // Notify operator in Telegram if a chat is configured
-    const { chatId } = getSecurityConfig();
-    if (chatId) {
-      getApi()
-        .sendMessage(chatId, warning)
-        .catch(() => {}); // best-effort — don't throw if notification fails
+    const notify = getHijackNotifyConfig();
+    if (notify.console)
+      console.error(`[telegram-bridge-mcp] WARNING: ${warning}`);
+    if (notify.telegram) {
+      const { chatId } = getSecurityConfig();
+      if (chatId)
+        getApi().sendMessage(chatId, warning).catch(() => {}); // best-effort
     }
   }
   _offset = Math.max(...updates.map((u) => u.update_id)) + 1;
   for (const u of updates) recordUpdate(u);
+  return warning;
 }
 
 export function resetOffset(): void {
   _offset = 0;
+}
+
+/** Returns true if the agent channel is enabled for hijack warnings. */
+export function hijackNotifyAgent(): boolean {
+  return (process.env.HIJACK_NOTIFY ?? "console,telegram").toLowerCase().includes("agent");
 }
 
 // ---------------------------------------------------------------------------

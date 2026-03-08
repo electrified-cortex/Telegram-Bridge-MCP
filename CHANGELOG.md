@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ### Added
 
+- **Dual-instance hijack detection** — `advanceOffset()` detects `update_id` gaps caused by a competing MCP instance consuming the same bot's update queue. Emits a `console.error` and sends a ⚠️ Telegram message to the operator by default. Configurable via `HIJACK_NOTIFY=console,telegram,agent` (any combination; default `console,telegram`). When `agent` is included, `get_update` and `get_updates` return a `hijack_warning` field so the agent can act on it directly.
+
+### Added
+
 - **CI workflow** — new `.github/workflows/ci.yml` runs tests and uploads coverage to Codecov on every push/PR to `master`
 - **Codecov integration** — coverage badge is now live and tied to the actual CI run
 - **Cosign image signing** — every Docker image is signed with keyless Cosign (GitHub OIDC) in the publish workflow
