@@ -34,9 +34,3 @@ jobs:
 
       - name: Run tests with coverage
         run: pnpm coverage
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de  # v5
-        with:
-          files: ./coverage/lcov.info
-          fail_ci_if_error: false  # non-blocking: don't fail CI on Codecov outages or fork upload restrictions

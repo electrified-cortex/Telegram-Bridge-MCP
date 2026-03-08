@@ -10,7 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com).
 ### Changed
 
 - Switched project license from MIT to AGPL-3.0-only
-- CI coverage upload now uses tokenless Codecov upload (public repo; no token required)
+- Removed Codecov badge and upload step (coverage reported in CI logs only)
 
 ### Fixed
 
