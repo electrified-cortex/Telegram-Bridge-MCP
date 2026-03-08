@@ -356,6 +356,22 @@ export function getOffset(): number {
 
 export function advanceOffset(updates: Update[]): void {
   if (updates.length === 0) return;
+  const minId = Math.min(...updates.map((u) => u.update_id));
+  if (_offset > 0 && minId > _offset) {
+    const gap = minId - _offset;
+    const warning =
+      `⚠️ Update ID gap detected — expected ${_offset}, got ${minId}. ` +
+      `${gap} update(s) may have been consumed by another process. ` +
+      "Ensure only one MCP instance is running against this bot token.";
+    console.error(`[telegram-bridge-mcp] WARNING: ${warning}`);
+    // Notify operator in Telegram if a chat is configured
+    const { chatId } = getSecurityConfig();
+    if (chatId) {
+      getApi()
+        .sendMessage(chatId, warning)
+        .catch(() => {}); // best-effort — don't throw if notification fails
+    }
+  }
   _offset = Math.max(...updates.map((u) => u.update_id)) + 1;
   for (const u of updates) recordUpdate(u);
 }

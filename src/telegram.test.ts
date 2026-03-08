@@ -536,6 +536,31 @@ describe("offset management", () => {
     resetOffset();
     expect(getOffset()).toBe(0);
   });
+
+  it("emits a hijack warning when update_id gap is detected", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    advanceOffset([{ update_id: 10 } as unknown as Update]); // offset → 11
+    advanceOffset([{ update_id: 15 } as unknown as Update]); // gap: expected 11, got 15
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0]).toContain("Update ID gap detected");
+    expect(spy.mock.calls[0][0]).toContain("may have been consumed");
+    spy.mockRestore();
+  });
+
+  it("does not emit a hijack warning on the first poll (offset = 0)", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    advanceOffset([{ update_id: 50 } as unknown as Update]); // first poll — no gap expected
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("does not emit a hijack warning for a contiguous batch", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    advanceOffset([{ update_id: 10 } as unknown as Update]); // offset → 11
+    advanceOffset([{ update_id: 11 } as unknown as Update]); // contiguous — no warning
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------
