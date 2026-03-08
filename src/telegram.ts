@@ -210,6 +210,11 @@ export function getApi(): Api {
   );
 }
 
+/** Clears the cached Api instance — for use in tests only. */
+export function resetApi(): void {
+  _api = null;
+}
+
 // ---------------------------------------------------------------------------
 // Security: allowed user / chat enforcement
 // ---------------------------------------------------------------------------

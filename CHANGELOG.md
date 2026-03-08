@@ -10,7 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com).
 ### Fixed
 
 - Duplicate `### Added` headings under `[2.1.0]` in CHANGELOG merged into one section
-- Test for `fireHijackNotification` rejection path now asserts `sendMessage` was called and uses `Promise.resolve()` instead of `setTimeout` to flush microtasks
+- `_api` singleton now reset after tests that set `BOT_TOKEN`, preventing cross-test coupling
 
 ## [2.1.0] — 2026-03-07
 

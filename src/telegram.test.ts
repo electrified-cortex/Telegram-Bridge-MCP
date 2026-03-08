@@ -22,6 +22,7 @@ import {
   advanceOffset,
   resetOffset,
   fireHijackNotification,
+  resetApi,
   sendVoiceDirect,
   LIMITS,
   type TelegramError,
@@ -594,6 +595,7 @@ describe("fireHijackNotification", () => {
     delete process.env.BOT_TOKEN;
     delete process.env.HIJACK_NOTIFY;
     delete process.env.ALLOWED_CHAT_ID;
+    resetApi();
     resetSecurityConfig();
   });
 
