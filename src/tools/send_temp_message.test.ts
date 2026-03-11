@@ -4,7 +4,7 @@ import { createMockServer, parseResult, isError } from "./test-utils.js";
 const apiMocks = vi.hoisted(() => ({ sendMessage: vi.fn() }));
 const tempMocks = vi.hoisted(() => ({
   setPendingTemp: vi.fn(),
-  clearPendingTemp: vi.fn().mockResolvedValue(undefined),
+  clearPendingTemp: vi.fn(),
   hasPendingTemp: vi.fn().mockReturnValue(false),
 }));
 
@@ -37,7 +37,7 @@ describe("send_temp_message tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
-    expect(data.ttl_seconds).toBe(30);
+    expect(data.ttl_seconds).toBe(300);
   });
 
   it("calls setPendingTemp with chat_id, message_id, and ttl", async () => {
@@ -45,9 +45,9 @@ describe("send_temp_message tool", () => {
     expect(tempMocks.setPendingTemp).toHaveBeenCalledWith(49154463, 42, 60);
   });
 
-  it("uses default ttl of 30 when not specified", async () => {
+  it("uses default ttl of 300 when not specified", async () => {
     await call({ text: "Working…" });
-    expect(tempMocks.setPendingTemp).toHaveBeenCalledWith(49154463, 42, 30);
+    expect(tempMocks.setPendingTemp).toHaveBeenCalledWith(49154463, 42, 300);
   });
 
   it("returns EMPTY_MESSAGE for blank text", async () => {

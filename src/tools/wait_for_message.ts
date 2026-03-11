@@ -15,6 +15,18 @@ async function serializeMessage(msg: Message): Promise<Record<string, unknown>> 
     reply_to_message_id: msg.reply_to_message?.message_id ?? undefined,
   };
 
+  // Detect slash commands — must check before plain text fallthrough
+  if (msg.text && msg.entities) {
+    const cmdEntity = msg.entities.find(e => e.type === "bot_command" && e.offset === 0);
+    if (cmdEntity) {
+      // Strip leading "/" and any "@botname" suffix (group-chat format)
+      const rawCommand = msg.text.slice(1, cmdEntity.length);
+      const command = rawCommand.split("@")[0];
+      const args = msg.text.slice(cmdEntity.length).trim() || undefined;
+      return { ...base, type: "command", command, args };
+    }
+  }
+
   if (msg.text) {
     return { ...base, type: "text", text: msg.text };
   }

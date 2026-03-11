@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
+import { BUILT_IN_COMMANDS } from "../built-in-commands.js";
 
 const RE_BOT_COMMAND = /^[a-z0-9_]+$/;
 
@@ -65,13 +66,21 @@ export function register(server: McpServer) {
             ? { type: "chat" as const, chat_id: chatId as number }
             : { type: "default" as const };
 
-        await getApi().setMyCommands(commands, { scope: botCommandScope });
+        // Always prepend built-in commands so they survive agent menu updates.
+        // If the agent passes [] to clear, honour it — but keep built-ins.
+        const builtIns = [...BUILT_IN_COMMANDS];
+        const merged = [
+          ...builtIns,
+          ...commands.filter(c => !builtIns.some(b => b.command === c.command)),
+        ];
+
+        await getApi().setMyCommands(merged, { scope: botCommandScope });
 
         return toResult({
           ok: true,
-          count: commands.length,
+          count: merged.length,
           scope,
-          commands: commands.length > 0 ? commands : null,
+          commands: merged.length > 0 ? merged : null,
           cleared: commands.length === 0,
         });
       } catch (err) {

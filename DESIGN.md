@@ -60,7 +60,7 @@ Tools are grouped by abstraction level.
 
 | Tool | Description |
 | --- | --- |
-| `wait_for_message` | Long-polls until a text or voice message is received. Transcribes voice automatically. |
+| `wait_for_message` | Long-polls until a text, voice, or slash-command message is received. Transcribes voice automatically. Returns `{ type: "command", command: "status", args?: "..." }` when the operator taps a bot-menu command, `{ type: "text" }` for plain text, or `{ type: "voice" }` with transcribed text for voice messages. |
 | `wait_for_callback_query` | Long-polls until an inline button is pressed on a specific message. |
 | `answer_callback_query` | Dismisses the loading spinner after a button press. Required after `wait_for_callback_query`. |
 
@@ -91,7 +91,7 @@ Tools are grouped by abstraction level.
 | --- | --- |
 | `get_me` | Returns basic information about the bot (id, username, capabilities). |
 | `get_chat` | Returns information about the configured chat. |
-| `set_commands` | Registers (or clears) the Telegram slash-command menu for the active chat or globally. Pass `[]` to remove the menu. Useful for surfacing escape-hatch commands like `/cancel` during long-running tasks. |
+| `set_commands` | Registers (or clears) the Telegram slash-command menu for the active chat or globally. Pass `[]` to remove the menu. Commands are automatically cleared on shutdown (SIGTERM, SIGINT, `restart_server`) so stale menu options never linger. Dynamically update the menu as task context changes. |
 
 ### Reactions
 

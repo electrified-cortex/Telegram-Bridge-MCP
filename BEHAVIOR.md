@@ -143,6 +143,37 @@ Only use `ask` or `wait_for_message` for truly open-ended free-text input where 
 
 ---
 
+## Tool usage: `set_commands` and slash-command handling
+
+The agent can register a dynamic slash-command menu at any time using `set_commands`. Commands appear in Telegram's `/` autocomplete and can be updated as the task context changes.
+
+```ts
+set_commands([
+  { command: "dump",   description: "Dump session record" },
+  { command: "cancel", description: "Cancel current task" },
+  { command: "exit",   description: "End session" },
+])
+```
+
+When the operator taps a command, `wait_for_message` delivers it as:
+
+```json
+{ "type": "command", "command": "status", "args": "optional rest text" }
+```
+
+- No text parsing required — `command` is the clean name without the leading `/`
+- `args` contains anything the operator typed after the command name (or `undefined` if nothing)
+- `@botname` suffixes (common in group chats) are stripped automatically
+
+**When to update the menu:**
+- At session start: register baseline commands (`/dump`, `/cancel`, `/exit`)
+- When entering a long task: add a `/cancel` command so the operator can abort
+- When the session ends or capabilities change: call `set_commands([])` to clear — or let shutdown handle it automatically
+
+**Shutdown behaviour:** the server automatically calls `set_commands([])` for both chat-scope and default-scope on `SIGTERM`, `SIGINT`, and `restart_server`. You never need to manually clear the menu before stopping.
+
+---
+
 ## Tool usage: `set_topic`
 
 Call `set_topic` once at session start to brand every outbound message with a `[Title]` prefix for the lifetime of this server process.

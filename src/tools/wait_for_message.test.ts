@@ -85,6 +85,18 @@ const makeUnknownUpdate = (chat_id: number, user_id: number) => ({
   },
 });
 
+const makeCommandUpdate = (chat_id: number, user_id: number, command: string, args?: string) => ({
+  update_id: 1,
+  message: {
+    message_id: 11,
+    text: `/${command}${args ? ` ${args}` : ""}`,
+    entities: [{ type: "bot_command", offset: 0, length: command.length + 1 }],
+    chat: { id: chat_id },
+    from: { id: user_id, username: "user", first_name: "User" },
+    date: 1000,
+  },
+});
+
 describe("wait_for_message tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
 
@@ -198,5 +210,42 @@ describe("wait_for_message tool", () => {
     expect(data.text).toBe("hello");
     // reactions are no longer inlined — they are buffered for later consumption
     expect(data.reactions).toBeUndefined();
+  });
+
+  it("returns command message with type=command", async () => {
+    mocks.getUpdates.mockResolvedValue([makeCommandUpdate(42, 10, "status")]);
+    const result = await call({ timeout_seconds: 5 });
+    const data = parseResult(result);
+    expect(data.timed_out).toBe(false);
+    expect(data.type).toBe("command");
+    expect(data.command).toBe("status");
+    expect(data.args).toBeUndefined();
+  });
+
+  it("returns command with args when present", async () => {
+    mocks.getUpdates.mockResolvedValue([makeCommandUpdate(42, 10, "set_mode", "verbose")]);
+    const result = await call({ timeout_seconds: 5 });
+    const data = parseResult(result);
+    expect(data.type).toBe("command");
+    expect(data.command).toBe("set_mode");
+    expect(data.args).toBe("verbose");
+  });
+
+  it("strips @botname suffix from command in group-chat format", async () => {
+    mocks.getUpdates.mockResolvedValue([{
+      update_id: 1,
+      message: {
+        message_id: 12,
+        text: "/status@mybot",
+        entities: [{ type: "bot_command", offset: 0, length: "/status@mybot".length }],
+        chat: { id: 42 },
+        from: { id: 10, username: "user", first_name: "User" },
+        date: 1000,
+      },
+    }]);
+    const result = await call({ timeout_seconds: 5 });
+    const data = parseResult(result);
+    expect(data.type).toBe("command");
+    expect(data.command).toBe("status");
   });
 });

@@ -19,9 +19,9 @@ export function register(server: McpServer) {
         .number()
         .int()
         .min(5)
-        .max(300)
-        .default(30)
-        .describe("Delete after this many seconds if no subsequent tool clears it first (default 30)"),
+        .max(600)
+        .default(300)
+        .describe("Delete after this many seconds if no subsequent tool clears it first (default 300, max 600)"),
       },
     },
     async ({ text, ttl_seconds }) => {

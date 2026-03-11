@@ -10,11 +10,15 @@ vi.mock("../telegram.js", async (importActual) => {
 });
 
 import { register } from "./set_commands.js";
+import { BUILT_IN_COMMANDS } from "../built-in-commands.js";
 
 const SAMPLE_COMMANDS = [
   { command: "cancel", description: "Stop the current task" },
   { command: "exit", description: "Exit the current workflow" },
 ];
+
+/** Built-ins are always prepended; agent commands follow (de-duped). */
+const MERGED = [...BUILT_IN_COMMANDS, ...SAMPLE_COMMANDS];
 
 describe("set_commands tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
@@ -32,10 +36,10 @@ describe("set_commands tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
-    expect(data.count).toBe(2);
+    expect(data.count).toBe(MERGED.length);
     expect(data.scope).toBe("chat");
     expect(data.cleared).toBe(false);
-    expect(mocks.setMyCommands).toHaveBeenCalledWith(SAMPLE_COMMANDS, {
+    expect(mocks.setMyCommands).toHaveBeenCalledWith(MERGED, {
       scope: { type: "chat", chat_id: 42 },
     });
   });
@@ -43,7 +47,7 @@ describe("set_commands tool", () => {
   it("registers commands with explicit chat scope", async () => {
     const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat" });
     expect(isError(result)).toBe(false);
-    expect(mocks.setMyCommands).toHaveBeenCalledWith(SAMPLE_COMMANDS, {
+    expect(mocks.setMyCommands).toHaveBeenCalledWith(MERGED, {
       scope: { type: "chat", chat_id: 42 },
     });
   });
@@ -53,20 +57,20 @@ describe("set_commands tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.scope).toBe("default");
-    expect(mocks.setMyCommands).toHaveBeenCalledWith(SAMPLE_COMMANDS, {
+    expect(mocks.setMyCommands).toHaveBeenCalledWith(MERGED, {
       scope: { type: "default" },
     });
   });
 
-  it("clears commands when empty array passed", async () => {
+  it("clears agent commands but keeps built-ins when empty array passed", async () => {
     const result = await call({ commands: [] });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
-    expect(data.count).toBe(0);
+    expect(data.count).toBe(BUILT_IN_COMMANDS.length);
     expect(data.cleared).toBe(true);
-    expect(data.commands).toBeNull();
-    expect(mocks.setMyCommands).toHaveBeenCalledWith([], {
+    // Built-ins still remain
+    expect(mocks.setMyCommands).toHaveBeenCalledWith([...BUILT_IN_COMMANDS], {
       scope: { type: "chat", chat_id: 42 },
     });
   });

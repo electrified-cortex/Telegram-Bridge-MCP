@@ -28,9 +28,18 @@ let _active = false;
 let _maxUpdates = 50;
 let _buffer: SessionEntry[] = [];
 
+// Auto-dump state — fires callback when buffer reaches threshold, then caller
+// resets the buffer so recording continues into the next window.
+let _autoDumpThreshold: number | null = null;
+let _autoDumpCallback: (() => Promise<void>) | null = null;
+let _dumpInFlight = false;
+
 export function startRecording(maxUpdates: number = 50): void {
   _active = true;
   _maxUpdates = maxUpdates;
+  _autoDumpThreshold = null;
+  _autoDumpCallback = null;
+  _dumpInFlight = false;
   _buffer = [];
 }
 
@@ -45,6 +54,18 @@ export function isRecording(): boolean {
 function pushEntry(entry: SessionEntry): void {
   if (_buffer.length >= _maxUpdates) _buffer.shift();
   _buffer.push(entry);
+  if (
+    _autoDumpThreshold !== null &&
+    _autoDumpCallback !== null &&
+    _buffer.length >= _autoDumpThreshold &&
+    !_dumpInFlight
+  ) {
+    _dumpInFlight = true;
+    const cb = _autoDumpCallback;
+    void Promise.resolve().then(async () => {
+      try { await cb(); } finally { _dumpInFlight = false; }
+    });
+  }
 }
 
 /** Called by advanceOffset() — records an inbound user update. */
@@ -82,4 +103,19 @@ export function clearRecording(): void {
 
 export function getMaxUpdates(): number {
   return _maxUpdates;
+}
+
+/**
+ * Configures automatic dumping: when the buffer hits `threshold` entries the
+ * callback fires asynchronously. Callback should dump the log then call
+ * `clearRecording()` to reset for the next window. Pass `null` to disable.
+ */
+export function setAutoDump(threshold: number | null, callback: (() => Promise<void>) | null): void {
+  _autoDumpThreshold = threshold;
+  _autoDumpCallback = callback;
+  _dumpInFlight = false;
+}
+
+export function getAutoDumpThreshold(): number | null {
+  return _autoDumpThreshold;
 }

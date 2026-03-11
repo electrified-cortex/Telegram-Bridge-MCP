@@ -17,7 +17,9 @@ Start a persistent Telegram chat loop using the available Telegram Bridge MCP to
 - **Voice responses** — Speak replies aloud via `send_message` with `voice: true` (requires TTS). Operators can listen while driving or multitasking. To send an existing audio file, use `send_voice` instead.
 - **Interactive buttons** — Use `send_confirmation` or `choose` for human-friendly Yes/No decisions and multi-option menus. Humans prefer clicking buttons over typing.
 - **Temporary Messages** — Use `send_temp_message` to indicate "Thinking...", "Investigating...", or "On it!". Humans like to know what's going on.
-- **Reactions** — Use `set_reaction` to help reflect acknowledgment or activity.
+- **Reactions** — Use `set_reaction` to help reflect acknowledgment or activity.  Try and use reactions to indicate your current state of mind. For example, a thinking face when processing a complex request, a thumbs up when confirming an action, or a wave when saying hello or goodbye.  Voice messages from the operator automatically have reactions but it may be better to override the default salute reaction depending on if you need to think more or what kind of action you need to take.
+- **Slash Commands** — Use `set_commands` to register a live bot-menu at any time. Commands arrive in `wait_for_message` as `{ type: "command", command: "status", args?: "..." }` — no text parsing needed. Register contextual commands as your task changes (e.g. `/dump`, `/cancel`, `/status`). The menu is automatically cleared when the server shuts down, so registered commands always reflect capabilities that are actually available.
+  - Suggested startup menu: `set_commands([{command:"dump",description:"Dump session record"},{command:"cancel",description:"Cancel current task"},{command:"exit",description:"End session"}])`
 
 ## The Loop
 

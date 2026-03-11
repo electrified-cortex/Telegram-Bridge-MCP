@@ -5,6 +5,7 @@ import path, { resolve } from "path";
 import { tmpdir } from "os";
 import { enqueueUpdates, dequeueMatch } from "./update-buffer.js";
 import { recordUpdate } from "./session-recording.js";
+import { handleIfBuiltIn, isBuiltInPanelQuery } from "./built-in-commands.js";
 
 /** Directory where downloaded files are stored — only local paths under this dir are allowed for file uploads. */
 export const SAFE_FILE_DIR = resolve(tmpdir(), "telegram-bridge-mcp");
@@ -682,17 +683,24 @@ export async function pollUntil<T>(
     advanceOffset(updates);
     const allowed = filterAllowedUpdates(updates);
 
-    const result = matcher(allowed);
+    // Intercept built-in commands and panel callback queries — never deliver to agent
+    const forwarded: Update[] = [];
+    for (const u of allowed) {
+      const consumed = await handleIfBuiltIn(u);
+      if (!consumed) forwarded.push(u);
+    }
+
+    const result = matcher(forwarded);
     if (result !== undefined) {
       // Buffer any non-matching updates from the same batch — nothing is dropped.
-      const rest = allowed.filter((u) => matcher([u]) === undefined);
+      const rest = forwarded.filter((u) => matcher([u]) === undefined);
       if (rest.length > 0) enqueueUpdates(rest);
       return { match: result, missed: [] };
     }
 
     // No match — buffer these updates so other tools can consume them later.
     // Nothing is ever dropped.
-    if (allowed.length > 0) enqueueUpdates(allowed);
+    if (forwarded.length > 0) enqueueUpdates(forwarded);
   }
 
   return { match: undefined, missed: [] };

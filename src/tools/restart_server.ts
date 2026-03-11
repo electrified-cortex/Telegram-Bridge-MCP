@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toResult } from "../telegram.js";
+import { clearCommandsOnShutdown } from "../shutdown.js";
 
 /**
  * Gracefully exits the MCP server process.
@@ -19,7 +20,7 @@ export function register(server: McpServer) {
     async () => {
       // Send the response first so the caller gets confirmation before we exit
       const result = toResult({ restarting: true });
-      setImmediate(() => process.exit(0));
+      setImmediate(() => void clearCommandsOnShutdown().finally(() => process.exit(0)));
       return result;
     }
   );

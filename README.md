@@ -25,6 +25,7 @@ Once configured, your AI assistant can:
 - **Send messages** to your Telegram chat — plain text, formatted Markdown, photos
 - **Ask questions** and wait for your reply — as free text or button choices
 - **Post live status updates** — an in-place checklist that updates as tasks progress
+- **Register slash commands** — dynamically set the bot's `/command` menu; commands arrive as structured `{ type: "command", command: "status" }` payloads, no text parsing needed
 - **React to messages** — emoji reactions instead of noise text
 - **Transcribe voice messages** — speak your reply; it arrives as text
 - **Send and receive files** — send documents/photos from disk or URL; receive any file type and download on demand
@@ -147,12 +148,12 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 ### Interaction primitives
 
 `wait_for_message` · `wait_for_callback_query` · `answer_callback_query`
-
+`wait_for_message` returns a structured payload for every message type including `{ type: "command", command: "status", args?: "..." }` when the operator taps a slash command from the bot menu — no text parsing needed.
 ### Info & utilities
 
 `get_me` · `get_chat` · `set_commands` · `set_reaction` · `get_update` · `get_updates` · `restart_server`
 
-`set_commands` — registers (or clears) the bot's slash-command menu in the active chat. Pass `[{command, description}, ...]` to show commands in Telegram's autocomplete; pass `[]` to remove the menu.
+`set_commands` — registers (or clears) the bot's slash-command menu in the active chat. Pass `[{command, description}, ...]` to show commands in Telegram's autocomplete; pass `[]` to remove the menu. Commands are automatically cleared when the server shuts down (SIGTERM, SIGINT, or `restart_server`) so the menu never shows stale options.
 
 ---
 
