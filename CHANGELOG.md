@@ -5,26 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-03-11
+
 ### Changed
 
 - **`send_temp_message` TTL** — default raised from 30 s to 300 s (5 minutes); maximum raised from 300 s to 600 s (10 minutes)
 - **`clearPendingTemp` grace period** — instead of deleting immediately when any outbound tool fires, the temp message now lingers for 10 seconds so the user can still read it if the real response arrives fast
-
-### Added
-
-- **CI workflow** — new `.github/workflows/ci.yml` runs tests and uploads coverage to Codecov on every push/PR to `master`
-- **Codecov integration** — coverage badge is now live and tied to the actual CI run
-- **Cosign image signing** — every Docker image is signed with keyless Cosign (GitHub OIDC) in the publish workflow
-- **SBOM attestation** — `sbom: true` in `docker/build-push-action`; inspect via `docker buildx imagetools inspect --format '{{json .SBOM}}'`
-- **Full build provenance** — `provenance: mode=max`; inspect via `docker buildx imagetools inspect --format '{{json .Provenance}}'`
-- **SHA-pinned GitHub Actions** — all actions in both workflows now reference exact commit SHAs to prevent supply-chain substitution attacks
-- **Dependabot `github-actions` ecosystem** — weekly PRs to keep action pins current
-- **Image verification docs** — `## Docker` section in README documents `cosign verify`, SBOM inspect, and provenance inspect commands
-
-### Changed
-
-- README badges replaced with live dynamic badges (CI status, Docker publish status, Codecov coverage, npm version, GHCR link, MIT license)
-- `publish.yml` permissions expanded with `id-token: write` and `attestations: write`
 
 ## [2.0.0] — 2026-03-07
 
