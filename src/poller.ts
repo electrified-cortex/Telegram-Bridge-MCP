@@ -6,7 +6,7 @@
  * The three-phase reaction lifecycle (✍ → � → 🫡) is managed across the pipeline:
  *   ✍  = transcribing (set by poller)
  *   😴 = queued, waiting for agent (set by poller after transcription)
- *   🫡 = acknowledged by agent (set by dequeue_update — not yet implemented)
+ *   🫡 = acknowledged by agent (set by dequeue_update on receipt)
  */
 
 import type { Update } from "grammy/types";

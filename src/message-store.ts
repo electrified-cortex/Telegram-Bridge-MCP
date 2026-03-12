@@ -97,10 +97,9 @@ export interface TimelineEvent {
   _update?: Update;
 }
 
-/** Queued reference to a timeline event, tagged with its lane. */
+/** Queued reference to a timeline event. */
 interface QueueItem {
   event: TimelineEvent;
-  lane: "response" | "message";
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +255,7 @@ export function recordInbound(update: Update, transcribedText?: string): void {
     // Callbacks are indexed by their own position in the queue, not by target.
     _timeline.push(evt);
     evictTimeline();
-    _responseLane.enqueue({ event: evt, lane: "response" });
+    _responseLane.enqueue({ event: evt });
     notifyWaiters();
     return;
   }
@@ -286,7 +285,7 @@ export function recordInbound(update: Update, transcribedText?: string): void {
     _timeline.push(evt);
     evictTimeline();
     // Reactions don't overwrite the message index — they reference it
-    _responseLane.enqueue({ event: evt, lane: "response" });
+    _responseLane.enqueue({ event: evt });
     notifyWaiters();
     return;
   }
@@ -307,7 +306,7 @@ export function recordInbound(update: Update, transcribedText?: string): void {
       _update: update,
     };
     pushEvent(evt);
-    _messageLane.enqueue({ event: evt, lane: "message" });
+    _messageLane.enqueue({ event: evt });
     notifyWaiters();
     return;
   }
@@ -478,12 +477,12 @@ export function dequeue(): TimelineEvent | undefined {
 export function dequeueMatch<T>(
   predicate: (event: TimelineEvent) => T | undefined,
 ): T | undefined {
-  return _scanAndRemove(_responseLane, predicate)
-    ?? _scanAndRemove(_messageLane, predicate);
+  return scanAndRemove(_responseLane, predicate)
+    ?? scanAndRemove(_messageLane, predicate);
 }
 
 /** Drain a lane, extract the first match, re-enqueue the rest. */
-function _scanAndRemove<T>(
+function scanAndRemove<T>(
   lane: SimpleQueue<QueueItem>,
   predicate: (event: TimelineEvent) => T | undefined,
 ): T | undefined {
@@ -499,6 +498,10 @@ function _scanAndRemove<T>(
     }
     lane.enqueue(item);
   }
+  // If non-matched items were re-enqueued, wake any waiters that registered
+  // after the original notifyWaiters() was already consumed (prevents up to
+  // timeout-length stall in ask/choose when an unrelated event was scanned).
+  if (lane.count > 0) notifyWaiters();
   return found;
 }
 

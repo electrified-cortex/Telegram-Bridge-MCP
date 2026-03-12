@@ -132,9 +132,11 @@ export function register(server: McpServer) {
       try {
         switch (fileType) {
           case "photo": {
+            const mediaResult = resolveMediaSource(file);
+            if ("code" in mediaResult) return toError(mediaResult);
             await showTyping(30, "upload_photo");
             const msg = await callApi(() =>
-              getApi().sendPhoto(chatId, file, {
+              getApi().sendPhoto(chatId, mediaResult.source, {
                 caption: resolvedCaption.text,
                 parse_mode: resolvedCaption.parse_mode,
                 disable_notification,

@@ -11,7 +11,8 @@ const REACT_SALUTE = "\uD83E\uDEE1" as ReactionEmoji; // 🫡
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
 function ackVoice(event: TimelineEvent): void {
   if (event.from !== "user" || event.content.type !== "voice") return;
-  const chatId = typeof resolveChat() === "number" ? resolveChat() as number : undefined;
+  const resolved = resolveChat();
+  const chatId = typeof resolved === "number" ? resolved : undefined;
   if (!chatId) return;
   void trySetMessageReaction(chatId, event.id, REACT_SALUTE)
     .then((ok) => { if (!ok) process.stderr.write(`[dequeue] ack 🫡 failed for voice msg ${event.id}\n`); });

@@ -1,6 +1,6 @@
 import { Api, GrammyError, HttpError, InputFile } from "grammy";
 import type { ApiError, ReactionTypeEmoji, Update } from "grammy/types";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, realpathSync } from "fs";
 import path, { resolve } from "path";
 import { tmpdir } from "os";
 
@@ -17,7 +17,7 @@ export function resolveMediaSource(input: string): { source: string | InputFile 
     return { code: "UNKNOWN", message: "Plain HTTP URLs are not accepted — use HTTPS to prevent interception in transit." };
   if (input.startsWith("https://")) return { source: input };
   if (existsSync(input)) {
-    const resolvedPath = resolve(input);
+    const resolvedPath = realpathSync(input); // realpathSync resolves symlinks; resolve() is lexical only
     const rel = path.relative(SAFE_FILE_DIR, resolvedPath);
     if (rel.startsWith("..") || path.isAbsolute(rel))
       return { code: "UNKNOWN", message: `Local file access is restricted to ${SAFE_FILE_DIR}. Use download_file to stage files first.` };
@@ -473,7 +473,7 @@ export async function sendVoiceDirect(
     form.append("voice", new Blob([new Uint8Array(voice)], { type: "audio/ogg" }), "voice.ogg");
   } else if (typeof voice === "string" && !voice.startsWith("http") && existsSync(voice)) {
     // Only allow reading local files from the safe temp directory to prevent arbitrary file exfiltration
-    const resolved = resolve(voice);
+    const resolved = realpathSync(voice); // realpathSync resolves symlinks; resolve() is lexical only
     const safeRelative = path.relative(SAFE_FILE_DIR, resolved);
     if (safeRelative.startsWith("..") || path.isAbsolute(safeRelative)) {
       throw new Error(`Local file read restricted to ${SAFE_FILE_DIR}. Refusing to read: ${resolved}`);

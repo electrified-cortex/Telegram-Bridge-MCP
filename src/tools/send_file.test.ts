@@ -158,7 +158,7 @@ describe("send_file tool", () => {
     await call({ file: "/img/photo.jpg", caption: "Look!" });
     expect(mocks.sendPhoto).toHaveBeenCalledWith(
       42,
-      "/img/photo.jpg",
+      "/path/to/file",
       expect.objectContaining({ caption: expect.any(String) }),
     );
   });
@@ -215,7 +215,7 @@ describe("send_file tool", () => {
     await call({ file: "/img/pic.jpg", reply_to_message_id: 3 });
     expect(mocks.sendPhoto).toHaveBeenCalledWith(
       42,
-      "/img/pic.jpg",
+      "/path/to/file",
       expect.objectContaining({
         reply_parameters: { message_id: 3 },
       }),

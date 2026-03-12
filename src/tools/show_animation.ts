@@ -9,7 +9,8 @@ const DESCRIPTION =
   "Multiple frames = cycling animation (min 1000ms interval). " +
   "Only one animation at a time — starting a new one cancels the previous. " +
   "Cancel with cancel_animation, or let it auto-clean on timeout. " +
-  "Avoid emoji-only frames — Telegram renders solo emoji as large animated stickers.";
+  "A single emoji works well as a static placeholder (e.g. [\"🤔\"] or [\"⏳\"]). " +
+  "Avoid cycling multiple emoji-only frames — Telegram renders solo emoji as large animated stickers, so rapid edits look jarring.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -20,7 +21,7 @@ export function register(server: McpServer) {
         frames: z
           .array(z.string())
           .default([...DEFAULT_FRAMES])
-          .describe("Animation frames. Single frame = static placeholder. Default: [\".\", \"..\", \"...\"]. Avoid emoji-only frames (Telegram renders them as animated stickers)."),
+          .describe("Animation frames. Single frame = static placeholder. Default: [\".\", \"..\", \"...\"]. A single emoji (e.g. [\"🤔\"]) works great as a static placeholder. Avoid cycling multiple emoji-only frames (Telegram renders them as large animated stickers)."),
         interval: z
           .number()
           .int()

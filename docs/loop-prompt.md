@@ -20,11 +20,12 @@ Start a persistent Telegram chat loop using the available Telegram Bridge MCP to
 ## The Loop
 
 ```txt
-dequeue_update() → show_typing → do work → reply via Telegram → repeat
+dequeue_update() → show_animation → do work → reply via Telegram → repeat
 ```
 
+- **Show animation by default.** Call `show_animation()` as soon as you receive a message that requires any thinking or work. The animation is free — it gets transparently replaced by your next real message (no extra API calls, no message bloat). Only skip animation for trivial instant replies (a quick reaction or one-liner). A single emoji like `["🤔"]` or `["⏳"]` works well as a static placeholder — avoid cycling multiple emoji-only frames though (Telegram renders solo emoji as large stickers, so rapid edits look jarring).
+- Call `cancel_animation()` when you're done — or just let it be replaced by your reply.
 - After any task, drain first: call `dequeue_update(timeout: 0)` until `empty: true`, then resume blocking with `dequeue_update()` (no args).
-
 - On **timeout**: notify the operator (silent) that no message was received and you'll check again in 5 minutes, then wait 5 minutes before calling `dequeue_update` again. Double the interval on each successive timeout (5 min → 10 → 20 → …). Reset the interval when a message is received.
 - On **`exit`**: send goodbye.
 - **All output**: send through Telegram — the operator is on their phone.
