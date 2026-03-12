@@ -63,7 +63,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 
 # Resource files read at runtime by the MCP server
-COPY BEHAVIOR.md COMMUNICATION.md FORMATTING.md SETUP.md LOOP-PROMPT.md ./
+COPY docs/behavior.md docs/communication.md docs/formatting.md docs/setup.md docs/loop-prompt.md ./docs/
 COPY package.json ./
 
 # Cache dir for Whisper/TTS model weights — mount a volume here to persist

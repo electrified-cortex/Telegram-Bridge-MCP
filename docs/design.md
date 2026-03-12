@@ -46,7 +46,7 @@ Tools are grouped by abstraction level.
 
 | Tool | Description |
 | --- | --- |
-| `get_agent_guide` | Returns BEHAVIOR.md — the behavioral guide for this server. Call at session start. |
+| `get_agent_guide` | Returns behavior.md — the behavioral guide for this server. Call at session start. |
 | `set_topic` | Sets a default title prepended to all outbound messages as `[Title]`. Useful when multiple VS Code windows share the same Telegram chat — each process labels its messages so you can tell which agent sent what. Pass empty string to clear. Scoped to this server process. |
 | `notify` | Sends a titled, severity-coded notification with optional body. Supports silent delivery. |
 | `ask` | Sends a question and blocks until the user replies with free text or voice. |
@@ -124,11 +124,11 @@ Five Markdown documents are exposed as MCP resources and via `get_agent_guide`:
 
 | URI | File | Description |
 | --- | --- | --- |
-| `telegram-bridge-mcp://agent-guide` | `BEHAVIOR.md` | Behavioral guide: personality, tool conventions, formatting rules |
-| `telegram-bridge-mcp://communication-guide` | `COMMUNICATION.md` | Tool selection, commit/push flow, loop rules, and multi-step task patterns |
+| `telegram-bridge-mcp://agent-guide` | `behavior.md` | Behavioral guide: personality, tool conventions, formatting rules |
+| `telegram-bridge-mcp://communication-guide` | `communication.md` | Tool selection, commit/push flow, loop rules, and multi-step task patterns |
 | `telegram-bridge-mcp://quick-reference` | `.github/instructions/telegram-communication.instructions.md` | Hard rules + tool selection table — compact injected rules card |
-| `telegram-bridge-mcp://setup-guide` | `SETUP.md` | Step-by-step setup guide for new users |
-| `telegram-bridge-mcp://formatting-guide` | `FORMATTING.md` | Markdown/MarkdownV2/HTML formatting reference |
+| `telegram-bridge-mcp://setup-guide` | `setup.md` | Step-by-step setup guide for new users |
+| `telegram-bridge-mcp://formatting-guide` | `formatting.md` | Markdown/MarkdownV2/HTML formatting reference |
 
 ---
 
@@ -155,7 +155,7 @@ All tools that send text default to `parse_mode: "Markdown"`. The server auto-co
 
 Explicit `parse_mode: "MarkdownV2"` and `parse_mode: "HTML"` are also supported for full control.
 
-See `FORMATTING.md` (or the `telegram-bridge-mcp://formatting-guide` resource) for the full reference.
+See `formatting.md` (or the `telegram-bridge-mcp://formatting-guide` resource) for the full reference.
 
 ---
 
@@ -213,11 +213,12 @@ telegram-bridge-mcp/
 │       ├── set_reaction.ts
 │       ├── dump_session_record.ts
 │       └── restart_server.ts
-├── BEHAVIOR.md               # Agent behavioral guide (also served as MCP resource)
-├── COMMUNICATION.md          # Communication patterns (also served as MCP resource)
-├── FORMATTING.md             # Formatting reference (also served as MCP resource)
-├── SETUP.md                  # Setup guide (also served as MCP resource)
-├── LOOP-PROMPT.md            # Sample loop prompt for VS Code Copilot agent sessions
+├── docs/
+│   ├── behavior.md               # Agent behavioral guide (also served as MCP resource)
+│   ├── communication.md          # Communication patterns (also served as MCP resource)
+│   ├── formatting.md             # Formatting reference (also served as MCP resource)
+│   ├── setup.md                  # Setup guide (also served as MCP resource)
+│   └── loop-prompt.md            # Sample loop prompt for VS Code Copilot agent sessions
 ├── LICENSE                   # AGPL-3.0
 ├── package.json
 └── tsconfig.json

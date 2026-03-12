@@ -98,11 +98,11 @@ export function createServer(): McpServer {
 
   // ── Resources ────────────────────────────────────────────────────────────
   const agentGuideContent = readFileSync(
-    join(__dirname, "..", "BEHAVIOR.md"),
+    join(__dirname, "..", "docs", "behavior.md"),
     "utf-8"
   );
   const communicationContent = readFileSync(
-    join(__dirname, "..", "COMMUNICATION.md"),
+    join(__dirname, "..", "docs", "communication.md"),
     "utf-8"
   );
   // Strip YAML frontmatter (--- ... ---) before serving as a resource
@@ -112,11 +112,11 @@ export function createServer(): McpServer {
   );
   const quickReferenceContent = quickReferenceRaw.replace(/^---[\s\S]*?---\n/, "").trimStart();
   const setupContent = readFileSync(
-    join(__dirname, "..", "SETUP.md"),
+    join(__dirname, "..", "docs", "setup.md"),
     "utf-8"
   );
   const formattingContent = readFileSync(
-    join(__dirname, "..", "FORMATTING.md"),
+    join(__dirname, "..", "docs", "formatting.md"),
     "utf-8"
   );
 

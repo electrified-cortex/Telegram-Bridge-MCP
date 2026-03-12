@@ -20,7 +20,7 @@ export function register(server: McpServer) {
     },
     () => {
       const content = readFileSync(
-        join(__dirname, "..", "..", "BEHAVIOR.md"),
+        join(__dirname, "..", "..", "docs", "behavior.md"),
         "utf-8"
       );
       return toResult({ guide: content });

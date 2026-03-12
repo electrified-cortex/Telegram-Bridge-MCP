@@ -70,4 +70,4 @@ If your context compacts mid-session and you lose track of what the user was wor
 
 - The store is **in-memory only** — content is not written to disk and is lost when the server restarts.
 - Voice messages arrive pre-transcribed in the timeline (background poller handles transcription).
-- `dump_session_record` returns sensitive personal content. Follow the PII guidance in `SECURITY-MODEL.md`.
+- `dump_session_record` returns sensitive personal content. Follow the PII guidance in `security-model.md`.

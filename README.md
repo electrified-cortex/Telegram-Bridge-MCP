@@ -111,7 +111,7 @@ This interactive wizard:
 
 ### 5. Start a session
 
-Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will connect, announce itself over Telegram, and wait for your instructions.
+Paste the contents of `loop-prompt.md` into your AI assistant's chat. It will connect, announce itself over Telegram, and wait for your instructions.
 
 ---
 
@@ -166,7 +166,7 @@ Pre-built instruction files are included for common agent hosts:
 | `.github/copilot-instructions.md` | VS Code Copilot / GitHub Copilot | Auto-injected into every session |
 | `.github/instructions/telegram-communication.instructions.md` | VS Code Copilot (`applyTo: "**"`) | Auto-injected communication rules |
 | `CLAUDE.md` | Claude Code | Auto-read at session start |
-| `COMMUNICATION.md` | Any agent | Read explicitly or via MCP resource |
+| `communication.md` | Any agent | Read explicitly or via MCP resource |
 
 ---
 
@@ -192,7 +192,7 @@ The server enforces a strict single-user model:
 
 `chat_id` is never a tool parameter — it is resolved from `ALLOWED_USER_ID` transparently.
 
-See `docs/SETUP.md` for setup and security details.
+See `docs/setup.md` for setup and security details.
 
 ---
 

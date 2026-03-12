@@ -18,7 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com).
 - **`dump_session_record` PII warning** — description now explicitly states the tool dumps full conversation history including voice transcripts, file metadata, locations, and contacts; instructs agents not to call speculatively
 - **`get_message` speculative probe warning** — description now restricts calls to message IDs already known to the agent session
 - **Reaction PII stripped** — `update-sanitizer.ts` no longer includes `name` or `username` in `message_reaction` user objects; only the numeric user ID is forwarded to the agent
-- **SECURITY-MODEL.md** — added User Privacy & PII section documenting all privacy controls and the consent model
+- **security-model.md** — added User Privacy & PII section documenting all privacy controls and the consent model
 
 ### Fixed
 
@@ -195,7 +195,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com).
 - **TTS/STT error bodies no longer forwarded to LLM**: raw server error responses from TTS/STT providers are now logged to stderr only; a generic message is returned to the agent
 - **`filterAllowedUpdates` covers `message_reaction` and `my_chat_member`**: these update types now have sender/chat ID extracted and filtered against `ALLOWED_USER_ID`/`ALLOWED_CHAT_ID`
 - **`send_confirmation` validates callback data length**: `yes_data` and `no_data` are now validated against the 64-byte Telegram limit before sending
-- **Supply chain / behavior guide integrity note**: documented in `SECURITY-MODEL.md` that `BEHAVIOR.md` is loaded verbatim into agent context; tampered content would inject instructions
+- **Supply chain / behavior guide integrity note**: documented in `security-model.md` that `behavior.md` is loaded verbatim into agent context; tampered content would inject instructions
 - **HTTPS startup warning for TTS/STT hosts**: server now emits a `[warn]` to stderr at startup if `TTS_HOST` or `STT_HOST` is set but does not use `https://`
 
 ---

@@ -3,7 +3,7 @@ applyTo: "**"
 ---
 # Telegram Communication — Hard Rules
 
-Full guide: `COMMUNICATION.md` · MCP resource: `telegram-bridge-mcp://communication-guide`
+Full guide: `communication.md` · MCP resource: `telegram-bridge-mcp://communication-guide`
 
 ---
 
@@ -31,5 +31,5 @@ Full guide: `COMMUNICATION.md` · MCP resource: `telegram-bridge-mcp://communica
 | Status / result | `notify` or `send_message` |
 | Multi-step task (3+) | `update_status` + `pin_message` |
 
-See `COMMUNICATION.md` for formatting, commit/push flow, pinning, and session end patterns.
+See `communication.md` for formatting, commit/push flow, pinning, and session end patterns.
 

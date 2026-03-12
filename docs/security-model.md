@@ -33,7 +33,7 @@ The operator's personal information (real name, Telegram username, chat descript
 | `get_message` | Allows lookup of any stored message by ID | Description restricts calls to message IDs already known to the agent session |
 | `update-sanitizer` (reaction events) | Raw Telegram reactions include reactor name and username | Name and username are stripped; only the numeric user ID is forwarded |
 
-**Agent guidance:** Tools in the `Agent Guide` (`BEHAVIOR.md`) instruct agents not to call identity-exposing tools without explicit operator request.
+**Agent guidance:** Tools in the `Agent Guide` (`behavior.md`) instruct agents not to call identity-exposing tools without explicit operator request.
 
 ---
 
@@ -97,13 +97,13 @@ Treat file tools as privileged operations and gate them accordingly in your MCP 
 
 ## Supply Chain / Behavior Guide Integrity
 
-`get_agent_guide` serves the contents of `BEHAVIOR.md` directly into the agent's context on every session start. If `BEHAVIOR.md` is modified (e.g., by a compromised dependency, CI step, or local access), an attacker could inject instructions into every agent session without the user noticing any change in tool output.
+`get_agent_guide` serves the contents of `behavior.md` directly into the agent's context on every session start. If `behavior.md` is modified (e.g., by a compromised dependency, CI step, or local access), an attacker could inject instructions into every agent session without the user noticing any change in tool output.
 
 Mitigations:
 
-- Keep the repository under version control and review `BEHAVIOR.md` in code review.
-- Sign or checksum `BEHAVIOR.md` in security-critical deployments.
-- Treat `BEHAVIOR.md` modifications as security-relevant changes.
+- Keep the repository under version control and review `behavior.md` in code review.
+- Sign or checksum `behavior.md` in security-critical deployments.
+- Treat `behavior.md` modifications as security-relevant changes.
 
 ---
 
