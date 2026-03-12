@@ -29,17 +29,17 @@ function renderStatus(
   return lines.join("\n");
 }
 
-/**
- * Renders a live task checklist. On first call (no message_id) creates the
- * message and returns the ID. Subsequent calls pass the message_id back to
- * edit it in-place. The agent keeps a running list of steps and updates their
- * status as work progresses.
- */
+const DESCRIPTION =
+  "Creates or updates a live task checklist message in Telegram. First call " +
+  "(no message_id) sends the message and returns its ID. Subsequent calls " +
+  "edit it in-place with the latest step statuses. Use throughout a " +
+  "multi-step agent task to give the user real-time progress.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "update_status",
     {
-      description: "Creates or updates a live task checklist message in Telegram. First call (no message_id) sends the message and returns its ID. Subsequent calls edit it in-place with the latest step statuses. Use throughout a multi-step agent task to give the user real-time progress.",
+      description: DESCRIPTION,
       inputSchema: {
         title: z.string().describe("Bold heading for the status block, e.g. \"Refactoring: src/auth.ts\""),
       steps: z

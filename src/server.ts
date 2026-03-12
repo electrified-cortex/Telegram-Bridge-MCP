@@ -53,7 +53,7 @@ export function createServer(): McpServer {
   registerUpdateStatus(server);
   registerSendConfirmation(server);
 
-  // ── Polling (V3: dequeue from store) ───────────────────────────────────
+  // ── Polling ─────────────────────────────────────────────────────────────
   registerDequeueUpdate(server);
   registerGetMessage(server);
 

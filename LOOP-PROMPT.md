@@ -6,27 +6,23 @@ Start a persistent Telegram chat loop using the available Telegram Bridge MCP to
 
 1. Call `get_agent_guide` — loads behavior rules and communication conventions.
 2. Read `telegram-bridge-mcp://quick-reference` — tool selection and hard rules.
-3. Call `get_update` in a loop until `remaining == 0` — drain stale messages one at a time.
+3. Drain stale messages: call `dequeue_update(timeout: 0)` in a loop until `pending == 0`.
 4. Send a **silent** `notify` that you're online and ready.
-5. Ask the operator whether they'd like the session recorded:
-   `send_confirmation("🧠 Enable temporary recall?", yes_text: "🔴 Record", no_text: "⬛ Skip")`
-   If **Yes**: call `start_session_recording(100)`, then read `SESSION-RECORDING.md` for full guidance on recording tools and workflows.
 
 ## Key Capabilities
 
-- **Voice responses** — Speak replies aloud via `send_message` with `voice: true` (requires TTS). Operators can listen while driving or multitasking. To send an existing audio file, use `send_voice` instead.
+- **Voice responses** — Use `send_text_as_voice` to speak replies aloud (requires TTS). Operators can listen while driving or multitasking. To send an existing audio file, use `send_file` instead.
 - **Interactive buttons** — Use `send_confirmation` or `choose` for human-friendly Yes/No decisions and multi-option menus. Humans prefer clicking buttons over typing.
-- **Temporary Messages** — Use `send_temp_message` to indicate "Thinking...", "Investigating...", or "On it!". Humans like to know what's going on.
-- **Reactions** — Use `set_reaction` to help reflect acknowledgment or activity.  Try and use reactions to indicate your current state of mind. For example, a thinking face when processing a complex request, a thumbs up when confirming an action, or a wave when saying hello or goodbye.  Voice messages from the operator automatically have reactions but it may be better to override the default salute reaction depending on if you need to think more or what kind of action you need to take.
+- **Reactions** — Use `set_reaction` to help reflect acknowledgment or activity. Try and use reactions to indicate your current state of mind. For example, a thinking face when processing a complex request, a thumbs up when confirming an action, or a wave when saying hello or goodbye. Voice messages from the operator automatically have reactions but it may be better to override the default salute reaction depending on if you need to think more or what kind of action you need to take.
 - **Slash Commands** — Use `set_commands` to register a live bot-menu at any time. Commands arrive in `wait_for_message` as `{ type: "command", command: "status", args?: "..." }` — no text parsing needed. Register contextual commands as your task changes (e.g. `/dump`, `/cancel`, `/status`). The menu is automatically cleared when the server shuts down, so registered commands always reflect capabilities that are actually available.
   - Suggested startup menu: `set_commands([{command:"dump",description:"Dump session record"},{command:"cancel",description:"Cancel current task"},{command:"exit",description:"End session"}])`
 
 ## The Loop
 
 ```txt
-wait_for_message → show_typing (or send_temp_message) → do work → reply via Telegram → repeat
+wait_for_message → show_typing → do work → reply via Telegram → repeat
 ```
 
 - On **timeout**: notify the operator (silent) that no message was received and you'll check again in 5 minutes, then wait 5 minutes before calling `wait_for_message` again. Double the interval on each successive timeout (5 min → 10 → 20 → …). Reset the interval when a message is received.
-- On **`exit`**: if recording is active, `dump_session_record(stop: true)` first, then send goodbye.
+- On **`exit`**: send goodbye.
 - **All output**: send through Telegram — the operator is on their phone.

@@ -44,6 +44,7 @@ If your context compacts or you lose track of conversation state, use `get_prior
 ```
 
 Ring buffer stores the last 100 updates (all types: messages, reactions, callbacks, etc.). Use `filter` to focus on specific senders:
+
 - `"user"` — updates from the operator only
 - `"bot"` — updates from the bot (echoes, confirmations)
 - A specific user ID (number) — updates from that exact user
@@ -62,6 +63,7 @@ After any task completes, drain the buffer before blocking:
 `remaining` is the count still buffered after the call. Ignoring it means messages queued while you were busy get silently dropped.
 
 **Optional parameters:**
+
 - `update_id <number>` — jump directly to a specific update ID (if you know it)
 - `from_update_id <number>` — start reading from this ID forward (useful with `get_prior_update` to replay a section)
 - `filter` — limit to `"user"` (operator only), `"bot"` (bot's own messages), `<user ID>` (exact user), or `"all"` (default)
@@ -71,6 +73,7 @@ After any task completes, drain the buffer before blocking:
 Only use `get_updates` when you are **prepared to store and respond to every update it returns**. It dumps all pending updates at once with no `remaining` signal — if you handle only the first and move on, the rest are gone.
 
 Optional parameters (for replay):
+
 - `from_update_id <number>` — read all updates from this ID forward (useful for bulk replay after recovering context with `get_prior_update`)
 - `limit <number>` — max updates to return (default all available)
 - `filter` — same filter options as `get_update`
@@ -166,6 +169,7 @@ When the operator taps a command, `wait_for_message` delivers it as:
 - `@botname` suffixes (common in group chats) are stripped automatically
 
 **When to update the menu:**
+
 - At session start: register baseline commands (`/dump`, `/cancel`, `/exit`)
 - When entering a long task: add a `/cancel` command so the operator can abort
 - When the session ends or capabilities change: call `set_commands([])` to clear — or let shutdown handle it automatically
@@ -441,26 +445,20 @@ Always acknowledge receipt. Even for stickers or types you can't process, confir
 
 ## Tool usage: session recording
 
-Session recording is opt-in, in-memory, and agent-controlled. Use it when you need to review, summarize, or export updates from the current session.
-
-**The four tools:**
+The message store records all inbound and outbound events automatically — no opt-in needed. The rolling timeline holds up to 1000 events.
 
 | Tool | Purpose |
 | --- | --- |
-| `start_session_recording(max_updates?)` | Begin capturing updates. Resets any existing buffer. Default 50 updates, max 500. |
-| `get_session_updates(messages?, oldest_first?)` | Retrieve buffered updates as structured objects. Newest-first by default. |
-| `dump_session_record(clean?, stop?)` | Export entire buffer as a formatted text log. `clean=true` clears buffer; `stop=true` also stops recording. |
-| `cancel_session_recording()` | Stop recording and **discard** the buffer. Call `dump_session_record` or `get_session_updates` first if you need the data. |
+| `dump_session_record(limit?)` | Returns the most recent timeline events as JSON. Default 100, max 1000. |
 
 **Key rules:**
 
-- Recording is **off by default** — call `start_session_recording` to opt in.
-- `cancel_session_recording` discards the buffer. Always export first if the data matters.
-- `dump_session_record(stop: true)` is the idiomatic end-of-session call — it exports, stops, and clears in one step.
-- The buffer is in-memory only. It does not persist across server restarts.
-- The buffer is a ring — oldest entries are evicted when `max_updates` is reached.
+- The timeline is **always on**. Every message, reaction, callback, and bot reply is captured automatically.
+- The timeline is in-memory only. It does not persist across server restarts.
+- The timeline is a rolling window — oldest events are evicted when the 1000-event limit is reached.
+- `dump_session_record` contains sensitive user content. Only call when the user explicitly requests session history, context recovery, or an audit.
 
-See `SESSION-RECORDING.md` for full documentation and workflow examples.
+The `/session` built-in command provides a Telegram-side panel for start/stop recording with auto-dump support.
 
 ---
 
@@ -468,6 +466,6 @@ See `SESSION-RECORDING.md` for full documentation and workflow examples.
 
 After calling `restart_server` (or the server restarts for any reason):
 
-1. Call `get_updates` once (limit 100, timeout 0) to drain stale messages — discard everything
+1. Drain stale messages: call `dequeue_update(timeout: 0)` in a loop until `pending == 0`
 2. Send a "back online" message via `notify` describing what changed
 3. Return to `wait_for_message` loop

@@ -2,11 +2,17 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 
+const DESCRIPTION =
+  "Pins or unpins a message in a chat. Requires the bot to have " +
+  "appropriate admin rights. Pass unpin: true to unpin instead of pin. " +
+  "Omit message_id with unpin: true to unpin the most recently pinned " +
+  "message.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "pin_message",
     {
-      description: "Pins or unpins a message in a chat. Requires the bot to have appropriate admin rights. Pass unpin: true to unpin instead of pin. Omit message_id with unpin: true to unpin the most recently pinned message.",
+      description: DESCRIPTION,
       inputSchema: {
         message_id: z
         .number()

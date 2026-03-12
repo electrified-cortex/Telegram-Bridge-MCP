@@ -5,16 +5,20 @@ export default tseslint.config(
   // Ignored paths
   { ignores: ["dist/**", "coverage/**", "temp/**"] },
 
-  // TypeScript recommended rules (non-type-aware, fast)
-  ...tseslint.configs.recommended,
+  // Strict + type-checked: all recommended rules plus stricter alternatives.
+  // Requires the TypeScript compiler (slower) but catches far more issues.
+  ...tseslint.configs.strictTypeChecked,
+
+  // Enable type-aware linting via project service
+  {
+    languageOptions: {
+      parserOptions: { projectService: true },
+    },
+  },
 
   // Project-specific overrides
   {
     rules: {
-      // Enforced by TypeScript standards doc
-      "@typescript-eslint/no-non-null-assertion": "error",
-      "@typescript-eslint/no-explicit-any": "error",
-
       // Allow unused args when prefixed with _
       "@typescript-eslint/no-unused-vars": [
         "error",

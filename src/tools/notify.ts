@@ -15,15 +15,19 @@ const SEVERITY_PREFIX: Record<string, string> = {
   error: "⛔",
 };
 
-/**
- * Fire-and-forget styled notification. Handles formatting automatically so the
- * agent doesn't need to think about HTML or emoji conventions.
- */
+const DESCRIPTION =
+  "Sends a formatted notification message to a chat. Handles severity " +
+  "styling (info/success/warning/error) automatically with emoji prefixes " +
+  "and bold titles. The most common agent tool — use for build results, " +
+  "progress updates, and status changes. Default parse_mode is Markdown " +
+  "— write standard Markdown in the body and it is auto-converted, no " +
+  "escaping needed.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "notify",
     {
-      description: "Sends a formatted notification message to a chat. Handles severity styling (info/success/warning/error) automatically with emoji prefixes and bold titles. The most common agent tool — use for build results, progress updates, and status changes. Default parse_mode is Markdown — write standard Markdown in the body and it is auto-converted, no escaping needed.",
+      description: DESCRIPTION,
       inputSchema: {
         title: z.string().describe("Short bold heading, e.g. \"Build Failed\""),
       body: z.string().optional().describe("Optional detail paragraph"),
@@ -68,7 +72,7 @@ export function register(server: McpServer) {
         if (err) return toError(err);
         cancelTyping();
         resetAnimationTimeout();
-        await clearPendingTemp();
+        clearPendingTemp();
 
         const msg = await getApi().sendMessage(chatId, text, {
           parse_mode: finalMode,

@@ -48,7 +48,7 @@ describe("send_text tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.clearPendingTemp.mockResolvedValue(undefined);
+    mocks.clearPendingTemp.mockReturnValue(undefined);
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     const server = createMockServer();
     register(server);

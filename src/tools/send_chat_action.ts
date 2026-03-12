@@ -2,11 +2,15 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 
+const DESCRIPTION =
+  'Sends a one-shot chat action indicator (e.g. "typing\u2026") that lasts ~5 s. ' +
+  'For sustained typing, use show_typing instead.';
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_chat_action",
     {
-      description: 'Sends a one-shot chat action indicator (e.g. "typing\u2026") that lasts ~5 s. For sustained typing, use show_typing instead.',
+      description: DESCRIPTION,
       inputSchema: {
         action: z
         .enum([

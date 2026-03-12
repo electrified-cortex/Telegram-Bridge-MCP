@@ -7,11 +7,16 @@ import { cancelTyping } from "../typing-state.js";
 import { recordOutgoingEdit } from "../message-store.js";
 import { resetAnimationTimeout } from "../animation-state.js";
 
+const DESCRIPTION =
+  "Edits the text of a previously sent message. Supports Markdown " +
+  "auto-conversion (default), MarkdownV2, and HTML. Can optionally " +
+  "update or clear the inline keyboard.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "edit_message_text",
     {
-      description: "Edits the text of a previously sent message. Supports Markdown auto-conversion (default), MarkdownV2, and HTML. Can optionally update or clear the inline keyboard.",
+      description: DESCRIPTION,
       inputSchema: {
         message_id: z.number().int().describe("ID of the message to edit"),
       text: z.string().describe("New text content"),

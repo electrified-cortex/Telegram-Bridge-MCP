@@ -3,17 +3,19 @@ import { z } from "zod";
 import { toResult, toError, resolveChat } from "../telegram.js";
 import { startAnimation, DEFAULT_FRAMES } from "../animation-state.js";
 
+const DESCRIPTION =
+  "Start a server-managed cycling visual placeholder message. The animation " +
+  "auto-cancels after timeout seconds of inactivity. One frame = static placeholder. " +
+  "Multiple frames = cycling animation (min 1000ms interval). " +
+  "Only one animation at a time — starting a new one cancels the previous. " +
+  "Cancel with cancel_animation, or let it auto-clean on timeout. " +
+  "Avoid emoji-only frames — Telegram renders solo emoji as large animated stickers.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "show_animation",
     {
-      description:
-        "Start a server-managed cycling visual placeholder message. The animation " +
-        "auto-cancels after timeout seconds of inactivity. One frame = static placeholder. " +
-        "Multiple frames = cycling animation (min 1000ms interval). " +
-        "Only one animation at a time — starting a new one cancels the previous. " +
-        "Cancel with cancel_animation, or let it auto-clean on timeout. " +
-        "Avoid emoji-only frames — Telegram renders solo emoji as large animated stickers.",
+      description: DESCRIPTION,
       inputSchema: {
         frames: z
           .array(z.string())

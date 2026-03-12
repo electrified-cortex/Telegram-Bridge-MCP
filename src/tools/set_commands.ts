@@ -5,25 +5,20 @@ import { BUILT_IN_COMMANDS } from "../built-in-commands.js";
 
 const RE_BOT_COMMAND = /^[a-z0-9_]+$/;
 
-/**
- * Sets (or clears) the Telegram slash-command menu for the active chat.
- *
- * Commands registered here appear in Telegram's "/" autocomplete menu when
- * the user starts typing in the chat. Useful for surfacing escape-hatch
- * commands like `/cancel` or `/exit` during long-running agent tasks.
- *
- * Scope behaviour:
- *  - "chat"    → commands are scoped to the active chat only (default)
- *  - "default" → commands apply globally as the bot's default for all
- *                private chats (use sparingly — this affects every user)
- *
- * Pass an empty commands array to remove the command menu entirely.
- */
+const DESCRIPTION =
+  'Sets (or clears) the slash-command menu shown in Telegram when the user ' +
+  'types "/". Pass an array of {command, description} pairs to register ' +
+  'commands — e.g. [{command:"cancel",description:"Stop the current task"}]. ' +
+  'Pass an empty array to remove all commands. Commands are scoped to the ' +
+  'active chat by default ("chat" scope) so they only appear in this ' +
+  'conversation. Use scope "default" to set bot-wide defaults for all ' +
+  'private chats.';
+
 export function register(server: McpServer) {
   server.registerTool(
     "set_commands",
     {
-      description: 'Sets (or clears) the slash-command menu shown in Telegram when the user types "/". Pass an array of {command, description} pairs to register commands — e.g. [{command:"cancel",description:"Stop the current task"}]. Pass an empty array to remove all commands. Commands are scoped to the active chat by default ("chat" scope) so they only appear in this conversation. Use scope "default" to set bot-wide defaults for all private chats.',
+      description: DESCRIPTION,
       inputSchema: {
         commands: z
         .array(

@@ -68,13 +68,13 @@ function pushEntry(entry: SessionEntry): void {
   }
 }
 
-/** Called by advanceOffset() — records an inbound user update. */
+/** Records an inbound user update (called by message-store). */
 export function recordUpdate(update: Update): void {
   if (!_active) return;
   pushEntry({ direction: "user", update });
 }
 
-/** Called by send tools — records an outbound bot message. */
+/** Records an outbound bot message (called by message-store). */
 export function recordBotMessage(entry: Omit<BotEntry, "direction" | "timestamp">): void {
   if (!_active) return;
   pushEntry({ direction: "bot", timestamp: new Date().toISOString(), ...entry });
@@ -83,13 +83,6 @@ export function recordBotMessage(entry: Omit<BotEntry, "direction" | "timestamp"
 /** Returns all session entries (user + bot) in capture order (oldest first). */
 export function getSessionEntries(): SessionEntry[] {
   return [..._buffer];
-}
-
-/** @deprecated Use getSessionEntries() for the full conversation. Kept for backward compat. */
-export function getRecordedUpdates(): Update[] {
-  return _buffer
-    .filter((e): e is UserEntry => e.direction === "user")
-    .map((e) => e.update);
 }
 
 export function recordedCount(): number {

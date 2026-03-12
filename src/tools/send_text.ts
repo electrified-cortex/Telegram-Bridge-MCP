@@ -8,15 +8,17 @@ import { applyTopicToText } from "../topic-state.js";
 import { recordOutgoing } from "../message-store.js";
 import { resetAnimationTimeout } from "../animation-state.js";
 
+const DESCRIPTION =
+  "Sends a text message to the Telegram chat. Default parse_mode is Markdown — " +
+  "write standard Markdown (*bold*, _italic_, `code`, [links](url)) and it is " +
+  "auto-converted. Messages longer than 4096 characters are automatically split. " +
+  "For voice/TTS, use `send_text_as_voice` instead.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_text",
     {
-      description:
-        "Sends a text message to the Telegram chat. Default parse_mode is Markdown — " +
-        "write standard Markdown (*bold*, _italic_, `code`, [links](url)) and it is " +
-        "auto-converted. Messages longer than 4096 characters are automatically split. " +
-        "For voice/TTS, use `send_text_as_voice` instead.",
+      description: DESCRIPTION,
       inputSchema: {
         text: z
           .string()
@@ -39,7 +41,7 @@ export function register(server: McpServer) {
     async ({ text, parse_mode, disable_notification, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
-      await clearPendingTemp();
+      clearPendingTemp();
 
       const textWithTopic = applyTopicToText(text, parse_mode);
       const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;

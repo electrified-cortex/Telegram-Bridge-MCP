@@ -37,15 +37,17 @@ function detectType(file: string): FileType {
 // Tool
 // ---------------------------------------------------------------------------
 
+const DESCRIPTION =
+  "Sends a file (photo, document, video, audio, or voice note) to the chat. " +
+  "Accepts a local file path, public HTTPS URL, or Telegram file_id. " +
+  "Auto-detects the file type by extension when type=\"auto\" (default). " +
+  "For file_id inputs, specify type explicitly since there's no extension to detect.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_file",
     {
-      description:
-        "Sends a file (photo, document, video, audio, or voice note) to the chat. " +
-        "Accepts a local file path, public HTTPS URL, or Telegram file_id. " +
-        "Auto-detects the file type by extension when type=\"auto\" (default). " +
-        "For file_id inputs, specify type explicitly since there's no extension to detect.",
+      description: DESCRIPTION,
       inputSchema: {
         file: z
           .string()
@@ -120,7 +122,7 @@ export function register(server: McpServer) {
         if ("code" in mediaResult) return toError(mediaResult);
       }
 
-      await clearPendingTemp();
+      clearPendingTemp();
       resetAnimationTimeout();
 
       const replyParams = reply_to_message_id

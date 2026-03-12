@@ -11,18 +11,21 @@ import { applyTopicToText } from "../topic-state.js";
 import { pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut } from "./button-helpers.js";
 import { recordOutgoing } from "../message-store.js";
 
-/**
- * Sends a question with labeled option buttons and blocks until one is pressed.
- * Handles the full flow: send message → wait for callback_query → answer it
- * (to dismiss the spinner) → return the chosen option.
- *
- * Replaces the manual: send_text + answer_callback_query chain.
- */
+const DESCRIPTION =
+  "Sends a question with 2–8 labeled option buttons and waits until the " +
+  "user presses one. Returns { label, value } of the chosen option. " +
+  "Automatically removes the buttons and updates the message to show the " +
+  "chosen option. If the user sends a text or voice message instead, " +
+  "returns { skipped: true, text_response }. If no input arrives within " +
+  "timeout_seconds, buttons are removed, the message is marked Skipped, " +
+  "and returns { timed_out: true }. Multiple choose calls can be chained " +
+  "for questionnaires. Use for any single-selection choice.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "choose",
     {
-      description: "Sends a question with 2–8 labeled option buttons and blocks until the user presses one. Returns { label, value } of the chosen option. Automatically removes the buttons and updates the message to show the chosen option. If the user sends a text or voice message instead, returns { skipped: true, text_response }. If no input arrives within timeout_seconds, buttons are removed, the message is marked Skipped, and returns { timed_out: true }. Multiple choose calls can be chained for questionnaires. Use for any single-selection choice.",
+      description: DESCRIPTION,
       inputSchema: {
         question: z.string().describe("The question to display above the buttons"),
       options: z
@@ -99,7 +102,7 @@ export function register(server: McpServer) {
 
       try {
         cancelTyping();
-        await clearPendingTemp();
+        clearPendingTemp();
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown")), {
           parse_mode: "MarkdownV2",
           reply_markup: { inline_keyboard: rows },

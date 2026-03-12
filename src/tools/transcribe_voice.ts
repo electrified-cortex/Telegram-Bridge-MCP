@@ -3,11 +3,17 @@ import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { transcribeWithIndicator } from "../transcribe.js";
 
+const DESCRIPTION =
+  "Transcribes a Telegram voice message by its file_id. Use this when you " +
+  "have a voice message's file_id (from a voice event in the message store) " +
+  "but need to (re-)transcribe it — for example if transcription failed " +
+  "previously, or you want to re-process with updated settings.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "transcribe_voice",
     {
-      description: "Transcribes a Telegram voice message by its file_id. Use this when you have a voice message's file_id (from a voice event in the message store) but need to (re-)transcribe it — for example if transcription failed previously, or you want to re-process with updated settings.",
+      description: DESCRIPTION,
       inputSchema: {
         file_id: z
         .string()

@@ -1,8 +1,5 @@
 /**
  * Shared helpers for button-based interaction tools (choose, send_confirmation).
- *
- * V3: Polls from the message store queue instead of calling Telegram API directly.
- * The background poller feeds updates into the store; these helpers consume them.
  */
 
 import { getApi } from "../telegram.js";

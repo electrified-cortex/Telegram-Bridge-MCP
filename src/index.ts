@@ -48,6 +48,5 @@ void (async () => {
   } catch { /* ignore */ }
 })();
 
-// V3: Start the background poller — feeds all updates into the message store.
 startPoller();
 process.stderr.write("[info] background poller started\n");

@@ -23,17 +23,19 @@ function compactEvent(event: TimelineEvent): Record<string, unknown> {
   return rest;
 }
 
+const DESCRIPTION =
+  "Consume the next update from the queue. Response lane (reactions, callbacks) " +
+  "drains before message lane (new messages, commands, media). " +
+  "Waits up to timeout seconds if the queue is empty. " +
+  "Returns compact format: { id, event, from, content }. " +
+  "pending > 0 means more updates waiting — call again before blocking. " +
+  "Voice messages arrive pre-transcribed as { type: \"voice\", text: \"...\" }.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "dequeue_update",
     {
-      description:
-        "Consume the next update from the queue. Response lane (reactions, callbacks) " +
-        "drains before message lane (new messages, commands, media). " +
-        "Blocks up to timeout seconds if the queue is empty. " +
-        "Returns compact format: { id, event, from, content }. " +
-        "pending > 0 means more updates waiting — call again before blocking. " +
-        "Voice messages arrive pre-transcribed as { type: \"voice\", text: \"...\" }.",
+      description: DESCRIPTION,
       inputSchema: {
         timeout: z
           .number()

@@ -1,10 +1,6 @@
 /**
  * Always-on message store — the core of V3.
  *
- * Replaces both session-recording.ts (opt-in recording) and
- * update-buffer.ts (transient polling buffer) with a single unified
- * structure.
- *
  * Two access patterns over one set of objects:
  *   1. Timeline: ordered event log (dump_session_record)
  *   2. Index:    Map<message_id, Map<version, event>> (get_message)
@@ -23,6 +19,7 @@
 
 import type { Update } from "grammy/types";
 import Queue from "@tsdotnet/queue";
+import { recordUpdate, recordBotMessage } from "./session-recording.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,7 +105,7 @@ let _messageLane = new Queue<QueueItem>();
 
 /**
  * Listeners waiting for the next enqueue. Resolved when a new item is
- * pushed to either lane. Used by dequeue_update to block on empty queue.
+ * pushed to either lane. Used by dequeue_update to wait on empty queue.
  */
 let _waiters: Array<() => void> = [];
 
@@ -180,6 +177,8 @@ function pushEvent(event: TimelineEvent): void {
  *   agent never blocks on transcription.
  */
 export function recordInbound(update: Update, transcribedText?: string): void {
+  recordUpdate(update);
+
   // --- Edited message: silent store update, no enqueue ---
   if (update.edited_message) {
     const msgId = update.edited_message.message_id;
@@ -354,6 +353,12 @@ export function recordOutgoing(
   text?: string,
   caption?: string,
 ): void {
+  recordBotMessage({
+    message_id: messageId,
+    content_type: contentType,
+    text,
+    caption,
+  });
   const evt: TimelineEvent = {
     id: messageId,
     timestamp: now(),
@@ -373,6 +378,11 @@ export function recordOutgoingEdit(
   contentType: string,
   text?: string,
 ): void {
+  recordBotMessage({
+    message_id: messageId,
+    content_type: contentType,
+    text,
+  });
   const versions = _index.get(messageId);
   if (!versions) {
     // Message was evicted — just record as new
@@ -470,7 +480,7 @@ export function pendingCount(): number {
 
 /**
  * Returns a promise that resolves when a new item is enqueued.
- * Used by dequeue_update to block when the queue is empty.
+ * Used by dequeue_update to wait when the queue is empty.
  */
 export function waitForEnqueue(): Promise<void> {
   return new Promise((resolve) => {

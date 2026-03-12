@@ -3,18 +3,20 @@ import { z } from "zod";
 import { toError } from "../telegram.js";
 import { dumpTimeline, timelineSize, storeSize } from "../message-store.js";
 
+const DESCRIPTION =
+  "Returns the full conversation timeline as compact JSON — all inbound and outbound " +
+  "events since server start (rolling limit of 1000 events), including user messages, " +
+  "voice transcriptions, file metadata, locations, and contacts. " +
+  "This is a broad history dump containing sensitive user content. " +
+  "Only call when the user explicitly requests session history, context recovery, or an audit. " +
+  "Do not call speculatively or to discover prior context without user consent. " +
+  "Use limit to control output size.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "dump_session_record",
     {
-      description:
-        "Returns the full conversation timeline as compact JSON — all inbound and outbound " +
-        "events since server start (rolling limit of 1000 events), including user messages, " +
-        "voice transcriptions, file metadata, locations, and contacts. " +
-        "This is a broad history dump containing sensitive user content. " +
-        "Only call when the user explicitly requests session history, context recovery, or an audit. " +
-        "Do not call speculatively or to discover prior context without user consent. " +
-        "Use limit to control output size.",
+      description: DESCRIPTION,
       inputSchema: {
         limit: z
           .number()

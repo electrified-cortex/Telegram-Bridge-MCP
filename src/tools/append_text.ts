@@ -5,15 +5,17 @@ import { resolveParseMode } from "../markdown.js";
 import { getMessage, recordOutgoingEdit, CURRENT } from "../message-store.js";
 import { resetAnimationTimeout } from "../animation-state.js";
 
+const DESCRIPTION =
+  "Delta-append text to an existing message. The server reads the current text " +
+  "from the store, concatenates the new chunk after a separator, and edits the " +
+  "message in-place. Agent sends only the new chunk — O(1) token cost per call. " +
+  "Each append creates an edit event in the timeline with the full accumulated text.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "append_text",
     {
-      description:
-        "Delta-append text to an existing message. The server reads the current text " +
-        "from the store, concatenates the new chunk after a separator, and edits the " +
-        "message in-place. Agent sends only the new chunk — O(1) token cost per call. " +
-        "Each append creates an edit event in the timeline with the full accumulated text.",
+      description: DESCRIPTION,
       inputSchema: {
         message_id: z.number().int().describe("Message ID to append to"),
         text: z.string().describe("New chunk to append"),

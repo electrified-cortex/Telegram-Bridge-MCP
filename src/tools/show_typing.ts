@@ -3,20 +3,19 @@ import { z } from "zod";
 import { toResult, toError, resolveChat } from "../telegram.js";
 import { showTyping, cancelTyping } from "../typing-state.js";
 
-/**
- * Idempotent typing indicator with optional cancel mode.
- *
- * Starts the interval if not already running. If already running, extends the
- * deadline instead of spawning a second interval. Auto-cancelled when any real
- * message is sent (sendMessage, sendPhoto, etc. all call cancelTyping()).
- *
- * With cancel: true, immediately stops any active typing indicator.
- */
+const DESCRIPTION =
+  "Starts (or extends) a sustained background typing indicator that repeats " +
+  "every 4 s until the timeout expires or a real message is sent. " +
+  "Idempotent — safe to call multiple times; only one interval runs at a " +
+  "time. Cancelled automatically when any message is sent. Default timeout " +
+  "is 20 s. Pass cancel: true to immediately stop typing (replaces the old " +
+  "cancel_typing tool).";
+
 export function register(server: McpServer) {
   server.registerTool(
     "show_typing",
     {
-      description: "Starts (or extends) a sustained background typing indicator that repeats every 4 s until the timeout expires or a real message is sent. Idempotent — safe to call multiple times; only one interval runs at a time. Cancelled automatically when any message is sent. Default timeout is 20 s. Pass cancel: true to immediately stop typing (replaces the old cancel_typing tool).",
+      description: DESCRIPTION,
       inputSchema: {
         timeout_seconds: z
         .number()

@@ -8,13 +8,17 @@ const CONFIRM_DATA = "get_chat_yes";
 const DENY_DATA = "get_chat_no";
 const TIMEOUT_SECONDS = 60;
 
+const DESCRIPTION =
+  "Returns information about the configured chat: id, type, title, " +
+  "username, first/last name, and description. Requires user " +
+  "approval — a confirmation prompt is sent to the chat and the " +
+  "tool waits until the user approves or denies.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "get_chat",
     {
-      description:
-        "Returns information about the configured chat: id, type, title, username, first/last name, and description. " +
-        "Requires user approval — a confirmation prompt is sent to the chat and the tool blocks until the user approves or denies.",
+      description: DESCRIPTION,
     },
     async () => {
       const chatId = resolveChat();

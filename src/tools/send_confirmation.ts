@@ -8,24 +8,17 @@ import { applyTopicToText } from "../topic-state.js";
 import { pollButtonOrTextOrVoice, ackAndEditSelection, editWithTimedOut, editWithSkipped } from "./button-helpers.js";
 import { recordOutgoing } from "../message-store.js";
 
-/**
- * Convenience tool for agent→human Yes/No confirmation flows.
- *
- * Fully self-contained — mirrors `choose` but hardcoded to two options:
- *   1. Sends the question with Yes/No inline buttons
- *   2. Blocks until the user presses one (or timeout)
- *   3. Answers the callback_query (removes the spinner)
- *   4. Edits the message to show the chosen label (buttons removed)
- *   5. Returns { confirmed: true|false }
- *
- * Use `answer_callback_query` directly only when buttons must remain
- * interactive across multiple presses (e.g. broadcast / persistent keyboards).
- */
+const DESCRIPTION =
+  "Sends a Yes/No confirmation message and waits until the user presses a " +
+  "button. Automatically removes buttons and updates the message to show the " +
+  "chosen option. Returns { confirmed: true|false }, or { timed_out: true } " +
+  "if the timeout expires without input.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_confirmation",
     {
-      description: "Sends a Yes/No confirmation message and blocks until the user presses a button. Automatically removes buttons and updates the message to show the chosen option. Returns { confirmed: true|false }, or { timed_out: true } if the timeout expires without input.",
+      description: DESCRIPTION,
       inputSchema: {
         text: z
           .string()
@@ -80,7 +73,7 @@ export function register(server: McpServer) {
 
       try {
         cancelTyping();
-        await clearPendingTemp();
+        clearPendingTemp();
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {
           parse_mode: "MarkdownV2",
           reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,

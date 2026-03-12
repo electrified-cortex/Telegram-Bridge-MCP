@@ -75,11 +75,18 @@ function resolveEmoji(input: string): string {
   return input;
 }
 
+const DESCRIPTION =
+  "Sets an emoji reaction on a message. Non-premium bots can set up to 1 " +
+  "reaction per message. Pass an empty string to remove all reactions. " +
+  "Supports semantic aliases like 'thinking', 'done', 'salute', or raw " +
+  "emoji. Use to acknowledge messages — e.g. 'approve' for confirmation, " +
+  "'salute' for task complete, 'reading' for noted.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "set_reaction",
     {
-      description: "Sets an emoji reaction on a message. Non-premium bots can set up to 1 reaction per message. Pass an empty string to remove all reactions. Supports semantic aliases like 'thinking', 'done', 'salute', or raw emoji. Use to acknowledge messages — e.g. 'approve' for confirmation, 'salute' for task complete, 'reading' for noted.",
+      description: DESCRIPTION,
       inputSchema: {
         message_id: z.number().int().describe("ID of the message to react to"),
       emoji: z

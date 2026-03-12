@@ -7,17 +7,20 @@ import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { recordOutgoing } from "../message-store.js";
 import { resetAnimationTimeout } from "../animation-state.js";
 
+const DESCRIPTION =
+  "Synthesizes plain text to speech and sends it as a Telegram voice note. " +
+  "Requires TTS_HOST or OPENAI_API_KEY to be configured. " +
+  "IMPORTANT: All Markdown formatting and special symbols are stripped before " +
+  "synthesis — asterisks, underscores, backticks, brackets, and similar " +
+  "characters become noise in audio. Write the text as natural spoken language: " +
+  "no bullet points, no headers, no code blocks, no URLs. Punctuation like " +
+  "periods and commas helps pacing; everything else should be plain prose.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_text_as_voice",
     {
-      description:
-        "Synthesizes plain text to speech and sends it as a Telegram voice note. " +
-        "Requires TTS_HOST or OPENAI_API_KEY to be configured. " +
-        "IMPORTANT: All Markdown formatting and special symbols are stripped before synthesis — " +
-        "asterisks, underscores, backticks, brackets, and similar characters become noise in audio. " +
-        "Write the text as natural spoken language: no bullet points, no headers, no code blocks, no URLs. " +
-        "Punctuation like periods and commas helps pacing; everything else should be plain prose.",
+      description: DESCRIPTION,
       inputSchema: {
         text: z.string().describe("Text to synthesize and send as a voice note."),
         disable_notification: z.boolean().optional().describe("Send silently"),

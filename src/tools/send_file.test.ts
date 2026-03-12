@@ -55,7 +55,7 @@ describe("send_file tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.clearPendingTemp.mockResolvedValue(undefined);
+    mocks.clearPendingTemp.mockReturnValue(undefined);
     mocks.showTyping.mockResolvedValue(undefined);
     mocks.resolveMediaSource.mockReturnValue({ source: "/path/to/file" });
     const server = createMockServer();

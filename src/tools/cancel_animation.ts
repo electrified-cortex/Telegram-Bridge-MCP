@@ -3,15 +3,17 @@ import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { cancelAnimation } from "../animation-state.js";
 
+const DESCRIPTION =
+  "Stop the active animation. Without text: deletes the placeholder. " +
+  "With text: edits the placeholder to show the provided text, making it " +
+  "a permanent logged message. Returns { cancelled, message_id? }. " +
+  "No-op if no animation is active.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "cancel_animation",
     {
-      description:
-        "Stop the active animation. Without text: deletes the placeholder. " +
-        "With text: edits the placeholder to show the provided text, making it " +
-        "a permanent logged message. Returns { cancelled, message_id? }. " +
-        "No-op if no animation is active.",
+      description: DESCRIPTION,
       inputSchema: {
         text: z
           .string()

@@ -2,11 +2,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError } from "../telegram.js";
 
+const DESCRIPTION =
+  "Acknowledges a callback query from an inline button press. " +
+  "Must be called within 30 s of receiving the update. " +
+  "Optionally shows a toast or alert to the user.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "answer_callback_query",
     {
-      description: "Acknowledges a callback query from an inline button press. Must be called within 30 s of receiving the update. Optionally shows a toast or alert to the user.",
+      description: DESCRIPTION,
       inputSchema: {
         callback_query_id: z.string().describe("ID from the callback_query update"),
       text: z

@@ -7,16 +7,16 @@ import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToText } from "../topic-state.js";
 import { recordOutgoing, dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
 
-/**
- * Sends a question and blocks until the user types a reply.
- * V3: polls from the message store queue instead of calling Telegram API.
- * Voice messages arrive pre-transcribed by the background poller.
- */
+const DESCRIPTION =
+  "Sends a question to a chat and waits until the user replies " +
+  "with a text message. Returns the reply text directly. " +
+  "Use for open-ended prompts where a button isn't appropriate.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "ask",
     {
-      description: "Sends a question to a chat and blocks until the user replies with a text message. Returns the reply text directly. Use for open-ended prompts where a button isn't appropriate.",
+      description: DESCRIPTION,
       inputSchema: {
         question: z.string().describe("The question to send"),
       timeout_seconds: z
@@ -41,7 +41,7 @@ export function register(server: McpServer) {
 
       try {
         cancelTyping();
-        await clearPendingTemp();
+        clearPendingTemp();
         // Send the question
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown")), {
           parse_mode: "MarkdownV2",

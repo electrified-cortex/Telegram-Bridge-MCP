@@ -149,6 +149,7 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 
 `wait_for_message` · `wait_for_callback_query` · `answer_callback_query`
 `wait_for_message` returns a structured payload for every message type including `{ type: "command", command: "status", args?: "..." }` when the operator taps a slash command from the bot menu — no text parsing needed.
+
 ### Info & utilities
 
 `get_me` · `get_chat` · `set_commands` · `set_reaction` · `get_update` · `get_updates` · `restart_server`
