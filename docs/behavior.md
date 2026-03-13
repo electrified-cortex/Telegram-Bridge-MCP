@@ -124,6 +124,8 @@ Whenever the user's response can be one of a predictable set of options — yes/
 
 Only use `ask` or `dequeue_update` for truly open-ended free-text input where choices cannot be enumerated.
 
+For the full keyboard interaction taxonomy — when to use `send_message` vs `send_choice` vs `choose` vs `send_confirmation`, button types, and implementation notes — see [`docs/keyboard-interactions.md`](keyboard-interactions.md).
+
 ---
 
 ## Tool usage: `set_commands` and slash-command handling

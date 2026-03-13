@@ -3,6 +3,7 @@
 ## Added
 
 - **`send_choice` tool** — non-blocking one-shot keyboard; sends a message with 2–8 labeled option buttons and returns `{ message_id }` immediately; on the first button press the keyboard is automatically removed and the spinner dismissed (auto-lock), while the `callback_query` event still appears in `dequeue_update` for the agent to read; use `choose` when blocking is acceptable, `send_message` for persistent keyboards
+- **`keyboard-interactions.md`** — new doc formalising the four keyboard primitives (`send_message`, `send_choice`, `choose`, `send_confirmation`), the hierarchy, button types (momentary/toggle/rotary), implementation notes; linked from `behavior.md`
 - **`send_message` tool** — core send primitive; sends a message with optional inline keyboard and returns `{ message_id }` immediately (fire-and-forget); keyboard buttons arrive as `callback_query` events via `dequeue_update`; supports per-button styles, `reply_to_message_id`, `disable_notification`, and all parse modes; the foundation on which `choose` and `send_confirmation` are built
 - **`edit_message` tool** — core edit primitive; updates text, keyboard, or both on an existing message; pass `keyboard: null` to remove buttons; omit `text` to update keyboard only (calls `editMessageReplyMarkup` internally); omit `keyboard` to update text while preserving existing buttons
 
