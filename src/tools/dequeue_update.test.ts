@@ -129,4 +129,31 @@ describe("dequeue_update tool", () => {
     await call({ timeout: 0 });
     expect(mocks.waitForEnqueue).not.toHaveBeenCalled();
   });
+
+  // =========================================================================
+  // Issue #7 — timeout path should report real pendingCount, not hardcoded 0
+  // =========================================================================
+
+  it("reports real pendingCount on timeout, not hardcoded 0 (#7)", async () => {
+    mocks.dequeue.mockReturnValue(undefined);
+    // Items arrive just before timeout but aren't dequeued (race)
+    mocks.pendingCount.mockReturnValue(3);
+    mocks.waitForEnqueue.mockImplementation(
+      () => new Promise<void>((r) => setTimeout(r, 50)),
+    );
+    const result = await call({ timeout: 1 });
+    const data = parseResult(result);
+    expect(data.empty).toBe(true);
+    // Should reflect actual queue state, not hardcoded 0
+    expect(data.pending).toBe(3);
+  });
+
+  it("reports pending 0 on instant poll when queue is truly empty (#7)", async () => {
+    mocks.dequeue.mockReturnValue(undefined);
+    mocks.pendingCount.mockReturnValue(0);
+    const result = await call({ timeout: 0 });
+    const data = parseResult(result);
+    expect(data.empty).toBe(true);
+    expect(data.pending).toBe(0);
+  });
 });

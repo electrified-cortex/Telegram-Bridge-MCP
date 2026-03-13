@@ -2,11 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToText } from "../topic-state.js";
-import { recordOutgoing } from "../message-store.js";
-import { resetAnimationTimeout } from "../animation-state.js";
 
 const DESCRIPTION =
   "Sends a text message to the Telegram chat. Default parse_mode is Markdown — " +
@@ -41,7 +37,6 @@ export function register(server: McpServer) {
     async ({ text, parse_mode, disable_notification, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
-      clearPendingTemp();
 
       const textWithTopic = applyTopicToText(text, parse_mode);
       const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;
@@ -54,13 +49,12 @@ export function register(server: McpServer) {
       const chunks = splitMessage(finalText);
 
       try {
-        cancelTyping();
-        resetAnimationTimeout();
         const message_ids: number[] = [];
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i];
           const textErr = validateText(chunk);
           if (textErr) return toError(textErr);
+
           const msg = await callApi(() =>
             getApi().sendMessage(chatId, chunk, {
               parse_mode: finalMode,
@@ -69,13 +63,10 @@ export function register(server: McpServer) {
                 i === 0 && reply_to_message_id
                   ? { message_id: reply_to_message_id }
                   : undefined,
-            }),
+              _rawText: chunks.length === 1 ? text : undefined,
+            } as Record<string, unknown>),
           );
           message_ids.push(msg.message_id);
-          // Single message: store raw markdown (compatible with append_text re-conversion).
-          // Split messages: store the chunk content actually sent — prevents append_text
-          // from reading the full original text and exceeding Telegram's 4096-char limit.
-          recordOutgoing(msg.message_id, "text", chunks.length === 1 ? text : chunk);
         }
 
         if (message_ids.length === 1) {

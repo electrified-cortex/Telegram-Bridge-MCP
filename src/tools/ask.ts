@@ -1,11 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, resolveChat, toResult, toError, validateText } from "../telegram.js";
+import { getApi, resolveChat, toResult, toError, validateText, ackVoiceMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToText } from "../topic-state.js";
-import { recordOutgoing, dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
+import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
 
 const DESCRIPTION =
   "Sends a question to a chat and waits until the user replies " +
@@ -40,14 +38,12 @@ export function register(server: McpServer) {
       if (textErr) return toError(textErr);
 
       try {
-        cancelTyping();
-        clearPendingTemp();
         // Send the question
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown")), {
           parse_mode: "MarkdownV2",
           reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
-        });
-        recordOutgoing(sent.message_id, "text", question);
+          _rawText: question,
+        } as Record<string, unknown>);
 
         // Poll from the store queue for text or voice messages after our question.
         // Voice messages arrive pre-transcribed by the background poller.
@@ -56,7 +52,9 @@ export function register(server: McpServer) {
         while (Date.now() < deadline) {
           const match = dequeueMatch((event: TimelineEvent) => {
             if (event.event === "message" && event.id > sent.message_id) {
-              if (event.content.type === "text" || event.content.type === "voice") {
+              if (event.content.type === "text"
+                || event.content.type === "voice"
+                || event.content.type === "command") {
                 return event;
               }
             }
@@ -65,11 +63,20 @@ export function register(server: McpServer) {
 
           if (match) {
             if (match.content.type === "voice") {
+              ackVoiceMessage(match.id);
               return toResult({
                 timed_out: false,
                 text: match.content.text ?? "[no transcription]",
                 message_id: match.id,
                 voice: true,
+              });
+            }
+            if (match.content.type === "command") {
+              return toResult({
+                timed_out: false,
+                command: match.content.text,
+                args: match.content.data,
+                message_id: match.id,
               });
             }
             return toResult({

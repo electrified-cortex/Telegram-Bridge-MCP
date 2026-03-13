@@ -3,10 +3,6 @@ import { createMockServer, parseResult, isError, errorCode } from "./test-utils.
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
-  recordOutgoing: vi.fn(),
-  resetAnimationTimeout: vi.fn(),
-  cancelTyping: vi.fn(),
-  clearPendingTemp: vi.fn(),
   applyTopicToText: vi.fn((t: string) => t),
 }));
 
@@ -18,22 +14,6 @@ vi.mock("../telegram.js", async (importActual) => {
     resolveChat: () => 42,
   };
 });
-
-vi.mock("../message-store.js", () => ({
-  recordOutgoing: mocks.recordOutgoing,
-}));
-
-vi.mock("../animation-state.js", () => ({
-  resetAnimationTimeout: mocks.resetAnimationTimeout,
-}));
-
-vi.mock("../typing-state.js", () => ({
-  cancelTyping: mocks.cancelTyping,
-}));
-
-vi.mock("../temp-message.js", () => ({
-  clearPendingTemp: mocks.clearPendingTemp,
-}));
 
 vi.mock("../topic-state.js", () => ({
   applyTopicToText: mocks.applyTopicToText,
@@ -48,7 +28,6 @@ describe("send_text tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.clearPendingTemp.mockReturnValue(undefined);
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     const server = createMockServer();
     register(server);
@@ -123,24 +102,13 @@ describe("send_text tool", () => {
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("calls recordOutgoing with message_id and original text", async () => {
+  it("passes _rawText in sendMessage opts for proxy recording", async () => {
     await call({ text: "Hello" });
-    expect(mocks.recordOutgoing).toHaveBeenCalledWith(7, "text", "Hello");
-  });
-
-  it("calls resetAnimationTimeout", async () => {
-    await call({ text: "Hello" });
-    expect(mocks.resetAnimationTimeout).toHaveBeenCalledOnce();
-  });
-
-  it("calls cancelTyping before sending", async () => {
-    await call({ text: "Hello" });
-    expect(mocks.cancelTyping).toHaveBeenCalledOnce();
-  });
-
-  it("clears pending temp message before sending", async () => {
-    await call({ text: "Hello" });
-    expect(mocks.clearPendingTemp).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.any(String),
+      expect.objectContaining({ _rawText: "Hello" }),
+    );
   });
 
   it("returns error on API failure", async () => {

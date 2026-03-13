@@ -27,7 +27,8 @@ import { recordUpdate, recordBotMessage } from "./session-recording.js";
 class SimpleQueue<T> {
   private _items: T[] = [];
 
-  enqueue(item: T): void {
+  enqueue(item: T, maxSize?: number): void {
+    if (maxSize && this._items.length >= maxSize) this._items.shift();
     this._items.push(item);
   }
 
@@ -76,6 +77,8 @@ export interface EventContent {
   removed?: string[];
   /** Message ID this is a reply to (user replied to a specific message). */
   reply_to?: number;
+  /** Telegram file_id for downloadable media (doc, photo, video, audio, voice, animation). */
+  file_id?: string;
 }
 
 /**
@@ -112,6 +115,9 @@ const MAX_TIMELINE = 1000;
 /** Maximum unique message_ids in the index. */
 const MAX_MESSAGES = 500;
 
+/** Maximum items per queue lane — bounds memory for slow consumers. */
+const MAX_QUEUE_SIZE = 5000;
+
 /** Version key for the current (latest) state of a message. */
 export const CURRENT = -1;
 
@@ -127,6 +133,9 @@ let _index = new Map<number, Map<number, TimelineEvent>>();
 
 /** Insertion-ordered list of message_ids for index eviction. */
 let _insertionOrder: number[] = [];
+
+/** Highwater mark — highest message_id seen (from any source). */
+let _highestMessageId = 0;
 
 /** Two-lane queue — response lane items drain before message lane. */
 const _responseLane = new SimpleQueue<QueueItem>();
@@ -188,6 +197,7 @@ function pushEvent(event: TimelineEvent): void {
   evictTimeline();
   const versions = getOrCreateVersions(event.id);
   versions.set(CURRENT, event);
+  if (event.id > _highestMessageId) _highestMessageId = event.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +265,7 @@ export function recordInbound(update: Update, transcribedText?: string): void {
     // Callbacks are indexed by their own position in the queue, not by target.
     _timeline.push(evt);
     evictTimeline();
-    _responseLane.enqueue({ event: evt });
+    _responseLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
     notifyWaiters();
     return;
   }
@@ -285,7 +295,7 @@ export function recordInbound(update: Update, transcribedText?: string): void {
     _timeline.push(evt);
     evictTimeline();
     // Reactions don't overwrite the message index — they reference it
-    _responseLane.enqueue({ event: evt });
+    _responseLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
     notifyWaiters();
     return;
   }
@@ -306,8 +316,9 @@ export function recordInbound(update: Update, transcribedText?: string): void {
       _update: update,
     };
     pushEvent(evt);
-    _messageLane.enqueue({ event: evt });
+    _messageLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
     notifyWaiters();
+
     return;
   }
 
@@ -330,22 +341,26 @@ function buildMessageContent(
     return { type: "text", text: msg.text };
   }
   if (msg.voice)
-    return { type: "voice", text: transcribedText };
+    return { type: "voice", text: transcribedText, file_id: msg.voice.file_id };
   if (msg.document)
     return {
       type: "doc",
       name: msg.document.file_name,
       mime: msg.document.mime_type,
       caption: msg.caption,
+      file_id: msg.document.file_id,
     };
-  if (msg.photo)
-    return { type: "photo", caption: msg.caption };
+  if (msg.photo) {
+    const largest = msg.photo[msg.photo.length - 1];
+    return { type: "photo", caption: msg.caption, file_id: largest.file_id };
+  }
   if (msg.video)
     return {
       type: "video",
       name: msg.video.file_name,
       mime: msg.video.mime_type,
       caption: msg.caption,
+      file_id: msg.video.file_id,
     };
   if (msg.audio)
     return {
@@ -353,11 +368,12 @@ function buildMessageContent(
       name: msg.audio.title ?? msg.audio.file_name,
       mime: msg.audio.mime_type,
       caption: msg.caption,
+      file_id: msg.audio.file_id,
     };
   if (msg.sticker)
     return { type: "sticker", emoji: msg.sticker.emoji };
   if (msg.animation)
-    return { type: "animation", name: msg.animation.file_name };
+    return { type: "animation", name: msg.animation.file_name, file_id: msg.animation.file_id };
   if (msg.contact)
     return { type: "contact", text: msg.contact.phone_number };
   if (msg.location)
@@ -414,8 +430,20 @@ export function recordOutgoingEdit(
   });
   const versions = _index.get(messageId);
   if (!versions) {
-    // Message was evicted — just record as new
-    recordOutgoing(messageId, contentType, text);
+    // Message was evicted — record as edit (not "sent") to preserve intent
+    recordBotMessage({
+      message_id: messageId,
+      content_type: contentType,
+      text,
+    });
+    const evt: TimelineEvent = {
+      id: messageId,
+      timestamp: now(),
+      event: "edit",
+      from: "bot",
+      content: { type: contentType, text },
+    };
+    pushEvent(evt);
     return;
   }
 
@@ -498,10 +526,9 @@ function scanAndRemove<T>(
     }
     lane.enqueue(item);
   }
-  // If non-matched items were re-enqueued, wake any waiters that registered
-  // after the original notifyWaiters() was already consumed (prevents up to
-  // timeout-length stall in ask/choose when an unrelated event was scanned).
-  if (lane.count > 0) notifyWaiters();
+  // Only wake waiters when a match was found AND items remain — prevents
+  // churn loop where misses wake waiters that re-scan and re-wake.
+  if (found !== undefined && lane.count > 0) notifyWaiters();
   return found;
 }
 
@@ -518,6 +545,11 @@ export function waitForEnqueue(): Promise<void> {
   return new Promise((resolve) => {
     _waiters.push(resolve);
   });
+}
+
+/** True if at least one dequeue_update call is blocked waiting for data. */
+export function hasPendingWaiters(): boolean {
+  return _waiters.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -579,6 +611,22 @@ export function storeSize(): number {
   return _index.size;
 }
 
+/**
+ * Returns the highest message_id seen from any source, or 0 if empty.
+ * Used by the animation system for position detection (edit vs delete).
+ */
+export function getHighestMessageId(): number {
+  return _highestMessageId;
+}
+
+/**
+ * Bump the highwater mark for a message_id that bypasses the store
+ * (e.g. animation placeholders sent via bypassProxy).
+ */
+export function trackMessageId(messageId: number): void {
+  if (messageId > _highestMessageId) _highestMessageId = messageId;
+}
+
 
 
 // ---------------------------------------------------------------------------
@@ -590,6 +638,7 @@ export function resetStoreForTest(): void {
   _timeline = [];
   _index = new Map();
   _insertionOrder = [];
+  _highestMessageId = 0;
   _responseLane.clear();
   _messageLane.clear();
   _waiters = [];

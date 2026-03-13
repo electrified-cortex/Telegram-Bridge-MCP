@@ -58,7 +58,15 @@ Use `get_message(message_id)` to retrieve a previously seen message by its ID. R
 
 ---
 
-## Proactive silent notifications
+## Constant status communication
+
+The operator should **always** know what you are doing. Silence is confusing — it suggests you are frozen or disconnected. Err heavily on the side of over-communicating your state.
+
+**Working state:** While performing a task, send frequent status updates via `notify` (silent). Every significant action gets its own notification — editing a file, running a command, reading code, thinking about a design decision. Keep them brief.
+
+**Waiting state:** When you finish a task and are ready for the next instruction, **say so explicitly.** Never leave an animation running or go silent while waiting for input. The operator must see a clear signal that you are done and listening. Use a short message like "Done — what's next?" or "Ready for more."
+
+**Rule: never confuse working with waiting.** If you show a "thinking" animation while actually idle and waiting for input, the operator cannot tell whether you are stuck. Cancel any animation before entering a wait, and send a completion message.
 
 Before any significant action — editing files, running commands, committing, restarting the server, or making multiple changes in sequence — send a **silent** `notify` (`disable_notification: true`) describing what you are about to do. This lets the user glance at activity without being buzzed.
 
@@ -209,6 +217,8 @@ await cancel_animation()
 - `cancel_animation` without `text` deletes the placeholder message.
 - `cancel_animation` with `text` edits the placeholder into a permanent log message.
 - Prefer `update_status` for tasks with 3+ named steps. Use `show_animation` for a quick "I'm on it" with no structured progress to show.
+- **Cancel the animation before waiting for input.** If your task is done, cancel the animation and send a completion message. Do not leave an animation running while idle — this misleads the operator into thinking you are still working.
+- **Use animation only during active work.** The moment you transition from working to waiting, the animation must stop.
 
 ---
 

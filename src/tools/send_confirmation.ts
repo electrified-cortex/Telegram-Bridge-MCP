@@ -2,11 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText, validateCallbackData } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToText } from "../topic-state.js";
-import { pollButtonOrTextOrVoice, ackAndEditSelection, editWithTimedOut, editWithSkipped } from "./button-helpers.js";
-import { recordOutgoing } from "../message-store.js";
+import {
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithTimedOut, editWithSkipped,
+  applyButtonStyle, type ButtonStyle,
+} from "./button-helpers.js";
 
 const DESCRIPTION =
   "Sends a Yes/No confirmation message and waits until the user presses a " +
@@ -72,19 +72,17 @@ export function register(server: McpServer) {
       if (noDataErr) return toError(noDataErr);
 
       try {
-        cancelTyping();
-        clearPendingTemp();
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {
           parse_mode: "MarkdownV2",
           reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
           reply_markup: {
             inline_keyboard: [[
-              { text: yes_text, callback_data: yes_data, ...(yes_style ? { style: yes_style } : {}) },
-              { text: no_text, callback_data: no_data, ...(no_style ? { style: no_style } : {}) },
+              { text: applyButtonStyle(yes_text, yes_style as ButtonStyle | undefined), callback_data: yes_data, ...(yes_style ? { style: yes_style as ButtonStyle } : {}) },
+              { text: applyButtonStyle(no_text, no_style as ButtonStyle | undefined), callback_data: no_data, ...(no_style ? { style: no_style as ButtonStyle } : {}) },
             ]],
           },
-        });
-        recordOutgoing(sent.message_id, "text", text);
+          _rawText: text,
+        } as Record<string, unknown>);
 
         const result = await pollButtonOrTextOrVoice(chatId, sent.message_id, timeout_seconds);
 
@@ -100,6 +98,17 @@ export function register(server: McpServer) {
             skipped: true,
             text_response: result.text,
             text_message_id: result.message_id,
+            message_id: sent.message_id,
+          });
+        }
+
+        // Slash command interrupted the confirmation — mark as skipped
+        if (result.kind === "command") {
+          await editWithSkipped(chatId, sent.message_id, text);
+          return toResult({
+            skipped: true,
+            command: result.command,
+            args: result.args,
             message_id: sent.message_id,
           });
         }

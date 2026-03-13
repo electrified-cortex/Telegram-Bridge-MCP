@@ -16,13 +16,14 @@ Communication patterns: `communication.md` · `telegram-bridge-mcp://communicati
 
 ## Changelog Maintenance
 
-**Every commit that changes behavior must update `CHANGELOG.md`.**
+**Every commit that changes behavior must update [changelog/unreleased.md](../changelog/unreleased.md).**
 
 - Use [Keep a Changelog](https://keepachangelog.com) format
-- Add entries under `## [Unreleased]` while working; move to a versioned section on release
+- Add entries to `changelog/unreleased.md` under the appropriate category heading
+- On release, move content to a new dated file (e.g. `changelog/2026-03-11_v2.1.2.md`) and reset `unreleased.md`
 - Categories: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Deprecated`
 - One line per change, written in past tense (e.g. "Fixed path traversal in download_file")
-- Include the `CHANGELOG.md` edit in the same commit as the code change — never a separate "update changelog" commit
+- Include the changelog edit in the same commit as the code change — never a separate "update changelog" commit
 
 ## Your Role
 

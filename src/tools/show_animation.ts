@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, resolveChat } from "../telegram.js";
-import { startAnimation, DEFAULT_FRAMES } from "../animation-state.js";
+import { startAnimation, getPreset } from "../animation-state.js";
 
 const DESCRIPTION =
   "Start a server-managed cycling visual placeholder message. The animation " +
@@ -10,7 +10,10 @@ const DESCRIPTION =
   "Only one animation at a time — starting a new one cancels the previous. " +
   "Cancel with cancel_animation, or let it auto-clean on timeout. " +
   "A single emoji works well as a static placeholder (e.g. [\"🤔\"] or [\"⏳\"]). " +
-  "Avoid cycling multiple emoji-only frames — Telegram renders solo emoji as large animated stickers, so rapid edits look jarring.";
+  "Avoid cycling multiple emoji-only frames — Telegram renders solo emoji as large animated stickers, so rapid edits look jarring. " +
+  "Pass a preset name (registered via set_default_animation) to recall saved frames without re-specifying them. " +
+  "Two modes: temporary (default) = one-shot, disappears on next bot message or show_typing. " +
+  "Persistent = continuous, restarts after each bot message until explicitly cancelled.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -18,10 +21,14 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
+        preset: z
+          .string()
+          .optional()
+          .describe("Name of a registered animation preset. If provided, its frames are used (ignoring the frames parameter). Use set_default_animation to register presets."),
         frames: z
           .array(z.string())
-          .default([...DEFAULT_FRAMES])
-          .describe("Animation frames. Single frame = static placeholder. Default: [\".\", \"..\", \"...\"]. A single emoji (e.g. [\"🤔\"]) works great as a static placeholder. Avoid cycling multiple emoji-only frames (Telegram renders them as large animated stickers)."),
+          .optional()
+          .describe("Animation frames. Single frame = static placeholder. A single emoji (e.g. [\"🤔\"]) works great as a static placeholder. Avoid cycling multiple emoji-only frames (Telegram renders them as large animated stickers). Omit to use the session default."),
         interval: z
           .number()
           .int()
@@ -34,17 +41,32 @@ export function register(server: McpServer) {
           .int()
           .min(5)
           .max(600)
-          .default(30)
-          .describe("Seconds of inactivity before auto-cleanup (default 30, max 600)"),
+          .default(120)
+          .describe("Seconds of inactivity before auto-cleanup (default 120, max 600)"),
+        persistent: z
+          .boolean()
+          .default(false)
+          .describe("If true, the animation restarts after each bot message (continuous streaming). Default false = one-shot, disappears on next message or show_typing."),
       },
     },
-    async ({ frames, interval, timeout }) => {
+    async ({ preset, frames, interval, timeout, persistent }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
+      // Resolve frames: preset > explicit frames > session default
+      let resolvedFrames: string[] | undefined;
+      if (preset) {
+        const presetFrames = getPreset(preset);
+        if (!presetFrames) return toError(`Unknown animation preset: "${preset}"`);
+        resolvedFrames = [...presetFrames];
+      } else if (frames) {
+        resolvedFrames = frames;
+      }
+      // undefined → startAnimation uses getDefaultFrames() internally
+
       try {
-        const message_id = await startAnimation(frames, interval, timeout);
-        return toResult({ message_id });
+        const message_id = await startAnimation(resolvedFrames, interval, timeout, persistent);
+        return toResult({ message_id, persistent });
       } catch (err) {
         return toError(err);
       }

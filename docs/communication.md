@@ -15,6 +15,7 @@ MCP resources: `telegram-bridge-mcp://communication-guide` (full) · `telegram-b
 5. **Commit/push** — get explicit operator approval first. Send a `notify` summary before committing.
 6. **`show_typing`** — call immediately after receiving a message, before starting work.
 7. **React 🫡** when starting multi-step work. Update to 👍 or ❤ when done.
+8. **Drain before you speak** — before sending any message, drain pending updates with `dequeue_update(timeout=0)` until empty. Never talk over the operator; always hear them out first. Responding without draining makes it look like you dismissed what they said.
 
 ---
 

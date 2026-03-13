@@ -4,10 +4,11 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "./server.js";
-import { getSecurityConfig, getApi, resolveChat } from "./telegram.js";
+import { getSecurityConfig, getApi, resolveChat, installOutboundProxy } from "./telegram.js";
 import { clearCommandsOnShutdown } from "./shutdown.js";
 import { BUILT_IN_COMMANDS } from "./built-in-commands.js";
 import { startPoller, stopPoller } from "./poller.js";
+import { createOutboundProxy } from "./outbound-proxy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -32,6 +33,10 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
 }
 
 const server = createServer();
+
+// Install the outbound proxy before any API calls
+installOutboundProxy(createOutboundProxy);
+
 const transport = new StdioServerTransport();
 
 await server.connect(transport);

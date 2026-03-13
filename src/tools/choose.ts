@@ -5,11 +5,11 @@ import {
   toResult, toError, validateText, validateCallbackData, LIMITS,
 } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToText } from "../topic-state.js";
-import { pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut } from "./button-helpers.js";
-import { recordOutgoing } from "../message-store.js";
+import {
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
+  applyButtonStyle, type ButtonStyle,
+} from "./button-helpers.js";
 
 const DESCRIPTION =
   "Sends a question with 2–8 labeled option buttons and waits until the " +
@@ -89,26 +89,24 @@ export function register(server: McpServer) {
       }
 
       // Build keyboard rows (n columns per row)
-      const rows: { text: string; callback_data: string; style?: "success" | "primary" | "danger" }[][] = [];
+      const rows: { text: string; callback_data: string; style?: ButtonStyle }[][] = [];
       for (let i = 0; i < options.length; i += columns) {
         rows.push(
           options.slice(i, i + columns).map((o) => ({
-            text: o.label,
+            text: applyButtonStyle(o.label, o.style as ButtonStyle | undefined),
             callback_data: o.value,
-            ...(o.style ? { style: o.style } : {}),
+            ...(o.style ? { style: o.style as ButtonStyle } : {}),
           }))
         );
       }
 
       try {
-        cancelTyping();
-        clearPendingTemp();
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown")), {
           parse_mode: "MarkdownV2",
           reply_markup: { inline_keyboard: rows },
           reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
-        });
-        recordOutgoing(sent.message_id, "text", question);
+          _rawText: question,
+        } as Record<string, unknown>);
 
         const match = await pollButtonOrTextOrVoice(chatId, sent.message_id, timeout_seconds);
 
@@ -140,6 +138,16 @@ export function register(server: McpServer) {
             text_message_id: match.message_id,
             message_id: sent.message_id,
             voice: true,
+          });
+        }
+
+        if (match.kind === "command") {
+          await editWithSkipped(chatId, sent.message_id, question);
+          return toResult({
+            skipped: true,
+            command: match.command,
+            args: match.args,
+            message_id: sent.message_id,
           });
         }
 

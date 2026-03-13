@@ -2,7 +2,7 @@
  * Shared helpers for button-based interaction tools (choose, send_confirmation).
  */
 
-import { getApi } from "../telegram.js";
+import { getApi, ackVoiceMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
 
@@ -29,7 +29,40 @@ export interface VoiceResult {
   text?: string;
 }
 
-export type ButtonOrTextResult = ButtonResult | TextResult | VoiceResult;
+export interface CommandResult {
+  kind: "command";
+  message_id: number;
+  command: string;
+  args?: string;
+}
+
+export type ButtonOrTextResult =
+  | ButtonResult
+  | TextResult
+  | VoiceResult
+  | CommandResult;
+
+// ---------------------------------------------------------------------------
+// Button style helpers
+// ---------------------------------------------------------------------------
+
+export type ButtonStyle = "success" | "primary" | "danger";
+
+const STYLE_EMOJI: Record<ButtonStyle, string> = {
+  success: "🟢",
+  primary: "🔵",
+  danger: "🔴",
+};
+
+/**
+ * Prepends a colored circle emoji to the button label based on the style.
+ * Returns the original text unchanged when no style is provided.
+ * This is the only reliable way to achieve colored buttons in Telegram.
+ */
+export function applyButtonStyle(text: string, style?: ButtonStyle): string {
+  if (!style) return text;
+  return `${STYLE_EMOJI[style]} ${text}`;
+}
 
 // ---------------------------------------------------------------------------
 // Store-based polling helpers
@@ -89,7 +122,7 @@ export async function pollButtonOrTextOrVoice(
         if (!qid || !data) return undefined;
         return { kind: "button" as const, callback_query_id: qid, data, message_id: messageId };
       }
-      // Check for text/voice message sent AFTER the question
+      // Check for text/voice/command message sent AFTER the question
       if (event.event === "message" && event.id > messageId) {
         if (event.content.type === "text") {
           const text = event.content.text;
@@ -97,10 +130,19 @@ export async function pollButtonOrTextOrVoice(
           return { kind: "text" as const, message_id: event.id, text };
         }
         if (event.content.type === "voice") {
+          ackVoiceMessage(event.id);
           return {
             kind: "voice" as const,
             message_id: event.id,
             text: event.content.text,
+          };
+        }
+        if (event.content.type === "command") {
+          return {
+            kind: "command" as const,
+            message_id: event.id,
+            command: event.content.text ?? "",
+            args: event.content.data,
           };
         }
       }

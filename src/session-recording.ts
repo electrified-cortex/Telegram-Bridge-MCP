@@ -1,8 +1,14 @@
 /**
- * Opt-in session recording.
- * Recording is off by default — the agent must explicitly call
- * start_session_recording() to enable it.
- * While active, every inbound update and every bot-sent message is captured.
+ * Opt-in session recording — supplementary capture layer.
+ *
+ * The always-on message store (`message-store.ts`) is the primary event log.
+ * This module provides an opt-in buffer for the `/session` built-in command
+ * flow: start/stop recording, auto-dump when the buffer fills, and export
+ * raw entries for the agent's session-prefs questionnaire.
+ *
+ * `dump_session_record` reads from the message store timeline, NOT from
+ * this buffer. This module is only used by the `/session` command panel
+ * and the startup prefs prompt.
  */
 
 import type { Update } from "grammy/types";
@@ -63,7 +69,7 @@ function pushEntry(entry: SessionEntry): void {
     _dumpInFlight = true;
     const cb = _autoDumpCallback;
     void Promise.resolve().then(async () => {
-      try { await cb(); } finally { _dumpInFlight = false; }
+      try { await cb(); } catch { /* auto-dump is best-effort */ } finally { _dumpInFlight = false; }
     });
   }
 }

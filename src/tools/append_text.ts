@@ -3,7 +3,6 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
 import { getMessage, recordOutgoingEdit, CURRENT } from "../message-store.js";
-import { resetAnimationTimeout } from "../animation-state.js";
 
 const DESCRIPTION =
   "Delta-append text to an existing message. The server reads the current text " +
@@ -55,7 +54,6 @@ export function register(server: McpServer) {
         );
         const editedId = typeof result === "boolean" ? message_id : result.message_id;
         recordOutgoingEdit(editedId, "text", accumulated);
-        resetAnimationTimeout();
         return toResult({ message_id: editedId, length: accumulated.length });
       } catch (err) {
         return toError(err);

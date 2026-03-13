@@ -111,7 +111,7 @@ This interactive wizard:
 
 ### 5. Start a session
 
-Paste the contents of `loop-prompt.md` into your AI assistant's chat. It will connect, announce itself over Telegram, and wait for your instructions.
+Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will connect, announce itself over Telegram, and wait for your instructions.
 
 ---
 

@@ -16,11 +16,23 @@ import {
   type ReactionEmoji,
 } from "./telegram.js";
 import { handleIfBuiltIn } from "./built-in-commands.js";
-import { recordInbound } from "./message-store.js";
+import { recordInbound, hasPendingWaiters } from "./message-store.js";
 import { transcribeVoice } from "./transcribe.js";
 
 const REACT_TRANSCRIBING = "\u270D" as ReactionEmoji;  // ✍
 const REACT_QUEUED = "\uD83D\uDE34" as ReactionEmoji;  // 😴
+
+/** Transcription timeout in milliseconds. */
+const TRANSCRIPTION_TIMEOUT_MS = 60_000;
+
+/**
+ * Grammy's getUpdates accepts ReadonlyArray for allowed_updates, so we cast
+ * once here rather than spreading DEFAULT_ALLOWED_UPDATES into a fresh mutable
+ * array on every poll iteration.
+ */
+const ALLOWED_UPDATES = DEFAULT_ALLOWED_UPDATES as ReadonlyArray<
+  Exclude<keyof Update, "update_id">
+>;
 
 let _running = false;
 
@@ -38,6 +50,31 @@ export function isPollerRunning(): boolean {
   return _running;
 }
 
+/** HTTP status codes that indicate the bot token is invalid or revoked. */
+const FATAL_STATUS_CODES = new Set([401, 403]);
+
+/** Default backoff on transient errors (ms). */
+const DEFAULT_BACKOFF_MS = 5000;
+
+/** Extract an HTTP status from various error shapes. */
+function getErrorStatus(err: unknown): number | undefined {
+  if (typeof err === "object" && err !== null && "status" in err) {
+    return (err as { status: number }).status;
+  }
+  return undefined;
+}
+
+/** Extract retry_after from a 429 error (Telegram rate limit). */
+function getRetryAfter(err: unknown): number | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const params = (err as Record<string, unknown>).parameters;
+  if (typeof params === "object" && params !== null) {
+    const ra = (params as Record<string, unknown>).retry_after;
+    if (typeof ra === "number") return ra;
+  }
+  return undefined;
+}
+
 async function _pollLoop(): Promise<void> {
   while (_running) {
     try {
@@ -45,38 +82,73 @@ async function _pollLoop(): Promise<void> {
         offset: getOffset(),
         limit: 100,
         timeout: 25,
-        allowed_updates: [...DEFAULT_ALLOWED_UPDATES] as ReadonlyArray<
-          Exclude<keyof Update, "update_id">
-        >,
+        allowed_updates: ALLOWED_UPDATES,
       });
 
-      advanceOffset(updates);
       const allowed = filterAllowedUpdates(updates);
 
       const voiceUpdates: Update[] = [];
       for (const u of allowed) {
-        const consumed = await handleIfBuiltIn(u);
-        if (consumed) continue;
+        try {
+          const consumed = await handleIfBuiltIn(u);
+          if (consumed) continue;
 
-        if (u.message?.voice) {
-          voiceUpdates.push(u);
-          continue;
+          if (u.message?.voice) {
+            voiceUpdates.push(u);
+            continue;
+          }
+
+          recordInbound(u);
+        } catch (perUpdateErr) {
+          const msg = perUpdateErr instanceof Error
+            ? perUpdateErr.message
+            : String(perUpdateErr);
+          process.stderr.write(
+            `[poller] error processing update ${u.update_id}: ${msg}\n`,
+          );
         }
-
-        recordInbound(u);
       }
 
       // Transcribe voice messages in parallel
       if (voiceUpdates.length > 0) {
-        await Promise.all(voiceUpdates.map((u) => _transcribeAndRecord(u)));
+        await Promise.all(
+          voiceUpdates.map((u) => _transcribeAndRecord(u)),
+        );
       }
+
+      // Advance offset AFTER processing so failed updates aren't lost
+      advanceOffset(updates);
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- _running is mutated externally by stopPoller()
       if (!_running) break;
+
+      const status = getErrorStatus(err);
       const msg = err instanceof Error ? err.message : String(err);
+
+      // Fatal: token revoked or bot blocked — stop immediately
+      if (status !== undefined && FATAL_STATUS_CODES.has(status)) {
+        process.stderr.write(
+          `[poller] fatal error (${status}): ${msg} — stopping poller\n`,
+        );
+        _running = false;
+        break;
+      }
+
+      // Rate-limited: respect retry_after
+      const retryAfter = getRetryAfter(err);
+      if (retryAfter !== undefined) {
+        process.stderr.write(
+          `[poller] rate limited, retrying in ${retryAfter}s\n`,
+        );
+        await new Promise<void>((r) =>
+          setTimeout(r, retryAfter * 1000),
+        );
+        continue;
+      }
+
+      // Transient: log and back off
       process.stderr.write(`[poller] error: ${msg}\n`);
-      // Back off on persistent errors
-      await new Promise<void>((r) => setTimeout(r, 5000));
+      await new Promise<void>((r) => setTimeout(r, DEFAULT_BACKOFF_MS));
     }
   }
 }
@@ -92,18 +164,43 @@ async function _transcribeAndRecord(u: Update): Promise<void> {
     const setScribe = await trySetMessageReaction(chatId, messageId, REACT_TRANSCRIBING);
     if (!setScribe) process.stderr.write(`[poller] failed to set ✍ on msg ${messageId}\n`);
 
-    const text = await Promise.race([
-      transcribeVoice(msg.voice.file_id),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => { reject(new Error("transcription timed out (60s)")); }, 60_000);
-      }),
-    ]);
+    // Race transcription against a hard timeout.
+    //
+    // The timeout timer MUST be cancelled once the race settles. If we left
+    // it alive and transcription won the race, the setTimeout callback would
+    // fire ~60 s later and call reject() on an already-resolved Promise.
+    // Node ≥15 treats that as an unhandled rejection and can crash the process.
+    //
+    // Pattern: declare the timer ID outside the Promise so the finally block
+    // can reach it, then clear it unconditionally — clearTimeout on an already-
+    // elapsed/cancelled timer is a safe no-op.
+    let _transcriptionTimer: ReturnType<typeof setTimeout> | undefined;
+    const _timeoutPromise = new Promise<never>((_, reject) => {
+      _transcriptionTimer = setTimeout(() => {
+        const secs = TRANSCRIPTION_TIMEOUT_MS / 1000;
+        reject(new Error(`transcription timed out (${secs}s)`));
+      }, TRANSCRIPTION_TIMEOUT_MS);
+    });
 
-    // Swap to 😴 (queued)
-    const setQueued = await trySetMessageReaction(chatId, messageId, REACT_QUEUED);
-    if (!setQueued) process.stderr.write(`[poller] failed to set 😴 on msg ${messageId}\n`);
+    let text: string;
+    try {
+      text = await Promise.race([transcribeVoice(msg.voice.file_id), _timeoutPromise]);
+    } finally {
+      // Cancel the timer so the pending reject() never fires, whether the race
+      // resolved (transcription succeeded) or rejected (timeout or other error).
+      clearTimeout(_transcriptionTimer);
+    }
 
+    // Record first so a pending waiter can consume immediately.
+    // Then check if a waiter was already waiting — if so, skip 😴
+    // because the waiter will set 🫡 on dequeue immediately.
+    const waiterWaiting = hasPendingWaiters();
     recordInbound(u, text);
+
+    if (!waiterWaiting) {
+      const setQueued = await trySetMessageReaction(chatId, messageId, REACT_QUEUED);
+      if (!setQueued) process.stderr.write(`[poller] failed to set 😴 on msg ${messageId}\n`);
+    }
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[poller] transcription error for msg ${messageId}: ${errMsg}\n`);

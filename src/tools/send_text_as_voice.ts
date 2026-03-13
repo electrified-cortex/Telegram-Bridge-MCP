@@ -1,11 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, validateText, resolveChat, splitMessage, sendVoiceDirect } from "../telegram.js";
-import { cancelTyping, showTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
+import { showTyping } from "../typing-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
-import { recordOutgoing } from "../message-store.js";
-import { resetAnimationTimeout } from "../animation-state.js";
 
 const DESCRIPTION =
   "Synthesizes plain text to speech and sends it as a Telegram voice note. " +
@@ -30,7 +27,6 @@ export function register(server: McpServer) {
     async ({ text, disable_notification, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
-      clearPendingTemp();
 
       if (!isTtsEnabled()) {
         return toError({
@@ -50,7 +46,6 @@ export function register(server: McpServer) {
       try {
         const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
         await showTyping(typingSeconds, "record_voice");
-        resetAnimationTimeout();
         const message_ids: number[] = [];
         for (let i = 0; i < voiceChunks.length; i++) {
           const ogg = await synthesizeToOgg(voiceChunks[i]);
@@ -60,12 +55,9 @@ export function register(server: McpServer) {
           });
           message_ids.push(msg.message_id);
         }
-        cancelTyping();
         if (message_ids.length === 1) {
-          recordOutgoing(message_ids[0], "voice", plainText);
           return toResult({ message_id: message_ids[0], voice: true });
         }
-        recordOutgoing(message_ids[0], "voice", plainText);
         return toResult({ message_ids, chunks: message_ids.length, split: true, voice: true });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

@@ -196,21 +196,37 @@ function classifyGrammyError(err: GrammyError): TelegramError {
 // Singleton API client
 // ---------------------------------------------------------------------------
 
-let _api: Api | null = null;
+let _rawApi: Api | null = null;
+let _proxiedApi: Api | null = null;
 
-export function getApi(): Api {
-  if (_api) return _api;
+/** Returns the raw (unproxied) Grammy Api — for internal use by animation-state. */
+export function getRawApi(): Api {
+  if (_rawApi) return _rawApi;
   const token = process.env.BOT_TOKEN;
-  if (token) return (_api = new Api(token));
+  if (token) return (_rawApi = new Api(token));
   throw new Error(
     "[telegram-bridge-mcp] Fatal: BOT_TOKEN environment variable is not set.\n" +
       "Set it in a .env file or pass it via the MCP server env config."
   );
 }
 
-/** Clears the cached Api instance — for use in tests only. */
+/**
+ * Install the outbound proxy. Called once at startup from server.ts,
+ * after all modules are loaded (avoids circular-import issues).
+ */
+export function installOutboundProxy(wrap: (raw: Api) => Api): void {
+  _proxiedApi = wrap(getRawApi());
+}
+
+/** Returns the proxied Api instance — all tool code should use this. */
+export function getApi(): Api {
+  return _proxiedApi ?? getRawApi();
+}
+
+/** Clears the cached Api instances — for use in tests only. */
 export function resetApi(): void {
-  _api = null;
+  _rawApi = null;
+  _proxiedApi = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +508,10 @@ export async function sendVoiceDirect(
   if (options.reply_to_message_id != null)
     form.append("reply_parameters", JSON.stringify({ message_id: options.reply_to_message_id }));
 
+  // Hook into the outbound proxy so animation/typing/temp/recording are handled
+  const { notifyBeforeFileSend, notifyAfterFileSend } = await import("./outbound-proxy.js");
+  await notifyBeforeFileSend();
+
   const res = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
     method: "POST",
     body: form,
@@ -515,6 +535,7 @@ export async function sendVoiceDirect(
     );
   }
 
+  await notifyAfterFileSend(json.result.message_id, "voice", undefined, options.caption);
   return json.result;
 }
 
@@ -533,6 +554,20 @@ export function trySetMessageReaction(
   return getApi()
     .setMessageReaction(chatId, messageId, [{ type: "emoji", emoji }])
     .then(() => true, () => false);
+}
+
+const REACT_SALUTE = "\uD83E\uDEE1" as ReactionEmoji; // 🫡
+
+/**
+ * Fire-and-forget 🫡 on a voice message to signal the agent received it.
+ * Safe to call from any dequeue path — resolves chat internally.
+ */
+export function ackVoiceMessage(messageId: number): void {
+  const resolved = resolveChat();
+  const chatId = typeof resolved === "number" ? resolved : undefined;
+  if (!chatId) return;
+  void trySetMessageReaction(chatId, messageId, REACT_SALUTE)
+    .then((ok) => { if (!ok) process.stderr.write(`[ack] 🫡 failed for msg ${messageId}\n`); });
 }
 
 /**

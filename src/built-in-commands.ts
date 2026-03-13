@@ -355,3 +355,9 @@ async function doSessionDump(
     } catch { /* ignore */ }
   }
 }
+
+/** For testing only: resets module-scoped state. */
+export function resetBuiltInCommandsForTest(): void {
+  _activePanels.clear();
+  _sessionPrefsAsked = false;
+}

@@ -68,7 +68,7 @@ Follow the wizard to create `.env` with your bot credentials.
 
 ### 4. Start a loop session
 
-Open your AI assistant (VS Code Copilot, Claude Desktop, etc.) and paste the contents of `loop-prompt.md`. The assistant will:
+Open your AI assistant (VS Code Copilot, Claude Desktop, etc.) and paste the contents of `LOOP-PROMPT.md`. The assistant will:
 
 1. Load the agent guide
 2. Drain stale updates
@@ -92,7 +92,7 @@ Open your AI assistant (VS Code Copilot, Claude Desktop, etc.) and paste the con
 **Edit behaviors:**
 
 - "Add a new reaction convention to behavior.md: 🔥 for critical errors"
-- "Update loop-prompt.md to poll every 60 seconds instead of 300"
+- "Update LOOP-PROMPT.md to poll every 60 seconds instead of 300"
 
 **Modify tools:**
 
@@ -124,7 +124,7 @@ Open your AI assistant (VS Code Copilot, Claude Desktop, etc.) and paste the con
 | ---- | ---------------- |
 | `behavior.md` | Agent personality, tool usage conventions, formatting rules. Also served as the `telegram-bridge-mcp://agent-guide` MCP resource. |
 | `formatting.md` | Markdown/HTML/MarkdownV2 reference for message formatting. Served as `telegram-bridge-mcp://formatting-guide`. |
-| `loop-prompt.md` | Your session startup script — the instructions you paste to begin a loop session. Customize this to change session behavior. |
+| `LOOP-PROMPT.md` | Your session startup script — the instructions you paste to begin a loop session. Customize this to change session behavior. |
 | `setup.md` | Bot creation and pairing walkthrough. Served as `telegram-bridge-mcp://setup-guide`. |
 | `src/tools/*.ts` | Individual MCP tool implementations. Each file = one tool. |
 | `src/telegram.ts` | Core Telegram API wrapper, security enforcement, polling helpers. |
@@ -161,7 +161,7 @@ The loop prompt requires the assistant to send a **silent notification** before:
 - Editing any source file (`src/*.ts`, `src/tools/*.ts`)
 - Editing any test file (`*.test.ts`)
 - Editing config/build files (`package.json`, `tsconfig.json`, etc.)
-- Editing documentation (`behavior.md`, `setup.md`, `formatting.md`, `loop-prompt.md`, etc.)
+- Editing documentation (`behavior.md`, `setup.md`, `formatting.md`, `LOOP-PROMPT.md`, etc.)
 - Running commands (`pnpm build`, `pnpm test`, `git commit`, etc.)
 - Deleting any file
 
@@ -317,7 +317,7 @@ After editing `behavior.md`, the changes take effect immediately — the assista
 
 ## Customizing the Loop Prompt
 
-`loop-prompt.md` defines the session startup sequence and loop rules. You can modify it to:
+`LOOP-PROMPT.md` defines the session startup sequence and loop rules. You can modify it to:
 
 - Change polling timeout (default 300 s)
 - Add custom startup actions (e.g., "check for git updates")
@@ -332,7 +332,7 @@ After editing, paste the new version into your AI assistant to start a session w
 
 ### Can I use this workflow for other projects?
 
-Yes — the loop prompt is generic. Point the MCP `cwd` to any repo and the assistant can work on it via Telegram. Just copy `loop-prompt.md` and adjust the file/command rules for your project.
+Yes — the loop prompt is generic. Point the MCP `cwd` to any repo and the assistant can work on it via Telegram. Just copy `LOOP-PROMPT.md` and adjust the file/command rules for your project.
 
 ### What if I break the MCP code?
 
@@ -355,7 +355,7 @@ Absolutely — fork the repo, make your changes, and publish your fork. Or submi
 ## Next Steps
 
 - Read `behavior.md` to understand the agent's personality and conventions
-- Read `loop-prompt.md` to see the full session startup sequence
+- Read `LOOP-PROMPT.md` to see the full session startup sequence
 - Try a simple edit: _"Add a new emoji reaction to behavior.md"_
 - Experiment with voice commands on your phone
 

@@ -113,6 +113,74 @@ function documentUpdate(msgId: number, fileName: string): Update {
   } as Update;
 }
 
+function photoUpdate(msgId: number, caption?: string): Update {
+  return {
+    update_id: nextUpdateId++,
+    message: {
+      message_id: msgId,
+      date: Math.floor(Date.now() / 1000),
+      chat: { id: 100, type: "private" },
+      from: { id: 1, is_bot: false, first_name: "User" },
+      photo: [
+        { file_id: "photo_sm", file_unique_id: "pu1", width: 90, height: 90 },
+        { file_id: "photo_lg", file_unique_id: "pu2", width: 800, height: 600 },
+      ],
+      caption,
+    },
+  } as Update;
+}
+
+function videoUpdate(msgId: number): Update {
+  return {
+    update_id: nextUpdateId++,
+    message: {
+      message_id: msgId,
+      date: Math.floor(Date.now() / 1000),
+      chat: { id: 100, type: "private" },
+      from: { id: 1, is_bot: false, first_name: "User" },
+      video: {
+        file_id: "vid123", file_unique_id: "vu123",
+        width: 1920, height: 1080, duration: 30,
+        file_name: "clip.mp4", mime_type: "video/mp4",
+      },
+    },
+  } as Update;
+}
+
+function audioUpdate(msgId: number): Update {
+  return {
+    update_id: nextUpdateId++,
+    message: {
+      message_id: msgId,
+      date: Math.floor(Date.now() / 1000),
+      chat: { id: 100, type: "private" },
+      from: { id: 1, is_bot: false, first_name: "User" },
+      audio: {
+        file_id: "aud123", file_unique_id: "au123",
+        duration: 180, title: "Song", file_name: "song.mp3",
+        mime_type: "audio/mpeg",
+      },
+    },
+  } as Update;
+}
+
+function animationUpdate(msgId: number): Update {
+  return {
+    update_id: nextUpdateId++,
+    message: {
+      message_id: msgId,
+      date: Math.floor(Date.now() / 1000),
+      chat: { id: 100, type: "private" },
+      from: { id: 1, is_bot: false, first_name: "User" },
+      animation: {
+        file_id: "anim123", file_unique_id: "anu123",
+        width: 320, height: 240, duration: 5,
+        file_name: "funny.gif",
+      },
+    },
+  } as Update;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -529,5 +597,127 @@ describe("Mixed inbound/outbound scenario", () => {
     // Version history works
     expect(getMessage(100)!.content.text).toBe("Found the bug in auth.ts");
     expect(getMessage(100, 0)!.content.text).toBe("Looking into it...");
+  });
+});
+
+// ===========================================================================
+// Issue #1 — file_id must be populated in EventContent for media messages
+// ===========================================================================
+
+describe("file_id in EventContent (#1)", () => {
+  it("includes file_id for documents", () => {
+    recordInbound(documentUpdate(20, "report.pdf"));
+    const evt = dequeue();
+    expect(evt!.content.file_id).toBe("doc123");
+  });
+
+  it("includes file_id for photos (largest size)", () => {
+    recordInbound(photoUpdate(21, "nice pic"));
+    const evt = dequeue();
+    expect(evt!.content.file_id).toBe("photo_lg");
+  });
+
+  it("includes file_id for videos", () => {
+    recordInbound(videoUpdate(22));
+    const evt = dequeue();
+    expect(evt!.content.file_id).toBe("vid123");
+  });
+
+  it("includes file_id for audio", () => {
+    recordInbound(audioUpdate(23));
+    const evt = dequeue();
+    expect(evt!.content.file_id).toBe("aud123");
+  });
+
+  it("includes file_id for voice", () => {
+    recordInbound(voiceUpdate(24), "transcribed");
+    const evt = dequeue();
+    expect(evt!.content.file_id).toBe("voice123");
+  });
+
+  it("includes file_id for animations", () => {
+    recordInbound(animationUpdate(25));
+    const evt = dequeue();
+    expect(evt!.content.file_id).toBe("anim123");
+  });
+});
+
+// ===========================================================================
+// Issue #3 — scanAndRemove should NOT wake waiters when nothing matched
+// ===========================================================================
+
+describe("scanAndRemove notify behavior (#3)", () => {
+  it("does not wake waiters when scan finds nothing", async () => {
+    // Enqueue an item that won't match
+    recordInbound(textUpdate(1, "hello"));
+
+    // Register a waiter
+    let woken = false;
+    const waiterPromise = waitForEnqueue().then(() => { woken = true; });
+
+    // Scan with a predicate that matches nothing
+    const result = dequeueMatch((_evt) =>
+      _evt.content.data === "impossible" ? true : undefined
+    );
+    expect(result).toBeUndefined();
+
+    // Give microtasks a chance to resolve
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Waiter should NOT have been woken — nothing was found
+    expect(woken).toBe(false);
+
+    // Clean up: enqueue something to release the waiter
+    recordInbound(textUpdate(2, "unblock"));
+    await waiterPromise;
+  });
+
+  it("wakes waiters when a match was found and items remain", async () => {
+    recordInbound(textUpdate(1, "keep"));
+    recordInbound(textUpdate(2, "target"));
+
+    let woken = false;
+    const waiterPromise = waitForEnqueue().then(() => { woken = true; });
+
+    // Match the second item — first should be re-enqueued
+    dequeueMatch((evt) =>
+      evt.content.text === "target" ? true : undefined
+    );
+
+    await new Promise((r) => setTimeout(r, 10));
+    // Should wake because a match was found and items remain
+    expect(woken).toBe(true);
+    await waiterPromise;
+  });
+});
+
+// ===========================================================================
+// Issue #5 — Queue lanes should have capacity limits
+// ===========================================================================
+
+describe("queue lane capacity limits (#5)", () => {
+  it("caps message lane at MAX_QUEUE_SIZE", () => {
+    // Enqueue more than the cap — older items should be dropped
+    for (let i = 1; i <= 5100; i++) {
+      recordInbound(textUpdate(i, `msg ${i}`));
+    }
+    // Should not exceed the cap
+    expect(pendingCount()).toBeLessThanOrEqual(5000);
+  });
+});
+
+// ===========================================================================
+// Issue #6 — recordOutgoingEdit fallback should use event: "edit"
+// ===========================================================================
+
+describe("recordOutgoingEdit fallback (#6)", () => {
+  it("uses event 'edit' when falling back for evicted messages", () => {
+    // Don't record original — simulate eviction
+    recordOutgoingEdit(999, "text", "orphan edit");
+
+    const evt = getMessage(999);
+    expect(evt).toBeDefined();
+    // Should be "edit", not "sent" — the edit event type must be preserved
+    expect(evt!.event).toBe("edit");
   });
 });

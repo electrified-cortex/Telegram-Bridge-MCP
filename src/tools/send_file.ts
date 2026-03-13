@@ -5,10 +5,7 @@ import {
   callApi, resolveMediaSource, sendVoiceDirect,
 } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { cancelTyping, showTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
-import { recordOutgoing } from "../message-store.js";
-import { resetAnimationTimeout } from "../animation-state.js";
+import { showTyping } from "../typing-state.js";
 import { extname } from "path";
 
 // ---------------------------------------------------------------------------
@@ -116,14 +113,16 @@ export function register(server: McpServer) {
 
       const fileType: FileType = type === "auto" ? detectType(file) : type;
 
-      // Resolve media source (validates paths, rejects http://)
+      // Validate media source for all types (rejects http://, path traversal)
       if (fileType !== "voice") {
         const mediaResult = resolveMediaSource(file);
         if ("code" in mediaResult) return toError(mediaResult);
+      } else if (typeof file === "string" && file.startsWith("http://")) {
+        // Voice bypasses resolveMediaSource for Buffer/file_id paths,
+        // but http:// must still be rejected for consistency.
+        const voiceResult = resolveMediaSource(file);
+        if ("code" in voiceResult) return toError(voiceResult);
       }
-
-      clearPendingTemp();
-      resetAnimationTimeout();
 
       const replyParams = reply_to_message_id
         ? { message_id: reply_to_message_id }
@@ -143,8 +142,6 @@ export function register(server: McpServer) {
                 reply_parameters: replyParams,
               }),
             );
-            cancelTyping();
-            recordOutgoing(msg.message_id, "photo", undefined, caption);
             return toResult({
               message_id: msg.message_id,
               type: "photo",
@@ -165,8 +162,6 @@ export function register(server: McpServer) {
                 reply_parameters: replyParams,
               }),
             );
-            cancelTyping();
-            recordOutgoing(msg.message_id, "video", undefined, caption);
             return toResult({
               message_id: msg.message_id,
               type: "video",
@@ -188,8 +183,6 @@ export function register(server: McpServer) {
                 reply_parameters: replyParams,
               }),
             );
-            cancelTyping();
-            recordOutgoing(msg.message_id, "audio", undefined, caption);
             return toResult({
               message_id: msg.message_id,
               type: "audio",
@@ -207,8 +200,6 @@ export function register(server: McpServer) {
               disable_notification,
               reply_to_message_id,
             });
-            cancelTyping();
-            recordOutgoing(msg.message_id, "voice", undefined, caption);
             return toResult({
               message_id: msg.message_id,
               type: "voice",
@@ -229,8 +220,6 @@ export function register(server: McpServer) {
                 reply_parameters: replyParams,
               }),
             );
-            cancelTyping();
-            recordOutgoing(msg.message_id, "document", undefined, caption);
             return toResult({
               message_id: msg.message_id,
               type: "document",
@@ -240,7 +229,6 @@ export function register(server: McpServer) {
           }
         }
       } catch (err) {
-        cancelTyping();
         return toError(err);
       }
     },

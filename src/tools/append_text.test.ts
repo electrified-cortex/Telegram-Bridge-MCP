@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   editMessageText: vi.fn(),
   getMessage: vi.fn(),
   recordOutgoingEdit: vi.fn(),
-  resetAnimationTimeout: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -21,10 +20,6 @@ vi.mock("../message-store.js", () => ({
   getMessage: mocks.getMessage,
   recordOutgoingEdit: mocks.recordOutgoingEdit,
   CURRENT: -1,
-}));
-
-vi.mock("../animation-state.js", () => ({
-  resetAnimationTimeout: mocks.resetAnimationTimeout,
 }));
 
 import { register } from "./append_text.js";
@@ -93,13 +88,6 @@ describe("append_text tool", () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     await call({ message_id: 10, text: "Y" });
     expect(mocks.recordOutgoingEdit).toHaveBeenCalledWith(10, "text", "X\nY");
-  });
-
-  it("calls resetAnimationTimeout", async () => {
-    mocks.getMessage.mockReturnValue({ content: { text: "A" } });
-    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, text: "B" });
-    expect(mocks.resetAnimationTimeout).toHaveBeenCalledOnce();
   });
 
   it("returns error on API failure", async () => {

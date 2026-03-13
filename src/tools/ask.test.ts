@@ -4,6 +4,7 @@ import type { TimelineEvent } from "../message-store.js";
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  ackVoiceMessage: vi.fn(),
   _storeQueue: [] as TimelineEvent[],
   _waitResolvers: [] as (() => void)[],
 }));
@@ -14,6 +15,7 @@ vi.mock("../telegram.js", async (importActual) => {
     ...actual,
     getApi: () => ({ sendMessage: mocks.sendMessage }),
     resolveChat: () => 42,
+    ackVoiceMessage: mocks.ackVoiceMessage,
   };
 });
 
@@ -57,6 +59,19 @@ function makeVoiceEvent(messageId: number, text: string): TimelineEvent {
     event: "message",
     from: "user",
     content: { type: "voice", text },
+  };
+}
+
+function makeCommandEvent(
+  messageId: number,
+  command: string,
+): TimelineEvent {
+  return {
+    id: messageId,
+    timestamp: new Date().toISOString(),
+    event: "message",
+    from: "user",
+    content: { type: "command", text: command },
   };
 }
 
@@ -109,10 +124,31 @@ describe("ask tool", () => {
     expect(data.voice).toBe(true);
   });
 
+  it("sets 🫡 reaction on voice message dequeue", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeVoiceEvent(11, "hello"));
+    await call({ question: "Continue?", timeout_seconds: 1 });
+    expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(11);
+  });
+
   it("validates question text before sending", async () => {
     const result = await call({ question: "" });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
     expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Issue #4 — commands sent during ask should be returned as break signals
+  // =========================================================================
+
+  it("returns command as a break signal instead of ignoring (#4)", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeCommandEvent(11, "cancel"));
+    const result = await call({ question: "Continue?", timeout_seconds: 1 });
+    const data = parseResult(result);
+    // Should not time out — command should be treated as a response
+    expect(data.timed_out).toBe(false);
+    expect(data.command).toBe("cancel");
   });
 });

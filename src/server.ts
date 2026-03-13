@@ -10,6 +10,7 @@ import { register as registerSendFile } from "./tools/send_file.js";
 import { register as registerAppendText } from "./tools/append_text.js";
 import { register as registerShowAnimation } from "./tools/show_animation.js";
 import { register as registerCancelAnimation } from "./tools/cancel_animation.js";
+import { register as registerSetDefaultAnimation } from "./tools/set_default_animation.js";
 import { register as registerSendTextAsVoice } from "./tools/send_text_as_voice.js";
 import { register as registerNotify } from "./tools/notify.js";
 import { register as registerEditMessageText } from "./tools/edit_message_text.js";
@@ -32,6 +33,7 @@ import { register as registerGetChat } from "./tools/get_chat.js";
 import { register as registerGetAgentGuide } from "./tools/get_agent_guide.js";
 import { register as registerDumpSessionRecord } from "./tools/dump_session_record.js";
 import { register as registerRestartServer } from "./tools/restart_server.js";
+import { register as registerSessionStart } from "./tools/session_start.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -65,6 +67,7 @@ export function createServer(): McpServer {
   // ── Visual (animations) ────────────────────────────────────────────────
   registerShowAnimation(server);
   registerCancelAnimation(server);
+  registerSetDefaultAnimation(server);
 
   // ── Interaction primitives ─────────────────────────────────────────────
   registerAnswerCallbackQuery(server);
@@ -91,6 +94,7 @@ export function createServer(): McpServer {
   registerGetChat(server);
 
   // ── Session ────────────────────────────────────────────────────────────
+  registerSessionStart(server);
   registerDumpSessionRecord(server);
 
   // ── System ─────────────────────────────────────────────────────────────

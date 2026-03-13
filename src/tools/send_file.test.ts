@@ -8,11 +8,7 @@ const mocks = vi.hoisted(() => ({
   sendAudio: vi.fn(),
   sendVoiceDirect: vi.fn(),
   resolveMediaSource: vi.fn(),
-  recordOutgoing: vi.fn(),
-  resetAnimationTimeout: vi.fn(),
-  cancelTyping: vi.fn(),
   showTyping: vi.fn(),
-  clearPendingTemp: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -31,21 +27,8 @@ vi.mock("../telegram.js", async (importActual) => {
   };
 });
 
-vi.mock("../message-store.js", () => ({
-  recordOutgoing: mocks.recordOutgoing,
-}));
-
-vi.mock("../animation-state.js", () => ({
-  resetAnimationTimeout: mocks.resetAnimationTimeout,
-}));
-
 vi.mock("../typing-state.js", () => ({
-  cancelTyping: mocks.cancelTyping,
   showTyping: mocks.showTyping,
-}));
-
-vi.mock("../temp-message.js", () => ({
-  clearPendingTemp: mocks.clearPendingTemp,
 }));
 
 import { register } from "./send_file.js";
@@ -55,7 +38,6 @@ describe("send_file tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.clearPendingTemp.mockReturnValue(undefined);
     mocks.showTyping.mockResolvedValue(undefined);
     mocks.resolveMediaSource.mockReturnValue({ source: "/path/to/file" });
     const server = createMockServer();
@@ -163,31 +145,6 @@ describe("send_file tool", () => {
     );
   });
 
-  // ---- recordOutgoing ----
-
-  it("calls recordOutgoing after sending photo", async () => {
-    mocks.sendPhoto.mockResolvedValue({ message_id: 18 });
-    await call({ file: "/img/photo.jpg", caption: "Cap" });
-    expect(mocks.recordOutgoing).toHaveBeenCalledWith(18, "photo", undefined, "Cap");
-  });
-
-  it("calls recordOutgoing after sending document", async () => {
-    mocks.sendDocument.mockResolvedValue({
-      message_id: 19,
-      document: { file_id: "d" },
-    });
-    await call({ file: "/file.txt" });
-    expect(mocks.recordOutgoing).toHaveBeenCalledWith(19, "document", undefined, undefined);
-  });
-
-  // ---- resetAnimationTimeout ----
-
-  it("calls resetAnimationTimeout", async () => {
-    mocks.sendPhoto.mockResolvedValue({ message_id: 20 });
-    await call({ file: "/img/photo.jpg" });
-    expect(mocks.resetAnimationTimeout).toHaveBeenCalledOnce();
-  });
-
   // ---- resolveMediaSource error ----
 
   it("returns error when resolveMediaSource fails", async () => {
@@ -220,5 +177,23 @@ describe("send_file tool", () => {
         reply_parameters: { message_id: 3 },
       }),
     );
+  });
+
+  // =========================================================================
+  // Issue #11 — http:// should be rejected for voice too
+  // =========================================================================
+
+  it("rejects http:// URL for voice type (#11)", async () => {
+    // resolveMediaSource should be called for voice too,
+    // and http:// should be rejected
+    mocks.resolveMediaSource.mockReturnValue({
+      code: "UNKNOWN",
+      message: "Plain HTTP URLs are not accepted",
+    });
+    const result = await call({
+      file: "http://evil.com/voice.ogg",
+      type: "voice",
+    });
+    expect(isError(result)).toBe(true);
   });
 });

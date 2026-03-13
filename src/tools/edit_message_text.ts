@@ -3,9 +3,7 @@ import type { InlineKeyboardMarkup } from "grammy/types";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
 import { recordOutgoingEdit } from "../message-store.js";
-import { resetAnimationTimeout } from "../animation-state.js";
 
 const DESCRIPTION =
   "Edits the text of a previously sent message. Supports Markdown " +
@@ -48,8 +46,6 @@ export function register(server: McpServer) {
       const resolved = resolveParseMode(text, parse_mode);
       const textErr = validateText(resolved.text);
       if (textErr) return toError(textErr);
-      cancelTyping();
-      resetAnimationTimeout();
       try {
         const result = await getApi().editMessageText(
           chatId,

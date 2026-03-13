@@ -11,6 +11,7 @@
  */
 
 import { getApi, resolveChat } from "./telegram.js";
+import { isAnimationActive, isAnimationPersistent, cancelAnimation } from "./animation-state.js";
 
 export type TypingAction =
   | "typing"
@@ -59,6 +60,12 @@ export function cancelTyping(): boolean {
  * Returns true if the indicator was newly started, false if an existing one was just extended.
  */
 export async function showTyping(timeoutSeconds: number, action: TypingAction = "typing"): Promise<boolean> {
+  // Cancel temporary animations — typing indicator replaces the placeholder.
+  // Persistent animations are agent-controlled and survive show_typing.
+  if (isAnimationActive() && !isAnimationPersistent()) {
+    await cancelAnimation();
+  }
+
   const timeoutMs = timeoutSeconds * 1000;
   const newDeadline = Date.now() + timeoutMs;
 

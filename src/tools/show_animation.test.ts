@@ -3,6 +3,8 @@ import { createMockServer, parseResult, isError } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   startAnimation: vi.fn(),
+  getPreset: vi.fn(),
+  getDefaultFrames: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -15,17 +17,19 @@ vi.mock("../animation-state.js", async (importActual) => {
   return {
     ...actual,
     startAnimation: mocks.startAnimation,
+    getPreset: mocks.getPreset,
+    getDefaultFrames: mocks.getDefaultFrames,
   };
 });
 
 import { register } from "./show_animation.js";
-import { DEFAULT_FRAMES } from "../animation-state.js";
 
 describe("show_animation tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getDefaultFrames.mockReturnValue(["`...`", "`·..`"]);
     const server = createMockServer();
     register(server);
     call = server.getHandler("show_animation");
@@ -39,13 +43,14 @@ describe("show_animation tool", () => {
     expect(data.message_id).toBe(50);
   });
 
-  it("passes default frames when none specified", async () => {
+  it("passes undefined frames when none specified (uses session default)", async () => {
     mocks.startAnimation.mockResolvedValue(51);
     await call({});
     expect(mocks.startAnimation).toHaveBeenCalledWith(
-      DEFAULT_FRAMES,
+      undefined,
       1000,
-      30,
+      120,
+      false,
     );
   });
 
@@ -60,7 +65,39 @@ describe("show_animation tool", () => {
       ["🔄", "⏳", "✅"],
       3000,
       60,
+      false,
     );
+  });
+
+  it("resolves preset frames by name", async () => {
+    mocks.getPreset.mockReturnValue(["thinking.", "thinking..", "thinking..."]);
+    mocks.startAnimation.mockResolvedValue(53);
+    const result = await call({ preset: "thinking" });
+    expect(isError(result)).toBe(false);
+    expect(mocks.startAnimation).toHaveBeenCalledWith(
+      ["thinking.", "thinking..", "thinking..."],
+      1000,
+      120,
+      false,
+    );
+  });
+
+  it("preset takes priority over explicit frames", async () => {
+    mocks.getPreset.mockReturnValue(["preset."]);
+    mocks.startAnimation.mockResolvedValue(54);
+    await call({ preset: "mypreset", frames: ["ignored"] });
+    expect(mocks.startAnimation).toHaveBeenCalledWith(
+      ["preset."],
+      1000,
+      120,
+      false,
+    );
+  });
+
+  it("returns error for unknown preset", async () => {
+    mocks.getPreset.mockReturnValue(undefined);
+    const result = await call({ preset: "nonexistent" });
+    expect(isError(result)).toBe(true);
   });
 
   it("returns error when startAnimation throws", async () => {
@@ -70,10 +107,22 @@ describe("show_animation tool", () => {
   });
 
   it("returns error when resolveChat fails", async () => {
-    // Re-register with a failing resolveChat by importing fresh
-    // The mock already returns 42, so test the startAnimation error path instead
     mocks.startAnimation.mockRejectedValue(new Error("Something went wrong"));
     const result = await call({ frames: ["⏳"] });
     expect(isError(result)).toBe(true);
+  });
+
+  it("passes persistent flag to startAnimation", async () => {
+    mocks.startAnimation.mockResolvedValue(55);
+    const result = await call({ persistent: true });
+    expect(isError(result)).toBe(false);
+    expect(mocks.startAnimation).toHaveBeenCalledWith(
+      undefined,
+      1000,
+      120,
+      true,
+    );
+    const data = parseResult(result);
+    expect(data.persistent).toBe(true);
   });
 });

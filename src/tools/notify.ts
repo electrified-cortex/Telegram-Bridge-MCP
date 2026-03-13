@@ -2,11 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat } from "../telegram.js";
 import { markdownToV2, escapeV2, escapeHtml } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToTitle } from "../topic-state.js";
-import { recordOutgoing } from "../message-store.js";
-import { resetAnimationTimeout } from "../animation-state.js";
 
 const SEVERITY_PREFIX: Record<string, string> = {
   info: "ℹ️",
@@ -70,16 +66,15 @@ export function register(server: McpServer) {
 
         const err = validateText(text);
         if (err) return toError(err);
-        cancelTyping();
-        resetAnimationTimeout();
-        clearPendingTemp();
+
+        const rawText = `${title}${body ? "\n" + body : ""}`;
 
         const msg = await getApi().sendMessage(chatId, text, {
           parse_mode: finalMode,
           disable_notification,
           reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
-        });
-        recordOutgoing(msg.message_id, "text", `${title}${body ? "\n" + body : ""}`);
+          _rawText: rawText,
+        } as Record<string, unknown>);
         return toResult({ message_id: msg.message_id });
       } catch (err) {
         return toError(err);

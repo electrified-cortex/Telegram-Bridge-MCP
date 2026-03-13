@@ -2,11 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { escapeHtml } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
 import { applyTopicToTitle } from "../topic-state.js";
-import { recordOutgoing } from "../message-store.js";
-import { resetAnimationTimeout } from "../animation-state.js";
 
 const STATUS_ICON: Record<string, string> = {
   pending:  "⬜",
@@ -68,11 +64,9 @@ export function register(server: McpServer) {
         const text = renderStatus(applyTopicToTitle(title), steps);
         const textErr = validateText(text);
         if (textErr) return toError(textErr);
-        cancelTyping();
-        resetAnimationTimeout();
-        clearPendingTemp();
 
         if (message_id !== undefined) {
+          // Editing existing message — proxy handles cancelTyping + animation timeout reset
           const result = await getApi().editMessageText(
             chatId,
             message_id,
@@ -82,10 +76,11 @@ export function register(server: McpServer) {
           const edited = typeof result === "boolean" ? { message_id } : result;
           return toResult({ message_id: edited.message_id, updated: true });
         } else {
+          // Sending new message — proxy handles animation promote + recording
           const msg = await getApi().sendMessage(chatId, text, {
             parse_mode: "HTML",
-          });
-          recordOutgoing(msg.message_id, "text", title);
+            _rawText: title,
+          } as Record<string, unknown>);
           return toResult({
             message_id: msg.message_id,
             hint: "Pass this message_id to future update_status calls to edit in-place.",

@@ -2,7 +2,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { pollButtonPress, ackAndEditSelection, editWithTimedOut } from "./button-helpers.js";
-import { recordOutgoing } from "../message-store.js";
 
 const CONFIRM_DATA = "get_chat_yes";
 const DENY_DATA = "get_chat_no";
@@ -33,8 +32,8 @@ export function register(server: McpServer) {
               { text: "❌ Deny", callback_data: DENY_DATA },
             ]],
           },
-        });
-        recordOutgoing(sent.message_id, "text", promptText);
+          _rawText: promptText,
+        } as Record<string, unknown>);
 
         const result = await pollButtonPress(chatId, sent.message_id, TIMEOUT_SECONDS);
 
