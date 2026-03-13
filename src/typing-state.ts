@@ -12,6 +12,7 @@
 
 import { getApi, resolveChat } from "./telegram.js";
 import { isAnimationActive, isAnimationPersistent, cancelAnimation } from "./animation-state.js";
+import { fireTempReactionRestore } from "./temp-reaction.js";
 
 export type TypingAction =
   | "typing"
@@ -65,6 +66,9 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
   if (isAnimationActive() && !isAnimationPersistent()) {
     await cancelAnimation();
   }
+
+  // Showing typing signals intent to respond — treat as outbound, restore temp reaction.
+  await fireTempReactionRestore();
 
   const timeoutMs = timeoutSeconds * 1000;
   const newDeadline = Date.now() + timeoutMs;
