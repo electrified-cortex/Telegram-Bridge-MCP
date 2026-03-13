@@ -91,15 +91,23 @@ export async function pollButtonPress(
 /**
  * Wait for EITHER a callback_query on the given message OR a text/voice
  * message from the store queue. Used by choose.
+ *
+ * @param onVoiceDetected - Optional callback fired immediately when a voice
+ *   message arrives, before transcription finishes. Use this to remove the
+ *   interactive keyboard right away so the user doesn't see a delayed edit.
  */
 export async function pollButtonOrTextOrVoice(
   _chatId: number,
   messageId: number,
   timeoutSeconds: number,
+  onVoiceDetected?: () => void,
 ): Promise<ButtonOrTextResult | null> {
   const deadline = Date.now() + timeoutSeconds * 1000;
+  let voiceDetectedFired = false;
 
   while (Date.now() < deadline) {
+    let hasPendingVoice = false;
+
     const result = dequeueMatch((event: TimelineEvent) => {
       // Check for callback on the specific message
       if (event.event === "callback" && event.content.target === messageId) {
@@ -117,7 +125,11 @@ export async function pollButtonOrTextOrVoice(
         }
         if (event.content.type === "voice") {
           // Don't consume until transcription is complete (two-phase recording)
-          if (!event.content.text) return undefined;
+          if (!event.content.text) {
+            // Voice arrived but transcription not yet done — flag for immediate edit
+            hasPendingVoice = true;
+            return undefined;
+          }
           ackVoiceMessage(event.id);
           return {
             kind: "voice" as const,
@@ -136,6 +148,13 @@ export async function pollButtonOrTextOrVoice(
       }
       return undefined;
     });
+
+    // Fire onVoiceDetected once as soon as a voice message is seen (pre-transcription)
+    if (hasPendingVoice && !voiceDetectedFired) {
+      voiceDetectedFired = true;
+      onVoiceDetected?.();
+    }
+
     if (result) return result;
 
     const remaining = deadline - Date.now();

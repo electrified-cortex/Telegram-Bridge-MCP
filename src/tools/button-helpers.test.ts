@@ -246,5 +246,44 @@ describe("button-helpers", () => {
       expect(result).not.toBeNull();
       expect(result!.kind).toBe("command");
     });
+
+    it("fires onVoiceDetected immediately when voice arrives without transcription", async () => {
+      // First call: voice with no text (pending transcription)
+      // Second call: same voice with text (transcription done)
+      let callCount = 0;
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        callCount++;
+        if (callCount === 1) {
+          fn({ event: "message", id: 11, content: { type: "voice" } }); // no text yet
+          return undefined;
+        }
+        return fn({ event: "message", id: 11, content: { type: "voice", text: "done" } });
+      });
+      mocks.waitForEnqueue.mockResolvedValue(undefined);
+
+      const onVoiceDetected = vi.fn();
+      const result = await pollButtonOrTextOrVoice(123, 10, 1, onVoiceDetected);
+
+      expect(onVoiceDetected).toHaveBeenCalledOnce();
+      expect(result).toEqual({ kind: "voice", message_id: 11, text: "done" });
+    });
+
+    it("fires onVoiceDetected only once even across multiple loops", async () => {
+      let callCount = 0;
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        callCount++;
+        if (callCount <= 2) {
+          fn({ event: "message", id: 11, content: { type: "voice" } }); // no text
+          return undefined;
+        }
+        return fn({ event: "message", id: 11, content: { type: "voice", text: "ready" } });
+      });
+      mocks.waitForEnqueue.mockResolvedValue(undefined);
+
+      const onVoiceDetected = vi.fn();
+      await pollButtonOrTextOrVoice(123, 10, 1, onVoiceDetected);
+
+      expect(onVoiceDetected).toHaveBeenCalledOnce();
+    });
   });
 });

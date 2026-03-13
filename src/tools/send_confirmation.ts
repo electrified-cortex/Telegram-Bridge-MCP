@@ -84,7 +84,15 @@ export function register(server: McpServer) {
           _rawText: text,
         } as Record<string, unknown>);
 
-        const result = await pollButtonOrTextOrVoice(chatId, sent.message_id, timeout_seconds);
+        // Fires immediately when a voice message is detected (before transcription).
+        // This removes the keyboard right away so the user doesn't see a delayed edit.
+        let skippedEditDone = false;
+        const onVoiceDetected = () => {
+          skippedEditDone = true;
+          editWithSkipped(chatId, sent.message_id, text).catch(() => {/* non-fatal */});
+        };
+
+        const result = await pollButtonOrTextOrVoice(chatId, sent.message_id, timeout_seconds, onVoiceDetected);
 
         if (!result) {
           await editWithTimedOut(chatId, sent.message_id, text);
@@ -93,7 +101,7 @@ export function register(server: McpServer) {
 
         // User typed or spoke instead of pressing a button — mark as skipped
         if (result.kind === "text" || result.kind === "voice") {
-          await editWithSkipped(chatId, sent.message_id, text);
+          if (!skippedEditDone) await editWithSkipped(chatId, sent.message_id, text);
           return toResult({
             skipped: true,
             text_response: result.text,

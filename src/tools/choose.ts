@@ -95,7 +95,15 @@ export function register(server: McpServer) {
           replyToMessageId: reply_to_message_id,
         });
 
-        const match = await pollButtonOrTextOrVoice(chatId, messageId, timeout_seconds);
+        // Fires immediately when a voice message is detected (before transcription).
+        // This removes the keyboard right away so the user doesn't see a delayed edit.
+        let skippedEditDone = false;
+        const onVoiceDetected = () => {
+          skippedEditDone = true;
+          editWithSkipped(chatId, messageId, question).catch(() => {/* non-fatal */});
+        };
+
+        const match = await pollButtonOrTextOrVoice(chatId, messageId, timeout_seconds, onVoiceDetected);
 
         if (!match) {
           // Timeout — remove buttons so they can't be clicked with no listener.
@@ -118,7 +126,7 @@ export function register(server: McpServer) {
         }
 
         if (match.kind === "voice") {
-          await editWithSkipped(chatId, messageId, question);
+          if (!skippedEditDone) await editWithSkipped(chatId, messageId, question);
           return toResult({
             skipped: true,
             text_response: match.text ?? "[no transcription]",
