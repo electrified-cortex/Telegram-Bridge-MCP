@@ -147,6 +147,14 @@ const _messageLane = new SimpleQueue<QueueItem>();
  */
 let _waiters: Array<() => void> = [];
 
+/**
+ * One-shot hooks registered by send_choice for auto-lock. Fired on the first
+ * callback_query for the target messageId, then removed. The event is still
+ * enqueued normally so dequeue_update will see it.
+ */
+type CallbackHookFn = (event: TimelineEvent) => void;
+const _callbackHooks = new Map<number, CallbackHookFn>();
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -265,6 +273,15 @@ export function recordInbound(update: Update, transcribedText?: string): void {
     // Callbacks are indexed by their own position in the queue, not by target.
     _timeline.push(evt);
     evictTimeline();
+
+    // Fire one-shot auto-lock hook (registered by send_choice). Remove before
+    // calling to prevent re-entry; errors are non-fatal.
+    const hook = _callbackHooks.get(targetId);
+    if (hook) {
+      _callbackHooks.delete(targetId);
+      try { hook(evt); } catch { /* non-fatal */ }
+    }
+
     _responseLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
     notifyWaiters();
     return;
@@ -642,4 +659,15 @@ export function resetStoreForTest(): void {
   _responseLane.clear();
   _messageLane.clear();
   _waiters = [];
+  _callbackHooks.clear();
+}
+
+/** Register a one-shot auto-lock hook for a send_choice message. */
+export function registerCallbackHook(messageId: number, fn: CallbackHookFn): void {
+  _callbackHooks.set(messageId, fn);
+}
+
+/** Remove a previously registered callback hook (e.g. on send_choice cleanup). */
+export function clearCallbackHook(messageId: number): void {
+  _callbackHooks.delete(messageId);
 }

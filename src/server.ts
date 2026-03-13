@@ -7,6 +7,7 @@ import { register as registerDequeueUpdate } from "./tools/dequeue_update.js";
 import { register as registerGetMessage } from "./tools/get_message.js";
 import { register as registerSendText } from "./tools/send_text.js";
 import { register as registerSendMessage } from "./tools/send_message.js";
+import { register as registerSendChoice } from "./tools/send_choice.js";
 import { register as registerSendFile } from "./tools/send_file.js";
 import { register as registerAppendText } from "./tools/append_text.js";
 import { register as registerShowAnimation } from "./tools/show_animation.js";
@@ -50,8 +51,7 @@ export function createServer(): McpServer {
   registerSetTopic(server);
   registerNotify(server);
   registerAsk(server);
-  registerChoose(server);
-  registerUpdateStatus(server);
+  registerChoose(server);  registerSendChoice(server);  registerUpdateStatus(server);
   registerSendConfirmation(server);
 
   // ── Polling ─────────────────────────────────────────────────────────────
