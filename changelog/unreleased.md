@@ -27,6 +27,9 @@
 - Fixed `show_animation` not firing `fireTempReactionRestore` when a new animation message is created — temp reactions are now cleared as expected
 - Fixed `ackVoiceMessage` unconditionally calling `trySetMessageReaction` — now a no-op when the message already has the `🫡` reaction recorded
 
+- Fixed orphaned `setTimeout` handles in `dequeue_update` and `ask` loop iterations — timer is now cancelled with `clearTimeout` after the `Promise.race` resolves
+- Fixed `snake_case` local variable names in `get_me.ts` — renamed `mcp_commit`/`mcp_build_time` to `mcpCommit`/`mcpBuildTime`; wire-format output field names are unchanged
+
 ## Removed
 
 - Removed `mcp-config.json` from version control (now gitignored; copy from `mcp-config.example.json`)

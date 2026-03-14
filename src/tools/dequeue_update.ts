@@ -71,11 +71,13 @@ export function register(server: McpServer) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
 
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([
           waitForEnqueue(),
-          new Promise<void>((r) => setTimeout(r, remaining)),
+          new Promise<void>((r) => { timeoutHandle = setTimeout(r, remaining); }),
           abortPromise,
         ]);
+        clearTimeout(timeoutHandle);
 
         batch = dequeueBatch();
         if (batch.length > 0) {

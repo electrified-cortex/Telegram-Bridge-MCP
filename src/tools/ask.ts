@@ -94,11 +94,13 @@ export function register(server: McpServer) {
           const remaining = deadline - Date.now();
           if (remaining <= 0) break;
 
+          let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
             waitForEnqueue(),
-            new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
+            new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(remaining, 5000)); }),
             abortPromise,
           ]);
+          clearTimeout(timeoutHandle);
         }
 
         return toResult({ timed_out: true });
