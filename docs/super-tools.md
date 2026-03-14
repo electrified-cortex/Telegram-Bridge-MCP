@@ -58,39 +58,35 @@ pin_message(message_id, unpin: true)
 
 ---
 
-### `progress_bar`
+### `progress_bar` → `send_new_progress` + `update_progress`
 
 A visual progress bar rendered with emoji blocks.
-Not yet implemented.
+Implemented as two tools: `send_new_progress` (create) and `update_progress` (edit in-place).
 
-**Concept:**
+**Example:**
 
 ```text
-{ message_id } = progress_bar(title, percent, subtext?)
+{ message_id } = send_new_progress(title, percent, subtext?)
 
-# Built-in render example (50%, default style):
+# Built-in render (50%, default width 10):
 # ▓▓▓▓▓░░░░░  50%
 # Building dist/...
 
-progress_bar(title, 100, "Done in 4.2s", message_id)
+update_progress(message_id, title, 100, "Done in 4.2s")
 ```
 
-**Parameters (planned):**
+**Parameters:**
 
 | Parameter | Type | Notes |
 | --- | --- | --- |
 | `title` | string | Bold heading |
 | `percent` | 0–100 | Current progress |
 | `subtext` | string (optional) | Italicized detail line below the bar |
-| `width` | number (optional) | Bar width in chars; default 10 |
-| `style` | string (optional) | Named style preset; default uses `▓`/`░` |
-| `message_id` | number (optional) | Omit to create; pass to edit in-place |
+| `width` | number (optional) | Bar width in chars; default 10, max 40 |
+| `message_id` | number | Required for `update_progress`; pass the value returned by `send_new_progress` |
 
-**Auto-lifecycle (planned):**
-
-- First call (no `message_id`): send + pin (silent)
-- Subsequent calls: edit in-place
-- `percent: 100`: reply to original message → unpin (if messages exist after it)
+Multiple concurrent progress bars are supported — each is tracked by its own `message_id`.
+The server is stateless; all parameters must be passed on every `update_progress` call.
 
 ---
 

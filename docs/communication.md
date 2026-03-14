@@ -125,7 +125,7 @@ Never assume silence means approval. If unsure whether to proceed, ask via `conf
 - `*bold*` for headers and key terms
 - `` `code` `` for commands, paths, values
 - ` ``` ` for command output / config snippets
-- Always thread replies with `reply_to_message_id`
+- Use `reply_to_message_id` at most once per response thread — thread the first reply to a specific operator message for context, then let subsequent messages flow unthreaded
 
 ### Symbol usage — quiet vs loud
 

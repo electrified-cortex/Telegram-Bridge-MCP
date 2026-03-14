@@ -37,6 +37,8 @@ import { register as registerGetAgentGuide } from "./tools/get_agent_guide.js";
 import { register as registerDumpSessionRecord } from "./tools/dump_session_record.js";
 import { register as registerShutdownServer } from "./tools/shutdown.js";
 import { register as registerSessionStart } from "./tools/session_start.js";
+import { register as registerSendNewProgress } from "./tools/send_new_progress.js";
+import { register as registerUpdateProgress } from "./tools/update_progress.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -51,7 +53,7 @@ export function createServer(): McpServer {
   registerSetTopic(server);
   registerNotify(server);
   registerAsk(server);
-  registerChoose(server);  registerSendChoice(server);  registerSendNewChecklist(server);
+  registerChoose(server);  registerSendChoice(server);  registerSendNewChecklist(server);  registerSendNewProgress(server);
   registerConfirm(server);
 
   // ── Polling ─────────────────────────────────────────────────────────────
@@ -96,6 +98,9 @@ export function createServer(): McpServer {
   // ── Info ───────────────────────────────────────────────────────────────
   registerGetMe(server);
   registerGetChat(server);
+
+  // ── Progress ───────────────────────────────────────────────────────────
+  registerUpdateProgress(server);
 
   // ── Session ────────────────────────────────────────────────────────────
   registerSessionStart(server);

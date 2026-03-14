@@ -128,6 +128,8 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 | `choose` | Send a question with 2–8 labeled buttons; blocks until you tap one or speak a reply. Supports per-button color (`success`/`primary`/`danger`). |
 | `confirm` | Yes/No prompt with customizable button colors; blocks until confirmed or denied. |
 | `send_new_checklist` | Live in-place checklist — edits itself as steps complete |
+| `send_new_progress` | Emoji block progress bar — `▓▓▓▓▓░░░░░ 50%`. Returns `message_id` to track. |
+| `update_progress` | Edit an existing progress bar in-place by `message_id`. |
 | `show_animation` | Cycling placeholder message visible while the agent works — signals "thinking". Cancel with text to make it a permanent log entry. |
 | `dequeue_update` | Wait for the next message, button tap, voice reply, or slash command from the user |
 
@@ -135,7 +137,13 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 
 `edit_message_text` · `append_text` · `delete_message` · `pin_message` · `send_file` · `send_chat_action` · `show_typing` · `cancel_animation` · `answer_callback_query` · `get_message`
 
+### Message primitives
+
+`send_message` · `edit_message` · `send_choice`
+
 ### Session start
+
+`session_start` — sends intro, checks for pending messages from a previous session, asks the operator to resume or start fresh. Call once at session start.
 
 `get_agent_guide` — loads the behavioral guide. Call once at session start.
 
@@ -153,7 +161,7 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 
 ### Session
 
-`dump_session_record`
+`session_start` · `dump_session_record`
 
 ---
 

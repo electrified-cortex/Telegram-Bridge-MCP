@@ -38,7 +38,7 @@
 - **`show_animation` tool** — starts a typing/thinking animation via `startAnimation`
 - **`cancel_animation` tool** — cancels active animation with optional replacement text
 - **`telegram.ts` split API singletons** — `getRawApi()` returns the unwrapped Grammy `Api` (for animation internals), `getApi()` returns the proxied version (for tools)
-- **ESLint upgraded to `strictTypeChecked`** — switched from `recommended` to `strictTypeChecked` preset; fixed all violations across source and test files (323 → 0)
+- **ESLint upgraded to `strictTypeChecked`** — switched from `recommended` to `strictTypeChecked` preset; fixed all violations across source and test files (323 → 0); follow-up pass fixed 9 remaining violations introduced by the v3 rewrite (`prefer-const`, unused import, unknown catch type, `String()` template cast, void-expression arrow functions, `no-misused-spread`, and `_state` null narrowing via local `const` capture)
 - **Replaced `@tsdotnet/queue` with inline `SimpleQueue<T>`** — eliminates external dependency and fixes 33 type-resolution failures caused by pnpm strict symlinking
 - **Test-file ESLint override** — relaxed `no-non-null-assertion`, `no-unsafe-*`, and `no-unnecessary-condition` for `*.test.ts` files (standard practice for mock-heavy test code)
 - **Renamed `session_recording.test.ts` → `dump_session_record.test.ts`** — test file now matches the tool it tests
@@ -70,6 +70,8 @@
 - **`LOOP-PROMPT.md` updated** — setup flow now uses `session_start` instead of manual drain loop
 - **All tool files stripped of cross-cutting imports** — `cancelTyping`, `clearPendingTemp`, `recordOutgoing`, `juggleAnimation`, `suspendAnimation`, `resumeAnimation` removed from 11 tool files; the outbound proxy handles these transparently
 - **`send_confirmation` renamed to `confirm`** — aligns with the short blocking-verb pattern (`ask`, `choose`, `confirm`); `send_*` tools are non-blocking, short verbs block; the old name broke the convention
+- **`send_new_progress` + `update_progress` tools** — emoji block progress bar rendered as `▓▓▓▓▓░░░░░ 50%`; `send_new_progress` creates a new message and returns `{ message_id, hint }`; `update_progress` edits it in-place; multiple concurrent bars supported, each tracked by its own `message_id`; optional `subtext` italic detail line; configurable `width` (default 10, max 40); server-stateless — all params required on every update call
+- **Technical docs relocated** — pure implementation supplement docs moved next to their source files following the `src/*.ts.md` convention: `docs/v3-message-store.md` → `src/message-store.ts.md`, `docs/outbound-proxy.md` → `src/outbound-proxy.ts.md`, `docs/session-recording.md` → `src/session-recording.ts.md`, `docs/animation-spec.md` → `src/animation-state.ts.md`, `docs/animation-flow.md` → `src/animation-state.ts.flow.md`, `docs/animation-edge-cases.md` → `src/animation-state.ts.edge-cases.md`
 
 ## Fixed
 

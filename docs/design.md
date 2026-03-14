@@ -54,6 +54,8 @@ Tools are grouped by abstraction level.
 | `confirm` | Sends a Yes/No inline keyboard and blocks until a button is pressed. Returns `{ confirmed: true \| false }`, or `{ timed_out: true }` if the timeout expires without input. |
 | `send_choice` | Sends buttons and returns immediately with a `message_id`. The first press auto-locks the keyboard; the callback event appears in `dequeue_update`. Non-blocking version of `choose`. |
 | `send_new_checklist` | Creates or edits a live task checklist message with per-step status indicators. |
+| `send_new_progress` | Creates a progress bar message rendered as `▓▓▓▓▓░░░░░ 50%`. Returns `{ message_id }`. |
+| `update_progress` | Edits an existing progress bar in-place by `message_id`. All params required each call. |
 
 ### Polling & message retrieval
 
@@ -195,8 +197,8 @@ telegram-bridge-mcp/
 │       ├── choose.ts
 │       ├── confirm.ts
 │       ├── send_choice.ts
-│       ├── send_new_checklist.ts
-│       ├── dequeue_update.ts
+│       ├── send_new_checklist.ts│       ├── send_new_progress.ts
+│       ├── update_progress.ts│       ├── dequeue_update.ts
 │       ├── get_message.ts
 │       ├── answer_callback_query.ts
 │       ├── send_message.ts
