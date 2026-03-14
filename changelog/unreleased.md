@@ -101,6 +101,7 @@
 - **Context bloat in `dump_session_record`** — added `limit` parameter (default 100, max 1000) and compact JSON output; prevents unbounded 500 KB responses
 - **`send_file` voice http:// rejection** — voice type now consistently rejects `http://` URLs through `resolveMediaSource` instead of silently bypassing the check
 - **`send_confirmation` command handling** — slash commands during a confirmation now return `{ skipped: true, command, args }` instead of causing a type error
+- **Stale built-in commands on startup** — built-in commands (`/shutdown`, `/session`, `/version`) sent before the server started are now silently discarded; prevents a queued `/shutdown` from killing a freshly-restarted server in a loop
 
 ## Security
 

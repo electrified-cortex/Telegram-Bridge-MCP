@@ -54,6 +54,13 @@ const _activePanels = new Map<number, "session">();
 /** Set to true after sending the startup prefs prompt so we only ask once per process. */
 let _sessionPrefsAsked = false;
 
+/**
+ * Unix timestamp (seconds) captured at module load — used to discard stale
+ * built-in commands that were queued before this process started.
+ * Prevents e.g. a lingering `/shutdown` from killing a freshly-started server.
+ */
+const _startupEpoch = Math.floor(Date.now() / 1000);
+
 export function isBuiltInPanelQuery(update: Update): boolean {
   const msgId = update.callback_query?.message?.message_id;
   if (msgId === undefined) return false;
@@ -138,6 +145,16 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
     const entities = update.message.entities ?? [];
     const cmd = entities.find(e => e.type === "bot_command" && e.offset === 0);
     if (cmd) {
+      // Ignore commands sent before this process started (prevents e.g. a
+      // queued /shutdown from killing a freshly-restarted server).
+      if ((update.message.date ?? 0) < _startupEpoch) {
+        process.stderr.write(
+          `[built-in] ignoring stale /${update.message.text.slice(1, cmd.length).split("@")[0]} `
+          + `(msg date ${update.message.date}, startup ${_startupEpoch})\n`,
+        );
+        return true; // consumed — don't forward to agent either
+      }
+
       const raw = update.message.text.slice(1, cmd.length).split("@")[0];
       if (raw === "session") {
         await handleSessionCommand();

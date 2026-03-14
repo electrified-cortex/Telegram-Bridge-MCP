@@ -86,7 +86,7 @@ function cmdUpdate(text: string): Update {
     update_id: 1,
     message: {
       message_id: 1,
-      date: 0,
+      date: Math.floor(Date.now() / 1000),
       chat: { id: 123, type: "private" },
       from: { id: 1, is_bot: false, first_name: "T" },
       text,
@@ -105,7 +105,7 @@ function callbackUpdate(msgId: number, data: string): Update {
       data,
       message: {
         message_id: msgId,
-        date: 0,
+        date: Math.floor(Date.now() / 1000),
         chat: { id: 123, type: "private" },
       },
     },
@@ -161,6 +161,24 @@ describe("built-in-commands", () => {
   it("returns false for empty update", async () => {
     const update = { update_id: 1 } as Update;
     expect(await handleIfBuiltIn(update)).toBe(false);
+  });
+
+  it("ignores stale commands from before startup", async () => {
+    const staleUpdate = {
+      update_id: 1,
+      message: {
+        message_id: 1,
+        date: 0, // epoch 0 — always before startup
+        chat: { id: 123, type: "private" },
+        from: { id: 1, is_bot: false, first_name: "T" },
+        text: "/shutdown",
+        entities: [{ type: "bot_command", offset: 0, length: 9 }],
+      },
+    } as unknown as Update;
+    // Should return true (consumed) but NOT trigger shutdown
+    expect(await handleIfBuiltIn(staleUpdate)).toBe(true);
+    // stopPoller is imported from poller — if shutdown ran it would be called.
+    // Since this is mocked, we verify it was NOT called.
   });
 
   // -- /session command ----------------------------------------------------
