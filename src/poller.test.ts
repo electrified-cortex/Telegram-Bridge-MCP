@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   filterAllowedUpdates: vi.fn((u: Update[]): Update[] => u),
   trySetMessageReaction: vi.fn(),
   handleIfBuiltIn: vi.fn((): Promise<boolean> => Promise.resolve(false)),
-  recordInbound: vi.fn(),
+  recordInbound: vi.fn((): boolean => true),
   patchVoiceText: vi.fn(),
   transcribeVoice: vi.fn((): Promise<string> => Promise.resolve("hello world")),
 }));
@@ -37,6 +37,7 @@ vi.mock("./message-store.js", () => ({
   recordInbound: mocks.recordInbound,
   patchVoiceText: mocks.patchVoiceText,
   hasPendingWaiters: vi.fn().mockReturnValue(false),
+  isMessageConsumed: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("./transcribe.js", () => ({

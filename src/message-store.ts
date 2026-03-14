@@ -144,6 +144,14 @@ let _botReactionIndex = new Map<number, string>();
 const _responseLane = new SimpleQueue<QueueItem>();
 const _messageLane = new SimpleQueue<QueueItem>();
 
+/** Message IDs that have been dequeued by the agent. Used by poller to skip 😴 on already-consumed voice messages. */
+const _consumedMessageIds = new Set<number>();
+
+/** Returns true if the given message_id has already been dequeued. */
+export function isMessageConsumed(messageId: number): boolean {
+  return _consumedMessageIds.has(messageId);
+}
+
 /**
  * Listeners waiting for the next enqueue. Resolved when a new item is
  * pushed to either lane. Used by dequeue_update to wait on empty queue.
@@ -226,7 +234,7 @@ function pushEvent(event: TimelineEvent): void {
  *   The poller transcribes voice before calling recordInbound so the
  *   agent never blocks on transcription.
  */
-export function recordInbound(update: Update, transcribedText?: string): void {
+export function recordInbound(update: Update, transcribedText?: string): boolean {
   recordUpdate(update);
 
   // --- Edited message: silent store update, no enqueue ---
@@ -249,7 +257,7 @@ export function recordInbound(update: Update, transcribedText?: string): void {
     // Overwrite current in index — no version history for user edits
     const versions = _index.get(msgId);
     if (versions) versions.set(CURRENT, evt);
-    return;
+    return true;
   }
 
   // --- Callback query ---
@@ -287,7 +295,7 @@ export function recordInbound(update: Update, transcribedText?: string): void {
 
     _responseLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
     notifyWaiters();
-    return;
+    return true;
   }
 
   // --- Reaction ---
@@ -317,12 +325,16 @@ export function recordInbound(update: Update, transcribedText?: string): void {
     // Reactions don't overwrite the message index — they reference it
     _responseLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
     notifyWaiters();
-    return;
+    return true;
   }
 
   // --- Regular message ---
   if (update.message) {
     const msg = update.message;
+    // Dedup: skip if this message_id is already in the index (restart re-delivery)
+    if (_index.has(msg.message_id)) {
+      return true;
+    }
     const content = buildMessageContent(msg, transcribedText);
     if (msg.reply_to_message) {
       content.reply_to = msg.reply_to_message.message_id;
@@ -339,10 +351,11 @@ export function recordInbound(update: Update, transcribedText?: string): void {
     _messageLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
     notifyWaiters();
 
-    return;
+    return true;
   }
 
   // Unrecognized update type — ignore
+  return false;
 }
 
 /** Extract content fields from an inbound message. */
@@ -451,11 +464,6 @@ export function recordOutgoingEdit(
   const versions = _index.get(messageId);
   if (!versions) {
     // Message was evicted — record as edit (not "sent") to preserve intent
-    recordBotMessage({
-      message_id: messageId,
-      content_type: contentType,
-      text,
-    });
     const evt: TimelineEvent = {
       id: messageId,
       timestamp: now(),
@@ -523,10 +531,34 @@ export function getBotReaction(messageId: number): string | null {
 
 /**
  * Returns the next available queue item, response lane first.
- * Returns undefined if both lanes are empty.
+ * Skips voice messages that are still waiting for transcription (text is
+ * undefined) — they stay queued until patchVoiceText fills them in.
+ * Returns undefined if both lanes are empty or only contain pending voice.
  */
 export function dequeue(): TimelineEvent | undefined {
-  return (_responseLane.dequeue() ?? _messageLane.dequeue())?.event;
+  const item = _dequeueReady(_responseLane) ?? _dequeueReady(_messageLane);
+  if (item?.event.id !== undefined) _consumedMessageIds.add(item.event.id);
+  return item?.event;
+}
+
+/** Dequeue the first item that is NOT a voice-pending-transcription. */
+function _dequeueReady(lane: SimpleQueue<QueueItem>): QueueItem | undefined {
+  const items = lane.dump();
+  let found: QueueItem | undefined;
+  for (const item of items) {
+    if (!found && _isReady(item)) {
+      found = item;
+      continue; // don't re-enqueue the consumed item
+    }
+    lane.enqueue(item);
+  }
+  return found;
+}
+
+/** A queue item is ready unless it's a voice message still waiting for text. */
+function _isReady(item: QueueItem): boolean {
+  const c = item.event.content;
+  return !(c.type === "voice" && c.text === undefined);
 }
 
 /**
@@ -549,19 +581,23 @@ function scanAndRemove<T>(
 ): T | undefined {
   const items = lane.dump();
   let found: T | undefined;
+  let consumedEventId: number | undefined;
   for (const item of items) {
     if (found === undefined) {
       const result = predicate(item.event);
       if (result !== undefined) {
         found = result;
+        consumedEventId = item.event.id;
         continue; // don't re-enqueue the matched item
       }
     }
     lane.enqueue(item);
   }
-  // Only wake waiters when a match was found AND items remain — prevents
-  // churn loop where misses wake waiters that re-scan and re-wake.
-  if (found !== undefined && lane.count > 0) notifyWaiters();
+  if (consumedEventId !== undefined) _consumedMessageIds.add(consumedEventId);
+  // Wake waiters when a match was found — even if the lane is now empty (items
+  // may exist in the other lane). The churn-loop concern only applies to *misses*
+  // (found === undefined), which still skip the notify.
+  if (found !== undefined) notifyWaiters();
   return found;
 }
 
@@ -677,6 +713,7 @@ export function resetStoreForTest(): void {
   _waiters = [];
   _callbackHooks.clear();
   _botReactionIndex.clear();
+  _consumedMessageIds.clear();
 }
 
 /** Register a one-shot auto-lock hook for a send_choice message. */

@@ -256,12 +256,12 @@ describe("recordInbound — voice messages", () => {
     expect(evt!.content.text).toBe("Hello from voice");
   });
 
-  it("records undefined text when transcription not provided", () => {
+  it("skips voice event without text in dequeue (waits for transcription)", () => {
     recordInbound(voiceUpdate(11));
 
+    // Voice without text is not ready — dequeue should skip it
     const evt = dequeue();
-    expect(evt!.content.type).toBe("voice");
-    expect(evt!.content.text).toBeUndefined();
+    expect(evt).toBeUndefined();
   });
 });
 
