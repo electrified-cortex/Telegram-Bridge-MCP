@@ -31,6 +31,7 @@ vi.mock("./outbound-proxy.js", () => ({
   registerSendInterceptor: mocks.registerSendInterceptor,
   clearSendInterceptor: mocks.clearSendInterceptor,
   bypassProxy: (fn: () => unknown) => fn(),
+  fireTempReactionRestore: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./message-store.js", () => ({

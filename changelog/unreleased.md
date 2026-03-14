@@ -23,6 +23,10 @@
 - Promoted inline regex literals in `markdown.ts` to named module-level constants (`MCP_BACKSLASH_STASH`, `MCP_MARKDOWN_UNESCAPE`)
 - Promoted remaining major inline regexes in `markdownToV2` to named constants (`FENCED_CODE_BLOCK`, `FENCED_CODE_UNCLOSED`, `BLOCKQUOTE_LINE`, `ATX_HEADING`)
 
+- Fixed animation default timeout being only 2 minutes — changed to 10 minutes (600 s) in both `show_animation.ts` and `animation-state.ts`
+- Fixed `show_animation` not firing `fireTempReactionRestore` when a new animation message is created — temp reactions are now cleared as expected
+- Fixed `ackVoiceMessage` unconditionally calling `trySetMessageReaction` — now a no-op when the message already has the `🫡` reaction recorded
+
 ## Removed
 
 - Removed `mcp-config.json` from version control (now gitignored; copy from `mcp-config.example.json`)

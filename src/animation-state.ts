@@ -19,6 +19,7 @@ import {
   registerSendInterceptor,
   clearSendInterceptor,
   bypassProxy,
+  fireTempReactionRestore,
 } from "./outbound-proxy.js";
 import { recordOutgoing, getHighestMessageId, trackMessageId } from "./message-store.js";
 
@@ -208,6 +209,7 @@ export async function startAnimation(
     } catch {
       // Edit failed (message gone?) — fall back to creating a new one
       _state = null;
+      await fireTempReactionRestore(); // treat new animation as an outbound action
       const msg = await bypassProxy(() =>
         getRawApi().sendMessage(chatId, firstFrame, { parse_mode: parseMode }),
       );
@@ -220,6 +222,7 @@ export async function startAnimation(
       _savedForResume = null;
       clearSendInterceptor();
     }
+    await fireTempReactionRestore(); // treat new animation as an outbound action
     const msg = await bypassProxy(() =>
       getRawApi().sendMessage(chatId, firstFrame, { parse_mode: parseMode }),
     );
