@@ -4,8 +4,9 @@ import {
   resolveChat,
   toResult, toError, validateText, validateCallbackData, LIMITS,
 } from "../telegram.js";
+import { registerCallbackHook, clearCallbackHook } from "../message-store.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   sendChoiceMessage, type KeyboardOption,
 } from "./button-helpers.js";
 
@@ -15,9 +16,9 @@ const DESCRIPTION =
   "Automatically removes the buttons and updates the message to show the " +
   "chosen option. If the user sends a text or voice message instead, " +
   "returns { skipped: true, text_response }. If no input arrives within " +
-  "timeout_seconds, buttons are removed, the message is marked Skipped, " +
-  "and returns { timed_out: true }. Multiple choose calls can be chained " +
-  "for questionnaires. Use for any single-selection choice.";
+  "timeout_seconds, returns { timed_out: true } — buttons remain live and " +
+  "late clicks are still handled automatically. Multiple choose calls can " +
+  "be chained for questionnaires. Use for any single-selection choice.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -61,7 +62,7 @@ export function register(server: McpServer) {
         .describe("Reply to this message ID — shows quoted message above the question"),
       },
     },
-    async ({ question, options, timeout_seconds, columns, reply_to_message_id }) => {
+    async ({ question, options, timeout_seconds, columns, reply_to_message_id }, { signal }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(question);
@@ -95,20 +96,28 @@ export function register(server: McpServer) {
           replyToMessageId: reply_to_message_id,
         });
 
+        // Register callback hook — handles button clicks even after poll timeout.
+        // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
+        registerCallbackHook(messageId, (evt) => {
+          const chosen = options.find((o) => o.value === evt.content.data);
+          const chosenLabel = chosen?.label ?? evt.content.data ?? "";
+          void ackAndEditSelection(chatId, messageId, question, chosenLabel, evt.content.qid)
+            .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${e}\n`));
+        });
+
         // Fires immediately when a voice message is detected (before transcription).
         // This removes the keyboard right away so the user doesn't see a delayed edit.
         let skippedEditDone = false;
         const onVoiceDetected = () => {
           skippedEditDone = true;
+          clearCallbackHook(messageId);
           editWithSkipped(chatId, messageId, question).catch(() => {/* non-fatal */});
         };
 
-        const match = await pollButtonOrTextOrVoice(chatId, messageId, timeout_seconds, onVoiceDetected);
+        const match = await pollButtonOrTextOrVoice(chatId, messageId, timeout_seconds, onVoiceDetected, signal);
 
         if (!match) {
-          // Timeout — remove buttons so they can't be clicked with no listener.
-          // The agent can call dequeue_update next to capture a free-text reply.
-          await editWithTimedOut(chatId, messageId, question);
+          // Timeout — buttons stay live, hook handles late clicks.
           return toResult({
             timed_out: true,
             message_id: messageId,
@@ -116,6 +125,7 @@ export function register(server: McpServer) {
         }
 
         if (match.kind === "text") {
+          clearCallbackHook(messageId);
           await editWithSkipped(chatId, messageId, question);
           return toResult({
             skipped: true,
@@ -126,6 +136,7 @@ export function register(server: McpServer) {
         }
 
         if (match.kind === "voice") {
+          clearCallbackHook(messageId);
           if (!skippedEditDone) await editWithSkipped(chatId, messageId, question);
           return toResult({
             skipped: true,
@@ -137,6 +148,7 @@ export function register(server: McpServer) {
         }
 
         if (match.kind === "command") {
+          clearCallbackHook(messageId);
           await editWithSkipped(chatId, messageId, question);
           return toResult({
             skipped: true,
@@ -146,10 +158,9 @@ export function register(server: McpServer) {
           });
         }
 
-        // Button was pressed
+        // Button was pressed — hook already acked + edited.
         const chosen = options.find((o) => o.value === match.data);
         const chosenLabel = chosen?.label ?? match.data;
-        await ackAndEditSelection(chatId, messageId, question, chosenLabel, match.callback_query_id);
 
         return toResult({
           timed_out: false,

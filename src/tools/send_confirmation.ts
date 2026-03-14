@@ -3,8 +3,9 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText, validateCallbackData } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
+import { registerCallbackHook, clearCallbackHook } from "../message-store.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithTimedOut, editWithSkipped,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   type ButtonStyle,
 } from "./button-helpers.js";
 
@@ -30,7 +31,7 @@ export function register(server: McpServer) {
       no_text: z
         .string()
         .default("🔴 No")
-        .describe("Label for the negative button. When using no_style, prefer plain text — the button color is the visual signal."),
+        .describe("Label for the negative button. Set to empty string to show only the primary/yes button (single-button CTA mode). When using no_style, prefer plain text — the button color is the visual signal."),
       yes_data: z
         .string()
         .default("confirm_yes")
@@ -61,15 +62,17 @@ export function register(server: McpServer) {
         .describe("Reply to this message ID — shows quoted message above the confirmation"),
       },
     },
-    async ({ text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id }) => {
+    async ({ text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id }, { signal }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(text);
       if (textErr) return toError(textErr);
       const yesDataErr = validateCallbackData(yes_data);
       if (yesDataErr) return toError(yesDataErr);
-      const noDataErr = validateCallbackData(no_data);
-      if (noDataErr) return toError(noDataErr);
+      if (no_text) {
+        const noDataErr = validateCallbackData(no_data);
+        if (noDataErr) return toError(noDataErr);
+      }
 
       try {
         const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {
@@ -78,29 +81,40 @@ export function register(server: McpServer) {
           reply_markup: {
             inline_keyboard: [[
               { text: yes_text, callback_data: yes_data, ...(yes_style ? { style: yes_style as ButtonStyle } : {}) },
-              { text: no_text, callback_data: no_data, ...(no_style ? { style: no_style as ButtonStyle } : {}) },
+              ...(no_text ? [{ text: no_text, callback_data: no_data, ...(no_style ? { style: no_style as ButtonStyle } : {}) }] : []),
             ]],
           },
           _rawText: text,
         } as Record<string, unknown>);
+
+        // Register callback hook — handles button clicks even after poll timeout.
+        // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
+        registerCallbackHook(sent.message_id, (evt) => {
+          const confirmed = evt.content.data === yes_data;
+          const chosenLabel = confirmed ? yes_text : no_text;
+          void ackAndEditSelection(chatId, sent.message_id, text, chosenLabel, evt.content.qid)
+            .catch((e: unknown) => process.stderr.write(`[warn] send_confirmation hook failed: ${e}\n`));
+        });
 
         // Fires immediately when a voice message is detected (before transcription).
         // This removes the keyboard right away so the user doesn't see a delayed edit.
         let skippedEditDone = false;
         const onVoiceDetected = () => {
           skippedEditDone = true;
+          clearCallbackHook(sent.message_id);
           editWithSkipped(chatId, sent.message_id, text).catch(() => {/* non-fatal */});
         };
 
-        const result = await pollButtonOrTextOrVoice(chatId, sent.message_id, timeout_seconds, onVoiceDetected);
+        const result = await pollButtonOrTextOrVoice(chatId, sent.message_id, timeout_seconds, onVoiceDetected, signal);
 
         if (!result) {
-          await editWithTimedOut(chatId, sent.message_id, text);
+          // Timeout — buttons stay live, hook handles late clicks.
           return toResult({ timed_out: true, message_id: sent.message_id });
         }
 
         // User typed or spoke instead of pressing a button — mark as skipped
         if (result.kind === "text" || result.kind === "voice") {
+          clearCallbackHook(sent.message_id);
           if (!skippedEditDone) await editWithSkipped(chatId, sent.message_id, text);
           return toResult({
             skipped: true,
@@ -112,6 +126,7 @@ export function register(server: McpServer) {
 
         // Slash command interrupted the confirmation — mark as skipped
         if (result.kind === "command") {
+          clearCallbackHook(sent.message_id);
           await editWithSkipped(chatId, sent.message_id, text);
           return toResult({
             skipped: true,
@@ -121,9 +136,8 @@ export function register(server: McpServer) {
           });
         }
 
+        // Button was pressed — hook already acked + edited.
         const confirmed = result.data === yes_data;
-        const chosenLabel = confirmed ? yes_text : no_text;
-        await ackAndEditSelection(chatId, sent.message_id, text, chosenLabel, result.callback_query_id);
 
         return toResult({
           timed_out: false,

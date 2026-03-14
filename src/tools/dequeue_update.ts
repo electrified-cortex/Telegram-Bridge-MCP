@@ -42,7 +42,7 @@ export function register(server: McpServer) {
           .describe("Seconds to block when queue is empty. Default 60 blocks until an update arrives (normal loop). Pass 0 for an instant non-blocking poll (drain loops only). Max 300 (5 min)."),
       },
     },
-    async ({ timeout }) => {
+    async ({ timeout }, { signal }) => {
       // Try immediate dequeue
       let event = dequeue();
       if (event) {
@@ -60,12 +60,14 @@ export function register(server: McpServer) {
       // Block until something arrives or timeout expires
       const deadline = Date.now() + timeout * 1000;
       while (Date.now() < deadline) {
+        if (signal.aborted) break;
         const remaining = deadline - Date.now();
         if (remaining <= 0) break;
 
         await Promise.race([
           waitForEnqueue(),
           new Promise<void>((r) => setTimeout(r, remaining)),
+          new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => r(), { once: true }); }),
         ]);
 
         event = dequeue();

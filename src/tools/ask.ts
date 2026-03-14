@@ -31,7 +31,7 @@ export function register(server: McpServer) {
         .describe("Reply to this message ID — shows quoted message above the question"),
       },
     },
-    async ({ question, timeout_seconds, reply_to_message_id }) => {
+    async ({ question, timeout_seconds, reply_to_message_id }, { signal }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(question);
@@ -50,6 +50,7 @@ export function register(server: McpServer) {
         const deadline = Date.now() + timeout_seconds * 1000;
 
         while (Date.now() < deadline) {
+          if (signal.aborted) return toResult({ timed_out: true });
           const match = dequeueMatch((event: TimelineEvent) => {
             if (event.event === "message" && event.id > sent.message_id) {
               if (event.content.type === "text"
@@ -95,6 +96,7 @@ export function register(server: McpServer) {
           await Promise.race([
             waitForEnqueue(),
             new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
+            new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => r(), { once: true }); }),
           ]);
         }
 

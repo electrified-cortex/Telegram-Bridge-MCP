@@ -62,10 +62,12 @@ export async function pollButtonPress(
   _chatId: number,
   messageId: number,
   timeoutSeconds: number,
+  signal?: AbortSignal,
 ): Promise<ButtonResult | null> {
   const deadline = Date.now() + timeoutSeconds * 1000;
 
   while (Date.now() < deadline) {
+    if (signal?.aborted) return null;
     const result = dequeueMatch((event: TimelineEvent) => {
       if (event.event === "callback" && event.content.target === messageId) {
         const qid = event.content.qid;
@@ -83,6 +85,7 @@ export async function pollButtonPress(
     await Promise.race([
       waitForEnqueue(),
       new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
+      ...(signal ? [new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => r(), { once: true }); })] : []),
     ]);
   }
   return null;
@@ -101,11 +104,13 @@ export async function pollButtonOrTextOrVoice(
   messageId: number,
   timeoutSeconds: number,
   onVoiceDetected?: () => void,
+  signal?: AbortSignal,
 ): Promise<ButtonOrTextResult | null> {
   const deadline = Date.now() + timeoutSeconds * 1000;
   let voiceDetectedFired = false;
 
   while (Date.now() < deadline) {
+    if (signal?.aborted) return null;
     let hasPendingVoice = false;
 
     const result = dequeueMatch((event: TimelineEvent) => {
@@ -163,6 +168,7 @@ export async function pollButtonOrTextOrVoice(
     await Promise.race([
       waitForEnqueue(),
       new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
+      ...(signal ? [new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => r(), { once: true }); })] : []),
     ]);
   }
   return null;
