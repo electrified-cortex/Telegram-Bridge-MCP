@@ -19,7 +19,7 @@ export default defineConfig({
         // Low-level audio codec — integration-level concern, no unit tests
         "src/ogg-opus-encoder.ts",
         // Tool registration stubs with no logic
-        "src/tools/restart_server.ts",
+        "src/tools/shutdown.ts",
         "src/tools/get_agent_guide.ts",
       ],
       thresholds: {

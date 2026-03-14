@@ -11,7 +11,7 @@
  */
 
 import type { Api } from "grammy";
-import { cancelTyping } from "./typing-state.js";
+import { cancelTyping, typingGeneration, cancelTypingIfSameGeneration } from "./typing-state.js";
 import { clearPendingTemp } from "./temp-message.js";
 import { recordOutgoing } from "./message-store.js";
 import { fireTempReactionRestore } from "./temp-reaction.js";
@@ -76,10 +76,12 @@ export async function bypassProxy<T>(fn: () => Promise<T>): Promise<T> {
 // Helpers for sendVoiceDirect (not a Grammy method, needs manual hooks)
 // ---------------------------------------------------------------------------
 
+let _fileSendTypingGen = 0;
+
 /** Call before a custom (non-Grammy) file send. */
 export async function notifyBeforeFileSend(): Promise<void> {
   if (_bypassing) return;
-  cancelTyping();
+  _fileSendTypingGen = typingGeneration();
   clearPendingTemp();
   await fireTempReactionRestore();
   if (_interceptor) await _interceptor.beforeFileSend();
@@ -93,6 +95,7 @@ export async function notifyAfterFileSend(
   caption?: string,
 ): Promise<void> {
   if (_bypassing) return;
+  cancelTypingIfSameGeneration(_fileSendTypingGen);
   recordOutgoing(messageId, contentType, text, caption);
   if (_interceptor) await _interceptor.afterFileSend();
 }
@@ -131,7 +134,7 @@ export function createOutboundProxy(realApi: Api): Api {
         ) {
           if (_bypassing) return fn(chatId, text, opts);
 
-          cancelTyping();
+          const gen = typingGeneration();
           clearPendingTemp();
           await fireTempReactionRestore();
 
@@ -145,11 +148,13 @@ export function createOutboundProxy(realApi: Api): Api {
             const savedInterceptor = _interceptor;
             const result = await _interceptor.beforeTextSend(chatId, text, cleanOpts ?? {});
             if (result.intercepted) {
+              cancelTypingIfSameGeneration(gen);
               recordOutgoing(result.message_id, "text", rawText ?? text);
               return { message_id: result.message_id };
             }
             // Not intercepted — send normally, then let animation restart below
             const msg = await fn(chatId, text, cleanOpts);
+            cancelTypingIfSameGeneration(gen);
             recordOutgoing(msg.message_id, "text", rawText ?? text);
             if (savedInterceptor.afterTextSend) {
               await savedInterceptor.afterTextSend();
@@ -159,6 +164,7 @@ export function createOutboundProxy(realApi: Api): Api {
 
           // Normal send
           const msg = await fn(chatId, text, cleanOpts);
+          cancelTypingIfSameGeneration(gen);
           recordOutgoing(msg.message_id, "text", rawText ?? text);
           return msg;
         };
@@ -170,7 +176,7 @@ export function createOutboundProxy(realApi: Api): Api {
         return async function proxiedFileSend(...args: unknown[]) {
           if (_bypassing) return fn(...args);
 
-          cancelTyping();
+          const gen = typingGeneration();
           clearPendingTemp();
           await fireTempReactionRestore();
 
@@ -180,6 +186,7 @@ export function createOutboundProxy(realApi: Api): Api {
 
           try {
             const msg = await fn(...args);
+            cancelTypingIfSameGeneration(gen);
 
             // Extract caption for recording
             const optsArg = args[2] as Record<string, unknown> | undefined;
@@ -200,9 +207,10 @@ export function createOutboundProxy(realApi: Api): Api {
       if (method === "editMessageText") {
         return async function proxiedEditMessageText(...args: unknown[]) {
           if (_bypassing) return fn(...args);
-          cancelTyping();
+          const gen = typingGeneration();
           await fireTempReactionRestore();
           const result = await fn(...args);
+          cancelTypingIfSameGeneration(gen);
           if (_interceptor) _interceptor.onEdit();
           return result;
         };
@@ -221,6 +229,7 @@ export function createOutboundProxy(realApi: Api): Api {
 export function resetOutboundProxyForTest(): void {
   _interceptor = null;
   _bypassing = false;
+  _fileSendTypingGen = 0;
 }
 
 /** Re-export for tests that need to assert temp-reaction interplay. */

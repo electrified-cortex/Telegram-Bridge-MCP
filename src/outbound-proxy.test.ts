@@ -6,12 +6,16 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   cancelTyping: vi.fn(),
+  typingGeneration: vi.fn().mockReturnValue(0),
+  cancelTypingIfSameGeneration: vi.fn(),
   clearPendingTemp: vi.fn(),
   recordOutgoing: vi.fn(),
 }));
 
 vi.mock("./typing-state.js", () => ({
   cancelTyping: mocks.cancelTyping,
+  typingGeneration: mocks.typingGeneration,
+  cancelTypingIfSameGeneration: mocks.cancelTypingIfSameGeneration,
 }));
 
 vi.mock("./temp-message.js", () => ({
@@ -91,7 +95,7 @@ describe("outbound-proxy", () => {
       const p = proxy(raw);
       await (p as unknown as FakeApi).sendMessage(42, "hi", {});
 
-      expect(mocks.cancelTyping).toHaveBeenCalledOnce();
+      expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalledOnce();
       expect(mocks.clearPendingTemp).toHaveBeenCalledOnce();
     });
 
@@ -182,7 +186,7 @@ describe("outbound-proxy", () => {
         42, "file-input", {},
       );
 
-      expect(mocks.cancelTyping).toHaveBeenCalledOnce();
+      expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalledOnce();
       expect(mocks.clearPendingTemp).toHaveBeenCalledOnce();
       expect(mocks.recordOutgoing).toHaveBeenCalledWith(
         msgId, contentType, undefined, undefined,
@@ -245,7 +249,7 @@ describe("outbound-proxy", () => {
         42, 10, "updated",
       );
 
-      expect(mocks.cancelTyping).toHaveBeenCalledOnce();
+      expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalledOnce();
       expect(raw.editMessageText).toHaveBeenCalled();
       expect(interceptor.onEdit).toHaveBeenCalledOnce();
     });
@@ -275,7 +279,7 @@ describe("outbound-proxy", () => {
       );
 
       // Cross-cutting concerns should NOT fire
-      expect(mocks.cancelTyping).not.toHaveBeenCalled();
+      expect(mocks.cancelTypingIfSameGeneration).not.toHaveBeenCalled();
       expect(mocks.clearPendingTemp).not.toHaveBeenCalled();
       expect(mocks.recordOutgoing).not.toHaveBeenCalled();
 
@@ -294,7 +298,7 @@ describe("outbound-proxy", () => {
 
       // After error, proxy should work normally again
       await (p as unknown as FakeApi).sendMessage(42, "after");
-      expect(mocks.cancelTyping).toHaveBeenCalledOnce();
+      expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalledOnce();
     });
   });
 
@@ -319,7 +323,7 @@ describe("outbound-proxy", () => {
       expect(raw.getChat).toHaveBeenCalledWith(42);
       expect(result).toEqual({ id: 42 });
       // Cross-cutting should not fire for unknown methods
-      expect(mocks.cancelTyping).not.toHaveBeenCalled();
+      expect(mocks.cancelTypingIfSameGeneration).not.toHaveBeenCalled();
     });
   });
 
@@ -333,11 +337,13 @@ describe("outbound-proxy", () => {
       registerSendInterceptor(interceptor);
 
       await notifyBeforeFileSend();
-      expect(mocks.cancelTyping).toHaveBeenCalledOnce();
       expect(mocks.clearPendingTemp).toHaveBeenCalledOnce();
       expect(interceptor.beforeFileSend).toHaveBeenCalledOnce();
+      // cancelTyping deferred to notifyAfterFileSend
+      expect(mocks.cancelTypingIfSameGeneration).not.toHaveBeenCalled();
 
       await notifyAfterFileSend(50, "voice", "hello", undefined);
+      expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalledOnce();
       expect(mocks.recordOutgoing).toHaveBeenCalledWith(
         50, "voice", "hello", undefined,
       );
@@ -353,7 +359,7 @@ describe("outbound-proxy", () => {
         await notifyAfterFileSend(50, "voice");
       });
 
-      expect(mocks.cancelTyping).not.toHaveBeenCalled();
+      expect(mocks.cancelTypingIfSameGeneration).not.toHaveBeenCalled();
       expect(interceptor.beforeFileSend).not.toHaveBeenCalled();
       expect(mocks.recordOutgoing).not.toHaveBeenCalled();
     });

@@ -6,8 +6,8 @@
  *    extends the deadline; no extra Telegram API call, no duplicate interval.
  *  - **Auto-cancel** — the interval self-destructs when the deadline passes.
  *  - **Send-cancel** — every outbound tool (send_message, notify, choose, …)
- *    calls cancelTyping() before sending, so the indicator stops the moment
- *    a real message goes out.
+ *    calls cancelTyping() after the Telegram API confirms delivery, so the
+ *    indicator persists until the message actually appears for the user.
  */
 
 import { getApi, resolveChat } from "./telegram.js";
@@ -25,6 +25,7 @@ export type TypingAction =
 let _timer: ReturnType<typeof setInterval> | null = null;
 let _safety: ReturnType<typeof setTimeout> | null = null;
 let _deadline = 0;
+let _generation = 0;
 
 const INTERVAL_MS = 4_000; // Telegram indicator expires in ~5 s; 4 s keeps it seamless
 
@@ -50,6 +51,21 @@ export function cancelTyping(): boolean {
   return wasActive;
 }
 
+/** Generation counter — incremented every time showTyping starts or extends. */
+export function typingGeneration(): number {
+  return _generation;
+}
+
+/**
+ * Cancel typing only if no new showTyping() call has occurred since `gen` was captured.
+ * Used by the outbound proxy to avoid clobbering a typing indicator that was
+ * (re-)started while a send was in flight.
+ */
+export function cancelTypingIfSameGeneration(gen: number): boolean {
+  if (_generation !== gen) return false;
+  return cancelTyping();
+}
+
 /**
  * Show the typing indicator for `timeoutMs` milliseconds.
  *
@@ -72,6 +88,7 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
 
   const timeoutMs = timeoutSeconds * 1000;
   const newDeadline = Date.now() + timeoutMs;
+  _generation++;
 
   if (_timer) {
     // Already running — just extend the deadline
