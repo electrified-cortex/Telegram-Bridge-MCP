@@ -84,8 +84,8 @@ export function register(server: McpServer) {
         if (dataErr) return toError(dataErr);
         if (opt.label.length > LIMITS.BUTTON_TEXT) {
           return toError({
-            code: "BUTTON_DATA_INVALID" as const,
-            message: `Button label "${opt.label}" is ${opt.label.length} chars; limit is ${LIMITS.BUTTON_TEXT}.`,
+            code: "BUTTON_LABEL_EXCEEDS_LIMIT" as const,
+            message: `Button label "${opt.label}" is ${opt.label.length} chars; hard limit is ${LIMITS.BUTTON_TEXT}.`,
           });
         }
         if (opt.label.length > displayMax) {

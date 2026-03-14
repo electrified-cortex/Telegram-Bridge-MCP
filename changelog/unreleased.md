@@ -15,6 +15,9 @@
 - Fixed per-iteration `AbortSignal` listener accumulation in `dequeue_update.ts` and `ask.ts` (hoisted `abortPromise` outside loop)
 - Fixed misleading JSDoc in `temp-reaction.ts`: omitting `restoreEmoji` restores the previous recorded reaction, not removes it
 - Fixed comment in `gen-build-info.mjs` to reflect actual output path `dist/tools/build-info.json`
+- Fixed wrong error code `BUTTON_DATA_INVALID` on hard label-length check in `send_choice.ts` — now `BUTTON_LABEL_EXCEEDS_LIMIT`
+- Removed UTF-8 BOM from `LOOP-PROMPT.md`
+- Promoted inline regex literals in `markdown.ts` to named module-level constants (`MCP_BACKSLASH_STASH`, `MCP_MARKDOWN_UNESCAPE`)
 
 ## Removed
 

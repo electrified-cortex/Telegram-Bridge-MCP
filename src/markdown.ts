@@ -22,6 +22,8 @@
 
 const V2_SPECIAL = /[_*[\]()~`>#+\-=|{}.!\\]/g;
 const V2_SPECIAL_CHAR = /[_*[\]()~`>#+\-=|{}.!\\]/;
+const MCP_BACKSLASH_STASH = /\\\\/g;
+const MCP_MARKDOWN_UNESCAPE = /\\([_*~`[\]()>#+\-=|{}.!])/g;
 
 export function escapeV2(s: string): string {
   return s.replace(V2_SPECIAL, "\\$&");
@@ -70,8 +72,8 @@ export function markdownToV2(input: string, partial = true): string {
   text = text
     .replace(/\\n/g, "\n")
     .replace(/\\"/g, '"')
-    .replace(/\\\\/g, "\x00BS\x00")       // stash real backslashes
-    .replace(/\\([_*~`[\]()>#+\-=|{}.!])/g, "$1")
+    .replace(MCP_BACKSLASH_STASH, "\x00BS\x00")       // stash real backslashes
+    .replace(MCP_MARKDOWN_UNESCAPE, "$1")
     .replace(/\x00BS\x00/g, "\\");
 
   // ── 1b. Extract blockquote lines so > is never re-escaped ───────────────
