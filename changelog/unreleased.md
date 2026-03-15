@@ -15,6 +15,9 @@
 
 ## Fixed
 
+- Fixed session record dump including internal server events (`/session`, `/version`, `session:*` callbacks, session panel messages, dump documents) — these are still stored in the timeline and visible to `dequeue_update` but filtered from the record JSON
+- Fixed session panel event count and "Dump record" button visibility reflecting raw timeline size instead of filtered record size
+
 - Fixed potential crash in `setup.ts` when channel post has no `from` field (added optional chaining `u.message.from?.id`)
 - Fixed per-iteration `AbortSignal` listener accumulation in `dequeue_update.ts` and `ask.ts` (hoisted `abortPromise` outside loop)
 - Fixed misleading JSDoc in `temp-reaction.ts`: omitting `restoreEmoji` restores the previous recorded reaction, not removes it
