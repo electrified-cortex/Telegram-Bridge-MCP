@@ -1,14 +1,14 @@
 /**
  * Module-level singleton for the active default title.
  *
- * **Purpose:** When multiple VS Code instances each run their own MCP server
- * process (one Telegram-facing chat per window), `set_topic` lets each process
+ * **Purpose:** When multiple MCP host instances each run their own MCP server
+ * process (one Telegram-facing chat per instance), `set_topic` lets each process
  * prepend a default title to its outbound messages — e.g. `[Refactor Agent]`
  * or `[Test Runner]` — so you can tell which agent sent what in the same chat.
  *
  * **Scope:** Module-level (process-scoped). Works correctly when there is one
- * MCP server process per VS Code instance. Multiple chat sessions sharing the
- * same VS Code window share one process and therefore one title — the last
+ * MCP server process per host instance. Multiple chat sessions sharing the
+ * same host instance share one process and therefore one title — the last
  * call wins.
  */
 

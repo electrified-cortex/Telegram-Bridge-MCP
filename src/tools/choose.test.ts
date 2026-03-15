@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   editWithSkipped: vi.fn(),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
+  registerMessageHook: vi.fn(),
+  clearMessageHook: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -30,6 +32,8 @@ vi.mock("../message-store.js", () => ({
   recordOutgoing: vi.fn(),
   registerCallbackHook: (...args: unknown[]) => mocks.registerCallbackHook(...args),
   clearCallbackHook: (...args: unknown[]) => mocks.clearCallbackHook(...args),
+  registerMessageHook: (...args: unknown[]) => mocks.registerMessageHook(...args),
+  clearMessageHook: (...args: unknown[]) => mocks.clearMessageHook(...args),
 }));
 
 vi.mock("./button-helpers.js", async (importActual) => {
@@ -212,5 +216,32 @@ describe("choose tool", () => {
     mocks.sendMessage.mockRejectedValue(new Error("Network error"));
     const result = await call({ question: "Pick", options: OPTIONS });
     expect(isError(result)).toBe(true);
+  });
+
+  it("registers a message hook on timeout to clean up stale buttons", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
+    await call({ question: "Pick", options: OPTIONS });
+    expect(mocks.registerMessageHook).toHaveBeenCalledWith(7, expect.any(Function));
+  });
+
+  it("message hook clears callback hook and edits with skipped", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
+    await call({ question: "Pick", options: OPTIONS });
+    const hookFn = mocks.registerMessageHook.mock.calls[0][1];
+    hookFn();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.clearCallbackHook).toHaveBeenCalledWith(7);
+    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 7, "Pick");
+  });
+
+  it("callback hook clears message hook on late button press", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("a"));
+    await call({ question: "Pick", options: OPTIONS });
+    const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
+    hookFn({ content: { data: "a", qid: "cq1" } });
+    expect(mocks.clearMessageHook).toHaveBeenCalledWith(7);
   });
 });

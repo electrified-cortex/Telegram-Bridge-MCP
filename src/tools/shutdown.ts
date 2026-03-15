@@ -4,7 +4,7 @@ import { clearCommandsOnShutdown } from "../shutdown.js";
 import { stopPoller } from "../poller.js";
 
 const DESCRIPTION =
-  "Shuts down the MCP server process cleanly. The MCP client (e.g. VS Code) " +
+  "Shuts down the MCP server process cleanly. The MCP host " +
   "will detect the exit and can relaunch it automatically. Reconnecting to " +
   "the server after shutdown starts it back up. Call this after running " +
   "`pnpm build` to pick up code changes.";

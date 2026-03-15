@@ -86,7 +86,7 @@ Examples:
 
 Whenever you finish a task that took meaningful time or effort — regardless of whether the user is actively in a chat loop — send a `notify` with the outcome. The user may have walked away, switched context, or be on their phone. A completion notification is how they know to come back.
 
-This applies even when not in a loop prompt session: if you were given a task in VS Code and it took more than a few seconds, send a `notify` when done. Don't assume the user is watching.
+This applies even when not in a loop prompt session: if you were given a task and it took more than a few seconds, send a `notify` when done. Don't assume the user is watching.
 
 Use `severity: "success"` for clean outcomes, `severity: "error"` if something failed. Keep it brief — title states what finished, body states the result or any action needed.
 
@@ -94,7 +94,7 @@ Examples:
 
 - "Build complete — all tests passed, ready to commit"
 - "Refactor done — 4 files updated, build clean"
-- "Tests failed — 2 failures in `choose.test.ts`, see VS Code Problems panel"
+- "Tests failed — 2 failures in `choose.test.ts`, check the error output for details"
 
 ---
 
@@ -170,7 +170,7 @@ set_topic("Refactor Agent")
 → every notify title:       [Refactor Agent] Build complete
 ```
 
-**When to use:** When multiple VS Code instances share the same Telegram chat and you need to tell which agent sent what. Each VS Code window runs its own MCP server process, so each instance has its own independent title.
+**When to use:** When multiple MCP host instances share the same Telegram chat and you need to tell which agent sent what. Each host instance runs its own MCP server process, so each instance has its own independent title.
 
 **Behavior:**
 

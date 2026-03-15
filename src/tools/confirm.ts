@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText, validateCallbackData } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
-import { registerCallbackHook, clearCallbackHook } from "../message-store.js";
+import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook } from "../message-store.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   type ButtonStyle,
@@ -94,6 +94,7 @@ export function register(server: McpServer) {
           const confirmed = evt.content.data === yes_data;
           // In single-button CTA mode (no_text is ""), ignore anything that isn't yes_data.
           if (!confirmed && !no_text) return;
+          clearMessageHook(sent.message_id);
           const chosenLabel = confirmed ? yes_text : no_text;
           void ackAndEditSelection(chatId, sent.message_id, text, chosenLabel, evt.content.qid)
             .catch((e: unknown) => process.stderr.write(`[warn] confirm hook failed: ${String(e)}\n`));
@@ -111,7 +112,12 @@ export function register(server: McpServer) {
         const result = await pollButtonOrTextOrVoice(chatId, sent.message_id, timeout_seconds, onVoiceDetected, signal);
 
         if (!result) {
-          // Timeout — buttons stay live, hook handles late clicks.
+          // Timeout — register a message hook so the next user message
+          // cleans up the stale buttons (callback hook handles late clicks).
+          registerMessageHook(sent.message_id, () => {
+            clearCallbackHook(sent.message_id);
+            editWithSkipped(chatId, sent.message_id, text).catch(() => {/* non-fatal */});
+          });
           return toResult({ timed_out: true, message_id: sent.message_id });
         }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { Update } from "grammy/types";
 import {
   recordInbound,
@@ -18,6 +18,8 @@ import {
   storeSize,
   resetStoreForTest,
   patchVoiceText,
+  registerMessageHook,
+  clearMessageHook,
   CURRENT,
 } from "./message-store.js";
 
@@ -927,5 +929,69 @@ describe("dequeueBatch", () => {
     const b3 = dequeueBatch();
     expect(b3).toHaveLength(0); // empty
     expect(pendingCount()).toBe(0);
+  });
+});
+
+// ===========================================================================
+// Message hooks — one-shot hooks for post-timeout button cleanup (#27)
+// ===========================================================================
+
+describe("registerMessageHook", () => {
+  it("fires when a message with id > afterId is recorded", () => {
+    const hook = vi.fn();
+    registerMessageHook(5, hook);
+    recordInbound(textUpdate(6, "hello"));
+    expect(hook).toHaveBeenCalledOnce();
+  });
+
+  it("does not fire for messages with id <= afterId", () => {
+    const hook = vi.fn();
+    registerMessageHook(10, hook);
+    recordInbound(textUpdate(10, "same id"));
+    recordInbound(textUpdate(9, "lower id")); // won't match dedup either, but let's test the hook guard
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it("is one-shot — does not fire twice", () => {
+    const hook = vi.fn();
+    registerMessageHook(5, hook);
+    recordInbound(textUpdate(6, "first"));
+    recordInbound(textUpdate(7, "second"));
+    expect(hook).toHaveBeenCalledOnce();
+  });
+
+  it("does not fire for callback queries", () => {
+    const hook = vi.fn();
+    registerMessageHook(5, hook);
+    recordInbound({
+      update_id: nextUpdateId++,
+      callback_query: {
+        id: "cq1",
+        chat_instance: "x",
+        from: { id: 1, is_bot: false, first_name: "U" },
+        data: "yes",
+        message: { message_id: 6, date: 0, chat: { id: 1, type: "private" } } as never,
+      },
+    });
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it("can be cleared before it fires", () => {
+    const hook = vi.fn();
+    registerMessageHook(5, hook);
+    clearMessageHook(5);
+    recordInbound(textUpdate(6, "hello"));
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it("event is still enqueued for dequeue_update (non-consuming)", () => {
+    const hook = vi.fn();
+    registerMessageHook(5, hook);
+    recordInbound(textUpdate(6, "hello"));
+    expect(hook).toHaveBeenCalledOnce();
+    expect(pendingCount()).toBe(1);
+    const evt = dequeue();
+    expect(evt).toBeDefined();
+    expect(evt!.content.text).toBe("hello");
   });
 });

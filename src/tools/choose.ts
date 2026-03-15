@@ -4,7 +4,7 @@ import {
   resolveChat,
   toResult, toError, validateText, validateCallbackData, LIMITS,
 } from "../telegram.js";
-import { registerCallbackHook, clearCallbackHook } from "../message-store.js";
+import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook } from "../message-store.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   sendChoiceMessage, type KeyboardOption,
@@ -102,6 +102,7 @@ export function register(server: McpServer) {
         registerCallbackHook(messageId, (evt) => {
           const chosen = options.find((o) => o.value === evt.content.data);
           const chosenLabel = chosen?.label ?? evt.content.data ?? "";
+          clearMessageHook(messageId);
           void ackAndEditSelection(chatId, messageId, question, chosenLabel, evt.content.qid)
             .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${String(e)}\n`));
         });
@@ -118,7 +119,12 @@ export function register(server: McpServer) {
         const match = await pollButtonOrTextOrVoice(chatId, messageId, timeout_seconds, onVoiceDetected, signal);
 
         if (!match) {
-          // Timeout — buttons stay live, hook handles late clicks.
+          // Timeout — register a message hook so the next user message
+          // cleans up the stale buttons (callback hook handles late clicks).
+          registerMessageHook(messageId, () => {
+            clearCallbackHook(messageId);
+            editWithSkipped(chatId, messageId, question).catch(() => {/* non-fatal */});
+          });
           return toResult({
             timed_out: true,
             message_id: messageId,

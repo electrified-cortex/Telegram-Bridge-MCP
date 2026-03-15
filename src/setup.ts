@@ -169,22 +169,26 @@ async function main() {
         console.log(green(`  ✓ Written to ${ENV_PATH}`));
         console.log("");
         console.log("  " + bold("Next steps:"));
-        console.log("    • For VS Code global MCP, add to your user settings.json:");
+        console.log("    • Add this server to your MCP host config.");
+        console.log("      Credentials are in .env — use them in the \"env\" block.");
         console.log("");
-        console.log(dim('    "mcp": {'));
-        console.log(dim('      "servers": {'));
-        console.log(dim('        "telegram": {'));
-        console.log(dim('          "type": "stdio",'));
-        console.log(dim(`          "command": "node",`));
-        console.log(dim(`          "args": ["${resolve(__dirname, "..", "dist", "index.js").replace(/\\/g, "\\\\")}"],`));
-        console.log(dim(`          "env": {`));
-        console.log(dim(`            "BOT_TOKEN": "${token.slice(0, 8)}…<redacted>",`));
-        console.log(dim(`            "ALLOWED_USER_ID": "${userId}"`));
-        console.log(dim(`          }`));
-        console.log(dim(`        }`));
-        console.log(dim(`      }`));
-        console.log(dim(`    }`));
-        console.log("");
+
+        const distPath = resolve(__dirname, "..", "dist", "index.js").replace(/\\/g, "\\\\");
+        const printConfig = (label: string, extra?: string) => {
+          console.log(dim(`    — ${label}:`));
+          console.log(dim('    "telegram": {'));
+          if (extra) console.log(dim(`      ${extra}`));
+          console.log(dim(`      "command": "node",`));
+          console.log(dim(`      "args": ["${distPath}"],`));
+          console.log(dim(`      "env": { "BOT_TOKEN": "<from .env>", "ALLOWED_USER_ID": "${userId}" }`));
+          console.log(dim(`    }`));
+          console.log("");
+        };
+
+        printConfig("VS Code (.vscode/mcp.json or settings.json → mcp.servers)", '"type": "stdio",');
+        printConfig("Claude Desktop (claude_desktop_config.json → mcpServers)");
+        printConfig("Claude Code (.mcp.json in project root → mcpServers)");
+
         console.log("    • Or run  " + bold("pnpm start") + "  to start the server manually.");
         console.log("");
 
