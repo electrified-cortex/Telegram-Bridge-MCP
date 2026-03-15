@@ -2,6 +2,7 @@
 
 ## Added
 
+- Added optional `caption` parameter to `send_text_as_voice` — shown as text below the voice note in Telegram. When a topic is set, it is automatically prepended to the caption.
 - Added `mcp-config.example.json` as a reference config template
 - Added async wait etiquette section to `telegram-communication.instructions.md`
 - Added `update_checklist` tool for editing existing checklists in-place (split from `send_new_checklist`)

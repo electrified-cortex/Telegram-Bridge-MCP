@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toResult, toError, validateText, resolveChat, splitMessage, sendVoiceDirect } from "../telegram.js";
 import { showTyping, cancelTyping } from "../typing-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
+import { getTopic } from "../topic-state.js";
 
 const DESCRIPTION =
   "Synthesizes plain text to speech and sends it as a Telegram voice note. " +
@@ -20,11 +21,15 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: {
         text: z.string().describe("Text to synthesize and send as a voice note."),
+        caption: z.string().optional().describe(
+          "Optional caption text shown below the voice note. " +
+          "If a topic is set, it is automatically prepended."
+        ),
         disable_notification: z.boolean().optional().describe("Send silently"),
         reply_to_message_id: z.number().int().min(1).optional().describe("Reply to this message ID"),
       },
     },
-    async ({ text, disable_notification, reply_to_message_id }) => {
+    async ({ text, caption, disable_notification, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -44,12 +49,17 @@ export function register(server: McpServer) {
 
       const voiceChunks = splitMessage(plainText);
       try {
+        const topic = getTopic();
+        const resolvedCaption = topic
+          ? caption ? `[${topic}] ${caption}` : `[${topic}]`
+          : caption ?? undefined;
         const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
         await showTyping(typingSeconds, "record_voice");
         const message_ids: number[] = [];
         for (let i = 0; i < voiceChunks.length; i++) {
           const ogg = await synthesizeToOgg(voiceChunks[i]);
           const msg = await sendVoiceDirect(chatId, ogg, {
+            caption: i === 0 ? resolvedCaption : undefined,
             disable_notification,
             reply_to_message_id: i === 0 ? reply_to_message_id : undefined,
           });
