@@ -40,6 +40,10 @@
 - Fixed Docker build stage missing `COPY scripts/ ./scripts/` — `gen-build-info.mjs` was not found inside the container, causing every Docker publish CI run to fail since the script was introduced
 - Added `.min(1)` to `message_id` schema in `append_text`, `delete_message`, `edit_message_text`, `set_reaction`, `update_progress` — rejects `0` at schema level instead of silently failing
 - Added `.min(1)` to `reply_to_message_id` schema in `ask`, `choose`, `confirm`, `notify`, `send_text_as_voice` — consistent with `send_choice` which already had it
+- Added `.min(1)` to `voice` param in `send_text_as_voice` — prevents empty string overrides
+- Fixed stale JSDoc on `handleVoiceSampleCallback` — no longer says button is removed
+- Fixed Markdown parse failure in voice-sample error message — removed `parse_mode: "Markdown"` to avoid unescaped interpolation
+- Fixed unbounded `_activePanels` growth for voice-sample entries — panel entry now deleted after voice is set
 - Fixed per-iteration `AbortSignal` listener accumulation in `pollButtonPress` and `pollButtonOrTextOrVoice` — hoisted `abortPromise` outside loop (mirrors fix already applied to `dequeue_update.ts` and `ask.ts`)
 - Fixed `session_start` not propagating MCP `signal` to `pollButtonPress` — prevents 10-minute orphan wait when the client disconnects mid-confirmation
 - Fixed animation R4 failure path leaving orphaned placeholder message — now attempts best-effort `deleteMessage` before returning `{ intercepted: false }` (mirrors R5 cleanup path)

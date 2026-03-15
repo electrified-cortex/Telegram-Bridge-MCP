@@ -401,8 +401,7 @@ async function sendVoiceSample(
       const api = getApi();
       const msg = await api.sendMessage(
         chatId,
-        `⚠️ Failed to generate sample for \`${voiceName}\`: ${errMsg}`,
-        { parse_mode: "Markdown" },
+        `⚠️ Failed to generate sample for ${voiceName}: ${errMsg}`,
       );
       markInternalMessage(msg.message_id);
     } catch { /* ignore */ }
@@ -411,7 +410,7 @@ async function sendVoiceSample(
 
 /**
  * Handles a callback from the "Use this voice" button on a voice sample.
- * Sets the voice and removes the inline button from the sample message.
+ * Sets the default voice and confirms via callback toast.
  */
 async function handleVoiceSampleCallback(
   callbackQueryId: string,
@@ -430,6 +429,7 @@ async function handleVoiceSampleCallback(
 
   const voiceName = data.slice("voice:set:".length);
   setDefaultVoice(voiceName);
+  _activePanels.delete(sampleMsgId);
 
   try {
     await api.answerCallbackQuery(callbackQueryId, {

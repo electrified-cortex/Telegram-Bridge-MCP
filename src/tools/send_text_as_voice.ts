@@ -22,7 +22,7 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: {
         text: z.string().describe("Text to synthesize and send as a voice note."),
-        voice: z.string().optional().describe(
+        voice: z.string().min(1).optional().describe(
           "Voice name to use for synthesis. Overrides the default voice. " +
           "Available voices depend on the TTS provider."
         ),
