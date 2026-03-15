@@ -500,9 +500,10 @@ async function buildVoicePanel(
   if (voices.length === 0) {
     lines.push("");
     lines.push(
-      "_No voices available. " +
-      "Add a `voices` array to `mcp-config.json` " +
-      "or set `TTS\\_VOICES\\_URL`._"
+      "_No voices found — TTS still works with the " +
+      "built\\-in voice\\. Point `TTS\\_HOST` at a " +
+      "[Kokoro](https://github.com/hexgrad/kokoro) " +
+      "server for 25\\+ natural voices\\._"
     );
   } else {
     buildWizardStep(voices, keyboard, lines, step, effective);

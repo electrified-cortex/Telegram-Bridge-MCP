@@ -1,5 +1,9 @@
 # [Unreleased]
 
+## Changed
+
+- Improved `/voice` panel empty-state hint to mention built-in fallback and link to Kokoro setup
+
 ## Added
 
 - Added Claude Code configuration instructions (project-scoped `.mcp.json`) to setup guide and README

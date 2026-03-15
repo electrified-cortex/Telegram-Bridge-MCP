@@ -379,7 +379,7 @@ describe("built-in-commands", () => {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 501 });
       await handleIfBuiltIn(cmdUpdate("/voice"));
       const text: string = mocks.sendMessage.mock.calls[0][1];
-      expect(text).toContain("No voices available");
+      expect(text).toContain("No voices found");
     });
 
     it("falls back to flat list when voices have no language", async () => {
