@@ -20,6 +20,15 @@ const CONFIG_PATH = resolve(__dirname, "..", "mcp-config.json");
 
 interface McpConfig {
   sessionLog?: "manual" | number;
+  defaultVoice?: string;
+  voices?: VoiceEntry[];
+}
+
+export interface VoiceEntry {
+  name: string;
+  description?: string;
+  language?: string;
+  gender?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +102,40 @@ export function sessionLogLabel(): string {
   if (mode === null) return "disabled";
   if (mode === "manual") return "manual";
   return `every ${mode} messages`;
+}
+
+// ---------------------------------------------------------------------------
+// Voice configuration
+// ---------------------------------------------------------------------------
+
+/** Get the configured default voice (if any). */
+export function getDefaultVoice(): string | null {
+  return _config.defaultVoice ?? null;
+}
+
+/** Set the default voice and persist to disk. Pass null to clear. */
+export function setDefaultVoice(voice: string | null): void {
+  if (voice) {
+    _config.defaultVoice = voice;
+  } else {
+    delete _config.defaultVoice;
+  }
+  save();
+}
+
+/** Get the configured voice menu (if any). */
+export function getConfiguredVoices(): VoiceEntry[] {
+  return _config.voices ?? [];
+}
+
+/** Set the voice menu and persist to disk. */
+export function setConfiguredVoices(voices: VoiceEntry[]): void {
+  if (voices.length > 0) {
+    _config.voices = voices;
+  } else {
+    delete _config.voices;
+  }
+  save();
 }
 
 /** For testing only. */

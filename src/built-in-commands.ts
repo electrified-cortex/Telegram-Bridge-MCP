@@ -18,6 +18,9 @@ import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
 import { clearCommandsOnShutdown } from "./shutdown.js";
 import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { getSessionLogMode, setSessionLogMode, sessionLogLabel } from "./config.js";
+import { getDefaultVoice, setDefaultVoice, getConfiguredVoices } from "./config.js";
+import type { VoiceEntry } from "./config.js";
+import { fetchVoiceList, isTtsEnabled } from "./tts.js";
 
 const require = createRequire(import.meta.url);
 const { version: MCP_VERSION } = require("../package.json") as { version: string };
@@ -40,7 +43,7 @@ import { dumpTimeline, dumpTimelineSince, timelineSize, storeSize, setOnEvent } 
 // ---------------------------------------------------------------------------
 
 /** Maps from message_id → panel type so we can route callback_queries back to us. */
-const _activePanels = new Map<number, "session">();
+const _activePanels = new Map<number, "session" | "voice" | "voice-sample">();
 
 /** Set to true after sending the startup prefs prompt so we only ask once per process. */
 let _sessionPrefsAsked = false;
@@ -129,6 +132,7 @@ export function sendSessionPrefsPrompt(): void {
 /** Built-in command metadata (for merging into set_commands menus). */
 export const BUILT_IN_COMMANDS = [
   { command: "session", description: "Session recording controls" },
+  { command: "voice", description: "Change the TTS voice" },
   { command: "version", description: "Show server version and build info" },
   { command: "shutdown", description: "Shut down the MCP server" },
 ] as const;
@@ -161,7 +165,7 @@ export function isInternalTimelineEvent(evt: Omit<TimelineEvent, "_update">): bo
     return _builtInCommandNames.has(evt.content.text ?? "");
   }
   if (evt.event === "callback" && typeof evt.content.data === "string") {
-    return evt.content.data.startsWith("session:");
+    return evt.content.data.startsWith("session:") || evt.content.data.startsWith("voice:");
   }
   return false;
 }
@@ -192,6 +196,10 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
         await handleSessionCommand();
         return true;
       }
+      if (raw === "voice") {
+        await handleVoiceCommand();
+        return true;
+      }
       if (raw === "version") {
         await handleVersionCommand();
         return true;
@@ -207,7 +215,22 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
   if (update.callback_query) {
     const msgId = update.callback_query.message?.message_id;
     if (msgId !== undefined && _activePanels.has(msgId)) {
-      await handleSessionCallback(update.callback_query.id, msgId, update.callback_query.data ?? "");
+      const panelType = _activePanels.get(msgId);
+      if (panelType === "voice") {
+        await handleVoiceCallback(
+          update.callback_query.id,
+          msgId,
+          update.callback_query.data ?? "",
+        );
+      } else if (panelType === "voice-sample") {
+        await handleVoiceSampleCallback(
+          update.callback_query.id,
+          msgId,
+          update.callback_query.data ?? "",
+        );
+      } else {
+        await handleSessionCallback(update.callback_query.id, msgId, update.callback_query.data ?? "");
+      }
       return true;
     }
   }
@@ -256,6 +279,365 @@ function handleShutdownCommand(): void {
   const timeout = new Promise<void>((r) => setTimeout(r, 10000));
   void Promise.race([shutdownSequence, timeout])
     .finally(() => clearCommandsOnShutdown().finally(() => process.exit(0)));
+}
+
+// ---------------------------------------------------------------------------
+// /voice panel
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve available voice names.
+ *
+ * Priority: configured voices in mcp-config.json → remote fetch from TTS
+ * server → empty (TTS not available or no listing endpoint).
+ */
+async function resolveVoiceNames(): Promise<VoiceEntry[]> {
+  const configured = getConfiguredVoices();
+  if (configured.length > 0) return configured;
+
+  const remote = await fetchVoiceList();
+  if (remote.length > 0) return remote;
+  return [];
+}
+
+async function handleVoiceCommand(): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const api = getApi();
+
+  if (!isTtsEnabled()) {
+    try {
+      const msg = await api.sendMessage(
+        chatId,
+        "🔇 TTS is not configured. Set `TTS_HOST` or `OPENAI_API_KEY` to enable voice.",
+        { parse_mode: "Markdown" },
+      );
+      markInternalMessage(msg.message_id);
+    } catch { /* ignore */ }
+    return;
+  }
+
+  const { text, keyboard } = await buildVoicePanel();
+  try {
+    const msg = await api.sendMessage(chatId, text, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: keyboard },
+    });
+    _activePanels.set(msg.message_id, "voice");
+    markInternalMessage(msg.message_id);
+  } catch { /* ignore */ }
+}
+
+async function handleVoiceCallback(
+  callbackQueryId: string,
+  panelMsgId: number,
+  data: string,
+): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const api = getApi();
+
+  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+
+  if (data === "voice:dismiss") {
+    _activePanels.delete(panelMsgId);
+    try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+    return;
+  }
+
+  if (data === "voice:noop") return;
+
+  // Wizard navigation — extract the step from callback data
+  let step = "";
+  if (data === "voice:clear") {
+    setDefaultVoice(null);
+  } else if (data === "voice:home") {
+    step = "";
+  } else if (data.startsWith("voice:nav:")) {
+    step = data.slice("voice:nav:".length);
+  } else if (data.startsWith("voice:sample:")) {
+    const voiceName = data.slice("voice:sample:".length);
+    await sendVoiceSample(chatId, voiceName);
+  }
+
+  // Refresh panel at the current wizard step
+  const { text, keyboard } = await buildVoicePanel(step);
+  try {
+    await api.editMessageText(chatId, panelMsgId, text, {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: keyboard },
+    });
+  } catch { /* ignore */ }
+}
+
+async function sendVoiceSample(
+  chatId: number,
+  voiceName: string,
+): Promise<void> {
+  const { synthesizeToOgg: synthOgg } = await import("./tts.js");
+  const voices = await resolveVoiceNames();
+  const entry = voices.find(v => v.name === voiceName);
+  const displayName = voiceLabel(entry ?? { name: voiceName });
+  const sampleText =
+    `Hi, this is a sample of the ${displayName} voice. ` +
+    "Hopefully it sounds good to you!";
+  try {
+    const ogg = await synthOgg(sampleText, voiceName);
+    const { sendVoiceDirect: sendVoice } = await import("./telegram.js");
+    const msg = await sendVoice(chatId, ogg, {
+      disable_notification: true,
+      reply_markup: {
+        inline_keyboard: [[{
+          text: `🎧 Use ${displayName} voice`,
+          callback_data: `voice:set:${voiceName}`,
+        }]],
+      },
+    });
+    markInternalMessage(msg.message_id);
+    _activePanels.set(msg.message_id, "voice-sample");
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    try {
+      const api = getApi();
+      const msg = await api.sendMessage(
+        chatId,
+        `⚠️ Failed to generate sample for ${voiceName}: ${errMsg}`,
+      );
+      markInternalMessage(msg.message_id);
+    } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Handles a callback from the "Use this voice" button on a voice sample.
+ * Sets the default voice and confirms via callback toast.
+ */
+async function handleVoiceSampleCallback(
+  callbackQueryId: string,
+  sampleMsgId: number,
+  data: string,
+): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const api = getApi();
+
+  if (!data.startsWith("voice:set:")) {
+    try { await api.answerCallbackQuery(callbackQueryId); }
+    catch { /* ignore */ }
+    return;
+  }
+
+  const voiceName = data.slice("voice:set:".length);
+  setDefaultVoice(voiceName);
+  _activePanels.delete(sampleMsgId);
+
+  try {
+    await api.answerCallbackQuery(callbackQueryId, {
+      text: `Voice set to ${voiceName}`,
+    });
+  } catch { /* ignore */ }
+}
+
+type InlineButton = { text: string; callback_data: string };
+
+/** Display label for a voice entry. */
+function voiceLabel(v: VoiceEntry): string {
+  return v.description ?? v.name;
+}
+
+/** Human-readable labels for language codes. */
+const LANG_LABELS: Record<string, string> = {
+  "en-US": "🇺🇸 American",
+  "en-GB": "🇬🇧 British",
+};
+
+/** Human-readable labels for genders. */
+const GENDER_LABELS: Record<string, string> = {
+  male: "♂ Male",
+  female: "♀ Female",
+};
+
+function langLabel(lang: string): string {
+  return LANG_LABELS[lang] ?? lang;
+}
+
+function genderLabel(g: string): string {
+  return GENDER_LABELS[g] ?? g;
+}
+
+/**
+ * Wizard-style voice panel.
+ *
+ * Step encoding (empty string = home):
+ *   ""             → show language buttons
+ *   "en-US"        → show gender buttons for that language
+ *   "en-US:female" → show individual voices
+ */
+async function buildVoicePanel(
+  step = "",
+): Promise<{
+  text: string;
+  keyboard: InlineButton[][];
+}> {
+  const currentVoice = getDefaultVoice();
+  const envVoice = process.env.TTS_VOICE;
+  const effective = currentVoice ?? envVoice ?? "(provider default)";
+
+  const lines = [
+    "🎙 *Voice Selection*",
+    "",
+    `*Current:* \`${effective}\``,
+  ];
+  if (currentVoice) {
+    lines.push(`*Source:* config override`);
+  } else if (envVoice) {
+    lines.push(`*Source:* TTS\\_VOICE env var`);
+  }
+
+  const voices = await resolveVoiceNames();
+  const keyboard: InlineButton[][] = [];
+
+  if (voices.length === 0) {
+    lines.push("");
+    lines.push(
+      "_No voices available. " +
+      "Add a `voices` array to `mcp-config.json` " +
+      "or set `TTS\\_VOICES\\_URL`._"
+    );
+  } else {
+    buildWizardStep(voices, keyboard, lines, step, effective);
+  }
+
+  // Footer row
+  const footerRow: InlineButton[] = [];
+  if (step) {
+    const backStep = step.includes(":")
+      ? step.slice(0, step.indexOf(":"))
+      : "";
+    const backData = backStep
+      ? `voice:nav:${backStep}`
+      : "voice:home";
+    footerRow.push({ text: "↩ Back", callback_data: backData });
+  }
+  if (currentVoice) {
+    footerRow.push({
+      text: "↩ Reset",
+      callback_data: "voice:clear",
+    });
+  }
+  footerRow.push({
+    text: "✖ Dismiss",
+    callback_data: "voice:dismiss",
+  });
+  keyboard.push(footerRow);
+
+  return { text: lines.join("\n"), keyboard };
+}
+
+/** Populate the wizard keyboard and text lines for the given step. */
+function buildWizardStep(
+  voices: VoiceEntry[],
+  keyboard: InlineButton[][],
+  lines: string[],
+  step: string,
+  effective: string,
+): void {
+  // Collect unique languages
+  const langs = [...new Set(
+    voices.map(v => v.language).filter(Boolean)
+  )] as string[];
+
+  // No language metadata → flat list (fallback)
+  if (langs.length === 0) {
+    lines.push("");
+    lines.push("Tap a voice to hear a sample:");
+    buildFlatVoiceButtons(voices, keyboard, effective);
+    return;
+  }
+
+  if (!step) {
+    // Step 1: pick language
+    lines.push("");
+    lines.push("Pick a language:");
+    for (const lang of langs) {
+      keyboard.push([{
+        text: langLabel(lang),
+        callback_data: `voice:nav:${lang}`,
+      }]);
+    }
+    return;
+  }
+
+  const parts = step.split(":");
+  const selectedLang = parts[0];
+  const selectedGender = parts[1] ?? "";
+  const langVoices = voices.filter(
+    v => v.language === selectedLang
+  );
+
+  if (!selectedGender) {
+    // Step 2: pick gender within the language
+    const genders = [...new Set(
+      langVoices.map(v => v.gender).filter(Boolean)
+    )] as string[];
+
+    if (genders.length <= 1) {
+      // Only one gender — skip straight to voices
+      lines.push("");
+      lines.push(
+        `${langLabel(selectedLang)} — ` +
+        "tap a voice to hear a sample:"
+      );
+      buildFlatVoiceButtons(langVoices, keyboard, effective);
+      return;
+    }
+
+    lines.push("");
+    lines.push(`${langLabel(selectedLang)} — pick a category:`);
+    for (const g of genders) {
+      keyboard.push([{
+        text: genderLabel(g),
+        callback_data: `voice:nav:${selectedLang}:${g}`,
+      }]);
+    }
+    return;
+  }
+
+  // Step 3: show voices in language + gender
+  const filtered = langVoices.filter(
+    v => v.gender === selectedGender
+  );
+  lines.push("");
+  lines.push(
+    `${langLabel(selectedLang)} ${genderLabel(selectedGender)} — ` +
+    "tap to hear a sample:"
+  );
+  buildFlatVoiceButtons(filtered, keyboard, effective);
+}
+
+/** Build a flat list of voice buttons (no grouping). */
+function buildFlatVoiceButtons(
+  voices: VoiceEntry[],
+  keyboard: InlineButton[][],
+  effective: string,
+): void {
+  const buttonsPerRow = 3;
+  let row: InlineButton[] = [];
+  for (const v of voices) {
+    const isActive = v.name === effective;
+    const label = isActive
+      ? `✓ ${voiceLabel(v)}`
+      : voiceLabel(v);
+    row.push({
+      text: label,
+      callback_data: `voice:sample:${v.name}`,
+    });
+    if (row.length >= buttonsPerRow) {
+      keyboard.push(row);
+      row = [];
+    }
+  }
+  if (row.length > 0) keyboard.push(row);
 }
 
 // ---------------------------------------------------------------------------

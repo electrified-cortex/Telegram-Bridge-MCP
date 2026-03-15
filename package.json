@@ -3,7 +3,7 @@
   "author": {
     "name": "electricessence"
   },
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Telegram Bridge MCP — An MCP server that bridges AI assistants to a Telegram bot for two-way messaging, confirmations, status updates, and voice transcription.",
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/electricessence/Telegram-Bridge-MCP",

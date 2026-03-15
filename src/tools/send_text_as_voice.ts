@@ -4,6 +4,7 @@ import { toResult, toError, validateText, resolveChat, splitMessage, sendVoiceDi
 import { showTyping, cancelTyping } from "../typing-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getTopic } from "../topic-state.js";
+import { getDefaultVoice } from "../config.js";
 
 const DESCRIPTION =
   "Synthesizes plain text to speech and sends it as a Telegram voice note. " +
@@ -21,15 +22,38 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: {
         text: z.string().describe("Text to synthesize and send as a voice note."),
+        voice: z.string().min(1).optional().describe(
+          "Voice name to use for synthesis. Overrides the default voice. " +
+          "Available voices depend on the TTS provider."
+        ),
         caption: z.string().optional().describe(
           "Optional caption text shown below the voice note. " +
           "If a topic is set, it is automatically prepended."
         ),
         disable_notification: z.boolean().optional().describe("Send silently"),
         reply_to_message_id: z.number().int().min(1).optional().describe("Reply to this message ID"),
+        reply_markup: z
+          .object({
+            inline_keyboard: z
+              .array(
+                z.array(
+                  z.object({
+                    text: z.string(),
+                    callback_data: z.string().optional(),
+                    url: z.string().optional(),
+                  })
+                )
+              )
+              .describe("Array of button rows"),
+          })
+          .optional()
+          .describe(
+            "Inline keyboard attached to the voice message. " +
+            "Only applied to the first chunk if the message is split."
+          ),
       },
     },
-    async ({ text, caption, disable_notification, reply_to_message_id }) => {
+    async ({ text, voice, caption, disable_notification, reply_to_message_id, reply_markup }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -53,15 +77,20 @@ export function register(server: McpServer) {
         const resolvedCaption = topic
           ? caption ? `[${topic}] ${caption}` : `[${topic}]`
           : caption ?? undefined;
+        // Voice resolution: explicit param > config default > env/provider
+        const resolvedVoice =
+          voice ?? getDefaultVoice() ?? undefined;
         const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
         await showTyping(typingSeconds, "record_voice");
         const message_ids: number[] = [];
         for (let i = 0; i < voiceChunks.length; i++) {
-          const ogg = await synthesizeToOgg(voiceChunks[i]);
+          const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice);
+          const isFirst = i === 0;
           const msg = await sendVoiceDirect(chatId, ogg, {
-            caption: i === 0 ? resolvedCaption : undefined,
+            caption: isFirst ? resolvedCaption : undefined,
             disable_notification,
-            reply_to_message_id: i === 0 ? reply_to_message_id : undefined,
+            reply_to_message_id: isFirst ? reply_to_message_id : undefined,
+            reply_markup: isFirst ? reply_markup : undefined,
           });
           message_ids.push(msg.message_id);
         }
