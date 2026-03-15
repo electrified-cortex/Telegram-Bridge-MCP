@@ -64,7 +64,7 @@ Follow the wizard to create `.env` with your bot credentials.
 }
 ```
 
-> **Important:** Use the **absolute path** to your local clone. The `cwd` (VS Code) or path in `args` ensures the MCP runs from your repo directory and can access `.env`.
+> **Important:** Use the **absolute path** to your local clone. The `cwd` or path in `args` ensures the MCP runs from your repo directory and can access `.env`.
 
 ### 4. Start a loop session
 
@@ -146,7 +146,7 @@ After modifying TypeScript source files, run `pnpm build` then call the `shutdow
 
 1. Runs `pnpm build` (compiles TypeScript)
 2. `shutdown` exits the MCP server process
-3. The MCP client (e.g. VS Code) detects the exit and relaunches
+3. The MCP host detects the exit and relaunches
 4. Calls `dequeue_update` to drain stale messages
 5. Sends a "back online" notification
 6. Returns to `dequeue_update` loop
@@ -342,7 +342,7 @@ Revert your changes via git, rebuild, and restart:
 ```bash
 git checkout src/tools/broken-file.ts
 pnpm build
-# Restart your MCP host (restart VS Code or Claude Desktop)
+# Restart your MCP host
 ```
 
 Or give the instruction via Telegram before things break too badly: _"Revert the last commit and rebuild"_
