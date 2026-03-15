@@ -268,6 +268,44 @@ TTS_VOICE=onyx         # default: alloy
 
 If a voice note appears but has no audible audio, check the `duration` field in the tool result — should be non-zero.
 
+### Kokoro Quick Start
+
+The default TTS provider is a local ONNX model — it works with zero config but
+produces robotic, single-voice output. **[Kokoro](https://github.com/hexgrad/kokoro)**
+is a free, high-quality TTS engine with 25+ natural-sounding voices across
+American and British English, male and female. It runs locally via Docker and
+exposes an OpenAI-compatible API.
+
+**1. Start the Kokoro server:**
+
+```bash
+docker run -d --name kokoro -p 8880:8880 ghcr.io/hexgrad/kokoro-onnx-server:latest
+```
+
+**2. Add env vars** to your `.env`:
+
+```dotenv
+TTS_HOST=http://localhost:8880
+TTS_FORMAT=ogg
+TTS_VOICE=af_heart
+```
+
+> `TTS_FORMAT=ogg` tells Kokoro to return OGG/Opus directly, skipping the
+> local WAV→OGG re-encode step for faster delivery.
+
+**3. Browse and sample voices** — send `/voice` in Telegram to open the
+interactive voice panel. It queries your Kokoro server, groups voices by
+language and gender, and lets you listen to samples before choosing one.
+
+| Category | Voices |
+| --- | --- |
+| 🇺🇸 Female | `af_heart` `af_bella` `af_nicole` `af_sarah` `af_sky` |
+| 🇺🇸 Male | `am_adam` `am_michael` `am_echo` `am_liam` |
+| 🇬🇧 Female | `bf_emma` `bf_isabella` |
+| 🇬🇧 Male | `bm_george` `bm_lewis` |
+
+The selected voice is saved to `mcp-config.json` and persists across restarts.
+
 ---
 
 ## Development
