@@ -43,7 +43,7 @@ import { dumpTimeline, dumpTimelineSince, timelineSize, storeSize, setOnEvent } 
 // ---------------------------------------------------------------------------
 
 /** Maps from message_id → panel type so we can route callback_queries back to us. */
-const _activePanels = new Map<number, "session" | "voice">();
+const _activePanels = new Map<number, "session" | "voice" | "voice-sample">();
 
 /** Set to true after sending the startup prefs prompt so we only ask once per process. */
 let _sessionPrefsAsked = false;
@@ -222,6 +222,12 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
           msgId,
           update.callback_query.data ?? "",
         );
+      } else if (panelType === "voice-sample") {
+        await handleVoiceSampleCallback(
+          update.callback_query.id,
+          msgId,
+          update.callback_query.data ?? "",
+        );
       } else {
         await handleSessionCallback(update.callback_query.id, msgId, update.callback_query.data ?? "");
       }
@@ -375,17 +381,27 @@ async function sendVoiceSample(
   voiceName: string,
 ): Promise<void> {
   const { synthesizeToOgg: synthOgg } = await import("./tts.js");
+  const voices = await resolveVoiceNames();
+  const entry = voices.find(v => v.name === voiceName);
+  const displayName = voiceLabel(entry ?? { name: voiceName });
   const sampleText =
-    `Hi, this is a sample of the ${voiceName} voice. ` +
+    `Hi, this is a sample of the ${displayName} voice. ` +
     "Hopefully it sounds good to you!";
   try {
     const ogg = await synthOgg(sampleText, voiceName);
     const { sendVoiceDirect: sendVoice } = await import("./telegram.js");
     const msg = await sendVoice(chatId, ogg, {
-      caption: `🎧 Voice sample: ${voiceName}`,
+      caption: `🎧 ${displayName} (${voiceName})`,
       disable_notification: true,
+      reply_markup: {
+        inline_keyboard: [[{
+          text: `✓ Use ${displayName}`,
+          callback_data: `voice:set:${voiceName}`,
+        }]],
+      },
     });
     markInternalMessage(msg.message_id);
+    _activePanels.set(msg.message_id, "voice-sample");
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     try {
@@ -398,6 +414,43 @@ async function sendVoiceSample(
       markInternalMessage(msg.message_id);
     } catch { /* ignore */ }
   }
+}
+
+/**
+ * Handles a callback from the "Use this voice" button on a voice sample.
+ * Sets the voice and removes the inline button from the sample message.
+ */
+async function handleVoiceSampleCallback(
+  callbackQueryId: string,
+  sampleMsgId: number,
+  data: string,
+): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const api = getApi();
+
+  if (!data.startsWith("voice:set:")) {
+    try { await api.answerCallbackQuery(callbackQueryId); }
+    catch { /* ignore */ }
+    return;
+  }
+
+  const voiceName = data.slice("voice:set:".length);
+  setDefaultVoice(voiceName);
+  _activePanels.delete(sampleMsgId);
+
+  try {
+    await api.answerCallbackQuery(callbackQueryId, {
+      text: `Voice set to ${voiceName}`,
+    });
+  } catch { /* ignore */ }
+
+  // Remove the button from the voice sample message
+  try {
+    await api.editMessageReplyMarkup(chatId, sampleMsgId, {
+      reply_markup: { inline_keyboard: [] },
+    });
+  } catch { /* ignore */ }
 }
 
 type InlineButton = { text: string; callback_data: string };

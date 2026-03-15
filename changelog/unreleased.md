@@ -17,6 +17,9 @@
 - `fetchVoiceList()` now returns `VoiceEntry[]` instead of `string[]` — includes `description`, `language`, and `gender` from the API
 - `parseVoiceListResponse()` now extracts `voice_id` (Kokoro-style) as the primary identifier, falling back to `id` then `name`
 - `/voice` panel now groups voices by language/gender with section headers and per-voice 🎧 sample buttons
+- Voice samples now include a "✓ Use this voice" inline keyboard button — one-tap to switch
+- Added `reply_markup` support to `sendVoiceDirect` — enables inline keyboard buttons on voice messages
+- Added optional `reply_markup` parameter to `send_text_as_voice` tool — attach inline keyboard buttons to voice notes
 - Added `language` and `gender` optional fields to `VoiceEntry` interface
 - Corrected `get_agent_guide` tool description: now says "Call this first — before session_start" (was "after session_start")
 - Updated session flow step 1 in `docs/communication.md`: now references `session_start` instead of a manual `notify`

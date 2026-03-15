@@ -500,6 +500,13 @@ export async function sendVoiceDirect(
     duration?: number;
     disable_notification?: boolean;
     reply_to_message_id?: number;
+    reply_markup?: {
+      inline_keyboard: {
+        text: string;
+        callback_data?: string;
+        url?: string;
+      }[][];
+    };
   } = {}
 ): Promise<{ message_id: number; voice?: Record<string, unknown> }> {
   const token = process.env.BOT_TOKEN;
@@ -530,6 +537,8 @@ export async function sendVoiceDirect(
   if (options.disable_notification) form.append("disable_notification", "true");
   if (options.reply_to_message_id != null)
     form.append("reply_parameters", JSON.stringify({ message_id: options.reply_to_message_id }));
+  if (options.reply_markup)
+    form.append("reply_markup", JSON.stringify(options.reply_markup));
 
   // Hook into the outbound proxy so animation/typing/temp/recording are handled
   const { notifyBeforeFileSend, notifyAfterFileSend } = await import("./outbound-proxy.js");

@@ -32,9 +32,28 @@ export function register(server: McpServer) {
         ),
         disable_notification: z.boolean().optional().describe("Send silently"),
         reply_to_message_id: z.number().int().min(1).optional().describe("Reply to this message ID"),
+        reply_markup: z
+          .object({
+            inline_keyboard: z
+              .array(
+                z.array(
+                  z.object({
+                    text: z.string(),
+                    callback_data: z.string().optional(),
+                    url: z.string().optional(),
+                  })
+                )
+              )
+              .describe("Array of button rows"),
+          })
+          .optional()
+          .describe(
+            "Inline keyboard attached to the voice message. " +
+            "Only applied to the first chunk if the message is split."
+          ),
       },
     },
-    async ({ text, voice, caption, disable_notification, reply_to_message_id }) => {
+    async ({ text, voice, caption, disable_notification, reply_to_message_id, reply_markup }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -66,10 +85,12 @@ export function register(server: McpServer) {
         const message_ids: number[] = [];
         for (let i = 0; i < voiceChunks.length; i++) {
           const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice);
+          const isFirst = i === 0;
           const msg = await sendVoiceDirect(chatId, ogg, {
-            caption: i === 0 ? resolvedCaption : undefined,
+            caption: isFirst ? resolvedCaption : undefined,
             disable_notification,
-            reply_to_message_id: i === 0 ? reply_to_message_id : undefined,
+            reply_to_message_id: isFirst ? reply_to_message_id : undefined,
+            reply_markup: isFirst ? reply_markup : undefined,
           });
           message_ids.push(msg.message_id);
         }
