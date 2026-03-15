@@ -63,7 +63,10 @@
 - Fixed `message_id` schema in `edit_message` missing `.min(1)` — invalid IDs now rejected at schema level
 - Fixed `get_me.ts` throwing at import time when `package.json` is absent — now wraps `require` in try/catch and defaults `mcp_version` to `"unknown"`
 - Fixed trailing whitespace on blank line 69 in `send_new_progress.test.ts`
+- Fixed `message_id` schema in `update_checklist` and `get_message` missing `.min(1)` — invalid IDs now rejected at schema level
+- Fixed `get_agent_guide` throwing synchronously when `docs/behavior.md` is absent — now returns a structured `GUIDE_NOT_FOUND` error
 - Updated `ask` tool `DESCRIPTION` to document all possible return shapes (text, voice, command, timed\_out, aborted)
+- Derived `StepStatus` union type from the Zod status enum in `send_new_checklist.ts` — `STATUS_ICON` and `renderStatus` now use the typed union instead of `string`, making invalid statuses a compile-time error
 
 ## Docs
 

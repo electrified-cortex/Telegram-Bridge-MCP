@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { toResult } from "../telegram.js";
+import { toResult, toError } from "../telegram.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -19,11 +19,15 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
     },
     () => {
-      const content = readFileSync(
-        join(__dirname, "..", "..", "docs", "behavior.md"),
-        "utf-8"
-      );
-      return toResult({ guide: content });
+      try {
+        const content = readFileSync(
+          join(__dirname, "..", "..", "docs", "behavior.md"),
+          "utf-8"
+        );
+        return toResult({ guide: content });
+      } catch {
+        return toError({ code: "GUIDE_NOT_FOUND" as const, message: "Agent guide unavailable: docs/behavior.md not found in distribution." });
+      }
     }
   );
 }

@@ -18,7 +18,7 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        message_id: z.number().int().describe("Message ID to look up"),
+        message_id: z.number().int().min(1).describe("Message ID to look up"),
         version: z
           .number()
           .int()

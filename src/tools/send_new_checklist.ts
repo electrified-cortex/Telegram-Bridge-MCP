@@ -4,7 +4,10 @@ import { getApi, toResult, toError, resolveChat, validateText } from "../telegra
 import { escapeHtml } from "../markdown.js";
 import { applyTopicToTitle } from "../topic-state.js";
 
-const STATUS_ICON: Record<string, string> = {
+const STEP_STATUS_SCHEMA = z.enum(["pending", "running", "done", "failed", "skipped"]);
+type StepStatus = z.infer<typeof STEP_STATUS_SCHEMA>;
+
+const STATUS_ICON: Record<StepStatus, string> = {
   pending:  "⬜",
   running:  "🔄",
   done:     "✅",
@@ -14,7 +17,7 @@ const STATUS_ICON: Record<string, string> = {
 
 function renderStatus(
   title: string,
-  steps: { label: string; status: string; detail?: string }[]
+  steps: { label: string; status: StepStatus; detail?: string }[]
 ): string {
   const lines: string[] = [`<b>${escapeHtml(title)}</b>`, ""];
   for (const step of steps) {
@@ -27,8 +30,7 @@ function renderStatus(
 
 const STEP_SCHEMA = z.object({
   label: z.string().describe("Step description"),
-  status: z
-    .enum(["pending", "running", "done", "failed", "skipped"])
+  status: STEP_STATUS_SCHEMA
     .describe("Current status of this step"),
   detail: z.string().optional().describe("Optional short italicized detail, e.g. error message or duration"),
 });
@@ -96,6 +98,7 @@ export function register(server: McpServer) {
         message_id: z
           .number()
           .int()
+          .min(1)
           .describe("ID of the checklist message to update, as returned by send_new_checklist."),
       },
     },
