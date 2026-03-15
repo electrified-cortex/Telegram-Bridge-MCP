@@ -385,7 +385,6 @@ async function sendVoiceSample(
     const ogg = await synthOgg(sampleText, voiceName);
     const { sendVoiceDirect: sendVoice } = await import("./telegram.js");
     const msg = await sendVoice(chatId, ogg, {
-      caption: `🎧 ${displayName} (${voiceName})`,
       disable_notification: true,
       reply_markup: {
         inline_keyboard: [[{
