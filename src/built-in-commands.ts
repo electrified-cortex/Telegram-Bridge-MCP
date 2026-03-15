@@ -231,7 +231,8 @@ async function handleVersionCommand(): Promise<void> {
     `*Built:* \`${buildTimeDisplay}\``,
   ];
   try {
-    await getApi().sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
+    const msg = await getApi().sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
+    markInternalMessage(msg.message_id);
   } catch { /* ignore */ }
 }
 
@@ -425,14 +426,14 @@ export async function doTimelineDump(incremental = false): Promise<void> {
 }
 
 function buildSessionPanel(): { text: string; keyboard: { text: string; callback_data: string }[][] } {
-  const tSize = timelineSize();
+  const recordSize = dumpTimeline().filter(evt => !isInternalTimelineEvent(evt)).length;
   const mSize = storeSize();
   const mode = getSessionLogMode();
 
   const lines = [
     `🗒 *Session Record*`,
     `Mode: ${sessionLogLabel()}`,
-    `Timeline: ${tSize} events · ${mSize} messages`,
+    `Timeline: ${recordSize} events · ${mSize} messages`,
   ];
   if (typeof mode === "number") {
     lines.push(`Auto-dump: every ${mode} events (${_eventsSinceLastDump} since last)`);
@@ -456,7 +457,7 @@ function buildSessionPanel(): { text: string; keyboard: { text: string; callback
 
   // Row 2: actions
   const actionButtons: { text: string; callback_data: string }[] = [];
-  if (mode !== null && tSize > 0) {
+  if (mode !== null && recordSize > 0) {
     actionButtons.push({ text: "⬇️ Dump record", callback_data: "session:dump" });
   }
   actionButtons.push({ text: "✖ Dismiss", callback_data: "session:dismiss" });

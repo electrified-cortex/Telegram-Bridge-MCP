@@ -195,7 +195,9 @@ describe("built-in-commands", () => {
   });
 
   it("shows mode and action buttons", async () => {
-    mocks.timelineSize.mockReturnValue(5);
+    mocks.dumpTimeline.mockReturnValue([
+      { id: 1, event: "message", from: "user", timestamp: "", content: { type: "text" } },
+    ]);
     await handleIfBuiltIn(cmdUpdate("/session"));
     const call = mocks.sendMessage.mock.calls[0];
     const keyboard = call[2].reply_markup.inline_keyboard;
