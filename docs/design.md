@@ -47,7 +47,7 @@ Tools are grouped by abstraction level.
 | Tool | Description |
 | --- | --- |
 | `get_agent_guide` | Returns behavior.md — the behavioral guide for this server. Call at session start. |
-| `set_topic` | Sets a default title prepended to all outbound messages as `[Title]`. Useful when multiple VS Code windows share the same Telegram chat — each process labels its messages so you can tell which agent sent what. Pass empty string to clear. Scoped to this server process. |
+| `set_topic` | Sets a default title prepended to all outbound messages as `[Title]`. Useful when multiple MCP host instances share the same Telegram chat — each process labels its messages so you can tell which agent sent what. Pass empty string to clear. Scoped to this server process. |
 | `notify` | Sends a titled, severity-coded notification with optional body. Supports silent delivery. |
 | `ask` | Sends a question and blocks until the user replies with free text or voice. |
 | `choose` | Sends a question with labeled inline keyboard buttons; blocks until a button is pressed or the user replies with text/voice. |
@@ -230,7 +230,7 @@ telegram-bridge-mcp/
 │   ├── communication.md          # Communication patterns (also served as MCP resource)
 │   ├── formatting.md             # Formatting reference (also served as MCP resource)
 │   ├── setup.md                  # Setup guide (also served as MCP resource)
-├── LOOP-PROMPT.md             # Sample loop prompt for VS Code Copilot agent sessions
+├── LOOP-PROMPT.md             # Sample loop prompt for MCP agent sessions
 ├── LICENSE                   # AGPL-3.0
 ├── package.json
 └── tsconfig.json
