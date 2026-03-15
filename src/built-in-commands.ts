@@ -347,15 +347,21 @@ async function handleVoiceCallback(
 
   if (data === "voice:noop") return;
 
+  // Wizard navigation — extract the step from callback data
+  let step = "";
   if (data === "voice:clear") {
     setDefaultVoice(null);
+  } else if (data === "voice:home") {
+    step = "";
+  } else if (data.startsWith("voice:nav:")) {
+    step = data.slice("voice:nav:".length);
   } else if (data.startsWith("voice:sample:")) {
     const voiceName = data.slice("voice:sample:".length);
     await sendVoiceSample(chatId, voiceName);
   }
 
-  // Refresh panel
-  const { text, keyboard } = await buildVoicePanel();
+  // Refresh panel at the current wizard step
+  const { text, keyboard } = await buildVoicePanel(step);
   try {
     await api.editMessageText(chatId, panelMsgId, text, {
       parse_mode: "Markdown",
@@ -448,27 +454,37 @@ function voiceLabel(v: VoiceEntry): string {
   return v.description ?? v.name;
 }
 
-/** Group key for sorting/sectioning voices. */
-function voiceGroupKey(v: VoiceEntry): string {
-  if (v.language && v.gender) {
-    return `${v.language} ${v.gender}`;
-  }
-  return "other";
-}
-
-/** Human-readable section header for a group key. */
-const LANGUAGE_LABELS: Record<string, string> = {
-  "en-US male": "🇺🇸 American Male",
-  "en-US female": "🇺🇸 American Female",
-  "en-GB male": "🇬🇧 British Male",
-  "en-GB female": "🇬🇧 British Female",
+/** Human-readable labels for language codes. */
+const LANG_LABELS: Record<string, string> = {
+  "en-US": "🇺🇸 American",
+  "en-GB": "🇬🇧 British",
 };
 
-function groupHeader(key: string): string {
-  return LANGUAGE_LABELS[key] ?? key;
+/** Human-readable labels for genders. */
+const GENDER_LABELS: Record<string, string> = {
+  male: "♂ Male",
+  female: "♀ Female",
+};
+
+function langLabel(lang: string): string {
+  return LANG_LABELS[lang] ?? lang;
 }
 
-async function buildVoicePanel(): Promise<{
+function genderLabel(g: string): string {
+  return GENDER_LABELS[g] ?? g;
+}
+
+/**
+ * Wizard-style voice panel.
+ *
+ * Step encoding (empty string = home):
+ *   ""             → show language buttons
+ *   "en-US"        → show gender buttons for that language
+ *   "en-US:female" → show individual voices
+ */
+async function buildVoicePanel(
+  step = "",
+): Promise<{
   text: string;
   keyboard: InlineButton[][];
 }> {
@@ -490,83 +506,147 @@ async function buildVoicePanel(): Promise<{
   const voices = await resolveVoiceNames();
   const keyboard: InlineButton[][] = [];
 
-  if (voices.length > 0) {
-    lines.push("");
-    lines.push("Tap a voice to hear a sample:");
-
-    buildGroupedVoiceButtons(
-      voices, keyboard, "voice:sample:", effective,
-    );
-  } else {
+  if (voices.length === 0) {
     lines.push("");
     lines.push(
       "_No voices available. " +
       "Add a `voices` array to `mcp-config.json` " +
       "or set `TTS\\_VOICES\\_URL`._"
     );
+  } else {
+    buildWizardStep(voices, keyboard, lines, step, effective);
   }
 
-  // Action row
-  const actionRow: InlineButton[] = [];
+  // Footer row
+  const footerRow: InlineButton[] = [];
+  if (step) {
+    const backStep = step.includes(":")
+      ? step.slice(0, step.indexOf(":"))
+      : "";
+    const backData = backStep
+      ? `voice:nav:${backStep}`
+      : "voice:home";
+    footerRow.push({ text: "↩ Back", callback_data: backData });
+  }
   if (currentVoice) {
-    actionRow.push({
-      text: "↩ Reset to default",
+    footerRow.push({
+      text: "↩ Reset",
       callback_data: "voice:clear",
     });
   }
-  actionRow.push({
+  footerRow.push({
     text: "✖ Dismiss",
     callback_data: "voice:dismiss",
   });
-  keyboard.push(actionRow);
+  keyboard.push(footerRow);
 
   return { text: lines.join("\n"), keyboard };
 }
 
-/** Build grouped voice buttons into the keyboard array. */
-function buildGroupedVoiceButtons(
+/** Populate the wizard keyboard and text lines for the given step. */
+function buildWizardStep(
   voices: VoiceEntry[],
   keyboard: InlineButton[][],
-  callbackPrefix: string,
+  lines: string[],
+  step: string,
   effective: string,
 ): void {
-  const groups = new Map<string, VoiceEntry[]>();
-  for (const v of voices) {
-    const key = voiceGroupKey(v);
-    const arr = groups.get(key) ?? [];
-    arr.push(v);
-    groups.set(key, arr);
+  // Collect unique languages
+  const langs = [...new Set(
+    voices.map(v => v.language).filter(Boolean)
+  )] as string[];
+
+  // No language metadata → flat list (fallback)
+  if (langs.length === 0) {
+    lines.push("");
+    lines.push("Tap a voice to hear a sample:");
+    buildFlatVoiceButtons(voices, keyboard, effective);
+    return;
   }
 
-  const hasGroups = groups.size > 1
-    || (groups.size === 1 && !groups.has("other"));
-
-  for (const [key, members] of groups) {
-    if (hasGroups) {
+  if (!step) {
+    // Step 1: pick language
+    lines.push("");
+    lines.push("Pick a language:");
+    for (const lang of langs) {
       keyboard.push([{
-        text: groupHeader(key),
-        callback_data: "voice:noop",
+        text: langLabel(lang),
+        callback_data: `voice:nav:${lang}`,
       }]);
     }
-
-    const buttonsPerRow = 3;
-    let row: InlineButton[] = [];
-    for (const v of members) {
-      const isActive = v.name === effective;
-      const label = isActive
-        ? `✓ ${voiceLabel(v)}`
-        : voiceLabel(v);
-      row.push({
-        text: label,
-        callback_data: `${callbackPrefix}${v.name}`,
-      });
-      if (row.length >= buttonsPerRow) {
-        keyboard.push(row);
-        row = [];
-      }
-    }
-    if (row.length > 0) keyboard.push(row);
+    return;
   }
+
+  const parts = step.split(":");
+  const selectedLang = parts[0];
+  const selectedGender = parts[1] ?? "";
+  const langVoices = voices.filter(
+    v => v.language === selectedLang
+  );
+
+  if (!selectedGender) {
+    // Step 2: pick gender within the language
+    const genders = [...new Set(
+      langVoices.map(v => v.gender).filter(Boolean)
+    )] as string[];
+
+    if (genders.length <= 1) {
+      // Only one gender — skip straight to voices
+      lines.push("");
+      lines.push(
+        `${langLabel(selectedLang)} — ` +
+        "tap a voice to hear a sample:"
+      );
+      buildFlatVoiceButtons(langVoices, keyboard, effective);
+      return;
+    }
+
+    lines.push("");
+    lines.push(`${langLabel(selectedLang)} — pick a category:`);
+    for (const g of genders) {
+      keyboard.push([{
+        text: genderLabel(g),
+        callback_data: `voice:nav:${selectedLang}:${g}`,
+      }]);
+    }
+    return;
+  }
+
+  // Step 3: show voices in language + gender
+  const filtered = langVoices.filter(
+    v => v.gender === selectedGender
+  );
+  lines.push("");
+  lines.push(
+    `${langLabel(selectedLang)} ${genderLabel(selectedGender)} — ` +
+    "tap to hear a sample:"
+  );
+  buildFlatVoiceButtons(filtered, keyboard, effective);
+}
+
+/** Build a flat list of voice buttons (no grouping). */
+function buildFlatVoiceButtons(
+  voices: VoiceEntry[],
+  keyboard: InlineButton[][],
+  effective: string,
+): void {
+  const buttonsPerRow = 3;
+  let row: InlineButton[] = [];
+  for (const v of voices) {
+    const isActive = v.name === effective;
+    const label = isActive
+      ? `✓ ${voiceLabel(v)}`
+      : voiceLabel(v);
+    row.push({
+      text: label,
+      callback_data: `voice:sample:${v.name}`,
+    });
+    if (row.length >= buttonsPerRow) {
+      keyboard.push(row);
+      row = [];
+    }
+  }
+  if (row.length > 0) keyboard.push(row);
 }
 
 // ---------------------------------------------------------------------------
