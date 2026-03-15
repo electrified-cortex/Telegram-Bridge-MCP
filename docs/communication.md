@@ -87,13 +87,13 @@ Humans strongly prefer tapping a button over typing a reply. When a decision is 
 - For a genuinely unbiased A/B choice where neither option is preferred, use no color on either button.
 - Avoid applying `primary` to both buttons — it defeats the purpose.
 
-**Symbols and icons**
+### Symbols and icons
 
 - Symbols/unicode icons in button labels are strongly encouraged — they add clarity at a glance.
 - **All-or-nothing rule:** if any button in a set has a symbol or emoji, all buttons in that set must have one.
 - Emojis (e.g. 🟢 🔴) only belong in *unstyled* buttons — they clash visually with colored buttons. Use plain text + icon characters (e.g. `✓ Yes`, `✗ No`) when a style is applied.
 
-**Single-button CTA**
+### Single-button CTA
 
 Pass an empty string to `no_text` on `confirm` to render a single centered button — ideal for "done / continue" moments.
 

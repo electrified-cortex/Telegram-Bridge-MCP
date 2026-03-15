@@ -29,10 +29,10 @@ A **background poller** (`poller.ts`) runs a continuous `getUpdates` long-poll l
 
 ## Configuration
 
-| Variable           | Required    | Description                                                                                   |
-|--------------------|-------------|-----------------------------------------------------------------------------------------------|
-| `BOT_TOKEN`        | Yes         | Telegram Bot API token from @BotFather                                                        |
-| `ALLOWED_USER_ID`  | Recommended | Numeric Telegram user ID; inbound updates from others are dropped; also the outbound chat target |
+| Variable | Required | Description |
+| --- | --- | --- |
+| `BOT_TOKEN` | Yes | Telegram Bot API token from @BotFather |
+| `ALLOWED_USER_ID` | Recommended | Numeric Telegram user ID; inbound updates from others are dropped; also the outbound chat target |
 
 Set via environment variable, or a `.env` file (loaded with `dotenv`).
 

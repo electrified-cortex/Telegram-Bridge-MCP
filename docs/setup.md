@@ -22,7 +22,7 @@ Your numeric Telegram user ID. When set:
 ### Threat model summary
 
 | Threat | Mitigated by |
-|--------|--------------|
+| --- | --- |
 | Stranger messages bot to inject replies | `ALLOWED_USER_ID` |
 | Agent redirected to message a different chat | No `chat_id` parameter — target is always `ALLOWED_USER_ID` |
 | Token leak → someone sends messages as bot | Rotate via `/revoke` in BotFather |
@@ -243,7 +243,7 @@ Add a **project-scoped** `.mcp.json` in your project root:
 ## Bot Permissions Reference
 
 | Action | Permission needed |
-|--------|-------------------|
+| --- | --- |
 | Send messages to a group | Must be a member |
 | Read group messages | Must be a member, or have `can_read_all_group_messages` set by BotFather |
 | Delete messages | Admin with "Delete messages" right |
