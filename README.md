@@ -109,6 +109,25 @@ This interactive wizard:
 }
 ```
 
+**Claude Code** — add a **project-scoped** `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
+      "env": {
+        "BOT_TOKEN": "YOUR_TOKEN",
+        "ALLOWED_USER_ID": "YOUR_USER_ID"
+      }
+    }
+  }
+}
+```
+
+> **Do not add this to global `~/.claude.json`.** Global MCP servers spawn in every Claude Code session — multiple instances will compete for the same bot token's `getUpdates`, causing conflicts.
+
 ### 5. Start a session
 
 Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will connect, announce itself over Telegram, and wait for your instructions.

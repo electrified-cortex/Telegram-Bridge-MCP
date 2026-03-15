@@ -140,6 +140,27 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
+### Claude Code
+
+Add a **project-scoped** `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
+      "env": {
+        "BOT_TOKEN": "YOUR_TOKEN_HERE",
+        "ALLOWED_USER_ID": "123456789"
+      }
+    }
+  }
+}
+```
+
+> **Do not add this to global `~/.claude.json` `mcpServers`.** Global MCP servers are spawned in *every* Claude Code session. If you have multiple sessions open, each one starts its own Telegram MCP process — all competing for the same bot token's `getUpdates` poll. Only the first instance receives updates; the rest get nothing or cause conflicts. Always use a project-scoped `.mcp.json` so the server only runs in sessions opened from that directory.
+
 ---
 
 ## Troubleshooting
@@ -197,6 +218,12 @@ Add to `claude_desktop_config.json`:
 
 - If `timeout` is 0 (instant poll) and there are no pending updates, this is expected.
 - Use `dequeue_update()` with no arguments to block up to 60 s for the next update.
+
+### Multiple instances competing / messages arriving in wrong session
+
+- Only one process can poll `getUpdates` per bot token. If multiple MCP instances share the same token, they race for updates — most sessions receive nothing.
+- **Common cause:** the Telegram MCP server is configured globally (e.g. `~/.claude.json` `mcpServers` for Claude Code, or Claude Desktop's global config) and multiple sessions are open.
+- **Fix:** move the config to a project-scoped file (`.mcp.json` for Claude Code, `.vscode/mcp.json` for VS Code) so the server only runs in one session at a time.
 
 ### Bot receives its own messages
 
