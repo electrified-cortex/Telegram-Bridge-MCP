@@ -94,7 +94,7 @@ Examples:
 
 - "Build complete — all tests passed, ready to commit"
 - "Refactor done — 4 files updated, build clean"
-- "Tests failed — 2 failures in `choose.test.ts`, see the host's Problems panel"
+- "Tests failed — 2 failures in `choose.test.ts`, check the error output for details"
 
 ---
 
