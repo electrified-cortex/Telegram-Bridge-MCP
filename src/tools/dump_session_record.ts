@@ -64,7 +64,7 @@ export function register(server: McpServer) {
         const { InputFile } = await import("grammy");
         const buf = Buffer.from(JSON.stringify(payload, null, 2), "utf-8");
         const file = new InputFile(buf, `session-log-${now.replace(/[:.]/g, "-")}.json`);
-        const label = `📼 Session log · ${timeline.length} events`;
+        const label = `� Session record · ${timeline.length} events`;
         const api = getApi();
         const msg = await api.sendDocument(chatId, file, {
           caption: label,

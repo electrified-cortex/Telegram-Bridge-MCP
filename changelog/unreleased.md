@@ -49,6 +49,12 @@
 - Fixed orphaned `setTimeout` handles in `dequeue_update` and `ask` loop iterations — timer is now cancelled with `clearTimeout` after the `Promise.race` resolves
 - Fixed `snake_case` local variable names in `get_me.ts` — renamed `mcp_commit`/`mcp_build_time` to `mcpCommit`/`mcpBuildTime`; wire-format output field names are unchanged
 - Fixed `send_text_as_voice` leaking typing indicator after voice delivery — `cancelTyping()` is now called in a `finally` block
+- Fixed `dump_session_record` MCP tool not advancing the dump cursor — now calls `advanceDumpCursor()` after every successful send so shutdown dump only covers new events
+- Fixed shutdown auto-dump re-sending already-seen events — now uses incremental mode (`doTimelineDump(true)`)
+- Fixed incremental dump emitting "no events captured" noise on shutdown — empty incremental dumps are now silent
+- Fixed session panel "Dump" button using full-timeline dump — now incremental (consistent with cursor tracking)
+- Fixed broken `U+FFFD` replacement character in session panel "Dump" button label — replaced with correct 🗒 emoji
+- Renamed "Session Log" → "Session Record" throughout UI strings and changed panel/file emoji from 📼 to 🗒
 
 - Fixed `BUTTON_DATA_INVALID` error code in `edit_message` button label validation — renamed to `BUTTON_LABEL_EXCEEDS_LIMIT` (consistent with `send_choice`)
 - Fixed `edit_message` skipping `validateText` before calling Telegram API — now validates resolved text length/emptiness and returns a structured error

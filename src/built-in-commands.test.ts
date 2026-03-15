@@ -184,7 +184,7 @@ describe("built-in-commands", () => {
     expect(result).toBe(true);
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       123,
-      expect.stringContaining("Session Log"),
+      expect.stringContaining("Session Record"),
       expect.objectContaining({
         parse_mode: "Markdown",
         reply_markup: expect.objectContaining({

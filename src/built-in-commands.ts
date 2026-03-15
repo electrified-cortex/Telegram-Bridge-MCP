@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Built-in server-level slash commands.
  *
  * These commands are intercepted in the update pipeline *before* any update
@@ -270,7 +270,7 @@ async function handleSessionCallback(
   } else if (data === "session:autodump") {
     // Show threshold picker
     try {
-      await api.editMessageText(chatId, panelMsgId, "📼 *Auto-dump*\n\nDump the session log every N events:", {
+      await api.editMessageText(chatId, panelMsgId, "� *Auto-dump*\n\nDump the session record every N events:", {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: [
           [
@@ -337,7 +337,7 @@ export async function doTimelineDump(incremental = false): Promise<void> {
   if (timeline.length === 0) {
     if (!incremental) {
       try {
-        await api.sendMessage(chatId, "📼 *Session Log*\n_(no events captured)_", {
+        await api.sendMessage(chatId, "� *Session Record*\n_(no events captured)_", {
           parse_mode: "Markdown",
         });
       } catch { /* ignore */ }
@@ -359,7 +359,7 @@ export async function doTimelineDump(incremental = false): Promise<void> {
     const { InputFile } = await import("grammy");
     const buf = Buffer.from(JSON.stringify(payload, null, 2), "utf-8");
     const file = new InputFile(buf, `session-log-${now.replace(/[:.]/g, "-")}.json`);
-    const label = `📼 Session log · ${timeline.length} events${incremental ? " (incremental)" : ""}`;
+    const label = `� Session record · ${timeline.length} events${incremental ? " (incremental)" : ""}`;
     const msg = await api.sendDocument(chatId, file, { caption: label }) as {
       message_id: number;
       document?: { file_id?: string };
@@ -392,7 +392,7 @@ function buildSessionPanel(): { text: string; keyboard: { text: string; callback
   const mode = getSessionLogMode();
 
   const lines = [
-    `📼 *Session Log*`,
+    `� *Session Record*`,
     `Mode: ${sessionLogLabel()}`,
     `Timeline: ${tSize} events · ${mSize} messages`,
   ];
@@ -419,7 +419,7 @@ function buildSessionPanel(): { text: string; keyboard: { text: string; callback
   // Row 2: actions
   const actionButtons: { text: string; callback_data: string }[] = [];
   if (mode !== null && tSize > 0) {
-    actionButtons.push({ text: "� Dump JSON", callback_data: "session:dump" });
+    actionButtons.push({ text: "\uD83D\uDDD2 Dump record", callback_data: "session:dump" });
   }
   actionButtons.push({ text: "✖ Dismiss", callback_data: "session:dismiss" });
 

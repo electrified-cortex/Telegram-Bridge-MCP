@@ -86,4 +86,4 @@ process.stderr.write("[info] background poller started\n");
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
 const logStatus = sessionLogLabel();
-void sendServiceMessage(`🟢 Online\nSession log: ${logStatus}\n/session to change settings`).catch(() => {});
+void sendServiceMessage(`🟢 Online\nSession record: ${logStatus}\n/session to change settings`).catch(() => {});
