@@ -11,7 +11,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that bridges AI assistants to a Telegram bot — enabling two-way messaging, interactive confirmations, live status updates, voice transcription, and text-to-speech replies.
 
-Works with any MCP-compatible AI host: VS Code Copilot, Claude Desktop, and others.
+Works with any MCP-compatible AI host: VS Code Copilot, Claude Desktop, Claude Code, Cursor, Windsurf, and others.
 
 ---
 
@@ -351,6 +351,24 @@ Create a `.env` file with your credentials (see `.env.example`), then configure 
 ```
 
 **Claude Desktop** — `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "--env-file", "/absolute/path/to/.env",
+        "-v", "telegram-mcp-cache:/home/node/.cache",
+        "ghcr.io/electricessence/telegram-bridge-mcp:latest"
+      ]
+    }
+  }
+}
+```
+
+**Claude Code** — `.mcp.json` in your project root:
 
 ```json
 {

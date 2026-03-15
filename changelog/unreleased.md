@@ -1,5 +1,10 @@
 # [Unreleased]
 
+## Changed
+
+- Replaced VS Code-specific language with client-agnostic terms across README, LOOP-PROMPT, docs, tool descriptions, and pairing wizard output
+- Added Claude Code Docker config example to README
+
 ## Added
 
 - Added Claude Code configuration instructions (project-scoped `.mcp.json`) to setup guide and README
