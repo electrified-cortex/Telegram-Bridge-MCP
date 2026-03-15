@@ -127,9 +127,10 @@ describe("built-in-commands", () => {
 
   // -- BUILT_IN_COMMANDS constant ------------------------------------------
 
-  it("exports /session, /version, and /shutdown command metadata", () => {
+  it("exports /session, /voice, /version, and /shutdown command metadata", () => {
     expect(BUILT_IN_COMMANDS).toEqual([
       { command: "session", description: "Session recording controls" },
+      { command: "voice", description: "Change the TTS voice" },
       { command: "version", description: "Show server version and build info" },
       { command: "shutdown", description: "Shut down the MCP server" },
     ]);

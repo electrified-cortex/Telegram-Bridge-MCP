@@ -108,7 +108,7 @@ describe("send_text_as_voice", () => {
   it("synthesizes and sends a single voice note", async () => {
     const result = await handler({ text: "Hello world" }) as { content: { text: string }[] };
     expect(mocks.showTyping).toHaveBeenCalled();
-    expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello world");
+    expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello world", undefined);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledWith(
       123,
       Buffer.from("ogg"),
