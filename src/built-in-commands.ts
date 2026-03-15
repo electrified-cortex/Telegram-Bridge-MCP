@@ -359,7 +359,7 @@ export async function doTimelineDump(incremental = false): Promise<void> {
     const { InputFile } = await import("grammy");
     const buf = Buffer.from(JSON.stringify(payload, null, 2), "utf-8");
     const file = new InputFile(buf, `session-log-${now.replace(/[:.]/g, "-")}.json`);
-    const label = `� Session record · ${timeline.length} events${incremental ? " (incremental)" : ""}`;
+    const label = `🗒 Session record · ${timeline.length} events${incremental ? " (incremental)" : ""}`;
     const msg = await api.sendDocument(chatId, file, { caption: label }) as {
       message_id: number;
       document?: { file_id?: string };
@@ -408,7 +408,7 @@ function buildSessionPanel(): { text: string; keyboard: { text: string; callback
     modeButtons.push({ text: "⏹ Disable", callback_data: "session:disable" });
   }
   if (mode !== "manual") {
-    modeButtons.push({ text: "✋ Manual", callback_data: "session:manual" });
+    modeButtons.push({ text: "🫵 Manual", callback_data: "session:manual" });
   }
   if (typeof mode !== "number") {
     modeButtons.push({ text: "⏩ Auto-dump", callback_data: "session:autodump" });
@@ -419,7 +419,7 @@ function buildSessionPanel(): { text: string; keyboard: { text: string; callback
   // Row 2: actions
   const actionButtons: { text: string; callback_data: string }[] = [];
   if (mode !== null && tSize > 0) {
-    actionButtons.push({ text: "\uD83D\uDDD2 Dump record", callback_data: "session:dump" });
+    actionButtons.push({ text: "⬇️ Dump record", callback_data: "session:dump" });
   }
   actionButtons.push({ text: "✖ Dismiss", callback_data: "session:dismiss" });
 
