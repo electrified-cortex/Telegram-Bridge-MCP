@@ -45,6 +45,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json ./
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 RUN pnpm build
 
 # ── Stage 3: runtime (no build tools, no dev deps, non-root) ─────────────────

@@ -25,6 +25,7 @@
 
 ## Fixed
 
+- Fixed Docker build stage missing `COPY scripts/ ./scripts/` — `gen-build-info.mjs` was not found inside the container, causing every Docker publish CI run to fail since the script was introduced
 - Added `.min(1)` to `message_id` schema in `append_text`, `delete_message`, `edit_message_text`, `set_reaction`, `update_progress` — rejects `0` at schema level instead of silently failing
 - Added `.min(1)` to `reply_to_message_id` schema in `ask`, `choose`, `confirm`, `notify`, `send_text_as_voice` — consistent with `send_choice` which already had it
 - Fixed per-iteration `AbortSignal` listener accumulation in `pollButtonPress` and `pollButtonOrTextOrVoice` — hoisted `abortPromise` outside loop (mirrors fix already applied to `dequeue_update.ts` and `ask.ts`)
