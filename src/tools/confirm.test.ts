@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   editWithSkipped: vi.fn(),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
+  registerMessageHook: vi.fn(),
+  clearMessageHook: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -30,6 +32,8 @@ vi.mock("../message-store.js", () => ({
   recordOutgoing: vi.fn(),
   registerCallbackHook: (...args: unknown[]) => mocks.registerCallbackHook(...args),
   clearCallbackHook: (...args: unknown[]) => mocks.clearCallbackHook(...args),
+  registerMessageHook: (...args: unknown[]) => mocks.registerMessageHook(...args),
+  clearMessageHook: (...args: unknown[]) => mocks.clearMessageHook(...args),
 }));
 
 vi.mock("./button-helpers.js", async (importActual) => {
@@ -180,5 +184,32 @@ describe("confirm tool", () => {
     await call({ text: "Proceed?", reply_to_message_id: 3 });
     const sendOpts = mocks.sendMessage.mock.calls[0][2];
     expect(sendOpts.reply_parameters).toEqual({ message_id: 3 });
+  });
+
+  it("registers a message hook on timeout to clean up stale buttons", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
+    await call({ text: "Proceed?" });
+    expect(mocks.registerMessageHook).toHaveBeenCalledWith(5, expect.any(Function));
+  });
+
+  it("message hook clears callback hook and edits with skipped", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
+    await call({ text: "Proceed?" });
+    const hookFn = mocks.registerMessageHook.mock.calls[0][1];
+    hookFn();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.clearCallbackHook).toHaveBeenCalledWith(5);
+    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?");
+  });
+
+  it("callback hook clears message hook on late button press", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+    await call({ text: "Proceed?" });
+    const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
+    hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
+    expect(mocks.clearMessageHook).toHaveBeenCalledWith(5);
   });
 });

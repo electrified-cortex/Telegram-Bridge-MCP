@@ -174,6 +174,15 @@ let _waiters: Array<() => void> = [];
 type CallbackHookFn = (event: TimelineEvent) => void;
 const _callbackHooks = new Map<number, CallbackHookFn>();
 
+/**
+ * One-shot hooks that fire on the first *message* with id > the registered
+ * afterId. Used by confirm/choose to clean up stale buttons after a timeout
+ * when the user sends a text/voice/command instead of pressing a button.
+ * Non-consuming: the event stays queued for dequeue_update.
+ */
+type MessageHookFn = () => void;
+const _messageHooks = new Map<number, MessageHookFn>();
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -358,6 +367,16 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
     };
     pushEvent(evt);
     _messageLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
+
+    // Fire one-shot message hooks for any afterId < this message's id.
+    // Non-consuming: the event stays queued for dequeue_update.
+    for (const [afterId, hook] of _messageHooks) {
+      if (msg.message_id > afterId) {
+        _messageHooks.delete(afterId);
+        try { hook(); } catch { /* non-fatal */ }
+      }
+    }
+
     notifyWaiters();
 
     return true;
@@ -766,6 +785,7 @@ export function resetStoreForTest(): void {
   _messageLane.clear();
   _waiters = [];
   _callbackHooks.clear();
+  _messageHooks.clear();
   _botReactionIndex.clear();
   _consumedMessageIds.clear();
   _onEventCallback = null;
@@ -779,6 +799,16 @@ export function registerCallbackHook(messageId: number, fn: CallbackHookFn): voi
 /** Remove a previously registered callback hook (e.g. on send_choice cleanup). */
 export function clearCallbackHook(messageId: number): void {
   _callbackHooks.delete(messageId);
+}
+
+/** Register a one-shot hook that fires on the first message with id > afterId. */
+export function registerMessageHook(afterId: number, fn: MessageHookFn): void {
+  _messageHooks.set(afterId, fn);
+}
+
+/** Remove a previously registered message hook. */
+export function clearMessageHook(afterId: number): void {
+  _messageHooks.delete(afterId);
 }
 
 /**
