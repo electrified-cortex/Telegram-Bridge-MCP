@@ -6,6 +6,7 @@
 - Added `session-queue` module — per-session queues with message ownership tracking and inbound routing (targeted via reply-to/callback/reaction, ambiguous via broadcast)
 - `session_start` now creates a per-session queue alongside the session
 - `close_session` now removes the per-session queue on closure
+- `list_sessions` tool — lists all active sessions (SID, name, creation time) and indicates the active session; no auth required
 - `dequeue_update` is now session-aware — reads from session queue when a session is active, falls back to global queue
 - Added cross-session outbound forwarding — bot messages from one session appear in other sessions' queues
 - Added `routing-mode` module — configurable routing for ambiguous messages (load_balance default, cascade/governor stubs for Phase 4)
