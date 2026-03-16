@@ -135,6 +135,40 @@ describe("session_start tool", () => {
     expect(opts._rawText).toBe("Welcome back!");
   });
 
+  it("enriches default intro with session identity when name is set", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "scout", sessionsActive: 1 });
+
+    await call({ name: "scout" });
+
+    const opts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    expect(opts._rawText).toBe("ℹ️ Session 2 — scout");
+  });
+
+  it("enriches default intro with session identity when multiple sessions active", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 3, pin: 333333, name: "", sessionsActive: 2 });
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "leader" }, { sid: 3, name: "" }]);
+
+    await call({});
+
+    const opts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    expect(opts._rawText).toBe("ℹ️ Session 3");
+  });
+
+  it("appends session tag to custom intro when multiple sessions active", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 4, pin: 444444, name: "worker", sessionsActive: 3 });
+    mocks.listSessions.mockReturnValue([
+      { sid: 1, name: "boss" }, { sid: 2, name: "helper" }, { sid: 4, name: "worker" },
+    ]);
+
+    await call({ intro: "Hello!", name: "worker" });
+
+    const opts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    expect(opts._rawText).toBe("Hello!\n_Session 4 — worker_");
+  });
+
   it("asks user and drains on Start Fresh", async () => {
     mocks.pendingCount.mockReturnValue(3);
     // After intro is sent, second sendMessage is the confirmation

@@ -11,7 +11,24 @@ import {
   ackAndEditSelection,
 } from "./button-helpers.js";
 
-const DEFAULT_INTRO = "\u2139\uFE0F Session Start";
+const DEFAULT_INTRO = "ℹ️ Session Start";
+
+/** Build the actual intro text, injecting session identity. */
+function buildIntro(
+  template: string,
+  sid: number,
+  name: string,
+  sessionsActive: number,
+): string {
+  const tag = name ? `Session ${sid} — ${name}` : `Session ${sid}`;
+  // When multiple sessions are active (or this one has a name), always show identity
+  if (sessionsActive > 1 || name) {
+    return template === DEFAULT_INTRO
+      ? `ℹ️ ${tag}`
+      : `${template}\n_${tag}_`;
+  }
+  return template;
+}
 
 const FRESH_DATA = "session_fresh";
 const RESUME_DATA = "session_resume";
@@ -62,13 +79,14 @@ export function register(server: McpServer) {
 
       try {
         // 1. Send the intro message
+        const introText = buildIntro(intro, session.sid, name, session.sessionsActive);
         const sent = await getApi().sendMessage(
           chatId,
-          markdownToV2(intro),
+          markdownToV2(introText),
           {
             parse_mode: "MarkdownV2",
             disable_notification: true,
-            _rawText: intro,
+            _rawText: introText,
           } as Record<string, unknown>,
         );
         const introId: number = sent.message_id;

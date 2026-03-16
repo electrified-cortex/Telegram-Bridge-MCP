@@ -10,6 +10,7 @@
 
 ## Changed
 
+- `session_start` intro message now includes session identity (SID and name) when multiple sessions are active or a name is provided
 - Softened session-start hint from prescriptive "Requires an active session — call session_start once before using this tool" to subtle "Ensure session_start has been called" across all 12 tool descriptions
 - Pending-updates guard on blocking tools now auto-bypasses when `reply_to_message_id` is set (targeted replies don't need queue draining)
 - Updated pending guard description in blocking tools to document the reply-to exception
