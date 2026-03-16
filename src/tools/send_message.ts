@@ -16,7 +16,7 @@ const DESCRIPTION =
   "answer_callback_query — there is no blocking wait. " +
   "For blocking single-selection, use choose. For yes/no, use confirm. " +
   "For voice/TTS, use send_text_as_voice. " +
-  "Requires an active session — call session_start once before using this tool.";
+  "Ensure session_start has been called.";
 
 const buttonSchema = z.object({
   label: z

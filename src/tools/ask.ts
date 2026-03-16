@@ -13,9 +13,9 @@ const DESCRIPTION =
   "{ timed_out: false, text, message_id, voice: true } for a transcribed voice reply, " +
   "or { timed_out: false, command, args, message_id } for a bot-command reply. " +
   "Use for open-ended prompts where a button isn't appropriate. " +
-  "Fails if there are unread pending updates — drain them with " +
+  "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
   "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
-  "Requires an active session — call session_start once before using this tool.";
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -49,7 +49,7 @@ export function register(server: McpServer) {
       const textErr = validateText(question);
       if (textErr) return toError(textErr);
 
-      if (!ignore_pending) {
+      if (!ignore_pending && !reply_to_message_id) {
         const pending = pendingCount();
         if (pending > 0) {
           return toError({

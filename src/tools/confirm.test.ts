@@ -257,10 +257,10 @@ describe("confirm tool", () => {
   it("calls editWithSkipped immediately via onVoiceDetected before poll resolves", async () => {
     const voiceResult: VoiceResult = { kind: "voice", message_id: 11, text: "do it" };
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
-    mocks.pollButtonOrTextOrVoice.mockImplementation(async (...args: unknown[]) => {
+    mocks.pollButtonOrTextOrVoice.mockImplementation((...args: unknown[]) => {
       const onVoiceDetected = args[3] as () => void;
       onVoiceDetected(); // fires immediately — simulates early voice detection
-      return voiceResult;
+      return Promise.resolve(voiceResult);
     });
     const result = await call({ text: "Proceed?" });
     expect(isError(result)).toBe(false);
@@ -291,6 +291,21 @@ describe("confirm tool", () => {
     const result = await call({
       text: "Proceed?",
       ignore_pending: true,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.confirmed).toBe(true);
+  });
+
+  it("bypasses pending guard when reply_to_message_id is set", async () => {
+    mocks.pendingCount.mockReturnValue(3);
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(
+      makeButtonResult("confirm_yes"),
+    );
+    const result = await call({
+      text: "Proceed?",
+      reply_to_message_id: 42,
     });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);

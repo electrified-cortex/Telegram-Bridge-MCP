@@ -87,12 +87,12 @@ describe("rate-limiter", () => {
 
   describe("enforceRateLimit", () => {
     it("does not throw when not rate limited", () => {
-      expect(() => enforceRateLimit()).not.toThrow();
+      expect(() => { enforceRateLimit(); }).not.toThrow();
     });
 
     it("throws when currently rate limited", () => {
       recordRateLimit(30);
-      expect(() => enforceRateLimit()).toThrow();
+      expect(() => { enforceRateLimit(); }).toThrow();
     });
 
     it("throws error with code RATE_LIMITED", () => {
@@ -118,7 +118,7 @@ describe("rate-limiter", () => {
     it("does not throw after window expires", async () => {
       recordRateLimit(1);
       await vi.advanceTimersByTimeAsync(1001);
-      expect(() => enforceRateLimit()).not.toThrow();
+      expect(() => { enforceRateLimit(); }).not.toThrow();
     });
   });
 

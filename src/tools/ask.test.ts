@@ -178,4 +178,19 @@ describe("ask tool", () => {
     expect(data.timed_out).toBe(false);
     expect(data.text).toBe("hello");
   });
+
+  it("bypasses pending guard when reply_to_message_id is set", async () => {
+    mocks.pendingCount.mockReturnValue(5);
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeTextEvent(11, "yes"));
+    const result = await call({
+      question: "Continue?",
+      timeout_seconds: 1,
+      reply_to_message_id: 99,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBe(false);
+    expect(data.text).toBe("yes");
+  });
 });

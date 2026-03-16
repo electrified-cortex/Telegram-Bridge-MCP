@@ -14,7 +14,7 @@ const DESCRIPTION =
   "characters become noise in audio. Write the text as natural spoken language: " +
   "no bullet points, no headers, no code blocks, no URLs. Punctuation like " +
   "periods and commas helps pacing; everything else should be plain prose. " +
-  "Requires an active session — call session_start once before using this tool.";
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(

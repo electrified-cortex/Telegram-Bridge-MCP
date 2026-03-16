@@ -1,0 +1,894 @@
+/**
+ * Multi-session integration tests.
+ *
+ * These test scenarios with 2–3 active sessions interacting through
+ * the real session-manager, session-queue, routing-mode, and dm-permissions
+ * modules. Only message-store's `getMessage` is mocked (needed by
+ * passMessage / routeMessage which look up events by ID).
+ */
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { TimelineEvent } from "./message-store.js";
+
+// ---------------------------------------------------------------------------
+// Mock message-store (passMessage / routeMessage need getMessage)
+// ---------------------------------------------------------------------------
+
+const mockGetMessage = vi.fn<() => TimelineEvent | undefined>();
+
+vi.mock("./message-store.js", () => ({
+  getMessage: (...args: unknown[]) => mockGetMessage(...args as []),
+  CURRENT: -1,
+}));
+
+import {
+  createSession,
+  setActiveSession,
+  getActiveSession,
+  closeSession,
+  listSessions,
+  resetSessions,
+} from "./session-manager.js";
+import {
+  createSessionQueue,
+  removeSessionQueue,
+  getSessionQueue,
+  sessionQueueCount,
+  trackMessageOwner,
+  getMessageOwner,
+  routeToSession,
+  broadcastOutbound,
+  deliverDirectMessage,
+  passMessage,
+  routeMessage,
+  popCascadePassDeadline,
+  notifySessionWaiters,
+  resetSessionQueuesForTest,
+} from "./session-queue.js";
+import {
+  setRoutingMode,
+  getRoutingMode,
+  getGovernorSid,
+  resetRoutingModeForTest,
+} from "./routing-mode.js";
+import {
+  grantDm,
+  hasDmPermission,
+  revokeAllForSession,
+  resetDmPermissionsForTest,
+} from "./dm-permissions.js";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let _eventId = 1;
+
+function makeEvent(overrides: Partial<TimelineEvent> = {}): TimelineEvent {
+  return {
+    id: _eventId++,
+    timestamp: new Date().toISOString(),
+    event: "message",
+    from: "user",
+    content: { type: "text", text: "hello" },
+    ...overrides,
+  };
+}
+
+function replyEvent(replyTo: number): TimelineEvent {
+  return makeEvent({
+    content: { type: "text", text: "reply", reply_to: replyTo },
+  });
+}
+
+function callbackEvent(target: number): TimelineEvent {
+  return makeEvent({
+    event: "callback",
+    content: { type: "cb", data: "yes", target },
+  });
+}
+
+/** Drain all pending items from a session queue. */
+function drain(sid: number): TimelineEvent[] {
+  const q = getSessionQueue(sid);
+  if (!q) return [];
+  const items: TimelineEvent[] = [];
+  let item = q.dequeue();
+  while (item) {
+    items.push(item);
+    item = q.dequeue();
+  }
+  return items;
+}
+
+/** Create a session and its queue in one step. */
+function setupSession(name = "") {
+  const s = createSession(name);
+  createSessionQueue(s.sid);
+  return s;
+}
+
+// ---------------------------------------------------------------------------
+// Setup — reset all module state between tests
+// ---------------------------------------------------------------------------
+
+describe("multi-session integration", () => {
+  beforeEach(() => {
+    resetSessions();
+    resetSessionQueuesForTest();
+    resetRoutingModeForTest();
+    resetDmPermissionsForTest();
+    mockGetMessage.mockReset();
+    _eventId = 1;
+  });
+
+  // =========================================================================
+  // 1. Session lifecycle
+  // =========================================================================
+
+  describe("session lifecycle", () => {
+    it("creates 3 sessions with sequential SIDs and queues", () => {
+      const s1 = setupSession("Agent A");
+      const s2 = setupSession("Agent B");
+      const s3 = setupSession("Agent C");
+
+      expect(s1.sid).toBe(1);
+      expect(s2.sid).toBe(2);
+      expect(s3.sid).toBe(3);
+
+      expect(sessionQueueCount()).toBe(3);
+      expect(listSessions()).toHaveLength(3);
+    });
+
+    it("closing a session removes its queue and session entry", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      closeSession(s2.sid);
+      removeSessionQueue(s2.sid);
+
+      expect(sessionQueueCount()).toBe(1);
+      expect(listSessions()).toHaveLength(1);
+      expect(getSessionQueue(s2.sid)).toBeUndefined();
+      expect(getSessionQueue(s1.sid)).toBeDefined();
+    });
+
+    it("closing a session clears its message ownership entries", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      trackMessageOwner(100, s1.sid);
+      trackMessageOwner(200, s2.sid);
+
+      removeSessionQueue(s2.sid);
+
+      expect(getMessageOwner(100)).toBe(s1.sid);
+      expect(getMessageOwner(200)).toBe(0); // cleaned up
+    });
+
+    it("closing a session revokes all its DM permissions", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      grantDm(s1.sid, s2.sid);
+      grantDm(s2.sid, s1.sid);
+      grantDm(s3.sid, s2.sid);
+
+      revokeAllForSession(s2.sid);
+
+      expect(hasDmPermission(s1.sid, s2.sid)).toBe(false);
+      expect(hasDmPermission(s2.sid, s1.sid)).toBe(false);
+      expect(hasDmPermission(s3.sid, s2.sid)).toBe(false);
+    });
+  });
+
+  // =========================================================================
+  // 2. Load-balance routing
+  // =========================================================================
+
+  describe("load-balance routing", () => {
+    it("routes ambiguous message to idle session among 3", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      setupSession("C");
+
+      // Only SID 2 is idle (has a pending waiter)
+      const q2 = getSessionQueue(s2.sid)!;
+      const waiterPromise = q2.waitForEnqueue();
+
+      const event = makeEvent();
+      routeToSession(event, "message");
+
+      // SID 2 should receive it (idle), others should not
+      expect(drain(s2.sid)).toEqual([event]);
+      expect(drain(s1.sid)).toEqual([]);
+
+      // resolve waiter to avoid dangling promise
+      q2.enqueueMessage(makeEvent());
+      return waiterPromise;
+    });
+
+    it("round-robins across idle sessions", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      // All 3 sessions are idle
+      const q1 = getSessionQueue(s1.sid)!;
+      const q2 = getSessionQueue(s2.sid)!;
+      const q3 = getSessionQueue(s3.sid)!;
+      const w1 = q1.waitForEnqueue();
+      const w2 = q2.waitForEnqueue();
+      const w3 = q3.waitForEnqueue();
+
+      const e1 = makeEvent();
+      const e2 = makeEvent();
+      const e3 = makeEvent();
+
+      routeToSession(e1, "message");
+      routeToSession(e2, "message");
+      routeToSession(e3, "message");
+
+      const got1 = drain(s1.sid);
+      const got2 = drain(s2.sid);
+      const got3 = drain(s3.sid);
+
+      // Each session should get exactly 1 message (round-robin)
+      expect(got1.length + got2.length + got3.length).toBe(3);
+      expect(got1).toHaveLength(1);
+      expect(got2).toHaveLength(1);
+      expect(got3).toHaveLength(1);
+
+      // Clean up waiters
+      q1.enqueueMessage(makeEvent());
+      q2.enqueueMessage(makeEvent());
+      q3.enqueueMessage(makeEvent());
+      return Promise.all([w1, w2, w3]);
+    });
+
+    it("falls back to any session when none are idle", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      // No waiters → no idle sessions
+      const event = makeEvent();
+      routeToSession(event, "message");
+
+      // Should go to one of them (deterministic: lowest SID first)
+      const total = drain(s1.sid).length + drain(s2.sid).length;
+      expect(total).toBe(1);
+    });
+  });
+
+  // =========================================================================
+  // 3. Cascade routing
+  // =========================================================================
+
+  describe("cascade routing", () => {
+    it("routes to lowest-SID idle session and sets deadline", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      setupSession("C");
+
+      setRoutingMode("cascade");
+
+      // SID 1 is idle
+      const q1 = getSessionQueue(s1.sid)!;
+      const w1 = q1.waitForEnqueue();
+
+      const event = makeEvent();
+      const before = Date.now();
+      routeToSession(event, "message");
+      const after = Date.now();
+
+      expect(drain(s1.sid)).toEqual([event]);
+      expect(drain(s2.sid)).toEqual([]);
+
+      // Verify deadline was set (~15s for idle)
+      const deadline = popCascadePassDeadline(s1.sid, event.id);
+      expect(deadline).toBeDefined();
+      expect(deadline!).toBeGreaterThanOrEqual(before + 14_000);
+      expect(deadline!).toBeLessThanOrEqual(after + 16_000);
+
+      q1.enqueueMessage(makeEvent());
+      return w1;
+    });
+
+    it("sets 30s deadline for busy sessions", () => {
+      const s1 = setupSession("A");
+      setupSession("B");
+
+      setRoutingMode("cascade");
+
+      // SID 1 is NOT idle (no waiter)
+      const event = makeEvent();
+      const before = Date.now();
+      routeToSession(event, "message");
+      const after = Date.now();
+
+      const deadline = popCascadePassDeadline(s1.sid, event.id);
+      expect(deadline).toBeDefined();
+      expect(deadline!).toBeGreaterThanOrEqual(before + 29_000);
+      expect(deadline!).toBeLessThanOrEqual(after + 31_000);
+    });
+
+    it("full pass chain: SID 1 → 2 → 3 → dead end", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      setRoutingMode("cascade");
+
+      const event = makeEvent();
+      mockGetMessage.mockReturnValue(event);
+
+      // Route to SID 1 first
+      routeToSession(event, "message");
+      expect(drain(s1.sid)).toEqual([event]);
+
+      // SID 1 passes
+      const next1 = passMessage(s1.sid, event.id);
+      expect(next1).toBe(s2.sid);
+      expect(drain(s2.sid)).toEqual([event]);
+
+      // SID 2 passes
+      const next2 = passMessage(s2.sid, event.id);
+      expect(next2).toBe(s3.sid);
+      expect(drain(s3.sid)).toEqual([event]);
+
+      // SID 3 is last — pass returns 0
+      const next3 = passMessage(s3.sid, event.id);
+      expect(next3).toBe(0);
+    });
+
+    it("pass clears the cascade deadline", () => {
+      const s1 = setupSession("A");
+      setupSession("B");
+
+      setRoutingMode("cascade");
+
+      const event = makeEvent();
+      mockGetMessage.mockReturnValue(event);
+
+      routeToSession(event, "message");
+      drain(s1.sid);
+
+      // Deadline exists before pass
+      const _deadlineBefore = popCascadePassDeadline(s1.sid, event.id);
+      // popCascade clears on read — re-route to set it again
+      resetSessionQueuesForTest();
+      createSessionQueue(s1.sid);
+      createSessionQueue(2);
+      routeToSession(event, "message");
+
+      // Pass clears deadline
+      passMessage(s1.sid, event.id);
+
+      const deadlineAfter = popCascadePassDeadline(s1.sid, event.id);
+      expect(deadlineAfter).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
+  // 4. Governor routing
+  // =========================================================================
+
+  describe("governor routing", () => {
+    it("routes all ambiguous messages to governor only", () => {
+      const s1 = setupSession("Worker A");
+      const s2 = setupSession("Governor");
+      const s3 = setupSession("Worker B");
+
+      setRoutingMode("governor", s2.sid);
+
+      const e1 = makeEvent();
+      const e2 = makeEvent();
+      routeToSession(e1, "message");
+      routeToSession(e2, "message");
+
+      expect(drain(s2.sid)).toEqual([e1, e2]);
+      expect(drain(s1.sid)).toEqual([]);
+      expect(drain(s3.sid)).toEqual([]);
+    });
+
+    it("governor delegates with routeMessage to a specific session", () => {
+      const s1 = setupSession("Worker");
+      const s2 = setupSession("Governor");
+      const s3 = setupSession("Worker B");
+
+      setRoutingMode("governor", s2.sid);
+
+      const event = makeEvent();
+      mockGetMessage.mockReturnValue(event);
+
+      // Governor routes to s3
+      const ok = routeMessage(event.id, s3.sid);
+      expect(ok).toBe(true);
+      expect(drain(s3.sid)).toEqual([event]);
+      expect(drain(s1.sid)).toEqual([]);
+    });
+
+    it("closing governor resets routing to load_balance", () => {
+      const s1 = setupSession("Worker");
+      const s2 = setupSession("Governor");
+
+      setRoutingMode("governor", s2.sid);
+      expect(getRoutingMode()).toBe("governor");
+      expect(getGovernorSid()).toBe(s2.sid);
+
+      // Simulate governor close: reset routing mode
+      closeSession(s2.sid);
+      removeSessionQueue(s2.sid);
+      // In prod, close_session tool does this:
+      setRoutingMode("load_balance");
+
+      expect(getRoutingMode()).toBe("load_balance");
+      expect(getGovernorSid()).toBe(0);
+
+      // New ambiguous message should route to remaining session
+      const event = makeEvent();
+      routeToSession(event, "message");
+      expect(drain(s1.sid)).toEqual([event]);
+    });
+  });
+
+  // =========================================================================
+  // 5. Targeted routing (reply-to / callback / reaction)
+  // =========================================================================
+
+  describe("targeted routing", () => {
+    it("reply-to routes only to owning session among 3", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      // SID 2 sent bot message 50
+      trackMessageOwner(50, s2.sid);
+
+      // User replies to message 50
+      const reply = replyEvent(50);
+      routeToSession(reply, "message");
+
+      expect(drain(s1.sid)).toEqual([]);
+      expect(drain(s2.sid)).toEqual([reply]);
+      expect(drain(s3.sid)).toEqual([]);
+    });
+
+    it("callback routes only to owning session", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      trackMessageOwner(70, s1.sid);
+
+      const cb = callbackEvent(70);
+      routeToSession(cb, "response");
+
+      expect(drain(s1.sid)).toEqual([cb]);
+      expect(drain(s2.sid)).toEqual([]);
+    });
+
+    it("reply to unknown message falls through to ambiguous routing", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      // reply_to message ID with no owner → ambiguous
+      const reply = replyEvent(999);
+      routeToSession(reply, "message");
+
+      // Should go to one of them via load-balance
+      const total = drain(s1.sid).length + drain(s2.sid).length;
+      expect(total).toBe(1);
+    });
+  });
+
+  // =========================================================================
+  // 6. Cross-session broadcast
+  // =========================================================================
+
+  describe("cross-session broadcast", () => {
+    it("outbound from SID 1 appears in SID 2 and 3, not SID 1", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      const outEvent = makeEvent({
+        event: "message",
+        from: "bot",
+        content: { type: "text", text: "status update" },
+        sid: s1.sid,
+      });
+
+      broadcastOutbound(outEvent, s1.sid);
+
+      expect(drain(s1.sid)).toEqual([]);
+      expect(drain(s2.sid)).toEqual([outEvent]);
+      expect(drain(s3.sid)).toEqual([outEvent]);
+    });
+
+    it("no broadcast when only one session exists", () => {
+      const s1 = setupSession("Solo");
+
+      const outEvent = makeEvent({ from: "bot", sid: s1.sid });
+      broadcastOutbound(outEvent, s1.sid);
+
+      expect(drain(s1.sid)).toEqual([]);
+    });
+  });
+
+  // =========================================================================
+  // 7. Direct messages
+  // =========================================================================
+
+  describe("direct messages", () => {
+    it("delivers DM when permission is granted", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      grantDm(s1.sid, s2.sid);
+
+      const ok = deliverDirectMessage(s1.sid, s2.sid, "hello from A");
+      expect(ok).toBe(true);
+
+      const items = drain(s2.sid);
+      expect(items).toHaveLength(1);
+      expect(items[0].event).toBe("direct_message");
+      expect(items[0].content.text).toBe("hello from A");
+      expect(items[0].sid).toBe(s1.sid);
+
+      // Sender doesn't see their own DM
+      expect(drain(s1.sid)).toEqual([]);
+    });
+
+    it("DM permission is unidirectional", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      grantDm(s1.sid, s2.sid); // A → B only
+
+      expect(hasDmPermission(s1.sid, s2.sid)).toBe(true);
+      expect(hasDmPermission(s2.sid, s1.sid)).toBe(false);
+    });
+
+    it("bidirectional DM exchange", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      grantDm(s1.sid, s2.sid);
+      grantDm(s2.sid, s1.sid);
+
+      deliverDirectMessage(s1.sid, s2.sid, "ping");
+      deliverDirectMessage(s2.sid, s1.sid, "pong");
+
+      const s1Items = drain(s1.sid);
+      const s2Items = drain(s2.sid);
+
+      expect(s2Items).toHaveLength(1);
+      expect(s2Items[0].content.text).toBe("ping");
+
+      expect(s1Items).toHaveLength(1);
+      expect(s1Items[0].content.text).toBe("pong");
+    });
+
+    it("DM fails when target session is closed", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      grantDm(s1.sid, s2.sid);
+
+      closeSession(s2.sid);
+      removeSessionQueue(s2.sid);
+
+      const ok = deliverDirectMessage(s1.sid, s2.sid, "hello?");
+      expect(ok).toBe(false);
+    });
+
+    it("DM IDs are negative to avoid collision with real messages", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      deliverDirectMessage(s1.sid, s2.sid, "first");
+      deliverDirectMessage(s1.sid, s2.sid, "second");
+
+      const items = drain(s2.sid);
+      expect(items[0].id).toBeLessThan(0);
+      expect(items[1].id).toBeLessThan(0);
+      expect(items[0].id).not.toBe(items[1].id);
+    });
+  });
+
+  // =========================================================================
+  // 8. Combined scenarios
+  // =========================================================================
+
+  describe("combined scenarios", () => {
+    it("session creates, routes, broadcasts, DMs, then closes cleanly", () => {
+      // Full lifecycle: 3 sessions, messages, DMs, then close one
+      const s1 = setupSession("Worker A");
+      const s2 = setupSession("Worker B");
+      const s3 = setupSession("Supervisor");
+
+      // Track some outbound messages
+      trackMessageOwner(100, s1.sid);
+      trackMessageOwner(200, s2.sid);
+
+      // Route targeted reply to s1
+      const reply = replyEvent(100);
+      routeToSession(reply, "message");
+      expect(drain(s1.sid)).toEqual([reply]);
+      expect(drain(s2.sid)).toEqual([]);
+
+      // Broadcast from s2
+      const broadcast = makeEvent({ from: "bot", sid: s2.sid });
+      broadcastOutbound(broadcast, s2.sid);
+      expect(drain(s1.sid)).toEqual([broadcast]);
+      expect(drain(s3.sid)).toEqual([broadcast]);
+      expect(drain(s2.sid)).toEqual([]);
+
+      // DM from s3 to s1
+      grantDm(s3.sid, s1.sid);
+      deliverDirectMessage(s3.sid, s1.sid, "task update");
+      const dm = drain(s1.sid);
+      expect(dm).toHaveLength(1);
+      expect(dm[0].content.text).toBe("task update");
+
+      // Close s2 — cleanup
+      closeSession(s2.sid);
+      removeSessionQueue(s2.sid);
+      revokeAllForSession(s2.sid);
+
+      expect(sessionQueueCount()).toBe(2);
+      expect(getMessageOwner(200)).toBe(0); // cleaned up
+      expect(getMessageOwner(100)).toBe(s1.sid); // s1 still alive
+    });
+
+    it("switching routing modes mid-session changes behavior", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      // Start with load-balance (default)
+      const e1 = makeEvent();
+      routeToSession(e1, "message");
+      const totalLB = drain(s1.sid).length + drain(s2.sid).length + drain(s3.sid).length;
+      expect(totalLB).toBe(1);
+
+      // Switch to governor
+      setRoutingMode("governor", s2.sid);
+      const e2 = makeEvent();
+      routeToSession(e2, "message");
+      expect(drain(s2.sid)).toEqual([e2]);
+      expect(drain(s1.sid)).toEqual([]);
+      expect(drain(s3.sid)).toEqual([]);
+
+      // Switch to cascade
+      setRoutingMode("cascade");
+      const q1 = getSessionQueue(s1.sid)!;
+      const w1 = q1.waitForEnqueue();
+      const e3 = makeEvent();
+      routeToSession(e3, "message");
+      expect(drain(s1.sid)).toEqual([e3]); // lowest SID idle
+      expect(drain(s2.sid)).toEqual([]);
+
+      q1.enqueueMessage(makeEvent());
+      return w1;
+    });
+
+    it("active session context tracks which session is executing", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      expect(getActiveSession()).toBe(0);
+
+      setActiveSession(s1.sid);
+      expect(getActiveSession()).toBe(s1.sid);
+
+      setActiveSession(s2.sid);
+      expect(getActiveSession()).toBe(s2.sid);
+
+      setActiveSession(0);
+      expect(getActiveSession()).toBe(0);
+    });
+  });
+
+  // =========================================================================
+  // 9. Edge cases
+  // =========================================================================
+
+  describe("edge cases", () => {
+    it("ownership survives even after queue removal (ownership ≠ queue)", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      trackMessageOwner(50, s1.sid);
+      trackMessageOwner(60, s2.sid);
+
+      // Remove s2's queue but DON'T remove its ownership (happens if close_session
+      // is called without removeSessionQueue, or if ownership is not cleaned up)
+      // removeSessionQueue DOES clean up, so verify that
+      removeSessionQueue(s2.sid);
+
+      expect(getMessageOwner(50)).toBe(s1.sid); // s1 untouched
+      expect(getMessageOwner(60)).toBe(0); // s2 cleaned
+
+      // s1 ownership still works for routing
+      createSessionQueue(3); // new session queue
+      const reply = replyEvent(50);
+      routeToSession(reply, "message");
+      expect(drain(s1.sid)).toEqual([reply]); // still routes to s1
+    });
+
+    it("cascade pass mid-close: target session removed before pass", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      setRoutingMode("cascade");
+
+      const event = makeEvent();
+      mockGetMessage.mockReturnValue(event);
+
+      // Route to SID 1
+      routeToSession(event, "message");
+      drain(s1.sid);
+
+      // Close SID 2 before SID 1 passes
+      closeSession(s2.sid);
+      removeSessionQueue(s2.sid);
+
+      // SID 1 passes — should skip removed SID 2 and go to SID 3
+      const next = passMessage(s1.sid, event.id);
+      expect(next).toBe(s3.sid);
+      expect(drain(s3.sid)).toEqual([event]);
+    });
+
+    it("broadcast wakes session queue waiters", async () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      const q2 = getSessionQueue(s2.sid)!;
+
+      let woken = false;
+      const waiter = q2.waitForEnqueue().then(() => { woken = true; });
+
+      // Broadcast from s1 should wake s2's waiter
+      broadcastOutbound(makeEvent({ from: "bot", sid: s1.sid }), s1.sid);
+
+      await waiter;
+      expect(woken).toBe(true);
+    });
+
+    it("notifySessionWaiters wakes all session queues", async () => {
+      setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      const q2 = getSessionQueue(s2.sid)!;
+      const q3 = getSessionQueue(s3.sid)!;
+
+      let woken2 = false;
+      let woken3 = false;
+      const w2 = q2.waitForEnqueue().then(() => { woken2 = true; });
+      const w3 = q3.waitForEnqueue().then(() => { woken3 = true; });
+
+      notifySessionWaiters();
+
+      await Promise.all([w2, w3]);
+      expect(woken2).toBe(true);
+      expect(woken3).toBe(true);
+    });
+
+    it("targeted routing still works in governor mode", () => {
+      const s1 = setupSession("Worker");
+      const s2 = setupSession("Governor");
+
+      setRoutingMode("governor", s2.sid);
+      trackMessageOwner(100, s1.sid);
+
+      // User replies to s1's message — should go to s1, not governor
+      const reply = replyEvent(100);
+      routeToSession(reply, "message");
+
+      expect(drain(s1.sid)).toEqual([reply]);
+      expect(drain(s2.sid)).toEqual([]);
+    });
+
+    it("response lane events have priority over message lane", () => {
+      const s1 = setupSession("A");
+
+      const q1 = getSessionQueue(s1.sid)!;
+
+      // Enqueue message-lane first, then response-lane
+      const msg = makeEvent({ content: { type: "text", text: "msg" } });
+      const resp = makeEvent({ content: { type: "text", text: "resp" } });
+
+      q1.enqueueMessage(msg);
+      q1.enqueueResponse(resp);
+
+      // Response should come out first (higher priority)
+      const first = q1.dequeue();
+      expect(first?.content.text).toBe("resp");
+      const second = q1.dequeue();
+      expect(second?.content.text).toBe("msg");
+    });
+
+    it("pop cascade deadline clears on read (single-use)", () => {
+      setupSession("A");
+      setupSession("B");
+
+      setRoutingMode("cascade");
+
+      const event = makeEvent();
+      routeToSession(event, "message");
+
+      // First read: returns deadline
+      const d1 = popCascadePassDeadline(1, event.id);
+      expect(d1).toBeDefined();
+
+      // Second read: already consumed
+      const d2 = popCascadePassDeadline(1, event.id);
+      expect(d2).toBeUndefined();
+    });
+
+    it("no queues: routeToSession is a no-op", () => {
+      // No sessions created — should not throw
+      const event = makeEvent();
+      expect(() => { routeToSession(event, "message"); }).not.toThrow();
+    });
+
+    it("DM to self delivers to own queue", () => {
+      const s1 = setupSession("Solo");
+
+      const ok = deliverDirectMessage(s1.sid, s1.sid, "talking to myself");
+      expect(ok).toBe(true);
+
+      const items = drain(s1.sid);
+      expect(items).toHaveLength(1);
+      expect(items[0].content.text).toBe("talking to myself");
+    });
+
+    it("multiple ambiguous messages interleave across sessions in load-balance", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      // Both idle
+      const q1 = getSessionQueue(s1.sid)!;
+      const q2 = getSessionQueue(s2.sid)!;
+      const w1 = q1.waitForEnqueue();
+      const w2 = q2.waitForEnqueue();
+
+      // Send 4 messages
+      const events = [makeEvent(), makeEvent(), makeEvent(), makeEvent()];
+      for (const e of events) routeToSession(e, "message");
+
+      const got1 = drain(s1.sid);
+      const got2 = drain(s2.sid);
+
+      // Even distribution: each gets 2
+      expect(got1).toHaveLength(2);
+      expect(got2).toHaveLength(2);
+
+      // All 4 events accounted for
+      const allIds = [...got1, ...got2].map(e => e.id).sort();
+      expect(allIds).toEqual(events.map(e => e.id).sort());
+
+      q1.enqueueMessage(makeEvent());
+      q2.enqueueMessage(makeEvent());
+      return Promise.all([w1, w2]);
+    });
+
+    it("governor fallback broadcasts when governor queue is missing", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      // Set governor to SID 99 which has no queue
+      setRoutingMode("governor", 99);
+
+      const event = makeEvent();
+      routeToSession(event, "message");
+
+      // Falls back to broadcast
+      expect(drain(s1.sid)).toEqual([event]);
+      expect(drain(s2.sid)).toEqual([event]);
+    });
+  });
+});

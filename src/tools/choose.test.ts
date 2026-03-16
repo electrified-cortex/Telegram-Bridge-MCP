@@ -263,10 +263,10 @@ describe("choose tool", () => {
 
   it("calls editWithSkipped immediately via onVoiceDetected before poll resolves", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
-    mocks.pollButtonOrTextOrVoice.mockImplementation(async (...args: unknown[]) => {
+    mocks.pollButtonOrTextOrVoice.mockImplementation((...args: unknown[]) => {
       const onVoiceDetected = args[3] as () => void;
       onVoiceDetected();
-      return makeVoiceResult(20, "pick the second one");
+      return Promise.resolve(makeVoiceResult(20, "pick the second one"));
     });
     const result = await call({ question: "Pick", options: OPTIONS });
     const data = parseResult(result);
@@ -313,5 +313,22 @@ describe("choose tool", () => {
     const data = parseResult(result);
     expect(data.timed_out).toBe(false);
     expect(data.label).toBe("Option A");
+  });
+
+  it("bypasses pending guard when reply_to_message_id is set", async () => {
+    mocks.pendingCount.mockReturnValue(2);
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(
+      makeButtonResult("opt_b"),
+    );
+    const result = await call({
+      question: "Pick",
+      options: OPTIONS,
+      reply_to_message_id: 55,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBe(false);
+    expect(data.label).toBe("Option B");
   });
 });

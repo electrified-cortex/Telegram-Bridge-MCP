@@ -75,6 +75,7 @@ export function enforceRateLimit(): void {
     message: `Rate limited by Telegram. Retry after ${retryAfter} seconds.`,
     retry_after: retryAfter,
   };
+  // eslint-disable-next-line @typescript-eslint/only-throw-error -- TelegramError is a protocol object, not a JS Error
   throw error;
 }
 

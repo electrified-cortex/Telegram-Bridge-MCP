@@ -150,7 +150,7 @@ async function cycleFrame(): Promise<void> {
   } catch (err) {
     if (err instanceof GrammyError && err.error_code === 429) {
       // Rate-limited — pause the cycle timer and resume after retry_after
-      const retryAfter = (err.parameters.retry_after ?? 60) as number;
+      const retryAfter = err.parameters.retry_after ?? 60;
       process.stderr.write(`[animation] rate limited, pausing cycle for ${retryAfter}s\n`);
       if (_state?.cycleTimer) {
         clearInterval(_state.cycleTimer);

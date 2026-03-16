@@ -19,7 +19,7 @@ const DESCRIPTION =
   "use send_text instead. Default parse_mode is Markdown " +
   "— write standard Markdown in the body and it is auto-converted, no " +
   "escaping needed. " +
-  "Requires an active session — call session_start once before using this tool.";
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(

@@ -132,7 +132,7 @@ describe("config", () => {
 
     it("silently ignores writeFileSync errors", () => {
       mocks.writeFileSync.mockImplementation(() => { throw new Error("permission denied"); });
-      expect(() => setSessionLogMode(10)).not.toThrow();
+      expect(() => { setSessionLogMode(10); }).not.toThrow();
     });
   });
 

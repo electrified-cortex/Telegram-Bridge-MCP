@@ -10,7 +10,7 @@ const DESCRIPTION =
   "auto-converted. Messages longer than 4096 characters are automatically split. " +
   "For structured status with severity styling, use notify instead. " +
   "For voice/TTS, use send_text_as_voice instead. " +
-  "Requires an active session — call session_start once before using this tool.";
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(

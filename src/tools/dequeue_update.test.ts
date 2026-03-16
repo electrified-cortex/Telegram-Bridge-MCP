@@ -29,8 +29,9 @@ vi.mock("../session-manager.js", () => ({
 }));
 
 vi.mock("../session-queue.js", () => ({
-  getSessionQueue: (...args: unknown[]) => mocks.getSessionQueue(...args),
-  popCascadePassDeadline: (...args: unknown[]) => mocks.popCascadePassDeadline(...args),
+  // eslint-disable-next-line @typescript-eslint/no-confusing-void-expression -- mock passthrough
+  getSessionQueue: (...args: unknown[]) => mocks.getSessionQueue(...(args as [])),
+  popCascadePassDeadline: (...args: unknown[]) => mocks.popCascadePassDeadline(...(args as [])),
 }));
 
 vi.mock("../routing-mode.js", () => ({
@@ -341,7 +342,7 @@ describe("dequeue_update tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.waitForEnqueue.mockImplementation(() => new Promise(() => {})); // never resolves
     const controller = new AbortController();
-    void Promise.resolve().then(() => controller.abort());
+    void Promise.resolve().then(() => { controller.abort(); });
     const result = await call({ timeout: 60 }, { signal: controller.signal });
     const data = parseResult(result);
     expect(data.empty).toBe(true);
