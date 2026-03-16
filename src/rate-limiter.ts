@@ -9,7 +9,7 @@
  *    error instead of hammering Telegram and potentially extending the ban.
  *
  * 2. **Send debounce**: Enforce a minimum gap between outbound sends
- *    (default 100 ms). Prevents bursts of tool calls from firing
+ *    (default 1000 ms). Prevents bursts of tool calls from firing
  *    10+ messages in the same tick.
  *
  * Usage in outbound-proxy:

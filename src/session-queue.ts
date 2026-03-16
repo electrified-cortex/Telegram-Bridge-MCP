@@ -5,7 +5,8 @@
  * update arrives, the router decides which session(s) receive it:
  *
  *   - Reply-to / callback / reaction → owning session (targeted)
- *   - Ambiguous (no reply context) → all sessions (broadcast for now)
+ *   - Ambiguous (no reply context) → routed by active routing mode
+ *     (load_balance, cascade, or governor; falls back to broadcast)
  *
  * The global queue in message-store remains the "session 0" fallback and
  * is always populated (backward compat). Session queues are additive —

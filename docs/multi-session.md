@@ -61,14 +61,14 @@ This two-factor model prevents impersonation:
 
 ### Tool Call Authentication
 
-**All tool calls require `sid` and `pin`** — both as integer parameters. The only exceptions are `session_start` (which creates the session) and bootstrap tools like `get_me` and `get_agent_guide`.
+**Session-management tools require `sid` and `pin`** — both as integer parameters. These include `close_session`, `send_direct_message`, `pass_message`, `route_message`, and `request_dm_access`. Other tools rely on the active session context set by `session_start` and do not require explicit auth parameters.
 
 Parameter design for token efficiency:
 
 - **`sid`** — integer (1, 2, 3...). One token.
 - **`pin`** — integer (6-digit code). One token.
-- Short parameter names minimize token cost. ~2 tokens overhead per tool call.
-- Invalid or missing `sid`/`pin` → server rejects with an auth error.
+- Short parameter names minimize token cost. ~2 tokens overhead per authenticated tool call.
+- Invalid or missing `sid`/`pin` on auth-required tools → server rejects with an auth error.
 
 `session_start` response example:
 

@@ -5,6 +5,8 @@ import {
   toResult, toError, validateText, validateCallbackData, LIMITS,
 } from "../telegram.js";
 import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
+import { getActiveSession } from "../session-manager.js";
+import { getSessionQueue } from "../session-queue.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   sendChoiceMessage, type KeyboardOption,
@@ -77,7 +79,9 @@ export function register(server: McpServer) {
       if (textErr) return toError(textErr);
 
       if (!ignore_pending && !reply_to_message_id) {
-        const pending = pendingCount();
+        const sid = getActiveSession();
+        const sq = sid > 0 ? getSessionQueue(sid) : undefined;
+        const pending = sq ? sq.pendingCount() : pendingCount();
         if (pending > 0) {
           return toError({
             code: "PENDING_UPDATES" as const,

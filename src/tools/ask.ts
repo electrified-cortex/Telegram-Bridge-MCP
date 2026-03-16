@@ -4,6 +4,8 @@ import { getApi, resolveChat, toResult, toError, validateText, ackVoiceMessage }
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import { dequeueMatch, waitForEnqueue, pendingCount, type TimelineEvent } from "../message-store.js";
+import { getActiveSession } from "../session-manager.js";
+import { getSessionQueue } from "../session-queue.js";
 
 const DESCRIPTION =
   "Sends a question to a chat and waits until the user replies. " +
@@ -50,7 +52,9 @@ export function register(server: McpServer) {
       if (textErr) return toError(textErr);
 
       if (!ignore_pending && !reply_to_message_id) {
-        const pending = pendingCount();
+        const sid = getActiveSession();
+        const sq = sid > 0 ? getSessionQueue(sid) : undefined;
+        const pending = sq ? sq.pendingCount() : pendingCount();
         if (pending > 0) {
           return toError({
             code: "PENDING_UPDATES" as const,

@@ -7,26 +7,6 @@
 - Added `multi-session.integration.test.ts` — 38 integration tests proving multi-session routing, cascade pass chains, governor delegation, DM delivery, broadcast, session lifecycle, and edge cases (ownership vs queue removal, mid-close cascade skip, waiter wakeup, response-lane priority, self-DM, governor fallback) with 2–3 concurrent sessions
 - Added pending-updates guard to blocking tools (`confirm`, `choose`, `ask`) — returns `PENDING_UPDATES` error when unread updates exist; pass `ignore_pending: true` to bypass
 - Added "Requires an active session" hint to 12 tool descriptions (`send_text`, `send_message`, `send_choice`, `send_file`, `send_text_as_voice`, `send_new_progress`, `send_new_checklist`, `notify`, `ask`, `choose`, `confirm`, `dequeue_update`)
-
-## Changed
-
-- `session_start` intro message now includes session identity (SID and name) when multiple sessions are active or a name is provided
-- Softened session-start hint from prescriptive "Requires an active session — call session_start once before using this tool" to subtle "Ensure session_start has been called" across all 12 tool descriptions
-- Pending-updates guard on blocking tools now auto-bypasses when `reply_to_message_id` is set (targeted replies don't need queue draining)
-- Updated pending guard description in blocking tools to document the reply-to exception
-
-## Removed
-
-- Removed pnpm patches for `@tsdotnet/queue`, `collection-base`, `compare`, `exceptions` — upstream 1.3.x ships `.js` extensions in `.d.ts` files natively
-- Removed `.npmrc` with `node-linker=hoisted` — no longer needed now that upstream types resolve correctly with pnpm's default symlink layout
-
-## Fixed
-
-- Removed unreachable deadline check inside `setInterval` callback in `typing-state.ts`
-- Simplified `_clearSlot` in `temp-reaction.ts` — removed unused `fireRestore` parameter that was never passed as `true`
-
-## Added
-
 - Added `TwoLaneQueue<T>` class — generic two-lane priority queue extracted from message-store, backed by `@tsdotnet/queue`
 - Added `session-queue` module — per-session queues with message ownership tracking and inbound routing (targeted via reply-to/callback/reaction, ambiguous via broadcast)
 - `session_start` now creates a per-session queue alongside the session
@@ -56,6 +36,10 @@
 
 ## Changed
 
+- `session_start` intro message now includes session identity (SID and name) when multiple sessions are active or a name is provided
+- Softened session-start hint from prescriptive "Requires an active session — call session_start once before using this tool" to subtle "Ensure session_start has been called" across all 12 tool descriptions
+- Pending-updates guard on blocking tools now auto-bypasses when `reply_to_message_id` is set (targeted replies don't need queue draining)
+- Updated pending guard description in blocking tools to document the reply-to exception
 - Restored `@tsdotnet/queue` dependency — replaces hand-rolled `SimpleQueue<T>` inline class; uses `Queue<T>` directly (no shims) thanks to pnpm patches
 - Refactored `message-store` to delegate queue operations to `TwoLaneQueue<T>` — inbound events are also routed to per-session queues via `routeToSession`
 - Ambiguous inbound messages now use load-balance routing (round-robin among idle sessions) instead of broadcast when multiple sessions are active
@@ -72,10 +56,23 @@
 - Improved `/voice` panel empty-state hint to mention built-in fallback and link to Kokoro setup
 - Replaced VS Code-specific language with client-agnostic terms across README, LOOP-PROMPT, docs, tool descriptions, and pairing wizard output
 
+## Removed
+
+- Removed pnpm patches for `@tsdotnet/queue`, `collection-base`, `compare`, `exceptions` — upstream 1.3.x ships `.js` extensions in `.d.ts` files natively
+- Removed `.npmrc` with `node-linker=hoisted` — no longer needed now that upstream types resolve correctly with pnpm's default symlink layout
+
 ## Fixed
 
+- Removed unreachable deadline check inside `setInterval` callback in `typing-state.ts`
+- Simplified `_clearSlot` in `temp-reaction.ts` — removed unused `fireRestore` parameter that was never passed as `true`
 - Fixed `session_start` never calling `setActiveSession` — per-session queues were created but never activated in production
+- Fixed `session_start` leaving orphaned session/queue when intro message send fails — now rolls back session, queue, and active-session state
 - Fixed `close_session` not resetting active session when closing the currently active session
 - Fixed `removeSessionQueue` leaking `_messageOwnership` entries for closed sessions
 - Fixed `set_reaction` ignoring `temporary` flag — added explicit `temporary` boolean parameter so reactions auto-revert without requiring `restore_emoji` or `timeout_seconds`
 - Fixed confirm/choose buttons staying forever after timeout when user sends a text message (#27)
+- Fixed pending-updates guard in `confirm`, `ask`, `choose` using global count instead of session-aware count — now checks session queue when active
+- Fixed animation-state 429 resume timer leak — multiple rate-limit retries no longer create duplicate resume timers
+- Fixed rate-limiter comment claiming 100 ms debounce when actual `MIN_SEND_INTERVAL_MS` is 1000 ms
+- Fixed stale "broadcast for now" comment in session-queue header — routing modes are fully implemented
+- Fixed multi-session.md overstating auth coverage — clarified that only session-management tools require `sid`/`pin`

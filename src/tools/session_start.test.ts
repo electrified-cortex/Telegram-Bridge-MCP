@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   pollButtonPress: vi.fn(),
   ackAndEditSelection: vi.fn(),
   createSession: vi.fn(),
+  closeSession: vi.fn(),
   setActiveSession: vi.fn(),
   listSessions: vi.fn().mockReturnValue([]),
   getRoutingMode: vi.fn().mockReturnValue("load_balance"),
@@ -38,6 +39,7 @@ vi.mock("../message-store.js", () => ({
 
 vi.mock("../session-manager.js", () => ({
   createSession: (...args: unknown[]) => mocks.createSession(...args),
+  closeSession: (...args: unknown[]) => mocks.closeSession(...args),
   setActiveSession: (...args: unknown[]) => mocks.setActiveSession(...args),
   listSessions: (...args: unknown[]) => mocks.listSessions(...args),
 }));
@@ -48,6 +50,7 @@ vi.mock("../routing-mode.js", () => ({
 
 vi.mock("../session-queue.js", () => ({
   createSessionQueue: vi.fn(),
+  removeSessionQueue: vi.fn(),
 }));
 
 vi.mock("./button-helpers.js", async (importActual) => {
@@ -401,11 +404,14 @@ describe("session_start tool", () => {
     expect(result.routing_mode).toBeUndefined();
   });
 
-  it("returns an error when the intro message send fails", async () => {
+  it("returns an error and rolls back session when the intro message send fails", async () => {
     mocks.pendingCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 5, pin: 500005, name: undefined, sessionsActive: 1 });
     mocks.sendMessage.mockRejectedValue(new Error("network error"));
     const result = await call({});
     expect(isError(result)).toBe(true);
+    expect(mocks.closeSession).toHaveBeenCalledWith(5);
+    expect(mocks.setActiveSession).toHaveBeenCalledWith(0);
   });
 
   it("returns error when chat is not configured", async () => {

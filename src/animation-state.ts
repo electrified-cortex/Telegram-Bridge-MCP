@@ -96,6 +96,7 @@ interface AnimationState {
   dispatchCount: number;     // counts actual API dispatches; interval doubles every 20
   cycleTimer: ReturnType<typeof setInterval> | null;
   timeoutTimer: ReturnType<typeof setTimeout> | null;
+  resumeTimer: ReturnType<typeof setTimeout> | null;
 }
 
 let _state: AnimationState | null = null;
@@ -122,6 +123,10 @@ function clearTimers(): void {
   if (_state?.timeoutTimer) {
     clearTimeout(_state.timeoutTimer);
     _state.timeoutTimer = null;
+  }
+  if (_state?.resumeTimer) {
+    clearTimeout(_state.resumeTimer);
+    _state.resumeTimer = null;
   }
 }
 
@@ -156,12 +161,17 @@ async function cycleFrame(): Promise<void> {
         clearInterval(_state.cycleTimer);
         _state.cycleTimer = null;
       }
-      const resumeTimer = setTimeout(() => {
-        if (!_state) return;
+      // Cancel any prior resume timer to avoid leaking duplicate intervals
+      if (_state?.resumeTimer) clearTimeout(_state.resumeTimer);
+      const captured429 = _state;
+      const timer = setTimeout(() => {
+        if (!_state || _state !== captured429 || _state.cycleTimer) return;
+        _state.resumeTimer = null;
         _state.cycleTimer = setInterval(() => void cycleFrame(), _state.intervalMs);
         unrefTimer(_state.cycleTimer);
       }, retryAfter * 1000);
-      unrefTimer(resumeTimer);
+      unrefTimer(timer);
+      if (_state) _state.resumeTimer = timer;
       return;
     }
     // Any other error — animation placeholder is gone (deleted, expired) — stop cycling
@@ -284,6 +294,7 @@ export async function startAnimation(
     dispatchCount: 0,
     cycleTimer: null,
     timeoutTimer: null,
+    resumeTimer: null,
   };
 
   // Start cycling if multiple frames

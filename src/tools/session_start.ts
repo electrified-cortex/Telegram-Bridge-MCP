@@ -3,8 +3,8 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { dequeue, pendingCount } from "../message-store.js";
-import { createSession, setActiveSession, listSessions } from "../session-manager.js";
-import { createSessionQueue } from "../session-queue.js";
+import { createSession, closeSession, setActiveSession, listSessions } from "../session-manager.js";
+import { createSessionQueue, removeSessionQueue } from "../session-queue.js";
 import { getRoutingMode } from "../routing-mode.js";
 import {
   pollButtonPress,
@@ -193,6 +193,10 @@ export function register(server: McpServer) {
         }
         return toResult(freshRes);
       } catch (err) {
+        // Rollback: clean up orphaned session on failure
+        removeSessionQueue(session.sid);
+        closeSession(session.sid);
+        setActiveSession(0);
         return toError(err);
       }
     },
