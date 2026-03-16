@@ -86,4 +86,41 @@ describe("debug-log", () => {
     const entries = getDebugLog(1);
     expect(entries[0].msg).toBe("e2049");
   });
+
+  it("assigns auto-incrementing ids to entries", () => {
+    setDebugEnabled(true);
+    dlog("session", "first");
+    dlog("route", "second");
+    dlog("queue", "third");
+    const entries = getDebugLog(10);
+    expect(entries[0].id).toBe(1);
+    expect(entries[1].id).toBe(2);
+    expect(entries[2].id).toBe(3);
+  });
+
+  it("filters by since (cursor-based pagination)", () => {
+    setDebugEnabled(true);
+    dlog("session", "a");
+    dlog("session", "b");
+    dlog("session", "c");
+    const all = getDebugLog(10);
+    // Get only entries after the first one
+    const after = getDebugLog(10, undefined, all[0].id);
+    expect(after).toHaveLength(2);
+    expect(after[0].msg).toBe("b");
+    expect(after[1].msg).toBe("c");
+  });
+
+  it("combines since with category filter", () => {
+    setDebugEnabled(true);
+    dlog("session", "s1");
+    dlog("route", "r1");
+    dlog("session", "s2");
+    dlog("route", "r2");
+    const allSession = getDebugLog(10, "session");
+    // since first session entry, only "s2" should remain
+    const after = getDebugLog(10, "session", allSession[0].id);
+    expect(after).toHaveLength(1);
+    expect(after[0].msg).toBe("s2");
+  });
 });

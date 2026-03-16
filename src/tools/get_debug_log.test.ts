@@ -48,13 +48,19 @@ describe("get_debug_log", () => {
     const result = parseResult(await handler({}));
     expect(result.enabled).toBe(true);
     expect(result.entries).toEqual(entries);
-    expect(mocks.getDebugLog).toHaveBeenCalledWith(50, undefined);
+    expect(mocks.getDebugLog).toHaveBeenCalledWith(50, undefined, undefined);
   });
 
   it("passes count and category to getDebugLog", async () => {
     mocks.getDebugLog.mockReturnValue([]);
     await handler({ count: 10, category: "route" });
-    expect(mocks.getDebugLog).toHaveBeenCalledWith(10, "route");
+    expect(mocks.getDebugLog).toHaveBeenCalledWith(10, "route", undefined);
+  });
+
+  it("passes since for cursor-based pagination", async () => {
+    mocks.getDebugLog.mockReturnValue([]);
+    await handler({ since: 42 });
+    expect(mocks.getDebugLog).toHaveBeenCalledWith(50, undefined, 42);
   });
 
   it("toggles debug on when enable=true", async () => {

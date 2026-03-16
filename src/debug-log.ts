@@ -33,6 +33,7 @@ export type DebugCategory =
   | "tool";
 
 export interface DebugEntry {
+  id: number;           // auto-incrementing sequence number
   ts: string;           // ISO-8601 timestamp
   cat: DebugCategory;   // category
   msg: string;          // human-readable summary
@@ -46,6 +47,7 @@ export interface DebugEntry {
 const MAX_ENTRIES = 2000;
 const _buffer: DebugEntry[] = [];
 let _enabled = false; // set by initDebugLog() after config loads
+let _nextId = 1;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -76,6 +78,7 @@ export function dlog(cat: DebugCategory, msg: string, data?: Record<string, unkn
   if (!_enabled) return;
 
   const entry: DebugEntry = {
+    id: _nextId++,
     ts: new Date().toISOString(),
     cat,
     msg,
@@ -93,9 +96,11 @@ export function dlog(cat: DebugCategory, msg: string, data?: Record<string, unkn
  * Return the last N entries, optionally filtered by category.
  * Most recent entries come last (chronological order).
  */
-export function getDebugLog(count = 50, category?: DebugCategory): DebugEntry[] {
-  const filtered = category ? _buffer.filter(e => e.cat === category) : _buffer;
-  return filtered.slice(-count);
+export function getDebugLog(count = 50, category?: DebugCategory, since?: number): DebugEntry[] {
+  let source = _buffer;
+  if (since !== undefined) source = source.filter(e => e.id > since);
+  if (category) source = source.filter(e => e.cat === category);
+  return source.slice(-count);
 }
 
 /** Number of entries currently in the buffer. */
@@ -112,4 +117,5 @@ export function clearDebugLog(): void {
 export function resetDebugLogForTest(): void {
   _buffer.length = 0;
   _enabled = false;
+  _nextId = 1;
 }
