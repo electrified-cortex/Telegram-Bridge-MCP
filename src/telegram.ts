@@ -3,7 +3,7 @@ import type { ApiError, ReactionTypeEmoji, Update } from "grammy/types";
 import { readFileSync, existsSync, realpathSync } from "fs";
 import path, { resolve } from "path";
 import { tmpdir } from "os";
-import { getBotReaction } from "./message-store.js";
+import { getBotReaction, recordBotReaction } from "./message-store.js";
 
 /** Directory where downloaded files are stored — only local paths under this dir are allowed for file uploads. */
 export const SAFE_FILE_DIR = resolve(tmpdir(), "telegram-bridge-mcp");
@@ -601,7 +601,10 @@ export function ackVoiceMessage(messageId: number): void {
   // No-op if the message already has 🫡 recorded in the store
   if (getBotReaction(messageId) === REACT_SALUTE) return;
   void trySetMessageReaction(chatId, messageId, REACT_SALUTE)
-    .then((ok) => { if (!ok) process.stderr.write(`[ack] 🫡 failed for msg ${messageId}\n`); });
+    .then((ok) => {
+      if (ok) recordBotReaction(messageId, REACT_SALUTE);
+      else process.stderr.write(`[ack] 🫡 failed for msg ${messageId}\n`);
+    });
 }
 
 /**
