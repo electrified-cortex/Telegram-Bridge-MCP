@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   clearCallbackHook: vi.fn(),
   registerMessageHook: vi.fn(),
   clearMessageHook: vi.fn(),
+  pendingCount: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -30,6 +31,7 @@ vi.mock("../telegram.js", async (importActual) => {
 
 vi.mock("../message-store.js", () => ({
   recordOutgoing: vi.fn(),
+  pendingCount: () => mocks.pendingCount(),
   registerCallbackHook: (...args: unknown[]) => mocks.registerCallbackHook(...args),
   clearCallbackHook: (...args: unknown[]) => mocks.clearCallbackHook(...args),
   registerMessageHook: (...args: unknown[]) => mocks.registerMessageHook(...args),
@@ -284,5 +286,32 @@ describe("choose tool", () => {
     await new Promise((r) => setTimeout(r, 20));
     // No unhandled rejection — .catch swallowed the error gracefully
     expect(mocks.ackAndEditSelection).toHaveBeenCalled();
+  });
+
+  it("rejects with PENDING_UPDATES when queue is non-empty", async () => {
+    mocks.pendingCount.mockReturnValue(2);
+    const result = await call({ question: "Pick", options: OPTIONS });
+    expect(isError(result)).toBe(true);
+    const data = parseResult(result);
+    expect(data.code).toBe("PENDING_UPDATES");
+    expect(data.pending).toBe(2);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("proceeds when ignore_pending is true despite pending updates", async () => {
+    mocks.pendingCount.mockReturnValue(2);
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(
+      makeButtonResult("opt_a"),
+    );
+    const result = await call({
+      question: "Pick",
+      options: OPTIONS,
+      ignore_pending: true,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBe(false);
+    expect(data.label).toBe("Option A");
   });
 });

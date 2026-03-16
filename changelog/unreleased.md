@@ -4,6 +4,8 @@
 
 - New test files: `config.test.ts` (100% coverage), `rate-limiter.test.ts` (100% coverage)
 - Extended test coverage for `tts.ts`, `typing-state.ts`, `show_typing.ts`, `confirm.ts`, `choose.ts`, `dequeue_update.ts`, `session_start.ts`; total tests 942 → 1030, statements 85.4% → 90.2%, branches 76.6% → 82.4%
+- Added pending-updates guard to blocking tools (`confirm`, `choose`, `ask`) — returns `PENDING_UPDATES` error when unread updates exist; pass `ignore_pending: true` to bypass
+- Added "Requires an active session" hint to 12 tool descriptions (`send_text`, `send_message`, `send_choice`, `send_file`, `send_text_as_voice`, `send_new_progress`, `send_new_checklist`, `notify`, `ask`, `choose`, `confirm`, `dequeue_update`)
 
 ## Fixed
 

@@ -18,7 +18,8 @@ const DESCRIPTION =
   "process events, errors). For conversational replies or long explanations, " +
   "use send_text instead. Default parse_mode is Markdown " +
   "— write standard Markdown in the body and it is auto-converted, no " +
-  "escaping needed.";
+  "escaping needed. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(

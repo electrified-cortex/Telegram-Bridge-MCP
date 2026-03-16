@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getApi, resolveChat, toResult, toError, validateText, ackVoiceMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
-import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
+import { dequeueMatch, waitForEnqueue, pendingCount, type TimelineEvent } from "../message-store.js";
 
 const DESCRIPTION =
   "Sends a question to a chat and waits until the user replies. " +
@@ -12,7 +12,10 @@ const DESCRIPTION =
   "or { timed_out: false, text, message_id } for a text reply, " +
   "{ timed_out: false, text, message_id, voice: true } for a transcribed voice reply, " +
   "or { timed_out: false, command, args, message_id } for a bot-command reply. " +
-  "Use for open-ended prompts where a button isn't appropriate.";
+  "Use for open-ended prompts where a button isn't appropriate. " +
+  "Fails if there are unread pending updates — drain them with " +
+  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -34,13 +37,31 @@ export function register(server: McpServer) {
         .min(1)
         .optional()
         .describe("Reply to this message ID — shows quoted message above the question"),
+      ignore_pending: z
+        .boolean()
+        .optional()
+        .describe("Set true to skip the pending-updates check and block immediately"),
       },
     },
-    async ({ question, timeout_seconds, reply_to_message_id }, { signal }) => {
+    async ({ question, timeout_seconds, reply_to_message_id, ignore_pending }, { signal }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(question);
       if (textErr) return toError(textErr);
+
+      if (!ignore_pending) {
+        const pending = pendingCount();
+        if (pending > 0) {
+          return toError({
+            code: "PENDING_UPDATES" as const,
+            message:
+              `${pending} unread update(s) in the queue. ` +
+              `Drain them with dequeue_update(timeout:0) before ` +
+              `calling ask, or pass ignore_pending: true.`,
+            pending,
+          });
+        }
+      }
 
       try {
         // Send the question

@@ -39,7 +39,8 @@ const DESCRIPTION =
   "Voice messages arrive pre-transcribed as { type: \"voice\", text: \"...\" }. " +
   "pending > 0 means more updates are queued — call again. " +
   "Two modes: omit timeout (default 60 s) to block until an update arrives; " +
-  "pass timeout: 0 for an instant non-blocking poll (use only for startup drain loops).";
+  "pass timeout: 0 for an instant non-blocking poll (use only for startup drain loops). " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(

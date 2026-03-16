@@ -32,7 +32,8 @@ const DESCRIPTION =
   "Use for percentage-based continuous tracking (e.g. 47%). " +
   "For discrete named steps with pass/fail status, use send_new_checklist instead. " +
   "Pass the returned message_id to update_progress to edit in-place. " +
-  "Multiple concurrent progress bars are supported — each is tracked by its own message_id.";
+  "Multiple concurrent progress bars are supported — each is tracked by its own message_id. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(

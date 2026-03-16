@@ -4,7 +4,7 @@ import {
   resolveChat,
   toResult, toError, validateText, validateCallbackData, LIMITS,
 } from "../telegram.js";
-import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook } from "../message-store.js";
+import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   sendChoiceMessage, type KeyboardOption,
@@ -18,7 +18,10 @@ const DESCRIPTION =
   "returns { skipped: true, text_response }. If no input arrives within " +
   "timeout_seconds, returns { timed_out: true } — buttons remain live and " +
   "late clicks are still handled automatically. Multiple choose calls can " +
-  "be chained for questionnaires. Use for any single-selection choice.";
+  "be chained for questionnaires. Use for any single-selection choice. " +
+  "Fails if there are unread pending updates — drain them with " +
+  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -61,13 +64,31 @@ export function register(server: McpServer) {
         .min(1)
         .optional()
         .describe("Reply to this message ID — shows quoted message above the question"),
+      ignore_pending: z
+        .boolean()
+        .optional()
+        .describe("Set true to skip the pending-updates check and block immediately"),
       },
     },
-    async ({ question, options, timeout_seconds, columns, reply_to_message_id }, { signal }) => {
+    async ({ question, options, timeout_seconds, columns, reply_to_message_id, ignore_pending }, { signal }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(question);
       if (textErr) return toError(textErr);
+
+      if (!ignore_pending) {
+        const pending = pendingCount();
+        if (pending > 0) {
+          return toError({
+            code: "PENDING_UPDATES" as const,
+            message:
+              `${pending} unread update(s) in the queue. ` +
+              `Drain them with dequeue_update(timeout:0) before ` +
+              `calling choose, or pass ignore_pending: true.`,
+            pending,
+          });
+        }
+      }
 
       // Validate all callback data up front
       const displayMax = columns >= 2

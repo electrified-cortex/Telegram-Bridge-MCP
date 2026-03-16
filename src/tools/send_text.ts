@@ -9,7 +9,8 @@ const DESCRIPTION =
   "write standard Markdown (*bold*, _italic_, `code`, [links](url)) and it is " +
   "auto-converted. Messages longer than 4096 characters are automatically split. " +
   "For structured status with severity styling, use notify instead. " +
-  "For voice/TTS, use send_text_as_voice instead.";
+  "For voice/TTS, use send_text_as_voice instead. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(

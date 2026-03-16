@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText, validateCallbackData } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
-import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook } from "../message-store.js";
+import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   type ButtonStyle,
@@ -13,7 +13,10 @@ const DESCRIPTION =
   "Sends a Yes/No confirmation message and waits until the user presses a " +
   "button. Automatically removes buttons and updates the message to show the " +
   "chosen option. Returns { confirmed: true|false }, or { timed_out: true } " +
-  "if the timeout expires without input.";
+  "if the timeout expires without input. " +
+  "Fails if there are unread pending updates — drain them with " +
+  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -61,13 +64,32 @@ export function register(server: McpServer) {
         .min(1)
         .optional()
         .describe("Reply to this message ID — shows quoted message above the confirmation"),
+      ignore_pending: z
+        .boolean()
+        .optional()
+        .describe("Set true to skip the pending-updates check and block immediately"),
       },
     },
-    async ({ text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id }, { signal }) => {
+    async ({ text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id, ignore_pending }, { signal }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(text);
       if (textErr) return toError(textErr);
+
+      if (!ignore_pending) {
+        const pending = pendingCount();
+        if (pending > 0) {
+          return toError({
+            code: "PENDING_UPDATES" as const,
+            message:
+              `${pending} unread update(s) in the queue. ` +
+              `Drain them with dequeue_update(timeout:0) before ` +
+              `calling confirm, or pass ignore_pending: true.`,
+            pending,
+          });
+        }
+      }
+
       const yesDataErr = validateCallbackData(yes_data);
       if (yesDataErr) return toError(yesDataErr);
       if (no_text) {

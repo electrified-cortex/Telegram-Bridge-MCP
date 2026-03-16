@@ -13,7 +13,8 @@ const DESCRIPTION =
   "synthesis — asterisks, underscores, backticks, brackets, and similar " +
   "characters become noise in audio. Write the text as natural spoken language: " +
   "no bullet points, no headers, no code blocks, no URLs. Punctuation like " +
-  "periods and commas helps pacing; everything else should be plain prose.";
+  "periods and commas helps pacing; everything else should be plain prose. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(

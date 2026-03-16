@@ -38,7 +38,8 @@ const DESCRIPTION =
   "Sends a file (photo, document, video, audio, or voice note) to the chat. " +
   "Accepts a local file path, public HTTPS URL, or Telegram file_id. " +
   "Auto-detects the file type by extension when type=\"auto\" (default). " +
-  "For file_id inputs, specify type explicitly since there's no extension to detect.";
+  "For file_id inputs, specify type explicitly since there's no extension to detect. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 export function register(server: McpServer) {
   server.registerTool(

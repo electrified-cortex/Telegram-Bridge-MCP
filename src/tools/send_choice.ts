@@ -15,7 +15,8 @@ const DESCRIPTION =
   "The callback_query event still appears in dequeue_update so the agent can read " +
   "which option was picked at its own pace. " +
   "Use choose for blocking single-selection (waits for the press). " +
-  "Use send_message for persistent keyboards that stay live indefinitely.";
+  "Use send_message for persistent keyboards that stay live indefinitely. " +
+  "Requires an active session — call session_start once before using this tool.";
 
 const optionSchema = z.object({
   label: z

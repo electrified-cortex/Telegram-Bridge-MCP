@@ -5,6 +5,7 @@ import type { TimelineEvent } from "../message-store.js";
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   ackVoiceMessage: vi.fn(),
+  pendingCount: vi.fn().mockReturnValue(0),
   _storeQueue: [] as TimelineEvent[],
   _waitResolvers: [] as (() => void)[],
 }));
@@ -21,6 +22,7 @@ vi.mock("../telegram.js", async (importActual) => {
 
 vi.mock("../message-store.js", () => ({
   recordOutgoing: vi.fn(),
+  pendingCount: () => mocks.pendingCount(),
   dequeueMatch: (predicate: (e: TimelineEvent) => unknown) => {
     for (let i = 0; i < mocks._storeQueue.length; i++) {
       const result = predicate(mocks._storeQueue[i]);
@@ -150,5 +152,30 @@ describe("ask tool", () => {
     // Should not time out — command should be treated as a response
     expect(data.timed_out).toBe(false);
     expect(data.command).toBe("cancel");
+  });
+
+  it("rejects with PENDING_UPDATES when queue is non-empty", async () => {
+    mocks.pendingCount.mockReturnValue(5);
+    const result = await call({ question: "Continue?", timeout_seconds: 1 });
+    expect(isError(result)).toBe(true);
+    const data = parseResult(result);
+    expect(data.code).toBe("PENDING_UPDATES");
+    expect(data.pending).toBe(5);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("proceeds when ignore_pending is true despite pending updates", async () => {
+    mocks.pendingCount.mockReturnValue(5);
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeTextEvent(11, "hello"));
+    const result = await call({
+      question: "Continue?",
+      timeout_seconds: 1,
+      ignore_pending: true,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBe(false);
+    expect(data.text).toBe("hello");
   });
 });

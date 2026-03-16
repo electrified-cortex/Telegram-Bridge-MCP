@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   clearCallbackHook: vi.fn(),
   registerMessageHook: vi.fn(),
   clearMessageHook: vi.fn(),
+  pendingCount: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -30,6 +31,7 @@ vi.mock("../telegram.js", async (importActual) => {
 
 vi.mock("../message-store.js", () => ({
   recordOutgoing: vi.fn(),
+  pendingCount: () => mocks.pendingCount(),
   registerCallbackHook: (...args: unknown[]) => mocks.registerCallbackHook(...args),
   clearCallbackHook: (...args: unknown[]) => mocks.clearCallbackHook(...args),
   registerMessageHook: (...args: unknown[]) => mocks.registerMessageHook(...args),
@@ -268,5 +270,30 @@ describe("confirm tool", () => {
     expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?");
     // Should NOT be called a second time because editState.done = true
     expect(mocks.editWithSkipped).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects with PENDING_UPDATES when queue is non-empty", async () => {
+    mocks.pendingCount.mockReturnValue(3);
+    const result = await call({ text: "Proceed?" });
+    expect(isError(result)).toBe(true);
+    const data = parseResult(result);
+    expect(data.code).toBe("PENDING_UPDATES");
+    expect(data.pending).toBe(3);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("proceeds when ignore_pending is true despite pending updates", async () => {
+    mocks.pendingCount.mockReturnValue(3);
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(
+      makeButtonResult("confirm_yes"),
+    );
+    const result = await call({
+      text: "Proceed?",
+      ignore_pending: true,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.confirmed).toBe(true);
   });
 });
