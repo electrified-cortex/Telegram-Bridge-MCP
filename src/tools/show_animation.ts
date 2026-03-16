@@ -6,7 +6,7 @@ import { startAnimation, getPreset } from "../animation-state.js";
 const DESCRIPTION =
   "Start a server-managed cycling visual placeholder message. The animation " +
   "auto-cancels after timeout seconds of inactivity. One frame = static placeholder. " +
-  "Multiple frames = cycling animation (min 1000ms interval). " +
+  "Multiple frames = cycling animation (min 1000ms interval, default 2000ms). " +
   "Only one animation at a time — starting a new one cancels the previous. " +
   "Cancel with cancel_animation, or let it auto-clean on timeout. " +
   "A single emoji works well as a static placeholder (e.g. [\"🤔\"] or [\"⏳\"]). " +
@@ -38,8 +38,8 @@ export function register(server: McpServer) {
           .int()
           .min(1000)
           .max(10000)
-          .default(1000)
-          .describe("Milliseconds between frames (min 1000, default 1000). Ignored if single frame."),
+          .default(2000)
+          .describe("Milliseconds between frames (min 1000, default 2000). Ignored if single frame."),
         timeout: z
           .number()
           .int()

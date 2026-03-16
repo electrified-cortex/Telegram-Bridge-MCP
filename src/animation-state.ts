@@ -13,6 +13,7 @@
  * The outbound proxy handles promotion transparently.
  */
 
+import { GrammyError } from "grammy";
 import { getRawApi, resolveChat } from "./telegram.js";
 import { resolveParseMode } from "./markdown.js";
 import {
@@ -140,7 +141,23 @@ async function cycleFrame(): Promise<void> {
       getRawApi().editMessageText(chatId, messageId, text, { parse_mode: parseMode }),
     );
   } catch (err) {
-    // Animation placeholder is gone (deleted, expired) — stop cycling
+    if (err instanceof GrammyError && err.error_code === 429) {
+      // Rate-limited — pause the cycle timer and resume after retry_after
+      const retryAfter = (err.parameters.retry_after ?? 60) as number;
+      process.stderr.write(`[animation] rate limited, pausing cycle for ${retryAfter}s\n`);
+      if (_state.cycleTimer) {
+        clearInterval(_state.cycleTimer);
+        _state.cycleTimer = null;
+      }
+      const resumeTimer = setTimeout(() => {
+        if (!_state) return;
+        _state.cycleTimer = setInterval(() => void cycleFrame(), _state.intervalMs);
+        unrefTimer(_state.cycleTimer);
+      }, retryAfter * 1000);
+      unrefTimer(resumeTimer);
+      return;
+    }
+    // Any other error — animation placeholder is gone (deleted, expired) — stop cycling
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[animation] cycleFrame failed for msg ${messageId}, stopping: ${msg}\n`);
     clearTimers();

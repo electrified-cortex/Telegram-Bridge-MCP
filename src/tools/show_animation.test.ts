@@ -48,7 +48,7 @@ describe("show_animation tool", () => {
     await call({});
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       undefined,
-      1000,
+      2000,
       600,
       false,
       false,
@@ -78,7 +78,7 @@ describe("show_animation tool", () => {
     expect(isError(result)).toBe(false);
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       ["thinking.", "thinking..", "thinking..."],
-      1000,
+      2000,
       600,
       false,
       false,
@@ -91,7 +91,7 @@ describe("show_animation tool", () => {
     await call({ preset: "mypreset", frames: ["ignored"] });
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       ["preset."],
-      1000,
+      2000,
       600,
       false,
       false,
@@ -122,7 +122,7 @@ describe("show_animation tool", () => {
     expect(isError(result)).toBe(false);
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       undefined,
-      1000,
+      2000,
       600,
       true,
       false,
