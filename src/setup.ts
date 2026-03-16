@@ -146,7 +146,7 @@ async function main() {
         clearInterval(countdownInterval);
         process.stdout.write("\r" + " ".repeat(40) + "\r"); // clear countdown line
 
-        const userId = u.message.from?.id;
+        const userId = u.message.from.id;
         const chatId = u.message.chat.id;
 
         if (!userId) {

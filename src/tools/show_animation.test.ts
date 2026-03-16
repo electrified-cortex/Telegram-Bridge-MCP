@@ -52,6 +52,7 @@ describe("show_animation tool", () => {
       600,
       false,
       false,
+      false,
     );
   });
 
@@ -68,6 +69,7 @@ describe("show_animation tool", () => {
       60,
       false,
       false,
+      false,
     );
   });
 
@@ -82,6 +84,7 @@ describe("show_animation tool", () => {
       600,
       false,
       false,
+      false,
     );
   });
 
@@ -93,6 +96,7 @@ describe("show_animation tool", () => {
       ["preset."],
       1000,
       600,
+      false,
       false,
       false,
     );
@@ -125,6 +129,7 @@ describe("show_animation tool", () => {
       1000,
       600,
       true,
+      false,
       false,
     );
     const data = parseResult(result);

@@ -21,7 +21,7 @@ function renderStatus(
 ): string {
   const lines: string[] = [`<b>${escapeHtml(title)}</b>`, ""];
   for (const step of steps) {
-    const icon = STATUS_ICON[step.status] ?? "⬜";
+    const icon = STATUS_ICON[step.status];
     const detail = step.detail ? ` — <i>${escapeHtml(step.detail)}</i>` : "";
     lines.push(`${icon} ${escapeHtml(step.label)}${detail}`);
   }

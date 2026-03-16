@@ -66,7 +66,7 @@ export async function pollButtonPress(
 ): Promise<ButtonResult | null> {
   const deadline = Date.now() + timeoutSeconds * 1000;
   const abortPromise = signal
-    ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => r(), { once: true }); })
+    ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); })
     : null;
 
   while (Date.now() < deadline) {
@@ -112,7 +112,7 @@ export async function pollButtonOrTextOrVoice(
   const deadline = Date.now() + timeoutSeconds * 1000;
   let voiceDetectedFired = false;
   const abortPromise = signal
-    ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => r(), { once: true }); })
+    ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); })
     : null;
 
   while (Date.now() < deadline) {
