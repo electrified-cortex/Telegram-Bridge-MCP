@@ -80,11 +80,11 @@ const DESCRIPTION =
   "Sets an emoji reaction on a message. Non-premium bots can set up to 1 " +
   "reaction per message. Pass an empty string to remove all reactions. " +
   "Supports semantic aliases like 'thinking', 'done', 'salute', or raw emoji. " +
-  "When restore_emoji or timeout_seconds is provided the reaction becomes " +
-  "temporary: it auto-reverts to restore_emoji (or is removed) on the next " +
-  "outbound action or after the timeout — no manual cleanup needed. " +
-  "Classic use: set 'reading' (👀) with restore_emoji 'salute' (🫡) to signal " +
-  "'processing' and auto-confirm once you reply.";
+  "Set temporary=true to auto-revert the reaction on the next outbound " +
+  "action (or after timeout_seconds). Optionally specify restore_emoji to " +
+  "revert to a specific emoji instead of removing the reaction. " +
+  "Classic use: set 'reading' (👀) with temporary=true to signal " +
+  "'processing' and auto-clear once you reply.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -101,12 +101,20 @@ export function register(server: McpServer) {
           .boolean()
           .optional()
           .describe("Use big animation (default false). Only applies to permanent reactions."),
+        temporary: z
+          .boolean()
+          .optional()
+          .describe(
+            "When true, the reaction auto-reverts on the next outbound " +
+            "action or after timeout_seconds. Defaults to false.",
+          ),
         restore_emoji: z
           .string()
           .optional()
           .describe(
-            "If set, makes the reaction temporary. After the next outbound action or timeout, " +
-            "reverts to this emoji/alias. Omit to remove the reaction on restore.",
+            "Emoji/alias to revert to when a temporary reaction expires. " +
+            "Omit to remove the reaction on restore. " +
+            "Implies temporary=true.",
           ),
         timeout_seconds: z
           .number()
@@ -114,12 +122,14 @@ export function register(server: McpServer) {
           .positive()
           .optional()
           .describe(
-            "Deadline in seconds before auto-restore fires (e.g. 300 = 5 min). " +
-            "Fires on whichever comes first: next outbound action or this timeout.",
+            "Deadline in seconds before auto-restore fires " +
+            "(e.g. 300 = 5 min). Fires on whichever comes first: " +
+            "next outbound action or this timeout. " +
+            "Implies temporary=true.",
           ),
       },
     },
-    async ({ message_id, emoji, is_big, restore_emoji, timeout_seconds }) => {
+    async ({ message_id, emoji, is_big, temporary, restore_emoji, timeout_seconds }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {
@@ -135,7 +145,10 @@ export function register(server: McpServer) {
         }
 
         // Temporary reaction path
-        if (restore_emoji !== undefined || timeout_seconds !== undefined) {
+        const isTemp = temporary === true
+          || restore_emoji !== undefined
+          || timeout_seconds !== undefined;
+        if (isTemp) {
           if (!resolved) {
             return toError({ code: "REACTION_EMOJI_INVALID" as const, message: "emoji is required for temporary reactions." });
           }

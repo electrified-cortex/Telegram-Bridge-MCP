@@ -91,6 +91,17 @@ describe("set_reaction tool", () => {
 
   // ── Temporary reaction ────────────────────────────────────────────────────
 
+  it("routes to setTempReaction when temporary=true (no restore_emoji)", async () => {
+    const result = await call({ message_id: 77, emoji: "👀", temporary: true });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.temporary).toBe(true);
+    expect(data.emoji).toBe("👀");
+    expect(data.restore_emoji).toBeNull();
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(77, "👀", undefined, undefined);
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+  });
+
   it("routes to setTempReaction when restore_emoji is provided", async () => {
     const result = await call({ message_id: 100, emoji: "reading", restore_emoji: "salute" });
     expect(isError(result)).toBe(false);
