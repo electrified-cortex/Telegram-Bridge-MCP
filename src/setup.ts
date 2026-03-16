@@ -146,7 +146,7 @@ async function main() {
         clearInterval(countdownInterval);
         process.stdout.write("\r" + " ".repeat(40) + "\r"); // clear countdown line
 
-        const userId = u.message.from?.id;
+        const userId = u.message.from.id;
         const chatId = u.message.chat.id;
 
         if (!userId) {
@@ -158,36 +158,37 @@ async function main() {
         console.log(green("  ✓ Code matched!"));
         console.log("");
         console.log(`    User ID  : ${bold(String(userId))}`);
-        console.log(`    Chat ID  : ${bold(String(chatId))}`);
         console.log("");
 
         // 6. Write to .env
         writeEnv({
           BOT_TOKEN: token,
           ALLOWED_USER_ID: String(userId),
-          ALLOWED_CHAT_ID: String(chatId),
         });
 
         console.log(green(`  ✓ Written to ${ENV_PATH}`));
         console.log("");
         console.log("  " + bold("Next steps:"));
-        console.log("    • For VS Code global MCP, add to your user settings.json:");
+        console.log("    • Add this server to your MCP host config.");
+        console.log("      Credentials are in .env — use them in the \"env\" block.");
         console.log("");
-        console.log(dim('    "mcp": {'));
-        console.log(dim('      "servers": {'));
-        console.log(dim('        "telegram": {'));
-        console.log(dim('          "type": "stdio",'));
-        console.log(dim(`          "command": "node",`));
-        console.log(dim(`          "args": ["${resolve(__dirname, "..", "dist", "index.js").replace(/\\/g, "\\\\")}"],`));
-        console.log(dim(`          "env": {`));
-        console.log(dim(`            "BOT_TOKEN": "${token.slice(0, 8)}…<redacted>",`));
-        console.log(dim(`            "ALLOWED_USER_ID": "${userId}",`));
-        console.log(dim(`            "ALLOWED_CHAT_ID": "${chatId}"`));
-        console.log(dim(`          }`));
-        console.log(dim(`        }`));
-        console.log(dim(`      }`));
-        console.log(dim(`    }`));
-        console.log("");
+
+        const distPath = resolve(__dirname, "..", "dist", "index.js").replace(/\\/g, "\\\\");
+        const printConfig = (label: string, extra?: string) => {
+          console.log(dim(`    — ${label}:`));
+          console.log(dim('    "telegram": {'));
+          if (extra) console.log(dim(`      ${extra}`));
+          console.log(dim(`      "command": "node",`));
+          console.log(dim(`      "args": ["${distPath}"],`));
+          console.log(dim(`      "env": { "BOT_TOKEN": "<from .env>", "ALLOWED_USER_ID": "${userId}" }`));
+          console.log(dim(`    }`));
+          console.log("");
+        };
+
+        printConfig("VS Code (.vscode/mcp.json or settings.json → mcp.servers)", '"type": "stdio",');
+        printConfig("Claude Desktop (claude_desktop_config.json → mcpServers)");
+        printConfig("Claude Code (.mcp.json in project root → mcpServers)");
+
         console.log("    • Or run  " + bold("pnpm start") + "  to start the server manually.");
         console.log("");
 
@@ -222,7 +223,7 @@ async function main() {
   process.exit(1);
 }
 
-main().catch((err) => {
-  console.error(red(`\n  ✗ Unexpected error: ${err.message}`));
+main().catch((err: unknown) => {
+  console.error(red(`\n  ✗ Unexpected error: ${err instanceof Error ? err.message : String(err)}`));
   process.exit(1);
 });

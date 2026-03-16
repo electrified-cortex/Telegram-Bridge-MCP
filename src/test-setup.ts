@@ -1,6 +1,6 @@
 import { vi, beforeEach } from "vitest";
 
-// Suppress the ALLOWED_USER_ID / ALLOWED_CHAT_ID startup warnings globally in
+// Suppress the ALLOWED_USER_ID startup warnings globally in
 // the test suite.  ALLOW_ALL_USERS=true acts as a safety valve so that any
 // test that calls getSecurityConfig() without setting ALLOWED_USER_ID won't
 // trigger the process.exit(1) guard introduced in this version.

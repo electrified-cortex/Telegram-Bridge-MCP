@@ -8,3 +8,5 @@ temp/
 # Session state files — regenerated each session by the agent
 HANDOFF.md
 memory.md
+# Local operator config — copy mcp-config.example.json to customize
+mcp-config.json

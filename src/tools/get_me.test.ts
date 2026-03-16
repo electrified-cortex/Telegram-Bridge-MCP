@@ -8,6 +8,19 @@ vi.mock("../telegram.js", async (importActual) => {
   return { ...actual, getApi: () => mocks };
 });
 
+vi.mock("module", async (importActual) => {
+  const actual = await importActual<typeof import("module")>();
+  const mod = Object.assign(Object.create(null) as object, actual);
+  return Object.assign(mod, {
+    createRequire: () => (path: string) => {
+      if (path.endsWith("package.json")) return { version: "0.0.0-test" };
+      if (path.endsWith("build-info.json"))
+        return { BUILD_COMMIT: "t3stc0mm", BUILD_TIME: "2025-01-01T00:00:00.000Z" };
+      throw new Error(`Unexpected require: ${path}`);
+    },
+  });
+});
+
 import { register } from "./get_me.js";
 
 describe("get_me tool", () => {
@@ -20,12 +33,17 @@ describe("get_me tool", () => {
     call = server.getHandler("get_me");
   });
 
-  it("returns bot info", async () => {
+  it("returns bot info with mcp_version and build fingerprint", async () => {
     const bot = { id: 1, is_bot: true, first_name: "Bot", username: "test_bot" };
     mocks.getMe.mockResolvedValue(bot);
     const result = await call({});
     expect(isError(result)).toBe(false);
-    expect(parseResult(result)).toEqual(bot);
+    expect(parseResult(result)).toEqual({
+      mcp_version: "0.0.0-test",
+      mcp_commit: "t3stc0mm",
+      mcp_build_time: "2025-01-01T00:00:00.000Z",
+      ...bot,
+    });
   });
 
   it("returns error on API failure", async () => {

@@ -3,6 +3,9 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
+  dequeueMatch: vi.fn(),
+  waitForEnqueue: vi.fn(),
+  ackVoiceMessage: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -10,10 +13,23 @@ vi.mock("../telegram.js", async (importActual) => {
   return {
     ...actual,
     getApi: () => mocks,
+    resolveChat: () => 42,
+    ackVoiceMessage: mocks.ackVoiceMessage,
   };
 });
 
-import { ackAndEditSelection, editWithTimedOut, editWithSkipped } from "./button-helpers.js";
+vi.mock("../message-store.js", () => ({
+  dequeueMatch: mocks.dequeueMatch,
+  waitForEnqueue: mocks.waitForEnqueue,
+}));
+
+import {
+  ackAndEditSelection,
+  editWithTimedOut,
+  editWithSkipped,
+  pollButtonPress,
+  pollButtonOrTextOrVoice,
+} from "./button-helpers.js";
 
 describe("button-helpers", () => {
   beforeEach(() => {
@@ -83,6 +99,232 @@ describe("button-helpers", () => {
     it("swallows editMessageText errors silently", async () => {
       mocks.editMessageText.mockRejectedValue(new Error("Message not modified"));
       await expect(editWithSkipped("42", 1, "Question?")).resolves.toBeUndefined();
+    });
+  });
+
+  // -- pollButtonPress -----------------------------------------------------
+
+  describe("pollButtonPress", () => {
+    it("returns button result when callback matches", async () => {
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "callback",
+          content: { target: 10, qid: "q1", data: "yes" },
+        });
+      });
+      const result = await pollButtonPress(123, 10, 1);
+      expect(result).toEqual({
+        kind: "button",
+        callback_query_id: "q1",
+        data: "yes",
+        message_id: 10,
+      });
+    });
+
+    it("returns null on timeout with no match", async () => {
+      mocks.dequeueMatch.mockReturnValue(undefined);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise((r) => setTimeout(r, 100)),
+      );
+      const result = await pollButtonPress(123, 10, 0.01);
+      expect(result).toBeNull();
+    });
+
+    it("ignores callbacks for different message_id", async () => {
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "callback",
+          content: { target: 999, qid: "q1", data: "no" },
+        });
+      });
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise((r) => setTimeout(r, 100)),
+      );
+      const result = await pollButtonPress(123, 10, 0.01);
+      expect(result).toBeNull();
+    });
+    it("returns null when signal is pre-aborted", async () => {
+      mocks.dequeueMatch.mockReturnValue(undefined);
+      mocks.waitForEnqueue.mockImplementation(() => new Promise(() => {})); // never resolves
+      const controller = new AbortController();
+      controller.abort();
+      const result = await pollButtonPress(123, 10, 10, controller.signal);
+      expect(result).toBeNull();
+    });
+
+    it("returns null when signal is aborted during wait", async () => {
+      mocks.dequeueMatch.mockReturnValue(undefined);
+      let resolveEnqueue!: () => void;
+      mocks.waitForEnqueue.mockImplementation(() => new Promise<void>((r) => { resolveEnqueue = r; }));
+      const controller = new AbortController();
+      const resultPromise = pollButtonPress(123, 10, 10, controller.signal);
+      controller.abort();
+      resolveEnqueue();
+      const result = await resultPromise;
+      expect(result).toBeNull();
+    });
+  });
+
+  // -- pollButtonOrTextOrVoice ---------------------------------------------
+
+  describe("pollButtonOrTextOrVoice", () => {
+    it("returns null when signal is pre-aborted", async () => {
+      mocks.dequeueMatch.mockReturnValue(undefined);
+      mocks.waitForEnqueue.mockImplementation(() => new Promise(() => {}));
+      const controller = new AbortController();
+      controller.abort();
+      const result = await pollButtonOrTextOrVoice(123, 10, 10, undefined, controller.signal);
+      expect(result).toBeNull();
+    });
+
+    it("returns null when signal is aborted during wait", async () => {
+      mocks.dequeueMatch.mockReturnValue(undefined);
+      let resolveEnqueue!: () => void;
+      mocks.waitForEnqueue.mockImplementation(() => new Promise<void>((r) => { resolveEnqueue = r; }));
+      const controller = new AbortController();
+      const resultPromise = pollButtonOrTextOrVoice(123, 10, 10, undefined, controller.signal);
+      controller.abort();
+      resolveEnqueue();
+      const result = await resultPromise;
+      expect(result).toBeNull();
+    });
+
+    it("returns button result for matching callback", async () => {
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "callback",
+          content: { target: 10, qid: "q1", data: "a" },
+        });
+      });
+      const result = await pollButtonOrTextOrVoice(123, 10, 1);
+      expect(result).toEqual({
+        kind: "button",
+        callback_query_id: "q1",
+        data: "a",
+        message_id: 10,
+      });
+    });
+
+    it("returns text result for text message after question", async () => {
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "message",
+          id: 11,
+          content: { type: "text", text: "typed answer" },
+        });
+      });
+      const result = await pollButtonOrTextOrVoice(123, 10, 1);
+      expect(result).toEqual({
+        kind: "text",
+        message_id: 11,
+        text: "typed answer",
+      });
+    });
+
+    it("returns voice result for voice message", async () => {
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "message",
+          id: 11,
+          content: { type: "voice", text: "transcribed" },
+        });
+      });
+      const result = await pollButtonOrTextOrVoice(123, 10, 1);
+      expect(result).toEqual({
+        kind: "voice",
+        message_id: 11,
+        text: "transcribed",
+      });
+    });
+
+    it("sets 🫡 reaction on voice message dequeue", async () => {
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "message",
+          id: 11,
+          content: { type: "voice", text: "hello" },
+        });
+      });
+      await pollButtonOrTextOrVoice(123, 10, 1);
+      expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(11);
+    });
+
+    it("ignores messages with id <= question id", async () => {
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        // Message with same ID as question — should not match
+        return fn({
+          event: "message",
+          id: 10,
+          content: { type: "text", text: "stale" },
+        });
+      });
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise((r) => setTimeout(r, 100)),
+      );
+      const result = await pollButtonOrTextOrVoice(123, 10, 0.01);
+      expect(result).toBeNull();
+    });
+
+    it("returns null on timeout", async () => {
+      mocks.dequeueMatch.mockReturnValue(undefined);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise((r) => setTimeout(r, 100)),
+      );
+      const result = await pollButtonOrTextOrVoice(123, 10, 0.01);
+      expect(result).toBeNull();
+    });
+
+    // Issue #4 — commands during button/text wait
+    it("returns command as break signal instead of ignoring (#4)", async () => {
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "message",
+          id: 11,
+          content: { type: "command", text: "cancel" },
+        });
+      });
+      const result = await pollButtonOrTextOrVoice(123, 10, 1);
+      expect(result).not.toBeNull();
+      expect(result!.kind).toBe("command");
+    });
+
+    it("fires onVoiceDetected immediately when voice arrives without transcription", async () => {
+      // First call: voice with no text (pending transcription)
+      // Second call: same voice with text (transcription done)
+      let callCount = 0;
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        callCount++;
+        if (callCount === 1) {
+          fn({ event: "message", id: 11, content: { type: "voice" } }); // no text yet
+          return undefined;
+        }
+        return fn({ event: "message", id: 11, content: { type: "voice", text: "done" } });
+      });
+      mocks.waitForEnqueue.mockResolvedValue(undefined);
+
+      const onVoiceDetected = vi.fn();
+      const result = await pollButtonOrTextOrVoice(123, 10, 1, onVoiceDetected);
+
+      expect(onVoiceDetected).toHaveBeenCalledOnce();
+      expect(result).toEqual({ kind: "voice", message_id: 11, text: "done" });
+    });
+
+    it("fires onVoiceDetected only once even across multiple loops", async () => {
+      let callCount = 0;
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        callCount++;
+        if (callCount <= 2) {
+          fn({ event: "message", id: 11, content: { type: "voice" } }); // no text
+          return undefined;
+        }
+        return fn({ event: "message", id: 11, content: { type: "voice", text: "ready" } });
+      });
+      mocks.waitForEnqueue.mockResolvedValue(undefined);
+
+      const onVoiceDetected = vi.fn();
+      await pollButtonOrTextOrVoice(123, 10, 1, onVoiceDetected);
+
+      expect(onVoiceDetected).toHaveBeenCalledOnce();
     });
   });
 });

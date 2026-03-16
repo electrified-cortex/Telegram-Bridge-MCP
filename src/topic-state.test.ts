@@ -9,7 +9,7 @@ import {
 } from "./topic-state.js";
 
 describe("topic-state", () => {
-  beforeEach(() => resetTopicStateForTest());
+  beforeEach(() => { resetTopicStateForTest(); });
 
   describe("getTopic / setTopic / clearTopic", () => {
     it("returns null initially", () => {

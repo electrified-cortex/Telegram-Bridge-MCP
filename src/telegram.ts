@@ -1,10 +1,9 @@
 import { Api, GrammyError, HttpError, InputFile } from "grammy";
 import type { ApiError, ReactionTypeEmoji, Update } from "grammy/types";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, realpathSync } from "fs";
 import path, { resolve } from "path";
 import { tmpdir } from "os";
-import { enqueueUpdates, dequeueMatch } from "./update-buffer.js";
-import { recordUpdate } from "./session-recording.js";
+import { getBotReaction, recordBotReaction } from "./message-store.js";
 
 /** Directory where downloaded files are stored — only local paths under this dir are allowed for file uploads. */
 export const SAFE_FILE_DIR = resolve(tmpdir(), "telegram-bridge-mcp");
@@ -19,7 +18,7 @@ export function resolveMediaSource(input: string): { source: string | InputFile 
     return { code: "UNKNOWN", message: "Plain HTTP URLs are not accepted — use HTTPS to prevent interception in transit." };
   if (input.startsWith("https://")) return { source: input };
   if (existsSync(input)) {
-    const resolvedPath = resolve(input);
+    const resolvedPath = realpathSync(input); // realpathSync resolves symlinks; resolve() is lexical only
     const rel = path.relative(SAFE_FILE_DIR, resolvedPath);
     if (rel.startsWith("..") || path.isAbsolute(rel))
       return { code: "UNKNOWN", message: `Local file access is restricted to ${SAFE_FILE_DIR}. Use download_file to stage files first.` };
@@ -74,9 +73,11 @@ export type TelegramErrorCode =
   | "MESSAGE_NOT_FOUND"
   | "MESSAGE_CANT_BE_EDITED"
   | "MESSAGE_CANT_BE_DELETED"
+  | "MISSING_MESSAGE_ID"
   | "RATE_LIMITED"
   | "BUTTON_DATA_INVALID"
   | "BUTTON_LABEL_TOO_LONG"
+  | "REACTION_EMOJI_INVALID"
   | "UNAUTHORIZED_SENDER"
   | "UNAUTHORIZED_CHAT"
   | "VOICE_RESTRICTED"
@@ -175,7 +176,7 @@ function classifyGrammyError(err: GrammyError): TelegramError {
     };
 
   if (err.error_code === 429) {
-    const retry = err.parameters?.retry_after;
+    const retry = err.parameters.retry_after;
     return {
       code: "RATE_LIMITED",
       message: `Rate limited by Telegram. Retry after ${retry ?? "a few"} seconds.`,
@@ -198,21 +199,57 @@ function classifyGrammyError(err: GrammyError): TelegramError {
 // Singleton API client
 // ---------------------------------------------------------------------------
 
-let _api: Api | null = null;
+let _rawApi: Api | null = null;
+let _proxiedApi: Api | null = null;
 
-export function getApi(): Api {
-  if (_api) return _api;
+/** Returns the raw (unproxied) Grammy Api — for internal use by animation-state. */
+export function getRawApi(): Api {
+  if (_rawApi) return _rawApi;
   const token = process.env.BOT_TOKEN;
-  if (token) return (_api = new Api(token));
+  if (token) return (_rawApi = new Api(token));
   throw new Error(
     "[telegram-bridge-mcp] Fatal: BOT_TOKEN environment variable is not set.\n" +
       "Set it in a .env file or pass it via the MCP server env config."
   );
 }
 
-/** Clears the cached Api instance — for use in tests only. */
+/**
+ * Sends a formatted service message (📦 header + status line) via the raw API,
+ * bypassing the outbound proxy so it never appears in the message store.
+ * Returns a promise that resolves when sent (or rejects on failure).
+ */
+export async function sendServiceMessage(status: string): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") {
+    process.stderr.write(`[service-msg] skipped: chatId is not a number\n`);
+    return;
+  }
+  process.stderr.write(`[service-msg] sending: ${status}\n`);
+  await getRawApi().sendMessage(
+    chatId,
+    `📦 *Telegram Bridge MCP*\n\n${status}`,
+    { parse_mode: "Markdown" },
+  );
+  process.stderr.write(`[service-msg] sent: ${status}\n`);
+}
+
+/**
+ * Install the outbound proxy. Called once at startup from server.ts,
+ * after all modules are loaded (avoids circular-import issues).
+ */
+export function installOutboundProxy(wrap: (raw: Api) => Api): void {
+  _proxiedApi = wrap(getRawApi());
+}
+
+/** Returns the proxied Api instance — all tool code should use this. */
+export function getApi(): Api {
+  return _proxiedApi ?? getRawApi();
+}
+
+/** Clears the cached Api instances — for use in tests only. */
 export function resetApi(): void {
-  _api = null;
+  _rawApi = null;
+  _proxiedApi = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,21 +259,12 @@ export function resetApi(): void {
 /**
  * ALLOWED_USER_ID  — Numeric Telegram user ID of the owner.
  *   When set, every inbound update whose sender is NOT this user is dropped.
+ *   Also used as the outbound chat target — for private 1-on-1 bots, chat.id === user.id.
  *   Prevents message-injection attacks from anyone who discovers the bot username.
- *
- * ALLOWED_CHAT_ID  — Chat ID (integer, may be negative for group/channel chats) that
- *   the bot is permitted to operate in.
- *   When set:
- *     • Inbound updates from other chats are dropped.
- *     • Outbound send calls targeting a different chat are rejected before
- *       hitting the Telegram API.
- *
- * Both are optional at runtime, but omitting ALLOWED_USER_ID is strongly
- * discouraged — a startup warning is emitted.
+ *   Optional at runtime, but strongly discouraged to omit — a startup warning is emitted.
  */
 export interface SecurityConfig {
   userId: number; // 0 — no filter
-  chatId: number; // 0 — no filter
 }
 
 let _securityConfig: SecurityConfig | null = null;
@@ -257,9 +285,8 @@ export function getSecurityConfig(): SecurityConfig {
   if (_securityConfig) return _securityConfig;
 
   const userId = parseEnvInt("ALLOWED_USER_ID");
-  const chatId = parseEnvInt("ALLOWED_CHAT_ID");
 
-  if (userId) return (_securityConfig = { userId, chatId });
+  if (userId) return (_securityConfig = { userId });
 
   if (process.env.ALLOW_ALL_USERS !== "true")
     throw new Error(
@@ -274,7 +301,7 @@ export function getSecurityConfig(): SecurityConfig {
       "Any Telegram user who messages the bot can inject updates."
   );
 
-  return (_securityConfig = { userId, chatId });
+  return (_securityConfig = { userId });
 }
 
 /** For testing only: resets the security config singleton so env vars are re-read. */
@@ -290,72 +317,44 @@ export function unauthorizedSenderError(fromId: number | undefined): TelegramErr
   };
 }
 
-/** Structured error for outbound sends targeting a disallowed chat. */
-export function unauthorizedChatError(chatId: string): TelegramError {
-  return {
-    code: "UNAUTHORIZED_CHAT",
-    message: `Operation rejected: chat ${chatId} is not the configured ALLOWED_CHAT_ID. This server is locked to a single conversation.`,
-  };
-}
-
 /**
- * Filters an update array to only those from the allowed user and/or chat.
+ * Filters an update array to only those from the allowed user.
  * Updates that fail the check are silently consumed (offset still advances)
  * to keep the Telegram queue clean — they are never surfaced to the agent.
  */
 export function filterAllowedUpdates(updates: Update[]): Update[] {
-  const { userId, chatId } = getSecurityConfig();
-  const hasUserFilter = userId > 0;
-  if (!hasUserFilter && !chatId) return updates;
+  const { userId } = getSecurityConfig();
+  if (!userId) return updates;
 
   return updates.filter((u) => {
     const senderId =
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- from is typed as required but absent on channel posts
       u.message?.from?.id ??
-      u.callback_query?.from?.id ??
+      u.callback_query?.from.id ??
       u.message_reaction?.user?.id ??
-      u.my_chat_member?.from?.id;
-    const updateChatId =
-      u.message?.chat?.id ??
-      u.callback_query?.message?.chat.id ??
-      u.message_reaction?.chat?.id ??
-      u.my_chat_member?.chat?.id ??
-      null;
-
-    if (hasUserFilter && (!senderId || senderId !== userId)) return false;
-    if (chatId && (!updateChatId || updateChatId !== chatId)) return false;
-    return true;
+      u.my_chat_member?.from.id;
+    return senderId !== undefined && senderId === userId;
   });
-}
-
-/**
- * Validates that an outbound target chat is permitted.
- * Returns a TelegramError if ALLOWED_CHAT_ID is set and the target differs.
- */
-export function validateTargetChat(chatId: string): TelegramError | null {
-  const { chatId: allowed } = getSecurityConfig();
-  if (!allowed) return null;
-  if (chatId.trim() === String(allowed)) return null;
-  return unauthorizedChatError(chatId);
 }
 
 /**
  * Resolves the target chat ID for all outbound tool calls.
  *
- * The server is designed for a single-user/single-chat workflow — the chat is
- * always fully determined by ALLOWED_CHAT_ID in the server config. Tools never
- * accept or expose chat_id as a parameter; it is resolved here transparently.
+ * Uses ALLOWED_USER_ID as the chat target — for private 1-on-1 bots,
+ * chat.id === user.id. Tools never accept or expose chat_id as a parameter;
+ * it is resolved here transparently.
  *
- * Returns the chat ID on success, or a TelegramError if ALLOWED_CHAT_ID
+ * Returns the chat ID on success, or a TelegramError if ALLOWED_USER_ID
  * has not been configured (use `typeof result !== "number"` to detect errors).
  */
 export function resolveChat(): number | TelegramError {
-  const { chatId } = getSecurityConfig();
-  if (chatId) return chatId;
+  const { userId } = getSecurityConfig();
+  if (userId) return userId;
   return {
     code: "UNAUTHORIZED_CHAT",
     message:
-      "ALLOWED_CHAT_ID is not configured. Set it in your .env or MCP server " +
-      "config to lock this server to its intended conversation.",
+      "ALLOWED_USER_ID is not configured. Set it in your .env or MCP server " +
+      "config so the server knows which conversation to target.",
   };
 }
 
@@ -391,8 +390,8 @@ export function fireHijackNotification(message: string): void {
   if (notify.console)
     console.error(`[telegram-bridge-mcp] WARNING: ${message}`);
   if (notify.telegram) {
-    const { chatId } = getSecurityConfig();
-    if (chatId)
+    const chatId = resolveChat();
+    if (typeof chatId === "number")
       getApi().sendMessage(chatId, message).catch(() => {}); // best-effort
   }
 }
@@ -416,7 +415,6 @@ export function advanceOffset(updates: Update[]): string | null {
     fireHijackNotification(warning);
   }
   _offset = Math.max(...updates.map((u) => u.update_id)) + 1;
-  for (const u of updates) recordUpdate(u);
   return warning;
 }
 
@@ -502,6 +500,13 @@ export async function sendVoiceDirect(
     duration?: number;
     disable_notification?: boolean;
     reply_to_message_id?: number;
+    reply_markup?: {
+      inline_keyboard: {
+        text: string;
+        callback_data?: string;
+        url?: string;
+      }[][];
+    };
   } = {}
 ): Promise<{ message_id: number; voice?: Record<string, unknown> }> {
   const token = process.env.BOT_TOKEN;
@@ -514,7 +519,7 @@ export async function sendVoiceDirect(
     form.append("voice", new Blob([new Uint8Array(voice)], { type: "audio/ogg" }), "voice.ogg");
   } else if (typeof voice === "string" && !voice.startsWith("http") && existsSync(voice)) {
     // Only allow reading local files from the safe temp directory to prevent arbitrary file exfiltration
-    const resolved = resolve(voice);
+    const resolved = realpathSync(voice); // realpathSync resolves symlinks; resolve() is lexical only
     const safeRelative = path.relative(SAFE_FILE_DIR, resolved);
     if (safeRelative.startsWith("..") || path.isAbsolute(safeRelative)) {
       throw new Error(`Local file read restricted to ${SAFE_FILE_DIR}. Refusing to read: ${resolved}`);
@@ -532,6 +537,12 @@ export async function sendVoiceDirect(
   if (options.disable_notification) form.append("disable_notification", "true");
   if (options.reply_to_message_id != null)
     form.append("reply_parameters", JSON.stringify({ message_id: options.reply_to_message_id }));
+  if (options.reply_markup)
+    form.append("reply_markup", JSON.stringify(options.reply_markup));
+
+  // Hook into the outbound proxy so animation/typing/temp/recording are handled
+  const { notifyBeforeFileSend, notifyAfterFileSend } = await import("./outbound-proxy.js");
+  await notifyBeforeFileSend();
 
   const res = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
     method: "POST",
@@ -556,6 +567,7 @@ export async function sendVoiceDirect(
     );
   }
 
+  await notifyAfterFileSend(json.result.message_id, "voice", undefined, options.caption);
   return json.result;
 }
 
@@ -574,6 +586,25 @@ export function trySetMessageReaction(
   return getApi()
     .setMessageReaction(chatId, messageId, [{ type: "emoji", emoji }])
     .then(() => true, () => false);
+}
+
+const REACT_SALUTE = "\uD83E\uDEE1" as ReactionEmoji; // 🫡
+
+/**
+ * Fire-and-forget 🫡 on a voice message to signal the agent received it.
+ * Safe to call from any dequeue path — resolves chat internally.
+ */
+export function ackVoiceMessage(messageId: number): void {
+  const resolved = resolveChat();
+  const chatId = typeof resolved === "number" ? resolved : undefined;
+  if (!chatId) return;
+  // No-op if the message already has 🫡 recorded in the store
+  if (getBotReaction(messageId) === REACT_SALUTE) return;
+  void trySetMessageReaction(chatId, messageId, REACT_SALUTE)
+    .then((ok) => {
+      if (ok) recordBotReaction(messageId, REACT_SALUTE);
+      else process.stderr.write(`[ack] 🫡 failed for msg ${messageId}\n`);
+    });
 }
 
 /**
@@ -646,54 +677,3 @@ export function toError(err: unknown) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Shared polling helper — 1 s ticks for responsive waiting
-// ---------------------------------------------------------------------------
-
-/**
- * Polls `getUpdates` with 1-second ticks until `matcher` returns a truthy
- * value from the allowed updates, or `timeoutSeconds` expires.
- *
- * Returns `{ match, missed }` — `match` is the matcher result (or undefined
- * on timeout), `missed` collects all non-matching allowed updates so the
- * caller can surface them (e.g. text messages during a `choose`).
- */
-export async function pollUntil<T>(
-  matcher: (updates: Update[]) => T | undefined,
-  timeoutSeconds: number,
-): Promise<{ match: T | undefined; missed: Update[] }> {
-  const deadline = Date.now() + timeoutSeconds * 1000;
-
-  // 1. Check the shared buffer — a previous poll may have already fetched the
-  //    update we need. Consume it from the buffer without hitting Telegram.
-  const buffered = dequeueMatch((u) => matcher([u]));
-  if (buffered !== undefined) {
-    return { match: buffered, missed: [] };
-  }
-
-  while (Date.now() < deadline) {
-    const updates = await getApi().getUpdates({
-      offset: getOffset(),
-      limit: 1,   // one at a time — prevents batch-drop when multiple messages arrive simultaneously
-      timeout: 25,
-      allowed_updates: [...DEFAULT_ALLOWED_UPDATES] as ReadonlyArray<Exclude<keyof Update, "update_id">>,
-    });
-
-    advanceOffset(updates);
-    const allowed = filterAllowedUpdates(updates);
-
-    const result = matcher(allowed);
-    if (result !== undefined) {
-      // Buffer any non-matching updates from the same batch — nothing is dropped.
-      const rest = allowed.filter((u) => matcher([u]) === undefined);
-      if (rest.length > 0) enqueueUpdates(rest);
-      return { match: result, missed: [] };
-    }
-
-    // No match — buffer these updates so other tools can consume them later.
-    // Nothing is ever dropped.
-    if (allowed.length > 0) enqueueUpdates(allowed);
-  }
-
-  return { match: undefined, missed: [] };
-}

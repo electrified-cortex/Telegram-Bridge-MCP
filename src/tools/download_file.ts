@@ -24,15 +24,22 @@ function isTextFile(fileName: string | undefined, mimeType: string | undefined):
   return false;
 }
 
+const DESCRIPTION =
+  "Downloads a file from Telegram by file_id and saves it to a local temp " +
+  "directory. Returns the local path, file name, MIME type, and file size. " +
+  "For text-based files under 100 KB, also returns the file contents as " +
+  "`text`. Only call this after the user has chosen an action that requires " +
+  "the file — do not download speculatively.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "download_file",
     {
-      description: "Downloads a file from Telegram by file_id and saves it to a local temp directory. Returns the local path, file name, MIME type, and file size. For text-based files under 100 KB, also returns the file contents as `text`. Only call this after the user has chosen an action that requires the file — do not download speculatively.",
+      description: DESCRIPTION,
       inputSchema: {
         file_id: z
         .string()
-        .describe("The Telegram file_id returned by wait_for_message or get_updates"),
+        .describe("The Telegram file_id from a message event (e.g. document.file_id, voice.file_id) delivered by dequeue_update or get_message"),
       file_name: z
         .string()
         .optional()

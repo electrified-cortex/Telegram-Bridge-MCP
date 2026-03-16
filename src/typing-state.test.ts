@@ -4,6 +4,11 @@ import type { TelegramError } from "./telegram.js";
 const mocks = vi.hoisted(() => ({
   sendChatAction: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 123),
+  fireTempReactionRestore: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./temp-reaction.js", () => ({
+  fireTempReactionRestore: mocks.fireTempReactionRestore,
 }));
 
 vi.mock("./telegram.js", async (importActual) => {

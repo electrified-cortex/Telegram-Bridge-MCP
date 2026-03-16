@@ -166,7 +166,7 @@ describe("synthesizeToOgg (openai provider)", () => {
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      arrayBuffer: async () => new ArrayBuffer(8),
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -192,7 +192,7 @@ describe("synthesizeToOgg (openai provider)", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false,
       status: 401,
-      text: async () => "Unauthorized",
+      text: () => Promise.resolve("Unauthorized"),
     }));
 
     await expect(synthesizeToOgg("hello")).rejects.toThrow("401");
@@ -230,7 +230,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      arrayBuffer: async () => new ArrayBuffer(8),
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -260,7 +260,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      arrayBuffer: async () => new ArrayBuffer(8),
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -279,7 +279,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, getChannelData: () => new Float32Array(1) });
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
-    const mockFetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
     vi.stubGlobal("fetch", mockFetch);
 
     await synthesizeToOgg("test");
@@ -295,7 +295,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
-      text: async () => "Internal Server Error",
+      text: () => Promise.resolve("Internal Server Error"),
     }));
 
     await expect(synthesizeToOgg("hello")).rejects.toThrow("500");
@@ -312,11 +312,11 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     // Use an isolated ArrayBuffer so Buffer.from(arrayBuffer) in the impl
     // produces exactly the same bytes (pooled buffers have extra padding).
     const bytes = Buffer.from("fake-native-ogg");
-    const arrBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const arrBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const fakeOgg = Buffer.from(arrBuf);
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      arrayBuffer: async () => arrBuf,
+      arrayBuffer: () => Promise.resolve(arrBuf),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -336,7 +336,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      arrayBuffer: async () => Buffer.from("fake-ogg").buffer,
+      arrayBuffer: () => Promise.resolve(Buffer.from("fake-ogg").buffer),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -358,8 +358,8 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     process.env.TTS_VOICE = "af_heart";
 
     const bytes = Buffer.from("fake-kokoro-ogg");
-    const arrBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const mockFetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => arrBuf });
+    const arrBuf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(arrBuf) });
     vi.stubGlobal("fetch", mockFetch);
 
     const result = await synthesizeToOgg("hello kokoro");

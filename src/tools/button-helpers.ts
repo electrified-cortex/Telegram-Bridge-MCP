@@ -1,93 +1,183 @@
 /**
- * Shared helpers for button-based interaction tools (choose, send_confirmation).
- *
- * Extracts the repeated: poll → ack → edit lifecycle so individual tools
- * only contain their schema definitions and result-mapping logic.
+ * Shared helpers for button-based interaction tools (choose, send_choice, confirm).
  */
 
-import type { Update } from "grammy/types";
-import { getApi, pollUntil } from "../telegram.js";
-import { markdownToV2 } from "../markdown.js";
+import { getApi, ackVoiceMessage } from "../telegram.js";
+import { markdownToV2, resolveParseMode } from "../markdown.js";
+import { applyTopicToText } from "../topic-state.js";
+import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
 
 // ---------------------------------------------------------------------------
 // Result types
 // ---------------------------------------------------------------------------
 
+export interface ButtonResult {
+  kind: "button";
+  callback_query_id: string;
+  data: string;
+  message_id: number;
+}
+
+export interface TextResult {
+  kind: "text";
+  message_id: number;
+  text: string;
+}
+
+export interface VoiceResult {
+  kind: "voice";
+  message_id: number;
+  text?: string;
+}
+
+export interface CommandResult {
+  kind: "command";
+  message_id: number;
+  command: string;
+  args?: string;
+}
+
 export type ButtonOrTextResult =
-  | { kind: "button"; cq: NonNullable<Update["callback_query"]> }
-  | { kind: "text";   message_id: number; text: string;   reply_to_message_id?: number }
-  | { kind: "voice";  message_id: number; fileId: string; reply_to_message_id?: number };
+  | ButtonResult
+  | TextResult
+  | VoiceResult
+  | CommandResult;
 
 // ---------------------------------------------------------------------------
-// Polling helpers
+// Button style type
+// ---------------------------------------------------------------------------
+
+/** Native Telegram inline button background color. */
+export type ButtonStyle = "success" | "primary" | "danger";
+
+// ---------------------------------------------------------------------------
+// Store-based polling helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Polls until a callback_query arrives for a specific message, or times out.
- * Used by send_confirmation (button-only response expected).
+ * Wait for a callback_query on a specific message from the store queue.
+ * Used by confirm (button-only response expected).
  */
 export async function pollButtonPress(
-  chatId: number,
+  _chatId: number,
   messageId: number,
   timeoutSeconds: number,
-): Promise<NonNullable<Update["callback_query"]> | null> {
-  const { match } = await pollUntil<NonNullable<Update["callback_query"]>>(
-    (updates) => {
-      const cq = updates.find(
-        (u) =>
-          u.callback_query &&
-          u.callback_query.message?.message_id === messageId &&
-          u.callback_query.message?.chat.id === chatId,
-      );
-      return cq?.callback_query;
-    },
-    timeoutSeconds,
-  );
-  return match ?? null;
+  signal?: AbortSignal,
+): Promise<ButtonResult | null> {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  const abortPromise = signal
+    ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); })
+    : null;
+
+  while (Date.now() < deadline) {
+    if (signal?.aborted) return null;
+    const result = dequeueMatch((event: TimelineEvent) => {
+      if (event.event === "callback" && event.content.target === messageId) {
+        const qid = event.content.qid;
+        const data = event.content.data;
+        if (!qid || !data) return undefined;
+        return { kind: "button" as const, callback_query_id: qid, data, message_id: messageId };
+      }
+      return undefined;
+    });
+    if (result) return result;
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+
+    await Promise.race([
+      waitForEnqueue(),
+      new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
+      ...(abortPromise ? [abortPromise] : []),
+    ]);
+  }
+  return null;
 }
 
 /**
- * Polls until EITHER a callback_query on the given message OR a text/voice
- * message arrives (whichever comes first). Used by choose, where the user
- * may type or speak instead of pressing a button.
+ * Wait for EITHER a callback_query on the given message OR a text/voice
+ * message from the store queue. Used by choose.
+ *
+ * @param onVoiceDetected - Optional callback fired immediately when a voice
+ *   message arrives, before transcription finishes. Use this to remove the
+ *   interactive keyboard right away so the user doesn't see a delayed edit.
  */
 export async function pollButtonOrTextOrVoice(
-  chatId: number,
+  _chatId: number,
   messageId: number,
   timeoutSeconds: number,
+  onVoiceDetected?: () => void,
+  signal?: AbortSignal,
 ): Promise<ButtonOrTextResult | null> {
-  const { match } = await pollUntil<ButtonOrTextResult>(
-    (updates) => {
-      const cq = updates.find(
-        (u) =>
-          u.callback_query &&
-          u.callback_query.message?.message_id === messageId &&
-          u.callback_query.message?.chat.id === chatId,
-      );
-      if (cq?.callback_query) return { kind: "button", cq: cq.callback_query };
+  const deadline = Date.now() + timeoutSeconds * 1000;
+  let voiceDetectedFired = false;
+  const abortPromise = signal
+    ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); })
+    : null;
 
-      // Only match messages sent AFTER the question (stale-message guard)
-      const tm = updates.find((u) => u.message?.text && u.message.message_id > messageId);
-      if (tm?.message?.text) return {
-        kind: "text",
-        message_id: tm.message.message_id,
-        text: tm.message.text,
-        reply_to_message_id: tm.message.reply_to_message?.message_id,
-      };
+  while (Date.now() < deadline) {
+    if (signal?.aborted) return null;
+    const state = { hasPendingVoice: false };
 
-      const vm = updates.find((u) => u.message?.voice && u.message.message_id > messageId);
-      if (vm?.message?.voice) return {
-        kind: "voice",
-        message_id: vm.message.message_id,
-        fileId: vm.message.voice.file_id,
-        reply_to_message_id: vm.message.reply_to_message?.message_id,
-      };
-
+    const result = dequeueMatch((event: TimelineEvent) => {
+      // Check for callback on the specific message
+      if (event.event === "callback" && event.content.target === messageId) {
+        const qid = event.content.qid;
+        const data = event.content.data;
+        if (!qid || !data) return undefined;
+        return { kind: "button" as const, callback_query_id: qid, data, message_id: messageId };
+      }
+      // Check for text/voice/command message sent AFTER the question
+      if (event.event === "message" && event.id > messageId) {
+        if (event.content.type === "text") {
+          const text = event.content.text;
+          if (!text) return undefined;
+          return { kind: "text" as const, message_id: event.id, text };
+        }
+        if (event.content.type === "voice") {
+          // Don't consume until transcription is complete (two-phase recording)
+          if (!event.content.text) {
+            // Voice arrived but transcription not yet done — flag for immediate edit
+            state.hasPendingVoice = true;
+            return undefined;
+          }
+          ackVoiceMessage(event.id);
+          return {
+            kind: "voice" as const,
+            message_id: event.id,
+            text: event.content.text,
+          };
+        }
+        if (event.content.type === "command") {
+          return {
+            kind: "command" as const,
+            message_id: event.id,
+            command: event.content.text ?? "",
+            args: event.content.data,
+          };
+        }
+      }
       return undefined;
-    },
-    timeoutSeconds,
-  );
-  return match ?? null;
+    });
+
+    // Fire onVoiceDetected once as soon as a voice message is seen (pre-transcription)
+    if (state.hasPendingVoice && !voiceDetectedFired) {
+      voiceDetectedFired = true;
+      onVoiceDetected?.();
+    }
+
+    if (result) return result;
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+
+    await Promise.race([
+      waitForEnqueue(),
+      new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
+      ...(abortPromise ? [abortPromise] : []),
+    ]);
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +195,7 @@ async function appendSuffixAndEdit(
       parse_mode: "MarkdownV2",
       reply_markup: { inline_keyboard: [] },
     })
-    .catch((e) => { console.error("[button-helpers] editMessageText failed:", e); });
+    .catch((e: unknown) => { console.error("[button-helpers] editMessageText failed:", e); });
 }
 
 /**
@@ -129,7 +219,7 @@ export async function ackAndEditSelection(
 
 /**
  * Edits the host message to show ⏱ Timed out with all buttons removed.
- * Used by send_confirmation when no button was pressed within the timeout.
+ * Used by confirm when no button was pressed within the timeout.
  */
 export async function editWithTimedOut(
   chatId: number,
@@ -149,4 +239,62 @@ export async function editWithSkipped(
   originalText: string,
 ): Promise<void> {
   await appendSuffixAndEdit(chatId, messageId, originalText, "⏭ _Skipped_");
+}
+
+// ---------------------------------------------------------------------------
+// Shared keyboard-send helpers (used by choose + send_choice)
+// ---------------------------------------------------------------------------
+
+export interface KeyboardOption {
+  label: string;
+  value: string;
+  style?: "success" | "primary" | "danger";
+}
+
+/** Arrange options into rows of `columns` buttons each. */
+export function buildKeyboardRows(
+  options: KeyboardOption[],
+  columns: number,
+): { text: string; callback_data: string; style?: ButtonStyle }[][] {
+  const rows: { text: string; callback_data: string; style?: ButtonStyle }[][] = [];
+  for (let i = 0; i < options.length; i += columns) {
+    rows.push(
+      options.slice(i, i + columns).map((o) => ({
+        text: o.label,
+        callback_data: o.value,
+        ...(o.style ? { style: o.style as ButtonStyle } : {}),
+      })),
+    );
+  }
+  return rows;
+}
+
+export interface SendChoiceMessageOptions {
+  text: string;
+  options: KeyboardOption[];
+  columns: number;
+  parseMode: "Markdown" | "HTML" | "MarkdownV2";
+  disableNotification?: boolean;
+  replyToMessageId?: number;
+}
+
+/**
+ * Send a message with an inline keyboard. Returns the message_id.
+ * Does NOT register any auto-lock hook — callers decide what happens on press.
+ */
+export async function sendChoiceMessage(
+  chatId: number,
+  opts: SendChoiceMessageOptions,
+): Promise<number> {
+  const rows = buildKeyboardRows(opts.options, opts.columns);
+  const textWithTopic = applyTopicToText(opts.text, opts.parseMode);
+  const { text: finalText, parse_mode: finalMode } = resolveParseMode(textWithTopic, opts.parseMode);
+  const sent = await getApi().sendMessage(chatId, finalText, {
+    parse_mode: finalMode,
+    reply_markup: { inline_keyboard: rows },
+    disable_notification: opts.disableNotification,
+    reply_parameters: opts.replyToMessageId ? { message_id: opts.replyToMessageId } : undefined,
+    _rawText: opts.text,
+  } as Record<string, unknown>);
+  return sent.message_id;
 }

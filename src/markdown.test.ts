@@ -110,6 +110,16 @@ describe("markdownToV2", () => {
     expect(out).not.toContain("C:\\\\\\\\");
   });
 
+  it("normalizes agent-escaped underscores in bold text", () => {
+    // Agents often write **send\_confirmation** — the \_ must become _ before
+    // the bold tokeniser applies MarkdownV2 escaping, so Telegram shows
+    // "send_confirmation" not "send\_confirmation".
+    const input = "**send\\_confirmation** is the tool";
+    const out = markdownToV2(input);
+    expect(out).toContain("*send\\_confirmation*");
+    expect(out).not.toContain("send\\\\_confirmation");
+  });
+
   it("real-world: confirmation text with escaped quotes passes through cleanly", () => {
     // The exact scenario reported: agent sends a confirmation with \"quoted terms\"
     const input = 'Do a terminology pass now (rename all docs/comments to use \\"claw/claws\\" and \\"the provisioner\\" consistently)?';

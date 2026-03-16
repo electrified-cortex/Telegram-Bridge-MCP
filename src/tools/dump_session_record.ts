@@ -1,137 +1,101 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { toError } from "../telegram.js";
-import {
-  getSessionEntries,
-  isRecording,
-  recordedCount,
-  getMaxUpdates,
-  clearRecording,
-  stopRecording,
-} from "../session-recording.js";
-import { sanitizeSessionEntries } from "../update-sanitizer.js";
+import { getApi, resolveChat, toError } from "../telegram.js";
+import { dumpTimeline, timelineSize, storeSize } from "../message-store.js";
+import { getSessionLogMode } from "../config.js";
+import { advanceDumpCursor, isInternalTimelineEvent, markInternalMessage } from "../built-in-commands.js";
 
-function formatLog(
-  updates: Record<string, unknown>[],
-  recording: boolean,
-  total: number,
-  maxUpdates: number
-): string {
-  const lines: string[] = [];
-  const now = new Date().toISOString();
-
-  lines.push("# Session Recording Log");
-  lines.push(`Generated: ${now}`);
-  lines.push(`Recording: ${recording ? "active" : "inactive"}`);
-  lines.push(`Updates: ${total} / ${maxUpdates}`);
-  lines.push("");
-  lines.push("---");
-  lines.push("");
-
-  if (updates.length === 0) {
-    lines.push("(no updates captured)");
-  } else {
-    updates.forEach((u, i) => {
-      const idx = i + 1;
-      const from = String(u.from ?? "user");
-      const fromLabel = from === "bot" ? "[BOT]" : "[USER]";
-
-      // ── Bot-sent entry ──────────────────────────────────────────────────
-      if (from === "bot") {
-        const contentType = String(u.content_type ?? "unknown");
-        const msgId = u.message_id != null ? `msg_id: ${u.message_id}` : "";
-        lines.push(`[${idx}] ${fromLabel} ${contentType} | ${msgId}`);
-        if (u.text) lines.push(String(u.text));
-        if (u.caption) lines.push(`Caption: ${u.caption}`);
-        lines.push("");
-        return;
-      }
-
-      // ── User-sent entry ─────────────────────────────────────────────────
-      const type = String(u.type ?? "unknown");
-
-      if (type === "message") {
-        const contentType = String(u.content_type ?? "unknown");
-        const msgId = u.message_id != null ? `msg_id: ${u.message_id}` : "";
-        const replyTo = u.reply_to_message_id != null ? ` (reply to: ${u.reply_to_message_id})` : "";
-        lines.push(`[${idx}] ${fromLabel} message · ${contentType} | ${msgId}${replyTo}`);
-
-        if (u.text)  lines.push(String(u.text));
-        if (u.caption) lines.push(`Caption: ${u.caption}`);
-        if (u.file_name) lines.push(`File: ${u.file_name}`);
-        if (u.file_id && !u.text) lines.push(`file_id: ${u.file_id}`);
-        if (u.emoji) lines.push(`Emoji: ${u.emoji}`);
-        if (u.question) lines.push(`Poll: ${u.question}`);
-        if (Array.isArray(u.content_keys) && u.content_keys.length)
-          lines.push(`[unknown content, keys: ${(u.content_keys as string[]).join(", ")}]`);
-      } else if (type === "callback_query") {
-        const msgId = u.message_id != null ? `msg_id: ${u.message_id}` : "";
-        lines.push(`[${idx}] ${fromLabel} callback_query | ${msgId}`);
-        if (u.data) lines.push(`data: ${u.data}`);
-      } else if (type === "message_reaction") {
-        const msgId = u.message_id != null ? `msg_id: ${u.message_id}` : "";
-        lines.push(`[${idx}] ${fromLabel} message_reaction | ${msgId}`);
-        const added = Array.isArray(u.emoji_added) && u.emoji_added.length
-          ? u.emoji_added.join(" ") : "(none)";
-        const removed = Array.isArray(u.emoji_removed) && u.emoji_removed.length
-          ? u.emoji_removed.join(" ") : "(none)";
-        lines.push(`Added: ${added}  Removed: ${removed}`);
-      } else {
-        lines.push(`[${idx}] ${fromLabel} ${type}`);
-      }
-
-      lines.push("");
-    });
-  }
-
-  lines.push("---");
-  lines.push("End of log");
-  return lines.join("\n");
-}
+const DESCRIPTION =
+  "Snapshots the conversation timeline as a JSON file and sends it to the Telegram chat " +
+  "as a downloadable document. The file will appear as a bot message that both the user " +
+  "and agent can download later via download_file. " +
+  "Covers all inbound and outbound events since server start (rolling limit of 1000 events). " +
+  "This is a broad history dump containing sensitive user content. " +
+  "Only call when the user explicitly requests session history, context recovery, or an audit.";
 
 export function register(server: McpServer) {
   server.registerTool(
     "dump_session_record",
     {
-      description:
-        "Formats all recorded session updates as a human-readable log string and returns the content " +
-        "directly to the caller (no file is written). " +
-        "clean=true clears the buffer after dumping (recording stays active). " +
-        "stop=true stops recording and clears the buffer after dumping (implies clean).",
+      description: DESCRIPTION,
       inputSchema: {
-        clean: z
-          .boolean()
-          .optional()
-          .describe(
-            "If true, clear the recording buffer after a successful dump while keeping recording active."
-          ),
-        stop: z
-          .boolean()
-          .optional()
-          .describe(
-            "If true, stop recording and clear the buffer after a successful dump. Implies clean."
-          ),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(1000)
+          .default(100)
+          .describe("Max events to return (most recent). Default 100."),
       },
     },
-    async ({ clean, stop }) => {
+    async ({ limit }) => {
       try {
-        const all = getSessionEntries(); // oldest → newest
-        const sanitized = await sanitizeSessionEntries(all);
-        const recording = isRecording();
-        const total = recordedCount();
-        const maxUpdates = getMaxUpdates();
-
-        const log = formatLog(sanitized, recording, total, maxUpdates);
-
-        if (stop) {
-          stopRecording();
-          clearRecording();
-        } else if (clean) {
-          clearRecording();
+        if (getSessionLogMode() === null) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: "Session log is disabled. Use /session in Telegram to enable it.",
+            }],
+          };
         }
 
+        const chatId = resolveChat();
+        if (typeof chatId !== "number") {
+          return { content: [{ type: "text" as const, text: "No chat configured." }] };
+        }
+
+        const full = dumpTimeline().filter(evt => !isInternalTimelineEvent(evt));
+        const timeline = full.length > limit ? full.slice(-limit) : full;
+
+        if (timeline.length === 0) {
+          return { content: [{ type: "text" as const, text: "No events captured yet." }] };
+        }
+
+        const now = new Date().toISOString();
+        const payload = {
+          generated: now,
+          timeline_events: timelineSize(),
+          unique_messages: storeSize(),
+          returned: timeline.length,
+          truncated: full.length > limit,
+          timeline,
+        };
+
+        const { InputFile } = await import("grammy");
+        const buf = Buffer.from(JSON.stringify(payload, null, 2), "utf-8");
+        const file = new InputFile(buf, `session-log-${now.replace(/[:.]/g, "-")}.json`);
+        const label = `🗒 Session record · ${timeline.length} events`;
+        const api = getApi();
+        const msg = await api.sendDocument(chatId, file, {
+          caption: label,
+        }) as { message_id: number; document?: { file_id?: string } };
+
+        markInternalMessage(msg.message_id);
+        advanceDumpCursor();
+
+        const fileId = msg.document?.file_id;
+
+        // Amend caption with file_id so it's recoverable after a crash
+        if (fileId) {
+          try {
+            await api.editMessageCaption(chatId, msg.message_id, {
+              caption: `${label}\nFile ID: \`${fileId}\``,
+              parse_mode: "Markdown",
+            });
+          } catch { /* best effort */ }
+        }
+
+        const result: Record<string, unknown> = {
+          message_id: msg.message_id,
+          event_count: timeline.length,
+        };
+        if (fileId) result.file_id = fileId;
+
         return {
-          content: [{ type: "text" as const, text: log }],
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify(result),
+          }],
         };
       } catch (err) {
         return toError(err);

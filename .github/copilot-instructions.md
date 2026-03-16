@@ -2,42 +2,35 @@
 
 This repository **is** the Telegram Bridge MCP server. When Telegram MCP tools are available, you are in a **persistent chat loop**.
 
----
-
-## The Loop — Always Active
-
-```
-task complete → notify via Telegram → wait_for_message → next task → repeat
-```
-
-- **ALWAYS call `wait_for_message` again** after every task, timeout, or error.
-- **ALWAYS send status through Telegram** — the user is on their phone, not watching this panel.
-- **ALWAYS ask via Telegram** before stopping if anything is ambiguous — wait for the answer.
-- The loop ends only when the operator sends exactly: `exit`
-- Timeout (`{ timed_out: true }`) means operator is idle — call `wait_for_message` again immediately.
-
----
-
 ## Starting a Session
 
 Paste `LOOP-PROMPT.md` into this chat to start the loop.
 
----
-
 ## This Codebase
 
-Edits to `src/` directly change the running MCP server. Follow pre-action announcement rules in `BEHAVIOR.md` (via `get_agent_guide`).
+Edits to `src/` directly change the running MCP server.
 
-Communication patterns: `COMMUNICATION.md` · `telegram-bridge-mcp://communication-guide`
+## Communication
+
+All responses go through Telegram. Hard rules are in `.github/instructions/telegram-communication.instructions.md` (auto-applied via `applyTo: "**"`). Key rules: drain before speaking, announce before every build/restart/commit/push/delete, never assume silence means approval.
+
+Full guide: `docs/communication.md` · MCP resource: `telegram-bridge-mcp://communication-guide`  
+Behavior + pre-action rules: `docs/behavior.md` (via `get_agent_guide`)
 
 ---
 
 ## Changelog Maintenance
 
-**Every commit that changes behavior must update `CHANGELOG.md`.**
+**Every commit that changes behavior must update [changelog/unreleased.md](../changelog/unreleased.md).**
 
 - Use [Keep a Changelog](https://keepachangelog.com) format
-- Add entries under `## [Unreleased]` while working; move to a versioned section on release
+- Add entries to `changelog/unreleased.md` under the appropriate category heading
+- On release, move content to a new dated file (e.g. `changelog/2026-03-11_v2.1.2.md`) and reset `unreleased.md`
 - Categories: `Added`, `Changed`, `Fixed`, `Removed`, `Security`, `Deprecated`
 - One line per change, written in past tense (e.g. "Fixed path traversal in download_file")
-- Include the `CHANGELOG.md` edit in the same commit as the code change — never a separate "update changelog" commit
+- Include the changelog edit in the same commit as the code change — never a separate "update changelog" commit
+
+## Your Role
+
+You are the overseer of this repo.
+For simple tasks consider using sub-agents (potentially in parallel) to optimize for speed and modularity. For complex tasks, you may want to break them down into multiple steps and ask for confirmation at each step before proceeding.

@@ -3,15 +3,21 @@ import type { InlineKeyboardMarkup } from "grammy/types";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { cancelTyping } from "../typing-state.js";
+import { recordOutgoingEdit } from "../message-store.js";
+
+const DESCRIPTION =
+  "Legacy — use edit_message instead, which handles both text and keyboard " +
+  "edits in one call. Edits the text of a previously sent message. " +
+  "Supports Markdown auto-conversion (default), MarkdownV2, and HTML. " +
+  "Can optionally update or clear the inline keyboard.";
 
 export function register(server: McpServer) {
   server.registerTool(
     "edit_message_text",
     {
-      description: "Edits the text of a previously sent message. Supports Markdown auto-conversion (default), MarkdownV2, and HTML. Can optionally update or clear the inline keyboard.",
+      description: DESCRIPTION,
       inputSchema: {
-        message_id: z.number().int().describe("ID of the message to edit"),
+        message_id: z.number().int().min(1).describe("ID of the message to edit"),
       text: z.string().describe("New text content"),
       parse_mode: z
         .enum(["Markdown", "HTML", "MarkdownV2"])
@@ -41,7 +47,6 @@ export function register(server: McpServer) {
       const resolved = resolveParseMode(text, parse_mode);
       const textErr = validateText(resolved.text);
       if (textErr) return toError(textErr);
-      cancelTyping();
       try {
         const result = await getApi().editMessageText(
           chatId,
@@ -52,6 +57,7 @@ export function register(server: McpServer) {
           { parse_mode: resolved.parse_mode, reply_markup: reply_markup as unknown as InlineKeyboardMarkup | undefined },
         );
         const editedId = typeof result === "boolean" ? message_id : result.message_id;
+        recordOutgoingEdit(editedId, "text", text);
         return toResult({ message_id: editedId });
       } catch (err) {
         return toError(err);

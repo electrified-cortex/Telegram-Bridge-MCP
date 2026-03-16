@@ -1,11 +1,11 @@
 /**
  * Temporary message tracker.
  *
- * A temp message is a short status like "Thinking…" that should vanish the
- * moment the agent sends a real response. Two things can delete it:
+ * A temp message is a short status like "Thinking…" that should vanish
+ * shortly after the agent sends a real response. Two things can delete it:
  *
- *   1. Any outbound tool calls clearPendingTemp() before sending — exact timing,
- *      the placeholder disappears right before the real content arrives.
+ *   1. Any outbound tool calls clearPendingTemp() — schedules deletion after
+ *      a short grace period so the user can still read it.
  *   2. The TTL timer fires — safety net if the agent goes silent.
  *
  * Storing in-process is intentional: we accept the tradeoff that a server
@@ -14,6 +14,9 @@
  */
 
 import { getApi } from "./telegram.js";
+
+/** Seconds the temp message lingers after clearPendingTemp() so the user can still read it. */
+const GRACE_SECONDS = 10;
 
 interface PendingTemp {
   chatId: number;
@@ -27,7 +30,7 @@ let _pending: PendingTemp | null = null;
  * Register a message as the current pending temp.
  * If a previous temp message exists it is deleted first.
  */
-export function setPendingTemp(chatId: number, messageId: number, ttlSeconds = 30): void {
+export function setPendingTemp(chatId: number, messageId: number, ttlSeconds = 300): void {
   // Replace any existing pending message
   if (_pending) {
     const prev = _pending;
@@ -47,16 +50,17 @@ export function setPendingTemp(chatId: number, messageId: number, ttlSeconds = 3
 }
 
 /**
- * Delete the pending temp message (if any) and cancel its timer.
+ * Schedule the pending temp message for deletion after a short grace period,
+ * then clear the pending reference. The grace period lets the user still read
+ * the status even when a real response arrives almost immediately.
  * Safe to call even when nothing is pending — it's a no-op.
- * Awaiting this before sending ensures the placeholder is gone first.
  */
-export async function clearPendingTemp(): Promise<void> {
+export function clearPendingTemp(): void {
   if (!_pending) return;
   const { chatId, messageId, timer } = _pending;
   _pending = null;
   clearTimeout(timer);
-  await _delete(chatId, messageId);
+  setTimeout(() => void _delete(chatId, messageId), GRACE_SECONDS * 1000);
 }
 
 /** Returns true if a temp message is currently registered. */

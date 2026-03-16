@@ -34,6 +34,7 @@
  */
 
 import { pipeline, env } from "@huggingface/transformers";
+import type { VoiceEntry } from "./config.js";
 
 // ---------------------------------------------------------------------------
 // Regex constants for stripForTts — extracted to module level for reuse
@@ -142,21 +143,22 @@ export function stripForTts(text: string): string {
 const DEFAULT_LOCAL_MODEL = "Xenova/mms-tts-eng";
 
 // Singleton — model is loaded once and reused across calls.
-let _localPipeline: Promise<(text: string) => Promise<{ audio: Float32Array; sampling_rate: number }>> | null = null;
+type TTSSynthesizer = (text: string) => Promise<{ audio: Float32Array; sampling_rate: number }>;
+
+let _localPipeline: Promise<TTSSynthesizer> | null = null;
 
 /** @internal Exposed for testing — resets the local pipeline singleton. */
 export function _resetLocalPipeline(): void {
   _localPipeline = null;
 }
 
-function getLocalPipeline() {
+function getLocalPipeline(): Promise<TTSSynthesizer> {
   if (_localPipeline) return _localPipeline;
   const model = process.env.TTS_MODEL_LOCAL ?? DEFAULT_LOCAL_MODEL;
   if (process.env.TTS_CACHE_DIR) {
     env.cacheDir = process.env.TTS_CACHE_DIR;
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (_localPipeline = pipeline("text-to-speech", model) as any);
+  return (_localPipeline = pipeline("text-to-speech", model) as unknown as Promise<TTSSynthesizer>);
 }
 
 async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
@@ -176,16 +178,22 @@ async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
 // HTTP provider (TTS_HOST or OPENAI_API_KEY)
 // ---------------------------------------------------------------------------
 
-async function synthesizeHttpToOgg(text: string, host: string, apiKey: string | null): Promise<Buffer> {
+async function synthesizeHttpToOgg(
+  text: string,
+  host: string,
+  apiKey: string | null,
+  voice?: string,
+): Promise<Buffer> {
   const model = process.env.TTS_MODEL;
-  const voice = process.env.TTS_VOICE;
+  const envVoice = process.env.TTS_VOICE;
   const fmt = (process.env.TTS_FORMAT ?? "wav").toLowerCase();
   const nativeOgg = fmt === "opus" || fmt === "ogg";
 
   // Apply OpenAI defaults only when using the OpenAI endpoint
   const isOpenAi = host.includes("api.openai.com");
   const resolvedModel = model ?? (isOpenAi ? "tts-1" : undefined);
-  const resolvedVoice = voice ?? (isOpenAi ? "alloy" : undefined);
+  const resolvedVoice =
+    voice ?? envVoice ?? (isOpenAi ? "alloy" : undefined);
 
   const body: Record<string, string> = { input: text, response_format: nativeOgg ? fmt : "wav" };
   if (resolvedModel) body.model = resolvedModel;
@@ -212,7 +220,11 @@ async function synthesizeHttpToOgg(text: string, host: string, apiKey: string | 
   if (nativeOgg) return audio;
 
   // Otherwise decode WAV → Float32 PCM → OGG/Opus
-  const { default: decode } = await import("audio-decode");
+  interface DecodedAudio {
+    getChannelData(channel: number): Float32Array;
+    sampleRate: number;
+  }
+  const { default: decode } = await import("audio-decode") as { default: (buf: Buffer) => Promise<DecodedAudio> };
   const decoded = await decode(audio);
   const channelData = decoded.getChannelData(0);
   const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
@@ -247,14 +259,112 @@ function validateTtsInput(text: string): void {
  *
  * @throws If no provider is configured, input is empty/oversized, or synthesis fails.
  */
-export async function synthesizeToOgg(text: string): Promise<Buffer> {
+export async function synthesizeToOgg(
+  text: string,
+  voice?: string,
+): Promise<Buffer> {
   validateTtsInput(text);
 
   const ttsHost = process.env.TTS_HOST?.replace(RE_TRAILING_SLASH, "");
-  if (ttsHost) return synthesizeHttpToOgg(text, ttsHost, process.env.OPENAI_API_KEY ?? null);
+  if (ttsHost) return synthesizeHttpToOgg(text, ttsHost, process.env.OPENAI_API_KEY ?? null, voice);
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) return synthesizeHttpToOgg(text, "https://api.openai.com", apiKey);
+  if (apiKey) return synthesizeHttpToOgg(text, "https://api.openai.com", apiKey, voice);
 
   return synthesizeLocalToOgg(text);
+}
+
+// ---------------------------------------------------------------------------
+// Voice listing
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempts to fetch available voices from the TTS server.
+ *
+ * Tries `GET {TTS_HOST}/v1/audio/voices` first (common for
+ * Kokoro and similar OpenAI-compatible servers). Falls back to
+ * `TTS_VOICES_URL` env var if the default endpoint fails.
+ *
+ * Returns an array of VoiceEntry objects, or an empty array
+ * if no listing is available.
+ */
+export async function fetchVoiceList(): Promise<VoiceEntry[]> {
+  const ttsHost = process.env.TTS_HOST?.replace(RE_TRAILING_SLASH, "");
+  if (!ttsHost) return [];
+
+  const voicesUrl =
+    process.env.TTS_VOICES_URL ?? `${ttsHost}/v1/audio/voices`;
+
+  try {
+    const res = await fetch(voicesUrl, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+
+    const body: unknown = await res.json();
+    return parseVoiceListResponse(body);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Extracts voices from various API response shapes.
+ *
+ * Handles:
+ *   - `{ voices: [{ voice_id, name, language, gender }] }` (Kokoro-style)
+ *   - `{ voices: [{ name: "..." }, ...] }` (common OpenAI-compatible)
+ *   - `{ voices: ["name", ...] }` (simple list)
+ *   - `["name", ...]` (bare array)
+ *   - `{ data: [{ id: "..." }, ...] }` (OpenAI models-style)
+ */
+function parseVoiceListResponse(body: unknown): VoiceEntry[] {
+  if (Array.isArray(body)) {
+    return body
+      .filter((v): v is string => typeof v === "string")
+      .map(name => ({ name }));
+  }
+  if (typeof body !== "object" || body === null) return [];
+
+  const obj = body as Record<string, unknown>;
+
+  if (Array.isArray(obj.voices)) {
+    return obj.voices
+      .map((v: unknown) => voiceObjectToEntry(v))
+      .filter((v): v is VoiceEntry => v !== null);
+  }
+
+  if (Array.isArray(obj.data)) {
+    return obj.data
+      .map((v: unknown) => voiceObjectToEntry(v))
+      .filter((v): v is VoiceEntry => v !== null);
+  }
+
+  return [];
+}
+
+/** Convert a single voice item (string or object) to a VoiceEntry. */
+function voiceObjectToEntry(v: unknown): VoiceEntry | null {
+  if (typeof v === "string") return { name: v };
+  if (typeof v !== "object" || v === null) return null;
+
+  const o = v as Record<string, unknown>;
+  // Prefer voice_id (Kokoro), then id (OpenAI), then name
+  const id =
+    (typeof o.voice_id === "string" ? o.voice_id : null) ??
+    (typeof o.id === "string" ? o.id : null) ??
+    (typeof o.name === "string" ? o.name : null);
+  if (!id) return null;
+
+  const entry: VoiceEntry = { name: id };
+  // Capture display name (only if different from the id)
+  const displayName =
+    typeof o.name === "string" ? o.name : undefined;
+  if (displayName && displayName !== id) {
+    entry.description = displayName;
+  }
+  if (typeof o.language === "string") entry.language = o.language;
+  if (typeof o.gender === "string") entry.gender = o.gender;
+  return entry;
 }

@@ -1,29 +1,30 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  getApi, resolveChat,
+  resolveChat,
   toResult, toError, validateText, validateCallbackData, LIMITS,
 } from "../telegram.js";
-import { markdownToV2 } from "../markdown.js";
-import { transcribeWithIndicator } from "../transcribe.js";
-import { cancelTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
-import { applyTopicToText } from "../topic-state.js";
-import { pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut } from "./button-helpers.js";
-import { recordBotMessage } from "../session-recording.js";
+import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook } from "../message-store.js";
+import {
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
+  sendChoiceMessage, type KeyboardOption,
+} from "./button-helpers.js";
 
-/**
- * Sends a question with labeled option buttons and blocks until one is pressed.
- * Handles the full flow: send message → wait for callback_query → answer it
- * (to dismiss the spinner) → return the chosen option.
- *
- * Replaces the manual: send_message + wait_for_callback_query + answer_callback_query chain.
- */
+const DESCRIPTION =
+  "Sends a question with 2–8 labeled option buttons and waits until the " +
+  "user presses one. Returns { label, value } of the chosen option. " +
+  "Automatically removes the buttons and updates the message to show the " +
+  "chosen option. If the user sends a text or voice message instead, " +
+  "returns { skipped: true, text_response }. If no input arrives within " +
+  "timeout_seconds, returns { timed_out: true } — buttons remain live and " +
+  "late clicks are still handled automatically. Multiple choose calls can " +
+  "be chained for questionnaires. Use for any single-selection choice.";
+
 export function register(server: McpServer) {
   server.registerTool(
     "choose",
     {
-      description: "Sends a question with 2–8 labeled option buttons and blocks until the user presses one. Returns { label, value } of the chosen option. Automatically removes the buttons and updates the message to show the chosen option. If the user sends a text or voice message instead, returns { skipped: true, text_response }. If no input arrives within timeout_seconds, buttons are removed, the message is marked Skipped, and returns { timed_out: true }. Multiple choose calls can be chained for questionnaires. Use for any single-selection choice.",
+      description: DESCRIPTION,
       inputSchema: {
         question: z.string().describe("The question to display above the buttons"),
       options: z
@@ -57,11 +58,12 @@ export function register(server: McpServer) {
       reply_to_message_id: z
         .number()
         .int()
+        .min(1)
         .optional()
         .describe("Reply to this message ID — shows quoted message above the question"),
       },
     },
-    async ({ question, options, timeout_seconds, columns, reply_to_message_id }) => {
+    async ({ question, options, timeout_seconds, columns, reply_to_message_id }, { signal }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(question);
@@ -86,75 +88,93 @@ export function register(server: McpServer) {
           });
       }
 
-      // Build keyboard rows (n columns per row)
-      const rows: { text: string; callback_data: string; style?: "success" | "primary" | "danger" }[][] = [];
-      for (let i = 0; i < options.length; i += columns) {
-        rows.push(
-          options.slice(i, i + columns).map((o) => ({
-            text: o.label,
-            callback_data: o.value,
-            ...(o.style ? { style: o.style } : {}),
-          }))
-        );
-      }
-
       try {
-        cancelTyping();
-        await clearPendingTemp();
-        const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown")), {
-          parse_mode: "MarkdownV2",
-          reply_markup: { inline_keyboard: rows },
-          reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
+        const messageId = await sendChoiceMessage(chatId, {
+          text: question,
+          options: options as KeyboardOption[],
+          columns,
+          parseMode: "Markdown",
+          replyToMessageId: reply_to_message_id,
         });
-        recordBotMessage({ content_type: "text", text: question, message_id: sent.message_id });
 
-        const match = await pollButtonOrTextOrVoice(chatId, sent.message_id, timeout_seconds);
+        // Register callback hook — handles button clicks even after poll timeout.
+        // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
+        registerCallbackHook(messageId, (evt) => {
+          const chosen = options.find((o) => o.value === evt.content.data);
+          const chosenLabel = chosen?.label ?? evt.content.data ?? "";
+          clearMessageHook(messageId);
+          void ackAndEditSelection(chatId, messageId, question, chosenLabel, evt.content.qid)
+            .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${String(e)}\n`));
+        });
+
+        // Fires immediately when a voice message is detected (before transcription).
+        // This removes the keyboard right away so the user doesn't see a delayed edit.
+        let skippedEditDone = false;
+        const onVoiceDetected = () => {
+          skippedEditDone = true;
+          clearCallbackHook(messageId);
+          editWithSkipped(chatId, messageId, question).catch(() => {/* non-fatal */});
+        };
+
+        const match = await pollButtonOrTextOrVoice(chatId, messageId, timeout_seconds, onVoiceDetected, signal);
 
         if (!match) {
-          // Timeout — remove buttons so they can't be clicked with no listener.
-          // The agent can call wait_for_message next to capture a free-text reply.
-          await editWithTimedOut(chatId, sent.message_id, question);
+          // Timeout — register a message hook so the next user message
+          // cleans up the stale buttons (callback hook handles late clicks).
+          registerMessageHook(messageId, () => {
+            clearCallbackHook(messageId);
+            editWithSkipped(chatId, messageId, question).catch(() => {/* non-fatal */});
+          });
           return toResult({
             timed_out: true,
-            message_id: sent.message_id,
+            message_id: messageId,
           });
         }
 
         if (match.kind === "text") {
-          await editWithSkipped(chatId, sent.message_id, question);
+          clearCallbackHook(messageId);
+          await editWithSkipped(chatId, messageId, question);
           return toResult({
             skipped: true,
             text_response: match.text,
             text_message_id: match.message_id,
-            reply_to_message_id: match.reply_to_message_id,
-            message_id: sent.message_id,
+            message_id: messageId,
           });
         }
 
         if (match.kind === "voice") {
-          const text = await transcribeWithIndicator(match.fileId, match.message_id)
-            .catch((e) => `[transcription failed: ${e.message}]`);
-          await editWithSkipped(chatId, sent.message_id, question);
+          clearCallbackHook(messageId);
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
+          if (!skippedEditDone) await editWithSkipped(chatId, messageId, question);
           return toResult({
             skipped: true,
-            text_response: text,
+            text_response: match.text ?? "[no transcription]",
             text_message_id: match.message_id,
-            reply_to_message_id: match.reply_to_message_id,
-            message_id: sent.message_id,
+            message_id: messageId,
             voice: true,
           });
         }
 
-        // Button was pressed
-        const chosen = options.find((o) => o.value === match.cq.data);
-        const chosenLabel = chosen?.label ?? match.cq.data ?? "";
-        await ackAndEditSelection(chatId, sent.message_id, question, chosenLabel, match.cq.id);
+        if (match.kind === "command") {
+          clearCallbackHook(messageId);
+          await editWithSkipped(chatId, messageId, question);
+          return toResult({
+            skipped: true,
+            command: match.command,
+            args: match.args,
+            message_id: messageId,
+          });
+        }
+
+        // Button was pressed — hook already acked + edited.
+        const chosen = options.find((o) => o.value === match.data);
+        const chosenLabel = chosen?.label ?? match.data;
 
         return toResult({
           timed_out: false,
           label: chosenLabel,
-          value: match.cq.data,
-          message_id: sent.message_id,
+          value: match.data,
+          message_id: messageId,
         });
       } catch (err) {
         return toError(err);

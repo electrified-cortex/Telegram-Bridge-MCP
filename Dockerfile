@@ -1,5 +1,21 @@
 # syntax=docker/dockerfile:1
 
+# Node.js Version Selection: v24 (Krypton - Active LTS until Feb 24, 2026)
+# 
+# Rationale:
+# - v24 is the latest Active LTS version with the most recent security patches
+# - All stable LTS versions (v20, v22, v24) share identical critical CVEs as of Jan 2026:
+#   * CVE-2025-55131: Buffer allocation race conditions (High)
+#   * CVE-2025-55130: Permission model bypass via symlinks (High)
+#   * CVE-2025-59465: HTTP/2 malformed HEADERS crash (High)
+# - v24 provides the best security posture: latest patches applied first, longest remaining support
+# - slim variant reduces image size by excluding documentation and man pages
+#
+# Security awareness:
+# - OS package upgrades applied in runtime stage (line 39) to patch system-level CVEs
+# - Pin exact versions in production when feasible; v24.13.0+ includes Jan 2026 security patches
+# - Monitor nodejs-sec mailing list: https://groups.google.com/forum/#!forum/nodejs-sec
+
 # ── Stage 1: production dependencies (native modules compiled here) ───────────
 FROM node:24-slim AS deps
 
@@ -29,6 +45,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json ./
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 RUN pnpm build
 
 # ── Stage 3: runtime (no build tools, no dev deps, non-root) ─────────────────
@@ -47,7 +64,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 
 # Resource files read at runtime by the MCP server
-COPY BEHAVIOR.md COMMUNICATION.md FORMATTING.md SETUP.md LOOP-PROMPT.md ./
+COPY docs/behavior.md docs/communication.md docs/formatting.md docs/setup.md ./docs/
+COPY LOOP-PROMPT.md ./
 COPY package.json ./
 
 # Cache dir for Whisper/TTS model weights — mount a volume here to persist

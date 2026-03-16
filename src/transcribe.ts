@@ -33,7 +33,7 @@ type ASRPipeline = AutomaticSpeechRecognitionPipeline;
 let _pipelinePromise: Promise<ASRPipeline> | null = null;
 
 function getPipeline(): Promise<ASRPipeline> {
-  return _pipelinePromise ??= pipeline(ASR_TASK, LOCAL_MODEL) as Promise<ASRPipeline>;
+  return _pipelinePromise ??= pipeline(ASR_TASK, LOCAL_MODEL);
 }
 
 /**
@@ -64,7 +64,11 @@ async function transcribeRemote(audioBytes: Buffer, filename: string, host: stri
  */
 async function decodeAudioToFloat32(audioBytes: Buffer): Promise<Float32Array> {
   // audio-decode is ESM-only, dynamic import required
-  const { default: decode } = await import("audio-decode");
+  interface DecodedAudio {
+    getChannelData(channel: number): Float32Array;
+    sampleRate: number;
+  }
+  const { default: decode } = await import("audio-decode") as { default: (buf: Buffer) => Promise<DecodedAudio> };
   const audioBuffer = await decode(audioBytes);
 
   // Take the first channel
@@ -127,7 +131,7 @@ export async function transcribeVoice(fileId: string): Promise<string> {
 }
 
 /**
- * Reacts to the voice message with 📝, transcribes it, then swaps the
+ * Reacts to the voice message with ✍, transcribes it, then swaps the
  * reaction to 🫡. Returns the transcribed text.
  * If reactions fail, transcription still proceeds.
  */
@@ -136,12 +140,12 @@ export async function transcribeWithIndicator(fileId: string, messageId?: number
   const reactId = typeof chatId === "number" ? chatId : undefined;
 
   if (reactId !== undefined && messageId !== undefined)
-    trySetMessageReaction(reactId, messageId, REACT_TRANSCRIBING);
+    void trySetMessageReaction(reactId, messageId, REACT_TRANSCRIBING);
 
   try {
     return await transcribeVoice(fileId);
   } finally {
     if (reactId !== undefined && messageId !== undefined)
-      trySetMessageReaction(reactId, messageId, REACT_DONE);
+      void trySetMessageReaction(reactId, messageId, REACT_DONE);
   }
 }

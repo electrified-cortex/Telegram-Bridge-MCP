@@ -96,7 +96,7 @@ function writeOggPage(
  * @param inputSampleRate  Sample rate of the input (Hz).
  * @returns Buffer containing a valid OGG/Opus file for Telegram sendVoice.
  */
-export async function pcmToOggOpus(float32: Float32Array, inputSampleRate: number): Promise<Buffer> {
+export function pcmToOggOpus(float32: Float32Array, inputSampleRate: number): Buffer {
   const TARGET_RATE = 48000;
   const CHANNELS = 1;
   const FRAME_SAMPLES = 960; // 20 ms at 48 kHz
@@ -120,8 +120,17 @@ export async function pcmToOggOpus(float32: Float32Array, inputSampleRate: numbe
 
   // --- Load opusscript (CJS module) via createRequire for ESM compatibility ---
   const requireCjs = createRequire(import.meta.url);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const OpusScript = requireCjs("opusscript") as any;
+
+  interface OpusEncoder {
+    encode(pcm: Buffer, frameSize: number): Buffer;
+    delete(): void;
+  }
+  interface OpusScriptModule {
+    new(rate: number, channels: number, app: number): OpusEncoder;
+    Application: { AUDIO: number };
+  }
+
+  const OpusScript = requireCjs("opusscript") as OpusScriptModule;
   const encoder = new OpusScript(TARGET_RATE, CHANNELS, OpusScript.Application.AUDIO);
 
   const serialNo = (Math.random() * 0xffffffff) | 0;
@@ -159,7 +168,7 @@ export async function pcmToOggOpus(float32: Float32Array, inputSampleRate: numbe
 
     let frameData: Buffer;
     if (byteEnd - byteStart === FRAME_SAMPLES * 2) {
-      frameData = pcmBytes.slice(byteStart, byteEnd);
+      frameData = pcmBytes.subarray(byteStart, byteEnd) as Buffer;
     } else {
       // Pad the last partial frame with silence
       frameData = Buffer.alloc(FRAME_SAMPLES * 2, 0);

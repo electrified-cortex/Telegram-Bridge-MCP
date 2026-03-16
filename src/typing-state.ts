@@ -6,11 +6,13 @@
  *    extends the deadline; no extra Telegram API call, no duplicate interval.
  *  - **Auto-cancel** — the interval self-destructs when the deadline passes.
  *  - **Send-cancel** — every outbound tool (send_message, notify, choose, …)
- *    calls cancelTyping() before sending, so the indicator stops the moment
- *    a real message goes out.
+ *    calls cancelTyping() after the Telegram API confirms delivery, so the
+ *    indicator persists until the message actually appears for the user.
  */
 
 import { getApi, resolveChat } from "./telegram.js";
+import { isAnimationActive, isAnimationPersistent, cancelAnimation } from "./animation-state.js";
+import { fireTempReactionRestore } from "./temp-reaction.js";
 
 export type TypingAction =
   | "typing"
@@ -23,10 +25,11 @@ export type TypingAction =
 let _timer: ReturnType<typeof setInterval> | null = null;
 let _safety: ReturnType<typeof setTimeout> | null = null;
 let _deadline = 0;
+let _generation = 0;
 
 const INTERVAL_MS = 4_000; // Telegram indicator expires in ~5 s; 4 s keeps it seamless
 
-function unrefTimer(t: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>): void {
+function unrefTimer(t: ReturnType<typeof setTimeout>): void {
   if (typeof t === "object" && "unref" in t) t.unref();
 }
 
@@ -48,6 +51,21 @@ export function cancelTyping(): boolean {
   return wasActive;
 }
 
+/** Generation counter — incremented every time showTyping starts or extends. */
+export function typingGeneration(): number {
+  return _generation;
+}
+
+/**
+ * Cancel typing only if no new showTyping() call has occurred since `gen` was captured.
+ * Used by the outbound proxy to avoid clobbering a typing indicator that was
+ * (re-)started while a send was in flight.
+ */
+export function cancelTypingIfSameGeneration(gen: number): boolean {
+  if (_generation !== gen) return false;
+  return cancelTyping();
+}
+
 /**
  * Show the typing indicator for `timeoutMs` milliseconds.
  *
@@ -59,16 +77,26 @@ export function cancelTyping(): boolean {
  * Returns true if the indicator was newly started, false if an existing one was just extended.
  */
 export async function showTyping(timeoutSeconds: number, action: TypingAction = "typing"): Promise<boolean> {
+  // Cancel temporary animations — typing indicator replaces the placeholder.
+  // Persistent animations are agent-controlled and survive show_typing.
+  if (isAnimationActive() && !isAnimationPersistent()) {
+    await cancelAnimation();
+  }
+
+  // Showing typing signals intent to respond — treat as outbound, restore temp reaction.
+  await fireTempReactionRestore();
+
   const timeoutMs = timeoutSeconds * 1000;
   const newDeadline = Date.now() + timeoutMs;
+  _generation++;
 
   if (_timer) {
     // Already running — just extend the deadline
     _deadline = Math.max(_deadline, newDeadline);
     // Reset the safety timeout too
     if (_safety) clearTimeout(_safety);
-    _safety = setTimeout(() => cancelTyping(), Math.max(0, _deadline - Date.now()));
-    if (_safety) unrefTimer(_safety);
+    _safety = setTimeout(() => { cancelTyping(); }, Math.max(0, _deadline - Date.now()));
+    unrefTimer(_safety);
     return false; // extended, not newly started
   }
 
@@ -86,16 +114,14 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
     return false;
   }
 
-  _timer = setInterval(async () => {
+  _timer = setInterval(() => {
     if (Date.now() >= _deadline) {
       cancelTyping();
       return;
     }
-    try {
-      await getApi().sendChatAction(chatId, action);
-    } catch {
+    getApi().sendChatAction(chatId, action).catch(() => {
       cancelTyping();
-    }
+    });
   }, INTERVAL_MS);
 
   unrefTimer(_timer);

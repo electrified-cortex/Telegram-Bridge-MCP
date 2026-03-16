@@ -1,163 +1,135 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn(), sendVoiceDirect: vi.fn() }));
-const ttsMocks = vi.hoisted(() => ({
-  isTtsEnabled: vi.fn(() => false),
-  synthesizeToOgg: vi.fn(),
-  stripForTts: vi.fn((t: string) => t),
+const mocks = vi.hoisted(() => ({
+  sendMessage: vi.fn(),
+  applyTopicToText: vi.fn((t: string) => t),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, sendVoiceDirect: mocks.sendVoiceDirect, resolveChat: () => 123 };
+  return {
+    ...actual,
+    getApi: () => ({ sendMessage: mocks.sendMessage }),
+    resolveChat: () => 42,
+  };
 });
 
-vi.mock("../tts.js", () => ({
-  isTtsEnabled: ttsMocks.isTtsEnabled,
-  synthesizeToOgg: ttsMocks.synthesizeToOgg,
-  stripForTts: ttsMocks.stripForTts,
+vi.mock("../topic-state.js", () => ({
+  applyTopicToText: mocks.applyTopicToText,
 }));
 
 import { register } from "./send_message.js";
+
+const BASE_MSG = { message_id: 7, chat: { id: 42 }, date: 0 };
 
 describe("send_message tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    ttsMocks.isTtsEnabled.mockReturnValue(false);
-    ttsMocks.stripForTts.mockImplementation((t: string) => t);
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
     const server = createMockServer();
     register(server);
     call = server.getHandler("send_message");
   });
 
-  it("sends a message and returns message_id and chat_id", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 123 }, date: 1000, text: "hi" });
-    const result = await call({ text: "hi" });
+  it("sends a basic text message and returns message_id", async () => {
+    const result = await call({ text: "Hello" });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.message_id).toBe(1);
-    expect(data.chat_id).toBeUndefined();
+    expect(parseResult(result).message_id).toBe(7);
   });
 
-  it("defaults parse_mode to Markdown, sends as MarkdownV2", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "x" });
-    await call({ text: "hello world" });
-    const [, , opts] = mocks.sendMessage.mock.calls[0];
-    expect(opts.parse_mode).toBe("MarkdownV2");
+  it("calls sendMessage with correct chat_id and MarkdownV2 by default", async () => {
+    await call({ text: "Hello" });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.any(String),
+      expect.objectContaining({ parse_mode: "MarkdownV2" }),
+    );
   });
 
-  it("auto-escapes plain text in Markdown mode", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "" });
-    await call({ text: "Done. Save!" });
-    const [, sentText] = mocks.sendMessage.mock.calls[0];
-    expect(sentText).toBe("Done\\. Save\\!");
+  it("sends with inline keyboard when keyboard is provided", async () => {
+    const result = await call({
+      text: "Pick one",
+      keyboard: [[{ label: "Yes", value: "yes" }, { label: "No", value: "no" }]],
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.any(String),
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "Yes", callback_data: "yes" },
+            { text: "No", callback_data: "no" },
+          ]],
+        },
+      }),
+    );
   });
 
-  it("passes explicit parse_mode HTML to API", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "x" });
-    await call({ text: "x", parse_mode: "HTML" });
-    const [, , opts] = mocks.sendMessage.mock.calls[0];
-    expect(opts.parse_mode).toBe("HTML");
+  it("includes style on buttons when provided", async () => {
+    await call({
+      text: "Go",
+      keyboard: [[{ label: "OK", value: "ok", style: "success" }]],
+    });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.any(String),
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [[{ text: "OK", callback_data: "ok", style: "success" }]],
+        },
+      }),
+    );
   });
 
-  it("passes explicit parse_mode MarkdownV2 unchanged", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 2, chat: { id: 1 }, date: 0, text: "x" });
-    await call({ text: "*hi*", parse_mode: "MarkdownV2" });
-    const [, sentText, opts] = mocks.sendMessage.mock.calls[0];
-    expect(sentText).toBe("*hi*");
-    expect(opts.parse_mode).toBe("MarkdownV2");
+  it("omits reply_markup when no keyboard is given", async () => {
+    await call({ text: "Plain" });
+    const opts = mocks.sendMessage.mock.calls[0][2] as Record<string, unknown>;
+    expect(opts.reply_markup).toBeUndefined();
   });
 
-  it("returns EMPTY_MESSAGE without calling API", async () => {
-    const result = await call({ text: "" });
+  it("passes reply_to_message_id via reply_parameters", async () => {
+    await call({ text: "Reply", reply_to_message_id: 5 });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.any(String),
+      expect.objectContaining({ reply_parameters: { message_id: 5 } }),
+    );
+  });
+
+  it("passes disable_notification option", async () => {
+    await call({ text: "Quiet", disable_notification: true });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.any(String),
+      expect.objectContaining({ disable_notification: true }),
+    );
+  });
+
+  it("returns error for callback_data that is too long", async () => {
+    const longValue = "x".repeat(65);
+    const result = await call({
+      text: "Pick",
+      keyboard: [[{ label: "Btn", value: longValue }]],
+    });
     expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("EMPTY_MESSAGE");
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(errorCode(result)).toBe("CALLBACK_DATA_TOO_LONG");
   });
 
-  it("auto-splits text over 4096 chars into multiple messages", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0, text: "x" });
-    const result = await call({ text: "a".repeat(5000) });
-    expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.split).toBe(true);
-    expect(Array.isArray(data.message_ids)).toBe(true);
-    expect(mocks.sendMessage.mock.calls.length).toBeGreaterThan(1);
-  });
-
-  it("maps CHAT_NOT_FOUND from GrammyError", async () => {
+  it("returns error on API failure", async () => {
     const { GrammyError } = await import("grammy");
     mocks.sendMessage.mockRejectedValue(
-      new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: chat not found" }, "sendMessage", {})
+      new GrammyError(
+        "e",
+        { ok: false, error_code: 400, description: "Bad Request: chat not found" },
+        "sendMessage",
+        {},
+      ),
     );
-    const result = await call({ text: "hi" });
-    expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("CHAT_NOT_FOUND");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Voice mode (TTS)
-// ---------------------------------------------------------------------------
-
-describe("send_message tool — voice mode", () => {
-  let call: (args: Record<string, unknown>) => Promise<unknown>;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    ttsMocks.isTtsEnabled.mockReturnValue(false);
-    ttsMocks.stripForTts.mockImplementation((t: string) => t);
-    ttsMocks.synthesizeToOgg.mockResolvedValue(Buffer.from("fakeaudio"));
-    mocks.sendVoiceDirect.mockResolvedValue({ message_id: 99, voice: { file_id: "f1", duration: 1, file_size: 9, mime_type: "audio/ogg" } });
-    const server = createMockServer();
-    register(server);
-    call = server.getHandler("send_message");
-  });
-
-  it("sends via sendVoiceDirect when voice:true and TTS is enabled", async () => {
-    ttsMocks.isTtsEnabled.mockReturnValue(true);
-    const result = await call({ text: "Hello!", voice: true });
-    expect(isError(result)).toBe(false);
-    expect(mocks.sendVoiceDirect).toHaveBeenCalledTimes(1);
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
-    const data = parseResult(result);
-    expect(data.message_id).toBe(99);
-    expect(data.voice).toBe(true);
-  });
-
-  it("sends text by default even when isTtsEnabled returns true (voice is opt-in)", async () => {
-    ttsMocks.isTtsEnabled.mockReturnValue(true);
-    mocks.sendMessage.mockResolvedValue({ message_id: 5, chat: { id: 1 }, date: 0, text: "x" });
-    const result = await call({ text: "hello" });
-    expect(isError(result)).toBe(false);
-    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
-  });
-
-  it("strips formatting before synthesis", async () => {
-    ttsMocks.isTtsEnabled.mockReturnValue(true);
-    ttsMocks.stripForTts.mockReturnValue("plain stripped text");
-    await call({ text: "**bold** _text_", voice: true });
-    expect(ttsMocks.stripForTts).toHaveBeenCalledWith("**bold** _text_");
-    expect(ttsMocks.synthesizeToOgg).toHaveBeenCalledWith("plain stripped text");
-  });
-
-  it("returns EMPTY_MESSAGE when stripped text is empty", async () => {
-    ttsMocks.isTtsEnabled.mockReturnValue(true);
-    ttsMocks.stripForTts.mockReturnValue("");
-    const result = await call({ text: "**formatting only**", voice: true });
-    expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("EMPTY_MESSAGE");
-    expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
-  });
-
-  it("propagates synthesis errors", async () => {
-    ttsMocks.isTtsEnabled.mockReturnValue(true);
-    ttsMocks.synthesizeToOgg.mockRejectedValue(new Error("OPENAI_API_KEY"));
-    const result = await call({ text: "hi", voice: true });
+    const result = await call({ text: "Hello" });
     expect(isError(result)).toBe(true);
   });
 });

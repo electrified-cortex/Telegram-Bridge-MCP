@@ -32,23 +32,26 @@ const FAKE_AUDIO = Buffer.from("fakeaudio");
 
 function mockFetch(responses: { url?: RegExp | string; ok: boolean; body?: object | string; arrayBuffer?: Buffer }[]) {
   let callIdx = 0;
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+  vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
     const resp = responses[callIdx++] ?? responses[responses.length - 1];
-    const urlStr = url.toString();
+    const urlStr = typeof url === "string" ? url : url instanceof URL ? url.href : "(non-string)";
     if (resp.url instanceof RegExp && !resp.url.test(urlStr)) {
       throw new Error(`Unexpected fetch URL: ${urlStr}`);
     }
-    return {
+    const audio = resp.arrayBuffer ?? FAKE_AUDIO;
+    return Promise.resolve({
       ok: resp.ok,
       status: resp.ok ? 200 : 500,
       statusText: resp.ok ? "OK" : "Internal Server Error",
-      arrayBuffer: async () => (resp.arrayBuffer ?? FAKE_AUDIO).buffer.slice(
-        (resp.arrayBuffer ?? FAKE_AUDIO).byteOffset,
-        (resp.arrayBuffer ?? FAKE_AUDIO).byteOffset + (resp.arrayBuffer ?? FAKE_AUDIO).byteLength,
+      arrayBuffer: () => Promise.resolve(audio.buffer.slice(
+        audio.byteOffset,
+        audio.byteOffset + audio.byteLength,
+      )),
+      json: () => Promise.resolve(resp.body as object),
+      text: () => Promise.resolve(
+        typeof resp.body === "string" ? resp.body : "",
       ),
-      json: async () => resp.body as object,
-      text: async () => String(resp.body ?? ""),
-    } as Response;
+    } as Response);
   });
 }
 

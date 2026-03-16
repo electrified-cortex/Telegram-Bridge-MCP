@@ -9,12 +9,9 @@
 [![Docker Image](https://img.shields.io/badge/ghcr.io-telegram--bridge--mcp-blue?logo=docker)](https://github.com/electricessence/Telegram-Bridge-MCP/pkgs/container/telegram-bridge-mcp)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server that bridges AI assistants to a Telegram bot — enabling two-way messaging, interactive confirmations, live status updates, and automatic voice transcription.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that bridges AI assistants to a Telegram bot — enabling two-way messaging, interactive confirmations, live status updates, voice transcription, and text-to-speech replies.
 
-Works with any MCP-compatible AI host: VS Code Copilot, Claude Desktop, and others.
-
-> [!NOTE]
-> **Pre-release:** This project is functional but has not yet been widely tested in production. Expect rough edges and possible breaking changes.
+Works with any MCP-compatible AI host: VS Code Copilot, Claude Desktop, Claude Code, Cursor, Windsurf, and others.
 
 ---
 
@@ -22,12 +19,14 @@ Works with any MCP-compatible AI host: VS Code Copilot, Claude Desktop, and othe
 
 Once configured, your AI assistant can:
 
-- **Send messages** to your Telegram chat — plain text, formatted Markdown, photos
+- **Send messages** to your Telegram chat — plain text, formatted Markdown, files
 - **Ask questions** and wait for your reply — as free text or button choices
 - **Post live status updates** — an in-place checklist that updates as tasks progress
+- **Register slash commands** — dynamically set the bot's `/command` menu; commands arrive as structured `{ type: "command", command: "status" }` payloads, no text parsing needed
 - **React to messages** — emoji reactions instead of noise text
-- **Transcribe voice messages** — speak your reply; it arrives as text
-- **Send and receive files** — send documents/photos from disk or URL; receive any file type and download on demand
+- **Listen to you** — speak your reply; voice messages are automatically transcribed and arrive as text
+- **Talk back** — the agent can reply as a spoken voice note via text-to-speech (local or OpenAI)
+- **Send and receive files** — send documents, photos, audio, and video from disk or URL; receive any file type and download on demand
 - **Receive all of this in real time** — long-polling, no webhooks, no public URL needed
 
 ---
@@ -86,8 +85,7 @@ This interactive wizard:
       "cwd": "/absolute/path/to/telegram-bridge-mcp",
       "env": {
         "BOT_TOKEN": "YOUR_TOKEN",
-        "ALLOWED_USER_ID": "YOUR_USER_ID",
-        "ALLOWED_CHAT_ID": "YOUR_CHAT_ID"
+        "ALLOWED_USER_ID": "YOUR_USER_ID"
       }
     }
   }
@@ -104,13 +102,31 @@ This interactive wizard:
       "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
       "env": {
         "BOT_TOKEN": "YOUR_TOKEN",
-        "ALLOWED_USER_ID": "YOUR_USER_ID",
-        "ALLOWED_CHAT_ID": "YOUR_CHAT_ID"
+        "ALLOWED_USER_ID": "YOUR_USER_ID"
       }
     }
   }
 }
 ```
+
+**Claude Code** — add a **project-scoped** `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
+      "env": {
+        "BOT_TOKEN": "YOUR_TOKEN",
+        "ALLOWED_USER_ID": "YOUR_USER_ID"
+      }
+    }
+  }
+}
+```
+
+> **Do not add this to global `~/.claude.json`.** Global MCP servers spawn in every Claude Code session — multiple instances will compete for the same bot token's `getUpdates`, causing conflicts.
 
 ### 5. Start a session
 
@@ -120,39 +136,51 @@ Paste the contents of `LOOP-PROMPT.md` into your AI assistant's chat. It will co
 
 ## Tools
 
-### High-level (use these 99% of the time)
+### Core — messaging and interaction
 
 | Tool | What it does |
-| ------ | ------------- |
-| `get_agent_guide` | Loads the behavioral guide — call this at session start |
-| `set_topic` | Sets a default title prepended to all outbound messages as `[Title]` — e.g. `[Refactor Agent]`. Useful when multiple VS Code instances share one Telegram chat so you can tell which agent sent what. Pass empty string to clear. |
+| --- | --- |
+| `send_text` | Send a plain or formatted message |
+| `send_text_as_voice` | Synthesize text to speech and send as a voice note |
 | `notify` | Silent or audible notification with title, body, and severity |
-| `ask` | Sends a question; blocks until you reply with text or voice |
-| `choose` | Sends a question with 2–8 labeled buttons; blocks until you tap one or type/speak a reply. Supports per-button color (`success`/`primary`/`danger`). Multiple calls chain naturally for questionnaires. |
-| `send_confirmation` | Yes/No prompt; blocks until confirmed or denied. Button colors are customizable (`yes_style`/`no_style`). |
-| `update_status` | Live in-place checklist — updates as steps complete |
+| `ask` | Send a question; blocks until you reply with text or voice |
+| `choose` | Send a question with 2–8 labeled buttons; blocks until you tap one or speak a reply. Supports per-button color (`success`/`primary`/`danger`). |
+| `confirm` | Yes/No prompt with customizable button colors; blocks until confirmed or denied. |
+| `send_new_checklist` | Live in-place checklist — edits itself as steps complete |
+| `send_new_progress` | Emoji block progress bar — `▓▓▓▓▓░░░░░ 50%`. Returns `message_id` to track. |
+| `update_progress` | Edit an existing progress bar in-place by `message_id`. |
+| `show_animation` | Cycling placeholder message visible while the agent works — signals "thinking". Cancel with text to make it a permanent log entry. |
+| `dequeue_update` | Wait for the next message, button tap, voice reply, or slash command from the user |
 
-### Messaging
+### Messaging utilities
 
-`send_message` · `edit_message_text` · `forward_message` · `delete_message` · `pin_message` · `unpin_message` · `send_chat_action` · `show_typing` · `cancel_typing`
+`edit_message_text` · `append_text` · `delete_message` · `pin_message` · `send_file` · `send_chat_action` · `show_typing` · `cancel_animation` · `answer_callback_query` · `get_message`
 
-### Files
+### Message primitives
 
-`send_document` · `send_photo` · `send_video` · `send_audio` · `send_voice` · `download_file` · `transcribe_voice`
+`send_message` · `edit_message` · `send_choice`
 
-### Drafts & temp
+### Session start
 
-`send_message_draft` · `send_temp_message`
+`session_start` — sends intro, checks for pending messages from a previous session, asks the operator to resume or start fresh. Call once at session start.
 
-### Interaction primitives
-
-`wait_for_message` · `wait_for_callback_query` · `answer_callback_query`
+`get_agent_guide` — loads the behavioral guide. Call once at session start.
 
 ### Info & utilities
 
-`get_me` · `get_chat` · `set_commands` · `set_reaction` · `get_update` · `get_updates` · `restart_server`
+`get_me` · `get_chat` · `set_reaction` · `set_commands` · `set_topic` · `shutdown`
 
-`set_commands` — registers (or clears) the bot's slash-command menu in the active chat. Pass `[{command, description}, ...]` to show commands in Telegram's autocomplete; pass `[]` to remove the menu.
+`set_commands` — registers (or clears) the bot's slash-command menu. Pass `[{command, description}, ...]` to populate Telegram's autocomplete; pass `[]` to remove it. The menu is cleared automatically on shutdown.
+
+`set_topic` — prepends `[Title]` to all outbound messages, e.g. `[Refactor Agent]`. Useful when multiple agents share one chat.
+
+### File operations
+
+`download_file` · `transcribe_voice`
+
+### Session
+
+`session_start` · `dump_session_record`
 
 ---
 
@@ -165,7 +193,7 @@ Pre-built instruction files are included for common agent hosts:
 | `.github/copilot-instructions.md` | VS Code Copilot / GitHub Copilot | Auto-injected into every session |
 | `.github/instructions/telegram-communication.instructions.md` | VS Code Copilot (`applyTo: "**"`) | Auto-injected communication rules |
 | `CLAUDE.md` | Claude Code | Auto-read at session start |
-| `COMMUNICATION.md` | Any agent | Read explicitly or via MCP resource |
+| `communication.md` | Any agent | Read explicitly or via MCP resource |
 
 ---
 
@@ -185,20 +213,19 @@ Five guides are available as MCP resources — any MCP client can read them dire
 
 ## Security
 
-The server enforces a strict two-layer security model:
+The server enforces a strict single-user model:
 
-- **`ALLOWED_USER_ID`** — Inbound updates from any other user are silently discarded before the assistant ever sees them. Prevents message injection.
-- **`ALLOWED_CHAT_ID`** — Outbound tool calls to any other chat are rejected immediately. Prevents misdirected messages.
+- **`ALLOWED_USER_ID`** — Inbound updates from any other user are silently discarded before the assistant ever sees them. Prevents message injection. Also used as the outbound chat target — for private 1-on-1 bots, `chat_id` equals `user_id`.
 
-The server is designed for **single-user, single-chat** use — `chat_id` is never a tool parameter; it is resolved from config transparently.
+`chat_id` is never a tool parameter — it is resolved from `ALLOWED_USER_ID` transparently.
 
-See `SETUP.md` for the full security model and threat analysis.
+See `docs/setup.md` for setup and security details.
 
 ---
 
 ## Voice Transcription
 
-All message-receiving tools (`wait_for_message`, `ask`, `choose`, `get_update`, `get_updates`) automatically transcribe voice messages using a local [Whisper](https://github.com/openai/whisper) model via `@huggingface/transformers` (ONNX Runtime). Voice responses also include a `file_id` so the agent can call `transcribe_voice` to re-transcribe if needed.
+Voice messages are automatically transcribed by a background poller before they arrive in `dequeue_update`. `ask` and `choose` also handle voice replies inline — results include `voice: true` with the transcribed `text`. Use `transcribe_voice` to re-transcribe a voice message by `file_id` if needed.
 
 - No external API calls
 - No ffmpeg required
@@ -215,7 +242,7 @@ WHISPER_CACHE_DIR=/path/to/cache            # optional
 
 ## Voice Output (TTS)
 
-`send_message` with `voice: true` delivers spoken voice notes via TTS.
+`send_text_as_voice` synthesizes text to speech and sends it as a Telegram voice note.
 
 Provider is selected automatically from env vars:
 
@@ -241,6 +268,44 @@ TTS_VOICE=onyx         # default: alloy
 
 If a voice note appears but has no audible audio, check the `duration` field in the tool result — should be non-zero.
 
+### Kokoro Quick Start
+
+The default TTS provider is a local ONNX model — it works with zero config but
+produces robotic, single-voice output. **[Kokoro](https://github.com/hexgrad/kokoro)**
+is a free, high-quality TTS engine with 25+ natural-sounding voices across
+American and British English, male and female. It runs locally via Docker and
+exposes an OpenAI-compatible API.
+
+**1. Start the Kokoro server:**
+
+```bash
+docker run -d --name kokoro -p 8880:8880 ghcr.io/hexgrad/kokoro-onnx-server:latest
+```
+
+**2. Add env vars** to your `.env`:
+
+```dotenv
+TTS_HOST=http://localhost:8880
+TTS_FORMAT=ogg
+TTS_VOICE=af_heart
+```
+
+> `TTS_FORMAT=ogg` tells Kokoro to return OGG/Opus directly, skipping the
+> local WAV→OGG re-encode step for faster delivery.
+
+**3. Browse and sample voices** — send `/voice` in Telegram to open the
+interactive voice panel. It queries your Kokoro server, groups voices by
+language and gender, and lets you listen to samples before choosing one.
+
+| Category | Voices |
+| --- | --- |
+| 🇺🇸 Female | `af_heart` `af_bella` `af_nicole` `af_sarah` `af_sky` |
+| 🇺🇸 Male | `am_adam` `am_michael` `am_echo` `am_liam` |
+| 🇬🇧 Female | `bf_emma` `bf_isabella` |
+| 🇬🇧 Male | `bm_george` `bm_lewis` |
+
+The selected voice is saved to `mcp-config.json` and persists across restarts.
+
 ---
 
 ## Development
@@ -261,7 +326,7 @@ A pre-built image is published to the GitHub Container Registry on every push to
 
 ```txt
 ghcr.io/electricessence/telegram-bridge-mcp:latest
-ghcr.io/electricessence/telegram-bridge-mcp:1.7.9
+ghcr.io/electricessence/telegram-bridge-mcp:3.0.0
 ```
 
 Create a `.env` file with your credentials (see `.env.example`), then configure your MCP host to use Docker instead of Node:
@@ -286,6 +351,24 @@ Create a `.env` file with your credentials (see `.env.example`), then configure 
 ```
 
 **Claude Desktop** — `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "--env-file", "/absolute/path/to/.env",
+        "-v", "telegram-mcp-cache:/home/node/.cache",
+        "ghcr.io/electricessence/telegram-bridge-mcp:latest"
+      ]
+    }
+  }
+}
+```
+
+**Claude Code** — `.mcp.json` in your project root:
 
 ```json
 {

@@ -1,135 +1,114 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect } from "../telegram.js";
-import { markdownToV2 } from "../markdown.js";
-import { cancelTyping, showTyping } from "../typing-state.js";
-import { clearPendingTemp } from "../temp-message.js";
+import {
+  getApi, toResult, toError, validateText, resolveChat, validateCallbackData, LIMITS, callApi,
+} from "../telegram.js";
+import { resolveParseMode } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
-import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
-import { recordBotMessage } from "../session-recording.js";
+import type { ButtonStyle } from "./button-helpers.js";
+
+const DESCRIPTION =
+  "Core send primitive — sends a message to the Telegram chat and returns immediately " +
+  "with a message_id. Optionally attach an inline keyboard (buttons). " +
+  "Default parse_mode is Markdown (auto-converted). Does not auto-split long text — " +
+  "use send_text for messages longer than 4096 chars or when no keyboard is needed. " +
+  "When keyboard is provided, handle button presses via dequeue_update and " +
+  "answer_callback_query — there is no blocking wait. " +
+  "For blocking single-selection, use choose. For yes/no, use confirm. " +
+  "For voice/TTS, use send_text_as_voice.";  
+
+const buttonSchema = z.object({
+  label: z
+    .string()
+    .describe(
+      `Button label text. Keep under ${LIMITS.BUTTON_DISPLAY_MULTI_COL} chars for ` +
+      `multi-column layout or under ${LIMITS.BUTTON_DISPLAY_SINGLE_COL} chars for single column. ` +
+      `Hard limit is ${LIMITS.BUTTON_TEXT} chars.`,
+    ),
+  value: z
+    .string()
+    .describe(`Callback data returned when pressed (max ${LIMITS.CALLBACK_DATA} bytes)`),
+  style: z
+    .enum(["success", "primary", "danger"])
+    .optional()
+    .describe("Button background color: success (green), primary (blue), danger (red). Omit for default."),
+});
 
 export function register(server: McpServer) {
   server.registerTool(
     "send_message",
     {
-      description: "Sends a text message to a Telegram chat. Default parse_mode is Markdown — write standard Markdown (*bold*, _italic_, `code`, **bold**, [links](url)) and it is auto-converted so no manual escaping is needed. Use MarkdownV2 for full control, or HTML for punctuation-heavy content. Messages longer than 4096 characters are automatically split and sent as sequential parts. When TTS is configured (TTS_HOST or OPENAI_API_KEY env var), setting voice:true synthesizes the text to speech and sends it as a voice note — use this to speak a response aloud. To send an existing audio file, use send_voice instead.",
+      description: DESCRIPTION,
       inputSchema: {
-        text: z.string().describe("Message text. Automatically split into multiple messages if longer than 4096 characters."),
-      parse_mode: z
-        .enum(["Markdown", "HTML", "MarkdownV2"])
-        .default("Markdown")
-        .describe("Markdown = standard Markdown auto-converted (default); MarkdownV2 = raw Telegram V2 (manual escaping required); HTML = HTML tags"),
-      disable_notification: z
-        .boolean()
-        .optional()
-        .describe("Send message silently"),
-      reply_to_message_id: z
-        .number()
-        .int()
-        .optional()
-        .describe("Reply to this message ID"),
-      voice: z
-        .boolean()
-        .optional()
-        .describe(
-          "Send as a spoken voice note via TTS instead of text. " +
-          "Requires TTS_HOST or OPENAI_API_KEY to be configured. " +
-          "Formatting is stripped to plain text before synthesis — no markdown in audio."
-        ),
+        text: z.string().describe("Message text"),
+        keyboard: z
+          .array(z.array(buttonSchema))
+          .optional()
+          .describe(
+            "Inline keyboard: outer array = rows, inner array = buttons in each row. " +
+            "Button presses arrive as callback_query events via dequeue_update.",
+          ),
+        parse_mode: z
+          .enum(["Markdown", "HTML", "MarkdownV2"])
+          .default("Markdown")
+          .describe("Markdown = auto-converted (default); MarkdownV2 = raw; HTML = HTML tags"),
+        disable_notification: z
+          .boolean()
+          .optional()
+          .describe("Send silently (no sound/notification)"),
+        reply_to_message_id: z
+          .number()
+          .int()
+          .optional()
+          .describe("Thread this message as a reply to the given message ID"),
       },
     },
-    async ({ text, parse_mode, disable_notification, reply_to_message_id, voice }) => {
+    async ({ text, keyboard, parse_mode, disable_notification, reply_to_message_id }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
-      await clearPendingTemp();
 
-      // ── Voice (TTS) mode ────────────────────────────────────────────────
-      const useVoice = voice === true && isTtsEnabled();
-      if (useVoice) {
-        const textErr = validateText(text);
-        if (textErr) return toError(textErr);
-
-        const plainText = stripForTts(text);
-        if (!plainText) return toError({ code: "EMPTY_MESSAGE", message: "Message text is empty after stripping formatting for TTS." } as const);
-
-        const voiceChunks = splitMessage(plainText);
-        try {
-          // Show record_voice indicator proportional to text length:
-          // ~5 s base + 1 s per 20 chars, capped at 120 s
-          const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
-          await showTyping(typingSeconds, "record_voice");
-          const message_ids: number[] = [];
-          for (let i = 0; i < voiceChunks.length; i++) {
-            const ogg = await synthesizeToOgg(voiceChunks[i]);
-            const msg = await sendVoiceDirect(chatId, ogg, {
-              disable_notification,
-              reply_to_message_id: i === 0 ? reply_to_message_id : undefined,
-            });
-            message_ids.push(msg.message_id);
+      if (keyboard) {
+        for (const row of keyboard) {
+          for (const btn of row) {
+            const dataErr = validateCallbackData(btn.value);
+            if (dataErr) return toError(dataErr);
+            if (btn.label.length > LIMITS.BUTTON_TEXT) {
+              return toError({
+                code: "BUTTON_DATA_INVALID" as const,
+                message: `Button label "${btn.label}" is ${btn.label.length} chars; Telegram hard limit is ${LIMITS.BUTTON_TEXT}.`,
+              });
+            }
           }
-          cancelTyping();
-          if (message_ids.length === 1) {
-            recordBotMessage({ content_type: "voice", text: plainText, message_id: message_ids[0] });
-            return toResult({ message_id: message_ids[0], voice: true });
-          }
-          recordBotMessage({ content_type: "voice", text: plainText, message_ids });
-          return toResult({ message_ids, chunks: message_ids.length, split: true, voice: true });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes("user restricted receiving of voice note messages")) {
-            return toError({
-              code: "VOICE_RESTRICTED",
-              message:
-                "Telegram blocked voice delivery — the user's privacy settings restrict voice notes from bots. " +
-                "To fix: Telegram → Settings → Privacy and Security → Voice Messages → " +
-                "Add Exceptions → Always Allow → add this bot. " +
-                "The base setting can remain as-is; the 'Always Allow' exception is sufficient.",
-            } as const);
-          }
-          return toError(err);
         }
       }
 
-      // ── Text mode ───────────────────────────────────────────────────────
       const textWithTopic = applyTopicToText(text, parse_mode);
-      const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;
-      const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
+      const { text: finalText, parse_mode: finalMode } = resolveParseMode(textWithTopic, parse_mode);
+      const textErr = validateText(finalText);
+      if (textErr) return toError(textErr);
 
-      // Empty check only — length is handled by auto-splitting
-      if (!finalText || finalText.trim().length === 0) return toError({ code: "EMPTY_MESSAGE", message: "Message text must not be empty." } as const);
-
-      const chunks = splitMessage(finalText);
+      const inlineKeyboard = keyboard?.map((row) =>
+        row.map((btn) => ({
+          text: btn.label,
+          callback_data: btn.value,
+          ...(btn.style ? { style: btn.style as ButtonStyle } : {}),
+        })),
+      );
 
       try {
-        cancelTyping();
-        const message_ids: number[] = [];
-        for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i];
-          const textErr = validateText(chunk);
-          if (textErr) return toError(textErr);
-          const msg = await callApi(() =>
-            getApi().sendMessage(chatId, chunk, {
-              parse_mode: finalMode,
-              disable_notification,
-              // Only attach reply to the first chunk
-              reply_parameters: i === 0 && reply_to_message_id
-                ? { message_id: reply_to_message_id }
-                : undefined,
-            })
-          );
-          message_ids.push(msg.message_id);
-        }
-
-        if (message_ids.length === 1) {
-          recordBotMessage({ content_type: "text", text, message_id: message_ids[0] });
-          return toResult({ message_id: message_ids[0] });
-        }
-        recordBotMessage({ content_type: "text", text, message_ids });
-        return toResult({ message_ids, chunks: message_ids.length, split: true });
+        const msg = await callApi(() =>
+          getApi().sendMessage(chatId, finalText, {
+            parse_mode: finalMode,
+            disable_notification,
+            reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
+            reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
+            _rawText: text,
+          } as Record<string, unknown>),
+        );
+        return toResult({ message_id: msg.message_id });
       } catch (err) {
         return toError(err);
       }
-    }
+    },
   );
 }
-

@@ -13,10 +13,8 @@ import {
   splitMessage,
   callApi,
   filterAllowedUpdates,
-  validateTargetChat,
   resetSecurityConfig,
   unauthorizedSenderError,
-  unauthorizedChatError,
   resolveChat,
   getOffset,
   advanceOffset,
@@ -332,13 +330,11 @@ describe("callApi", () => {
 describe("filterAllowedUpdates", () => {
   beforeEach(() => {
     delete process.env.ALLOWED_USER_ID;
-    delete process.env.ALLOWED_CHAT_ID;
     resetSecurityConfig();
   });
 
   afterEach(() => {
     delete process.env.ALLOWED_USER_ID;
-    delete process.env.ALLOWED_CHAT_ID;
     resetSecurityConfig();
   });
 
@@ -371,33 +367,15 @@ describe("filterAllowedUpdates", () => {
     expect(filterAllowedUpdates([noSender])).toHaveLength(0);
   });
 
-  it("filters by chatId: keeps matching chat", () => {
-    process.env.ALLOWED_CHAT_ID = "100";
-    resetSecurityConfig();
-    const updates = [makeMessageUpdate(1, 100), makeMessageUpdate(1, 999)];
-    const result = filterAllowedUpdates(updates);
-    expect(result).toHaveLength(1);
-    expect(result[0].message?.chat?.id).toBe(100);
-  });
-
-  it("filters by chatId: drops update with null chatId (closes null-bypass gap)", () => {
-    process.env.ALLOWED_CHAT_ID = "100";
-    resetSecurityConfig();
-    // Update has no chat info at all — updateChatId resolves to null
-    const noChatMsg = { message: { from: { id: 1 } } } as unknown as Update; // chat property absent
-    expect(filterAllowedUpdates([noChatMsg])).toHaveLength(0);
-  });
-
-  it("applies both userId and chatId filters together", () => {
+  it("userId filter passes updates from any chat (no chat filtering)", () => {
     process.env.ALLOWED_USER_ID = "42";
-    process.env.ALLOWED_CHAT_ID = "100";
     resetSecurityConfig();
-    const pass = makeMessageUpdate(42, 100);
+    const sameChat = makeMessageUpdate(42, 100);
+    const diffChat = makeMessageUpdate(42, 999); // same user, different chat — still passes
     const wrongUser = makeMessageUpdate(99, 100);
-    const wrongChat = makeMessageUpdate(42, 999);
-    const result = filterAllowedUpdates([pass, wrongUser, wrongChat]);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toBe(pass);
+    const result = filterAllowedUpdates([sameChat, diffChat, wrongUser]);
+    expect(result).toHaveLength(2);
+    expect(result.every((u) => u.message?.from?.id === 42)).toBe(true);
   });
 
   it("handles callback_query updates with userId filter", () => {
@@ -410,57 +388,10 @@ describe("filterAllowedUpdates", () => {
     expect(result[0].callback_query?.from?.id).toBe(7);
   });
 
-  it("handles callback_query updates with chatId filter", () => {
-    process.env.ALLOWED_CHAT_ID = "50";
-    resetSecurityConfig();
-    const match = makeCallbackUpdate(7, 50);
-    const mismatch = makeCallbackUpdate(7, 99);
-    expect(filterAllowedUpdates([match, mismatch])).toHaveLength(1);
-  });
 });
 
 // ---------------------------------------------------------------------------
-// validateTargetChat
-// ---------------------------------------------------------------------------
-
-describe("validateTargetChat", () => {
-  beforeEach(() => {
-    delete process.env.ALLOWED_CHAT_ID;
-    resetSecurityConfig();
-  });
-
-  afterEach(() => {
-    delete process.env.ALLOWED_CHAT_ID;
-    resetSecurityConfig();
-  });
-
-  it("returns null when no ALLOWED_CHAT_ID is configured", () => {
-    expect(validateTargetChat("any-chat")).toBeNull();
-  });
-
-  it("returns null when chatId matches the configured ALLOWED_CHAT_ID", () => {
-    process.env.ALLOWED_CHAT_ID = "12345";
-    resetSecurityConfig();
-    expect(validateTargetChat("12345")).toBeNull();
-  });
-
-  it("returns UNAUTHORIZED_CHAT error when chatId differs from ALLOWED_CHAT_ID", () => {
-    process.env.ALLOWED_CHAT_ID = "12345";
-    resetSecurityConfig();
-    const err = validateTargetChat("99999");
-    expect(err?.code).toBe("UNAUTHORIZED_CHAT");
-    expect(err?.message).toContain("99999");
-  });
-
-  it("trims whitespace when comparing chatIds", () => {
-    process.env.ALLOWED_CHAT_ID = "  12345  ";
-    resetSecurityConfig();
-    expect(validateTargetChat("12345")).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// unauthorizedSenderError / unauthorizedChatError
+// unauthorizedSenderError
 // ---------------------------------------------------------------------------
 
 describe("unauthorizedSenderError", () => {
@@ -476,37 +407,29 @@ describe("unauthorizedSenderError", () => {
   });
 });
 
-describe("unauthorizedChatError", () => {
-  it("includes the chat id in the message", () => {
-    const err = unauthorizedChatError("999");
-    expect(err.code).toBe("UNAUTHORIZED_CHAT");
-    expect(err.message).toContain("999");
-  });
-});
-
 // ---------------------------------------------------------------------------
 // resolveChat
 // ---------------------------------------------------------------------------
 
 describe("resolveChat", () => {
   beforeEach(() => {
-    delete process.env.ALLOWED_CHAT_ID;
+    delete process.env.ALLOWED_USER_ID;
     resetSecurityConfig();
   });
 
   afterEach(() => {
-    delete process.env.ALLOWED_CHAT_ID;
+    delete process.env.ALLOWED_USER_ID;
     resetSecurityConfig();
   });
 
-  it("returns UNAUTHORIZED_CHAT error when ALLOWED_CHAT_ID is not set", () => {
+  it("returns UNAUTHORIZED_CHAT error when ALLOWED_USER_ID is not set", () => {
     const result = resolveChat();
     expect(typeof result).toBe("object");
     expect((result as TelegramError).code).toBe("UNAUTHORIZED_CHAT");
   });
 
-  it("returns the configured chatId when ALLOWED_CHAT_ID is set", () => {
-    process.env.ALLOWED_CHAT_ID = "12345";
+  it("returns userId as the chat target when ALLOWED_USER_ID is set", () => {
+    process.env.ALLOWED_USER_ID = "12345";
     resetSecurityConfig();
     expect(resolveChat()).toBe(12345);
   });
@@ -594,14 +517,14 @@ describe("fireHijackNotification", () => {
     sendMessageSpy.mockRestore();
     delete process.env.BOT_TOKEN;
     delete process.env.HIJACK_NOTIFY;
-    delete process.env.ALLOWED_CHAT_ID;
+    delete process.env.ALLOWED_USER_ID;
     resetApi();
     resetSecurityConfig();
   });
 
-  it("sends to configured chat when HIJACK_NOTIFY includes 'telegram' and ALLOWED_CHAT_ID is set", () => {
+  it("sends to configured chat when HIJACK_NOTIFY includes 'telegram' and ALLOWED_USER_ID is set", () => {
     process.env.HIJACK_NOTIFY = "telegram";
-    process.env.ALLOWED_CHAT_ID = "99999";
+    process.env.ALLOWED_USER_ID = "99999";
     resetSecurityConfig();
     fireHijackNotification("⚠️ test warning");
     expect(sendMessageSpy).toHaveBeenCalledOnce();
@@ -609,7 +532,7 @@ describe("fireHijackNotification", () => {
     expect(sendMessageSpy.mock.calls[0][1]).toBe("⚠️ test warning");
   });
 
-  it("skips Telegram send when ALLOWED_CHAT_ID is not configured", () => {
+  it("skips Telegram send when ALLOWED_USER_ID is not configured", () => {
     process.env.HIJACK_NOTIFY = "telegram";
     resetSecurityConfig();
     fireHijackNotification("⚠️ test warning");
@@ -619,10 +542,10 @@ describe("fireHijackNotification", () => {
   it("swallows sendMessage rejection without throwing", async () => {
     sendMessageSpy.mockRejectedValue(new Error("network error"));
     process.env.HIJACK_NOTIFY = "telegram";
-    process.env.ALLOWED_CHAT_ID = "99999";
+    process.env.ALLOWED_USER_ID = "99999";
     resetSecurityConfig();
     // fire-and-forget — must not throw
-    expect(() => fireHijackNotification("⚠️ test warning")).not.toThrow();
+    expect(() => { fireHijackNotification("⚠️ test warning"); }).not.toThrow();
     // verify the send was actually attempted
     expect(sendMessageSpy).toHaveBeenCalledOnce();
     // flush microtask queue so the rejection is handled and swallowed
