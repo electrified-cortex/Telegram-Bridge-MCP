@@ -78,8 +78,28 @@ export function activeSessionCount(): number {
   return _sessions.size;
 }
 
+// ── Active Session Context ─────────────────────────────────
+
+/**
+ * The session ID of the currently-executing tool call.
+ * 0 = no session (single-session backward compat / bootstrap tools).
+ *
+ * Safe for stdio (one tool call at a time). For HTTP transport with
+ * concurrent sessions, replace with AsyncLocalStorage.
+ */
+let _activeSessionId = 0;
+
+export function setActiveSession(sid: number): void {
+  _activeSessionId = sid;
+}
+
+export function getActiveSession(): number {
+  return _activeSessionId;
+}
+
 /** Clear all sessions and reset the ID counter. Test-only. */
 export function resetSessions(): void {
   _sessions.clear();
   _nextId = 1;
+  _activeSessionId = 0;
 }

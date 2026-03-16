@@ -19,6 +19,7 @@
 
 import type { Update } from "grammy/types";
 import { recordUpdate, recordBotMessage } from "./session-recording.js";
+import { getActiveSession } from "./session-manager.js";
 
 // ---------------------------------------------------------------------------
 // Simple generic queue (replaces @tsdotnet/queue)
@@ -96,6 +97,8 @@ export interface TimelineEvent {
   from: "user" | "bot";
   /** Event-specific payload. */
   content: EventContent;
+  /** Session ID that produced this event (0 or absent = single-session). */
+  sid?: number;
   /** Raw Telegram update — stored for get_message full detail. */
   _update?: Update;
 }
@@ -470,12 +473,14 @@ export function recordOutgoing(
   if (text !== undefined) content.text = text;
   if (caption !== undefined) content.caption = caption;
   if (fileId !== undefined) content.file_id = fileId;
+  const activeSid = getActiveSession();
   const evt: TimelineEvent = {
     id: messageId,
     timestamp: now(),
     event: "sent",
     from: "bot",
     content,
+    ...(activeSid > 0 && { sid: activeSid }),
   };
   pushEvent(evt);
 }
@@ -497,12 +502,14 @@ export function recordOutgoingEdit(
   const versions = _index.get(messageId);
   if (!versions) {
     // Message was evicted — record as edit (not "sent") to preserve intent
+    const activeSid = getActiveSession();
     const evt: TimelineEvent = {
       id: messageId,
       timestamp: now(),
       event: "edit",
       from: "bot",
       content: { type: contentType, text },
+      ...(activeSid > 0 && { sid: activeSid }),
     };
     pushEvent(evt);
     return;
@@ -515,12 +522,14 @@ export function recordOutgoingEdit(
     versions.set(nextVersion, current);
   }
 
+  const activeSidEdit = getActiveSession();
   const evt: TimelineEvent = {
     id: messageId,
     timestamp: now(),
     event: "edit",
     from: "bot",
     content: { type: contentType, text },
+    ...(activeSidEdit > 0 && { sid: activeSidEdit }),
   };
   _timeline.push(evt);
   evictTimeline();

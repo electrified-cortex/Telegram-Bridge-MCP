@@ -7,6 +7,8 @@ import {
   listSessions,
   resetSessions,
   activeSessionCount,
+  setActiveSession,
+  getActiveSession,
 } from "./session-manager.js";
 
 beforeEach(() => {
@@ -187,5 +189,22 @@ describe("resetSessions", () => {
     expect(activeSessionCount()).toBe(0);
     const fresh = createSession();
     expect(fresh.sid).toBe(1);
+  });
+});
+
+describe("active session context", () => {
+  it("defaults to 0 (no session)", () => {
+    expect(getActiveSession()).toBe(0);
+  });
+
+  it("set and get round-trip", () => {
+    setActiveSession(3);
+    expect(getActiveSession()).toBe(3);
+  });
+
+  it("resets to 0 on resetSessions", () => {
+    setActiveSession(5);
+    resetSessions();
+    expect(getActiveSession()).toBe(0);
   });
 });

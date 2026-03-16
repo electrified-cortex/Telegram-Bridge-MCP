@@ -22,6 +22,10 @@ import {
   clearMessageHook,
   CURRENT,
 } from "./message-store.js";
+import {
+  setActiveSession,
+  resetSessions,
+} from "./session-manager.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — minimal Telegram Update factories
@@ -472,6 +476,46 @@ describe("recordOutgoing", () => {
     expect(msg!.from).toBe("bot");
     expect(msg!.event).toBe("sent");
     expect(msg!.content.text).toBe("Hi there");
+  });
+});
+
+describe("session tagging on outbound", () => {
+  beforeEach(() => {
+    resetSessions();
+  });
+
+  it("tags recordOutgoing events with active session ID", () => {
+    setActiveSession(3);
+    recordOutgoing(200, "text", "tagged");
+    const evt = getMessage(200);
+    expect(evt!.sid).toBe(3);
+  });
+
+  it("omits sid when active session is 0", () => {
+    setActiveSession(0);
+    recordOutgoing(201, "text", "no session");
+    const evt = getMessage(201);
+    expect(evt!.sid).toBeUndefined();
+  });
+
+  it("tags recordOutgoingEdit events with active session ID", () => {
+    setActiveSession(1);
+    recordOutgoing(300, "text", "original");
+    setActiveSession(2);
+    recordOutgoingEdit(300, "text", "edited");
+    const timeline = dumpTimeline(10);
+    const editEvt = timeline.find(
+      (e) => e.id === 300 && e.event === "edit",
+    );
+    expect(editEvt!.sid).toBe(2);
+  });
+
+  it("tags orphan edits (evicted message) with active session ID", () => {
+    setActiveSession(5);
+    recordOutgoingEdit(999, "text", "orphan");
+    const timeline = dumpTimeline(10);
+    const evt = timeline.find((e) => e.id === 999);
+    expect(evt!.sid).toBe(5);
   });
 });
 
