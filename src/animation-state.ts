@@ -164,6 +164,7 @@ export async function startAnimation(
   timeoutSeconds = 600,
   persistent = false,
   allowBreakingSpaces = false,
+  notify = false,
 ): Promise<number> {
   const chatId = resolveChat();
   if (typeof chatId !== "number") throw new Error("ALLOWED_USER_ID not configured");
@@ -211,7 +212,7 @@ export async function startAnimation(
       _state = null;
       await fireTempReactionRestore(); // treat new animation as an outbound action
       const msg = await bypassProxy(() =>
-        getRawApi().sendMessage(chatId, firstFrame, { parse_mode: parseMode }),
+        getRawApi().sendMessage(chatId, firstFrame, { parse_mode: parseMode, disable_notification: !notify }),
       );
       messageId = msg.message_id;
       trackMessageId(messageId);
@@ -224,7 +225,7 @@ export async function startAnimation(
     }
     await fireTempReactionRestore(); // treat new animation as an outbound action
     const msg = await bypassProxy(() =>
-      getRawApi().sendMessage(chatId, firstFrame, { parse_mode: parseMode }),
+      getRawApi().sendMessage(chatId, firstFrame, { parse_mode: parseMode, disable_notification: !notify }),
     );
     messageId = msg.message_id;
     trackMessageId(messageId);

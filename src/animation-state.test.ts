@@ -80,7 +80,7 @@ describe("animation-state", () => {
     it("sends the first frame as a message", async () => {
       await startAnimation(["🔄", "🔃"]);
 
-      expect(mocks.sendMessage).toHaveBeenCalledWith(123, "🔄", { parse_mode: "MarkdownV2" });
+      expect(mocks.sendMessage).toHaveBeenCalledWith(123, "🔄", { parse_mode: "MarkdownV2", disable_notification: true });
     });
 
     it("returns the message_id of the sent message", async () => {
@@ -99,7 +99,7 @@ describe("animation-state", () => {
       const [chatId, text, opts] = mocks.sendMessage.mock.calls[0] as [number, string, unknown];
       expect(chatId).toBe(123);
       expect(text).toMatch(/\u258e/); // ▎ delimiter — confirms default frames are used
-      expect(opts).toEqual({ parse_mode: "MarkdownV2" });
+      expect(opts).toEqual({ parse_mode: "MarkdownV2", disable_notification: true });
     });
 
     it("reuses existing message when starting new animation", async () => {
@@ -120,6 +120,18 @@ describe("animation-state", () => {
       mocks.resolveChat.mockReturnValueOnce("not_a_number" as unknown as number);
 
       await expect(startAnimation()).rejects.toThrow("ALLOWED_USER_ID not configured");
+    });
+
+    it("sends with disable_notification: true by default (silent)", async () => {
+      await startAnimation(["X"]);
+      const [, , opts] = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+      expect(opts.disable_notification).toBe(true);
+    });
+
+    it("sends with disable_notification: false when notify: true", async () => {
+      await startAnimation(["X"], 1000, 600, false, false, true);
+      const [, , opts] = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+      expect(opts.disable_notification).toBe(false);
     });
   });
 
@@ -826,7 +838,7 @@ describe("animation-state", () => {
       expect(mocks.sendMessage).toHaveBeenCalledWith(
         123,
         "A\u00A0B",
-        { parse_mode: "MarkdownV2" },
+        { parse_mode: "MarkdownV2", disable_notification: true },
       );
     });
 
@@ -835,7 +847,7 @@ describe("animation-state", () => {
       expect(mocks.sendMessage).toHaveBeenCalledWith(
         123,
         "A B",
-        { parse_mode: "MarkdownV2" },
+        { parse_mode: "MarkdownV2", disable_notification: true },
       );
     });
 
@@ -845,7 +857,7 @@ describe("animation-state", () => {
       expect(mocks.sendMessage).toHaveBeenCalledWith(
         123,
         "A\u00A0",
-        { parse_mode: "MarkdownV2" },
+        { parse_mode: "MarkdownV2", disable_notification: true },
       );
     });
   });
