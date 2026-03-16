@@ -4,7 +4,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 ## Prerequisites
 
-- MCP server running with `TELEGRAM_MCP_DEBUG=1` (or toggle on via `/debug`)
+- MCP server running with `TELEGRAM_MCP_DEBUG=1` env var set in config
 - One MCP client connected as **Session 1 (S1)** — typically the primary agent
 - A second MCP client ready to connect as **S2** (e.g. another VS Code window, Claude Code, or any MCP client)
 - Telegram chat open on the operator's device
@@ -23,7 +23,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 1. **[S1]** `session_start` (already done)
 2. **[Verify]** S1 received `{ sid: 1, pin: ..., sessions_active: 1 }`
-3. **[Op]** Send `/debug` → enable debug logging if not already on
+3. **[Verify]** Server stderr shows session-1 creation traces (requires `TELEGRAM_MCP_DEBUG=1`)
 
 ### 1.2 Second Session Joins
 
@@ -34,10 +34,10 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
    - `fellow_sessions` array listing S1
    - `routing_mode: "load_balance"`
 3. **[Verify]** Intro message in Telegram shows "Session 2 · Scout"
-4. **[Op]** Send `/debug` → refresh → confirm logs show:
-   - `[session] created sid=2 name="Scout"`
-   - `[queue] created queue for sid=2`
-   - `[session] active 0 → 2`
+3. **[Verify]** Server stderr shows debug traces:
+   - `[dbg:session] created sid=2 name="Scout"`
+   - `[dbg:queue] created queue for sid=2`
+   - `[dbg:session] active 0 → 2`
 
 ### 1.3 List Sessions
 
@@ -56,7 +56,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 2. **[Verify]** Exactly one session receives it via `dequeue_update`
 3. **[Op]** Send another plain text: `"And this one?"`
 4. **[Verify]** The other session receives it (round-robin)
-5. **[Op]** Check `/debug` logs — should show `[route] load_balance event=X → sid=Y`
+5. **[Verify]** Server stderr shows `[dbg:route] load_balance event=X → sid=Y`
 
 ### 2.2 Targeted Message — Reply-To
 
@@ -64,7 +64,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 2. **[Op]** Reply to S1's message: `"Got it, S1."`
 3. **[Verify]** Only S1 receives the reply via `dequeue_update`
 4. **[Verify]** S2 does NOT receive it
-5. **[Op]** Check `/debug` logs — should show `[route] targeted event=X → sid=1`
+5. **[Verify]** Server stderr shows `[dbg:route] targeted event=X → sid=1`
 
 ### 2.3 Targeted Message — Callback
 
@@ -87,14 +87,14 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 1. **[S1]** Call `dequeue_update(timeout: 60)` (S1 is now idle/waiting)
 2. **[Op]** Send: `"Cascade test message"`
 3. **[Verify]** S1 receives it (lowest SID, AND it's idle → priority)
-4. **[Op]** Check debug log — should show `[cascade] routed event=X → sid=1 idle=true`
+4. **[Verify]** Server stderr shows `[dbg:cascade] routed event=X → sid=1 idle=true`
 
 ### 3.3 Cascade Pass
 
 1. **[S1]** receives the message but decides to pass: `pass_message` with `message_id` of the cascaded message
 2. **[Verify]** `pass_message` returns `{ forwarded_to: 2 }`
 3. **[Verify]** S2 now receives the same message via `dequeue_update`
-4. **[Op]** Check debug log — should show `[cascade] pass msg=X from sid=1 → sid=2`
+4. **[Verify]** Server stderr shows `[dbg:cascade] pass msg=X from sid=1 → sid=2`
 
 ### 3.4 Cascade Timeout
 
@@ -118,14 +118,14 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 2. **[Verify]** Only S1 (governor) receives it
 3. **[S1]** Calls `route_message` with `message_id` and `target_sid: 2`
 4. **[Verify]** S2 receives the message
-5. **[Op]** Check debug log — shows `[route] governor event=X → sid=1` then `[route] governor delegated msg=X → sid=2`
+5. **[Verify]** Server stderr shows `[dbg:route] governor event=X → sid=1` then `[dbg:route] governor delegated msg=X → sid=2`
 
 ### 4.3 Governor Death Recovery
 
 1. **[S1]** Calls `close_session` (with auth)
 2. **[Verify]** Routing mode automatically resets to `load_balance`
 3. **[Verify]** Operator sees a notification about governor shutdown and mode reset
-4. **[Op]** Check debug log — `[session] closed sid=1` and routing mode change
+4. **[Verify]** Server stderr shows `[dbg:session] closed sid=1` and routing mode change
 
 ---
 
@@ -144,7 +144,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 1. **[S2]** `send_direct_message` to S1 with text: `"Hey S1, I found something interesting."`
 2. **[Verify]** S1 receives a `direct_message` event via `dequeue_update`
 3. **[Verify]** The event has `type: "direct_message"` and `sid` field showing sender
-4. **[Op]** Check debug log — `[dm] delivered DM from sid=2 → sid=1`
+4. **[Verify]** Server stderr shows `[dbg:dm] delivered DM from sid=2 → sid=1`
 
 ### 5.3 Permission Denied
 
@@ -155,7 +155,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 1. **[S2]** Calls `close_session`
 2. **[Verify]** All DM permissions involving S2 are revoked
-3. **[Op]** Check debug log — `[dm] revoked N DM permission(s) for sid=2`
+3. **[Verify]** Server stderr shows `[dbg:dm] revoked N DM permission(s) for sid=2`
 
 ---
 
@@ -184,7 +184,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 4. **[S1]** Passes → goes to S2
 5. **[S2]** Passes → goes to S3
 6. **[S3]** Handles it (no one left to pass to)
-7. **[Op]** Verify debug log shows full cascade chain
+7. **[Verify]** Server stderr shows full cascade chain
 
 ### 6.4 Governor with 3
 
@@ -197,7 +197,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 1. **[S3]** Tries `close_session` with S2's SID but S3's PIN
 2. **[Verify]** Auth error — can't close another session with wrong credentials
-3. **[Op]** Check debug log — `[session] auth failed sid=2`
+3. **[Verify]** Server stderr shows `[dbg:session] auth failed sid=2`
 
 ---
 
@@ -213,7 +213,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 1. **[Op]** Send 5 messages in quick succession
 2. **[Verify]** All 5 are distributed correctly (no drops, no duplicates)
-3. **[Op]** Check queue pending counts match expected values
+3. **[Verify]** Queue pending counts match expected values
 
 ### 7.3 Session Close Mid-Conversation
 
@@ -224,10 +224,9 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 ### 7.4 Debug Log Review
 
-1. **[Op]** Send `/debug` → review full log
+1. **[Op]** Review server stderr log output
 2. **[Verify]** All lifecycle events, routing decisions, and queue operations are traced
-3. **[Op]** Filter by category (session, route, cascade, dm, queue)
-4. **[Op]** Clear the buffer and confirm it resets
+3. **[Verify]** Traces cover categories: session, route, cascade, dm, queue
 
 ---
 

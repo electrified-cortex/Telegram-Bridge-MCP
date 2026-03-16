@@ -33,8 +33,7 @@
 - Added Claude Code configuration instructions (project-scoped `.mcp.json`) to setup guide and README
 - Added Kokoro quick-start guide to README — Docker pull, env vars, `/voice` panel, and voice table
 - Added troubleshooting entry for multiple instances competing for the same bot token
-- Added `debug-log` module — structured, bounded (2 000 entries) trace logger with categories (session, route, queue, cascade, dm, animation, tool); toggle via `TELEGRAM_MCP_DEBUG=1` env var or `/debug` built-in command
-- Added `/debug` built-in command — interactive panel to toggle debug logging, filter by category, view last 15 entries, and clear the buffer
+- Added `debug-log` module — structured, bounded (2 000 entries) trace logger with categories (session, route, queue, cascade, dm, animation, tool); enable via `TELEGRAM_MCP_DEBUG=1` env var
 - Added debug instrumentation across `session-manager`, `session-queue`, `dm-permissions`, `animation-state`, and `session-auth` — all lifecycle events, routing decisions, and DM operations are now traced
 - Added `docs/multi-session-test-script.md` — detailed phase-by-phase manual test guide for multi-session features (6 phases, 20+ scenarios)
 

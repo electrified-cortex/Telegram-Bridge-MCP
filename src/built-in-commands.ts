@@ -23,7 +23,7 @@ import type { VoiceEntry } from "./config.js";
 import { fetchVoiceList, isTtsEnabled } from "./tts.js";
 import { getRoutingMode, setRoutingMode, type RoutingMode } from "./routing-mode.js";
 import { activeSessionCount } from "./session-manager.js";
-import { isDebugEnabled, setDebugEnabled, getDebugLog, debugLogSize, clearDebugLog, type DebugCategory } from "./debug-log.js";
+
 
 const require = createRequire(import.meta.url);
 const { version: MCP_VERSION } = require("../package.json") as { version: string };
@@ -46,7 +46,7 @@ import { dumpTimeline, dumpTimelineSince, timelineSize, storeSize, setOnEvent } 
 // ---------------------------------------------------------------------------
 
 /** Maps from message_id → panel type so we can route callback_queries back to us. */
-const _activePanels = new Map<number, "session" | "voice" | "voice-sample" | "routing" | "debug">();
+const _activePanels = new Map<number, "session" | "voice" | "voice-sample" | "routing">();
 
 /** Set to true after sending the startup prefs prompt so we only ask once per process. */
 let _sessionPrefsAsked = false;
@@ -137,7 +137,6 @@ export const BUILT_IN_COMMANDS = [
   { command: "session", description: "Session recording controls" },
   { command: "voice", description: "Change the TTS voice" },
   { command: "routing", description: "Message routing mode for multi-session" },
-  { command: "debug", description: "Toggle debug logging and view trace buffer" },
   { command: "version", description: "Show server version and build info" },
   { command: "shutdown", description: "Shut down the MCP server" },
 ] as const;
@@ -209,10 +208,6 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
         await handleRoutingCommand();
         return true;
       }
-      if (raw === "debug") {
-        await handleDebugCommand();
-        return true;
-      }
       if (raw === "version") {
         await handleVersionCommand();
         return true;
@@ -243,12 +238,6 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
         );
       } else if (panelType === "routing") {
         await handleRoutingCallback(
-          update.callback_query.id,
-          msgId,
-          update.callback_query.data ?? "",
-        );
-      } else if (panelType === "debug") {
-        await handleDebugCallback(
           update.callback_query.id,
           msgId,
           update.callback_query.data ?? "",
@@ -981,108 +970,7 @@ function buildSessionPanel(): { text: string; keyboard: { text: string; callback
   return { text, keyboard };
 }
 
-// ---------------------------------------------------------------------------
-// /debug panel
-// ---------------------------------------------------------------------------
 
-const DEBUG_CATEGORIES: DebugCategory[] = ["session", "route", "queue", "cascade", "dm", "animation", "tool"];
-
-function buildDebugPanel(filter?: DebugCategory): { text: string; keyboard: Array<Array<{ text: string; callback_data: string }>> } {
-  const enabled = isDebugEnabled();
-  const total = debugLogSize();
-
-  const lines = [
-    "🔍 *Debug Log*",
-    "",
-    `Status: ${enabled ? "✅ ON" : "⛔ OFF"}`,
-    `Buffer: ${total} entries`,
-  ];
-
-  if (enabled && total > 0) {
-    const entries = getDebugLog(15, filter);
-    if (filter) lines.push(`Filter: \`${filter}\``);
-    lines.push("");
-    for (const e of entries) {
-      const time = e.ts.slice(11, 23); // HH:mm:ss.sss
-      lines.push(`\`${time}\` \\[${e.cat}\\] ${e.msg}`);
-    }
-  }
-
-  const text = lines.join("\n");
-
-  const toggleBtn = enabled
-    ? { text: "⛔ Disable", callback_data: "debug:off" }
-    : { text: "✅ Enable", callback_data: "debug:on" };
-
-  const filterRow: Array<{ text: string; callback_data: string }> = [];
-  for (const cat of DEBUG_CATEGORIES) {
-    filterRow.push({
-      text: filter === cat ? `[${cat}]` : cat,
-      callback_data: `debug:filter:${cat}`,
-    });
-  }
-
-  const keyboard = [
-    [toggleBtn, { text: "🗑 Clear", callback_data: "debug:clear" }],
-    filterRow,
-    [
-      { text: "🔄 Refresh", callback_data: filter ? `debug:filter:${filter}` : "debug:refresh" },
-      { text: "✖ Dismiss", callback_data: "debug:dismiss" },
-    ],
-  ];
-
-  return { text, keyboard };
-}
-
-async function handleDebugCommand(): Promise<void> {
-  const chatId = resolveChat();
-  if (typeof chatId !== "number") return;
-  const api = getApi();
-
-  const { text, keyboard } = buildDebugPanel();
-  try {
-    const msg = await api.sendMessage(chatId, text, {
-      parse_mode: "MarkdownV2",
-      reply_markup: { inline_keyboard: keyboard },
-    });
-    _activePanels.set(msg.message_id, "debug");
-    markInternalMessage(msg.message_id);
-  } catch { /* ignore */ }
-}
-
-async function handleDebugCallback(
-  callbackQueryId: string,
-  panelMsgId: number,
-  data: string,
-): Promise<void> {
-  const chatId = resolveChat();
-  if (typeof chatId !== "number") return;
-  const api = getApi();
-
-  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
-
-  if (data === "debug:dismiss") {
-    _activePanels.delete(panelMsgId);
-    try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
-    return;
-  }
-
-  if (data === "debug:on") setDebugEnabled(true);
-  if (data === "debug:off") setDebugEnabled(false);
-  if (data === "debug:clear") clearDebugLog();
-
-  const filter = data.startsWith("debug:filter:")
-    ? data.slice("debug:filter:".length) as DebugCategory
-    : undefined;
-
-  const { text, keyboard } = buildDebugPanel(filter);
-  try {
-    await api.editMessageText(chatId, panelMsgId, text, {
-      parse_mode: "MarkdownV2",
-      reply_markup: { inline_keyboard: keyboard },
-    });
-  } catch { /* ignore */ }
-}
 
 /** For testing only: resets module-scoped state. */
 export function resetBuiltInCommandsForTest(): void {

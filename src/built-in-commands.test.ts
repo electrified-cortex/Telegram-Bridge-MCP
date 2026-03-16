@@ -160,12 +160,11 @@ describe("built-in-commands", () => {
 
   // -- BUILT_IN_COMMANDS constant ------------------------------------------
 
-  it("exports /session, /voice, /routing, /debug, /version, and /shutdown command metadata", () => {
+  it("exports /session, /voice, /routing, /version, and /shutdown command metadata", () => {
     expect(BUILT_IN_COMMANDS).toEqual([
       { command: "session", description: "Session recording controls" },
       { command: "voice", description: "Change the TTS voice" },
       { command: "routing", description: "Message routing mode for multi-session" },
-      { command: "debug", description: "Toggle debug logging and view trace buffer" },
       { command: "version", description: "Show server version and build info" },
       { command: "shutdown", description: "Shut down the MCP server" },
     ]);
