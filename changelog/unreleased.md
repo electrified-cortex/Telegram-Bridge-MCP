@@ -2,6 +2,7 @@
 
 ## Fixed
 
+- Fixed `set_reaction` ignoring `temporary` flag — added explicit `temporary` boolean parameter so reactions auto-revert without requiring `restore_emoji` or `timeout_seconds`
 - Fixed confirm/choose buttons staying forever after timeout when user sends a text message (#27)
 
 ## Changed
