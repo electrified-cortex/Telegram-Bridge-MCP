@@ -100,15 +100,15 @@ Based on the phased plan in [multi-session.md](multi-session.md), here's a more 
 
 > **Muting deferred** — the permission model handles isolation: no permission = no communication. Muting may layer on later if needed.
 
-### Phase 4: Ambiguity Refinement & Swarm
+### Phase 4: Ambiguity Refinement & Swarm (partial ✅)
 
-1. `claim_message` / `pass_message` tools for cascade protocol
-2. `route_message` tool for governor delegation
-3. Governor death recovery: prompt operator for new mode when governor disconnects
+1. ~~`pass_message` tool for cascade protocol — session forwards ambiguous message to next in SID order~~ ✅
+2. ~~`route_message` tool for governor delegation — governor routes message to specific target session~~ ✅
+3. ~~Governor death recovery: reset routing mode to load_balance and notify operator when governor closes~~ ✅
 4. Cascade timeout tuning (idle vs busy session timeouts)
-5. `list_sessions` tool — enumerate active sessions with names, topics, status
+5. ~~`list_sessions` tool — enumerate active sessions with names, topics, status~~ ✅ (Phase 2)
 6. Session directory for new sessions bootstrapping
-7. Write tests for cascade edge cases (all pass, governor death, mode switching)
+7. ~~Write tests for cascade edge cases (pass, governor death, mode switching)~~ ✅
 
 ## Quick Wins (Can Do Now)
 

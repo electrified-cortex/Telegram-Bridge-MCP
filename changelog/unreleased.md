@@ -16,6 +16,10 @@
 - Added `request_dm_access` tool — request operator permission to DM another session via confirmation prompt
 - Added `deliverDirectMessage` in session-queue — synthetic `direct_message` events injected into target queue (negative IDs to avoid collision)
 - `close_session` now revokes all DM permissions for the closed session
+- Added `pass_message` tool — forward an ambiguous message to the next session in cascade order (cascade mode only)
+- Added `route_message` tool — governor delegates a message to a specific target session (governor mode only)
+- Added `passMessage` and `routeMessage` functions in session-queue — re-deliver events from the message store to another session's queue
+- Added governor death recovery — closing the governor session resets routing mode to load_balance and notifies the operator
 - Added `.npmrc` with `node-linker=hoisted` — flattens `node_modules` for reliable type resolution across transitive deps
 - Added `pnpm patch` files for `@tsdotnet/queue`, `collection-base`, `compare`, `exceptions` — adds `.js` extensions to relative `.d.ts` imports for `moduleResolution: "node16"` compatibility
 

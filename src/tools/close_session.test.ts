@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(),
   setActiveSession: vi.fn(),
   revokeAllForSession: vi.fn(),
+  getGovernorSid: vi.fn(),
+  setRoutingMode: vi.fn(),
+  sendServiceMessage: vi.fn(),
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -21,6 +24,20 @@ vi.mock("../dm-permissions.js", () => ({
     mocks.revokeAllForSession(...args),
 }));
 
+vi.mock("../routing-mode.js", () => ({
+  getGovernorSid: () => mocks.getGovernorSid(),
+  setRoutingMode: (...args: unknown[]) => mocks.setRoutingMode(...args),
+}));
+
+vi.mock("../telegram.js", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../telegram.js")>();
+  return {
+    ...orig,
+    sendServiceMessage: (...args: unknown[]) =>
+      mocks.sendServiceMessage(...args),
+  };
+});
+
 import { register } from "./close_session.js";
 
 describe("close_session tool", () => {
@@ -30,6 +47,8 @@ describe("close_session tool", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     mocks.closeSession.mockReturnValue(true);
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.sendServiceMessage.mockResolvedValue(undefined);
     const server = createMockServer();
     register(server);
     call = server.getHandler("close_session");
@@ -94,5 +113,33 @@ describe("close_session tool", () => {
     await call({ sid: 1, pin: 123456 });
 
     expect(mocks.setActiveSession).not.toHaveBeenCalled();
+  });
+
+  it("resets routing mode when governor session closes", async () => {
+    mocks.getGovernorSid.mockReturnValue(1);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.setRoutingMode).toHaveBeenCalledWith("load_balance");
+    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+      expect.stringContaining("Governor session closed"),
+    );
+  });
+
+  it("does not reset routing mode when non-governor closes", async () => {
+    mocks.getGovernorSid.mockReturnValue(5);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.setRoutingMode).not.toHaveBeenCalled();
+    expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+  });
+
+  it("still returns success even if service message fails", async () => {
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.sendServiceMessage.mockRejectedValue(new Error("network"));
+
+    const result = parseResult(await call({ sid: 1, pin: 123456 }));
+    expect(result.closed).toBe(true);
   });
 });

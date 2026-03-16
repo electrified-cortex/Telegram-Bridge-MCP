@@ -119,6 +119,8 @@ Tools are grouped by abstraction level.
 | `list_sessions` | List all active sessions (SID, name, creation time) and the currently active session. No auth required. |
 | `send_direct_message` | Send a direct message to another session (internal only, never appears in Telegram). Requires auth + DM permission from the operator. |
 | `request_dm_access` | Request operator permission to DM another session. Shows a confirmation prompt; on approval, grants one-way sender→target access. |
+| `pass_message` | Pass an ambiguous message to the next session in cascade order. Only available in cascade routing mode. The last session cannot pass. |
+| `route_message` | Route an ambiguous message to a specific target session. Only available in governor mode and only callable by the governor session. |
 | `dump_session_record` | Sends the conversation timeline as a JSON file to the Telegram chat. Returns `{ message_id, event_count, file_id }`. Caption includes the file ID for crash recovery. Accepts optional `limit` (default 100, max 1000). Call only when the operator explicitly requests session history. |
 
 ### Server management
@@ -231,6 +233,8 @@ telegram-bridge-mcp/
 │       ├── list_sessions.ts
 │       ├── send_direct_message.ts
 │       ├── request_dm_access.ts
+│       ├── pass_message.ts
+│       ├── route_message.ts
 │       ├── dump_session_record.ts
 │       └── shutdown.ts
 ├── docs/

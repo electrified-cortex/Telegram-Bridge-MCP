@@ -14,6 +14,7 @@
 
 import { TwoLaneQueue } from "./two-lane-queue.js";
 import type { TimelineEvent } from "./message-store.js";
+import { getMessage, CURRENT } from "./message-store.js";
 import { getRoutingMode, getGovernorSid } from "./routing-mode.js";
 
 // ---------------------------------------------------------------------------
@@ -286,6 +287,55 @@ export function deliverDirectMessage(
     content: { type: "direct_message", text },
     sid: senderSid,
   };
+
+  q.enqueueMessage(event);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Pass / Route — cascade & governor delegation
+// ---------------------------------------------------------------------------
+
+/**
+ * Pass a message to the next session in cascade order.
+ * The session that currently holds the message calls this to forward it.
+ * Returns the SID the message was forwarded to, or 0 on failure.
+ *
+ * Failure reasons: message not found in store, no next session available,
+ * or `fromSid` is already the last session in cascade order.
+ */
+export function passMessage(fromSid: number, messageId: number): number {
+  const event = getMessage(messageId, CURRENT);
+  if (!event) return 0;
+
+  const sids = [..._queues.keys()].sort((a, b) => a - b);
+  const idx = sids.indexOf(fromSid);
+  if (idx < 0) return 0;
+
+  // Try sessions after fromSid in cascade order
+  for (let i = idx + 1; i < sids.length; i++) {
+    const targetSid = sids[i];
+    const q = _queues.get(targetSid);
+    if (q) {
+      q.enqueueMessage(event);
+      return targetSid;
+    }
+  }
+
+  // fromSid is last — nowhere to pass
+  return 0;
+}
+
+/**
+ * Route a message to a specific target session (governor delegation).
+ * Returns true if delivered, false if message or target queue not found.
+ */
+export function routeMessage(messageId: number, targetSid: number): boolean {
+  const event = getMessage(messageId, CURRENT);
+  if (!event) return false;
+
+  const q = _queues.get(targetSid);
+  if (!q) return false;
 
   q.enqueueMessage(event);
   return true;
