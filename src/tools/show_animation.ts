@@ -17,6 +17,7 @@ const DESCRIPTION =
   "Persistent = continuous, restarts after each bot message until explicitly cancelled. " +
   "By default all regular spaces in frames are replaced with non-breaking spaces to prevent layout shift; " +
   "set allow_breaking_spaces: true to opt out. " +
+  "Animations are silent by default (no notification). Set notify: true to trigger a notification on the initial placeholder. " +
   "For a brief native typing indicator in the chat header (seconds, pre-reply), use show_typing instead.";
 
 export function register(server: McpServer) {
@@ -38,8 +39,8 @@ export function register(server: McpServer) {
           .int()
           .min(1000)
           .max(10000)
-          .default(2000)
-          .describe("Milliseconds between frames (min 1000, default 2000). Ignored if single frame."),
+          .default(1000)
+          .describe("Milliseconds between frames (min 1000, default 1000). Ignored if single frame."),
         timeout: z
           .number()
           .int()
@@ -55,9 +56,13 @@ export function register(server: McpServer) {
           .boolean()
           .default(false)
           .describe("If true, regular spaces in frames are kept as-is (not converted to non-breaking spaces). Default false converts spaces to NBSP for stable layout."),
+        notify: z
+          .boolean()
+          .default(false)
+          .describe("If true, the initial animation placeholder triggers a notification. Default false = silent (no ping/buzz)."),
       },
     },
-    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces }) => {
+    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -73,7 +78,7 @@ export function register(server: McpServer) {
       // undefined → startAnimation uses getDefaultFrames() internally
 
       try {
-        const message_id = await startAnimation(resolvedFrames, interval, timeout, persistent, allow_breaking_spaces);
+        const message_id = await startAnimation(resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify);
         return toResult({ message_id, persistent });
       } catch (err) {
         return toError(err);

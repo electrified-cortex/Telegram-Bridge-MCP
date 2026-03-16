@@ -40,6 +40,15 @@ const _queues = new Map<number, TwoLaneQueue<TimelineEvent>>();
 /** message_id → owning sid (tracks which session sent each bot message) */
 const _messageOwnership = new Map<number, number>();
 
+/** `${sid}:${eventId}` → epoch-ms deadline by which the session should pass_message */
+const _cascadePassDeadlines = new Map<string, number>();
+
+/** Idle session time window (ms) to handle or pass a cascade message. */
+const CASCADE_IDLE_TIMEOUT_MS = 15_000;
+
+/** Busy session time window (ms) to handle or pass a cascade message. */
+const CASCADE_BUSY_TIMEOUT_MS = 30_000;
+
 // ---------------------------------------------------------------------------
 // Queue lifecycle
 // ---------------------------------------------------------------------------
@@ -132,6 +141,9 @@ export function routeToSession(event: TimelineEvent, lane: "response" | "message
   } else if (mode === "cascade") {
     const sid = pickCascade();
     if (sid > 0) {
+      const isIdle = _queues.get(sid)?.hasPendingWaiters() ?? false;
+      const deadlineMs = Date.now() + (isIdle ? CASCADE_IDLE_TIMEOUT_MS : CASCADE_BUSY_TIMEOUT_MS);
+      _cascadePassDeadlines.set(`${sid}:${event.id}`, deadlineMs);
       enqueueToSession(sid, event, lane);
       return;
     }
@@ -297,6 +309,18 @@ export function deliverDirectMessage(
 // ---------------------------------------------------------------------------
 
 /**
+ * Consume and return the cascade pass deadline for a given session + event.
+ * Returns undefined if no deadline exists (event wasn't cascade-routed).
+ * Clears the deadline on read — call once per dequeue.
+ */
+export function popCascadePassDeadline(sid: number, eventId: number): number | undefined {
+  const key = `${sid}:${eventId}`;
+  const deadline = _cascadePassDeadlines.get(key);
+  if (deadline !== undefined) _cascadePassDeadlines.delete(key);
+  return deadline;
+}
+
+/**
  * Pass a message to the next session in cascade order.
  * The session that currently holds the message calls this to forward it.
  * Returns the SID the message was forwarded to, or 0 on failure.
@@ -311,6 +335,9 @@ export function passMessage(fromSid: number, messageId: number): number {
   const sids = [..._queues.keys()].sort((a, b) => a - b);
   const idx = sids.indexOf(fromSid);
   if (idx < 0) return 0;
+
+  // Clear any pending pass deadline for the passing session
+  _cascadePassDeadlines.delete(`${fromSid}:${messageId}`);
 
   // Try sessions after fromSid in cascade order
   for (let i = idx + 1; i < sids.length; i++) {
@@ -348,6 +375,7 @@ export function routeMessage(messageId: number, targetSid: number): boolean {
 export function resetSessionQueuesForTest(): void {
   _queues.clear();
   _messageOwnership.clear();
+  _cascadePassDeadlines.clear();
   _lastRoutedSid = 0;
   _nextDmId = -1;
 }
