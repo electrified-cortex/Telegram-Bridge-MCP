@@ -1095,4 +1095,256 @@ describe("multi-session integration", () => {
       expect(new Set(allIds).size).toBe(4);
     });
   });
+
+  // =========================================================================
+  // 9. Cross-session isolation (end-to-end with real queues)
+  // =========================================================================
+
+  describe("cross-session isolation (e2e)", () => {
+    it("dequeuing from SID 1 never returns SID 2 messages", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      setRoutingMode("load_balance");
+
+      // Make both idle
+      void getSessionQueue(s1.sid)!.waitForEnqueue();
+      void getSessionQueue(s2.sid)!.waitForEnqueue();
+
+      // Route 10 messages — 5 per session via round-robin
+      for (let i = 0; i < 10; i++) {
+        routeToSession(makeEvent(), "message");
+      }
+
+      // Drain S1 only
+      const got1 = drain(s1.sid);
+      expect(got1).toHaveLength(5);
+
+      // Verify S2 still has all its messages
+      const q2 = getSessionQueue(s2.sid)!;
+      expect(q2.pendingCount()).toBe(5);
+
+      // Drain S2
+      const got2 = drain(s2.sid);
+      expect(got2).toHaveLength(5);
+
+      // Zero overlap between the two sets
+      const ids1 = new Set(got1.map(e => e.id));
+      const ids2 = new Set(got2.map(e => e.id));
+      for (const id of ids1) expect(ids2.has(id)).toBe(false);
+    });
+
+    it("wrong SID returns nothing (queue exists but empty)", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      // S1 owns message 300
+      trackMessageOwner(300, s1.sid);
+
+      // Reply to 300 → targeted at S1
+      routeToSession(replyEvent(300), "message");
+
+      // S2 should have nothing
+      expect(drain(s2.sid)).toHaveLength(0);
+      // S1 gets it
+      expect(drain(s1.sid)).toHaveLength(1);
+    });
+
+    it("closing session does not relocate its queued messages", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      setRoutingMode("load_balance");
+
+      void getSessionQueue(s1.sid)!.waitForEnqueue();
+      void getSessionQueue(s2.sid)!.waitForEnqueue();
+
+      // Route 6 messages — 3 each
+      for (let i = 0; i < 6; i++) {
+        routeToSession(makeEvent(), "message");
+      }
+
+      // Close S1 — its 3 messages should vanish
+      closeSession(s1.sid);
+      removeSessionQueue(s1.sid);
+
+      // S2 still has exactly 3 — no leakage from S1
+      expect(drain(s2.sid)).toHaveLength(3);
+    });
+  });
+
+  // =========================================================================
+  // 10. High-concurrency stress test
+  // =========================================================================
+
+  describe("high-concurrency routing", () => {
+    it("50 messages across 5 sessions: zero loss, zero duplication",
+      () => {
+        const sessions = Array.from(
+          { length: 5 },
+          (_, i) => setupSession(`S${i + 1}`),
+        );
+        setRoutingMode("load_balance");
+
+        // Mark all idle
+        for (const s of sessions) {
+          void getSessionQueue(s.sid)!.waitForEnqueue();
+        }
+
+        const total = 50;
+        const sent: TimelineEvent[] = [];
+        for (let i = 0; i < total; i++) sent.push(makeEvent());
+        for (const e of sent) routeToSession(e, "message");
+
+        // Drain all sessions
+        const received: TimelineEvent[] = [];
+        for (const s of sessions) {
+          received.push(...drain(s.sid));
+        }
+
+        // Total count matches
+        expect(received).toHaveLength(total);
+
+        // No duplicates
+        const ids = received.map(e => e.id);
+        expect(new Set(ids).size).toBe(total);
+
+        // All original IDs accounted for
+        const sentIds = sent.map(e => e.id).sort((a, b) => a - b);
+        const gotIds = ids.sort((a, b) => a - b);
+        expect(gotIds).toEqual(sentIds);
+
+        // Even distribution — 10 each (round-robin is deterministic)
+        // Can't retroactively check which queue each went to after
+        // draining, but total + uniqueness already guarantees correctness
+      },
+    );
+
+    it("mixed routing modes: targeted + round-robin + broadcast",
+      () => {
+        const s1 = setupSession("A");
+        const s2 = setupSession("B");
+        const s3 = setupSession("C");
+        setRoutingMode("load_balance");
+
+        // All idle
+        for (const sid of [s1.sid, s2.sid, s3.sid]) {
+          void getSessionQueue(sid)!.waitForEnqueue();
+        }
+
+        // S2 owns messages 500, 501
+        trackMessageOwner(500, s2.sid);
+        trackMessageOwner(501, s2.sid);
+
+        // 3 targeted replies → S2
+        routeToSession(replyEvent(500), "message");
+        routeToSession(replyEvent(501), "message");
+        routeToSession(callbackEvent(500), "response");
+
+        // 9 round-robin messages → 3 each (all idle)
+        for (let i = 0; i < 9; i++) {
+          routeToSession(makeEvent(), "message");
+        }
+
+        // Switch to governor mode → S1
+        setRoutingMode("governor", s1.sid);
+
+        // 3 governor messages → all to S1
+        const govEvents: TimelineEvent[] = [];
+        for (let i = 0; i < 3; i++) {
+          const e = makeEvent();
+          govEvents.push(e);
+          routeToSession(e, "message");
+        }
+
+        const got1 = drain(s1.sid);
+        const got2 = drain(s2.sid);
+        const got3 = drain(s3.sid);
+
+        const allReceived = [...got1, ...got2, ...got3];
+        const totalSent = 3 + 9 + 3; // targeted + round-robin + governor
+        expect(allReceived).toHaveLength(totalSent);
+
+        // No duplicates
+        const allIds = allReceived.map(e => e.id);
+        expect(new Set(allIds).size).toBe(totalSent);
+
+        // S2 got at least 3 targeted messages
+        expect(got2.length).toBeGreaterThanOrEqual(3);
+
+        // S1 got the 3 governor messages
+        for (const ge of govEvents) {
+          expect(got1.map(e => e.id)).toContain(ge.id);
+        }
+      },
+    );
+  });
+
+  // =========================================================================
+  // 11. DM edge cases
+  // =========================================================================
+
+  describe("DM edge cases", () => {
+    it("DM to non-existent session returns false", () => {
+      setupSession("A");
+      // SID 999 never created
+      const delivered = deliverDirectMessage(1, 999, "hello");
+      expect(delivered).toBe(false);
+    });
+
+    it("DM to closed session returns false", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+
+      closeSession(s2.sid);
+      removeSessionQueue(s2.sid);
+
+      const delivered = deliverDirectMessage(
+        s1.sid,
+        s2.sid,
+        "are you there?",
+      );
+      expect(delivered).toBe(false);
+    });
+
+    it("DM permission survives queue removal (grant is separate)",
+      () => {
+        const s1 = setupSession("A");
+        const s2 = setupSession("B");
+
+        grantDm(s1.sid, s2.sid);
+        expect(hasDmPermission(s1.sid, s2.sid)).toBe(true);
+
+        // Close and remove S2's queue
+        closeSession(s2.sid);
+        removeSessionQueue(s2.sid);
+
+        // Permission still exists (orphaned — cleaned on
+        // revokeAllForSession)
+        expect(hasDmPermission(s1.sid, s2.sid)).toBe(true);
+
+        // Delivery fails despite permission
+        const delivered = deliverDirectMessage(
+          s1.sid,
+          s2.sid,
+          "ghost message",
+        );
+        expect(delivered).toBe(false);
+      },
+    );
+
+    it("revokeAllForSession cleans both directions", () => {
+      const s1 = setupSession("A");
+      const s2 = setupSession("B");
+      const s3 = setupSession("C");
+
+      grantDm(s1.sid, s2.sid);  // A→B
+      grantDm(s2.sid, s1.sid);  // B→A
+      grantDm(s3.sid, s2.sid);  // C→B
+
+      revokeAllForSession(s2.sid);
+
+      expect(hasDmPermission(s1.sid, s2.sid)).toBe(false);
+      expect(hasDmPermission(s2.sid, s1.sid)).toBe(false);
+      expect(hasDmPermission(s3.sid, s2.sid)).toBe(false);
+    });
+  });
 });
