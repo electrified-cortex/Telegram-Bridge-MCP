@@ -61,6 +61,21 @@ export function register(server: McpServer) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
+      // Name collision guard: reject if a session with the same name exists
+      if (name) {
+        const existing = listSessions().find(
+          s => s.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (existing) {
+          return toError({
+            code: "NAME_CONFLICT",
+            message:
+              `A session named "${existing.name}" already exists (SID ${existing.sid}). ` +
+              `Choose a different name, or resume your existing session with dequeue_update(sid=${existing.sid}).`,
+          });
+        }
+      }
+
       const session = createSession(name);
       createSessionQueue(session.sid);
       setActiveSession(session.sid);

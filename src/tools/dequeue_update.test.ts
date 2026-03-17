@@ -243,6 +243,87 @@ describe("dequeue_update tool", () => {
     expect(mocks.ackVoiceMessage).not.toHaveBeenCalled();
   });
 
+  it("acks voice message via session queue path (immediate batch)", async () => {
+    // Edge case #3: the ack fires through the session queue dequeueBatch
+    // path, not the global dequeueBatch — this path had zero test coverage.
+    const evt = makeVoiceEvent(90);
+    const mockSessionQueue = {
+      dequeueBatch: vi.fn(() => [evt] as TimelineEvent[]),
+      pendingCount: vi.fn(() => 0),
+      waitForEnqueue: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.getActiveSession.mockReturnValueOnce(3);
+    mocks.getSessionQueue.mockReturnValueOnce(mockSessionQueue);
+
+    await call({ timeout: 0 });
+    expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(90);
+  });
+
+  it("acks multiple voice messages in a batch via session queue", async () => {
+    const v1 = makeVoiceEvent(91);
+    const v2 = makeVoiceEvent(92);
+    const mockSessionQueue = {
+      dequeueBatch: vi.fn(() => [v1, v2] as TimelineEvent[]),
+      pendingCount: vi.fn(() => 0),
+      waitForEnqueue: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.getActiveSession.mockReturnValueOnce(3);
+    mocks.getSessionQueue.mockReturnValueOnce(mockSessionQueue);
+
+    await call({ timeout: 0 });
+    expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(91);
+    expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(92);
+  });
+
+  it("acks voice message via session queue path (blocking wait path)", async () => {
+    // Edge case #7: blocking wait path + session queue — ack must fire when
+    // the event arrives after the initial empty poll.
+    const evt = makeVoiceEvent(93);
+    const mockSessionQueue = {
+      dequeueBatch: vi.fn()
+        .mockReturnValueOnce([] as TimelineEvent[])
+        .mockReturnValueOnce([evt] as TimelineEvent[]),
+      pendingCount: vi.fn(() => 0),
+      waitForEnqueue: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.getActiveSession.mockReturnValue(3);
+    mocks.getSessionQueue.mockReturnValue(mockSessionQueue);
+
+    await call({ timeout: 1 });
+    expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(93);
+    mocks.getActiveSession.mockReturnValue(0);
+    mocks.getSessionQueue.mockReturnValue(undefined);
+  });
+
+  it("does not ack non-voice events mixed with voice in session queue batch", async () => {
+    const voiceEvt = makeVoiceEvent(94);
+    const textEvt = makeEvent(95, "text");
+    const mockSessionQueue = {
+      dequeueBatch: vi.fn(() => [textEvt, voiceEvt] as TimelineEvent[]),
+      pendingCount: vi.fn(() => 0),
+      waitForEnqueue: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.getActiveSession.mockReturnValueOnce(3);
+    mocks.getSessionQueue.mockReturnValueOnce(mockSessionQueue);
+
+    await call({ timeout: 0 });
+    expect(mocks.ackVoiceMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(94);
+  });
+
+  it("acks voice message on global blocking wait path", async () => {
+    // Edge case #7: blocking wait on global queue (single-session) returns
+    // a voice event — ack must fire on that path too.
+    const evt = makeVoiceEvent(96);
+    mocks.dequeueBatch
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([evt]);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+
+    await call({ timeout: 1 });
+    expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(96);
+  });
+
   // =========================================================================
   // Cascade pass_by
   // =========================================================================

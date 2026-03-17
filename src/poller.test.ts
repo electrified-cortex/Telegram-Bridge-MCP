@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   recordInbound: vi.fn((): boolean => true),
   patchVoiceText: vi.fn(),
   transcribeVoice: vi.fn((): Promise<string> => Promise.resolve("hello world")),
+  hasAnySessionWaiter: vi.fn((): boolean => false),
+  isSessionMessageConsumed: vi.fn((): boolean => false),
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
@@ -38,6 +40,11 @@ vi.mock("./message-store.js", () => ({
   patchVoiceText: mocks.patchVoiceText,
   hasPendingWaiters: vi.fn().mockReturnValue(false),
   isMessageConsumed: vi.fn().mockReturnValue(false),
+}));
+
+vi.mock("./session-queue.js", () => ({
+  hasAnySessionWaiter: () => mocks.hasAnySessionWaiter(),
+  isSessionMessageConsumed: (id: number) => mocks.isSessionMessageConsumed(id),
 }));
 
 vi.mock("./transcribe.js", () => ({
@@ -256,6 +263,54 @@ describe("poller", () => {
       const reactionCalls = mocks.trySetMessageReaction.mock.calls;
       const lastCall = reactionCalls[reactionCalls.length - 1];
       expect(lastCall).toEqual([123, 12, "😴"]);
+    });
+
+    // -------------------------------------------------------------------------
+    // Session queue waiter awareness (multi-session race condition prevention)
+    // -------------------------------------------------------------------------
+
+    it("skips 😴 when a session queue agent is waiting (hasAnySessionWaiter=true)", async () => {
+      // In multi-session mode, hasPendingWaiters() (global) returns false but
+      // the agent is blocked on a session queue. Without the fix the poller
+      // would set 😴 anyway, then the agent's 🫡 races it on the Telegram API.
+      mocks.hasAnySessionWaiter.mockReturnValueOnce(true);
+      // Reset transcription — previous tests may have left mockRejectedValue active
+      mocks.transcribeVoice.mockResolvedValue("hello world");
+      const u = voiceUpdate(20);
+      await runOneCycle([u]);
+
+      const reactionCalls = mocks.trySetMessageReaction.mock.calls;
+      // ✍ should have been set, but 😴 must NOT appear
+      expect(reactionCalls.some(c => c[2] === "✍")).toBe(true);
+      expect(reactionCalls.some(c => c[2] === "😴")).toBe(false);
+    });
+
+    it("skips 😴 when message already consumed by a session queue (isSessionMessageConsumed=true)", async () => {
+      // The agent dequeued the message from a session queue before or during
+      // transcription. The global isMessageConsumed returns false (message
+      // was never in the global queue in multi-session mode), but the session
+      // queue consumed set has it — so we should not overwrite 🫡 with 😴.
+      mocks.isSessionMessageConsumed.mockReturnValue(true);
+      // Reset transcription — previous tests may have left mockRejectedValue active
+      mocks.transcribeVoice.mockResolvedValue("hello world");
+      const u = voiceUpdate(21);
+      await runOneCycle([u]);
+
+      const reactionCalls = mocks.trySetMessageReaction.mock.calls;
+      expect(reactionCalls.some(c => c[2] === "😴")).toBe(false);
+    });
+
+    it("still sets 😴 when neither global nor session waiters are active", async () => {
+      // No waiter, not consumed — normal queued case, 😴 should fire.
+      mocks.hasAnySessionWaiter.mockReturnValue(false);
+      mocks.isSessionMessageConsumed.mockReturnValue(false);
+      // Reset transcription — previous tests may have left mockRejectedValue active
+      mocks.transcribeVoice.mockResolvedValue("hello world");
+      const u = voiceUpdate(22);
+      await runOneCycle([u]);
+
+      const reactionCalls = mocks.trySetMessageReaction.mock.calls;
+      expect(reactionCalls.some(c => c[2] === "😴")).toBe(true);
     });
   });
 

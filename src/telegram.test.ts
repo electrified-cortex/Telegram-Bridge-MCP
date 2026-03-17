@@ -22,6 +22,7 @@ import {
   fireHijackNotification,
   resetApi,
   sendVoiceDirect,
+  ackVoiceMessage,
   LIMITS,
   type TelegramError,
 } from "./telegram.js";
@@ -611,5 +612,85 @@ describe("sendVoiceDirect path restriction", () => {
     await expect(
       sendVoiceDirect("123", safeFile)
     ).rejects.toThrow(/BOT_TOKEN/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ackVoiceMessage — fire-and-forget 🫡 reaction
+// ---------------------------------------------------------------------------
+import { getBotReaction, recordBotReaction, resetStoreForTest } from "./message-store.js";
+
+describe("ackVoiceMessage", () => {
+  let setMessageReactionSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    process.env.BOT_TOKEN = "test_token";
+    process.env.ALLOWED_USER_ID = "12345";
+    resetSecurityConfig();
+    resetApi();
+    resetStoreForTest();
+    setMessageReactionSpy = vi
+      .spyOn(Api.prototype, "setMessageReaction")
+      .mockResolvedValue(true as unknown as never);
+  });
+
+  afterEach(() => {
+    setMessageReactionSpy.mockRestore();
+    delete process.env.BOT_TOKEN;
+    delete process.env.ALLOWED_USER_ID;
+    resetApi();
+    resetSecurityConfig();
+    resetStoreForTest();
+  });
+
+  it("calls setMessageReaction with 🫡 for the given message id", async () => {
+    ackVoiceMessage(100);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(setMessageReactionSpy).toHaveBeenCalledWith(
+      12345, 100, [{ type: "emoji", emoji: "🫡" }],
+    );
+  });
+
+  it("records 🫡 in the bot reaction index on success", async () => {
+    ackVoiceMessage(101);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getBotReaction(101)).toBe("🫡");
+  });
+
+  it("is a no-op when resolveChat returns a non-number (no ALLOWED_USER_ID)", () => {
+    delete process.env.ALLOWED_USER_ID;
+    resetSecurityConfig();
+    ackVoiceMessage(102);
+    // synchronous guard — if we got here without throwing, the check passed.
+    // The spy must NOT have been called (even after async flush it won't fire).
+    expect(setMessageReactionSpy).not.toHaveBeenCalled();
+  });
+
+  it("skips the API call when 🫡 is already in the bot reaction index (dedup)", async () => {
+    // Edge case #5: pre-set the reaction so the dedup guard fires
+    recordBotReaction(103, "🫡");
+    ackVoiceMessage(103);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(setMessageReactionSpy).not.toHaveBeenCalled();
+  });
+
+  it("writes to stderr and does NOT record reaction when API call fails", async () => {
+    setMessageReactionSpy.mockRejectedValue(new Error("api error"));
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    ackVoiceMessage(104);
+    // Three microtask ticks: Promise.race → .then(ok → ..., () => false) → .then(ok => { ...stderr... })
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining("🫡 failed for msg 104"),
+    );
+    expect(getBotReaction(104)).toBeNull();
+    stderrSpy.mockRestore();
   });
 });

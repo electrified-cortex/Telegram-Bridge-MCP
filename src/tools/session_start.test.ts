@@ -143,6 +143,11 @@ describe("session_start tool", () => {
   it("appends session tag to custom intro when multiple sessions active", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 4, pin: 444444, name: "worker", sessionsActive: 3 });
+    // First call: name collision check (pre-creation — no "worker" yet)
+    mocks.listSessions.mockReturnValueOnce([
+      { sid: 1, name: "boss" }, { sid: 2, name: "helper" },
+    ]);
+    // Second call: fellow_sessions (post-creation — includes "worker")
     mocks.listSessions.mockReturnValue([
       { sid: 1, name: "boss" }, { sid: 2, name: "helper" }, { sid: 4, name: "worker" },
     ]);
@@ -214,6 +219,11 @@ describe("session_start tool", () => {
   it("includes fellow_sessions and routing_mode in fast-path result when sessionsActive > 1", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 4, pin: 444444, name: "scout", sessionsActive: 2 });
+    // First call: name collision check (pre-creation)
+    mocks.listSessions.mockReturnValueOnce([
+      { sid: 3, name: "leader" },
+    ]);
+    // Second call: fellow_sessions (post-creation)
     mocks.listSessions.mockReturnValue([
       { sid: 3, name: "leader" },
       { sid: 4, name: "scout" },
@@ -234,6 +244,11 @@ describe("session_start tool", () => {
   it("includes fellow_sessions when auto-draining with multiple sessions", async () => {
     mocks.pendingCount.mockReturnValue(2);
     mocks.createSession.mockReturnValue({ sid: 6, pin: 666666, name: "gamma", sessionsActive: 2 });
+    // First call: name collision check (pre-creation)
+    mocks.listSessions.mockReturnValueOnce([
+      { sid: 5, name: "delta" },
+    ]);
+    // Second call: fellow_sessions (post-creation)
     mocks.listSessions.mockReturnValue([
       { sid: 5, name: "delta" },
       { sid: 6, name: "gamma" },
@@ -278,5 +293,53 @@ describe("session_start tool", () => {
     mocks.resolveChat.mockReturnValueOnce({ code: "UNAUTHORIZED_CHAT", message: "no chat" } as never);
     const result = await call({});
     expect(isError(result)).toBe(true);
+  });
+
+  // =========================================================================
+  // Name collision guard
+  // =========================================================================
+
+  it("rejects session_start when a session with the same name already exists", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+
+    const result = await call({ name: "Overseer" });
+
+    expect(isError(result)).toBe(true);
+    const text = JSON.stringify(result);
+    expect(text).toContain("NAME_CONFLICT");
+    expect(text).toContain("Overseer");
+    // Must NOT create a session
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects name collision case-insensitively", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "overseer", createdAt: "2026-03-17" }]);
+
+    const result = await call({ name: "OVERSEER" });
+
+    expect(isError(result)).toBe(true);
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("allows session_start when name differs from existing sessions", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Scout", sessionsActive: 2 });
+
+    const result = parseResult(await call({ name: "Scout" }));
+
+    expect(result.sid).toBe(2);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout");
+  });
+
+  it("allows empty name even when named sessions exist", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "", sessionsActive: 2 });
+
+    const result = parseResult(await call({}));
+
+    expect(result.sid).toBe(2);
+    expect(mocks.createSession).toHaveBeenCalledWith("");
   });
 });

@@ -2,6 +2,8 @@
 
 ## Added
 
+- `session_start` now rejects name collisions — returns `NAME_CONFLICT` error when a session with the same name (case-insensitive) already exists, with guidance to resume the existing session or choose a different name
+
 - New test files: `config.test.ts` (100% coverage), `rate-limiter.test.ts` (100% coverage)
 - Extended test coverage for `tts.ts`, `typing-state.ts`, `show_typing.ts`, `confirm.ts`, `choose.ts`, `dequeue_update.ts`, `session_start.ts`; total tests 942 → 1030, statements 85.4% → 90.2%, branches 76.6% → 82.4%
 - Added `multi-session.integration.test.ts` — 38 integration tests proving multi-session routing, cascade pass chains, governor delegation, DM delivery, broadcast, session lifecycle, and edge cases (ownership vs queue removal, mid-close cascade skip, waiter wakeup, response-lane priority, self-DM, governor fallback) with 2–3 concurrent sessions
@@ -28,6 +30,8 @@
 - Added cascade pass-by deadlines — cascade-routed events include a `pass_by` ISO timestamp (15 s for idle sessions, 30 s for busy)
 - Added session directory to `session_start` — when `sessions_active > 1`, response includes `fellow_sessions` (list of other sessions) and `routing_mode`
 - Added auto-routing prompt — when the 2nd session joins, `session_start` sends the routing mode selection panel to the operator automatically (previously required manual `/routing` command)
+- Added `hasAnySessionWaiter()` and `isSessionMessageConsumed()` to `session-queue` — poller uses these to avoid setting 😴 when any session agent is waiting or has already consumed the message
+- Added test coverage for voice salute edge cases: session queue ack paths in `dequeue_update`, session waiter blind spot in poller, and `ackVoiceMessage` unit tests (dedup, no-ALLOWED_USER_ID guard, stderr on failure)
 - Added Claude Code Docker config example to README
 - Added Claude Code configuration instructions (project-scoped `.mcp.json`) to setup guide and README
 - Added Kokoro quick-start guide to README — Docker pull, env vars, `/voice` panel, and voice table
@@ -70,6 +74,8 @@
 
 ## Fixed
 
+- Fixed multi-session 😴 race: poller now checks `hasAnySessionWaiter()` (session queues) in addition to `hasPendingWaiters()` (global queue) before setting 😴 — prevents 😴 overwriting 🫡 when an agent is blocked on a per-session queue
+- Fixed multi-session consumed guard: poller's `_transcribeAndRecord` now checks `isSessionMessageConsumed()` before setting 😴 in both the success path and the transcription-failure catch block — prevents stale 😴 overwriting an agent-set 🫡 when the message was consumed via a session queue (which is never tracked by the global `isMessageConsumed`)
 - Fixed multi-session queue isolation — `dequeue_update` now returns `SID_REQUIRED` error when called without `sid` and multiple sessions are active, preventing agents from silently reading another session's queue via the racy `getActiveSession()` fallback
 - Fixed global queue duplication — inbound messages, callbacks, and reactions are no longer enqueued to both the global queue and the routed session queue; when session queues exist, messages go through `routeToSession()` only, eliminating the possibility of leaking messages across sessions via the unscoped global queue
 - Fixed outbound message ownership tagging using wrong session in multi-session scenarios — `recordOutgoing` and `recordOutgoingEdit` now use `getCallerSid()` (AsyncLocalStorage) instead of `getActiveSession()` (global last-writer-wins), ensuring messages are attributed to the correct session even when sessions execute tool calls concurrently

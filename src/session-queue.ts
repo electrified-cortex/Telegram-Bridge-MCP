@@ -280,6 +280,31 @@ export function notifySessionWaiters(): void {
   }
 }
 
+/**
+ * Returns true if any session queue has a pending waiter (agent blocked in
+ * dequeue_update). Used by the poller to decide whether to skip setting 😴 —
+ * if a session agent is waiting, it will dequeue and set 🫡 itself.
+ */
+export function hasAnySessionWaiter(): boolean {
+  for (const q of _queues.values()) {
+    if (q.hasPendingWaiters()) return true;
+  }
+  return false;
+}
+
+/**
+ * Returns true if any session queue has already consumed the given message ID.
+ * Used by the poller as a secondary guard against setting 😴 on an already-
+ * dequeued message (e.g. agent consumed the message before transcription
+ * completed from a previous dequeue cycle).
+ */
+export function isSessionMessageConsumed(messageId: number): boolean {
+  for (const q of _queues.values()) {
+    if (q.isConsumed(messageId)) return true;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Direct message delivery (inter-session, internal only)
 // ---------------------------------------------------------------------------
