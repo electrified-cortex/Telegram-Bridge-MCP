@@ -487,6 +487,8 @@ After calling `shutdown` (or the server restarts for any reason):
 
 When 2+ agent sessions are active simultaneously, additional rules apply.
 
+> **Full protocol:** See [multi-session-protocol.md](multi-session-protocol.md) for the complete routing protocol, governor duties, cascade fallback, and human experience design.
+
 ### Session identity
 
 `session_start` returns a `sid` (session ID), your session `name` (if set), and a `fellow_sessions` list of co-active agents. Use the returned name in your internal context — it is what the operator and other agents use to identify you.
@@ -495,13 +497,13 @@ Your outbound messages automatically include a `🤖 YourName` header line injec
 
 ### Routing modes
 
-The server routes incoming operator messages based on the current routing mode:
+The server routes incoming operator messages based on the current routing mode. These modes are **internal** — the operator never sees or selects them.
 
 | Mode | Behavior |
 | --- | --- |
 | `load_balance` | Messages distributed across sessions. Default for single-session. |
-| `governor` | One session (governor) receives all messages. Active when 2+ sessions exist. |
-| `cascade` | Ordered fallback — first available session handles. |
+| `governor` | One session (governor) receives all ambiguous messages. Active when 2+ sessions exist. |
+| `cascade` | Ordered fallback — first available session handles. Used when the governor is unresponsive. |
 
 Governor mode activates automatically when the second session joins. The lowest-SID session becomes governor by default.
 
@@ -525,8 +527,16 @@ If you are the governor (`sid` matches `routing_mode.governor_sid` in `session_s
 - You own ambiguous operator messages by default.
 - Triage and route to the appropriate specialist session via `route_message` or `send_direct_message` if needed.
 - Coordinate multi-session workflows.
+- **Set a topic** reflecting your coordinating role — this helps the operator understand what each session does.
 
 Governor status transfers automatically when sessions close — the next lowest-SID session is promoted. You may become governor unexpectedly if the previous governor closes.
+
+### Topics
+
+**Always set a topic** when starting a session, especially in multi-session mode. Topics serve as at-a-glance identifiers for what each session is doing. The governor uses topics to decide where to route ambiguous messages.
+
+Good topics: `Refactoring animation state`, `Reviewing PR #40`, `Overseeing v4 branch`
+Bad topics: `Working`, `Agent`, `Session 2`
 
 ### Coordination tools
 

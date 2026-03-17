@@ -78,6 +78,23 @@ export function removeSessionQueue(sid: number): boolean {
   return removed;
 }
 
+/**
+ * Drain all pending items from a session's queue without removing the queue.
+ * Returns events from both lanes (response lane first), skipping not-ready items.
+ * Used during teardown to reroute orphaned messages.
+ */
+export function drainQueue(sid: number): TimelineEvent[] {
+  const q = _queues.get(sid);
+  if (!q) return [];
+  const items: TimelineEvent[] = [];
+  let item: TimelineEvent | undefined;
+  while ((item = q.dequeue()) !== undefined) {
+    items.push(item);
+  }
+  dlog("queue", `drained sid=${sid} orphaned=${items.length}`);
+  return items;
+}
+
 /** Get a session's queue (or undefined if no such session). */
 export function getSessionQueue(sid: number): TwoLaneQueue<TimelineEvent> | undefined {
   return _queues.get(sid);

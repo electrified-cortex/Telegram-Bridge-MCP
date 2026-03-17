@@ -66,7 +66,7 @@ describe("set_default_animation tool", () => {
   it("sets session default frames", async () => {
     const result = await call({ frames: ["thinking.", "thinking..", "thinking..."] });
     expect(isError(result)).toBe(false);
-    expect(mocks.setSessionDefault).toHaveBeenCalledWith(["thinking.", "thinking..", "thinking..."]);
+    expect(mocks.setSessionDefault).toHaveBeenCalledWith(0, ["thinking.", "thinking..", "thinking..."]);
     const data = parseResult(result);
     expect(data.action).toBe("default_set");
   });
@@ -75,7 +75,7 @@ describe("set_default_animation tool", () => {
     mocks.listPresets.mockReturnValue(["cool"]);
     const result = await call({ frames: ["✨", "💫"], name: "cool" });
     expect(isError(result)).toBe(false);
-    expect(mocks.registerPreset).toHaveBeenCalledWith("cool", ["✨", "💫"]);
+    expect(mocks.registerPreset).toHaveBeenCalledWith(0, "cool", ["✨", "💫"]);
     const data = parseResult(result);
     expect(data.action).toBe("preset_registered");
     expect(data.name).toBe("cool");

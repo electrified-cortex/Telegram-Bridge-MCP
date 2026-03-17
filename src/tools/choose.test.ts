@@ -105,7 +105,7 @@ describe("choose tool", () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_b"));
     await call({ question: "Pick", options: OPTIONS });
-    expect(mocks.registerCallbackHook).toHaveBeenCalledWith(7, expect.any(Function));
+    expect(mocks.registerCallbackHook).toHaveBeenCalledWith(7, expect.any(Function), expect.any(Number));
   });
 
   it("calls ackAndEditSelection when hook fires", async () => {

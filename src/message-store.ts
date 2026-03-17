@@ -143,6 +143,9 @@ export function isMessageConsumed(messageId: number): boolean {
 type CallbackHookFn = (event: TimelineEvent) => void;
 const _callbackHooks = new Map<number, CallbackHookFn>();
 
+/** tracks which session registered each callback hook (for teardown). */
+const _callbackHookOwners = new Map<number, number>();
+
 /**
  * One-shot hooks that fire on the first *message* with id > the registered
  * afterId. Used by confirm/choose to clean up stale buttons after a timeout
@@ -681,19 +684,44 @@ export function resetStoreForTest(): void {
   _highestMessageId = 0;
   _queue.clear();
   _callbackHooks.clear();
+  _callbackHookOwners.clear();
   _messageHooks.clear();
   _botReactionIndex.clear();
   _onEventCallback = null;
 }
 
 /** Register a one-shot auto-lock hook for a send_choice message. */
-export function registerCallbackHook(messageId: number, fn: CallbackHookFn): void {
+export function registerCallbackHook(messageId: number, fn: CallbackHookFn, ownerSid?: number): void {
   _callbackHooks.set(messageId, fn);
+  if (ownerSid !== undefined && ownerSid > 0) {
+    _callbackHookOwners.set(messageId, ownerSid);
+  }
 }
 
 /** Remove a previously registered callback hook (e.g. on send_choice cleanup). */
 export function clearCallbackHook(messageId: number): void {
   _callbackHooks.delete(messageId);
+  _callbackHookOwners.delete(messageId);
+}
+
+/**
+ * Replace all callback hooks owned by a session with a "Session closed" responder.
+ * Called during session teardown so late button presses get a graceful ack.
+ * Returns the message IDs that were replaced.
+ */
+export function replaceSessionCallbackHooks(
+  sid: number,
+  replacement: CallbackHookFn,
+): number[] {
+  const replaced: number[] = [];
+  for (const [msgId, ownerSid] of _callbackHookOwners) {
+    if (ownerSid === sid) {
+      _callbackHooks.set(msgId, replacement);
+      _callbackHookOwners.delete(msgId);
+      replaced.push(msgId);
+    }
+  }
+  return replaced;
 }
 
 /** Register a one-shot hook that fires on the first message with id > afterId. */

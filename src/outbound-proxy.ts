@@ -68,14 +68,18 @@ export interface SendInterceptor {
   onEdit: () => void;
 }
 
-let _interceptor: SendInterceptor | null = null;
+const _interceptors = new Map<number, SendInterceptor>();
 
-export function registerSendInterceptor(i: SendInterceptor): void {
-  _interceptor = i;
+export function registerSendInterceptor(sid: number, i: SendInterceptor): void {
+  _interceptors.set(sid, i);
 }
 
-export function clearSendInterceptor(): void {
-  _interceptor = null;
+export function clearSendInterceptor(sid?: number): void {
+  if (sid !== undefined) {
+    _interceptors.delete(sid);
+  } else {
+    _interceptors.clear();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +110,9 @@ export async function notifyBeforeFileSend(): Promise<void> {
   _fileSendTypingGen = typingGeneration();
   clearPendingTemp();
   await fireTempReactionRestore();
-  if (_interceptor) await _interceptor.beforeFileSend();
+  const sid = getCallerSid();
+  const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
+  if (interceptor) await interceptor.beforeFileSend();
 }
 
 /** Call after a custom (non-Grammy) file send. */
@@ -119,7 +125,9 @@ export async function notifyAfterFileSend(
   if (_bypassing) return;
   cancelTypingIfSameGeneration(_fileSendTypingGen);
   recordOutgoing(messageId, contentType, text, caption);
-  if (_interceptor) await _interceptor.afterFileSend();
+  const sid = getCallerSid();
+  const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
+  if (interceptor) await interceptor.afterFileSend();
 }
 
 // ---------------------------------------------------------------------------
@@ -188,9 +196,11 @@ export function createOutboundProxy(realApi: Api): Api {
             : undefined;
 
           // Animation promote: edit animation → real content
-          if (_interceptor) {
-            const savedInterceptor = _interceptor;
-            const result = await _interceptor.beforeTextSend(chatId, finalText, cleanOpts ?? {});
+          const callSid = getCallerSid();
+          const activeInterceptor = callSid > 0 ? _interceptors.get(callSid) : undefined;
+          if (activeInterceptor) {
+            const savedInterceptor = activeInterceptor;
+            const result = await activeInterceptor.beforeTextSend(chatId, finalText, cleanOpts ?? {});
             if (result.intercepted) {
               cancelTypingIfSameGeneration(gen);
               recordOutgoing(result.message_id, "text", finalRawText ?? finalText);
@@ -225,8 +235,10 @@ export function createOutboundProxy(realApi: Api): Api {
           await fireTempReactionRestore();
 
           // Suspend animation (delete placeholder)
-          const hadInterceptor = _interceptor != null;
-          if (_interceptor) await _interceptor.beforeFileSend();
+          const fileSid = getCallerSid();
+          const fileInterceptor = fileSid > 0 ? _interceptors.get(fileSid) : undefined;
+          const hadInterceptor = fileInterceptor != null;
+          if (fileInterceptor) await fileInterceptor.beforeFileSend();
 
           try {
             // Inject session header into caption if multi-session active
@@ -251,8 +263,9 @@ export function createOutboundProxy(realApi: Api): Api {
             return msg;
           } finally {
             // Resume animation below — runs even if the API call threw
-            if (hadInterceptor && _interceptor) {
-              await _interceptor.afterFileSend();
+            if (hadInterceptor) {
+              const resumeInterceptor = fileSid > 0 ? _interceptors.get(fileSid) : undefined;
+              if (resumeInterceptor) await resumeInterceptor.afterFileSend();
             }
           }
         };
@@ -276,7 +289,9 @@ export function createOutboundProxy(realApi: Api): Api {
 
           const result = await fn(...args);
           cancelTypingIfSameGeneration(gen);
-          if (_interceptor) _interceptor.onEdit();
+          const editSid = getCallerSid();
+          const editInterceptor = editSid > 0 ? _interceptors.get(editSid) : undefined;
+          if (editInterceptor) editInterceptor.onEdit();
           return result;
         };
       }
@@ -292,7 +307,7 @@ export function createOutboundProxy(realApi: Api): Api {
 // ---------------------------------------------------------------------------
 
 export function resetOutboundProxyForTest(): void {
-  _interceptor = null;
+  _interceptors.clear();
   _bypassing = false;
   _fileSendTypingGen = 0;
 }

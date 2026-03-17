@@ -37,7 +37,7 @@ export function register(server: McpServer) {
       const _sid = requireAuth(identity);
       if (typeof _sid !== "number") return toError(_sid);
       try {
-        const result = await cancelAnimation(text, parse_mode);
+        const result = await cancelAnimation(_sid, text, parse_mode);
         return toResult(result);
       } catch (err) {
         return toError(err);

@@ -4,6 +4,7 @@ import { createMockServer, parseResult, isError, type ToolHandler } from "./test
 const mocks = vi.hoisted(() => ({
   closeSession: vi.fn(),
   validateSession: vi.fn(),
+  getSession: vi.fn(),
   getActiveSession: vi.fn(),
   setActiveSession: vi.fn(),
   listSessions: vi.fn().mockReturnValue([]),
@@ -12,11 +13,17 @@ const mocks = vi.hoisted(() => ({
   setRoutingMode: vi.fn(),
   sendServiceMessage: vi.fn(),
   deliverDirectMessage: vi.fn(),
+  drainQueue: vi.fn().mockReturnValue([]),
+  routeToSession: vi.fn(),
+  replaceSessionCallbackHooks: vi.fn(),
+  answerCallbackQuery: vi.fn(),
+  resolveChat: vi.fn().mockReturnValue(1001),
 }));
 
 vi.mock("../session-manager.js", () => ({
   closeSession: (...args: unknown[]) => mocks.closeSession(...args),
   validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  getSession: (...args: unknown[]) => mocks.getSession(...args),
   getActiveSession: (...args: unknown[]) => mocks.getActiveSession(...args),
   setActiveSession: (...args: unknown[]) => mocks.setActiveSession(...args),
   listSessions: (...args: unknown[]) => mocks.listSessions(...args),
@@ -25,6 +32,12 @@ vi.mock("../session-manager.js", () => ({
 vi.mock("../session-queue.js", () => ({
   removeSessionQueue: vi.fn(),
   deliverDirectMessage: (...args: unknown[]) => mocks.deliverDirectMessage(...args),
+  drainQueue: (...args: unknown[]) => mocks.drainQueue(...args),
+  routeToSession: (...args: unknown[]) => mocks.routeToSession(...args),
+}));
+
+vi.mock("../message-store.js", () => ({
+  replaceSessionCallbackHooks: (...args: unknown[]) => mocks.replaceSessionCallbackHooks(...args),
 }));
 
 vi.mock("../dm-permissions.js", () => ({
@@ -43,6 +56,7 @@ vi.mock("../telegram.js", async (importOriginal) => {
     ...orig,
     sendServiceMessage: (...args: unknown[]) =>
       mocks.sendServiceMessage(...args),
+    resolveChat: () => mocks.resolveChat(),
   };
 });
 
@@ -58,6 +72,9 @@ describe("close_session tool", () => {
     mocks.getGovernorSid.mockReturnValue(0);
     mocks.listSessions.mockReturnValue([]);
     mocks.sendServiceMessage.mockResolvedValue(undefined);
+    mocks.getSession.mockReturnValue({ sid: 1, pin: 123456, name: "Alpha", createdAt: "2026-03-17" });
+    mocks.drainQueue.mockReturnValue([]);
+    mocks.resolveChat.mockReturnValue(1001);
     const server = createMockServer();
     register(server);
     call = server.getHandler("close_session");
@@ -141,7 +158,11 @@ describe("close_session tool", () => {
     await call({ sid: 1, pin: 123456 });
 
     expect(mocks.setRoutingMode).not.toHaveBeenCalled();
-    expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    // disconnect notification is always sent, but no routing-change message
+    expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+      expect.stringContaining("has disconnected"),
+    );
   });
 
   it("still returns success even if service message fails", async () => {
@@ -286,7 +307,110 @@ describe("close_session tool", () => {
     await call({ sid: 1, pin: 123456 });
 
     expect(mocks.setRoutingMode).not.toHaveBeenCalled();
-    expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    // Only the disconnect notification is sent — no routing-change message
+    expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+      expect.stringContaining("has disconnected"),
+    );
     expect(mocks.deliverDirectMessage).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Disconnect notification
+  // =========================================================================
+
+  it("always sends operator disconnect notification with session name", async () => {
+    mocks.getSession.mockReturnValue({ sid: 1, pin: 123456, name: "Orion", createdAt: "2026-03-17" });
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+      expect.stringContaining("🤖 Orion has disconnected."),
+    );
+  });
+
+  it("uses 'Session N' label in disconnect notification when session has no name", async () => {
+    mocks.getSession.mockReturnValue({ sid: 3, pin: 123456, name: "", createdAt: "2026-03-17" });
+
+    await call({ sid: 3, pin: 123456 });
+
+    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+      expect.stringContaining("🤖 Session 3 has disconnected."),
+    );
+  });
+
+  it("uses 'Session N' label when getSession returns undefined", async () => {
+    mocks.getSession.mockReturnValue(undefined);
+
+    await call({ sid: 5, pin: 123456 });
+
+    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+      expect.stringContaining("🤖 Session 5 has disconnected."),
+    );
+  });
+
+  // =========================================================================
+  // Orphaned queue rerouting
+  // =========================================================================
+
+  it("drains orphaned queue and reroutes events to remaining sessions", async () => {
+    const orphanedEvent = { id: 99, event: "message", content: { type: "text" } };
+    mocks.drainQueue.mockReturnValue([orphanedEvent]);
+    mocks.listSessions.mockReturnValue([{ sid: 2, name: "Beta", createdAt: "2026-03-17" }]);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.drainQueue).toHaveBeenCalledWith(1);
+    expect(mocks.routeToSession).toHaveBeenCalledWith(orphanedEvent, "message");
+  });
+
+  it("reroutes callback events to the response lane", async () => {
+    const callbackEvent = { id: 55, event: "callback", content: { type: "cb" } };
+    mocks.drainQueue.mockReturnValue([callbackEvent]);
+    mocks.listSessions.mockReturnValue([{ sid: 2, name: "Beta", createdAt: "2026-03-17" }]);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.routeToSession).toHaveBeenCalledWith(callbackEvent, "response");
+  });
+
+  it("does not reroute orphaned events when no sessions remain", async () => {
+    const orphanedEvent = { id: 99, event: "message", content: { type: "text" } };
+    mocks.drainQueue.mockReturnValue([orphanedEvent]);
+    mocks.listSessions.mockReturnValue([]); // no sessions
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.routeToSession).not.toHaveBeenCalled();
+  });
+
+  it("does not call routeToSession when queue is empty", async () => {
+    mocks.drainQueue.mockReturnValue([]);
+    mocks.listSessions.mockReturnValue([{ sid: 2, name: "Beta", createdAt: "2026-03-17" }]);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.routeToSession).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Pending callback hook cleanup
+  // =========================================================================
+
+  it("replaces pending callback hooks with session-closed responders", async () => {
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.replaceSessionCallbackHooks).toHaveBeenCalledWith(
+      1,
+      expect.any(Function),
+    );
+  });
+
+  it("does not replace hooks if session close fails", async () => {
+    mocks.closeSession.mockReturnValue(false);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.replaceSessionCallbackHooks).not.toHaveBeenCalled();
   });
 });

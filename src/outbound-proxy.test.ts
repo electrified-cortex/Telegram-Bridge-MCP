@@ -152,7 +152,8 @@ describe("outbound-proxy", () => {
           message_id: 99,
         }),
       });
-      registerSendInterceptor(interceptor);
+      registerSendInterceptor(1, interceptor);
+      mocks.getCallerSid.mockReturnValue(1);
 
       const raw = fakeApi();
       const p = proxy(raw);
@@ -172,7 +173,8 @@ describe("outbound-proxy", () => {
 
     it("falls through when interceptor returns not-intercepted", async () => {
       const interceptor = spyInterceptor();
-      registerSendInterceptor(interceptor);
+      registerSendInterceptor(1, interceptor);
+      mocks.getCallerSid.mockReturnValue(1);
 
       const raw = fakeApi();
       const p = proxy(raw);
@@ -223,7 +225,8 @@ describe("outbound-proxy", () => {
 
     it("calls interceptor.beforeFileSend and afterFileSend", async () => {
       const interceptor = spyInterceptor();
-      registerSendInterceptor(interceptor);
+      registerSendInterceptor(1, interceptor);
+      mocks.getCallerSid.mockReturnValue(1);
 
       const raw = fakeApi();
       const p = proxy(raw);
@@ -235,7 +238,8 @@ describe("outbound-proxy", () => {
 
     it("calls afterFileSend even when the API call throws", async () => {
       const interceptor = spyInterceptor();
-      registerSendInterceptor(interceptor);
+      registerSendInterceptor(1, interceptor);
+      mocks.getCallerSid.mockReturnValue(1);
 
       const raw = fakeApi();
       raw.sendPhoto.mockRejectedValueOnce(new Error("network error"));
@@ -257,7 +261,8 @@ describe("outbound-proxy", () => {
   describe("editMessageText", () => {
     it("cancels typing and calls interceptor.onEdit", async () => {
       const interceptor = spyInterceptor();
-      registerSendInterceptor(interceptor);
+      registerSendInterceptor(1, interceptor);
+      mocks.getCallerSid.mockReturnValue(1);
 
       const raw = fakeApi();
       const p = proxy(raw);
@@ -350,7 +355,8 @@ describe("outbound-proxy", () => {
   describe("notifyBeforeFileSend / notifyAfterFileSend", () => {
     it("fires cross-cutting + interceptor hooks", async () => {
       const interceptor = spyInterceptor();
-      registerSendInterceptor(interceptor);
+      registerSendInterceptor(1, interceptor);
+      mocks.getCallerSid.mockReturnValue(1);
 
       await notifyBeforeFileSend();
       expect(mocks.clearPendingTemp).toHaveBeenCalledOnce();
@@ -368,7 +374,8 @@ describe("outbound-proxy", () => {
 
     it("skips everything when bypassing", async () => {
       const interceptor = spyInterceptor();
-      registerSendInterceptor(interceptor);
+      registerSendInterceptor(1, interceptor);
+      mocks.getCallerSid.mockReturnValue(1);
 
       await bypassProxy(async () => {
         await notifyBeforeFileSend();
@@ -393,7 +400,8 @@ describe("outbound-proxy", () => {
           message_id: 99,
         }),
       });
-      registerSendInterceptor(interceptor);
+      registerSendInterceptor(1, interceptor);
+      mocks.getCallerSid.mockReturnValue(1);
       clearSendInterceptor();
 
       const raw = fakeApi();
@@ -408,8 +416,9 @@ describe("outbound-proxy", () => {
     it("registerSendInterceptor replaces old interceptor", async () => {
       const first = spyInterceptor();
       const second = spyInterceptor();
-      registerSendInterceptor(first);
-      registerSendInterceptor(second);
+      registerSendInterceptor(1, first);
+      registerSendInterceptor(1, second);
+      mocks.getCallerSid.mockReturnValue(1);
 
       const raw = fakeApi();
       const p = proxy(raw);

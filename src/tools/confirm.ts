@@ -127,6 +127,7 @@ export function register(server: McpServer) {
 
         // Register callback hook — handles button clicks even after poll timeout.
         // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
+        // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
         registerCallbackHook(sent.message_id, (evt) => {
           const confirmed = evt.content.data === yes_data;
           // In single-button CTA mode (no_text is ""), ignore anything that isn't yes_data.
@@ -135,7 +136,7 @@ export function register(server: McpServer) {
           const chosenLabel = confirmed ? yes_text : no_text;
           void ackAndEditSelection(chatId, sent.message_id, text, chosenLabel, evt.content.qid)
             .catch((e: unknown) => process.stderr.write(`[warn] confirm hook failed: ${String(e)}\n`));
-        });
+        }, _sid);
 
         // Fires immediately when a voice message is detected (before transcription).
         // This removes the keyboard right away so the user doesn't see a delayed edit.

@@ -2,10 +2,16 @@
 
 ## Added
 
+- Session close teardown contract — `close_session` now: (1) drains orphaned queue items and reroutes them to remaining sessions, (2) always sends operator disconnect notification "🤖 {name} has disconnected.", (3) replaces any pending `choose`/`confirm`/`send_choice` callback hooks owned by the closing session with a "Session closed" ack so late button presses are handled gracefully
+- `drainQueue(sid)` in `session-queue.ts` — returns all pending events from a session queue before removal, enabling orphan rerouting on close
+- `replaceSessionCallbackHooks(sid, fn)` in `message-store.ts` — replaces all callback hooks registered by a session with a substitution function; used during teardown to install "Session closed" ack handlers
+- `registerCallbackHook` now accepts an optional `ownerSid` parameter for session-level hook ownership tracking; `confirm`, `choose`, and `send_choice` pass their session SID so hooks can be cleaned up on teardown
+- `docs/multi-session-protocol.md` — comprehensive routing protocol documentation covering session lifecycle, message routing decision tree, governor duties, cascade fallback, and agent guidelines
+
 - `session_start` now rejects name collisions — returns `NAME_CONFLICT` error when a session with the same name (case-insensitive) already exists, with guidance to resume the existing session or choose a different name
 - Added session approval gate — second and subsequent sessions send an operator Telegram prompt (✓ Approve / ✗ Deny) before the session is created; first session auto-approved; 60 s timeout defaults to deny (`SESSION_DENIED`); missing name on second+ session returns `NAME_REQUIRED`
 - First session now defaults to name `"Primary"` when no name is provided; second+ sessions must supply an explicit name
-- When 2nd session joins, `session_start` now notifies all existing sessions via internal DM: "📢 Multi-session active. 🤖 {Name} has joined. Routing: governor (🤖 {Governor} handles ambiguous messages)."
+- When 2nd session joins, `session_start` now notifies all existing sessions via internal DM: "📢 🤖 {Name} has joined. You'll coordinate incoming messages."
 - When a session close drops the active count from 2 → 1, `close_session` now resets routing to `load_balance` and delivers a DM to the remaining session: "📢 Single-session mode restored." (replaces old governor-promotion logic for the 2→1 case)
 - All 32 non-exempt tools now require `identity` tuple `[sid, pin]` when `activeSessionCount() > 1` — returns `SID_REQUIRED` when omitted, `AUTH_FAILED` when invalid; single-session mode unchanged (backward compat)
 - Added `session-gate.ts` with `requireAuth(identity)` helper — shared gate logic for all tool-level session authentication
@@ -39,7 +45,6 @@
 - Added governor death recovery — closing the governor session resets routing mode to load_balance and notifies the operator
 - Added cascade pass-by deadlines — cascade-routed events include a `pass_by` ISO timestamp (15 s for idle sessions, 30 s for busy)
 - Added session directory to `session_start` — when `sessions_active > 1`, response includes `fellow_sessions` (list of other sessions) and `routing_mode`
-- Added auto-routing prompt — when the 2nd session joins, `session_start` sends the routing mode selection panel to the operator automatically (previously required manual `/routing` command)
 - Added `hasAnySessionWaiter()` and `isSessionMessageConsumed()` to `session-queue` — poller uses these to avoid setting 😴 when any session agent is waiting or has already consumed the message
 - Added test coverage for voice salute edge cases: session queue ack paths in `dequeue_update`, session waiter blind spot in poller, and `ackVoiceMessage` unit tests (dedup, no-ALLOWED_USER_ID guard, stderr on failure)
 - Added Claude Code Docker config example to README
@@ -60,6 +65,10 @@
 
 ## Changed
 
+- Refactored `animation-state` to per-SID state — all animation functions now take `sid` as first parameter; presets, defaults, and resume state stored in per-SID Maps; eliminates cross-session animation conflicts
+- Refactored outbound proxy interceptor to per-SID — `registerSendInterceptor(sid, fn)` and `clearSendInterceptor(sid?)` scope interceptors per session; lookups use `getCallerSid()` from AsyncLocalStorage
+- Simplified `session_start` DM announcement — removed governor/routing terminology from user-facing messages; DM now reads "🤖 {Name} has joined. You'll coordinate incoming messages." instead of mentioning routing mode details
+- Removed `sendRoutingPanel()` call from `session_start` — routing is now automatic and internal-only; operator no longer sees a routing mode selection panel on session join
 - `session_start` no longer asks "Resume / Start Fresh" — always auto-drains pending messages from previous sessions (start fresh) without operator interaction
 - `session_start` intro message now includes session identity (SID and name) when multiple sessions are active or a name is provided
 - Softened session-start hint from prescriptive "Requires an active session — call session_start once before using this tool" to subtle "Ensure session_start has been called" across all 12 tool descriptions

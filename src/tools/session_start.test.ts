@@ -646,14 +646,11 @@ describe("session_start tool", () => {
 
     await call({ name: "Worker" });
 
-    // Should deliver a DM to existing session 1 about multi-session activation
+    // Should deliver a DM to existing session 1 about the new session joining
     expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(
       2,          // senderSid = new session
       1,          // targetSid = existing session
-      expect.stringContaining("Multi-session active"),
-    );
-    expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(
-      2, 1, expect.stringContaining("Worker"),
+      expect.stringContaining("Worker has joined"),
     );
   });
 
@@ -713,9 +710,9 @@ describe("session_start tool", () => {
 
     await call({ name: "Scout" });
 
-    // DM should mention Overseer as governor
+    // DM should mention the joiner's name
     expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(
-      2, 1, expect.stringContaining("Overseer"),
+      2, 1, expect.stringContaining("Scout has joined"),
     );
   });
 });

@@ -54,7 +54,7 @@ describe("cancel_animation tool", () => {
   it("passes text and parse_mode to cancelAnimation", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: true, message_id: 10 });
     await call({ text: "Done!", parse_mode: "HTML" });
-    expect(mocks.cancelAnimation).toHaveBeenCalledWith("Done!", "HTML");
+    expect(mocks.cancelAnimation).toHaveBeenCalledWith(0, "Done!", "HTML");
   });
 
   it("returns message_id when text replacement is provided", async () => {
@@ -68,13 +68,13 @@ describe("cancel_animation tool", () => {
   it("uses default Markdown parse_mode when not specified", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: true });
     await call({ text: "Result" });
-    expect(mocks.cancelAnimation).toHaveBeenCalledWith("Result", "Markdown");
+    expect(mocks.cancelAnimation).toHaveBeenCalledWith(0, "Result", "Markdown");
   });
 
   it("calls cancelAnimation without text when text is omitted", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: true });
     await call({});
-    expect(mocks.cancelAnimation).toHaveBeenCalledWith(undefined, "Markdown");
+    expect(mocks.cancelAnimation).toHaveBeenCalledWith(0, undefined, "Markdown");
   });
 
   it("returns error when cancelAnimation throws", async () => {

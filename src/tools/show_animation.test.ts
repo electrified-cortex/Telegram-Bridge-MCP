@@ -60,6 +60,7 @@ describe("show_animation tool", () => {
     mocks.startAnimation.mockResolvedValue(51);
     await call({});
     expect(mocks.startAnimation).toHaveBeenCalledWith(
+      0,
       undefined,
       1000,
       600,
@@ -77,6 +78,7 @@ describe("show_animation tool", () => {
       timeout: 60,
     });
     expect(mocks.startAnimation).toHaveBeenCalledWith(
+      0,
       ["🔄", "⏳", "✅"],
       3000,
       60,
@@ -92,6 +94,7 @@ describe("show_animation tool", () => {
     const result = await call({ preset: "thinking" });
     expect(isError(result)).toBe(false);
     expect(mocks.startAnimation).toHaveBeenCalledWith(
+      0,
       ["thinking.", "thinking..", "thinking..."],
       1000,
       600,
@@ -106,6 +109,7 @@ describe("show_animation tool", () => {
     mocks.startAnimation.mockResolvedValue(54);
     await call({ preset: "mypreset", frames: ["ignored"] });
     expect(mocks.startAnimation).toHaveBeenCalledWith(
+      0,
       ["preset."],
       1000,
       600,
@@ -138,6 +142,7 @@ describe("show_animation tool", () => {
     const result = await call({ persistent: true });
     expect(isError(result)).toBe(false);
     expect(mocks.startAnimation).toHaveBeenCalledWith(
+      0,
       undefined,
       1000,
       600,

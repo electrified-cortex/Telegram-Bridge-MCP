@@ -52,40 +52,40 @@ export function register(server: McpServer) {
       if (typeof _sid !== "number") return toError(_sid);
       // Reset mode
       if (reset) {
-        resetSessionDefault();
+        resetSessionDefault(_sid);
         return toResult({
           action: "reset",
           default_frames: [...DEFAULT_FRAMES],
-          presets: listPresets(),
+          presets: listPresets(_sid),
         });
       }
 
       // No-args: query mode
       if (!frames) {
         return toResult({
-          default_frames: [...getDefaultFrames()],
-          session_presets: listPresets(),
+          default_frames: [...getDefaultFrames(_sid)],
+          session_presets: listPresets(_sid),
           builtin_presets: listBuiltinPresets(),
         });
       }
 
       // Register named preset
       if (name) {
-        registerPreset(name, frames);
+        registerPreset(_sid, name, frames);
         return toResult({
           action: "preset_registered",
           name,
           frames,
-          presets: listPresets(),
+          presets: listPresets(_sid),
         });
       }
 
       // Set session default
-      setSessionDefault(frames);
+      setSessionDefault(_sid, frames);
       return toResult({
         action: "default_set",
         default_frames: frames,
-        presets: listPresets(),
+        presets: listPresets(_sid),
       });
     },
   );

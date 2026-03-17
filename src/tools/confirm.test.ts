@@ -103,7 +103,7 @@ describe("confirm tool", () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
     await call({ text: "Proceed?" });
-    expect(mocks.registerCallbackHook).toHaveBeenCalledWith(5, expect.any(Function));
+    expect(mocks.registerCallbackHook).toHaveBeenCalledWith(5, expect.any(Function), expect.any(Number));
   });
 
   it("calls ackAndEditSelection when hook fires", async () => {

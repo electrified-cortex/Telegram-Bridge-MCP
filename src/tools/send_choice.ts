@@ -122,6 +122,7 @@ export function register(server: McpServer) {
 
         // Register one-shot auto-lock: on first press, dismiss the spinner and
         // remove the buttons. The callback_query event is still enqueued normally.
+        // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
         registerCallbackHook(messageId, (evt) => {
           const qid = evt.content.qid;
           void (async () => {
@@ -132,7 +133,7 @@ export function register(server: McpServer) {
               .editMessageReplyMarkup(chatId, messageId, { reply_markup: { inline_keyboard: [] } })
               .catch(() => { /* non-fatal */ });
           })();
-        });
+        }, _sid);
 
         return toResult({ message_id: messageId });
       } catch (err) {

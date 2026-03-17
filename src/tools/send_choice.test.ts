@@ -122,7 +122,7 @@ describe("send_choice tool", () => {
 
   it("registers a one-shot callback hook after sending", async () => {
     await call({ text: "Pick", options: TWO_OPTIONS });
-    expect(mocks.registerCallbackHook).toHaveBeenCalledWith(9, expect.any(Function));
+    expect(mocks.registerCallbackHook).toHaveBeenCalledWith(9, expect.any(Function), expect.any(Number));
   });
 
   it("does NOT block — resolves without waiting for button press", async () => {

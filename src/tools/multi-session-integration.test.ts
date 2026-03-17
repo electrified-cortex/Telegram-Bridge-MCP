@@ -54,6 +54,7 @@ vi.mock("../message-store.js", () => ({
   dequeueBatch: vi.fn(() => []),
   pendingCount: vi.fn(() => 0),
   waitForEnqueue: vi.fn(() => new Promise<void>(() => { /* never resolves */ })),
+  replaceSessionCallbackHooks: vi.fn(() => []),
 }));
 
 // ---------------------------------------------------------------------------

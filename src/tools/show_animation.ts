@@ -79,16 +79,16 @@ export function register(server: McpServer) {
       // Resolve frames: preset > explicit frames > session default
       let resolvedFrames: string[] | undefined;
       if (preset) {
-        const presetFrames = getPreset(preset);
+        const presetFrames = getPreset(_sid, preset);
         if (!presetFrames) return toError(`Unknown animation preset: "${preset}"`);
         resolvedFrames = [...presetFrames];
       } else if (frames) {
         resolvedFrames = frames;
       }
-      // undefined → startAnimation uses getDefaultFrames() internally
+      // undefined → startAnimation uses getDefaultFrames(sid) internally
 
       try {
-        const message_id = await startAnimation(resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify);
+        const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify);
         return toResult({ message_id, persistent });
       } catch (err) {
         return toError(err);

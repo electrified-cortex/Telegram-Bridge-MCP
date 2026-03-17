@@ -7,7 +7,6 @@ import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-sto
 import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount } from "../session-manager.js";
 import { createSessionQueue, removeSessionQueue, deliverDirectMessage } from "../session-queue.js";
 import { getRoutingMode, setRoutingMode } from "../routing-mode.js";
-import { sendRoutingPanel } from "../built-in-commands.js";
 
 const DEFAULT_INTRO = "ℹ️ Session Start";
 const APPROVAL_TIMEOUT_MS = 60_000;
@@ -192,16 +191,13 @@ export function register(server: McpServer) {
             // Auto-activate governor: lowest-SID session (the first one) becomes governor
             const lowestSid = Math.min(...allSessions.map(s => s.sid));
             setRoutingMode("governor", lowestSid);
-            sendRoutingPanel().catch(() => {});
-            // Notify existing sessions that multi-session mode is now active
-            const governorSession = allSessions.find(s => s.sid === lowestSid);
-            const governorLabel = governorSession?.name || `Session ${lowestSid}`;
+            // Notify existing sessions that a new session has joined
             const joinerLabel = effectiveName || `Session ${session.sid}`;
             for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
               deliverDirectMessage(
                 session.sid,
                 fellow.sid,
-                `📢 Multi-session active. 🤖 ${joinerLabel} has joined.\nRouting: governor (🤖 ${governorLabel} handles ambiguous messages).`,
+                `📢 🤖 ${joinerLabel} has joined. You'll coordinate incoming messages.`,
               );
             }
           }
