@@ -5,11 +5,15 @@ const mocks = vi.hoisted(() => ({
   startAnimation: vi.fn(),
   getPreset: vi.fn(),
   getDefaultFrames: vi.fn(),
+  resolveChat: vi.fn((): number | { code: string; message: string } => 42),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, resolveChat: () => 42 };
+  return {
+    ...actual,
+    resolveChat: mocks.resolveChat,
+  };
 });
 
 vi.mock("../animation-state.js", async (importActual) => {
@@ -134,5 +138,14 @@ describe("show_animation tool", () => {
     );
     const data = parseResult(result);
     expect(data.persistent).toBe(true);
+  });
+
+  it("returns error when resolveChat returns non-number", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({});
+    expect(isError(result)).toBe(true);
   });
 });

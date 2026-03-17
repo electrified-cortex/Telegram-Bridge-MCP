@@ -1,11 +1,15 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
-const mocks = vi.hoisted(() => ({ pinChatMessage: vi.fn(), unpinChatMessage: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  pinChatMessage: vi.fn(),
+  unpinChatMessage: vi.fn(),
+  resolveChat: vi.fn((): number | { code: string; message: string } => 1),
+}));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, resolveChat: () => 1 };
+  return { ...actual, getApi: () => mocks, resolveChat: mocks.resolveChat };
 });
 
 import { register } from "./pin_message.js";
@@ -64,5 +68,15 @@ describe("pin_message tool", () => {
     const result = await call({ unpin: true });
     expect(isError(result)).toBe(false);
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1);
+  });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ message_id: 5 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
 });
