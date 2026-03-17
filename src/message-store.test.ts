@@ -26,6 +26,7 @@ import {
   setActiveSession,
   resetSessions,
 } from "./session-manager.js";
+import { runInSessionContext } from "./session-context.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — minimal Telegram Update factories
@@ -516,6 +517,63 @@ describe("session tagging on outbound", () => {
     const timeline = dumpTimeline(10);
     const evt = timeline.find((e) => e.id === 999);
     expect(evt!.sid).toBe(5);
+  });
+
+  // ── AsyncLocalStorage path (getCallerSid) ────────────────────────────────
+
+  it("runInSessionContext: recordOutgoing picks up session from ALS", () => {
+    setActiveSession(0); // global is 0 — proves ALS is used, not global
+    runInSessionContext(7, () => {
+      recordOutgoing(400, "text", "als-tagged");
+    });
+    const evt = getMessage(400);
+    expect(evt!.sid).toBe(7);
+  });
+
+  it("runInSessionContext: explicit sid param overrides ALS", () => {
+    runInSessionContext(7, () => {
+      recordOutgoing(401, "text", "explicit-override", undefined, undefined, 9);
+    });
+    const evt = getMessage(401);
+    expect(evt!.sid).toBe(9);
+  });
+
+  it("runInSessionContext: concurrent contexts tag independently", async () => {
+    // Two concurrent async operations must not cross-contaminate
+    const [p1, p2] = await Promise.all([
+      runInSessionContext(10, async () => {
+        await Promise.resolve();
+        recordOutgoing(500, "text", "from-sid-10");
+        return getMessage(500);
+      }),
+      runInSessionContext(20, async () => {
+        await Promise.resolve();
+        recordOutgoing(501, "text", "from-sid-20");
+        return getMessage(501);
+      }),
+    ]);
+    expect(p1!.sid).toBe(10);
+    expect(p2!.sid).toBe(20);
+  });
+
+  it("runInSessionContext: recordOutgoingEdit picks up session from ALS", () => {
+    setActiveSession(0);
+    recordOutgoing(600, "text", "base");
+    runInSessionContext(11, () => {
+      recordOutgoingEdit(600, "text", "als-edit");
+    });
+    const timeline = dumpTimeline(10);
+    const editEvt = timeline.find((e) => e.id === 600 && e.event === "edit");
+    expect(editEvt!.sid).toBe(11);
+  });
+
+  it("runInSessionContext: recordOutgoingEdit orphan (evicted) picks up ALS", () => {
+    setActiveSession(0);
+    runInSessionContext(12, () => {
+      recordOutgoingEdit(999, "text", "als-orphan");
+    });
+    const evt = getMessage(999);
+    expect(evt!.sid).toBe(12);
   });
 });
 

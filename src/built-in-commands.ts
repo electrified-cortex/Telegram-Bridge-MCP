@@ -712,6 +712,14 @@ function buildRoutingPanel(): { text: string; keyboard: Array<Array<{ text: stri
 }
 
 async function handleRoutingCommand(): Promise<void> {
+  await sendRoutingPanel();
+}
+
+/**
+ * Sends the routing-mode selection panel to the operator.
+ * Exported so session_start can trigger it when the 2nd session joins.
+ */
+export async function sendRoutingPanel(): Promise<void> {
   const chatId = resolveChat();
   if (typeof chatId !== "number") return;
   const api = getApi();

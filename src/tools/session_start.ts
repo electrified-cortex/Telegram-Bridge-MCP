@@ -6,6 +6,7 @@ import { dequeue, pendingCount } from "../message-store.js";
 import { createSession, closeSession, setActiveSession, listSessions } from "../session-manager.js";
 import { createSessionQueue, removeSessionQueue } from "../session-queue.js";
 import { getRoutingMode } from "../routing-mode.js";
+import { sendRoutingPanel } from "../built-in-commands.js";
 import {
   pollButtonPress,
   ackAndEditSelection,
@@ -105,6 +106,7 @@ export function register(server: McpServer) {
           if (session.sessionsActive > 1) {
             res.fellow_sessions = listSessions().filter(s => s.sid !== session.sid);
             res.routing_mode = getRoutingMode();
+            if (session.sessionsActive === 2) sendRoutingPanel().catch(() => {});
           }
           return toResult(res);
         }
@@ -171,6 +173,7 @@ export function register(server: McpServer) {
           if (session.sessionsActive > 1) {
             res.fellow_sessions = listSessions().filter(s => s.sid !== session.sid);
             res.routing_mode = getRoutingMode();
+            if (session.sessionsActive === 2) sendRoutingPanel().catch(() => {});
           }
           return toResult(res);
         }
@@ -190,6 +193,7 @@ export function register(server: McpServer) {
         if (session.sessionsActive > 1) {
           freshRes.fellow_sessions = listSessions().filter(s => s.sid !== session.sid);
           freshRes.routing_mode = getRoutingMode();
+          if (session.sessionsActive === 2) sendRoutingPanel().catch(() => {});
         }
         return toResult(freshRes);
       } catch (err) {
