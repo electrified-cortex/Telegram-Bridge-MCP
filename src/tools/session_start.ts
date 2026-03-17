@@ -2,15 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
-import { dequeue, pendingCount } from "../message-store.js";
+import { dequeue } from "../message-store.js";
 import { createSession, closeSession, setActiveSession, listSessions } from "../session-manager.js";
 import { createSessionQueue, removeSessionQueue } from "../session-queue.js";
 import { getRoutingMode } from "../routing-mode.js";
 import { sendRoutingPanel } from "../built-in-commands.js";
-import {
-  pollButtonPress,
-  ackAndEditSelection,
-} from "./button-helpers.js";
 
 const DEFAULT_INTRO = "ℹ️ Session Start";
 
@@ -31,19 +27,10 @@ function buildIntro(
   return template;
 }
 
-const FRESH_DATA = "session_fresh";
-const RESUME_DATA = "session_resume";
-const FRESH_LABEL = "Start Fresh";
-const RESUME_LABEL = "\u25B6\uFE0F Resume";
-
-/** Wait up to 10 minutes — effectively no timeout. */
-const CONFIRM_TIMEOUT_S = 600;
-
 const DESCRIPTION =
   "Call once at the start of every session. Creates a session " +
-  "with a unique ID and PIN, sends an intro message, checks " +
-  "for pending messages from a previous session, and — if any " +
-  "exist — asks the operator whether to resume or start fresh. " +
+  "with a unique ID and PIN, sends an intro message, and " +
+  "auto-drains any pending messages from a previous session. " +
   "Returns { sid, pin, sessions_active, action, pending } so " +
   "the agent knows its identity and how to proceed. " +
   "Call after get_agent_guide and get_me during session setup.";
@@ -70,7 +57,7 @@ export function register(server: McpServer) {
           ),
       },
     },
-    async ({ intro, name }, { signal }) => {
+    async ({ intro, name }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -80,7 +67,9 @@ export function register(server: McpServer) {
 
       try {
         // 1. Send the intro message
-        const introText = buildIntro(intro, session.sid, name, session.sessionsActive);
+        const introText = buildIntro(
+          intro, session.sid, name, session.sessionsActive,
+        );
         const sent = await getApi().sendMessage(
           chatId,
           markdownToV2(introText),
@@ -92,110 +81,28 @@ export function register(server: McpServer) {
         );
         const introId: number = sent.message_id;
 
-        // 2. Check pending count
-        const pending = pendingCount();
-        if (pending === 0) {
-          const res: Record<string, unknown> = {
-            sid: session.sid,
-            pin: session.pin,
-            sessions_active: session.sessionsActive,
-            action: "fresh",
-            pending: 0,
-            intro_message_id: introId,
-          };
-          if (session.sessionsActive > 1) {
-            res.fellow_sessions = listSessions().filter(s => s.sid !== session.sid);
-            res.routing_mode = getRoutingMode();
-            if (session.sessionsActive === 2) sendRoutingPanel().catch(() => {});
-          }
-          return toResult(res);
-        }
-
-        // 3. Ask the operator
-        const plural = pending === 1 ? "message" : "messages";
-        const confirmText =
-          `${pending} ${plural} from a previous session.`;
-
-        const confirmSent = await getApi().sendMessage(
-          chatId,
-          markdownToV2(confirmText),
-          {
-            parse_mode: "MarkdownV2",
-            reply_markup: {
-              inline_keyboard: [[
-                { text: FRESH_LABEL, callback_data: FRESH_DATA },
-                { text: RESUME_LABEL, callback_data: RESUME_DATA },
-              ]],
-            },
-            _rawText: confirmText,
-          } as Record<string, unknown>,
-        );
-
-        // 4. Wait for button press
-        const result = await pollButtonPress(
-          chatId,
-          confirmSent.message_id,
-          CONFIRM_TIMEOUT_S,
-          signal,
-        );
-
-        if (!result) {
-          // Extremely unlikely (10 min timeout), treat as fresh
-          return toResult({
-            sid: session.sid,
-            pin: session.pin,
-            sessions_active: session.sessionsActive,
-            action: "fresh",
-            discarded: 0,
-            intro_message_id: introId,
-          });
-        }
-
-        const chosenLabel =
-          result.data === FRESH_DATA ? FRESH_LABEL : RESUME_LABEL;
-        await ackAndEditSelection(
-          chatId,
-          confirmSent.message_id,
-          confirmText,
-          chosenLabel,
-          result.callback_query_id,
-        );
-
-        if (result.data === RESUME_DATA) {
-          const res: Record<string, unknown> = {
-            sid: session.sid,
-            pin: session.pin,
-            sessions_active: session.sessionsActive,
-            action: "resume",
-            pending,
-            intro_message_id: introId,
-          };
-          if (session.sessionsActive > 1) {
-            res.fellow_sessions = listSessions().filter(s => s.sid !== session.sid);
-            res.routing_mode = getRoutingMode();
-            if (session.sessionsActive === 2) sendRoutingPanel().catch(() => {});
-          }
-          return toResult(res);
-        }
-
-        // 5. Drain all pending messages
+        // 2. Auto-drain any pending messages (always start fresh)
         let discarded = 0;
         while (dequeue() !== undefined) discarded++;
 
-        const freshRes: Record<string, unknown> = {
+        const res: Record<string, unknown> = {
           sid: session.sid,
           pin: session.pin,
           sessions_active: session.sessionsActive,
           action: "fresh",
-          discarded,
+          pending: 0,
           intro_message_id: introId,
         };
+        if (discarded > 0) res.discarded = discarded;
         if (session.sessionsActive > 1) {
-          freshRes.fellow_sessions = listSessions().filter(s => s.sid !== session.sid);
-          freshRes.routing_mode = getRoutingMode();
-          if (session.sessionsActive === 2) sendRoutingPanel().catch(() => {});
+          res.fellow_sessions = listSessions()
+            .filter(s => s.sid !== session.sid);
+          res.routing_mode = getRoutingMode();
+          if (session.sessionsActive === 2) {
+            sendRoutingPanel().catch(() => {});
+          }
         }
-        return toResult(freshRes);
+        return toResult(res);
       } catch (err) {
         // Rollback: clean up orphaned session on failure
         removeSessionQueue(session.sid);

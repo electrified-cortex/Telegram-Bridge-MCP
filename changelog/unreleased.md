@@ -45,6 +45,7 @@
 
 ## Changed
 
+- `session_start` no longer asks "Resume / Start Fresh" — always auto-drains pending messages from previous sessions (start fresh) without operator interaction
 - `session_start` intro message now includes session identity (SID and name) when multiple sessions are active or a name is provided
 - Softened session-start hint from prescriptive "Requires an active session — call session_start once before using this tool" to subtle "Ensure session_start has been called" across all 12 tool descriptions
 - Softened `send_text` session hint to clarify session_start is recommended, not enforced

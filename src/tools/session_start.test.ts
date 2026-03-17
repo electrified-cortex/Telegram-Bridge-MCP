@@ -1,15 +1,10 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, type ToolHandler } from "./test-utils.js";
-import type { ButtonResult } from "./button-helpers.js";
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
-  answerCallbackQuery: vi.fn(),
-  editMessageText: vi.fn(),
   pendingCount: vi.fn(),
   dequeue: vi.fn(),
-  pollButtonPress: vi.fn(),
-  ackAndEditSelection: vi.fn(),
   createSession: vi.fn(),
   closeSession: vi.fn(),
   setActiveSession: vi.fn(),
@@ -24,8 +19,6 @@ vi.mock("../telegram.js", async (importActual) => {
     ...actual,
     getApi: () => ({
       sendMessage: mocks.sendMessage,
-      answerCallbackQuery: mocks.answerCallbackQuery,
-      editMessageText: mocks.editMessageText,
     }),
     resolveChat: () => mocks.resolveChat(),
   };
@@ -53,29 +46,9 @@ vi.mock("../session-queue.js", () => ({
   removeSessionQueue: vi.fn(),
 }));
 
-vi.mock("./button-helpers.js", async (importActual) => {
-  const actual = await importActual<typeof import("./button-helpers.js")>();
-  return {
-    ...actual,
-    pollButtonPress: (...args: unknown[]) => mocks.pollButtonPress(...args),
-    ackAndEditSelection: (...args: unknown[]) =>
-      mocks.ackAndEditSelection(...args),
-  };
-});
-
 import { register } from "./session_start.js";
 
 const INTRO_MSG = { message_id: 100, chat: { id: 42 }, date: 0 };
-const CONFIRM_MSG = { message_id: 101, chat: { id: 42 }, date: 0 };
-
-function makeButtonResult(data: string): ButtonResult {
-  return {
-    kind: "button",
-    callback_query_id: "cq1",
-    data,
-    message_id: 101,
-  };
-}
 
 describe("session_start tool", () => {
   let call: ToolHandler;
@@ -83,7 +56,6 @@ describe("session_start tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.sendMessage.mockResolvedValue(INTRO_MSG);
-    mocks.ackAndEditSelection.mockResolvedValue(undefined);
     mocks.createSession.mockReturnValue({
       sid: 1,
       pin: 123456,
@@ -95,17 +67,26 @@ describe("session_start tool", () => {
     call = server.getHandler("session_start");
   });
 
-  it("passes MCP signal to pollButtonPress", async () => {
-    mocks.pendingCount.mockReturnValue(1);
-    mocks.sendMessage
-      .mockResolvedValueOnce(INTRO_MSG)
-      .mockResolvedValueOnce(CONFIRM_MSG);
-    mocks.pollButtonPress.mockResolvedValue(null);
+  it("auto-drains pending messages and returns discarded count", async () => {
+    mocks.pendingCount.mockReturnValue(3);
+    mocks.dequeue
+      .mockReturnValueOnce({ id: 1 })
+      .mockReturnValueOnce({ id: 2 })
+      .mockReturnValueOnce({ id: 3 })
+      .mockReturnValueOnce(undefined);
 
-    const signal = new AbortController().signal;
-    await call({}, { signal });
+    const result = parseResult(await call({}));
 
-    expect(mocks.pollButtonPress).toHaveBeenCalledWith(42, 101, 600, signal);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      sid: 1,
+      pin: 123456,
+      sessions_active: 1,
+      action: "fresh",
+      pending: 0,
+      discarded: 3,
+      intro_message_id: 100,
+    });
   });
 
   it("sends intro message and returns fresh when no pending", async () => {
@@ -172,108 +153,12 @@ describe("session_start tool", () => {
     expect(opts._rawText).toBe("Hello!\n_Session 4 — worker_");
   });
 
-  it("asks user and drains on Start Fresh", async () => {
-    mocks.pendingCount.mockReturnValue(3);
-    // After intro is sent, second sendMessage is the confirmation
-    mocks.sendMessage
-      .mockResolvedValueOnce(INTRO_MSG)
-      .mockResolvedValueOnce(CONFIRM_MSG);
-    mocks.pollButtonPress.mockResolvedValue(
-      makeButtonResult("session_fresh"),
-    );
-    // Simulate draining 3 messages
-    mocks.dequeue
-      .mockReturnValueOnce({ id: 1 })
-      .mockReturnValueOnce({ id: 2 })
-      .mockReturnValueOnce({ id: 3 })
-      .mockReturnValueOnce(undefined);
+  it("omits discarded when nothing was pending", async () => {
+    mocks.pendingCount.mockReturnValue(0);
 
     const result = parseResult(await call({}));
 
-    expect(result).toEqual({
-      sid: 1,
-      pin: 123456,
-      sessions_active: 1,
-      action: "fresh",
-      discarded: 3,
-      intro_message_id: 100,
-    });
-    // Confirmation should have been ack'd
-    expect(mocks.ackAndEditSelection).toHaveBeenCalledTimes(1);
-  });
-
-  it("asks user and returns resume with pending count", async () => {
-    mocks.pendingCount.mockReturnValue(5);
-    mocks.sendMessage
-      .mockResolvedValueOnce(INTRO_MSG)
-      .mockResolvedValueOnce(CONFIRM_MSG);
-    mocks.pollButtonPress.mockResolvedValue(
-      makeButtonResult("session_resume"),
-    );
-
-    const result = parseResult(await call({}));
-
-    expect(result).toEqual({
-      sid: 1,
-      pin: 123456,
-      sessions_active: 1,
-      action: "resume",
-      pending: 5,
-      intro_message_id: 100,
-    });
-    expect(mocks.ackAndEditSelection).toHaveBeenCalledTimes(1);
-  });
-
-  it("sends confirmation with Start Fresh as first button", async () => {
-    mocks.pendingCount.mockReturnValue(2);
-    mocks.sendMessage
-      .mockResolvedValueOnce(INTRO_MSG)
-      .mockResolvedValueOnce(CONFIRM_MSG);
-    mocks.pollButtonPress.mockResolvedValue(
-      makeButtonResult("session_fresh"),
-    );
-    mocks.dequeue
-      .mockReturnValueOnce({ id: 1 })
-      .mockReturnValueOnce({ id: 2 })
-      .mockReturnValueOnce(undefined);
-
-    await call({});
-
-    // Second sendMessage call is the confirmation
-    const confirmCall = mocks.sendMessage.mock.calls[1] as unknown[];
-    const opts = confirmCall[2] as Record<string, unknown>;
-    const markup = opts.reply_markup as {
-      inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
-    };
-    const buttons = markup.inline_keyboard[0];
-    // "Start Fresh" should be the first (default) button
-    expect(buttons[0].text).toContain("Start Fresh");
-    expect(buttons[0].callback_data).toBe("session_fresh");
-    expect(buttons[1].text).toContain("Resume");
-    expect(buttons[1].callback_data).toBe("session_resume");
-  });
-
-  it("confirmation text includes pending count", async () => {
-    mocks.pendingCount.mockReturnValue(7);
-    mocks.sendMessage
-      .mockResolvedValueOnce(INTRO_MSG)
-      .mockResolvedValueOnce(CONFIRM_MSG);
-    mocks.pollButtonPress.mockResolvedValue(
-      makeButtonResult("session_fresh"),
-    );
-    // drain 7
-    for (let i = 0; i < 7; i++) {
-      mocks.dequeue.mockReturnValueOnce({ id: i + 1 });
-    }
-    mocks.dequeue.mockReturnValueOnce(undefined);
-
-    await call({});
-
-    const confirmCall = mocks.sendMessage.mock.calls[1] as unknown[];
-    const rawText = (confirmCall[2] as Record<string, unknown>)
-      ._rawText as string;
-    expect(rawText).toContain("7");
-    expect(rawText).toContain("message");
+    expect(result.discarded).toBeUndefined();
   });
 
   it("calls createSession with provided name", async () => {
@@ -346,29 +231,7 @@ describe("session_start tool", () => {
     expect(result.routing_mode).toBe("cascade");
   });
 
-  it("includes fellow_sessions in resume result when sessionsActive > 1", async () => {
-    mocks.pendingCount.mockReturnValue(3);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 111111, name: "alpha", sessionsActive: 2 });
-    mocks.listSessions.mockReturnValue([
-      { sid: 1, name: "beta" },
-      { sid: 2, name: "alpha" },
-    ]);
-    mocks.getRoutingMode.mockReturnValue("load_balance");
-    mocks.sendMessage
-      .mockResolvedValueOnce(INTRO_MSG)
-      .mockResolvedValueOnce(CONFIRM_MSG);
-    mocks.pollButtonPress.mockResolvedValue(makeButtonResult("session_resume"));
-
-    const result = parseResult(await call({ name: "alpha" }));
-
-    expect(result.action).toBe("resume");
-    const fellows = result.fellow_sessions as Array<{ sid: number }>;
-    expect(fellows.some(s => s.sid === 1)).toBe(true);
-    expect(fellows.every(s => s.sid !== 2)).toBe(true);
-    expect(result.routing_mode).toBe("load_balance");
-  });
-
-  it("includes fellow_sessions in fresh+discard result when sessionsActive > 1", async () => {
+  it("includes fellow_sessions when auto-draining with multiple sessions", async () => {
     mocks.pendingCount.mockReturnValue(2);
     mocks.createSession.mockReturnValue({ sid: 6, pin: 666666, name: "gamma", sessionsActive: 2 });
     mocks.listSessions.mockReturnValue([
@@ -376,10 +239,6 @@ describe("session_start tool", () => {
       { sid: 6, name: "gamma" },
     ]);
     mocks.getRoutingMode.mockReturnValue("load_balance");
-    mocks.sendMessage
-      .mockResolvedValueOnce(INTRO_MSG)
-      .mockResolvedValueOnce(CONFIRM_MSG);
-    mocks.pollButtonPress.mockResolvedValue(makeButtonResult("session_fresh"));
     mocks.dequeue
       .mockReturnValueOnce({ id: 1 })
       .mockReturnValueOnce({ id: 2 })
@@ -388,6 +247,7 @@ describe("session_start tool", () => {
     const result = parseResult(await call({ name: "gamma" }));
 
     expect(result.action).toBe("fresh");
+    expect(result.discarded).toBe(2);
     const fellows = result.fellow_sessions as Array<{ sid: number }>;
     expect(fellows.some(s => s.sid === 5)).toBe(true);
     expect(fellows.every(s => s.sid !== 6)).toBe(true);
