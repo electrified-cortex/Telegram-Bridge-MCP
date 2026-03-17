@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, resolveChat } from "../telegram.js";
 import { startAnimation, getPreset } from "../animation-state.js";
+import { requireAuth } from "../session-gate.js";
 
 const DESCRIPTION =
   "Start a server-managed cycling visual placeholder message. The animation " +
@@ -60,9 +61,18 @@ export function register(server: McpServer) {
           .boolean()
           .default(false)
           .describe("If true, the initial animation placeholder triggers a notification. Default false = silent (no ping/buzz)."),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify }) => {
+    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

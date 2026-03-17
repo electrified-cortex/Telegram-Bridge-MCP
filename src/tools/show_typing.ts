@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, resolveChat } from "../telegram.js";
 import { showTyping, cancelTyping } from "../typing-state.js";
+import { requireAuth } from "../session-gate.js";
 
 const DESCRIPTION =
   "Starts (or extends) a sustained background typing indicator that repeats " +
@@ -29,9 +30,18 @@ export function register(server: McpServer) {
         .boolean()
         .optional()
         .describe("If true, immediately stop the typing indicator instead of starting/extending it."),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    async ({ timeout_seconds, cancel }) => {
+    async ({ timeout_seconds, cancel, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       if (cancel) {

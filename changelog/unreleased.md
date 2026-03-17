@@ -3,6 +3,8 @@
 ## Added
 
 - `session_start` now rejects name collisions — returns `NAME_CONFLICT` error when a session with the same name (case-insensitive) already exists, with guidance to resume the existing session or choose a different name
+- All 32 non-exempt tools now require `identity` tuple `[sid, pin]` when `activeSessionCount() > 1` — returns `SID_REQUIRED` when omitted, `AUTH_FAILED` when invalid; single-session mode unchanged (backward compat)
+- Added `session-gate.ts` with `requireAuth(identity)` helper — shared gate logic for all tool-level session authentication
 
 - New test files: `config.test.ts` (100% coverage), `rate-limiter.test.ts` (100% coverage)
 - Extended test coverage for `tts.ts`, `typing-state.ts`, `show_typing.ts`, `confirm.ts`, `choose.ts`, `dequeue_update.ts`, `session_start.ts`; total tests 942 → 1030, statements 85.4% → 90.2%, branches 76.6% → 82.4%

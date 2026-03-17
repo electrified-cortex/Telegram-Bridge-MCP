@@ -4,6 +4,7 @@ import {
   toResult, toError, validateText, resolveChat, validateCallbackData, LIMITS, getApi,
 } from "../telegram.js";
 import { registerCallbackHook } from "../message-store.js";
+import { requireAuth } from "../session-gate.js";
 import {
   sendChoiceMessage, type KeyboardOption,
 } from "./button-helpers.js";
@@ -68,9 +69,18 @@ export function register(server: McpServer) {
           .min(1)
           .optional()
           .describe("Reply to this message ID"),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    async ({ text, options, columns, parse_mode, disable_notification, reply_to_message_id }) => {
+    async ({ text, options, columns, parse_mode, disable_notification, reply_to_message_id, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

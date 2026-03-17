@@ -5,6 +5,7 @@ import { join, extname, basename } from "path";
 import { z } from "zod";
 import { getApi, toResult, toError } from "../telegram.js";
 import { cancelTyping, showTyping } from "../typing-state.js";
+import { requireAuth } from "../session-gate.js";
 
 /** Text-based MIME types and extensions that are safe to read as UTF-8 */
 const TEXT_MIME_PREFIXES = ["text/"];
@@ -48,9 +49,18 @@ export function register(server: McpServer) {
         .string()
         .optional()
         .describe("MIME type hint from the message, used to determine if text contents should be returned."),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    async ({ file_id, file_name, mime_type }) => {
+    async ({ file_id, file_name, mime_type, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       try {
         await showTyping(30);
         const token = process.env.BOT_TOKEN;

@@ -6,6 +6,7 @@ import {
 import { resolveParseMode } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import type { ButtonStyle } from "./button-helpers.js";
+import { requireAuth } from "../session-gate.js";
 
 const DESCRIPTION =
   "Core send primitive — sends a message to the Telegram chat and returns immediately " +
@@ -62,9 +63,18 @@ export function register(server: McpServer) {
           .int()
           .optional()
           .describe("Thread this message as a reply to the given message ID"),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    async ({ text, keyboard, parse_mode, disable_notification, reply_to_message_id }) => {
+    async ({ text, keyboard, parse_mode, disable_notification, reply_to_message_id, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

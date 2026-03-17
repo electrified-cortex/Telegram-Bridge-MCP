@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat } from "../telegram.js";
 import { markdownToV2, escapeV2, escapeHtml } from "../markdown.js";
 import { applyTopicToTitle } from "../topic-state.js";
+import { requireAuth } from "../session-gate.js";
 
 const SEVERITY_PREFIX: Record<string, string> = {
   info: "ℹ️",
@@ -47,9 +48,18 @@ export function register(server: McpServer) {
         .min(1)
         .optional()
         .describe("Reply to this message ID — shows quoted message above the notification"),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    async ({ title, body, severity, parse_mode, disable_notification, reply_to_message_id }) => {
+    async ({ title, body, severity, parse_mode, disable_notification, reply_to_message_id, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {

@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { getMessage, getVersions, CURRENT } from "../message-store.js";
+import { requireAuth } from "../session-gate.js";
 
 const DESCRIPTION =
   "Look up a stored message by ID and optional version. Returns detail including " +
@@ -24,9 +25,18 @@ export function register(server: McpServer) {
           .int()
           .default(CURRENT)
           .describe("Version: -1 = current/latest (default), 0 = original, 1+ = edit history"),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    ({ message_id, version }) => {
+    ({ message_id, version, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const event = getMessage(message_id, version);
       if (!event) {
         return toError({

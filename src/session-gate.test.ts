@@ -1,101 +1,95 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { requireSid } from "./session-gate.js";
+import { requireAuth } from "./session-gate.js";
 
-vi.mock("./session-manager.js", () => ({
+const sessionMocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),
   getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
 }));
 
-import { activeSessionCount, getActiveSession } from "./session-manager.js";
-
-const mocks = {
-  activeSessionCount: vi.mocked(activeSessionCount),
-  getActiveSession: vi.mocked(getActiveSession),
-};
+vi.mock("./session-manager.js", () => ({
+  activeSessionCount: () => sessionMocks.activeSessionCount(),
+  getActiveSession: () => sessionMocks.getActiveSession(),
+  validateSession: (sid: number, pin: number) => sessionMocks.validateSession(sid, pin),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.activeSessionCount.mockReturnValue(0);
-  mocks.getActiveSession.mockReturnValue(0);
+  sessionMocks.activeSessionCount.mockReturnValue(0);
+  sessionMocks.getActiveSession.mockReturnValue(0);
+  sessionMocks.validateSession.mockReturnValue(false);
 });
 
-describe("requireSid", () => {
+describe("requireAuth", () => {
   describe("single-session mode (activeSessionCount <= 1)", () => {
-    it("returns getActiveSession() fallback when no sid given and 0 sessions", () => {
-      mocks.activeSessionCount.mockReturnValue(0);
-      mocks.getActiveSession.mockReturnValue(0);
-      const result = requireSid(undefined);
-      expect(result).toBe(0);
+    it("returns getActiveSession() when identity omitted and 0 sessions", () => {
+      sessionMocks.activeSessionCount.mockReturnValue(0);
+      sessionMocks.getActiveSession.mockReturnValue(0);
+      expect(requireAuth(undefined)).toBe(0);
     });
 
-    it("returns getActiveSession() fallback when no sid given and 1 session", () => {
-      mocks.activeSessionCount.mockReturnValue(1);
-      mocks.getActiveSession.mockReturnValue(42);
-      const result = requireSid(undefined);
-      expect(result).toBe(42);
+    it("returns getActiveSession() when identity omitted and 1 session", () => {
+      sessionMocks.activeSessionCount.mockReturnValue(1);
+      sessionMocks.getActiveSession.mockReturnValue(42);
+      expect(requireAuth(undefined)).toBe(42);
     });
 
-    it("returns provided sid directly when sid given and 0 sessions", () => {
-      mocks.activeSessionCount.mockReturnValue(0);
-      const result = requireSid(7);
-      expect(typeof result).toBe("number");
-      expect(result).toBe(7);
+    it("returns getActiveSession() even when identity is provided (single-session)", () => {
+      sessionMocks.activeSessionCount.mockReturnValue(1);
+      sessionMocks.getActiveSession.mockReturnValue(7);
+      // In single-session mode the identity is ignored; just return getActiveSession()
+      expect(requireAuth([99, 12345])).toBe(7);
     });
 
-    it("returns provided sid directly when sid given and 1 session", () => {
-      mocks.activeSessionCount.mockReturnValue(1);
-      const result = requireSid(42);
-      expect(result).toBe(42);
+    it("does not call validateSession in single-session mode", () => {
+      sessionMocks.activeSessionCount.mockReturnValue(1);
+      requireAuth([1, 9999]);
+      expect(sessionMocks.validateSession).not.toHaveBeenCalled();
     });
   });
 
   describe("multi-session mode (activeSessionCount > 1)", () => {
     beforeEach(() => {
-      mocks.activeSessionCount.mockReturnValue(2);
+      sessionMocks.activeSessionCount.mockReturnValue(2);
     });
 
-    it("returns SID_REQUIRED error when sid is omitted", () => {
-      const result = requireSid(undefined);
-      expect(typeof result).toBe("object");
+    it("returns SID_REQUIRED when identity is omitted", () => {
+      const result = requireAuth(undefined);
       expect(result).toMatchObject({
         code: "SID_REQUIRED",
         message: expect.stringContaining("Multiple sessions are active"),
       });
     });
 
-    it("includes active session count in the error message", () => {
-      mocks.activeSessionCount.mockReturnValue(3);
-      const result = requireSid(undefined);
+    it("includes active session count in SID_REQUIRED message", () => {
+      sessionMocks.activeSessionCount.mockReturnValue(3);
+      const result = requireAuth(undefined);
       expect(typeof result).toBe("object");
-      if (typeof result === "object") {
-        expect(result.message).toContain("3");
-      }
+      if (typeof result === "object") expect(result.message).toContain("3");
     });
 
-    it("returns sid directly when sid is provided (no error)", () => {
-      const result = requireSid(5);
-      expect(result).toBe(5);
+    it("returns AUTH_FAILED when validateSession returns false", () => {
+      sessionMocks.validateSession.mockReturnValue(false);
+      const result = requireAuth([1, 99999]);
+      expect(result).toMatchObject({ code: "AUTH_FAILED" });
     });
 
-    it("returns sid=1 directly when provided", () => {
-      const result = requireSid(1);
-      expect(result).toBe(1);
+    it("calls validateSession with correct sid and pin", () => {
+      sessionMocks.validateSession.mockReturnValue(false);
+      requireAuth([5, 80914]);
+      expect(sessionMocks.validateSession).toHaveBeenCalledWith(5, 80914);
     });
 
-    it("does NOT call getActiveSession when sid is provided", () => {
-      requireSid(3);
-      expect(mocks.getActiveSession).not.toHaveBeenCalled();
+    it("returns sid when validateSession returns true", () => {
+      sessionMocks.validateSession.mockReturnValue(true);
+      const result = requireAuth([3, 12345]);
+      expect(result).toBe(3);
     });
-  });
 
-  describe("SID_REQUIRED code is a string literal", () => {
-    it("has code SID_REQUIRED", () => {
-      mocks.activeSessionCount.mockReturnValue(2);
-      const result = requireSid(undefined);
-      expect(typeof result).toBe("object");
-      if (typeof result === "object") {
-        expect(result.code).toBe("SID_REQUIRED");
-      }
+    it("does not call getActiveSession when identity is provided", () => {
+      sessionMocks.validateSession.mockReturnValue(true);
+      requireAuth([2, 55555]);
+      expect(sessionMocks.getActiveSession).not.toHaveBeenCalled();
     });
   });
 });

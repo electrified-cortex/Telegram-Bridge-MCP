@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
+import { requireAuth } from "../session-gate.js";
 
 const DESCRIPTION =
   "Sends a text message to the Telegram chat. Default parse_mode is Markdown — " +
@@ -35,9 +36,18 @@ export function register(server: McpServer) {
           .min(1)
           .optional()
           .describe("Reply to this message ID"),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    async ({ text, parse_mode, disable_notification, reply_to_message_id }) => {
+    async ({ text, parse_mode, disable_notification, reply_to_message_id, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

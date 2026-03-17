@@ -1,7 +1,8 @@
 import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { toResult } from "../telegram.js";
+import { toResult, toError } from "../telegram.js";
 import { getDebugLog, debugLogSize, isDebugEnabled, setDebugEnabled, type DebugCategory } from "../debug-log.js";
+import { requireAuth } from "../session-gate.js";
 
 const CATEGORIES: DebugCategory[] = ["session", "route", "queue", "cascade", "dm", "animation", "tool"];
 
@@ -27,9 +28,18 @@ export function register(server: McpServer) {
           .describe("Only return entries with id > since (cursor-based pagination)"),
         enable: z.boolean().optional()
           .describe("Set to true/false to toggle debug logging on/off"),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    ({ count, category, since, enable }) => {
+    ({ count, category, since, enable, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       if (enable !== undefined) setDebugEnabled(enable);
 
       const entries = getDebugLog(count ?? 50, category as DebugCategory | undefined, since);

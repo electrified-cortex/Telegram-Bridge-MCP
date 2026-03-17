@@ -83,6 +83,7 @@ export type TelegramErrorCode =
   | "VOICE_RESTRICTED"
   | "DUAL_INSTANCE_CONFLICT"
   | "SID_REQUIRED"
+  | "AUTH_FAILED"
   | "NAME_CONFLICT"
   | "UNKNOWN";
 

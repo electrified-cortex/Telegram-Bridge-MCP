@@ -1,40 +1,43 @@
-import { activeSessionCount, getActiveSession } from "./session-manager.js";
+import { activeSessionCount, getActiveSession, validateSession } from "./session-manager.js";
 import type { TelegramError } from "./telegram.js";
 
 /**
- * The `sid` Zod schema fragment used by every gated tool.
- * Import this constant and spread it into `inputSchema` so the description
- * stays consistent and the schema never drifts.
- */
-export const SID_SCHEMA_FIELD = {
-  description:
-    "Session ID returned by session_start. " +
-    "Required when multiple sessions share the same server process.",
-} as const;
-
-/**
- * Resolves the session ID for a tool call and enforces the multi-session
- * SID requirement.
+ * Resolves and authenticates the session for a tool call.
  *
- * - If `sid` is provided: returns it directly.
- * - If only one (or zero) sessions are active: falls back to
- *   `getActiveSession()` (single-agent backward-compat).
- * - If multiple sessions are active and `sid` is omitted: returns a
- *   `TelegramError` with code `SID_REQUIRED`.
+ * Pass the `identity` tuple `[sid, pin]` from the tool args.
+ *
+ * - **Single-session mode** (`activeSessionCount() <= 1`): `identity` may be
+ *   omitted. Falls back to `getActiveSession()` for backward compat.
+ * - **Multi-session mode** (`activeSessionCount() > 1`): `identity` is
+ *   required.
+ *   - Omitted → `SID_REQUIRED` error.
+ *   - Provided but invalid → `AUTH_FAILED` error.
+ *   - Valid → resolved SID (number) returned.
  *
  * Usage in a tool handler:
  * ```ts
- * const _sid = requireSid(sid);
+ * const _sid = requireAuth(identity);
  * if (typeof _sid !== "number") return toError(_sid);
  * ```
  */
-export function requireSid(sid: number | undefined): number | TelegramError {
-  if (sid !== undefined) return sid;
+export function requireAuth(
+  identity: [number, number] | undefined,
+): number | TelegramError {
   if (activeSessionCount() <= 1) return getActiveSession();
-  return {
-    code: "SID_REQUIRED",
-    message:
-      `Multiple sessions are active (${activeSessionCount()}). ` +
-      `Pass sid (from session_start) to identify your session.`,
-  };
+  if (!identity) {
+    return {
+      code: "SID_REQUIRED",
+      message:
+        `Multiple sessions are active (${activeSessionCount()}). ` +
+        `Pass identity ([sid, pin] from session_start) to identify your session.`,
+    };
+  }
+  const [sid, pin] = identity;
+  if (!validateSession(sid, pin)) {
+    return {
+      code: "AUTH_FAILED",
+      message: "Invalid session credentials. Check that sid and pin match those returned by session_start.",
+    };
+  }
+  return sid;
 }

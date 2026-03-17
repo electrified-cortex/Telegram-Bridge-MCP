@@ -3,6 +3,9 @@ import type { TelegramError } from "../telegram.js";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageReplyMarkup: vi.fn(),
@@ -32,6 +35,12 @@ vi.mock("../topic-state.js", () => ({
 
 vi.mock("../message-store.js", () => ({
   registerCallbackHook: mocks.registerCallbackHook,
+}));
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
 }));
 
 import { register } from "./send_choice.js";
@@ -250,4 +259,38 @@ describe("send_choice tool", () => {
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("BUTTON_LABEL_TOO_LONG");
   });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when multiple sessions active and no identity", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    const result = await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}],"identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when multiple sessions active and identity is valid", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}],"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when single session active and no identity (backward compat)", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(1);
+    let code: string | undefined;
+    try { code = errorCode(await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+  });
+});
+
 });

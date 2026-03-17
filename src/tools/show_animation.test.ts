@@ -1,7 +1,10 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "./test-utils.js";
+import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   startAnimation: vi.fn(),
   getPreset: vi.fn(),
   getDefaultFrames: vi.fn(),
@@ -25,6 +28,12 @@ vi.mock("../animation-state.js", async (importActual) => {
     getDefaultFrames: mocks.getDefaultFrames,
   };
 });
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+}));
 
 import { register } from "./show_animation.js";
 
@@ -148,4 +157,38 @@ describe("show_animation tool", () => {
     const result = await call({});
     expect(isError(result)).toBe(true);
   });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when multiple sessions active and no identity", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    const result = await call({});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when multiple sessions active and identity is valid", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when single session active and no identity (backward compat)", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(1);
+    let code: string | undefined;
+    try { code = errorCode(await call({})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+  });
+});
+
 });

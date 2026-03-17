@@ -1,7 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { pollButtonPress, ackAndEditSelection, editWithTimedOut } from "./button-helpers.js";
+import { requireAuth } from "../session-gate.js";
 
 const CONFIRM_DATA = "get_chat_yes";
 const DENY_DATA = "get_chat_no";
@@ -19,8 +21,19 @@ export function register(server: McpServer) {
     "get_chat",
     {
       description: DESCRIPTION,
+      inputSchema: {
+        identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+      },
     },
-    async () => {
+    async ({ identity }) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {

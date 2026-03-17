@@ -3,6 +3,9 @@ import { createMockServer, parseResult, isError, errorCode } from "./test-utils.
 import type { TimelineEvent } from "../message-store.js";
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   getMessage: vi.fn(),
   getVersions: vi.fn(),
 }));
@@ -16,6 +19,12 @@ vi.mock("../message-store.js", () => ({
   getMessage: mocks.getMessage,
   getVersions: mocks.getVersions,
   CURRENT: -1,
+}));
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
 }));
 
 import { register } from "./get_message.js";
@@ -123,4 +132,38 @@ describe("get_message tool", () => {
     const data = parseResult(result);
     expect(data._update).toBeUndefined();
   });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when multiple sessions active and no identity", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    const result = await call({"message_id":1});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"message_id":1,"identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when multiple sessions active and identity is valid", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(2);
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"message_id":1,"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when single session active and no identity (backward compat)", async () => {
+    mocks.activeSessionCount.mockReturnValueOnce(1);
+    let code: string | undefined;
+    try { code = errorCode(await call({"message_id":1})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+  });
+});
+
 });

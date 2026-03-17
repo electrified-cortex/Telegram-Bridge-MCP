@@ -7,6 +7,7 @@ import {
 import { resolveParseMode } from "../markdown.js";
 import { showTyping } from "../typing-state.js";
 import { extname } from "path";
+import { requireAuth } from "../session-gate.js";
 
 // ---------------------------------------------------------------------------
 // Auto-detection
@@ -94,12 +95,22 @@ export function register(server: McpServer) {
           .int()
           .optional()
           .describe("Reply to this message ID"),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
     async ({
       file, type, caption, parse_mode, duration, performer, title,
       width, height, disable_notification, reply_to_message_id,
+      identity,
     }) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

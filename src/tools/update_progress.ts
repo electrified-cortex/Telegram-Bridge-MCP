@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { applyTopicToTitle } from "../topic-state.js";
 import { renderProgress } from "./send_new_progress.js";
+import { requireAuth } from "../session-gate.js";
 
 const DEFAULT_WIDTH = 10;
 
@@ -44,9 +45,18 @@ export function register(server: McpServer) {
           .max(40)
           .default(DEFAULT_WIDTH)
           .describe(`Bar width in characters. Default ${DEFAULT_WIDTH}.`),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    async ({ message_id, percent, title, subtext, width }) => {
+    async ({ message_id, percent, title, subtext, width, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {

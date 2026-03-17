@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { toResult } from "../telegram.js";
+import { toResult, toError } from "../telegram.js";
+import { requireAuth } from "../session-gate.js";
 import {
   setSessionDefault,
   resetSessionDefault,
@@ -37,9 +38,18 @@ export function register(server: McpServer) {
           .boolean()
           .default(false)
           .describe("Reset the session default back to the built-in animation. Ignores frames/name."),
-      },
+              identity: z
+          .tuple([z.number().int(), z.number().int()])
+          .optional()
+          .describe(
+            "Identity tuple [sid, pin] from session_start. " +
+            "Required when multiple sessions share the same server process.",
+          ),
+},
     },
-    ({ frames, name, reset }) => {
+    ({ frames, name, reset, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       // Reset mode
       if (reset) {
         resetSessionDefault();
