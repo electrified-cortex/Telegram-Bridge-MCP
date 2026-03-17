@@ -8,16 +8,21 @@ Structured task tracking for bugs, features, and big-picture items. Works like a
 | --- | --- | --- |
 | `1-draft` | Ideas and rough notes — not yet scoped or committed to | Overseer writes |
 | `2-queued` | Scoped and ready to work on — available for pickup | Overseer writes, agents pick up |
-| `3-pending` | Claimed and in progress — owned by the agent who moved it here | Owning agent only |
-| `4-completed` | Done — moved here by the owning agent | Owning agent moves |
+| `3-in-progress` | Claimed and in progress — owned by the agent who moved it here | Owning agent only |
+| `4-completed` | Done — awaiting review by overseer/human | Owning agent moves here |
 
 ## How Agents Pick Up Work
 
 1. Browse `2-queued/` for available tasks.
-2. Move the task file to `3-pending/` — this claims ownership.
+2. Move the task file to `3-in-progress/` — this claims ownership.
 3. Work the task (TDD, implement, test, lint, build).
-4. Move the task to `4-completed/` when done.
-5. Report results to the overseer.
+4. Update the task document with a **completion report** (see [AGENTS.md](AGENTS.md)).
+5. Move the task to `4-completed/` when done.
+6. Report results to the overseer.
+
+## Archive
+
+Once the overseer/human reviews a completed task and approves it, they move it into a **dated subfolder** within `4-completed/` (e.g., `4-completed/2026-03-17/`). This keeps the root of `4-completed/` clean — only unreviewed items sit there.
 
 See [AGENTS.md](AGENTS.md) for full agent instructions.
 

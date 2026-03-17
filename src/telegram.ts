@@ -82,6 +82,8 @@ export type TelegramErrorCode =
   | "UNAUTHORIZED_CHAT"
   | "VOICE_RESTRICTED"
   | "DUAL_INSTANCE_CONFLICT"
+  | "SID_REQUIRED"
+  | "NAME_CONFLICT"
   | "UNKNOWN";
 
 export interface TelegramError {
