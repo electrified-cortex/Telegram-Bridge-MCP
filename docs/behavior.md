@@ -39,13 +39,13 @@ When starting a new session with this MCP:
 | Mode | Call | Behavior |
 | --- | --- | --- |
 | **Block** (normal loop) | `dequeue_update()` — no args | Waits up to 300 s (5 min) for the next update. Returns `{ timed_out: true }` on timeout — call again immediately to stay in the loop. |
-| **Instant poll** (drain) | `dequeue_update(timeout: 0)` | Returns immediately — an update if one exists, or `{ timed_out: true }`. |
+| **Instant poll** (drain) | `dequeue_update(timeout: 0)` | Returns immediately — an update if one exists, or `{ empty: true }`. |
 | **Shorter wait** | `dequeue_update(timeout: 60)` | Waits up to 60 s — use when you want more responsive feedback cycles. |
 
 Normal drain-then-block sequence:
 
 ```text
-1. drain: call dequeue_update(timeout: 0) until timed_out: true — handles any backlog
+1. drain: call dequeue_update(timeout: 0) until empty: true — handles any backlog
 2. block: call dequeue_update()           — waits up to 300 s for the next task
 3. On update: handle it, then go to step 1
 ```
