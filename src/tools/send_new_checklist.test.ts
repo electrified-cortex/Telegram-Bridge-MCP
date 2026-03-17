@@ -1,14 +1,22 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "./test-utils.js";
+import type { TelegramError } from "../telegram.js";
+import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   editMessageText: vi.fn(),
+  resolveChat: vi.fn((): number | TelegramError => 1),
+  validateText: vi.fn((): TelegramError | null => null),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, resolveChat: () => 1 };
+  return {
+    ...actual,
+    getApi: () => mocks,
+    resolveChat: mocks.resolveChat,
+    validateText: mocks.validateText,
+  };
 });
 
 import { register } from "./send_new_checklist.js";
@@ -67,6 +75,26 @@ describe("send_new_checklist tool", () => {
     const [, text] = mocks.sendMessage.mock.calls[0];
     expect(text).toContain("<i>exit code 1</i>");
   });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ title: "T", steps: STEPS });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
+  });
+
+  it("returns error when validateText fails", async () => {
+    mocks.validateText.mockReturnValueOnce({
+      code: "TEXT_TOO_LONG",
+      message: "too long",
+    });
+    const result = await call({ title: "T", steps: STEPS });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TEXT_TOO_LONG");
+  });
 });
 
 describe("update_checklist tool", () => {
@@ -93,5 +121,29 @@ describe("update_checklist tool", () => {
     const result = await update({ title: "T", steps: STEPS, message_id: 42 });
     expect(isError(result)).toBe(false);
     expect((parseResult(result)).message_id).toBe(42);
+  });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await update({
+      title: "T", steps: STEPS, message_id: 10,
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
+  });
+
+  it("returns error when validateText fails", async () => {
+    mocks.validateText.mockReturnValueOnce({
+      code: "TEXT_TOO_LONG",
+      message: "too long",
+    });
+    const result = await update({
+      title: "T", steps: STEPS, message_id: 10,
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TEXT_TOO_LONG");
   });
 });

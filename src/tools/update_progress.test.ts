@@ -1,13 +1,21 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "./test-utils.js";
+import type { TelegramError } from "../telegram.js";
+import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   editMessageText: vi.fn(),
+  resolveChat: vi.fn((): number | TelegramError => 1),
+  validateText: vi.fn((): TelegramError | null => null),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, resolveChat: () => 1 };
+  return {
+    ...actual,
+    getApi: () => mocks,
+    resolveChat: mocks.resolveChat,
+    validateText: mocks.validateText,
+  };
 });
 
 import { register } from "./update_progress.js";
@@ -62,5 +70,25 @@ describe("update_progress tool", () => {
     const data = parseResult(result);
     expect(data.message_id).toBe(10);
     expect(data.updated).toBe(true);
+  });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ message_id: 10, percent: 50 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
+  });
+
+  it("returns error when validateText fails", async () => {
+    mocks.validateText.mockReturnValueOnce({
+      code: "TEXT_TOO_LONG",
+      message: "too long",
+    });
+    const result = await call({ message_id: 10, percent: 50 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TEXT_TOO_LONG");
   });
 });

@@ -87,3 +87,4 @@
 - Fixed rate-limiter comment claiming 100 ms debounce when actual `MIN_SEND_INTERVAL_MS` is 1000 ms
 - Fixed stale "broadcast for now" comment in session-queue header — routing modes are fully implemented
 - Fixed multi-session.md overstating auth coverage — clarified that only session-management tools require `sid`/`pin`
+- Fixed missing branch coverage in 6 tool files (`delete_message`, `edit_message_text`, `send_choice`, `send_new_checklist`, `send_new_progress`, `update_progress`) — added resolveChat error, validateText failure, boolean API result, and button label limit tests; branch coverage 82.43% → 83.27%

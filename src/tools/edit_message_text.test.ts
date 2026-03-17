@@ -1,12 +1,26 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "./test-utils.js";
+import type { TelegramError } from "../telegram.js";
+import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
-const mocks = vi.hoisted(() => ({ editMessageText: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  editMessageText: vi.fn(),
+  resolveChat: vi.fn((): number | TelegramError => 42),
+  validateText: vi.fn((): TelegramError | null => null),
+}));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, resolveChat: () => 42 };
+  return {
+    ...actual,
+    getApi: () => mocks,
+    resolveChat: mocks.resolveChat,
+    validateText: mocks.validateText,
+  };
 });
+
+vi.mock("../message-store.js", () => ({
+  recordOutgoingEdit: vi.fn(),
+}));
 
 import { register } from "./edit_message_text.js";
 
@@ -40,5 +54,32 @@ describe("edit_message_text tool", () => {
     );
     const result = await call({ message_id: 99, text: "x" });
     expect(isError(result)).toBe(true);
+  });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ message_id: 1, text: "x" });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
+  });
+
+  it("returns error when validateText fails", async () => {
+    mocks.validateText.mockReturnValueOnce({
+      code: "TEXT_TOO_LONG",
+      message: "too long",
+    });
+    const result = await call({ message_id: 1, text: "x" });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TEXT_TOO_LONG");
+  });
+
+  it("handles boolean result from API (channel case)", async () => {
+    mocks.editMessageText.mockResolvedValue(true);
+    const result = await call({ message_id: 7, text: "Updated" });
+    expect(isError(result)).toBe(false);
+    expect(parseResult(result)).toMatchObject({ message_id: 7 });
   });
 });

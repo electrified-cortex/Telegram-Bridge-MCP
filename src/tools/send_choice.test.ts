@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import type { TelegramError } from "../telegram.js";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   editMessageReplyMarkup: vi.fn(),
   registerCallbackHook: vi.fn(),
   applyTopicToText: vi.fn((t: string) => t),
+  resolveChat: vi.fn((): number | TelegramError => 42),
+  validateText: vi.fn((): TelegramError | null => null),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -18,7 +21,8 @@ vi.mock("../telegram.js", async (importActual) => {
       answerCallbackQuery: mocks.answerCallbackQuery,
       editMessageReplyMarkup: mocks.editMessageReplyMarkup,
     }),
-    resolveChat: () => 42,
+    resolveChat: mocks.resolveChat,
+    validateText: mocks.validateText,
   };
 });
 
@@ -198,5 +202,52 @@ describe("send_choice tool", () => {
     mocks.sendMessage.mockRejectedValue(new Error("network error"));
     const result = await call({ text: "Fail", options: TWO_OPTIONS });
     expect(isError(result)).toBe(true);
+  });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ text: "Pick", options: TWO_OPTIONS });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
+  });
+
+  it("returns error when validateText fails", async () => {
+    mocks.validateText.mockReturnValueOnce({
+      code: "TEXT_TOO_LONG",
+      message: "too long",
+    });
+    const result = await call({ text: "Pick", options: TWO_OPTIONS });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TEXT_TOO_LONG");
+  });
+
+  it("returns BUTTON_LABEL_EXCEEDS_LIMIT for label > hard limit", async () => {
+    const longLabel = "x".repeat(65); // BUTTON_TEXT limit is 64
+    const result = await call({
+      text: "Pick",
+      options: [
+        { label: longLabel, value: "a" },
+        { label: "Short", value: "b" },
+      ],
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("BUTTON_LABEL_EXCEEDS_LIMIT");
+  });
+
+  it("returns BUTTON_LABEL_TOO_LONG for label > display max", async () => {
+    const mediumLabel = "x".repeat(21); // BUTTON_DISPLAY_MULTI_COL is 20
+    const result = await call({
+      text: "Pick",
+      columns: 2,
+      options: [
+        { label: mediumLabel, value: "a" },
+        { label: "Short", value: "b" },
+      ],
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("BUTTON_LABEL_TOO_LONG");
   });
 });
