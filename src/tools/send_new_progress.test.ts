@@ -111,6 +111,39 @@ describe("send_new_progress tool", () => {
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("TEXT_TOO_LONG");
   });
+
+  describe("identity gate", () => {
+    it("returns SID_REQUIRED when multiple sessions active and no identity", async () => {
+      mocks.activeSessionCount.mockReturnValueOnce(2);
+      const result = await call({"percent":50});
+      expect(isError(result)).toBe(true);
+      expect(errorCode(result)).toBe("SID_REQUIRED");
+    });
+
+    it("returns AUTH_FAILED when identity has wrong pin", async () => {
+      mocks.activeSessionCount.mockReturnValueOnce(2);
+      mocks.validateSession.mockReturnValueOnce(false);
+      const result = await call({"percent":50,"identity":[1,99999]});
+      expect(isError(result)).toBe(true);
+      expect(errorCode(result)).toBe("AUTH_FAILED");
+    });
+
+    it("proceeds when multiple sessions active and identity is valid", async () => {
+      mocks.activeSessionCount.mockReturnValueOnce(2);
+      mocks.validateSession.mockReturnValueOnce(true);
+      let code: string | undefined;
+      try { code = errorCode(await call({"percent":50,"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+      expect(code).not.toBe("SID_REQUIRED");
+      expect(code).not.toBe("AUTH_FAILED");
+    });
+
+    it("proceeds when single session active and no identity (backward compat)", async () => {
+      mocks.activeSessionCount.mockReturnValueOnce(1);
+      let code: string | undefined;
+      try { code = errorCode(await call({"percent":50})); } catch { /* gate passed, other error ok */ }
+      expect(code).not.toBe("SID_REQUIRED");
+    });
+  });
 });
 
 describe("renderProgress", () => {
@@ -162,38 +195,4 @@ describe("renderProgress", () => {
     // escapeHtml replaces angle brackets
     expect(text).toContain("&lt;b&gt;Title&lt;/b&gt;");
   });
-
-describe("identity gate", () => {
-  it("returns SID_REQUIRED when multiple sessions active and no identity", async () => {
-    mocks.activeSessionCount.mockReturnValueOnce(2);
-    const result = await call({"percent":50});
-    expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("SID_REQUIRED");
-  });
-
-  it("returns AUTH_FAILED when identity has wrong pin", async () => {
-    mocks.activeSessionCount.mockReturnValueOnce(2);
-    mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"percent":50,"identity":[1,99999]});
-    expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("AUTH_FAILED");
-  });
-
-  it("proceeds when multiple sessions active and identity is valid", async () => {
-    mocks.activeSessionCount.mockReturnValueOnce(2);
-    mocks.validateSession.mockReturnValueOnce(true);
-    let code: string | undefined;
-    try { code = errorCode(await call({"percent":50,"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
-    expect(code).not.toBe("SID_REQUIRED");
-    expect(code).not.toBe("AUTH_FAILED");
-  });
-
-  it("proceeds when single session active and no identity (backward compat)", async () => {
-    mocks.activeSessionCount.mockReturnValueOnce(1);
-    let code: string | undefined;
-    try { code = errorCode(await call({"percent":50})); } catch { /* gate passed, other error ok */ }
-    expect(code).not.toBe("SID_REQUIRED");
-  });
-});
-
 });

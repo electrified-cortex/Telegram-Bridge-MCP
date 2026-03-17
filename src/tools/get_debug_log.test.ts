@@ -18,9 +18,13 @@ vi.mock("../debug-log.js", () => ({
   setDebugEnabled: mocks.setDebugEnabled,
 }));
 
-vi.mock("../telegram.js", () => ({
-  toResult: (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] }),
-}));
+vi.mock("../telegram.js", async (importActual) => {
+  const actual = await importActual<typeof import("../telegram.js")>();
+  return {
+    ...actual,
+    toResult: (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] }),
+  };
+});
 
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),

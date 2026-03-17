@@ -98,4 +98,5 @@
 - Fixed rate-limiter comment claiming 100 ms debounce when actual `MIN_SEND_INTERVAL_MS` is 1000 ms
 - Fixed stale "broadcast for now" comment in session-queue header — routing modes are fully implemented
 - Fixed multi-session.md overstating auth coverage — clarified that only session-management tools require `sid`/`pin`
+- Fixed identity-gate test bugs — corrected four test files: `get_debug_log` telegram mock now spreads actual module so `toError` is available; `send_text_as_voice` was missing `isError`/`errorCode` imports; `send_new_checklist` and `send_new_progress` identity-gate describe blocks were nested inside wrong outer describe (wrong variable in scope); `send_new_checklist` gate tests were missing required `title` arg, causing ZodError before the handler ran and leaving unconsumed `mockReturnValueOnce` state that corrupted subsequent `update_checklist` tests
 - Fixed missing branch coverage in 6 tool files (`delete_message`, `edit_message_text`, `send_choice`, `send_new_checklist`, `send_new_progress`, `update_progress`) — added resolveChat error, validateText failure, boolean API result, and button label limit tests; branch coverage 82.43% → 83.27%
