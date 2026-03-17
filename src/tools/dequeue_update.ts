@@ -7,7 +7,6 @@ import {
 } from "../message-store.js";
 import { getActiveSession, setActiveSession, activeSessionCount } from "../session-manager.js";
 import { getSessionQueue, getMessageOwner } from "../session-queue.js";
-import { getGovernorSid } from "../routing-mode.js";
 
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
 function ackVoice(event: TimelineEvent): void {
@@ -20,14 +19,12 @@ function compactEvent(event: TimelineEvent, sid: number): Record<string, unknown
   const { _update: _, timestamp: __, ...rest } = event;
   void sid; // reserved for future per-session metadata
   const result: Record<string, unknown> = rest;
-  if (getGovernorSid() > 0) {
-    const replyTo = event.content.reply_to;
-    const target = event.content.target;
-    const isTargeted =
-      (replyTo !== undefined && getMessageOwner(replyTo) > 0) ||
-      (target !== undefined && getMessageOwner(target) > 0);
-    result.routing = isTargeted ? "targeted" : "ambiguous";
-  }
+  const replyTo = event.content.reply_to;
+  const target = event.content.target;
+  const isTargeted =
+    (replyTo !== undefined && getMessageOwner(replyTo) > 0) ||
+    (target !== undefined && getMessageOwner(target) > 0);
+  result.routing = isTargeted ? "targeted" : "ambiguous";
   return result;
 }
 

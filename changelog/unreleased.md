@@ -12,11 +12,11 @@
 - Added session approval gate — second and subsequent sessions send an operator Telegram prompt (✓ Approve / ✗ Deny) before the session is created; first session auto-approved; 60 s timeout defaults to deny (`SESSION_DENIED`); missing name on second+ session returns `NAME_REQUIRED`
 - First session now defaults to name `"Primary"` when no name is provided; second+ sessions must supply an explicit name
 - When 2nd session joins, `session_start` now notifies all existing sessions via internal DM: "📢 🤖 {Name} has joined. You'll coordinate incoming messages."
-- When a session close drops the active count from 2 → 1, `close_session` now resets routing to `load_balance` and delivers a DM to the remaining session: "📢 Single-session mode restored." (replaces old governor-promotion logic for the 2→1 case)
+- When a session close drops the active count from 2 → 1, `close_session` now clears the governor and delivers a DM to the remaining session: "📢 Single-session mode restored."
 - All 32 non-exempt tools now require `identity` tuple `[sid, pin]` when `activeSessionCount() > 1` — returns `SID_REQUIRED` when omitted, `AUTH_FAILED` when invalid; single-session mode unchanged (backward compat)
 - Added `session-gate.ts` with `requireAuth(identity)` helper — shared gate logic for all tool-level session authentication
 - Outbound messages now include `🤖 {name}` session header when 2+ sessions are active — injected by outbound proxy for `sendMessage`, `editMessageText`, and file send captions; single-session mode unchanged
-- `dequeue_update` events now include `routing: "targeted"|"ambiguous"` field in governor mode — targeted when replying to a known bot message, ambiguous otherwise
+- `dequeue_update` events now always include `routing: "targeted"|"ambiguous"` field — targeted when replying to a known bot message, ambiguous otherwise
 - `close_session` governor promotion — when the governor session closes with other sessions active, the lowest-SID remaining session is automatically promoted to governor (instead of resetting to `load_balance`)
 - Added multi-session behavior documentation in `docs/behavior.md` and `docs/communication.md` — routing modes, ambiguous message protocol, governor responsibilities, coordination tools
 
@@ -32,19 +32,16 @@
 - `list_sessions` tool — lists all active sessions (SID, name, creation time) and indicates the active session; no auth required
 - `dequeue_update` is now session-aware — reads from session queue when a session is active, falls back to global queue
 - Added cross-session outbound forwarding — bot messages from one session appear in other sessions' queues
-- Added `routing-mode` module — configurable routing for ambiguous messages (load_balance, cascade, governor)
-- Added `/routing` built-in command — inline panel to view and switch routing mode (load balance / cascade / governor)
+- Added `routing-mode` module — governor SID tracking for ambiguous message routing
 - Added `dm-permissions` module — directional permission map for inter-session DMs (sender→target, operator-gated)
 - Added `send_direct_message` tool — send internal-only messages to another session (requires auth + DM permission)
 - Added `request_dm_access` tool — request operator permission to DM another session via confirmation prompt
 - Added `deliverDirectMessage` in session-queue — synthetic `direct_message` events injected into target queue (negative IDs to avoid collision)
 - `close_session` now revokes all DM permissions for the closed session
-- Added `pass_message` tool — forward an ambiguous message to the next session in cascade order (cascade mode only)
-- Added `route_message` tool — governor delegates a message to a specific target session (governor mode only)
-- Added `passMessage` and `routeMessage` functions in session-queue — re-deliver events from the message store to another session's queue
-- Added governor death recovery — closing the governor session resets routing mode to load_balance and notifies the operator
-- Added cascade pass-by deadlines — cascade-routed events include a `pass_by` ISO timestamp (15 s for idle sessions, 30 s for busy)
-- Added session directory to `session_start` — when `sessions_active > 1`, response includes `fellow_sessions` (list of other sessions) and `routing_mode`
+- Added `route_message` tool — governor delegates a message to a specific target session
+- Added `routeMessage` function in session-queue — re-deliver events from the message store to another session's queue
+- Added governor promotion on close — closing the governor session promotes the lowest-SID remaining session
+- Added session directory to `session_start` — when `sessions_active > 1`, response includes `fellow_sessions` (list of other sessions)
 - Added `hasAnySessionWaiter()` and `isSessionMessageConsumed()` to `session-queue` — poller uses these to avoid setting 😴 when any session agent is waiting or has already consumed the message
 - Added test coverage for voice salute edge cases: session queue ack paths in `dequeue_update`, session waiter blind spot in poller, and `ackVoiceMessage` unit tests (dedup, no-ALLOWED_USER_ID guard, stderr on failure)
 - Added Claude Code Docker config example to README
@@ -77,9 +74,7 @@
 - Updated pending guard description in blocking tools to document the reply-to exception
 - Restored `@tsdotnet/queue` dependency — replaces hand-rolled `SimpleQueue<T>` inline class; uses `Queue<T>` directly (upstream 1.3.x ships `.js` extensions in `.d.ts` files natively)
 - Refactored `message-store` to delegate queue operations to `TwoLaneQueue<T>` — inbound events are also routed to per-session queues via `routeToSession`
-- Ambiguous inbound messages now broadcast to all sessions by default (no governor) — removed round-robin load-balance routing
-- Implemented cascade routing mode — always prefers lowest-SID idle session (priority hierarchy), falls back to lowest SID
-- Implemented governor routing mode — routes ambiguous messages to the designated governor session only
+- Ambiguous inbound messages route to the governor session when set, otherwise broadcast to all sessions
 - Fixed lint errors in `close_session` — removed unnecessary `async` and type assertions
 - Added session manager with incrementing SIDs and 6-digit PINs (crypto.randomInt)
 - Added `SESSION_AUTH_SCHEMA` and `checkAuth()` for tool-level session authentication

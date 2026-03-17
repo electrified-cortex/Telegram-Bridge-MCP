@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),
   getSessionQueue: vi.fn(() => undefined),
   getMessageOwner: vi.fn(() => 0),
-  getGovernorSid: vi.fn(() => 0),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -38,9 +37,7 @@ vi.mock("../session-queue.js", () => ({
   getMessageOwner: (...args: unknown[]) => mocks.getMessageOwner(...(args as [])),
 }));
 
-vi.mock("../routing-mode.js", () => ({
-  getGovernorSid: () => mocks.getGovernorSid(),
-}));
+
 
 import { register } from "./dequeue_update.js";
 
@@ -556,8 +553,7 @@ describe("dequeue_update tool", () => {
       };
     }
 
-    it("adds routing: ambiguous for fresh message in governor mode", async () => {
-      mocks.getGovernorSid.mockReturnValue(1);
+    it("adds routing: ambiguous for fresh message", async () => {
       mocks.getMessageOwner.mockReturnValue(0); // no owner → ambiguous
       const evt = makeEvent(10, "hello");
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
@@ -566,8 +562,7 @@ describe("dequeue_update tool", () => {
       expect(data.updates[0].routing).toBe("ambiguous");
     });
 
-    it("adds routing: targeted for reply-to message in governor mode", async () => {
-      mocks.getGovernorSid.mockReturnValue(1);
+    it("adds routing: targeted for reply-to message", async () => {
       mocks.getMessageOwner.mockImplementation((msgId: number) => msgId === 50 ? 1 : 0);
       const evt = makeReplyEvent(10, 50);
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
@@ -576,8 +571,7 @@ describe("dequeue_update tool", () => {
       expect(data.updates[0].routing).toBe("targeted");
     });
 
-    it("adds routing: targeted for callback event in governor mode", async () => {
-      mocks.getGovernorSid.mockReturnValue(1);
+    it("adds routing: targeted for callback event", async () => {
       mocks.getMessageOwner.mockImplementation((msgId: number) => msgId === 60 ? 2 : 0);
       const cbEvt: TimelineEvent = {
         id: 11,
@@ -593,17 +587,16 @@ describe("dequeue_update tool", () => {
       expect(data.updates[0].routing).toBe("targeted");
     });
 
-    it("omits routing field when no governor is set", async () => {
-      mocks.getGovernorSid.mockReturnValue(0);
+    it("adds routing: ambiguous when no governor is set", async () => {
+      mocks.getMessageOwner.mockReturnValue(0);
       const evt = makeEvent(12, "hi");
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
       const result = await call({ timeout: 0 });
       const data = parseResult(result);
-      expect(data.updates[0].routing).toBeUndefined();
+      expect(data.updates[0].routing).toBe("ambiguous");
     });
 
     it("adds routing to all events in a batch", async () => {
-      mocks.getGovernorSid.mockReturnValue(1);
       mocks.getMessageOwner.mockReturnValue(0); // all ambiguous
       const evt1 = makeEvent(14, "first");
       const evt2 = makeEvent(15, "second");
@@ -616,7 +609,6 @@ describe("dequeue_update tool", () => {
 
     it("treats reply to untracked message as ambiguous", async () => {
       // Reply to a message we don't track → treated as ambiguous (owner=0)
-      mocks.getGovernorSid.mockReturnValue(1);
       mocks.getMessageOwner.mockReturnValue(0); // untracked → 0
       const evt = makeReplyEvent(16, 999);
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
