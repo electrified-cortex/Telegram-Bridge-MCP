@@ -1,11 +1,14 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
-const mocks = vi.hoisted(() => ({ sendMessage: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  sendMessage: vi.fn(),
+  resolveChat: vi.fn((): number | { code: string; message: string } => 99),
+}));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, resolveChat: () => 99 };
+  return { ...actual, getApi: () => mocks, resolveChat: mocks.resolveChat };
 });
 
 import { register } from "./notify.js";
@@ -76,5 +79,29 @@ describe("notify tool", () => {
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
     expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("returns error when sendMessage API fails", async () => {
+    const { GrammyError } = await import("grammy");
+    mocks.sendMessage.mockRejectedValue(
+      new GrammyError(
+        "e",
+        { ok: false, error_code: 400, description: "Bad Request: chat not found" },
+        "sendMessage",
+        {},
+      ),
+    );
+    const result = await call({ title: "Done", severity: "info" });
+    expect(isError(result)).toBe(true);
+  });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ title: "Done" });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
 });

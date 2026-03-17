@@ -4,6 +4,7 @@ import { createMockServer, parseResult, isError, errorCode } from "./test-utils.
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   applyTopicToText: vi.fn((t: string) => t),
+  resolveChat: vi.fn((): number | { code: string; message: string } => 42),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -11,7 +12,7 @@ vi.mock("../telegram.js", async (importActual) => {
   return {
     ...actual,
     getApi: () => ({ sendMessage: mocks.sendMessage }),
-    resolveChat: () => 42,
+    resolveChat: mocks.resolveChat,
   };
 });
 
@@ -131,5 +132,25 @@ describe("send_message tool", () => {
     );
     const result = await call({ text: "Hello" });
     expect(isError(result)).toBe(true);
+  });
+
+  it("returns BUTTON_DATA_INVALID for label > hard limit", async () => {
+    const longLabel = "x".repeat(65);
+    const result = await call({
+      text: "Pick",
+      keyboard: [[{ label: longLabel, value: "ok" }]],
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("BUTTON_DATA_INVALID");
+  });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ text: "Hello" });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
 });

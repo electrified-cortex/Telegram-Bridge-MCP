@@ -2,11 +2,14 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 import { GrammyError } from "grammy";
 
-const mocks = vi.hoisted(() => ({ setMyCommands: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  setMyCommands: vi.fn(),
+  resolveChat: vi.fn((): number | { code: string; message: string } => 42),
+}));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, resolveChat: () => 42 };
+  return { ...actual, getApi: () => mocks, resolveChat: mocks.resolveChat };
 });
 
 import { register } from "./set_commands.js";
@@ -106,5 +109,16 @@ describe("set_commands tool", () => {
     const result = await call({ commands: SAMPLE_COMMANDS });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CHAT_NOT_FOUND");
+  });
+
+  it("returns error when resolveChat fails for chat scope", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat" });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
+    expect(mocks.setMyCommands).not.toHaveBeenCalled();
   });
 });
