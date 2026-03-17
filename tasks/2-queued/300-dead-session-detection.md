@@ -1,4 +1,4 @@
-# Feature: Dead Session Detection (Heartbeat)
+# Feature: Governor Timeout & Cascade Fallback (Heartbeat)
 
 ## Type
 
@@ -10,47 +10,78 @@ Feature / Reliability
 
 ## Description
 
-If an agent session stops calling `dequeue_update` (crash, timeout, network loss), the server has no way to know. Messages continue routing to the dead session's queue and pile up forever. The operator sees silence and doesn't know why.
+If the governor session stops polling `dequeue_update` (crash, timeout, network loss), ambiguous messages pile up in its queue with no one handling them. The operator sees silence.
 
-Need a heartbeat mechanism: if a session hasn't polled `dequeue_update` within N seconds, mark it unhealthy. Optionally reroute its messages and notify the operator.
+This task implements a **governor-cascade hybrid**: sessions are ranked by SID (lowest = highest rank). The governor normally handles all ambiguous messages, but if it goes unresponsive, messages automatically cascade to the next-ranked session. When the governor recovers, it resumes automatically.
 
 ## Current State
 
-- `dequeue_update` is the only polling mechanism. Each call is stateless — the server doesn't track when the last poll happened.
-- `session-queue.ts` tracks per-session queues but has no health/liveness concept.
+- `dequeue_update` is stateless — the server doesn't track when the last poll happened.
 - `session-manager.ts` tracks creation time but not last-active time.
+- Governor mode routes ALL ambiguous messages to the governor. No fallback.
+- Cascade mode exists as a separate routing mode but isn't used as a fallback.
 
-## Design Sketch
+## Design
 
-1. **Track last poll time** — in `dequeue_update` handler, update `session.lastPollAt = Date.now()` on every call.
-2. **Health check interval** — periodic timer (e.g., every 60s) checks all sessions. If `Date.now() - lastPollAt > THRESHOLD`, mark unhealthy.
-3. **Unhealthy behavior** — options:
-   - Reroute messages to governor (safest)
-   - Notify operator: "🤖 Worker appears unresponsive"
-   - Auto-close after extended timeout (aggressive)
-4. **Recovery** — if session resumes polling, automatically mark healthy again.
+### SID = Rank
 
-## Design Decisions
+SID order is rank: SID 1 is top (governor), SID 2 is first fallback, SID 3 is second fallback, etc. This is natural — the first session to join is the most trusted.
 
-- **Threshold:** `DEQUEUE_TIMEOUT + 60s` buffer. If the default dequeue timeout is 300s, a session is unhealthy after 360s of silence.
-- **Unhealthy behavior:** Reroute messages + notify operator. Do NOT auto-close — let the operator or overseer decide. The session may recover.
-- **No manual kick** for now — operator can ask an agent to call `close_session`. A future `/kick` command can come later.
-- **Recovery:** If a session resumes polling (`dequeue_update`), automatically mark it healthy again. No operator notification on recovery (too noisy).
+### Heartbeat tracking
+
+Every `dequeue_update` call records `lastPollAt = Date.now()` on the session. This is the heartbeat.
+
+### Governor timeout → cascade
+
+A periodic health check (every 60s) inspects all sessions:
+
+1. If governor hasn't polled within `THRESHOLD` (dequeue timeout + 60s buffer, ~360s):
+   - Mark governor as `unhealthy`
+   - Reroute NEW ambiguous messages to the next-ranked healthy session
+   - DM the fallback session: `⚠️ Governor appears offline. You're handling ambiguous messages.`
+   - Notify operator: `⚠️ {name} appears unresponsive.`
+2. If ANY non-governor session goes unhealthy:
+   - Notify operator only — no routing change needed (they don't get ambiguous messages anyway)
+   - Their queued messages stay put (they'll process on recovery)
+
+### Recovery
+
+When an unhealthy session resumes polling:
+- Automatically mark as `healthy`
+- If it was the governor, it resumes governor duties (no notification — seamless)
+- Messages queued during the outage stay with the fallback session that received them
+
+### No auto-close
+
+Unhealthy sessions are NOT auto-closed. The operator or overseer decides. The session may recover.
 
 ## Code Path
 
-1. `src/session-manager.ts` — Add `lastPollAt: number` to session record. Export `touchSession(sid)` to update timestamp. Add `getUnhealthySessions(thresholdMs): Session[]`.
-2. `src/tools/dequeue_update.ts` — Call `touchSession(sid)` at the start of every poll.
-3. `src/session-manager.ts` (or new `src/health-check.ts`) — `setInterval` that runs every 60s, calls `getUnhealthySessions()`, reroutes messages, notifies operator.
-4. `src/session-queue.ts` — Add `reroute(fromSid, toSid)` to move pending messages.
-5. `src/telegram.ts` — Send unhealthy notification: `⚠️ {name} appears unresponsive.`
+1. `src/session-manager.ts` — Add `lastPollAt: number` and `healthy: boolean` to session record. Export:
+   - `touchSession(sid)` — update `lastPollAt` and set `healthy = true`
+   - `getUnhealthySessions(thresholdMs): Session[]`
+   - `markUnhealthy(sid)` / `isHealthy(sid)`
+2. `src/tools/dequeue_update.ts` — Call `touchSession(sid)` at start of every poll.
+3. `src/health-check.ts` (new) — `setInterval(60_000)`:
+   - Call `getUnhealthySessions(THRESHOLD)`
+   - For newly unhealthy governor: find next healthy session by SID order, reroute
+   - Notify operator and fallback session
+   - Track which sessions have already been flagged (don't re-notify)
+4. `src/session-queue.ts` — `reroute(fromSid, toSid)` — move pending messages from one queue to another.
+5. `src/routing-mode.ts` — `setFallbackGovernor(sid)` or similar to temporarily redirect without changing the actual governor setting.
 
 ## Acceptance Criteria
 
-- [ ] `dequeue_update` records last poll timestamp per session
-- [ ] Health check detects sessions that haven't polled within threshold
-- [ ] Unhealthy sessions trigger operator notification
-- [ ] Messages rerouted away from unhealthy sessions
-- [ ] Recovery: session resumes healthy status on next poll
-- [ ] Tests for health detection, notification, and recovery
+- [ ] `dequeue_update` records `lastPollAt` per session on every poll
+- [ ] Health check runs periodically (configurable interval, default 60s)
+- [ ] Governor timeout triggers cascade to next-ranked healthy session
+- [ ] Fallback session receives DM notification about taking over
+- [ ] Operator receives notification about unresponsive session
+- [ ] Non-governor unhealthy → operator notification only, no reroute
+- [ ] Recovery: session resumes healthy on next poll, governor resumes duties
+- [ ] No auto-close — unhealthy sessions persist until manually closed
+- [ ] Tests: governor timeout → cascade fallback
+- [ ] Tests: recovery → governor resumes
+- [ ] Tests: non-governor timeout → operator notification only
+- [ ] Tests: health check interval fires correctly
 - [ ] All tests pass: `pnpm test`
