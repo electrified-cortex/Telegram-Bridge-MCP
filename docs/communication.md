@@ -11,7 +11,7 @@ MCP resource: `telegram-bridge-mcp://communication-guide`
 Every session follows this loop:
 
 1. **Announce** — call `session_start` to announce your presence and handle any pending messages from the previous session.
-2. **Call `dequeue_update`** — blocks up to 60 s waiting for the next update.
+2. **Call `dequeue_update`** — blocks up to 300 s waiting for the next update.
 3. **On receive** — work through the message handling pipeline:
    a. **Voice message?** The server already manages reactions: ✍ while transcribing, then 🫡 once your `dequeue_update` call returns it to you. No reaction action needed from you.
    b. **Show a thinking animation** — the human can see you're considering a plan.
@@ -106,12 +106,12 @@ Pass an empty string to `no_text` on `confirm` to render a single centered butto
 ```text
 Normal loop:
   loop:
-    result = dequeue_update()          # blocks up to 60 s
+    result = dequeue_update()          # blocks up to 300 s
     handle result
     goto loop
 
-On timeout ({ empty: true }):
-  call dequeue_update() again immediately — this is normal idle behavior.
+On timeout ({ timed_out: true }):
+  send a brief notify ("Still here — are you there?") then call dequeue_update() again.
 ```
 
 **The `pending` field is a warning.** When `pending > 0`, the operator has sent more messages while you were working — they may have changed their mind, added details, or cancelled the task. Before acting on your current plan, consider calling `dequeue_update` once more to check. You can fold the new context into your current plan or treat it as the next task after you finish.
@@ -205,7 +205,7 @@ Call `dequeue_update` again after every task, timeout, or error — loop forever
 Only `exit` from the operator ends the loop.  
 When unsure whether to stop, ask via Telegram and wait for the operator's answer.
 
-On timeout (`{ empty: true }`): call `dequeue_update` again immediately. Normal idle behavior.
+On timeout (`{ timed_out: true }`): send a brief `notify` ("Still here — are you there?") then call `dequeue_update` again.
 
 ---
 

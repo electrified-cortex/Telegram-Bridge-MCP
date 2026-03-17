@@ -94,12 +94,13 @@ describe("dequeue_update tool", () => {
     expect(data.pending).toBeUndefined();
   });
 
-  it("returns timed_out when queue is empty and timeout is 0", async () => {
+  it("returns empty when queue is empty and timeout is 0 (instant poll)", async () => {
     mocks.dequeueBatch.mockReturnValue([]);
     const result = await call({ timeout: 0 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.timed_out).toBe(true);
+    expect(data.empty).toBe(true);
+    expect(data.timed_out).toBeUndefined();
     expect(data.pending).toBe(0);
   });
 
@@ -160,7 +161,8 @@ describe("dequeue_update tool", () => {
     mocks.pendingCount.mockReturnValue(0);
     const result = await call({ timeout: 0 });
     const data = parseResult(result);
-    expect(data.timed_out).toBe(true);
+    expect(data.empty).toBe(true);
+    expect(data.timed_out).toBeUndefined();
     expect(data.pending).toBe(0);
   });
 

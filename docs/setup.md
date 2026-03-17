@@ -214,10 +214,11 @@ Add a **project-scoped** `.mcp.json` in your project root:
 - Telegram silently ignores edits where the text is identical to the current content.
 - This is not an error — the message is already up to date.
 
-### `dequeue_update` returns `{ empty: true }` immediately
+### `dequeue_update` returns `{ empty: true }` or `{ timed_out: true }` with no updates
 
-- If `timeout` is 0 (instant poll) and there are no pending updates, this is expected.
-- Use `dequeue_update()` with no arguments to block up to 60 s for the next update.
+- `{ empty: true }` — expected when `timeout` is 0 (instant poll) and there are no pending updates.
+- `{ timed_out: true }` — expected when a blocking wait (default 300 s) expires with no updates. Call again immediately.
+- Use `dequeue_update()` with no arguments to block up to 300 s for the next update.
 
 ### Multiple instances competing / messages arriving in wrong session
 
