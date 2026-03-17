@@ -16,7 +16,6 @@
 - `session_start` now rejects name collisions — returns `NAME_CONFLICT` error when a session with the same name (case-insensitive) already exists, with guidance to resume the existing session or choose a different name
 - Added session approval gate — second and subsequent sessions send an operator Telegram prompt (✓ Approve / ✗ Deny) before the session is created; first session auto-approved; 60 s timeout defaults to deny (`SESSION_DENIED`); missing name on second+ session returns `NAME_REQUIRED`
 - First session now defaults to name `"Primary"` when no name is provided; second+ sessions must supply an explicit name
-- When 2nd session joins, `session_start` now notifies all existing sessions via internal DM: "📢 🤖 {Name} has joined. You'll coordinate incoming messages."
 - When a session close drops the active count from 2 → 1, `close_session` now clears the governor and delivers a DM to the remaining session: "📢 Single-session mode restored."
 - All 32 non-exempt tools now require `identity` tuple `[sid, pin]` when `activeSessionCount() > 1` — returns `SID_REQUIRED` when omitted, `AUTH_FAILED` when invalid; single-session mode unchanged (backward compat)
 - Added `session-gate.ts` with `requireAuth(identity)` helper — shared gate logic for all tool-level session authentication
@@ -28,6 +27,10 @@
 - Added `route_message` and `send_direct_message` to the tool selection table in `docs/communication.md`
 - Created `docs/multi-session-prompts.md` — governor, worker, and topic discipline prompt templates with a two-session quick-start guide
 - Added multi-session behavior documentation in `docs/behavior.md` and `docs/communication.md` — routing modes, ambiguous message protocol, governor responsibilities, coordination tools
+
+## Removed
+
+- Removed redundant join DM from `session_start` — the `deliverDirectMessage` loop that sent "📢 🤖 {Name} has joined" to existing sessions was removed; the new session's intro Telegram message is already routed to existing sessions via normal poller flow
 
 - New test files: `config.test.ts` (100% coverage), `rate-limiter.test.ts` (100% coverage)
 - Extended test coverage for `tts.ts`, `typing-state.ts`, `show_typing.ts`, `confirm.ts`, `choose.ts`, `dequeue_update.ts`, `session_start.ts`; total tests 942 → 1030, statements 85.4% → 90.2%, branches 76.6% → 82.4%

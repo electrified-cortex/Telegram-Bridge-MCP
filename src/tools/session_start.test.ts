@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
   resolveChat: vi.fn(() => 42 as number),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
-  deliverDirectMessage: vi.fn(),
   grantDm: vi.fn(),
 }));
 
@@ -56,7 +55,6 @@ vi.mock("../routing-mode.js", () => ({
 vi.mock("../session-queue.js", () => ({
   createSessionQueue: vi.fn(),
   removeSessionQueue: vi.fn(),
-  deliverDirectMessage: (...args: unknown[]) => mocks.deliverDirectMessage(...args),
 }));
 
 vi.mock("../dm-permissions.js", () => ({
@@ -592,72 +590,6 @@ describe("session_start tool", () => {
     expect(JSON.stringify(result)).toContain("NAME_REQUIRED");
     expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
     expect(mocks.createSession).not.toHaveBeenCalled();
-  });
-
-  // =========================================================================
-  // Multi-session announcement (task 250)
-  // =========================================================================
-
-  it("notifies existing sessions when 2nd session joins", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
-    mocks.listSessions
-      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]) // collision check
-      .mockReturnValue([                                                             // allSessions
-        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
-        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
-      ]);
-    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
-    });
-    mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
-      .mockResolvedValue(INTRO_MSG);               // intro
-
-    await call({ name: "Worker" });
-
-    // Should deliver a DM to existing session 1 about the new session joining
-    expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(
-      2,          // senderSid = new session
-      1,          // targetSid = existing session
-      expect.stringContaining("Worker has joined"),
-    );
-  });
-
-  it("does not notify when first session starts (no existing sessions)", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Primary", sessionsActive: 1 });
-
-    await call({});
-
-    expect(mocks.deliverDirectMessage).not.toHaveBeenCalled();
-  });
-
-  it("announcement includes governor name", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Scout", sessionsActive: 2 });
-    mocks.listSessions
-      .mockReturnValueOnce([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }])
-      .mockReturnValue([
-        { sid: 1, name: "Overseer", createdAt: "2026-03-17" },
-        { sid: 2, name: "Scout", createdAt: "2026-03-17" },
-      ]);
-    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
-    });
-    mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
-
-    await call({ name: "Scout" });
-
-    // DM should mention the joiner's name
-    expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(
-      2, 1, expect.stringContaining("Scout has joined"),
-    );
   });
 
   // =========================================================================

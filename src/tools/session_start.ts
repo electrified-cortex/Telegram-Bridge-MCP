@@ -5,7 +5,7 @@ import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
 import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount } from "../session-manager.js";
-import { createSessionQueue, removeSessionQueue, deliverDirectMessage } from "../session-queue.js";
+import { createSessionQueue, removeSessionQueue } from "../session-queue.js";
 import { setGovernorSid } from "../routing-mode.js";
 import { grantDm } from "../dm-permissions.js";
 
@@ -201,15 +201,6 @@ export function register(server: McpServer) {
             // Auto-activate governor: lowest-SID session (the first one) becomes governor
             const lowestSid = Math.min(...allSessions.map(s => s.sid));
             setGovernorSid(lowestSid);
-            // Notify existing sessions that a new session has joined
-            const joinerLabel = effectiveName || `Session ${session.sid}`;
-            for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
-              deliverDirectMessage(
-                session.sid,
-                fellow.sid,
-                `📢 🤖 ${joinerLabel} has joined. You'll coordinate incoming messages.`,
-              );
-            }
           }
         }
         return toResult(res);
