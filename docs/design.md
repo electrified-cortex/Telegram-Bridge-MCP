@@ -61,7 +61,7 @@ Tools are grouped by abstraction level.
 
 | Tool | Description |
 | --- | --- |
-| `dequeue_update` | **Universal update consumption.** Blocks up to `timeout` seconds when the queue is empty. Returns `{ updates: [...] }` — a compact batch: response lane items (reactions, callbacks) first, then up to one message lane item. Voice messages arrive pre-transcribed. Returns `{ empty: true }` when no update is available within the timeout. `pending` is included when more updates are queued. |
+| `dequeue_update` | **Universal update consumption.** Blocks up to `timeout` seconds (default 300 s) when the queue is empty. Returns `{ updates: [...] }` — a compact batch: response lane items (reactions, callbacks) first, then up to one message lane item. Voice messages arrive pre-transcribed. Returns `{ timed_out: true }` when a blocking wait expires, or `{ empty: true }` for instant polls (`timeout: 0`). `pending` is included when more updates are queued. |
 | `get_message` | Random-access lookup of a stored message by ID with optional version history. Returns text, caption, file metadata, and edit history. Only call for message IDs already known to this agent session. |
 
 ### Messaging

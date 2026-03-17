@@ -28,7 +28,7 @@ When starting a new session with this MCP:
 2. Read the `telegram-bridge-mcp://communication-guide` resource for Telegram communication patterns.
 3. Call `get_me` — verifies the Telegram connection. If it fails, stop and notify the user.
 4. Call `session_start` — sends an intro message and handles pending messages from a previous session (offers Resume / Start Fresh if any exist).
-5. Enter the `dequeue_update` loop — call with no arguments to block up to 60 s (the default).
+5. Enter the `dequeue_update` loop — call with no arguments to block up to 300 s (the default).
 
 **`dequeue_update` is the sole tool for receiving updates.** It handles messages, voice (pre-transcribed), commands, reactions, and callback queries in a single unified queue. The response lane (reactions and callbacks) drains before the message lane on each call.
 
@@ -38,19 +38,28 @@ When starting a new session with this MCP:
 
 | Mode | Call | Behavior |
 | --- | --- | --- |
-| **Block** (normal loop) | `dequeue_update()` — no args | Waits up to 60 s for the next update. Use this in the main loop. |
+| **Block** (normal loop) | `dequeue_update()` — no args | Waits up to 300 s (5 min) for the next update. Returns `{ timed_out: true }` on timeout — call again immediately to stay in the loop. |
 | **Instant poll** (drain) | `dequeue_update(timeout: 0)` | Returns immediately — an update if one exists, or `{ empty: true }`. |
-| **Long idle wait** | `dequeue_update(timeout: 300)` | Waits up to 5 min. Use after doubling idle backoff. |
+| **Shorter wait** | `dequeue_update(timeout: 60)` | Waits up to 60 s — use when you want more responsive feedback cycles. |
 
 Normal drain-then-block sequence:
 
 ```text
 1. drain: call dequeue_update(timeout: 0) until empty: true — handles any backlog
-2. block: call dequeue_update()           — waits up to 60 s for the next task
+2. block: call dequeue_update()           — waits up to 300 s for the next task
 3. On update: handle it, then go to step 1
 ```
 
 `pending` (included when more updates are queued; omitted when 0) tells you how many items are still waiting. When `pending > 0`, skip straight to another `dequeue_update(timeout: 0)` call instead of blocking.
+
+### Handling a full timeout — check in with the user
+
+When `dequeue_update()` returns `{ timed_out: true }` after a **full blocking wait** (i.e. not a `timeout: 0` drain poll), it means 5 minutes have passed with no activity. Do not silently loop — check in:
+
+1. Send a brief `notify` asking if the operator is still there (e.g. "Still listening — are you there?").
+2. Continue the `dequeue_update` loop as normal.
+
+This prevents the session from appearing frozen and gives the operator a clear signal the agent is still alive. Do **not** check in after `timeout: 0` drain polls — those are expected to return immediately with no message.
 
 ### Looking up prior messages
 
@@ -228,7 +237,7 @@ await cancel_animation()
 
 **Default timeouts are optimized for minimal token usage during idle polling:**
 
-- `dequeue_update`: 60 s (default) — blocks until a message arrives or timeout occurs; up to 300 s for long idle periods
+- `dequeue_update`: 300 s (default) — blocks until a message arrives or timeout occurs; optimized for agent listen loops that should run indefinitely
 - `ask`, `choose`, `confirm`: 60 s — reasonable wait when expecting a response
 
 All tools support up to 300 s max. Use shorter timeouts (e.g., 30–60 s) when you want more responsive feedback loops, or longer timeouts when idle to minimize repeated polling overhead.
