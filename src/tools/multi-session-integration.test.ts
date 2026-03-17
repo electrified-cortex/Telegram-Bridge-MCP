@@ -299,7 +299,7 @@ describe("multi-session tool integration", () => {
   // Scenario 4: Session close resets governor routing
   // -------------------------------------------------------------------------
   describe("scenario 4: session close resets governor routing", () => {
-    it("closing governor session promotes next-lowest SID when sessions remain", async () => {
+    it("closing governor session resets routing to load_balance when 1 session remains (2→1 teardown)", async () => {
       const { sid: sid1, pin: pin1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
       setRoutingMode("governor", sid1);
@@ -311,9 +311,8 @@ describe("multi-session tool integration", () => {
       registerCloseSession(server);
       await server.getHandler("close_session")({ sid: sid1, pin: pin1 });
 
-      // sid2 is now the only remaining session — promoted to governor
-      expect(getRoutingMode()).toBe("governor");
-      expect(getGovernorSid()).toBe(sid2);
+      // 2→1 teardown: single-session mode restored, not governor promotion
+      expect(getRoutingMode()).toBe("load_balance");
     });
 
     it("closing governor session resets routing to load_balance when no sessions remain", async () => {
@@ -328,7 +327,7 @@ describe("multi-session tool integration", () => {
       expect(getGovernorSid()).toBe(0);
     });
 
-    it("closing a non-governor session does not affect routing mode", async () => {
+    it("closing a non-governor session resets routing when 1 session remains (2→1 teardown)", async () => {
       const { sid: sid1, pin: _pin1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2, pin: pin2 } = createSession(); createSessionQueue(sid2);
       setRoutingMode("governor", sid1);
@@ -337,8 +336,8 @@ describe("multi-session tool integration", () => {
       registerCloseSession(server);
       await server.getHandler("close_session")({ sid: sid2, pin: pin2 });
 
-      expect(getRoutingMode()).toBe("governor");
-      expect(getGovernorSid()).toBe(sid1);
+      // 2→1 teardown: routing resets regardless of which session closed
+      expect(getRoutingMode()).toBe("load_balance");
     });
 
     it("close_session with wrong pin returns AUTH_FAILED and leaves routing intact", async () => {

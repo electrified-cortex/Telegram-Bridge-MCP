@@ -5,6 +5,8 @@
 - `session_start` now rejects name collisions — returns `NAME_CONFLICT` error when a session with the same name (case-insensitive) already exists, with guidance to resume the existing session or choose a different name
 - Added session approval gate — second and subsequent sessions send an operator Telegram prompt (✓ Approve / ✗ Deny) before the session is created; first session auto-approved; 60 s timeout defaults to deny (`SESSION_DENIED`); missing name on second+ session returns `NAME_REQUIRED`
 - First session now defaults to name `"Primary"` when no name is provided; second+ sessions must supply an explicit name
+- When 2nd session joins, `session_start` now notifies all existing sessions via internal DM: "📢 Multi-session active. 🤖 {Name} has joined. Routing: governor (🤖 {Governor} handles ambiguous messages)."
+- When a session close drops the active count from 2 → 1, `close_session` now resets routing to `load_balance` and delivers a DM to the remaining session: "📢 Single-session mode restored." (replaces old governor-promotion logic for the 2→1 case)
 - All 32 non-exempt tools now require `identity` tuple `[sid, pin]` when `activeSessionCount() > 1` — returns `SID_REQUIRED` when omitted, `AUTH_FAILED` when invalid; single-session mode unchanged (backward compat)
 - Added `session-gate.ts` with `requireAuth(identity)` helper — shared gate logic for all tool-level session authentication
 - Outbound messages now include `🤖 {name}` session header when 2+ sessions are active — injected by outbound proxy for `sendMessage`, `editMessageText`, and file send captions; single-session mode unchanged

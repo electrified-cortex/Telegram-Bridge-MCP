@@ -134,3 +134,56 @@ All changes go in `src/tools/session_start.ts`:
 
 The approval prompt is sent **before** `createSession()` is called — the session doesn't exist yet. Use `sid=0` (global queue) for `pollButtonPress` so it polls the main message store, not a per-session queue.
 
+## Completion
+
+**Agent:** Copilot (GitHub Copilot / Claude Sonnet 4.6)
+**Date:** 2026-03-17
+
+### What Changed
+
+- **`src/tools/session_start.ts`** — Full implementation of the approval gate:
+  - Added imports: `TimelineEvent`, `registerCallbackHook`, `clearCallbackHook` from `message-store.js`; `activeSessionCount` from `session-manager.js`
+  - New constants: `APPROVAL_TIMEOUT_MS = 60_000`, `APPROVAL_YES = "approve_yes"`, `APPROVAL_NO = "approve_no"`
+  - New `requestApproval(chatId, name)` helper: sends Telegram prompt with ✓ Approve / ✗ Deny buttons, uses `registerCallbackHook` (fires before `routeToSession` — works cross-session), 60s timeout, acks button spinner, edits message to show outcome
+  - Handler: `isFirstSession = activeSessionCount() === 0`, `effectiveName` (defaults to "Primary" on first session), `NAME_REQUIRED` guard, collision check on `effectiveName`, approval gate, `createSession(effectiveName)`
+  - Note: `pollButtonPress` was NOT used (routes to per-session queues; `registerCallbackHook` fires pre-routing and is cross-session safe)
+  - Timeout and operator-deny both return `SESSION_DENIED` (single unified code)
+
+- **`src/tools/session_start.test.ts`** — Full test suite update:
+  - Removed: `pollButtonPress`, `ackAndEditSelection`, `editWithSkipped` mocks; `vi.mock("./button-helpers.js")`
+  - Added: `editMessageText`, `answerCallbackQuery` to `getApi()` mock; `triggerApproval` helper (later removed as unused); `listSessions`/`getRoutingMode` resets in `beforeEach` to prevent cross-test pollution
+  - All approval-gate tests rewritten to use `registerCallbackHook.mockImplementationOnce` pattern
+  - Fixed: cross-test state pollution from `mockReturnValue` not being reset by `vi.clearAllMocks()`
+  - Updated "uses custom intro text" expectation to reflect that first session now always has "Primary" name (so intros are always enriched)
+
+### Test Results
+
+- Tests added: 6 new approval gate tests (pre-existing scaffolding, rewritten for final implementation)  
+- Total tests: 1 379 passing across 72 test files (0 failures)
+- `pnpm lint` — 0 errors
+- `pnpm build` — clean
+
+### Findings
+
+- `registerCallbackHook` is the correct intercept point for pre-session callbacks — not `pollButtonPress`. When a second session requests approval, the first session's queue already exists; `routeToSession` would swallow the callback. `registerCallbackHook` fires synchronously before `routeToSession`.
+- `vi.clearAllMocks()` only clears call history, NOT `mockReturnValue` state. Tests that set `mockReturnValue` without resetting in `beforeEach` pollute later tests. Fixed by explicitly resetting `listSessions` and `getRoutingMode` in `beforeEach`.
+
+### Acceptance Criteria Status
+
+- [x] First session auto-approved without operator interaction
+- [x] Second+ session blocked until operator approves via Telegram button
+- [x] Operator deny → session not created, `SESSION_DENIED` error returned
+- [x] Name collision → immediate error without operator prompt (`NAME_CONFLICT`)
+- [x] Name comparison is case-insensitive
+- [x] Timeout (60s) → deny by default (`SESSION_DENIED`)
+- [x] First session defaults to name "Primary" if none provided
+- [x] Second+ session requires a name (error if omitted — `NAME_REQUIRED`)
+- [x] Tests: first session auto-approval flow
+- [x] Tests: second session approval prompt sent
+- [x] Tests: operator denies → error returned
+- [x] Tests: name collision → immediate error
+- [x] Tests: timeout → deny
+- [x] All tests pass: `pnpm test` — 1 379/1 379
+- [x] No new lint errors: `pnpm lint` — 0 errors
+- [x] Build clean: `pnpm build` — clean
+

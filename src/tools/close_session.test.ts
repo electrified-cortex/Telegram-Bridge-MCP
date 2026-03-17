@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getGovernorSid: vi.fn(),
   setRoutingMode: vi.fn(),
   sendServiceMessage: vi.fn(),
+  deliverDirectMessage: vi.fn(),
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -19,6 +20,11 @@ vi.mock("../session-manager.js", () => ({
   getActiveSession: (...args: unknown[]) => mocks.getActiveSession(...args),
   setActiveSession: (...args: unknown[]) => mocks.setActiveSession(...args),
   listSessions: (...args: unknown[]) => mocks.listSessions(...args),
+}));
+
+vi.mock("../session-queue.js", () => ({
+  removeSessionQueue: vi.fn(),
+  deliverDirectMessage: (...args: unknown[]) => mocks.deliverDirectMessage(...args),
 }));
 
 vi.mock("../dm-permissions.js", () => ({
@@ -185,10 +191,11 @@ describe("close_session tool", () => {
     expect(mocks.setRoutingMode).toHaveBeenCalledWith("governor", 3);
   });
 
-  it("uses session name in promotion message", async () => {
+  it("uses session name in promotion message when 2+ remain", async () => {
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions.mockReturnValue([
       { sid: 2, name: "Primary", createdAt: "2026-03-17" },
+      { sid: 3, name: "Scout", createdAt: "2026-03-17" },
     ]);
 
     await call({ sid: 1, pin: 123456 });
@@ -198,10 +205,11 @@ describe("close_session tool", () => {
     );
   });
 
-  it("uses Session N label when promoted session has no name", async () => {
+  it("uses Session N label when promoted session has no name (2+ remain)", async () => {
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions.mockReturnValue([
       { sid: 2, name: "", createdAt: "2026-03-17" },
+      { sid: 3, name: "Scout", createdAt: "2026-03-17" },
     ]);
 
     await call({ sid: 1, pin: 123456 });
@@ -209,5 +217,76 @@ describe("close_session tool", () => {
     expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
       expect.stringContaining("Session 2"),
     );
+  });
+
+  // =========================================================================
+  // 2 → 1 teardown: single-session mode restoration
+  // =========================================================================
+
+  it("resets routing to load_balance when dropping from 2 to 1 session (governor closes)", async () => {
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([
+      { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+    ]);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.setRoutingMode).toHaveBeenCalledWith("load_balance");
+    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+      expect.stringContaining("Single-session mode restored"),
+    );
+  });
+
+  it("resets routing to load_balance when dropping from 2 to 1 session (non-governor closes)", async () => {
+    mocks.getGovernorSid.mockReturnValue(1); // session 1 is governor, we're closing session 2
+    mocks.listSessions.mockReturnValue([
+      { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+    ]);
+
+    await call({ sid: 2, pin: 123456 });
+
+    expect(mocks.setRoutingMode).toHaveBeenCalledWith("load_balance");
+    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+      expect.stringContaining("Single-session mode restored"),
+    );
+  });
+
+  it("notifies remaining session via DM when dropping from 2 to 1", async () => {
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([
+      { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+    ]);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(
+      0,
+      2,
+      expect.stringContaining("Single-session mode restored"),
+    );
+  });
+
+  it("does not deliver DM notification when last session closes", async () => {
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.deliverDirectMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not reset routing or deliver DM when 3 sessions remain after close", async () => {
+    mocks.getGovernorSid.mockReturnValue(0); // no governor
+    mocks.listSessions.mockReturnValue([
+      { sid: 2, name: "A", createdAt: "2026-03-17" },
+      { sid: 3, name: "B", createdAt: "2026-03-17" },
+      { sid: 4, name: "C", createdAt: "2026-03-17" },
+    ]);
+
+    await call({ sid: 1, pin: 123456 });
+
+    expect(mocks.setRoutingMode).not.toHaveBeenCalled();
+    expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    expect(mocks.deliverDirectMessage).not.toHaveBeenCalled();
   });
 });

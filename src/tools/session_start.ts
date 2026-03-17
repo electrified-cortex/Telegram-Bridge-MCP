@@ -2,13 +2,65 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
-import { dequeue } from "../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions } from "../session-manager.js";
-import { createSessionQueue, removeSessionQueue } from "../session-queue.js";
-import { getRoutingMode } from "../routing-mode.js";
+import type { TimelineEvent } from "../message-store.js";
+import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount } from "../session-manager.js";
+import { createSessionQueue, removeSessionQueue, deliverDirectMessage } from "../session-queue.js";
+import { getRoutingMode, setRoutingMode } from "../routing-mode.js";
 import { sendRoutingPanel } from "../built-in-commands.js";
 
 const DEFAULT_INTRO = "ℹ️ Session Start";
+const APPROVAL_TIMEOUT_MS = 60_000;
+const APPROVAL_YES = "approve_yes";
+const APPROVAL_NO = "approve_no";
+
+/**
+ * Send an operator approval prompt for a new session and wait up to
+ * APPROVAL_TIMEOUT_MS for a button press. Returns true if approved, false
+ * if denied or timed out.
+ */
+async function requestApproval(
+  chatId: number,
+  name: string,
+): Promise<boolean> {
+  const text = `🤖 *New session requesting access:* ${markdownToV2(name)}`;
+  const sent = await getApi().sendMessage(chatId, text, {
+    parse_mode: "MarkdownV2",
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "✓ Approve", callback_data: APPROVAL_YES, style: "success" },
+        { text: "✗ Deny",    callback_data: APPROVAL_NO,  style: "danger"  },
+      ]],
+    },
+  } as Record<string, unknown>);
+  const msgId: number = sent.message_id;
+
+  const approved = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      clearCallbackHook(msgId);
+      resolve(false);
+    }, APPROVAL_TIMEOUT_MS);
+
+    registerCallbackHook(msgId, (evt: TimelineEvent) => {
+      clearTimeout(timer);
+      const approved = evt.content.data === APPROVAL_YES;
+      // Ack the Telegram button spinner
+      const qid = evt.content.qid;
+      if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
+      resolve(approved);
+    });
+  });
+
+  // Edit the prompt to reflect the outcome (clears the inline keyboard)
+  await getApi().editMessageText(
+    chatId,
+    msgId,
+    `🤖 *Session request:* ${markdownToV2(name)} — ${approved ? "approved ✓" : "denied ✗"}`,
+    { parse_mode: "MarkdownV2" },
+  ).catch(() => {});
+
+  return approved;
+}
 
 /** Build the actual intro text, injecting session identity. */
 function buildIntro(
@@ -61,10 +113,23 @@ export function register(server: McpServer) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
+      const isFirstSession = activeSessionCount() === 0;
+
+      // Default name for the first session
+      const effectiveName = isFirstSession && !name ? "Primary" : name;
+
+      // Second+ sessions must provide a name
+      if (!isFirstSession && !effectiveName) {
+        return toError({
+          code: "NAME_REQUIRED",
+          message: "A name is required when starting a second or later session.",
+        });
+      }
+
       // Name collision guard: reject if a session with the same name exists
-      if (name) {
+      if (effectiveName) {
         const existing = listSessions().find(
-          s => s.name.toLowerCase() === name.toLowerCase(),
+          s => s.name.toLowerCase() === effectiveName.toLowerCase(),
         );
         if (existing) {
           return toError({
@@ -76,14 +141,25 @@ export function register(server: McpServer) {
         }
       }
 
-      const session = createSession(name);
+      // Approval gate: second+ sessions require operator approval
+      if (!isFirstSession) {
+        const approved = await requestApproval(chatId, effectiveName);
+        if (!approved) {
+          return toError({
+            code: "SESSION_DENIED",
+            message: `Session "${effectiveName}" was denied by the operator.`,
+          });
+        }
+      }
+
+      const session = createSession(effectiveName);
       createSessionQueue(session.sid);
       setActiveSession(session.sid);
 
       try {
         // 1. Send the intro message
         const introText = buildIntro(
-          intro, session.sid, name, session.sessionsActive,
+          intro, session.sid, effectiveName, session.sessionsActive,
         );
         const sent = await getApi().sendMessage(
           chatId,
@@ -110,12 +186,26 @@ export function register(server: McpServer) {
         };
         if (discarded > 0) res.discarded = discarded;
         if (session.sessionsActive > 1) {
-          res.fellow_sessions = listSessions()
-            .filter(s => s.sid !== session.sid);
-          res.routing_mode = getRoutingMode();
+          const allSessions = listSessions();
+          res.fellow_sessions = allSessions.filter(s => s.sid !== session.sid);
           if (session.sessionsActive === 2) {
+            // Auto-activate governor: lowest-SID session (the first one) becomes governor
+            const lowestSid = Math.min(...allSessions.map(s => s.sid));
+            setRoutingMode("governor", lowestSid);
             sendRoutingPanel().catch(() => {});
+            // Notify existing sessions that multi-session mode is now active
+            const governorSession = allSessions.find(s => s.sid === lowestSid);
+            const governorLabel = governorSession?.name || `Session ${lowestSid}`;
+            const joinerLabel = effectiveName || `Session ${session.sid}`;
+            for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
+              deliverDirectMessage(
+                session.sid,
+                fellow.sid,
+                `📢 Multi-session active. 🤖 ${joinerLabel} has joined.\nRouting: governor (🤖 ${governorLabel} handles ambiguous messages).`,
+              );
+            }
           }
+          res.routing_mode = getRoutingMode();
         }
         return toResult(res);
       } catch (err) {
