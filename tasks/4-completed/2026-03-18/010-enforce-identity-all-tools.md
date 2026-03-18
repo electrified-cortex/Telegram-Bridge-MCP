@@ -75,12 +75,22 @@
 
 ## Acceptance Criteria
 
-- [ ] All tools accept `identity: [sid, pin]` as a required parameter
-- [ ] `requireAuth()` always validates — no single-session bypass
-- [ ] Tool calls without valid identity return `AUTH_FAILED` or `SID_REQUIRED`
-- [ ] No tool relies solely on ALS for auth — `requireAuth()` is the gate
-- [ ] dequeue_update uses `identity` tuple like everything else
-- [ ] Tests cover auth enforcement for all modified tools
+- [x] All tools accept `identity: [sid, pin]` as a required parameter
+- [x] `requireAuth()` always validates — no single-session bypass
+- [x] Tool calls without valid identity return `AUTH_FAILED` or `SID_REQUIRED`
+- [x] No tool relies solely on ALS for auth — `requireAuth()` is the gate
+- [x] dequeue_update uses `identity` tuple like everything else
+- [x] Tests cover auth enforcement for all modified tools
 - [ ] Reply to Copilot comment on GitHub PR (dequeue_update auth)
-- [ ] Build passes, lint clean, all tests pass
-- [ ] `changelog/unreleased.md` updated
+- [x] Build passes, lint clean, all tests pass (77 files / 1419 tests)
+- [x] `changelog/unreleased.md` updated
+
+## Completion Note
+
+Completed 2026-03-18. All acceptance criteria met except the GitHub PR comment (no open PR exists).
+Summary of changes:
+- `session-gate.ts`: removed single-session bypass from `requireAuth()`
+- `dequeue_update.ts`: migrated to `identity: [sid, pin]`, removed legacy `checkAuth`
+- Pattern A tools (`close_session`, `route_message`, `rename_session`, `send_direct_message`): migrated from `{ sid, pin }` to `{ identity: [sid, pin] }`
+- All 35 Pattern B tools: `identity` schema kept `.optional()` so Zod passes through `undefined` to `requireAuth()` for structured error reporting
+- 77 test files updated throughout the session to pass `identity: [sid, pin]` consistently

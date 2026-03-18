@@ -13,6 +13,7 @@ import {
   markUnhealthy,
   isHealthy,
   getUnhealthySessions,
+  getAvailableColors,
   COLOR_PALETTE,
 } from "./session-manager.js";
 
@@ -354,5 +355,57 @@ describe("health tracking", () => {
       expect(unhealthy[0].sid).toBe(a.sid);
       vi.useRealTimers();
     });
+  });
+});
+
+describe("getAvailableColors", () => {
+  it("returns all 6 palette colors when no sessions exist", () => {
+    const colors = getAvailableColors();
+    expect(colors).toEqual([...COLOR_PALETTE]);
+  });
+
+  it("excludes colors already taken by active sessions", () => {
+    createSession("A"); // takes 🟦
+    createSession("B"); // takes 🟩
+    const colors = getAvailableColors();
+    expect(colors).not.toContain("🟦");
+    expect(colors).not.toContain("🟩");
+    expect(colors).toHaveLength(4);
+  });
+
+  it("places valid available hint first", () => {
+    const colors = getAvailableColors("🟩");
+    expect(colors[0]).toBe("🟩");
+    expect(colors).toHaveLength(6);
+  });
+
+  it("hint that is already taken is not placed first — falls back to natural order", () => {
+    createSession("A"); // takes 🟦
+    const colors = getAvailableColors("🟦"); // 🟦 taken, ignore hint
+    expect(colors[0]).not.toBe("🟦");
+    expect(colors).not.toContain("🟦");
+  });
+
+  it("hint that is not in palette is ignored", () => {
+    const colors = getAvailableColors("🔵");
+    expect(colors).toEqual([...COLOR_PALETTE]);
+  });
+
+  it("returns all 6 when all are taken (allow duplicates)", () => {
+    for (let i = 0; i < 6; i++) createSession(`S${i}`);
+    const colors = getAvailableColors();
+    expect(colors).toHaveLength(6);
+    expect(colors).toEqual([...COLOR_PALETTE]);
+  });
+
+  it("hint first when only one color available and hint matches", () => {
+    // Take 5 colors, leave only 🟪
+    createSession("A", "🟦");
+    createSession("B", "🟩");
+    createSession("C", "🟨");
+    createSession("D", "🟧");
+    createSession("E", "🟥");
+    const colors = getAvailableColors("🟪");
+    expect(colors).toEqual(["🟪"]);
   });
 });

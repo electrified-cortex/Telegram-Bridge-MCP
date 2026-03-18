@@ -115,3 +115,41 @@ Use `approve_🟦`, `approve_🟩`, etc. for color buttons. Parse the emoji from
 - [ ] First session (no approval gate) is unchanged
 - [ ] `createSession` receives the operator-chosen color
 - [ ] Existing tests pass
+
+## Completion
+
+**Agent:** GitHub Copilot (worker session)
+**Date:** 2026-03-18
+
+### What Changed
+
+- `src/session-manager.ts` — Added exported `getAvailableColors(hint?: string): string[]` function that returns palette colors not currently in use, with optional hint placed first; returns all 6 if all are taken.
+- `src/tools/session_start.ts` — Rewrote `requestApproval()`: imported `COLOR_PALETTE` and `getAvailableColors`; dynamic color-picker keyboard using `approve_N` (numeric index) for each available color plus a `danger`-styled Deny button; callback parsing maps index back to `COLOR_PALETTE[idx]`; post-decision edit shows color emoji + name. Updated `buildIntro()` to accept optional `color` and prepend it to the session tag. Updated `register()` to pass the operator-chosen color to `createSession()` and the agent's `color` hint to `requestApproval()`. Updated `color` param description with palette role meanings.
+
+### Design deviation from spec
+
+Spec proposed `approve_🟦` emoji-in-identifier callback data. This was changed to **`approve_0`, `approve_1`, … `approve_5`** (palette index) to keep all identifier strings ASCII-clean in both TypeScript code and Telegram JSON payloads. The button *display text* remains the emoji square; only the callback data payload uses the index.
+
+### Test Results
+
+- Tests added: 14 new (7 for `getAvailableColors` in session-manager.test.ts, 7 for color-picker approval flow in session_start.test.ts)
+- Total tests: 1433 (all passing)
+- Lint: zero errors
+- Build: clean
+
+### Findings
+
+- `COLOR_PALETTE` must be included in the session-manager mock in session_start.test.ts (the implementation reads it for index mapping at approval time).
+- TypeScript considers `COLOR_PALETTE[idx]` always non-undefined because the tuple type has no optional elements — using an explicit bounds check (`idx >= 0 && idx < COLOR_PALETTE.length`) satisfies the no-unnecessary-condition lint rule.
+
+### Acceptance Criteria Status
+
+- [x] Approval prompt shows available color buttons + Deny
+- [x] Tapping a color approves AND assigns that color
+- [x] Already-taken colors are excluded from buttons (unless all taken)
+- [x] Agent's preferred color hint is shown first / highlighted (placed first in list via `getAvailableColors`)
+- [x] Post-decision edit shows chosen color + name
+- [x] Reconnect variant uses same color-picker flow
+- [x] First session (no approval gate) is unchanged
+- [x] `createSession` receives the operator-chosen color
+- [x] Existing tests pass

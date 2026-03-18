@@ -7,6 +7,7 @@
 - Pattern A tools (`close_session`, `route_message`, `rename_session`, `send_direct_message`) migrated from `{ sid, pin }` to `{ identity: [sid, pin] }` parameter shape
 - All 35 Pattern B tools have `identity` schema updated to `.optional()` with descriptive text; auth response is structured `SID_REQUIRED`/`AUTH_FAILED` error instead of a Zod validation error
 - `session-gate.ts` — removed `activeSessionCount()`/`getActiveSession()` single-session bypass; `requireAuth(undefined)` always returns `SID_REQUIRED`
+- `session_start` approval dialog now presents a color-picker keyboard — operator selects a color (🟦🟩🟧🟪🟥🟨) to approve instead of plain ✓/✗ buttons; chosen color is assigned to the session; `getAvailableColors(hint?)` in `session-manager.ts` returns palette colors not already in use with optional hint ordering; post-decision message is edited to show the selected color and session name
 
 - Replaced `TwoLaneQueue` with `TemporalQueue` — events are now delivered in strict arrival order; heavyweight events (user text, voice) act as temporal batch delimiters instead of having separate lanes; `two-lane-queue.ts` is now a backward-compatibility shim re-exporting `TemporalQueue`; `enqueueResponse`/`enqueueMessage` kept as deprecated aliases for `enqueue()`
 - `route_message` now injects a server-stamped `routed_by` field into the event copy delivered to the target session — identifies which session SID performed the routing; cannot be forged by any agent; original event in the global timeline is unmodified

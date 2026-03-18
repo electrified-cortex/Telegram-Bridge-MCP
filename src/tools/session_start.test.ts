@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   setActiveSession: vi.fn(),
   listSessions: vi.fn().mockReturnValue([]),
   activeSessionCount: vi.fn().mockReturnValue(0),
+  getAvailableColors: vi.fn().mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]),
   setGovernorSid: vi.fn(),
   getGovernorSid: vi.fn().mockReturnValue(0),
   deliverServiceMessage: vi.fn(),
@@ -47,6 +48,8 @@ vi.mock("../session-manager.js", () => ({
   setActiveSession: (...args: unknown[]) => mocks.setActiveSession(...args),
   listSessions: (...args: unknown[]) => mocks.listSessions(...args),
   activeSessionCount: () => mocks.activeSessionCount(),
+  getAvailableColors: (...args: unknown[]) => mocks.getAvailableColors(...args),
+  COLOR_PALETTE: ["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"],
 }));
 
 vi.mock("../routing-mode.js", () => ({
@@ -157,7 +160,7 @@ describe("session_start tool", () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary" }, { sid: 3, name: "Helper" }]);
     // Simulate operator approving
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
@@ -184,7 +187,7 @@ describe("session_start tool", () => {
     ]);
     // Simulate operator approving
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 51 })   // approval prompt
@@ -232,7 +235,7 @@ describe("session_start tool", () => {
       sessionsActive: 3,
     });
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -255,7 +258,7 @@ describe("session_start tool", () => {
       sessionsActive: 2,
     });
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -284,7 +287,7 @@ describe("session_start tool", () => {
       { sid: 4, name: "scout" },
     ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
@@ -314,7 +317,7 @@ describe("session_start tool", () => {
       { sid: 6, name: "gamma" },
     ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
@@ -425,7 +428,7 @@ describe("session_start tool", () => {
       { sid: 2, name: "Worker", createdAt: "2026-03-17" },
     ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -459,7 +462,7 @@ describe("session_start tool", () => {
       { sid: 5, name: "Late", createdAt: "2026-03-17" },
     ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -486,7 +489,7 @@ describe("session_start tool", () => {
       { sid: 3, name: "Third", createdAt: "2026-03-17" },
     ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -532,13 +535,13 @@ describe("session_start tool", () => {
       .mockResolvedValue(INTRO_MSG);               // intro message
     // Simulate operator pressing Approve
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "cqid" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "cqid" } }); });
     });
 
     const result = parseResult(await call({ name: "Scout" }));
 
     expect(mocks.registerCallbackHook).toHaveBeenCalled();
-    expect(mocks.createSession).toHaveBeenCalledWith("Scout", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout", "🟦");
     expect(result.sid).toBe(2);
   });
 
@@ -691,7 +694,7 @@ describe("session_start tool", () => {
         { sid: 2, name: "Worker", createdAt: "2026-03-17" },
       ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -720,7 +723,7 @@ describe("session_start tool", () => {
         { sid: 2, name: "Worker", createdAt: "2026-03-17" },
       ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -803,7 +806,7 @@ describe("session_start tool", () => {
         { sid: 2, name: "Worker", createdAt: "2026-03-17" },
       ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -831,7 +834,7 @@ describe("session_start tool", () => {
         { sid: 2, name: "Worker", createdAt: "2026-03-17" },
       ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -859,7 +862,7 @@ describe("session_start tool", () => {
         { sid: 2, name: "Worker", createdAt: "2026-03-17" },
       ]);
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_yes", qid: "q1" } }); });
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
@@ -882,5 +885,173 @@ describe("session_start tool", () => {
     const opts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
     expect(opts._rawText).toBe("ℹ️ Session 1 — Primary");
   });
+
+  // =========================================================================
+  // Color-picker approval dialog (task 080)
+  // =========================================================================
+
+  it("approval prompt shows color buttons from getAvailableColors", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })
+      .mockResolvedValue(INTRO_MSG);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    // First sendMessage is the approval prompt with color buttons
+    const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const buttons = keyboard[0] as Array<Record<string, unknown>>;
+    const colorButtonData = buttons.filter(b => String(b.callback_data).startsWith("approve_") && b.callback_data !== "approve_no").map(b => b.callback_data);
+    expect(colorButtonData).toContain("approve_0");
+    expect(colorButtonData).toContain("approve_1");
+    expect(colorButtonData).toContain("approve_2");
+  });
+
+  it("approval prompt has Deny button", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })
+      .mockResolvedValue(INTRO_MSG);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const buttons = keyboard[0] as Array<Record<string, unknown>>;
+    const denyButton = buttons.find(b => b.callback_data === "approve_no");
+    expect(denyButton).toBeDefined();
+    expect(denyButton!.style).toBe("danger");
+  });
+
+  it("tapping a color approves and passes operator-chosen color to createSession", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]).mockReturnValue([]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })
+      .mockResolvedValue(INTRO_MSG);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    // createSession should receive the operator-chosen color 🟩
+    expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩");
+  });
+
+  it("post-decision edit shows color + name after approval", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]).mockReturnValue([]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })
+      .mockResolvedValue(INTRO_MSG);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    // editMessageText should be called with the approval outcome showing color
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42,
+      50,
+      expect.stringContaining("🟩"),
+      expect.objectContaining({ parse_mode: "MarkdownV2" }),
+    );
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42,
+      50,
+      expect.stringContaining("Worker"),
+      expect.any(Object),
+    );
+  });
+
+  it("post-decision edit shows name (no color) after denial", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_no", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValue({ message_id: 50 });
+
+    const result = await call({ name: "Worker" });
+
+    expect(isError(result)).toBe(true);
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42,
+      50,
+      expect.stringContaining("Worker"),
+      expect.any(Object),
+    );
+    // Should NOT contain a color emoji in the denial edit
+    const editCall = mocks.editMessageText.mock.calls[0] as unknown[];
+    expect(String(editCall[2])).not.toMatch(/🟦|🟩|🟨|🟧|🟥|🟪/);
+  });
+
+  it("agent's color hint passed to getAvailableColors", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]).mockReturnValue([]);
+    mocks.getAvailableColors.mockReturnValue(["🟩", "🟦"]); // 🟩 first = hint honored
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })
+      .mockResolvedValue(INTRO_MSG);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+
+    await call({ name: "Worker", color: "🟩" });
+
+    expect(mocks.getAvailableColors).toHaveBeenCalledWith("🟩");
+  });
+
+  it("reconnect variant color-picker still works", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+      ]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })
+      .mockResolvedValue(INTRO_MSG);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Worker", color: "🟩", sessionsActive: 2 });
+
+    await call({ name: "Worker", reconnect: true });
+
+    expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩");
+  });
 });
+
+
 

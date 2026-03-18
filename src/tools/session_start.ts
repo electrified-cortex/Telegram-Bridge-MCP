@@ -4,64 +4,84 @@ import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount } from "../session-manager.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getAvailableColors, COLOR_PALETTE } from "../session-manager.js";
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 
 const DEFAULT_INTRO = "ℹ️ Session Start";
 const DEFAULT_RECONNECT_INTRO = "ℹ️ Session Reconnected";
 const APPROVAL_TIMEOUT_MS = 60_000;
-const APPROVAL_YES = "approve_yes";
 const APPROVAL_NO = "approve_no";
+const APPROVE_PREFIX = "approve_";
 
 /**
- * Send an operator approval prompt for a new session and wait up to
- * APPROVAL_TIMEOUT_MS for a button press. Returns true if approved, false
- * if denied or timed out.
+ * Send an operator approval prompt for a new session. The prompt shows
+ * available color squares as buttons — tapping a color approves AND assigns
+ * that color in one action. Returns { approved: true, color } on approval
+ * or { approved: false } on denial / timeout.
  */
 async function requestApproval(
   chatId: number,
   name: string,
   reconnect = false,
-): Promise<boolean> {
+  colorHint?: string,
+): Promise<{ approved: boolean; color?: string }> {
   const label = reconnect ? "Session reconnecting:" : "New session requesting access:";
-  const text = `🤖 *${label}* ${markdownToV2(name)}`;
+  const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:`;
+  const availableColors = getAvailableColors(colorHint);
+  const colorButtons = availableColors.map((c) => ({
+    text: c,
+    callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
+  }));
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
     reply_markup: {
       inline_keyboard: [[
-        { text: "✓ Approve", callback_data: APPROVAL_YES, style: "success" },
-        { text: "✗ Deny",    callback_data: APPROVAL_NO,  style: "danger"  },
+        ...colorButtons,
+        { text: "✗ Deny", callback_data: APPROVAL_NO, style: "danger" },
       ]],
     },
   } as Record<string, unknown>);
   const msgId: number = sent.message_id;
 
-  const approved = await new Promise<boolean>((resolve) => {
+  const decision = await new Promise<{ approved: boolean; color?: string }>((resolve) => {
     const timer = setTimeout(() => {
       clearCallbackHook(msgId);
-      resolve(false);
+      resolve({ approved: false });
     }, APPROVAL_TIMEOUT_MS);
 
     registerCallbackHook(msgId, (evt: TimelineEvent) => {
       clearTimeout(timer);
-      const approved = evt.content.data === APPROVAL_YES;
-      // Ack the Telegram button spinner
+      const data: string = evt.content.data ?? "";
       const qid = evt.content.qid;
       if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
-      resolve(approved);
+      if (data === APPROVAL_NO) {
+        resolve({ approved: false });
+      } else if (data.startsWith(APPROVE_PREFIX)) {
+        const idx = parseInt(data.slice(APPROVE_PREFIX.length), 10);
+        if (idx >= 0 && idx < COLOR_PALETTE.length) {
+          resolve({ approved: true, color: COLOR_PALETTE[idx] });
+        } else {
+          resolve({ approved: false });
+        }
+      } else {
+        resolve({ approved: false });
+      }
     });
   });
 
   // Edit the prompt to reflect the outcome (clears the inline keyboard)
+  const outcomeText = decision.approved
+    ? `🤖 *Session approved:* ${decision.color} ${markdownToV2(name)} ✓`
+    : `🤖 *Session denied:* ${markdownToV2(name)} ✗`;
   await getApi().editMessageText(
     chatId,
     msgId,
-    `🤖 *Session request:* ${markdownToV2(name)} — ${approved ? "approved ✓" : "denied ✗"}`,
+    outcomeText,
     { parse_mode: "MarkdownV2" },
   ).catch(() => {});
 
-  return approved;
+  return decision;
 }
 
 /** Build the actual intro text, injecting session identity. */
@@ -71,9 +91,11 @@ function buildIntro(
   name: string,
   sessionsActive: number,
   reconnect = false,
+  color?: string,
 ): string {
   const reconnectSuffix = reconnect ? " (reconnected)" : "";
-  const tag = name ? `Session ${sid} — ${name}` : `Session ${sid}`;
+  const colorPrefix = color ? `${color} ` : "";
+  const tag = name ? `Session ${sid} — ${colorPrefix}${name}` : `Session ${sid}`;
   // When multiple sessions are active (or this one has a name), always show identity
   if (sessionsActive > 1 || name) {
     return template === DEFAULT_INTRO
@@ -122,8 +144,11 @@ export function register(server: McpServer) {
           .string()
           .optional()
           .describe(
-            "Preferred color square emoji (🟦 🟩 🟨 🟧 🟥 🟪). " +
-            "Auto-assigned in palette order if omitted or if the requested color is already taken.",
+            "Preferred color square emoji for this session. " +
+            "Palette meanings: 🟦 Coordinator/overseer · 🟩 Builder/worker · 🟨 Reviewer/QA · " +
+            "🟧 Research/exploration · 🟥 Ops/deployment · 🟪 Specialist/one-off. " +
+            "The operator makes the final choice via the approval dialog color buttons. " +
+            "Your hint goes first in the button list as a suggestion.",
           ),
       },
     },
@@ -169,24 +194,26 @@ export function register(server: McpServer) {
       }
 
       // Approval gate: second+ sessions require operator approval
+      let chosenColor: string | undefined = color;
       if (!isFirstSession) {
-        const approved = await requestApproval(chatId, effectiveName, reconnect);
-        if (!approved) {
+        const decision = await requestApproval(chatId, effectiveName, reconnect, color);
+        if (!decision.approved) {
           return toError({
             code: "SESSION_DENIED",
             message: `Session "${effectiveName}" was denied by the operator.`,
           });
         }
+        chosenColor = decision.color;
       }
 
-      const session = createSession(effectiveName, color);
+      const session = createSession(effectiveName, chosenColor);
       createSessionQueue(session.sid);
       setActiveSession(session.sid);
 
       try {
         // 1. Send the intro message
         const introText = buildIntro(
-          intro, session.sid, effectiveName, session.sessionsActive, reconnect,
+          intro, session.sid, effectiveName, session.sessionsActive, reconnect, session.color,
         );
         const sent = await getApi().sendMessage(
           chatId,
