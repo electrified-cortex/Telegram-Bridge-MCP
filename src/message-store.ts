@@ -54,6 +54,12 @@ export interface EventContent {
   event_type?: string;
   /** Structured details — set for service_message events. */
   details?: Record<string, unknown>;
+  /**
+   * SID of the session that explicitly routed this message via `route_message`.
+   * Server-injected — cannot be forged by any agent. Absent if the event
+   * arrived naturally (not via governor delegation).
+   */
+  routed_by?: number;
 }
 
 /**

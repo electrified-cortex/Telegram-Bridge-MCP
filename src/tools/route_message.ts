@@ -56,7 +56,7 @@ export function register(server: McpServer) {
         });
       }
 
-      const delivered = routeMessage(message_id, target_sid);
+      const delivered = routeMessage(message_id, target_sid, sid);
       if (!delivered) {
         return toError({
           code: "ROUTE_FAILED",

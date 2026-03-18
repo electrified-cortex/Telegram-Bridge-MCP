@@ -316,17 +316,25 @@ export function deliverServiceMessage(
 
 /**
  * Route a message to a specific target session (governor delegation).
+ * Injects `routed_by: routerSid` into the event copy so the recipient can
+ * verify the routing came from the server, not the original sender.
  * Returns true if delivered, false if message or target queue not found.
  */
-export function routeMessage(messageId: number, targetSid: number): boolean {
+export function routeMessage(messageId: number, targetSid: number, routerSid: number): boolean {
   const event = getMessage(messageId, CURRENT);
   if (!event) return false;
 
   const q = _queues.get(targetSid);
   if (!q) return false;
 
-  q.enqueue(event);
-  dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`);  return true;
+  // Shallow-copy the event and inject the server-stamped routing envelope.
+  const routed: TimelineEvent = {
+    ...event,
+    content: { ...event.content, routed_by: routerSid },
+  };
+  q.enqueue(routed);
+  dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`, { routerSid });
+  return true;
 }
 
 // ---------------------------------------------------------------------------

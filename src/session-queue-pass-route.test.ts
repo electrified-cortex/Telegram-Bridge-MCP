@@ -49,7 +49,7 @@ describe("routeMessage", () => {
     const event = makeEvent(100);
     mockGetMessage.mockReturnValue(event);
 
-    const result = routeMessage(100, 2);
+    const result = routeMessage(100, 2, 1);
     expect(result).toBe(true);
 
     const q2 = getSessionQueue(2);
@@ -58,17 +58,32 @@ describe("routeMessage", () => {
     expect(batch[0].id).toBe(100);
   });
 
+  it("injects routed_by field with router SID", () => {
+    createSessionQueue(1);
+    createSessionQueue(2);
+
+    const event = makeEvent(100);
+    mockGetMessage.mockReturnValue(event);
+    routeMessage(100, 2, 1);
+
+    const q2 = getSessionQueue(2);
+    const batch = q2?.dequeueBatch() ?? [];
+    expect(batch[0].content.routed_by).toBe(1);
+    // Original event is not mutated
+    expect(event.content.routed_by).toBeUndefined();
+  });
+
   it("returns false when message is not found", () => {
     createSessionQueue(1);
     mockGetMessage.mockReturnValue(undefined);
 
-    expect(routeMessage(999, 1)).toBe(false);
+    expect(routeMessage(999, 1, 1)).toBe(false);
   });
 
   it("returns false when target queue does not exist", () => {
     mockGetMessage.mockReturnValue(makeEvent(100));
 
-    expect(routeMessage(100, 99)).toBe(false);
+    expect(routeMessage(100, 99, 1)).toBe(false);
   });
 
   it("does not enqueue to other sessions", () => {
@@ -76,7 +91,7 @@ describe("routeMessage", () => {
     createSessionQueue(2);
     mockGetMessage.mockReturnValue(makeEvent(100));
 
-    routeMessage(100, 2);
+    routeMessage(100, 2, 1);
 
     const q1 = getSessionQueue(1);
     expect(q1?.dequeueBatch()).toHaveLength(0);

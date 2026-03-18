@@ -84,7 +84,7 @@ describe("route_message tool", () => {
     const data = parseResult(result);
     expect(data.routed).toBe(true);
     expect(data.target_sid).toBe(2);
-    expect(mocks.routeMessage).toHaveBeenCalledWith(100, 2);
+    expect(mocks.routeMessage).toHaveBeenCalledWith(100, 2, 1);
   });
 
   it("returns error when route fails", async () => {
