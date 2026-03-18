@@ -27,7 +27,7 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 1. **[S1]** `session_start` (already done or do now)
 2. **[Verify]** S1 received `{ sid: 1, pin: ..., sessions_active: 1 }`
 3. **[S2]** `session_start` with `name: "Scout"` (or any name)
-4. **[Verify]** S2 received `{ sid: 2, sessions_active: 2, routing_mode: "load_balance" }`
+4. **[Verify]** S2 received `{ sid: 2, sessions_active: 2 }` (no routing_mode field — routing is automatic)
 
 ### 1.1 Reply-To — Session 1
 
@@ -60,7 +60,6 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 1. **[Verify]** S2's `session_start` response (from Phase 1 setup) includes:
    - `fellow_sessions` array listing S1
-   - `routing_mode: "load_balance"`
 2. **[Verify]** Intro message in Telegram shows "Session 2 · Scout"
 3. **[Verify]** Server stderr shows debug traces:
    - `[dbg:session] created sid=2 name="Scout"`
@@ -86,56 +85,46 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 ## Phase 3 — Ambiguous Message Routing
 
-### 3.1 Load Balance — Round-Robin
+> When two or more sessions are active, the first (lowest-SID) session is automatically
+> designated governor. All ambiguous messages (not a reply, callback, or reaction) are
+> delivered only to the governor, which can then delegate them via `route_message`.
+
+### 3.0 Setup — Verify Governor Assignment
+
+1. **[Verify]** S1 and S2 are both active (from Phase 2 setup or restart)
+2. **[Verify]** S2's `session_start` response included `sessions_active: 2`
+3. **[Verify]** Server stderr shows `[dbg:session] governor set to sid=1` (auto-set when 2nd session joined)
+
+### 3.1 Ambiguous Message Goes to Governor
 
 1. **[Op]** Send a plain text message (not replying to anything): `"Hello, who gets this?"`
-2. **[Verify]** Exactly one session receives it via `dequeue_update`
-3. **[Op]** Send another plain text: `"And this one?"`
-4. **[Verify]** The other session receives it (round-robin)
-5. **[Verify]** Server stderr shows `[dbg:route] load_balance event=X → sid=Y`
+2. **[Verify]** Only S1 (governor) receives it via `dequeue_update`
+3. **[Verify]** S2 does NOT receive it
+4. **[Verify]** Server stderr shows `[dbg:route] governor event=X → sid=1`
 
-### 3.2 Cascade — Switch and Priority
+### 3.2 Governor Delegation
 
-1. **[Op]** Send `/routing` → select "Cascade"
-2. **[Verify]** Panel shows Cascade as active mode
-3. **[S1]** Call `dequeue_update(timeout: 60)` (S1 is now idle/waiting)
-4. **[Op]** Send: `"Cascade test message"`
-5. **[Verify]** S1 receives it (lowest SID, AND it's idle → priority)
-6. **[Verify]** Server stderr shows `[dbg:cascade] routed event=X → sid=1 idle=true`
-
-### 3.3 Cascade — Pass
-
-1. **[S1]** receives the message but decides to pass: `pass_message` with `message_id` of the cascaded message
-2. **[Verify]** `pass_message` returns `{ forwarded_to: 2 }`
-3. **[Verify]** S2 now receives the same message via `dequeue_update`
-4. **[Verify]** Server stderr shows `[dbg:cascade] pass msg=X from sid=1 → sid=2`
-
-### 3.4 Cascade — Timeout
-
-1. **[Op]** Send another message while S1 is busy (not calling `dequeue_update`)
-2. **[Verify]** S1 receives it with a `pass_by` deadline in the dequeue response
-3. **[Verify]** If S1 doesn't pass or handle within the deadline window, the message is still in S1's queue (no auto-forward — agents must call `pass_message`)
-
-### 3.5 Governor — Switch and Designate
-
-1. **[Op]** Send `/routing` → select "Governor"
-2. **[Verify]** Panel asks which session is the governor (or defaults to S1)
-3. **[Op]** Select S1 as governor
-
-### 3.6 Governor — Delegation
-
-1. **[Op]** Send: `"Route this wherever it belongs"`
-2. **[Verify]** Only S1 (governor) receives it
+1. **[Op]** Send: `"Route this to Scout"`
+2. **[Verify]** S1 receives it first
 3. **[S1]** Calls `route_message` with `message_id` and `target_sid: 2`
-4. **[Verify]** S2 receives the message
-5. **[Verify]** Server stderr shows `[dbg:route] governor event=X → sid=1` then `[dbg:route] governor delegated msg=X → sid=2`
+4. **[Verify]** S2 receives the same message via `dequeue_update`
+5. **[Verify]** S1 does NOT receive it a second time
+6. **[Verify]** Server stderr shows the delegation trace
 
-### 3.7 Governor — Death Recovery
+### 3.3 Governor Continuity
+
+1. **[Op]** Send 3 more plain messages
+2. **[Verify]** All 3 go to S1 (governor)
+3. **[Verify]** S2 receives none of them
+
+### 3.4 Governor Death Recovery
 
 1. **[S1]** Calls `close_session` (with auth)
-2. **[Verify]** Routing mode automatically resets to `load_balance`
-3. **[Verify]** Operator sees a notification about governor shutdown and mode reset
-4. **[Verify]** Server stderr shows `[dbg:session] closed sid=1` and routing mode change
+2. **[Verify]** Server stderr shows `[dbg:session] closed sid=1`
+3. **[Verify]** Server stderr shows governor promoted to S2 (lowest remaining SID)
+4. **[Op]** Send: `"Who's in charge now?"`
+5. **[Verify]** S2 receives it (S2 is now governor)
+6. **[Verify]** Server stderr shows `[dbg:route] governor event=X → sid=2`
 
 ---
 
@@ -179,29 +168,18 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 4. **[Verify]** Each session's intro shows correct SID and fellow sessions
 5. **[Verify]** `list_sessions` from any session shows all 3
 
-### 5.2 Load Balance with 3
+### 5.2 Ambiguous Routing with 3
 
 1. **[Op]** Send 3 plain messages in sequence
-2. **[Verify]** Each session receives exactly one (round-robin distribution)
-3. **[Op]** Send 3 more
-4. **[Verify]** Distribution continues cycling
+2. **[Verify]** All 3 go to the governor (lowest-SID session among the three)
+3. **[Verify]** S2 and S3 receive none directly
 
-### 5.3 Cascade with 3
+### 5.3 Governor Delegation with 3
 
-1. **[Op]** Switch to cascade mode
-2. **[Op]** Send a message while all 3 are idle
-3. **[Verify]** S1 gets it (lowest SID + idle)
-4. **[S1]** Passes → goes to S2
-5. **[S2]** Passes → goes to S3
-6. **[S3]** Handles it (no one left to pass to)
-7. **[Verify]** Server stderr shows full cascade chain
-
-### 5.4 Governor with 3
-
-1. **[Op]** Switch to governor, designate S1
-2. **[Op]** Send 2 messages
-3. **[S1]** Routes first to S2, second to S3
-4. **[Verify]** Each target receives the delegated message
+1. **[Op]** Send 2 ambiguous messages
+2. **[S_gov]** (the current governor) routes first to S2, second to S3
+3. **[Verify]** Each target receives the delegated message
+4. **[Verify]** The governor's own queue is not re-filled by its own delegations
 
 ### 5.5 Auth Rejection
 
@@ -245,11 +223,9 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 - [ ] Targeted routing: reply-to (both sessions), callback
 - [ ] Session lifecycle: create, list, close, rejoin
 - [ ] Intro enrichment: SID, name, fellow sessions
-- [ ] Load balance routing: round-robin, fair distribution
-- [ ] Cascade mode: priority order, pass, pass-by deadlines
-- [ ] Governor mode: designation, delegation, death recovery
+- [ ] Governor mode: auto-designation, ambiguous delivery, delegation, death recovery
 - [ ] DM flow: request, approve, send, directional, revoke on close
-- [ ] 3+ sessions: scaling, all modes
+- [ ] 3+ sessions: scaling, governor delegation across 3 targets
 - [ ] Cross-session outbound forwarding
 - [ ] Auth rejection with wrong credentials
 - [ ] Debug logging tracks all key events

@@ -96,6 +96,7 @@
 - Improved `/voice` panel empty-state hint to mention built-in fallback and link to Kokoro setup
 - Replaced VS Code-specific language with client-agnostic terms across README, LOOP-PROMPT, docs, tool descriptions, and pairing wizard output
 - Reordered `multi-session-test-script.md` — targeted routing (reply-to, callback) is now Phase 1; session lifecycle moved to Phase 2; cascade and governor merged into Phase 3 (ambiguous routing); added close/rejoin and reply-to-S2 tests
+- Rewrote `multi-session-test-script.md` Phase 3 and Phase 5 for governor-only routing — removed stale load-balance round-robin, cascade pass, and `/routing` panel steps; Phase 3 now covers auto-governor designation, ambiguous delivery to governor, `route_message` delegation, and governor death recovery; Phase 5 removes cascade/load-balance subscenarios; completion checklist updated accordingly; also removed stale `routing_mode` field from expected `session_start` response in Phase 1 and Phase 2
 
 ## Fixed
 
