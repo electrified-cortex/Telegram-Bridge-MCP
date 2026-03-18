@@ -1,5 +1,25 @@
 # Feature: Multi-Session Callback Isolation Tests
 
+## ⚠️ Needs Clarification Before Implementation
+
+1. **Wrong file path in Code References and Constraints.** References
+   `src/tools/multi-session-integration.test.ts` — this file does not exist.
+   The real file is `src/multi-session.integration.test.ts` (at `src/` root,
+   not inside `src/tools/`). Correct the path before implementation.
+
+2. **SC-3 has no specified expected outcome.** The scenario says "Verify: hook
+   still fires… OR hook is cleaned up on session close? Document whichever is
+   correct." This is not a test — it's an open design question. Before writing
+   this scenario, decide: **should hooks survive session close or be cleaned
+   up?** Pin the expected behavior in the spec, then write the test to assert
+   it.
+
+3. **SC-4 references an undefined concept: "Governor".** The scenario says
+   "Governor (SID 1) routes incoming text to SID 2" without explaining what
+   a Governor is or how to set one up in a test. Either define the Governor
+   routing setup steps explicitly, or rewrite SC-4 using concrete session and
+   routing-mode primitives (`setRoutingMode`, etc.).
+
 ## Type
 
 Testing

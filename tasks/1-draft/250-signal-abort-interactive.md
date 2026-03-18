@@ -1,5 +1,25 @@
 # Feature: Signal Abort During Interactive Wait
 
+## ⚠️ Needs Clarification Before Implementation
+
+1. **Expected return shape for `confirm` and `choose` on abort is not
+   specified.** `ask` documents `{ timed_out: false, aborted: true }` in its
+   description. `confirm` and `choose` use `pollButtonPress` / 
+   `pollButtonOrTextOrVoice` — but neither their source docstrings nor this
+   task spec state what they return when the abort signal fires. Before
+   writing SCs 2 and 3, read `src/tools/confirm.ts` and `src/tools/choose.ts`
+   to determine:
+   - Does `pollButtonPress` propagate abort at all, or silently hang?
+   - What is the exact return value (e.g. `null`, `{ aborted: true }`, thrown
+     error) that the tool wraps and sends to the MCP caller?
+   Specify the expected return shape in the scenario before writing the test.
+
+2. **"If abort is NOT actually wired, document as a finding" is a testing gap,
+   not a test spec.** If abort is unimplemented in `confirm`/`choose`, this
+   becomes a bug report task, not a testing task. Verify this first by reading
+   the source; if the feature is missing, create a separate bug/implementation
+   task.
+
 ## Type
 
 Testing
