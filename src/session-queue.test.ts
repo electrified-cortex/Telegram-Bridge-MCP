@@ -350,13 +350,12 @@ describe("session-queue", () => {
       deliverDirectMessage(1, 2, "b");
 
       const q = getSessionQueue(2);
-      const first = q?.dequeueBatch() ?? [];
-      const second = q?.dequeueBatch() ?? [];
-      expect(first).toHaveLength(1);
-      expect(second).toHaveLength(1);
-      expect(first[0].id).toBeLessThan(0);
-      expect(second[0].id).toBeLessThan(0);
-      expect(first[0].id).not.toBe(second[0].id);
+      // DMs are lightweight — both drain in a single batch
+      const batch = q?.dequeueBatch() ?? [];
+      expect(batch).toHaveLength(2);
+      expect(batch[0].id).toBeLessThan(0);
+      expect(batch[1].id).toBeLessThan(0);
+      expect(batch[0].id).not.toBe(batch[1].id);
     });
 
     it("does not enqueue to sender", () => {

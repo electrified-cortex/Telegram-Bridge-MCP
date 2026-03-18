@@ -20,7 +20,7 @@
 import type { Update } from "grammy/types";
 import { recordUpdate, recordBotMessage } from "./session-recording.js";
 import { getCallerSid } from "./session-context.js";
-import { TwoLaneQueue } from "./two-lane-queue.js";
+import { TemporalQueue } from "./temporal-queue.js";
 import { routeToSession, trackMessageOwner, notifySessionWaiters, broadcastOutbound, sessionQueueCount } from "./session-queue.js";
 
 // ---------------------------------------------------------------------------
@@ -128,8 +128,15 @@ function isQueueItemReady(item: QueueItem): boolean {
   return !(c.type === "voice" && c.text === undefined);
 }
 
-/** Two-lane queue — response lane drains before message lane. */
-const _queue = new TwoLaneQueue<QueueItem>({
+/** Heavyweight events act as temporal batch delimiters in the queue. */
+function isQueueItemHeavyweight(item: QueueItem): boolean {
+  const e = item.event;
+  return e.event === "message" && (e.content.type === "text" || e.content.type === "voice");
+}
+
+/** Temporal queue — events delivered in arrival order; heavyweights delimit batches. */
+const _queue = new TemporalQueue<QueueItem>({
+  isHeavyweight: isQueueItemHeavyweight,
   isReady: isQueueItemReady,
   getId: (item) => item.event.id,
 });
@@ -280,7 +287,7 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
       try { hook(evt); } catch { /* non-fatal */ }
     }
 
-    if (sessionQueueCount() === 0) _queue.enqueueResponse({ event: evt });
+    if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
     routeToSession(evt, "response");
     return true;
   }
@@ -310,7 +317,7 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
     _timeline.push(evt);
     evictTimeline();
     // Reactions don't overwrite the message index — they reference it
-    if (sessionQueueCount() === 0) _queue.enqueueResponse({ event: evt });
+    if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
     routeToSession(evt, "response");
     return true;
   }
@@ -335,7 +342,7 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
       _update: update,
     };
     pushEvent(evt);
-    if (sessionQueueCount() === 0) _queue.enqueueMessage({ event: evt });
+    if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
     routeToSession(evt, "message");
 
     // Fire one-shot message hooks for any afterId < this message's id.
@@ -537,7 +544,7 @@ export function getBotReaction(messageId: number): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Dequeue — consumption by the agent (delegates to TwoLaneQueue)
+// Dequeue — consumption by the agent (delegates to TemporalQueue)
 // ---------------------------------------------------------------------------
 
 /**

@@ -161,8 +161,7 @@ export function routeToSession(event: TimelineEvent, lane: "response" | "message
   // Fallback: broadcast to all sessions
   dlog("route", `broadcast event=${event.id} → ${_queues.size} sessions`, { lane });
   for (const q of _queues.values()) {
-    if (lane === "response") q.enqueueResponse(event);
-    else q.enqueueMessage(event);
+    q.enqueue(event);
   }
 }
 
@@ -282,7 +281,7 @@ export function deliverDirectMessage(
     sid: senderSid,
   };
 
-  q.enqueueMessage(event);
+  q.enqueue(event);
   dlog("dm", `delivered DM from sid=${senderSid} → sid=${targetSid}`, { eventId: event.id });
   return true;
 }
@@ -310,7 +309,7 @@ export function deliverServiceMessage(
     sid: 0,
   };
 
-  q.enqueueMessage(event);
+  q.enqueue(event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
@@ -326,9 +325,8 @@ export function routeMessage(messageId: number, targetSid: number): boolean {
   const q = _queues.get(targetSid);
   if (!q) return false;
 
-  q.enqueueMessage(event);
-  dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`);
-  return true;
+  q.enqueue(event);
+  dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`);  return true;
 }
 
 // ---------------------------------------------------------------------------

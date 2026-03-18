@@ -1,5 +1,12 @@
+/**
+ * Tests for TemporalQueue — the temporal ordered queue with heavyweight
+ * delimiter semantics. Imported via two-lane-queue.ts shim for backward compat.
+ *
+ * See tasks/3-in-progress/100-temporal-queue-redesign.md for the 11 required
+ * test scenarios.
+ */
 import { describe, it, expect, beforeEach } from "vitest";
-import { TwoLaneQueue } from "./two-lane-queue.js";
+import { TemporalQueue } from "./temporal-queue.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -7,291 +14,309 @@ import { TwoLaneQueue } from "./two-lane-queue.js";
 
 interface TestItem {
   id: number;
+  /** "text" or "voice" = heavyweight; "reaction"/"callback" = lightweight */
   type: string;
   text?: string;
+  /** false = voice not yet transcribed (not ready). Defaults to true. */
   ready?: boolean;
 }
 
+/** Create a queue with text/voice heavy, reaction/callback light. */
 function makeQueue(opts?: { maxSize?: number }) {
-  return new TwoLaneQueue<TestItem>({
+  return new TemporalQueue<TestItem>({
     maxSize: opts?.maxSize,
+    isHeavyweight: (item) => item.type === "text" || item.type === "voice",
     isReady: (item) => item.ready !== false,
     getId: (item) => item.id,
   });
 }
 
-function msg(id: number, text = "hello"): TestItem {
-  return { id, type: "message", text };
-}
-
-function response(id: number, type = "callback"): TestItem {
-  return { id, type };
-}
-
-function voicePending(id: number): TestItem {
-  return { id, type: "voice", ready: false };
-}
-
-function _voiceReady(id: number, text: string): TestItem {
-  return { id, type: "voice", text, ready: true };
-}
+const text = (id: number, t = "hello"): TestItem => ({ id, type: "text", text: t });
+const reaction = (id: number): TestItem => ({ id, type: "reaction" });
+const callback = (id: number): TestItem => ({ id, type: "callback" });
+const voicePending = (id: number): TestItem => ({ id, type: "voice", ready: false });
+const voiceReady = (id: number, t = "transcript"): TestItem => ({ id, type: "voice", text: t });
 
 // ---------------------------------------------------------------------------
-// Tests
+// Required Scenarios (Task 100)
 // ---------------------------------------------------------------------------
 
-describe("TwoLaneQueue", () => {
-  let q: TwoLaneQueue<TestItem>;
+describe("TemporalQueue — required batch scenarios", () => {
+  let q: TemporalQueue<TestItem>;
+  beforeEach(() => { q = makeQueue(); });
 
-  beforeEach(() => {
-    q = makeQueue();
+  // Scenario 1: [R, R, R, T] → batch [R, R, R, T]
+  it("sc1: reactions then text arrive in one batch", () => {
+    q.enqueue(reaction(1));
+    q.enqueue(reaction(2));
+    q.enqueue(reaction(3));
+    q.enqueue(text(4));
+    const batch = q.dequeueBatch();
+    expect(batch.map((i) => i.id)).toEqual([1, 2, 3, 4]);
+    expect(q.pendingCount()).toBe(0);
   });
 
-  // -------------------------------------------------------------------------
-  // Basic enqueue / dequeue
-  // -------------------------------------------------------------------------
+  // Scenario 2: [T, R, R] → batch [T], then [R, R]
+  it("sc2: text then reactions — text delimits first batch", () => {
+    q.enqueue(text(1));
+    q.enqueue(reaction(2));
+    q.enqueue(reaction(3));
+    expect(q.dequeueBatch().map((i) => i.id)).toEqual([1]);
+    expect(q.dequeueBatch().map((i) => i.id)).toEqual([2, 3]);
+    expect(q.dequeueBatch()).toEqual([]);
+  });
 
+  // Scenario 3: [T₁, T₂, T₃] → three separate batches
+  it("sc3: consecutive texts yield one per batch", () => {
+    q.enqueue(text(1));
+    q.enqueue(text(2));
+    q.enqueue(text(3));
+    expect(q.dequeueBatch().map((i) => i.id)).toEqual([1]);
+    expect(q.dequeueBatch().map((i) => i.id)).toEqual([2]);
+    expect(q.dequeueBatch().map((i) => i.id)).toEqual([3]);
+    expect(q.dequeueBatch()).toEqual([]);
+  });
+
+  // Scenario 4: [R₁, T₁, R₂, T₂] → [R₁, T₁], then [R₂, T₂]
+  it("sc4: reactions between texts form two batches", () => {
+    q.enqueue(reaction(1));
+    q.enqueue(text(2));
+    q.enqueue(reaction(3));
+    q.enqueue(text(4));
+    expect(q.dequeueBatch().map((i) => i.id)).toEqual([1, 2]);
+    expect(q.dequeueBatch().map((i) => i.id)).toEqual([3, 4]);
+  });
+
+  // Scenario 5: [R, V(pending)] → held, after transcript → [R, V]
+  it("sc5: voice pending holds entire batch; released after transcript", () => {
+    q.enqueue(reaction(1));
+    const voice = voicePending(2);
+    q.enqueue(voice);
+    // Both enqueued; voice not ready → batch held
+    expect(q.dequeueBatch()).toEqual([]);
+    expect(q.pendingCount()).toBe(2);
+    // Simulate patchVoiceText:
+    voice.ready = true;
+    voice.text = "words";
+    q.notifyWaiters();
+    const batch = q.dequeueBatch();
+    expect(batch.map((i) => i.id)).toEqual([1, 2]);
+    expect(q.pendingCount()).toBe(0);
+  });
+
+  // Scenario 6: [R, V(pending), R₂] → held; after transcript → [R, V], then [R₂]
+  it("sc6: voice hold blocks later lightweight events too", () => {
+    q.enqueue(reaction(1));
+    const voice = voicePending(2);
+    q.enqueue(voice);
+    q.enqueue(reaction(3));
+    // Nothing released while voice pending
+    expect(q.dequeueBatch()).toEqual([]);
+    // Transcription arrives
+    voice.ready = true;
+    const first = q.dequeueBatch();
+    expect(first.map((i) => i.id)).toEqual([1, 2]);
+    const second = q.dequeueBatch();
+    expect(second.map((i) => i.id)).toEqual([3]);
+  });
+
+  // Scenario 7: [R₁, C, R₂] — all lightweight, drain all
+  it("sc7: all-lightweight batch drains everything at once", () => {
+    q.enqueue(reaction(1));
+    q.enqueue(callback(2));
+    q.enqueue(reaction(3));
+    const batch = q.dequeueBatch();
+    expect(batch.map((i) => i.id)).toEqual([1, 2, 3]);
+  });
+
+  // Scenario 8: callback from old button enters at current temporal position
+  it("sc8: late callback enters queue at arrival time, not original message time", () => {
+    // T₁ arrives and is consumed. Then R₁ arrives. Then old-button callback C.
+    // T₂ arrives after. Queue at this point: [R₁, C, T₂].
+    q.enqueue(text(1));
+    q.dequeueBatch(); // consume T₁
+    q.enqueue(reaction(2));
+    q.enqueue(callback(3)); // press old button — arrives NOW
+    q.enqueue(text(4));
+    // dequeueBatch: R₂(reaction) and C(callback) are lightweight, T₂ is heavy
+    // → [R₁, C, T₂]
+    const batch = q.dequeueBatch();
+    expect(batch.map((i) => i.id)).toEqual([2, 3, 4]);
+  });
+
+  // Scenario 9: empty queue → []
+  it("sc9: empty queue returns empty batch", () => {
+    expect(q.dequeueBatch()).toEqual([]);
+  });
+
+  // Scenario 10: single heavyweight [T] → [T]
+  it("sc10: single heavyweight yields one-item batch", () => {
+    q.enqueue(text(1));
+    expect(q.dequeueBatch().map((i) => i.id)).toEqual([1]);
+    expect(q.pendingCount()).toBe(0);
+  });
+
+  // Scenario 11: [R, V(ready)] → [R, V] no hold
+  it("sc11: voice already ready is not held", () => {
+    q.enqueue(reaction(1));
+    q.enqueue(voiceReady(2));
+    const batch = q.dequeueBatch();
+    expect(batch.map((i) => i.id)).toEqual([1, 2]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Infrastructure tests
+// ---------------------------------------------------------------------------
+
+describe("TemporalQueue — infrastructure", () => {
+  let q: TemporalQueue<TestItem>;
+  beforeEach(() => { q = makeQueue(); });
+
+  // dequeue (single-item mode)
   describe("dequeue", () => {
     it("returns undefined when empty", () => {
       expect(q.dequeue()).toBeUndefined();
     });
 
-    it("returns a message-lane item", () => {
-      q.enqueueMessage(msg(1));
-      expect(q.dequeue()).toEqual(msg(1));
+    it("returns first ready item in FIFO order", () => {
+      q.enqueue(text(1));
+      q.enqueue(text(2));
+      expect(q.dequeue()?.id).toBe(1);
+      expect(q.dequeue()?.id).toBe(2);
     });
 
-    it("returns a response-lane item", () => {
-      q.enqueueResponse(response(1));
-      expect(q.dequeue()).toEqual(response(1));
-    });
-
-    it("drains response lane before message lane", () => {
-      q.enqueueMessage(msg(1));
-      q.enqueueResponse(response(2));
-      expect(q.dequeue()).toEqual(response(2));
-      expect(q.dequeue()).toEqual(msg(1));
-    });
-
-    it("skips not-ready items", () => {
-      q.enqueueMessage(voicePending(1));
-      q.enqueueMessage(msg(2));
-      expect(q.dequeue()).toEqual(msg(2));
-      // voice-pending item remains queued
+    it("skips not-ready items and returns next ready", () => {
+      const vp = voicePending(1);
+      q.enqueue(vp);
+      q.enqueue(text(2));
+      expect(q.dequeue()?.id).toBe(2);
+      // pending voice still in queue
       expect(q.pendingCount()).toBe(1);
     });
 
-    it("returns not-ready item once it becomes ready", () => {
-      const pending = voicePending(1);
-      q.enqueueMessage(pending);
+    it("returns pending item once ready", () => {
+      const vp = voicePending(1);
+      q.enqueue(vp);
       expect(q.dequeue()).toBeUndefined();
-      // Mutate in-place (simulating patchVoiceText)
-      pending.ready = true;
-      pending.text = "transcribed";
-      expect(q.dequeue()?.text).toBe("transcribed");
+      vp.ready = true;
+      vp.text = "words";
+      expect(q.dequeue()?.text).toBe("words");
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Batch dequeue
-  // -------------------------------------------------------------------------
-
-  describe("dequeueBatch", () => {
-    it("returns empty array when empty", () => {
-      expect(q.dequeueBatch()).toEqual([]);
-    });
-
-    it("drains all response items + one message", () => {
-      q.enqueueResponse(response(1));
-      q.enqueueResponse(response(2));
-      q.enqueueMessage(msg(3));
-      q.enqueueMessage(msg(4));
-      const batch = q.dequeueBatch();
-      expect(batch).toHaveLength(3);
-      expect(batch[0]).toEqual(response(1));
-      expect(batch[1]).toEqual(response(2));
-      expect(batch[2]).toEqual(msg(3));
-      // msg(4) remains
-      expect(q.pendingCount()).toBe(1);
-    });
-
-    it("returns only response items when no messages", () => {
-      q.enqueueResponse(response(1));
-      q.enqueueResponse(response(2));
-      const batch = q.dequeueBatch();
-      expect(batch).toHaveLength(2);
-    });
-
-    it("returns single message when no responses", () => {
-      q.enqueueMessage(msg(1));
-      const batch = q.dequeueBatch();
-      expect(batch).toEqual([msg(1)]);
-    });
-
-    it("skips not-ready messages", () => {
-      q.enqueueMessage(voicePending(1));
-      q.enqueueMessage(msg(2));
-      const batch = q.dequeueBatch();
-      expect(batch).toEqual([msg(2)]);
-      expect(q.pendingCount()).toBe(1);
-    });
-
-    it("consecutive batches drain completely", () => {
-      q.enqueueMessage(msg(1));
-      q.enqueueMessage(msg(2));
-      q.enqueueMessage(msg(3));
-      expect(q.dequeueBatch()).toHaveLength(1);
-      expect(q.dequeueBatch()).toHaveLength(1);
-      expect(q.dequeueBatch()).toHaveLength(1);
-      expect(q.dequeueBatch()).toEqual([]);
-    });
-
-    it("handles 200 response items in single pass", () => {
-      for (let i = 1; i <= 200; i++) q.enqueueResponse(response(i));
-      q.enqueueMessage(msg(201));
-      const batch = q.dequeueBatch();
-      expect(batch).toHaveLength(201);
-      expect(batch[0]).toEqual(response(1));
-      expect(batch[199]).toEqual(response(200));
-      expect(batch[200]).toEqual(msg(201));
-      expect(q.pendingCount()).toBe(0);
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // dequeueMatch
-  // -------------------------------------------------------------------------
-
   describe("dequeueMatch", () => {
-    it("extracts matching item from response lane", () => {
-      q.enqueueResponse(response(1, "reaction"));
-      q.enqueueResponse(response(2, "callback"));
+    it("extracts first matching item", () => {
+      q.enqueue(reaction(1));
+      q.enqueue(callback(2));
       const result = q.dequeueMatch((item) =>
         item.type === "callback" ? item : undefined,
       );
-      expect(result).toEqual(response(2, "callback"));
-      expect(q.pendingCount()).toBe(1);
-    });
-
-    it("extracts matching item from message lane", () => {
-      q.enqueueMessage(msg(1, "no"));
-      q.enqueueMessage(msg(2, "yes"));
-      const result = q.dequeueMatch((item) =>
-        item.text === "yes" ? item : undefined,
-      );
-      expect(result).toEqual(msg(2, "yes"));
+      expect(result?.id).toBe(2);
       expect(q.pendingCount()).toBe(1);
     });
 
     it("returns undefined when nothing matches", () => {
-      q.enqueueMessage(msg(1));
-      const result = q.dequeueMatch((item) =>
-        item.id === 999 ? true : undefined,
-      );
-      expect(result).toBeUndefined();
+      q.enqueue(reaction(1));
+      expect(q.dequeueMatch((): undefined => undefined)).toBeUndefined();
       expect(q.pendingCount()).toBe(1);
     });
 
-    it("checks response lane first", () => {
-      q.enqueueResponse(response(1, "target"));
-      q.enqueueMessage({ id: 2, type: "target" });
+    it("transforms match result", () => {
+      q.enqueue(text(5, "greet"));
       const result = q.dequeueMatch((item) =>
-        item.type === "target" ? item : undefined,
+        item.text === "greet" ? `id=${item.id}` : undefined,
       );
-      expect(result?.id).toBe(1);
-      expect(q.pendingCount()).toBe(1);
+      expect(result).toBe("id=5");
     });
 
-    it("transforms the match result", () => {
-      q.enqueueMessage(msg(1, "hello"));
-      const result = q.dequeueMatch((item) =>
-        item.text === "hello" ? `found-${item.id}` : undefined,
-      );
-      expect(result).toBe("found-1");
+    it("wakes waiters on match", async () => {
+      q.enqueue(reaction(1));
+      const p = q.waitForEnqueue();
+      q.dequeueMatch((item) => (item.id === 1 ? true : undefined));
+      await p;
+    });
+
+    it("does not wake waiters on miss", () => {
+      q.enqueue(reaction(1));
+      void q.waitForEnqueue();
+      q.dequeueMatch((): undefined => undefined);
+      expect(q.hasPendingWaiters()).toBe(true);
     });
   });
 
-  // -------------------------------------------------------------------------
   // pendingCount
-  // -------------------------------------------------------------------------
-
   describe("pendingCount", () => {
-    it("starts at zero", () => {
-      expect(q.pendingCount()).toBe(0);
-    });
+    it("starts at 0", () => { expect(q.pendingCount()).toBe(0); });
 
-    it("reflects items across both lanes", () => {
-      q.enqueueResponse(response(1));
-      q.enqueueMessage(msg(2));
-      q.enqueueMessage(msg(3));
-      expect(q.pendingCount()).toBe(3);
+    it("increments on enqueue", () => {
+      q.enqueue(reaction(1));
+      q.enqueue(text(2));
+      expect(q.pendingCount()).toBe(2);
     });
 
     it("decrements on dequeue", () => {
-      q.enqueueMessage(msg(1));
+      q.enqueue(text(1));
       q.dequeue();
+      expect(q.pendingCount()).toBe(0);
+    });
+
+    it("decrements on dequeueBatch", () => {
+      q.enqueue(reaction(1));
+      q.enqueue(text(2));
+      q.dequeueBatch();
       expect(q.pendingCount()).toBe(0);
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Consumed tracking
-  // -------------------------------------------------------------------------
-
-  describe("consumed tracking", () => {
-    it("tracks dequeued message IDs", () => {
-      q.enqueueMessage(msg(42));
+  // consumed tracking
+  describe("isConsumed", () => {
+    it("returns false before dequeue", () => {
+      q.enqueue(text(42));
       expect(q.isConsumed(42)).toBe(false);
+    });
+
+    it("returns true after dequeue", () => {
+      q.enqueue(text(42));
       q.dequeue();
       expect(q.isConsumed(42)).toBe(true);
     });
 
-    it("tracks batch-dequeued IDs", () => {
-      q.enqueueResponse(response(10));
-      q.enqueueMessage(msg(20));
+    it("returns true after dequeueBatch", () => {
+      q.enqueue(reaction(10));
+      q.enqueue(text(20));
       q.dequeueBatch();
       expect(q.isConsumed(10)).toBe(true);
       expect(q.isConsumed(20)).toBe(true);
     });
 
-    it("tracks dequeueMatch IDs", () => {
-      q.enqueueMessage(msg(7));
+    it("returns true after dequeueMatch", () => {
+      q.enqueue(callback(7));
       q.dequeueMatch((item) => (item.id === 7 ? true : undefined));
       expect(q.isConsumed(7)).toBe(true);
     });
 
     it("does not track ID 0", () => {
-      const noId = new TwoLaneQueue<TestItem>({
-        getId: () => 0,
-      });
-      noId.enqueueMessage(msg(1));
+      const noId = new TemporalQueue<TestItem>({ getId: () => 0 });
+      noId.enqueue(text(1));
       noId.dequeue();
       expect(noId.isConsumed(0)).toBe(false);
     });
 
-    it("survives clear", () => {
-      q.enqueueMessage(msg(1));
+    it("is reset by clear()", () => {
+      q.enqueue(text(1));
       q.dequeue();
       q.clear();
-      // clear resets consumed IDs
       expect(q.isConsumed(1)).toBe(false);
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Waiters
-  // -------------------------------------------------------------------------
-
+  // waiters
   describe("waiters", () => {
-    it("resolves on enqueueMessage", async () => {
+    it("resolves on enqueue", async () => {
       const p = q.waitForEnqueue();
-      q.enqueueMessage(msg(1));
-      await p; // should resolve
-    });
-
-    it("resolves on enqueueResponse", async () => {
-      const p = q.waitForEnqueue();
-      q.enqueueResponse(response(1));
+      q.enqueue(text(1));
       await p;
     });
 
@@ -307,83 +332,74 @@ describe("TwoLaneQueue", () => {
       expect(q.hasPendingWaiters()).toBe(true);
     });
 
-    it("waiters are one-shot", async () => {
+    it("is one-shot", async () => {
       const p = q.waitForEnqueue();
-      q.enqueueMessage(msg(1));
+      q.enqueue(text(1));
       await p;
       expect(q.hasPendingWaiters()).toBe(false);
     });
-
-    it("dequeueMatch wakes waiters on match", async () => {
-      q.enqueueMessage(msg(1));
-      const p = q.waitForEnqueue();
-      q.dequeueMatch((item) => (item.id === 1 ? true : undefined));
-      await p;
-    });
-
-    it("dequeueMatch does NOT wake waiters on miss", () => {
-      q.enqueueMessage(msg(1));
-      void q.waitForEnqueue();
-      q.dequeueMatch((): undefined => undefined);
-      expect(q.hasPendingWaiters()).toBe(true);
-    });
   });
 
-  // -------------------------------------------------------------------------
-  // Capacity limits
-  // -------------------------------------------------------------------------
-
-  describe("capacity limits", () => {
-    it("caps message lane at maxSize", () => {
+  // capacity
+  describe("capacity", () => {
+    it("evicts oldest when full", () => {
       const small = makeQueue({ maxSize: 3 });
-      small.enqueueMessage(msg(1));
-      small.enqueueMessage(msg(2));
-      small.enqueueMessage(msg(3));
-      small.enqueueMessage(msg(4)); // evicts msg(1)
+      small.enqueue(text(1));
+      small.enqueue(text(2));
+      small.enqueue(text(3));
+      small.enqueue(text(4)); // evicts text(1)
       expect(small.pendingCount()).toBe(3);
       expect(small.dequeue()?.id).toBe(2);
     });
-
-    it("caps response lane at maxSize", () => {
-      const small = makeQueue({ maxSize: 2 });
-      small.enqueueResponse(response(1));
-      small.enqueueResponse(response(2));
-      small.enqueueResponse(response(3)); // evicts response(1)
-      expect(small.pendingCount()).toBe(2);
-      expect(small.dequeue()?.id).toBe(2);
-    });
-
-    it("defaults to 5000", () => {
-      // Just verify we can enqueue a lot without error
-      for (let i = 0; i < 100; i++) q.enqueueMessage(msg(i));
-      expect(q.pendingCount()).toBe(100);
-    });
   });
 
-  // -------------------------------------------------------------------------
-  // Clear
-  // -------------------------------------------------------------------------
-
+  // clear
   describe("clear", () => {
-    it("empties both lanes and resets waiters", () => {
-      q.enqueueResponse(response(1));
-      q.enqueueMessage(msg(2));
-      void q.waitForEnqueue();
+    it("empties queue and consumed IDs", () => {
+      q.enqueue(text(1));
+      q.dequeue();
+      q.enqueue(reaction(2));
       q.clear();
       expect(q.pendingCount()).toBe(0);
-      expect(q.hasPendingWaiters()).toBe(false);
+      expect(q.isConsumed(1)).toBe(false);
+    });
+
+    it("wakes pending waiters is not needed after clear (new items required)", () => {
+      q.clear();
+      expect(q.pendingCount()).toBe(0);
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Default options
-  // -------------------------------------------------------------------------
+  // deprecated aliases
+  describe("enqueueResponse / enqueueMessage aliases", () => {
+    it("enqueueResponse adds item to temporal queue", () => {
+      q.enqueueResponse(reaction(1));
+      expect(q.pendingCount()).toBe(1);
+      expect(q.dequeue()?.id).toBe(1);
+    });
 
+    it("enqueueMessage adds item to temporal queue", () => {
+      q.enqueueMessage(text(2));
+      expect(q.pendingCount()).toBe(1);
+      expect(q.dequeue()?.id).toBe(2);
+    });
+
+    it("temporal order is preserved between the two alias methods", () => {
+      q.enqueueMessage(text(1)); // enqueued first
+      q.enqueueResponse(reaction(2)); // enqueued second
+      // temporal: text(1) comes out first (not response-priority)
+      expect(q.dequeue()?.id).toBe(1);
+      expect(q.dequeue()?.id).toBe(2);
+    });
+  });
+
+  // no options
   describe("default options", () => {
-    it("works with no options (everything is ready, no ID tracking)", () => {
-      const bare = new TwoLaneQueue<{ value: string }>();
-      bare.enqueueMessage({ value: "a" });
-      expect(bare.dequeue()).toEqual({ value: "a" });
+    it("works with no options specified (all lightweight, all ready)", () => {
+      const bare = new TemporalQueue<{ v: number }>();
+      bare.enqueue({ v: 1 });
+      bare.enqueue({ v: 2 });
+      expect(bare.dequeueBatch()).toEqual([{ v: 1 }, { v: 2 }]);
     });
   });
 });

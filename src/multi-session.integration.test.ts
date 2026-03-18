@@ -595,23 +595,23 @@ describe("multi-session integration", () => {
       expect(drain(s2.sid)).toEqual([]);
     });
 
-    it("response lane events have priority over message lane", () => {
+    it("temporal ordering — first enqueued arrives first", () => {
       const s1 = setupSession("A");
 
       const q1 = getSessionQueue(s1.sid)!;
 
-      // Enqueue message-lane first, then response-lane
+      // Enqueue in temporal order: msg first, then resp
       const msg = makeEvent({ content: { type: "text", text: "msg" } });
       const resp = makeEvent({ content: { type: "text", text: "resp" } });
 
-      q1.enqueueMessage(msg);
-      q1.enqueueResponse(resp);
+      q1.enqueueMessage(msg);    // arrives first — temporal order wins
+      q1.enqueueResponse(resp);  // arrives second
 
-      // Response should come out first (higher priority)
+      // Temporal order: msg comes out first
       const first = q1.dequeue();
-      expect(first?.content.text).toBe("resp");
+      expect(first?.content.text).toBe("msg");
       const second = q1.dequeue();
-      expect(second?.content.text).toBe("msg");
+      expect(second?.content.text).toBe("resp");
     });
 
     it("no queues: routeToSession is a no-op", () => {

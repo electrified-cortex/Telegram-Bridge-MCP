@@ -322,37 +322,37 @@ describe("recordInbound — documents", () => {
   });
 });
 
-describe("recordInbound — callback queries (response lane)", () => {
-  it("enqueues to response lane and drains before messages", () => {
+describe("recordInbound — callback queries (temporal order)", () => {
+  it("enqueues callbacks in arrival order after prior messages", () => {
     // Enqueue a message first, then a callback
     recordInbound(textUpdate(1, "message first"));
     recordInbound(callbackUpdate(1, "approve"));
 
     expect(pendingCount()).toBe(2);
 
-    // Response lane should drain first
+    // Temporal order: message arrived first, callback arrived second
     const first = dequeue();
-    expect(first!.event).toBe("callback");
-    expect(first!.content.data).toBe("approve");
+    expect(first!.event).toBe("message");
+    expect(first!.content.text).toBe("message first");
 
     const second = dequeue();
-    expect(second!.event).toBe("message");
-    expect(second!.content.text).toBe("message first");
+    expect(second!.event).toBe("callback");
+    expect(second!.content.data).toBe("approve");
   });
 });
 
-describe("recordInbound — reactions (response lane)", () => {
-  it("enqueues reactions to response lane", () => {
+describe("recordInbound — reactions (temporal order)", () => {
+  it("enqueues reactions in arrival order after prior messages", () => {
     recordInbound(textUpdate(1, "some text"));
     recordInbound(reactionUpdate(1, ["👍"]));
 
-    // Reaction drains first (response lane)
+    // Temporal order: message came first
     const first = dequeue();
-    expect(first!.event).toBe("reaction");
-    expect(first!.content.added).toEqual(["👍"]);
+    expect(first!.event).toBe("message");
 
     const second = dequeue();
-    expect(second!.event).toBe("message");
+    expect(second!.event).toBe("reaction");
+    expect(second!.content.added).toEqual(["👍"]);
   });
 });
 
@@ -377,8 +377,8 @@ describe("recordInbound — edited messages (silent update)", () => {
   });
 });
 
-describe("Two-lane priority queue", () => {
-  it("drains response lane before message lane", () => {
+describe("Temporal queue ordering", () => {
+  it("preserves arrival order across all event types", () => {
     recordInbound(textUpdate(1, "msg1"));
     recordInbound(textUpdate(2, "msg2"));
     recordInbound(callbackUpdate(1, "cb1"));
@@ -388,13 +388,13 @@ describe("Two-lane priority queue", () => {
     let evt;
     while ((evt = dequeue())) order.push(evt.event);
 
-    expect(order[0]).toBe("callback");
-    expect(order[1]).toBe("reaction");
-    expect(order[2]).toBe("message");
-    expect(order[3]).toBe("message");
+    expect(order[0]).toBe("message");
+    expect(order[1]).toBe("message");
+    expect(order[2]).toBe("callback");
+    expect(order[3]).toBe("reaction");
   });
 
-  it("returns undefined when both lanes empty", () => {
+  it("returns undefined when queue is empty", () => {
     expect(dequeue()).toBeUndefined();
   });
 });
@@ -727,7 +727,7 @@ describe("Mixed inbound/outbound scenario", () => {
     // User sends follow-up
     recordInbound(textUpdate(2, "Thanks!"));
 
-    // Reaction (response lane) drains first
+    // Reaction (enqueued before "Thanks!") arrives first in temporal order
     const reaction = dequeue();
     expect(reaction!.event).toBe("reaction");
 

@@ -1,5 +1,9 @@
 # [Unreleased]
 
+## Changed
+
+- Replaced `TwoLaneQueue` with `TemporalQueue` — events are now delivered in strict arrival order; heavyweight events (user text, voice) act as temporal batch delimiters instead of having separate lanes; `two-lane-queue.ts` is now a backward-compatibility shim re-exporting `TemporalQueue`; `enqueueResponse`/`enqueueMessage` kept as deprecated aliases for `enqueue()`
+
 ## Fixed
 
 - Converted `topic-state`, `typing-state`, `temp-message`, and `temp-reaction` from module-level singletons to per-SID `Map` instances — eliminates cross-session state corruption when multiple sessions are active simultaneously
