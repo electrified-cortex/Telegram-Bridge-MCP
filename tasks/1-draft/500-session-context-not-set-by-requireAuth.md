@@ -1,4 +1,4 @@
-# Bug: requireAuth Validates SID but Doesn't Set Session Context
+# Bug: Middleware Identity Disconnect — AsyncLocalStorage Gets Wrong SID
 
 ## Type
 
@@ -10,68 +10,59 @@ Multi-session manual testing (2026-03-18)
 
 ## Symptom
 
-When S1 (Primary) calls `send_text` with `identity: [1, 919877]`, the outbound message appears with the header "🤖 Scout" (S2's name) instead of "🤖 Primary". The message is attributed to the wrong session.
+When S1 calls `send_text` with `identity: [1, pin]`, the outbound message shows "🤖 Scout" (S2's name). The message is attributed to the wrong session. Message ownership, outbound broadcasting, and cross-session events all use the wrong SID.
 
 ## Root Cause
 
-`requireAuth(identity)` in `src/session-gate.ts` validates the `[sid, pin]` tuple and returns the correct SID, but **never calls `runInSessionContext(sid, ...)`**. The outbound proxy's `buildHeader()` calls `getCallerSid()`, which falls back to `getActiveSession()` — a global that returns whichever session last called any tool.
+There are **two separate identity mechanisms** that are disconnected:
+
+1. **`identity: [sid, pin]`** — the documented API that tools expose. Validated by `requireAuth()`. Returns the correct SID.
+2. **`sid` (auto-injected by middleware)** — `server.ts` L80-83 injects a hidden `sid` parameter into every tool schema. Used by the middleware to call `runInSessionContext(sid, ...)`.
+
+Agents pass `identity` (the documented API) but NOT the hidden `sid` parameter. The middleware reads `args.sid`, finds `undefined`, falls back to `getActiveSession()` (a last-writer-wins global), and sets `runInSessionContext` with the wrong SID.
 
 ### Code Path
 
-1. Tool handler calls `requireAuth(identity)` → returns `1` (correct)
-2. SID stored in `_sid` local variable but NOT propagated to `AsyncLocalStorage`
-3. Handler calls `getApi().sendMessage(...)` → outbound proxy intercepts
-4. `buildHeader()` calls `getCallerSid()` → `AsyncLocalStorage` has no value → falls back to `getActiveSession()` → returns `2` (wrong — S2 was the last session to call a tool)
-5. Header shows "🤖 Scout" instead of "🤖 Primary"
+```text
+Agent calls send_text({ identity: [1, pin], text: "hello" })
+  → server.ts middleware: args.sid is undefined
+  → falls back to getActiveSession() → returns 2 (S2 was last to call a tool)
+  → runInSessionContext(2, handler)
+    → handler: requireAuth(identity) → validates [1, pin] → returns 1 ✅
+    → handler: getApi().sendMessage(...)
+      → outbound proxy: getCallerSid() → reads ALS → returns 2 ❌
+      → buildHeader() → "🤖 Scout" ❌
+      → recordOutgoing() → trackMessageOwner(msgId, 2) ❌
+```
 
 ### Affected Code
 
-- `src/session-gate.ts` — `requireAuth()` returns SID but doesn't set ALS
-- `src/outbound-proxy.ts` — `buildHeader()` relies on `getCallerSid()` which gets wrong value
-- `src/message-store.ts` — `recordOutgoing()` calls `getCallerSid()` for message ownership
-- All 32 gated tools — none wrap their handler in `runInSessionContext`
+- `src/server.ts` L88-90 — middleware reads `args.sid` not `args.identity[0]`
+- `src/session-context.ts` L37 — `getCallerSid()` fallback to `getActiveSession()`
+- `src/outbound-proxy.ts` L33 — `buildHeader()` reads `getCallerSid()`
+- `src/message-store.ts` L438 — `recordOutgoing()` reads `getCallerSid()`
+- `src/tools/confirm.ts` L93, `ask.ts` L66, `choose.ts` L93 — pending check uses `getActiveSession()` instead of `getCallerSid()`
 
-## Fix Options
+## Fix
 
-### Option A — Fix in `requireAuth` (Recommended)
-
-Make `requireAuth` set the ALS context. Since it's called at the top of every handler and the handler is async, we need to restructure so the tool handler body runs inside the context:
-
-```typescript
-// New: requireAuthAndRun wraps the handler
-export async function requireAuthAndRun<T>(
-  identity: [number, number] | undefined,
-  fn: (sid: number) => Promise<T>,
-): Promise<T | ErrorResult> {
-  const sid = requireAuth(identity);
-  if (typeof sid !== "number") return toError(sid);
-  return runInSessionContext(sid, () => fn(sid));
-}
-```
-
-This requires changing all 32 tool handlers to use the wrapper pattern.
-
-### Option B — Set global active session in requireAuth
+Patch the middleware in `server.ts` to extract SID from `identity` when `sid` is absent:
 
 ```typescript
-export function requireAuth(identity) {
-  // ... validation ...
-  setActiveSession(sid); // <-- add this
-  return sid;
-}
+const sid = typeof args.sid === "number"
+  ? args.sid
+  : (Array.isArray(args.identity) && typeof args.identity[0] === "number"
+    ? args.identity[0]
+    : getActiveSession());
 ```
 
-Simpler but re-introduces the race condition that ALS was meant to solve. Two concurrent tool calls from different sessions would overwrite each other.
-
-### Option C — Pass SID explicitly through the call chain
-
-Have `recordOutgoing` and `buildHeader` accept an explicit `sid` parameter instead of reading from context. More invasive but eliminates the implicit dependency.
+Also fix the pending-check in `confirm.ts`, `ask.ts`, `choose.ts` to use `getCallerSid()` instead of `getActiveSession()`.
 
 ## Acceptance Criteria
 
-- [ ] `send_text` with `identity: [1, pin]` shows "🤖 Primary" header (not Scout)
-- [ ] `recordOutgoing` attributes message to correct SID
+- [ ] `send_text` with `identity: [1, pin]` shows correct session name in header
+- [ ] `recordOutgoing` attributes message to the identity SID
 - [ ] `broadcastOutbound` sends to correct fellow sessions
 - [ ] Cross-session outbound event shows correct `sid` field
-- [ ] All 1394+ tests pass
-- [ ] Concurrent tool calls from different sessions don't cross-contaminate
+- [ ] `confirm`/`ask`/`choose` pending check reads correct session queue
+- [ ] All tests pass
+- [ ] No regression in single-session mode (identity omitted)
