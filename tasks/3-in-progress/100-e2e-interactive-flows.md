@@ -102,3 +102,32 @@ Telegram API calls) to prove the full interactive lifecycle works.
 - Use the existing test infrastructure (`test-setup.ts`, `vitest`)
 - Each scenario must be independent (no shared state between tests)
 - Test file only — no production code changes
+
+---
+
+## Completion Report
+
+**Status:** Done — all 9 tests pass.
+
+**File created:** `src/tools/interactive-flows.integration.test.ts`
+
+**Approach:**
+
+- Mocked only `telegram.js` (`sendMessage`, `answerCallbackQuery`,
+  `editMessageText`, `editMessageReplyMarkup`, `ackVoiceMessage`).
+- All other modules (message-store, session-queue, session-manager,
+  session-context, button-helpers, tool handlers) used real implementations.
+- Sessions set up with `createSession` + `setActiveSession` + `createSessionQueue`.
+- Blocking tools (confirm, choose, ask) called inside `runInSessionContext`
+  with a 20 ms `setTimeout` yield to let the tool register its hook and reach
+  the poll wait before injecting events via `recordInbound`.
+- `recordInbound` (synchronous) fires callback hooks inline and routes events
+  to the session queue, unblocking `pollButtonOrTextOrVoice`.
+
+**Key finding — microtask ordering:** Fire-and-forget hook chains (e.g.
+`ackAndEditSelection`) complete one microtask tick *after* `dequeue_update`
+resolves. SC-5 and SC-6 needed `await Promise.resolve()` after
+`dequeue_update` so that `editMessageReplyMarkup` / `editMessageText` mock
+calls were visible before assertions.
+
+**Test count delta:** 1433 → 1442 (+9 new), 74 test files, all green.
