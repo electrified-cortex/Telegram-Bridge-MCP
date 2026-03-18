@@ -604,8 +604,8 @@ describe("multi-session integration", () => {
       const msg = makeEvent({ content: { type: "text", text: "msg" } });
       const resp = makeEvent({ content: { type: "text", text: "resp" } });
 
-      q1.enqueueMessage(msg);    // arrives first — temporal order wins
-      q1.enqueueResponse(resp);  // arrives second
+      q1.enqueue(msg);    // arrives first — temporal order wins
+      q1.enqueue(resp);  // arrives second
 
       // Temporal order: msg comes out first
       const first = q1.dequeue();

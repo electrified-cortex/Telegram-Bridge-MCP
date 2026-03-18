@@ -142,7 +142,7 @@ describe("multi-session tool integration", () => {
       createSessionQueue(sid2);
 
       const event = makeEvent();
-      getSessionQueue(sid1)!.enqueueMessage(event);
+      getSessionQueue(sid1)!.enqueue(event);
 
       const server = createMockServer();
       registerDequeue(server);
@@ -160,7 +160,7 @@ describe("multi-session tool integration", () => {
       createSessionQueue(sid2);
 
       const event = makeEvent();
-      getSessionQueue(sid1)!.enqueueMessage(event);
+      getSessionQueue(sid1)!.enqueue(event);
 
       const server = createMockServer();
       registerDequeue(server);
@@ -249,7 +249,7 @@ describe("multi-session tool integration", () => {
       createSessionQueue(sid);
 
       const voiceEvent = makeVoiceEvent();
-      getSessionQueue(sid)!.enqueueMessage(voiceEvent);
+      getSessionQueue(sid)!.enqueue(voiceEvent);
 
       const server = createMockServer();
       registerDequeue(server);
@@ -263,7 +263,7 @@ describe("multi-session tool integration", () => {
       const { sid } = createSession();
       createSessionQueue(sid);
 
-      getSessionQueue(sid)!.enqueueMessage(makeEvent()); // text event
+      getSessionQueue(sid)!.enqueue(makeEvent()); // text event
 
       const server = createMockServer();
       registerDequeue(server);
@@ -279,8 +279,8 @@ describe("multi-session tool integration", () => {
       // Two voice events to verify both are acked
       const v1 = makeVoiceEvent();
       const v2 = makeVoiceEvent();
-      getSessionQueue(sid)!.enqueueMessage(v1);
-      getSessionQueue(sid)!.enqueueMessage(v2);
+      getSessionQueue(sid)!.enqueue(v1);
+      getSessionQueue(sid)!.enqueue(v2);
 
       const server = createMockServer();
       registerDequeue(server);
@@ -417,7 +417,7 @@ describe("multi-session tool integration", () => {
     it("only the session with a pending message gets it on concurrent polls", async () => {
       const { sid: sid1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
-      getSessionQueue(sid1)!.enqueueMessage(makeEvent());
+      getSessionQueue(sid1)!.enqueue(makeEvent());
 
       const server = createMockServer();
       registerDequeue(server);
@@ -443,8 +443,8 @@ describe("multi-session tool integration", () => {
 
       const e1 = makeEvent({ content: { type: "text", text: "for session 1" } });
       const e2 = makeEvent({ content: { type: "text", text: "for session 2" } });
-      getSessionQueue(sid1)!.enqueueMessage(e1);
-      getSessionQueue(sid2)!.enqueueMessage(e2);
+      getSessionQueue(sid1)!.enqueue(e1);
+      getSessionQueue(sid2)!.enqueue(e2);
 
       const server = createMockServer();
       registerDequeue(server);
@@ -468,9 +468,9 @@ describe("multi-session tool integration", () => {
       const a = makeEvent({ content: { type: "text", text: "a" } });
       const b = makeEvent({ content: { type: "text", text: "b" } });
       const c = makeEvent({ content: { type: "text", text: "c" } });
-      getSessionQueue(sid1)!.enqueueMessage(a);
-      getSessionQueue(sid1)!.enqueueMessage(b);
-      getSessionQueue(sid2)!.enqueueMessage(c);
+      getSessionQueue(sid1)!.enqueue(a);
+      getSessionQueue(sid1)!.enqueue(b);
+      getSessionQueue(sid2)!.enqueue(c);
 
       const server = createMockServer();
       registerDequeue(server);

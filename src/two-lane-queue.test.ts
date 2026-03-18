@@ -219,7 +219,11 @@ describe("TemporalQueue — infrastructure", () => {
 
     it("returns undefined when nothing matches", () => {
       q.enqueue(reaction(1));
-      expect(q.dequeueMatch((): undefined => undefined)).toBeUndefined();
+      // eslint-disable-next-line @typescript-eslint/no-confusing-void-expression
+      const noMatch = q.dequeueMatch(() => {
+        return undefined;
+      });
+      expect(noMatch).toBeUndefined();
       expect(q.pendingCount()).toBe(1);
     });
 
@@ -370,7 +374,8 @@ describe("TemporalQueue — infrastructure", () => {
     });
   });
 
-  // deprecated aliases
+  // deprecated aliases — intentionally testing deprecated methods
+  /* eslint-disable @typescript-eslint/no-deprecated */
   describe("enqueueResponse / enqueueMessage aliases", () => {
     it("enqueueResponse adds item to temporal queue", () => {
       q.enqueueResponse(reaction(1));
@@ -392,6 +397,7 @@ describe("TemporalQueue — infrastructure", () => {
       expect(q.dequeue()?.id).toBe(2);
     });
   });
+  /* eslint-enable @typescript-eslint/no-deprecated */
 
   // no options
   describe("default options", () => {
