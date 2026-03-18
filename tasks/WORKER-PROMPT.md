@@ -12,7 +12,7 @@ Read [`tasks/AGENTS.md`](AGENTS.md) — it has the full workflow, rules, and com
 
 ## Step 2: Pick a Task
 
-Browse [`tasks/2-queued/`](2-queued/) and choose a task. **Move it to `3-in-progress/` immediately** — before reading it, before planning, before writing any code. The move is the claim.
+Browse [`tasks/2-queued/`](2-queued/) and pick the **lowest-numbered file** — that is the highest priority. **Move exactly that one file to `3-in-progress/` immediately** — before reading it, before planning, before writing any code. The move is the claim. Never move more than one task at a time; only one file may exist in `3-in-progress/` at once.
 
 ## Step 3: Work
 

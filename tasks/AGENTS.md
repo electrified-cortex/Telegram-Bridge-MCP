@@ -34,8 +34,8 @@ This applies to ALL task transitions: `2-queued → 3-in-progress`, `3-in-progre
 
 > **Step 1 is non-negotiable.** You MUST move the file before doing anything else — reading, planning, or coding. The move IS the claim. Without it, another agent may pick the same task.
 
-1. Browse `2-queued/` — pick a task that matches your capabilities.
-1. **Move the file** (see "Moving Task Files" above) from `2-queued/` to `3-in-progress/` **immediately** — this is your very first action. No reading, no planning, no code changes until the file is moved.
+1. Browse `2-queued/` — pick the **lowest-numbered file** (lowest number = highest priority). Only **one task at a time** may live in `3-in-progress/`.
+1. **Move that one file** (see "Moving Task Files" above) from `2-queued/` to `3-in-progress/` **immediately** — this is your very first action. No reading, no planning, no code changes until the file is moved. Never move more than one file at once.
 1. Read the task document thoroughly — it contains the description, context, and acceptance criteria.
 1. Understand the codebase context before making changes. Use the existing test files and docs as reference.
 1. **Never guess.** If the task document is unclear, escalate back to the overseer.
@@ -87,6 +87,7 @@ This is mandatory. A task moved to `4-completed/` without a completion report is
 ## Rules
 
 - **Claim first, always.** The file move to `3-in-progress/` must precede all other work — no exceptions.
+- **One task at a time.** Only one task file may be in `3-in-progress/` at once. The file name prefix determines priority — pick the lowest number. Do not move additional tasks until the current one is complete and moved to `4-completed/`.
 - **Move, never copy.** Task files must exist in exactly one folder at all times. Use `git mv` or filesystem rename — never read+create. If a file appears in two folders, the kanban is broken.
 - **No commits or pushes.** Only the overseer commits. You write code and run tests.
 - **No changelog edits.** The overseer handles changelog entries at commit time.
