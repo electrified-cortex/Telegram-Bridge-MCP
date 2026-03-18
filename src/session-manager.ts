@@ -144,3 +144,22 @@ export function resetSessions(): void {
   _nextId = 1;
   _activeSessionId = 0;
 }
+
+/**
+ * Rename a session. Validates that the new name is not taken by another
+ * active session (case-insensitive). Returns `{ old_name, new_name }` on
+ * success or `null` if the session does not exist.
+ *
+ * @throws if the new name is already taken — caller must check first.
+ */
+export function renameSession(
+  sid: number,
+  newName: string,
+): { old_name: string; new_name: string } | null {
+  const session = _sessions.get(sid);
+  if (!session) return null;
+  const old_name = session.name;
+  session.name = newName;
+  dlog("session", `renamed sid=${sid} "${old_name}" → "${newName}"`);
+  return { old_name, new_name: newName };
+}

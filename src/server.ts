@@ -47,6 +47,7 @@ import { register as registerUpdateProgress } from "./tools/update_progress.js";
 import { register as registerSendDirectMessage } from "./tools/send_direct_message.js";
 import { register as registerRequestDmAccess } from "./tools/request_dm_access.js";
 import { register as registerRouteMessage } from "./tools/route_message.js";
+import { register as registerRenameSession } from "./tools/rename_session.js";
 import { register as registerGetDebugLog } from "./tools/get_debug_log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -162,6 +163,7 @@ export function createServer(): McpServer {
   registerSendDirectMessage(server);
   registerRequestDmAccess(server);
   registerRouteMessage(server);
+  registerRenameSession(server);
   registerDumpSessionRecord(server);
   registerGetDebugLog(server);
 
