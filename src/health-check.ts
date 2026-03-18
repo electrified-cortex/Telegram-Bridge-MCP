@@ -2,8 +2,8 @@
  * Governor health-check timer.
  *
  * Runs every CHECK_INTERVAL_MS (default 60 s) and inspects all active sessions.
- * - Sessions that haven't called dequeue_update within HEALTH_THRESHOLD_MS are treated
- *   as unresponsive.
+ * - Sessions with no tool activity within HEALTH_THRESHOLD_MS are treated as unresponsive.
+ *   Any authenticated tool call resets the timer via touchSession() in requireAuth().
  * - If the governor is unresponsive the operator receives a three-option prompt to
  *   reroute, promote, or wait.
  * - Non-governor unresponsive sessions produce a notification only.
@@ -32,10 +32,10 @@ import { hasActiveAnimation } from "./animation-state.js";
 export const CHECK_INTERVAL_MS = 60_000;
 
 /**
- * How long a session can go without polling before it is considered unhealthy.
- * Chosen as max dequeue_update timeout (300 s) + one check interval (60 s).
+ * How long a session can go without any tool activity before it is considered
+ * unhealthy. Set to 10 minutes to allow room for long-running local operations.
  */
-export const HEALTH_THRESHOLD_MS = 360_000;
+export const HEALTH_THRESHOLD_MS = 600_000;
 
 const CB_REROUTE_NOW  = "hc_reroute_now";
 const CB_MAKE_PRIMARY = "hc_make_primary";

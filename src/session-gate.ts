@@ -1,6 +1,16 @@
 import { validateSession } from "./session-manager.js";
 import type { TelegramError } from "./telegram.js";
 
+// ── Auth hook ──────────────────────────────────────────────
+
+/** Optional side-effect triggered on every successful auth. */
+let _authHook: ((sid: number) => void) | undefined;
+
+/** Register a callback invoked after every successful requireAuth(). */
+export function setAuthHook(fn: (sid: number) => void): void {
+  _authHook = fn;
+}
+
 /**
  * Resolves and authenticates the session for a tool call.
  *
@@ -32,5 +42,6 @@ export function requireAuth(
       message: "Invalid session credentials. Check that sid and pin match those returned by session_start.",
     };
   }
+  _authHook?.(sid);
   return sid;
 }

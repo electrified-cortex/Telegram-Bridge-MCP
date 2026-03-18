@@ -9,6 +9,8 @@ import { clearCommandsOnShutdown } from "./shutdown.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
 import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startHealthCheck } from "./health-check.js";
+import { setAuthHook } from "./session-gate.js";
+import { touchSession } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
 import { loadConfig, getSessionLogMode, sessionLogLabel, isDebugConfig } from "./config.js";
 import { timelineSize } from "./message-store.js";
@@ -91,6 +93,7 @@ startPoller();
 process.stderr.write("[info] background poller started\n");
 
 startHealthCheck();
+setAuthHook(touchSession);
 process.stderr.write("[info] health check started\n");
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
