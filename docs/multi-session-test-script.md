@@ -1,160 +1,163 @@
-# Multi-Session Manual Test Script
+# Multi-Session Acceptance Test Script
 
-Step-by-step live testing guide. The operator follows these instructions on Telegram while one or more MCP agent sessions are connected.
+> **If this script passes end-to-end, the multi-session feature is cleared for merge.**
+
+Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Telegram. Each phase builds on the previous one. Do not skip phases.
 
 ## Prerequisites
 
-- MCP server running with `TELEGRAM_MCP_DEBUG=1` env var set in config
-- One MCP client connected as **Session 1 (S1)** — typically the primary agent
-- A second MCP client ready to connect as **S2** (e.g. another VS Code window, Claude Code, or any MCP client)
-- Telegram chat open on the operator's device
+- `pnpm build` clean, `pnpm lint` clean, `pnpm test` all passing
+- `mcp-config.json` has `"debug": true`
+- MCP server freshly restarted
+- **S1** — first MCP client, connected via `session_start` (auto-named "Primary")
+- **S2** — second MCP client ready to connect (separate VS Code chat, Claude Code, etc.)
+- **S3** — third MCP client (needed for Phase 5 only; can reuse S2 after close)
+- Telegram chat open on operator's device
 
 ## Notation
 
-- **[Op]** = Operator action on Telegram
-- **[S1]** / **[S2]** / **[S3]** = Agent session action (tool call)
-- **[Verify]** = Expected outcome to confirm
+- **[S1]** / **[S2]** / **[S3]** = agent session action (tool call)
+- **[Op]** = operator action on Telegram
+- **[Verify]** = expected outcome — check tool response and/or Telegram UI
+- **[Debug]** = check server stderr (debug log via `get_debug_log`)
 
 ---
 
-## Phase 1 — Targeted Routing (Reply-To)
+## Phase 1 — Session Lifecycle
 
-> The most critical behavior: replies and callbacks must reach the correct
-> session. If this fails, nothing else matters. Test it first.
+### 1.1 First Session
 
-### 1.0 Setup — Start Both Sessions
+1. **[S1]** already connected via `session_start`
+2. **[Verify]** `{ sid: 1, sessions_active: 1 }`
 
-1. **[S1]** `session_start` (already done or do now)
-2. **[Verify]** S1 received `{ sid: 1, pin: ..., sessions_active: 1 }`
-3. **[S2]** `session_start` with `name: "Scout"` (or any name)
-4. **[Verify]** S2 received `{ sid: 2, sessions_active: 2 }` (no routing_mode field — routing is automatic)
+### 1.2 Second Session Joins
 
-### 1.1 Reply-To — Session 1
+1. **[S2]** `session_start` with `name: "Scout"`
+2. **[Verify]** Operator gets approval prompt in Telegram
+3. **[Op]** Approve S2
+4. **[Verify]** S2 receives `{ sid: 2, sessions_active: 2, fellow_sessions: [{sid: 1, name: "Primary"}] }`
+5. **[Verify]** Intro message shows session identity (SID, name)
+6. **[Debug]** `created sid=2 name="Scout"`, `governor set to sid=1`
 
-1. **[S1]** `send_text` with text: `"I'm session 1"`
-2. **[Op]** Reply to S1's message: `"Got it, S1."`
+### 1.3 Auto-DM Grant
+
+1. **[Verify]** S2's approval auto-grants bidirectional DM (S1↔S2)
+2. **[Debug]** DM grant log entries
+
+### 1.4 List Sessions
+
+1. **[S1]** `list_sessions` → both sessions listed
+2. **[S2]** `list_sessions` → same list, `active_sid` matches caller
+
+### 1.5 Name Collision Guard
+
+1. **[S2 or another client]** Try `session_start` with `name: "Primary"`
+2. **[Verify]** Rejected — name already taken
+
+---
+
+## Phase 2 — Targeted Routing
+
+> The most critical behavior: replies and callbacks must reach the correct session only.
+
+### 2.1 Reply-To — Session 1
+
+1. **[S1]** `send_text("I'm session 1")`
+2. **[Op]** Reply to S1's message: "Got it, S1."
 3. **[Verify]** Only S1 receives the reply via `dequeue_update`
 4. **[Verify]** S2 does NOT receive it
-5. **[Verify]** Server stderr shows `[dbg:route] targeted event=X → sid=1`
+5. **[Debug]** `targeted event=X → sid=1`
 
-### 1.2 Reply-To — Session 2
+### 2.2 Reply-To — Session 2
 
-1. **[S2]** `send_text` with text: `"I'm session 2"`
-2. **[Op]** Reply to S2's message: `"Got it, S2."`
-3. **[Verify]** Only S2 receives the reply via `dequeue_update`
+1. **[S2]** `send_text("I'm session 2")`
+2. **[Op]** Reply to S2's message: "Got it, S2."
+3. **[Verify]** Only S2 receives the reply
 4. **[Verify]** S1 does NOT receive it
-5. **[Verify]** Server stderr shows `[dbg:route] targeted event=X → sid=2`
+5. **[Debug]** `targeted event=X → sid=2`
 
-### 1.3 Callback Routing
+### 2.3 Callback Routing
 
-1. **[S1]** `confirm` with prompt: `"Ready to continue?"`
+1. **[S1]** `confirm("Ready to continue?")`
 2. **[Op]** Press the button
 3. **[Verify]** Only S1 receives the callback
 4. **[Verify]** S2 does NOT receive it
 
 ---
 
-## Phase 2 — Session Lifecycle
+## Phase 3 — Governor Routing
 
-### 2.1 Session Details
+> First session (lowest SID) is automatically the governor. All ambiguous messages
+> (not a reply, callback, or reaction) go only to the governor.
 
-1. **[Verify]** S2's `session_start` response (from Phase 1 setup) includes:
-   - `fellow_sessions` array listing S1
-2. **[Verify]** Intro message in Telegram shows "Session 2 · Scout"
-3. **[Verify]** Server stderr shows debug traces:
-   - `[dbg:session] created sid=2 name="Scout"`
-   - `[dbg:queue] created queue for sid=2`
-   - `[dbg:session] active 0 → 2`
+### 3.1 Verify Governor
 
-### 2.2 List Sessions
+1. **[Debug]** `governor set to sid=1` (from Phase 1.2)
+2. **[S1]** is the governor
 
-1. **[S2]** `list_sessions`
-2. **[Verify]** Response lists both sessions with SIDs, names, creation times
-3. **[S1]** `list_sessions`
-4. **[Verify]** Same listing, but `active` field shows S1's own SID
+### 3.2 Ambiguous Message
 
-### 2.3 Close and Rejoin
-
-1. **[S2]** `close_session` (with auth)
-2. **[Verify]** Server stderr shows `[dbg:session] closed sid=2`
-3. **[S2]** `session_start` with `name: "Scout"` again
-4. **[Verify]** S2 gets a fresh SID (may be 2 again or next available)
-5. **[Verify]** `list_sessions` from S1 shows the rejoined session
-
----
-
-## Phase 3 — Ambiguous Message Routing
-
-> When two or more sessions are active, the first (lowest-SID) session is automatically
-> designated governor. All ambiguous messages (not a reply, callback, or reaction) are
-> delivered only to the governor, which can then delegate them via `route_message`.
-
-### 3.0 Setup — Verify Governor Assignment
-
-1. **[Verify]** S1 and S2 are both active (from Phase 2 setup or restart)
-2. **[Verify]** S2's `session_start` response included `sessions_active: 2`
-3. **[Verify]** Server stderr shows `[dbg:session] governor set to sid=1` (auto-set when 2nd session joined)
-
-### 3.1 Ambiguous Message Goes to Governor
-
-1. **[Op]** Send a plain text message (not replying to anything): `"Hello, who gets this?"`
-2. **[Verify]** Only S1 (governor) receives it via `dequeue_update`
+1. **[Op]** Send a plain text message (not a reply): "Hello, who gets this?"
+2. **[Verify]** Only S1 (governor) receives it
 3. **[Verify]** S2 does NOT receive it
-4. **[Verify]** Server stderr shows `[dbg:route] governor event=X → sid=1`
+4. **[Debug]** `governor event=X → sid=1`
 
-### 3.2 Governor Delegation
+### 3.3 Governor Delegation
 
-1. **[Op]** Send: `"Route this to Scout"`
-2. **[Verify]** S1 receives it first
-3. **[S1]** Calls `route_message` with `message_id` and `target_sid: 2`
-4. **[Verify]** S2 receives the same message via `dequeue_update`
+1. **[Op]** Send: "Route this to Scout"
+2. **[Verify]** S1 receives it
+3. **[S1]** `route_message(message_id, target_sid: 2)`
+4. **[Verify]** S2 receives the message
 5. **[Verify]** S1 does NOT receive it a second time
-6. **[Verify]** Server stderr shows the delegation trace
 
-### 3.3 Governor Continuity
+### 3.4 Governor Continuity
 
 1. **[Op]** Send 3 more plain messages
 2. **[Verify]** All 3 go to S1 (governor)
-3. **[Verify]** S2 receives none of them
+3. **[Verify]** S2 receives none
 
-### 3.4 Governor Death Recovery
+### 3.5 Governor Death Recovery
 
-1. **[S1]** Calls `close_session` (with auth)
-2. **[Verify]** Server stderr shows `[dbg:session] closed sid=1`
-3. **[Verify]** Server stderr shows governor promoted to S2 (lowest remaining SID)
-4. **[Op]** Send: `"Who's in charge now?"`
-5. **[Verify]** S2 receives it (S2 is now governor)
-6. **[Verify]** Server stderr shows `[dbg:route] governor event=X → sid=2`
+1. **[S1]** `close_session`
+2. **[Debug]** `closed sid=1`, governor promoted to S2
+3. **[Op]** Send: "Who's in charge now?"
+4. **[Verify]** S2 receives it (S2 is now governor)
+5. **[Debug]** `governor event=X → sid=2`
 
 ---
 
 ## Phase 4 — DM Permissions
 
-### 4.1 Request DM Access
+> DMs are auto-granted bidirectionally on session approval (Phase 1.3).
+> This phase tests the DM flow and revocation.
 
-1. **[Op]** Switch back to load balance, ensure S1 and S2 are both active (restart S1 if closed)
-2. **[S2]** `request_dm_access` targeting S1
-3. **[Verify]** Operator sees a confirm prompt: "Session 2 (Scout) wants to send a message to Session 1. Allow?"
-4. **[Op]** Press "Allow"
-5. **[Verify]** S2's `request_dm_access` resolves with `{ granted: true }`
+### 4.0 Setup
 
-### 4.2 Send DM
+1. Restart S1 if closed in Phase 3.5: **[S1]** `session_start`
+2. Both S1 and S2 active
 
-1. **[S2]** `send_direct_message` to S1 with text: `"Hey S1, I found something interesting."`
+### 4.1 Send DM (Auto-Granted)
+
+1. **[S2]** `send_direct_message(target_sid: 1, text: "Hey S1, found something.")`
 2. **[Verify]** S1 receives a `direct_message` event via `dequeue_update`
-3. **[Verify]** The event has `type: "direct_message"` and `sid` field showing sender
-4. **[Verify]** Server stderr shows `[dbg:dm] delivered DM from sid=2 → sid=1`
+3. **[Verify]** Event has sender SID field
+4. **[Debug]** `delivered DM from sid=2 → sid=1`
 
-### 4.3 Permission Denied
+### 4.2 Bidirectional
 
-1. **[S1]** Tries `send_direct_message` to S2 (without having requested access)
-2. **[Verify]** Error: permission denied (DM permissions are directional: S2→S1 was granted, not S1→S2)
+1. **[S1]** `send_direct_message(target_sid: 2, text: "Thanks, S2.")`
+2. **[Verify]** S2 receives the DM
 
-### 4.4 Revoke on Close
+### 4.3 Revoke on Close
 
-1. **[S2]** Calls `close_session`
-2. **[Verify]** All DM permissions involving S2 are revoked
-3. **[Verify]** Server stderr shows `[dbg:dm] revoked N DM permission(s) for sid=2`
+1. **[S2]** `close_session`
+2. **[Verify]** DM permissions involving S2 revoked
+3. **[Debug]** DM revocation log
+
+### 4.4 Manual DM Request (New Session)
+
+1. **[S2]** `session_start(name: "Scout")` → operator approves → auto-DM-grant
+2. **[S2]** `send_direct_message(target_sid: 1, text: "I'm back")` → works immediately
 
 ---
 
@@ -162,30 +165,29 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 ### 5.1 Scale Up
 
-1. **[S1]** already connected
-2. **[S2]** `session_start` with `name: "Analyst"`
-3. **[S3]** (third MCP client) `session_start` with `name: "Builder"`
-4. **[Verify]** Each session's intro shows correct SID and fellow sessions
-5. **[Verify]** `list_sessions` from any session shows all 3
+1. **[S1]** active, **[S2]** active
+2. **[S3]** `session_start(name: "Builder")` → operator approves
+3. **[Verify]** 3 sessions active, each sees fellow sessions
+4. **[Verify]** `list_sessions` from any session shows all 3
 
 ### 5.2 Ambiguous Routing with 3
 
-1. **[Op]** Send 3 plain messages in sequence
-2. **[Verify]** All 3 go to the governor (lowest-SID session among the three)
-3. **[Verify]** S2 and S3 receive none directly
+1. **[Op]** Send 3 plain messages
+2. **[Verify]** All 3 go to governor (lowest SID)
+3. **[Verify]** S2 and S3 receive none
 
 ### 5.3 Governor Delegation with 3
 
 1. **[Op]** Send 2 ambiguous messages
-2. **[S_gov]** (the current governor) routes first to S2, second to S3
-3. **[Verify]** Each target receives the delegated message
-4. **[Verify]** The governor's own queue is not re-filled by its own delegations
+2. **[Gov]** Routes first to S2, second to S3
+3. **[Verify]** Each target receives its delegated message
+4. **[Verify]** Governor queue not re-filled by its own delegations
 
-### 5.5 Auth Rejection
+### 5.4 Auth Rejection
 
 1. **[S3]** Tries `close_session` with S2's SID but S3's PIN
-2. **[Verify]** Auth error — can't close another session with wrong credentials
-3. **[Verify]** Server stderr shows `[dbg:session] auth failed sid=2`
+2. **[Verify]** Auth error — wrong credentials
+3. **[Debug]** `auth failed sid=2`
 
 ---
 
@@ -193,40 +195,48 @@ Step-by-step live testing guide. The operator follows these instructions on Tele
 
 ### 6.1 Cross-Session Outbound Forwarding
 
-1. **[S1]** `send_text` with text: `"S1 speaking"`
-2. **[Verify]** S2 receives the outbound event in its queue (cross-session forwarding)
-3. **[Verify]** The event has `sid: 1` marking the sender
+1. **[S1]** `send_text("S1 speaking")`
+2. **[Verify]** S2 receives an outbound event with `sid: 1`
 
 ### 6.2 Rapid Messages
 
-1. **[Op]** Send 5 messages in quick succession
-2. **[Verify]** All 5 are distributed correctly (no drops, no duplicates)
-3. **[Verify]** Queue pending counts match expected values
+1. **[Op]** Send 5 messages quickly
+2. **[Verify]** All 5 distributed correctly, no drops, no duplicates
 
 ### 6.3 Session Close Mid-Conversation
 
-1. **[S2]** is in the middle of processing a message
-2. **[S2]** calls `close_session`
-3. **[Verify]** S2's queue is removed, remaining sessions unaffected
-4. **[Verify]** Subsequent ambiguous messages go only to remaining sessions
+1. **[S2]** `close_session` while messages are in its queue
+2. **[Verify]** S2's queue removed, other sessions unaffected
+3. **[Verify]** Subsequent ambiguous messages go to remaining sessions only
 
-### 6.4 Debug Log Review
+### 6.4 Voice Messages
 
-1. **[Op]** Review server stderr log output
-2. **[Verify]** All lifecycle events, routing decisions, and queue operations are traced
-3. **[Verify]** Traces cover categories: session, route, cascade, dm, queue
+1. **[Op]** Send a voice message
+2. **[Verify]** Governor receives it with transcription
+3. **[Verify]** 🫡 reaction auto-set
+
+### 6.5 Debug Log Completeness
+
+1. **[Any]** `get_debug_log`
+2. **[Verify]** Entries cover: `session`, `route`, `queue`, `dm`, `animation`
+3. **[Verify]** All lifecycle and routing events are traced
 
 ---
 
 ## Completion Checklist
 
+- [ ] Session lifecycle: create, approve, list, close, rejoin
+- [ ] Auto-DM-grant on approval
+- [ ] Name collision rejection
 - [ ] Targeted routing: reply-to (both sessions), callback
-- [ ] Session lifecycle: create, list, close, rejoin
-- [ ] Intro enrichment: SID, name, fellow sessions
-- [ ] Governor mode: auto-designation, ambiguous delivery, delegation, death recovery
-- [ ] DM flow: request, approve, send, directional, revoke on close
-- [ ] 3+ sessions: scaling, governor delegation across 3 targets
+- [ ] Governor auto-designation on 2nd session join
+- [ ] Ambiguous messages → governor only
+- [ ] Governor delegation via `route_message`
+- [ ] Governor death → promotion to next lowest SID
+- [ ] DM send, bidirectional, revoke on close
+- [ ] 3-session scaling + delegation
+- [ ] Auth rejection (wrong SID/PIN)
 - [ ] Cross-session outbound forwarding
-- [ ] Auth rejection with wrong credentials
-- [ ] Debug logging tracks all key events
-- [ ] No dropped messages, no duplicates
+- [ ] Rapid messages — no drops, no duplicates
+- [ ] Voice transcription + 🫡 reaction
+- [ ] Debug log covers all categories
