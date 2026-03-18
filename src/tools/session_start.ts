@@ -115,14 +115,23 @@ export function register(server: McpServer) {
 
       const isFirstSession = activeSessionCount() === 0;
 
-      // Default name for the first session
-      const effectiveName = isFirstSession && !name ? "Primary" : name;
+      // Default name for the first session; trim before any validation
+      const trimmedName = name.trim();
+      const effectiveName = isFirstSession && !trimmedName ? "Primary" : trimmedName;
 
       // Second+ sessions must provide a name
       if (!isFirstSession && !effectiveName) {
         return toError({
           code: "NAME_REQUIRED",
           message: "A name is required when starting a second or later session.",
+        });
+      }
+
+      // Names must be alphanumeric (letters, digits, spaces only)
+      if (effectiveName && !/^[a-zA-Z0-9 ]+$/.test(effectiveName)) {
+        return toError({
+          code: "INVALID_NAME",
+          message: "Session names must be alphanumeric (letters, digits, spaces only).",
         });
       }
 

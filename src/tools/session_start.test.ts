@@ -593,6 +593,98 @@ describe("session_start tool", () => {
   });
 
   // =========================================================================
+  // Alphanumeric name validation (task 250)
+  // =========================================================================
+
+  it("rejects name with symbols → INVALID_NAME", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    const result = await call({ name: "Scout!" });
+    expect(isError(result)).toBe(true);
+    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects name with underscore → INVALID_NAME", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    const result = await call({ name: "Scout_2" });
+    expect(isError(result)).toBe(true);
+    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects name with emoji → INVALID_NAME", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    const result = await call({ name: "Scout🤖" });
+    expect(isError(result)).toBe(true);
+    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects name with non-Latin unicode → INVALID_NAME", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    const result = await call({ name: "スカウト" });
+    expect(isError(result)).toBe(true);
+    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("accepts alphanumeric name with spaces", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout Alpha", sessionsActive: 1 });
+    mocks.listSessions.mockReturnValue([]);
+    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
+    mocks.dequeue.mockResolvedValue([]);
+
+    const result = await call({ name: "Scout Alpha" });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout Alpha");
+  });
+
+  it("trims whitespace before validation — leading/trailing spaces are allowed", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout", sessionsActive: 1 });
+    mocks.listSessions.mockReturnValue([]);
+    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
+    mocks.dequeue.mockResolvedValue([]);
+
+    const result = await call({ name: "  Scout  " });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout");
+  });
+
+  it("whitespace-only name on first session → uses 'Primary' default", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Primary", sessionsActive: 1 });
+    mocks.listSessions.mockReturnValue([]);
+    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
+    mocks.dequeue.mockResolvedValue([]);
+
+    const result = await call({ name: "   " });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.createSession).toHaveBeenCalledWith("Primary");
+  });
+
+  it("alphanumeric name with digits is accepted", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout2", sessionsActive: 1 });
+    mocks.listSessions.mockReturnValue([]);
+    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
+    mocks.dequeue.mockResolvedValue([]);
+
+    const result = await call({ name: "Scout2" });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout2");
+  });
+
+  // =========================================================================
   // Auto-grant DM on approval (task 250)
   // =========================================================================
 
