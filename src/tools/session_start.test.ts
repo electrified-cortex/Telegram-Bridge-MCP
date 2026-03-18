@@ -629,12 +629,10 @@ describe("session_start tool", () => {
   });
 
   it("accepts alphanumeric name with spaces", async () => {
-    mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout Alpha", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
     mocks.sendMessage.mockResolvedValue(INTRO_MSG);
-    mocks.dequeue.mockResolvedValue([]);
 
     const result = await call({ name: "Scout Alpha" });
 
@@ -643,12 +641,10 @@ describe("session_start tool", () => {
   });
 
   it("trims whitespace before validation — leading/trailing spaces are allowed", async () => {
-    mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
     mocks.sendMessage.mockResolvedValue(INTRO_MSG);
-    mocks.dequeue.mockResolvedValue([]);
 
     const result = await call({ name: "  Scout  " });
 
@@ -657,12 +653,10 @@ describe("session_start tool", () => {
   });
 
   it("whitespace-only name on first session → uses 'Primary' default", async () => {
-    mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Primary", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
     mocks.sendMessage.mockResolvedValue(INTRO_MSG);
-    mocks.dequeue.mockResolvedValue([]);
 
     const result = await call({ name: "   " });
 
@@ -671,12 +665,10 @@ describe("session_start tool", () => {
   });
 
   it("alphanumeric name with digits is accepted", async () => {
-    mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout2", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
     mocks.sendMessage.mockResolvedValue(INTRO_MSG);
-    mocks.dequeue.mockResolvedValue([]);
 
     const result = await call({ name: "Scout2" });
 
