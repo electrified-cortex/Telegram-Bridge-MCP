@@ -31,9 +31,10 @@ Before issuing the actual shutdown, the Governor notifies all active worker sess
 1. Identify all active worker sessions (via `list_sessions` or known SIDs from session startup).
 2. Send each worker a DM via their session:
 
-   > "Heads up — we're shutting down shortly. Your session will be invalidated when the server restarts. **Do not start new work.** Finish your current tool call if safe, then wait. After the server comes back up (~60 seconds), your operator will re-engage you and you'll need to start a new session."
+   > "Heads up — we're shutting down shortly. Your session will be invalidated when the server restarts. **Do not start new work.** Finish your current tool call if safe, then end your agent turn and wait. After the server comes back up (~60 seconds), the operator will re-engage you and you'll need to start a new session via `session_start`."
 
-3. Allow a brief window (~15–30 s) for workers to reach a safe stopping point. Confirm with the operator if needed.
+3. Wait for each worker to acknowledge and confirm they have ended their turn (operator can visually confirm agents have stopped making tool calls).
+4. Confirm with the operator before proceeding to Phase 2.
 
 ### Phase 2 — Actual Shutdown
 
@@ -47,33 +48,64 @@ Before issuing the actual shutdown, the Governor notifies all active worker sess
 
 ---
 
+## How to Sleep (Concrete Mechanism)
+
+For an AI agent in VS Code Copilot, **"sleeping" means ending your agent turn**. You cannot pause mid-turn — the only real sleep state is yielding control back to the operator by making no further tool calls.
+
+The concrete steps:
+
+1. Send a final status message to the operator (or a DM to the governor) summarising where you stopped.
+2. Run a visible terminal command so the operator can see you have parked:
+   ```powershell
+   Write-Host "Session ended — awaiting operator restart and re-engagement."
+   ```
+3. **Stop making tool calls.** End your response. Do not call `dequeue_update` or any other MCP tool.
+4. Wait for the operator to re-engage you (new message, new conversation, or a re-engagement prompt).
+
+> This is the protocol equivalent of putting a sign on your desk that says "gone for restart — back shortly". The operator knows where you stopped, and they control when you resume.
+
+---
+
 ## What Workers Should Do
 
 ### On receiving the Governor's pre-warning (Phase 1)
 
-- Acknowledge: react with 👍 or send a brief text reply.
-- Do not start new tasks or long-running tool calls.
-- Finish any in-progress tool call if it can be completed quickly.
-- Enter a holding state — call `dequeue_update` with a short timeout (e.g. 60 s) and loop, watching for the system message.
+1. Acknowledge via DM or 👍 reaction — one brief message is enough.
+2. Do not start new tasks or long-running tool calls.
+3. Finish the current tool call only if it will complete in seconds.
+4. Run the "going to sleep" terminal command above.
+5. **End your agent turn.** Do not call `dequeue_update` again. You are now parked.
 
 ### On receiving the shutdown service message (Phase 2)
 
-When `dequeue_update` returns an event with `type: "service"` and `subtype: "shutdown"`:
+If you are still in the `dequeue_update` loop when shutdown fires, you will receive an event with `type: "service"` and `subtype: "shutdown"`:
 
-1. **Stop immediately** — do not call `dequeue_update` again on this session.
-2. Do not attempt to resume the dequeue loop. The session is about to be invalidated.
-3. Respond to the MCP caller with a clean summary of current state (so the operator knows where you stopped).
-4. Your MCP connection will close when the server exits. This is expected.
+1. Do not call `dequeue_update` again on this session.
+2. Send a brief final status message (if your MCP channel is still open).
+3. Run the "going to sleep" terminal command.
+4. **End your agent turn.** The MCP connection will close when the server exits — this is expected.
+
+### What the Governor must do after issuing shutdown
+
+The Governor is **also subject to this protocol.** After calling the `shutdown` MCP tool:
+
+1. Send one final operator message confirming shutdown was issued.
+2. Run the "going to sleep" terminal command.
+3. **End your agent turn immediately.** Do not make any further tool calls — not even `dequeue_update`.
+4. Wait for the operator to re-engage you after the server restarts.
 
 ### After the server restarts
 
-When the operator re-engages you (typically by sending a new message or pasting a re-engagement prompt):
+When the operator re-engages you (new message or re-engagement prompt):
 
-1. Call `session_start` to register a new session — your old SID is invalid.
-2. Resume from the last known task state (check your task file for context).
-3. Re-enter the `dequeue_update` loop as normal.
+1. Call `session_start` to register a new session. Your old SID is dead — do not reuse it.
+2. The new `session_start` response gives you a fresh `sid` and `pin`. Use these for all subsequent tool calls.
+3. Resume from the last known task state (check your task file or the terminal output left by the "going to sleep" command).
+4. Re-enter the `dequeue_update` loop as normal.
 
 > **Do not hardcode or remember old SIDs.** Always obtain a fresh SID from `session_start` after a restart.
+>
+> **Governor restarts first.** The Governor must establish its new session before signalling workers to reconnect, so it is ready to coordinate again.
 
 ---
 
