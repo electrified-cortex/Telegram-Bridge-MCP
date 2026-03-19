@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   isTtsEnabled: vi.fn((): boolean => true),
   stripForTts: vi.fn((t: string) => t),
   synthesizeToOgg: vi.fn(),
+  getTopic: vi.fn((): string | null => null),
   registerTool: vi.fn(),
 }));
 
@@ -39,6 +40,10 @@ vi.mock("../tts.js", () => ({
   isTtsEnabled: mocks.isTtsEnabled,
   stripForTts: mocks.stripForTts,
   synthesizeToOgg: mocks.synthesizeToOgg,
+}));
+
+vi.mock("../topic-state.js", () => ({
+  getTopic: () => mocks.getTopic(),
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -78,6 +83,7 @@ describe("send_text_as_voice", () => {
     mocks.showTyping.mockResolvedValue(undefined);
     mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
     mocks.sendVoiceDirect.mockResolvedValue({ message_id: 42 });
+    mocks.getTopic.mockReturnValue(null);
     setupHandler();
   });
 
@@ -168,6 +174,50 @@ describe("send_text_as_voice", () => {
     mocks.synthesizeToOgg.mockRejectedValue(new Error("network"));
     const result = await handler({ text: "hi", identity: [1, 123456] }) as { isError: boolean };
     expect(result.isError).toBe(true);
+  });
+
+  describe("topic formatting", () => {
+    it("boldens topic in caption with parse_mode Markdown when topic is set (no body)", async () => {
+      mocks.getTopic.mockReturnValue("my-topic");
+      await handler({ text: "Hello", identity: [1, 123456] });
+      expect(mocks.sendVoiceDirect).toHaveBeenCalledWith(
+        123,
+        expect.any(Buffer),
+        expect.objectContaining({
+          caption: "**[my-topic]**",
+          parse_mode: "Markdown",
+        }),
+      );
+    });
+
+    it("puts topic label on its own line before caption body", async () => {
+      mocks.getTopic.mockReturnValue("audit");
+      await handler({ text: "Hello", caption: "Some details here.", identity: [1, 123456] });
+      expect(mocks.sendVoiceDirect).toHaveBeenCalledWith(
+        123,
+        expect.any(Buffer),
+        expect.objectContaining({
+          caption: "**[audit]**\nSome details here.",
+          parse_mode: "Markdown",
+        }),
+      );
+    });
+
+    it("does not pass parse_mode when no topic is set", async () => {
+      mocks.getTopic.mockReturnValue(null);
+      await handler({ text: "Hello", caption: "plain cap", identity: [1, 123456] });
+      const callArgs = mocks.sendVoiceDirect.mock.calls[0][2] as Record<string, unknown>;
+      expect(callArgs.caption).toBe("plain cap");
+      expect(callArgs.parse_mode).toBeUndefined();
+    });
+
+    it("does not pass parse_mode when no topic and no caption", async () => {
+      mocks.getTopic.mockReturnValue(null);
+      await handler({ text: "Hello", identity: [1, 123456] });
+      const callArgs = mocks.sendVoiceDirect.mock.calls[0][2] as Record<string, unknown>;
+      expect(callArgs.caption).toBeUndefined();
+      expect(callArgs.parse_mode).toBeUndefined();
+    });
   });
 
 describe("identity gate", () => {

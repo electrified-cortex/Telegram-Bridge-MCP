@@ -80,9 +80,15 @@ export function register(server: McpServer) {
       const voiceChunks = splitMessage(plainText);
       try {
         const topic = getTopic();
-        const resolvedCaption = topic
-          ? caption ? `[${topic}] ${caption}` : `[${topic}]`
-          : caption ?? undefined;
+        let resolvedCaption: string | undefined;
+        let captionNeedsMarkdown = false;
+        if (topic) {
+          captionNeedsMarkdown = true;
+          const topicLabel = `**[${topic}]**`;
+          resolvedCaption = caption ? `${topicLabel}\n${caption}` : topicLabel;
+        } else {
+          resolvedCaption = caption ?? undefined;
+        }
         // Voice resolution: explicit param > config default > env/provider
         const resolvedVoice =
           voice ?? getDefaultVoice() ?? undefined;
@@ -94,6 +100,7 @@ export function register(server: McpServer) {
           const isFirst = i === 0;
           const msg = await sendVoiceDirect(chatId, ogg, {
             caption: isFirst ? resolvedCaption : undefined,
+            ...(captionNeedsMarkdown ? { parse_mode: "Markdown" as const } : {}),
             disable_notification,
             reply_to_message_id: isFirst ? reply_to_message_id : undefined,
             reply_markup: isFirst ? reply_markup : undefined,
