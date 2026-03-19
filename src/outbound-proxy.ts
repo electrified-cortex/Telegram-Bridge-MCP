@@ -28,7 +28,7 @@ import { escapeHtml, escapeV2 } from "./markdown.js";
  * and the current session has a name, otherwise returns `""` or `"🤖 Session {sid}\n"`.
  * Uses parse-mode specific formatting for the name portion.
  */
-function buildHeader(parseMode?: string): { plain: string; formatted: string } {
+export function buildHeader(parseMode?: string): { plain: string; formatted: string } {
   if (activeSessionCount() < 2) return { plain: "", formatted: "" };
   const sid = getCallerSid();
   const session = sid > 0 ? getSession(sid) : undefined;

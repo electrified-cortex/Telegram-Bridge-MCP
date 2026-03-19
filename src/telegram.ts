@@ -552,8 +552,26 @@ export async function sendVoiceDirect(
     form.append("voice", voice);
   }
 
-  if (options.caption) form.append("caption", options.caption);
-  if (options.parse_mode) form.append("parse_mode", options.parse_mode);
+  // Inject session header into caption (multi-session name tag)
+  const { notifyBeforeFileSend, notifyAfterFileSend, buildHeader } = await import("./outbound-proxy.js");
+  const { plain: captionHeader, formatted: captionHeaderFmt } = buildHeader(options.parse_mode);
+  let finalCaption = options.caption;
+  let finalParseMode = options.parse_mode;
+  if (captionHeaderFmt) {
+    // Prepend name tag; if no caption existed, use the header alone (trim trailing \n)
+    if (finalCaption) {
+      finalCaption = captionHeaderFmt + finalCaption;
+    } else {
+      finalCaption = captionHeaderFmt.trimEnd();
+    }
+    // Auto-inject Markdown parse_mode for backtick rendering
+    if (!finalParseMode) {
+      finalParseMode = "Markdown";
+    }
+  }
+
+  if (finalCaption) form.append("caption", finalCaption);
+  if (finalParseMode) form.append("parse_mode", finalParseMode);
   if (options.duration != null) form.append("duration", String(options.duration));
   if (options.disable_notification) form.append("disable_notification", "true");
   if (options.reply_to_message_id != null)
@@ -562,7 +580,6 @@ export async function sendVoiceDirect(
     form.append("reply_markup", JSON.stringify(options.reply_markup));
 
   // Hook into the outbound proxy so animation/typing/temp/recording are handled
-  const { notifyBeforeFileSend, notifyAfterFileSend } = await import("./outbound-proxy.js");
   await notifyBeforeFileSend();
 
   const res = await fetch(`https://api.telegram.org/bot${token}/sendVoice`, {
@@ -588,7 +605,10 @@ export async function sendVoiceDirect(
     );
   }
 
-  await notifyAfterFileSend(json.result.message_id, "voice", undefined, options.caption);
+  const recordCaption = captionHeader && options.caption
+    ? captionHeader + options.caption
+    : options.caption;
+  await notifyAfterFileSend(json.result.message_id, "voice", undefined, recordCaption);
   return json.result;
 }
 
