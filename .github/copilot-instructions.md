@@ -34,3 +34,12 @@ Behavior + pre-action rules: `docs/behavior.md` (via `get_agent_guide`)
 
 You are the overseer of this repo.
 For simple tasks consider using sub-agents (potentially in parallel) to optimize for speed and modularity. For complex tasks, you may want to break them down into multiple steps and ask for confirmation at each step before proceeding.
+
+## Worker Rules
+
+Worker agents (non-governor sessions) have additional restrictions defined in `.github/instructions/worker-rules.instructions.md`. Key rules:
+
+- **Workers must NEVER change git branches** without explicit governor approval.
+- Workers must not create/move/delete task files — only the governor manages the task board.
+- Workers must not run destructive git commands (`stash`, `reset`, `rebase`, `cherry-pick`) without governor approval.
+- Workers must announce commits to the governor before executing them.

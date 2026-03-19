@@ -226,7 +226,7 @@ async function synthesizeHttpToOgg(
   }
   const { default: decode } = await import("audio-decode") as { default: (buf: Buffer) => Promise<DecodedAudio> };
   const decoded = await decode(audio);
-  const channelData = decoded.channelData[0]!;
+  const channelData = decoded.channelData[0];
   const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
   return pcmToOggOpus(channelData, decoded.sampleRate);
 }

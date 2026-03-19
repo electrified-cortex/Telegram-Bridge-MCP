@@ -14,7 +14,7 @@
 
 import { createRequire } from "module";
 import type { Update } from "grammy/types";
-import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
+import { getApi, resolveChat } from "./telegram.js";
 import { elegantShutdown, setShutdownDumpHook } from "./shutdown.js";
 
 import { getSessionLogMode, setSessionLogMode, sessionLogLabel } from "./config.js";

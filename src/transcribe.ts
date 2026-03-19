@@ -72,7 +72,7 @@ async function decodeAudioToFloat32(audioBytes: Buffer): Promise<Float32Array> {
   const audioBuffer = await decode(audioBytes);
 
   // Take the first channel
-  const channelData = audioBuffer.channelData[0]!
+  const channelData = audioBuffer.channelData[0]
 
   // Resample to 16 kHz if needed
   if (audioBuffer.sampleRate === SAMPLE_RATE) {
