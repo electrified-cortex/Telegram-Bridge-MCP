@@ -20,7 +20,7 @@ import {
   getUnhealthySessions,
 } from "./session-manager.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
-import { deliverDirectMessage } from "./session-queue.js";
+import { deliverDirectMessage, deliverServiceMessage } from "./session-queue.js";
 import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
 import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
@@ -118,6 +118,17 @@ async function sendGovernorPrompt(
       targetSid,
       `↑ You are now the primary session. Ambiguous messages will be routed to you.`,
     );
+
+    // Notify all other active sessions that the governor has changed
+    for (const s of listSessions()) {
+      if (s.sid === targetSid) continue; // already notified via DM above
+      deliverServiceMessage(
+        s.sid,
+        `Governor switched: '${targetName}' (SID ${targetSid}) is now the primary session.`,
+        "governor_changed",
+        { new_governor_sid: targetSid, new_governor_name: targetName },
+      );
+    }
 
     const verb = data.startsWith(CB_MAKE_PRIMARY) ? "primary session" : "rerouted to";
     void getApi().editMessageText(

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getGovernorSid: vi.fn(() => 0),
   setGovernorSid: vi.fn(),
   deliverDirectMessage: vi.fn(() => true),
+  deliverServiceMessage: vi.fn(() => true),
   sendServiceMessage: vi.fn().mockResolvedValue(undefined),
   resolveChat: vi.fn(() => 12345 as number | { code: string; message: string }),
   getApi: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("./routing-mode.js", () => ({
 
 vi.mock("./session-queue.js", () => ({
   deliverDirectMessage: mocks.deliverDirectMessage,
+  deliverServiceMessage: mocks.deliverServiceMessage,
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
@@ -96,6 +98,7 @@ describe("health-check", () => {
     mocks.answerCallbackQuery.mockResolvedValue(undefined);
     mocks.sendServiceMessage.mockResolvedValue(undefined);
     mocks.deliverDirectMessage.mockReturnValue(true);
+    mocks.deliverServiceMessage.mockReturnValue(true);
     mocks.getGovernorSid.mockReturnValue(0);
     mocks.getUnhealthySessions.mockReturnValue([]);
     mocks.listSessions.mockReturnValue([]);
@@ -287,6 +290,71 @@ describe("health-check", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         12345, 999, expect.stringContaining("Waiting"), expect.anything(),
       );
+    });
+  });
+
+  describe("operator response — governor_changed notifications", () => {
+    it("delivers governor_changed service message to all non-target sessions on reroute", async () => {
+      const gov = makeSession(1, "Primary");
+      const worker2 = makeSession(2, "Worker2");
+      const worker3 = makeSession(3, "Worker3");
+      mocks.getUnhealthySessions.mockReturnValue([gov]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.listSessions.mockReturnValue([gov, worker2, worker3]);
+      mocks.getSession.mockReturnValue(worker2);
+      await _runHealthCheckNow();
+      pressButton("hc_reroute_now:2");
+      // worker3 (sid 3) should receive governor_changed; worker2 (sid 2) should not
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        3,
+        expect.stringContaining("Governor switched"),
+        "governor_changed",
+        { new_governor_sid: 2, new_governor_name: "Worker2" },
+      );
+    });
+
+    it("does not deliver governor_changed to the new governor itself", async () => {
+      const gov = makeSession(1, "Primary");
+      const worker2 = makeSession(2, "Worker2");
+      mocks.getUnhealthySessions.mockReturnValue([gov]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.listSessions.mockReturnValue([gov, worker2]);
+      mocks.getSession.mockReturnValue(worker2);
+      await _runHealthCheckNow();
+      pressButton("hc_reroute_now:2");
+      // deliverServiceMessage should NOT have been called with sid 2 (the new governor)
+      const calls = mocks.deliverServiceMessage.mock.calls as unknown as [number, ...unknown[]][];
+      const calledForTarget = calls.some(([sid]) => sid === 2);
+      expect(calledForTarget).toBe(false);
+    });
+
+    it("delivers governor_changed on make-primary path too", async () => {
+      const gov = makeSession(1, "Primary");
+      const worker2 = makeSession(2, "Worker2");
+      const worker3 = makeSession(3, "Worker3");
+      mocks.getUnhealthySessions.mockReturnValue([gov]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.listSessions.mockReturnValue([gov, worker2, worker3]);
+      mocks.getSession.mockReturnValue(worker2);
+      await _runHealthCheckNow();
+      pressButton("hc_make_primary:2");
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        3,
+        expect.stringContaining("Governor switched"),
+        "governor_changed",
+        { new_governor_sid: 2, new_governor_name: "Worker2" },
+      );
+    });
+
+    it("does not deliver governor_changed when operator chooses wait", async () => {
+      const gov = makeSession(1, "Primary");
+      const worker2 = makeSession(2, "Worker2");
+      mocks.getUnhealthySessions.mockReturnValue([gov]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.listSessions.mockReturnValue([gov, worker2]);
+      await _runHealthCheckNow();
+      pressButton("hc_wait");
+      expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
     });
   });
 

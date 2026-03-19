@@ -189,15 +189,17 @@ The server injects service messages for lifecycle events. These have
 | `session_joined` | All existing sessions | A new session joined |
 | `session_orientation` | New session | Your role, governor SID, fellow sessions |
 | `session_closed` | Remaining sessions | A session disconnected |
-| `governor_promoted` | New governor | You are now the governor |
+| `governor_promoted` | New governor | You are now the governor (via `close_session` path) |
+| `governor_changed` | All non-governor sessions | The governor was switched via the health-check reroute panel; `details` contains `new_governor_sid` and `new_governor_name` |
 | `voice_transcription_failed` | Governor (or all sessions if no governor) | A voice message could not be transcribed; `details` contains `message_id`, `reason` (`service_timeout` or `service_error`), and human-readable `details` |
 
 React to these events to keep your internal state synchronized:
 
 - On `session_joined`: update your mental model of active sessions.
 - On `session_closed`: note the disconnection; if you're a worker whose governor
-  left, wait for `governor_promoted` or check `fellow_sessions` on next poll.
+  left, wait for `governor_promoted` or `governor_changed`, or check `fellow_sessions` on next poll.
 - On `governor_promoted`: switch roles, update topic, prepare to triage messages.
+- On `governor_changed`: update your internal record of the governor SID; route future DMs and ambiguous-message escalations to the new governor.
 
 ---
 
