@@ -46,8 +46,11 @@ Investigate why the error persists after the source fix. Ensure end-to-end valid
 
 - [ ] `dist/` is confirmed rebuilt and matches source (`z.array`, no `z.tuple`)
 - [ ] VS Code MCP server restart confirmed (kill process, not just reload)
-- [ ] A local validation script or test verifies the **actual JSON Schema output** for every registered tool — not just `IDENTITY_SCHEMA` in isolation, but the full tool schema as the MCP SDK would emit it
-- [ ] No tool schema contains `prefixItems` or array-form `items`
+- [ ] A **regression test** iterates every registered tool's input schema (all 37+ tools), recursively walks the JSON Schema tree, and asserts:
+  - No property anywhere contains `prefixItems`
+  - `items` is always an object or boolean, never an array
+  - This catches any future `z.tuple()` introduction in any tool
+- [ ] The test uses the actual tool definitions from `server.ts` (or the tool registration list), not just `IDENTITY_SCHEMA` in isolation
 - [ ] Verification passes against both `draft-2020-12` and `openapi` targets
 - [ ] Document the rebuild + restart requirement in the task completion notes
 - [ ] All tests pass
