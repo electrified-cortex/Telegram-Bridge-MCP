@@ -64,6 +64,9 @@ export function createServer(): McpServer {
   const _origRegisterTool = server.registerTool.bind(server);
   type AnyConfig = Parameters<typeof _origRegisterTool>[1];
   type AnyCallback = Parameters<typeof _origRegisterTool>[2];
+  // `any[]` is intentional: this wrapper must accept any tool callback signature
+  // without knowing the parameter types at compile time. The real type safety
+  // lives in individual tool registrations via their Zod inputSchema.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type CallableCb = (...a: any[]) => unknown;
   server.registerTool = ((

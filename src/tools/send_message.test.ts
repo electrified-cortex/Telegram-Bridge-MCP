@@ -39,7 +39,6 @@ describe("send_message tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
-    mocks.validateSession.mockReturnValue(true);
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     const server = createMockServer();
     register(server);

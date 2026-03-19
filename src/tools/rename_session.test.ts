@@ -130,7 +130,7 @@ describe("rename_session tool", () => {
   // Collision guard
   // =========================================================================
 
-  it("rejects rename when new name is taken by another session → NAME_TAKEN", async () => {
+  it("rejects rename when new name is taken by another session → NAME_CONFLICT", async () => {
     mocks.listSessions.mockReturnValue([
       { sid: 1, name: "Primary" },
       { sid: 2, name: "Scout" },
@@ -139,7 +139,7 @@ describe("rename_session tool", () => {
     const result = await call({ identity: [1, 111111], new_name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_TAKEN");
+    expect(JSON.stringify(result)).toContain("NAME_CONFLICT");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -152,7 +152,7 @@ describe("rename_session tool", () => {
     const result = await call({ identity: [1, 111111], new_name: "SCOUT" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_TAKEN");
+    expect(JSON.stringify(result)).toContain("NAME_CONFLICT");
   });
 
   it("does not collide with own SID (rename to same name)", async () => {

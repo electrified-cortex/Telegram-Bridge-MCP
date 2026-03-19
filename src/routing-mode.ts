@@ -1,11 +1,11 @@
 /**
  * Routing state for multi-session ambiguous message dispatch.
  *
- * The only supported routing model is governor: one designated session
- * classifies all incoming ambiguous messages and routes them via
- * route_message. Targeted messages (reply-to / callbacks / reactions
- * traceable to a specific session) are always delivered directly to
- * that session without consulting the governor.
+ * Three routing models: broadcast (all sessions), governor (one designated
+ * session handles ambiguous messages and delegates via route_message), and
+ * pass-through (single active session, no routing logic). Targeted messages
+ * (reply-to / callbacks / reactions traceable to a specific session) are
+ * always delivered directly to that session without consulting the governor.
  *
  * Governor state is set automatically when a second session joins.
  * Stored in-memory only; resets on MCP restart.

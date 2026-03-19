@@ -8,7 +8,7 @@ This document describes the out-of-box experience for multi-session Telegram Bri
 2. Auto-approved (first session, no gate)
 3. SID 1 returned. PIN returned.
 4. No name tags. No routing logic. Everything works like v3.x.
-5. Tools accept optional `sid`/`pin` but never require them.
+5. All tools require `identity: [sid, pin]` credentials on every call.
 
 ## Second Session Joins
 

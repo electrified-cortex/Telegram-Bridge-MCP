@@ -69,6 +69,6 @@ PR body references the old directional DM permission model. Update to match curr
 - [ ] Duplicate mock line removed from `send_message.test.ts`
 - [ ] `multi-session-flow.md` credentials claim corrected
 - [ ] PR #40 description updated on GitHub
-- [ ] Reply to all related Copilot comments on GitHub PR
+- [ ] ~~Reply to all related Copilot comments on GitHub PR~~ **→ DRAFT: no list of which specific comments; needs enumeration before implementation**
 - [ ] Build passes, lint clean, all tests pass
 - [ ] `changelog/unreleased.md` updated

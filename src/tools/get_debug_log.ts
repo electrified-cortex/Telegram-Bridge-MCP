@@ -1,11 +1,11 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toResult, toError } from "../telegram.js";
 import { getDebugLog, debugLogSize, isDebugEnabled, setDebugEnabled, type DebugCategory } from "../debug-log.js";
 import { requireAuth } from "../session-gate.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
-const CATEGORIES: DebugCategory[] = ["session", "route", "queue", "cascade", "dm", "animation", "tool", "health"];
+const CATEGORIES = ["session", "route", "queue", "cascade", "dm", "animation", "tool", "health"] as const satisfies [string, ...string[]];
 
 const DESCRIPTION =
   "Read the server's debug trace log. Returns recent entries from the in-memory " +
@@ -23,7 +23,7 @@ export function register(server: McpServer) {
       inputSchema: {
         count: z.number().int().min(1).max(500).optional()
           .describe("Max entries to return (default 50, most recent first)"),
-        category: z.enum(CATEGORIES as unknown as [string, ...string[]]).optional()
+        category: z.enum(CATEGORIES).optional()
           .describe("Filter to a single category"),
         since: z.number().int().min(0).optional()
           .describe("Only return entries with id > since (cursor-based pagination)"),

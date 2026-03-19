@@ -36,7 +36,8 @@ export function register(server: McpServer) {
         });
       }
 
-      if (!/^[a-zA-Z0-9 ]+$/.test(trimmed)) {
+      const VALID_NAME_RE = /^[a-zA-Z0-9 ]+$/;
+      if (!VALID_NAME_RE.test(trimmed)) {
         return toError({
           code: "INVALID_NAME",
           message: "Session names must be alphanumeric (letters, digits, spaces only).",
@@ -49,7 +50,7 @@ export function register(server: McpServer) {
       );
       if (collision) {
         return toError({
-          code: "NAME_TAKEN",
+          code: "NAME_CONFLICT",
           message:
             `A session named "${collision.name}" already exists (SID ${collision.sid}). ` +
             `Choose a different name.`,
