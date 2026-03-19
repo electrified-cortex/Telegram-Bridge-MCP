@@ -24,16 +24,29 @@ The same caption string is then passed to `sendVoiceDirect`, which prepends the 
 
 ## Expected Format
 
-When both name tag (multi-session) and topic are set, a voice caption should appear as:
+The desired layout for voice captions (and consistently for ALL messages) is:
 
 ```
 🟦 🤖 `Overseer`
-**[format audit]** A brief spoken summary of what this voice note contains.
+**[format audit]**
+A brief spoken summary of what this voice note contains.
 ```
 
-Single session (no name tag) with topic:
+Each element on its own line:
+1. **Name tag line** — `🟦 🤖 \`Overseer\`` (already working via `buildHeader()`)
+2. **Topic line** — `**[topic]**` — bold, brackets, its own line
+3. **Caption body** — free text, after the topic
+
+Single session (no name tag) with topic and caption:
 ```
-**[format audit]** Caption text.
+**[format audit]**
+Caption text.
+```
+
+Topic only (no caption body):
+```
+🟦 🤖 `Overseer`
+**[format audit]**
 ```
 
 ## Fix
@@ -53,6 +66,7 @@ let captionNeedsMarkdown = false;
 if (topic) {
   captionNeedsMarkdown = true;
   const topicLabel = `**[${topic}]**`;
+  // Topic on its own line; caption body after (if present)
   resolvedCaption = caption ? `${topicLabel}\n${caption}` : topicLabel;
 } else {
   resolvedCaption = caption ?? undefined;
