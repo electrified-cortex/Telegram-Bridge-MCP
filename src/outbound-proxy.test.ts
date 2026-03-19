@@ -473,6 +473,21 @@ describe("outbound-proxy", () => {
       expect(sentText).toMatch(/🤖 `Scout\\_2`\n/);
     });
 
+    it("uses HTML code tags in name when parse_mode is HTML (sendMessage)", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(2);
+      mocks.getSession.mockReturnValue({ name: "Scout<2>" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).sendMessage(
+        42, "content", { parse_mode: "HTML" },
+      );
+
+      const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
+      expect(sentText).toBe("🤖 <code>Scout&lt;2&gt;</code>\ncontent");
+    });
+
     it("prepends header to _rawText in multi-session mode", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getCallerSid.mockReturnValue(1);
@@ -544,6 +559,21 @@ describe("outbound-proxy", () => {
 
       const [, , editedText] = raw.editMessageText.mock.calls[0] as [number, number, string];
       expect(editedText).toBe("🤖 `Scout`\nedited content");
+    });
+
+    it("uses HTML code tags in editMessageText when parse_mode is HTML", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Scout" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).editMessageText(
+        42, 10, "edited content", { parse_mode: "HTML" },
+      );
+
+      const [, , editedText] = raw.editMessageText.mock.calls[0] as [number, number, string];
+      expect(editedText).toBe("🤖 <code>Scout</code>\nedited content");
     });
 
     it("omits header in editMessageText in single-session mode", async () => {

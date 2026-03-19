@@ -17,7 +17,7 @@ import { recordOutgoing } from "./message-store.js";
 import { fireTempReactionRestore } from "./temp-reaction.js";
 import { getCallerSid } from "./session-context.js";
 import { activeSessionCount, getSession } from "./session-manager.js";
-import { escapeV2 } from "./markdown.js";
+import { escapeHtml, escapeV2 } from "./markdown.js";
 
 // ---------------------------------------------------------------------------
 // Session header injection
@@ -26,18 +26,25 @@ import { escapeV2 } from "./markdown.js";
 /**
  * Returns the `🤖 {name}\n` header when 2+ sessions are active
  * and the current session has a name, otherwise returns `""` or `"🤖 Session {sid}\n"`.
- * Pass `escape: true` to MarkdownV2-escape the name portion.
+ * Uses parse-mode specific formatting for the name portion.
  */
-function buildHeader(escape: boolean): { plain: string; formatted: string } {
+function buildHeader(parseMode?: string): { plain: string; formatted: string } {
   if (activeSessionCount() < 2) return { plain: "", formatted: "" };
   const sid = getCallerSid();
   const session = sid > 0 ? getSession(sid) : undefined;
   const name = session?.name || (sid > 0 ? `Session ${sid}` : "");
   if (!name) return { plain: "", formatted: "" };
   const colorPrefix = session?.color ? `${session.color} ` : "";
-  const formatted = escape
-    ? `${colorPrefix}🤖 \`${escapeV2(name)}\`\n`
-    : `${colorPrefix}🤖 \`${name}\`\n`;
+
+  let formatted: string;
+  if (parseMode === "MarkdownV2") {
+    formatted = `${colorPrefix}🤖 \`${escapeV2(name)}\`\n`;
+  } else if (parseMode === "HTML") {
+    formatted = `${colorPrefix}🤖 <code>${escapeHtml(name)}</code>\n`;
+  } else {
+    formatted = `${colorPrefix}🤖 \`${name}\`\n`;
+  }
+
   return { plain: `${colorPrefix}🤖 \`${name}\`\n`, formatted };
 }
 
@@ -191,8 +198,8 @@ export function createOutboundProxy(realApi: Api): Api {
           if (cleanOpts) delete cleanOpts._rawText;
 
           // Session header — prepend "🤖 Name\n" in multi-session mode
-          const isMarkdownV2 = cleanOpts?.parse_mode === "MarkdownV2";
-          const { plain: headerPlain, formatted: headerFormatted } = buildHeader(isMarkdownV2);
+          const parseMode = cleanOpts?.parse_mode as string | undefined;
+          const { plain: headerPlain, formatted: headerFormatted } = buildHeader(parseMode);
           const finalText = headerFormatted ? headerFormatted + text : text;
           const finalRawText = rawText !== undefined
             ? (headerPlain ? headerPlain + rawText : rawText)
@@ -246,7 +253,8 @@ export function createOutboundProxy(realApi: Api): Api {
           try {
             // Inject session header into caption if multi-session active
             const optsArg = args[2] as Record<string, unknown> | undefined;
-            const { plain: captionHeader } = buildHeader(false);
+            const parseMode = optsArg?.parse_mode as string | undefined;
+            const { plain: captionHeader } = buildHeader(parseMode);
             if (captionHeader && optsArg?.caption) {
               (args[2] as Record<string, unknown>).caption =
                 captionHeader + (optsArg.caption as string);
@@ -284,8 +292,8 @@ export function createOutboundProxy(realApi: Api): Api {
           // Inject session header into edit text if multi-session active
           // args: (chatId, messageId, text, opts?)
           const editOpts = args[3] as Record<string, unknown> | undefined;
-          const isMarkdownV2Edit = editOpts?.parse_mode === "MarkdownV2";
-          const { formatted: editHeader } = buildHeader(isMarkdownV2Edit);
+          const parseMode = editOpts?.parse_mode as string | undefined;
+          const { formatted: editHeader } = buildHeader(parseMode);
           if (editHeader) {
             args[2] = editHeader + (args[2] as string);
           }
