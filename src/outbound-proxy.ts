@@ -42,10 +42,11 @@ function buildHeader(parseMode?: string): { plain: string; formatted: string } {
     formatted = `${colorPrefix}🤖 \`${escapeV2(name)}\`\n`;
   } else if (parseMode === "HTML") {
     formatted = `${colorPrefix}🤖 <code>${escapeHtml(name)}</code>\n`;
-  } else if (parseMode === "Markdown") {
-    formatted = `${colorPrefix}🤖 \`${name}\`\n`;
   } else {
-    formatted = plain;
+    // Markdown (legacy) or no parse_mode — use backtick formatting.
+    // The caller is responsible for setting parse_mode: "Markdown" when
+    // no parse_mode was originally provided (see sendMessage proxy).
+    formatted = `${colorPrefix}🤖 \`${name}\`\n`;
   }
 
   return { plain, formatted };
@@ -201,9 +202,16 @@ export function createOutboundProxy(realApi: Api): Api {
           if (cleanOpts) delete cleanOpts._rawText;
 
           // Session header — prepend "🤖 Name\n" in multi-session mode
-          const parseMode = cleanOpts?.parse_mode as string | undefined;
+          let parseMode = cleanOpts?.parse_mode as string | undefined;
           const { plain: headerPlain, formatted: headerFormatted } = buildHeader(parseMode);
           const finalText = headerFormatted ? headerFormatted + text : text;
+
+          // Auto-inject parse_mode so the backtick name tag renders
+          let finalOpts = cleanOpts;
+          if (headerFormatted && !parseMode) {
+            finalOpts = { ...cleanOpts, parse_mode: "Markdown" };
+            parseMode = "Markdown";
+          }
           const finalRawText = rawText !== undefined
             ? (headerPlain ? headerPlain + rawText : rawText)
             : undefined;
@@ -213,14 +221,14 @@ export function createOutboundProxy(realApi: Api): Api {
           const activeInterceptor = callSid > 0 ? _interceptors.get(callSid) : undefined;
           if (activeInterceptor) {
             const savedInterceptor = activeInterceptor;
-            const result = await activeInterceptor.beforeTextSend(chatId, finalText, cleanOpts ?? {});
+            const result = await activeInterceptor.beforeTextSend(chatId, finalText, finalOpts ?? {});
             if (result.intercepted) {
               cancelTypingIfSameGeneration(gen);
               recordOutgoing(result.message_id, "text", finalRawText ?? finalText);
               return { message_id: result.message_id };
             }
             // Not intercepted — send normally, then let animation restart below
-            const msg = await fn(chatId, finalText, cleanOpts);
+            const msg = await fn(chatId, finalText, finalOpts);
             cancelTypingIfSameGeneration(gen);
             recordOutgoing(msg.message_id, "text", finalRawText ?? finalText);
             if (savedInterceptor.afterTextSend) {
@@ -230,7 +238,7 @@ export function createOutboundProxy(realApi: Api): Api {
           }
 
           // Normal send
-          const msg = await fn(chatId, finalText, cleanOpts);
+          const msg = await fn(chatId, finalText, finalOpts);
           cancelTypingIfSameGeneration(gen);
           recordOutgoing(msg.message_id, "text", finalRawText ?? finalText);
           return msg;
@@ -295,10 +303,15 @@ export function createOutboundProxy(realApi: Api): Api {
           // Inject session header into edit text if multi-session active
           // args: (chatId, messageId, text, opts?)
           const editOpts = args[3] as Record<string, unknown> | undefined;
-          const parseMode = editOpts?.parse_mode as string | undefined;
-          const { formatted: editHeader } = buildHeader(parseMode);
+          let editParseMode = editOpts?.parse_mode as string | undefined;
+          const { formatted: editHeader } = buildHeader(editParseMode);
           if (editHeader) {
             args[2] = editHeader + (args[2] as string);
+            // Auto-inject parse_mode so the backtick name tag renders
+            if (!editParseMode) {
+              args[3] = { ...editOpts, parse_mode: "Markdown" };
+              editParseMode = "Markdown";
+            }
           }
 
           const result = await fn(...args);
