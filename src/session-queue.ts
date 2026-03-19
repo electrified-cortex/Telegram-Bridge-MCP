@@ -149,7 +149,7 @@ export function getMessageOwner(messageId: number): number {
  * The global queue in message-store is NOT touched here — it's
  * populated by recordInbound as before. This is additive.
  */
-export function routeToSession(event: TimelineEvent, _lane?: "response" | "message"): void {
+export function routeToSession(event: TimelineEvent): void {
   if (_queues.size === 0) return;
 
   const targetSid = resolveTargetSession(event);

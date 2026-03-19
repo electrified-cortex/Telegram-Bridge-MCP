@@ -109,7 +109,7 @@ export function register(server: McpServer) {
       // Reroute orphaned queue items to remaining sessions
       if (orphaned.length > 0 && remaining.length > 0) {
         for (const event of orphaned) {
-          routeToSession(event, event.event === "callback" ? "response" : "message");
+          routeToSession(event);
         }
         dlogOrphans(sid, orphaned.length);
       }

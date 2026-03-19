@@ -127,7 +127,7 @@ describe("session-queue", () => {
       createSessionQueue(1);
       createSessionQueue(2);
       trackMessageOwner(50, 1);
-      routeToSession(replyEvent(50), "message");
+      routeToSession(replyEvent(50));
       expect(getSessionQueue(1)?.pendingCount()).toBe(1);
       expect(getSessionQueue(2)?.pendingCount()).toBe(0);
     });
@@ -136,7 +136,7 @@ describe("session-queue", () => {
       createSessionQueue(1);
       createSessionQueue(2);
       trackMessageOwner(60, 2);
-      routeToSession(callbackEvent(60), "response");
+      routeToSession(callbackEvent(60));
       expect(getSessionQueue(1)?.pendingCount()).toBe(0);
       expect(getSessionQueue(2)?.pendingCount()).toBe(1);
     });
@@ -145,7 +145,7 @@ describe("session-queue", () => {
       createSessionQueue(1);
       createSessionQueue(2);
       trackMessageOwner(70, 1);
-      routeToSession(reactionEvent(70), "response");
+      routeToSession(reactionEvent(70));
       expect(getSessionQueue(1)?.pendingCount()).toBe(1);
       expect(getSessionQueue(2)?.pendingCount()).toBe(0);
     });
@@ -153,7 +153,7 @@ describe("session-queue", () => {
     it("drops targeted event when owner has no queue", () => {
       createSessionQueue(1);
       trackMessageOwner(80, 3); // session 3 has no queue
-      routeToSession(replyEvent(80), "message");
+      routeToSession(replyEvent(80));
       expect(getSessionQueue(1)?.pendingCount()).toBe(0);
     });
   });
@@ -166,26 +166,26 @@ describe("session-queue", () => {
     it("broadcasts to all sessions when no governor is set", () => {
       createSessionQueue(1);
       createSessionQueue(2);
-      routeToSession(makeEvent(), "message");
+      routeToSession(makeEvent());
       expect(getSessionQueue(1)?.pendingCount()).toBe(1);
       expect(getSessionQueue(2)?.pendingCount()).toBe(1);
     });
 
     it("routes to the only session when no governor is set", () => {
       createSessionQueue(1);
-      routeToSession(makeEvent({ id: 10 }), "message");
+      routeToSession(makeEvent({ id: 10 }));
       expect(getSessionQueue(1)?.pendingCount()).toBe(1);
     });
 
     it("no-ops when no session queues exist", () => {
-      routeToSession(makeEvent(), "message");
+      routeToSession(makeEvent());
     });
 
     it("routes to the governor session", () => {
       setGovernorSid(2);
       createSessionQueue(1);
       createSessionQueue(2);
-      routeToSession(makeEvent(), "message");
+      routeToSession(makeEvent());
       expect(getSessionQueue(1)?.pendingCount()).toBe(0);
       expect(getSessionQueue(2)?.pendingCount()).toBe(1);
     });
@@ -194,7 +194,7 @@ describe("session-queue", () => {
       setGovernorSid(99);
       createSessionQueue(1);
       createSessionQueue(2);
-      routeToSession(makeEvent(), "message");
+      routeToSession(makeEvent());
       // Fallback: broadcast to all
       expect(getSessionQueue(1)?.pendingCount()).toBe(1);
       expect(getSessionQueue(2)?.pendingCount()).toBe(1);
@@ -208,7 +208,7 @@ describe("session-queue", () => {
   describe("session queue dequeue", () => {
     it("dequeues events from session queue", () => {
       createSessionQueue(1);
-      routeToSession(makeEvent({ id: 10 }), "message");
+      routeToSession(makeEvent({ id: 10 }));
       const q = getSessionQueue(1);
       const evt = q?.dequeue();
       expect(evt?.id).toBe(10);
@@ -216,10 +216,10 @@ describe("session-queue", () => {
 
     it("dequeueBatch drains response + 1 message", () => {
       createSessionQueue(1);
-      routeToSession(callbackEvent(0, 10), "response");
-      routeToSession(callbackEvent(0, 11), "response");
-      routeToSession(makeEvent({ id: 20 }), "message");
-      routeToSession(makeEvent({ id: 21 }), "message");
+      routeToSession(callbackEvent(0, 10));
+      routeToSession(callbackEvent(0, 11));
+      routeToSession(makeEvent({ id: 20 }));
+      routeToSession(makeEvent({ id: 21 }));
       const q = getSessionQueue(1);
       const batch = q?.dequeueBatch() ?? [];
       expect(batch).toHaveLength(3);
@@ -228,7 +228,7 @@ describe("session-queue", () => {
 
     it("tracks consumed IDs", () => {
       createSessionQueue(1);
-      routeToSession(makeEvent({ id: 42 }), "message");
+      routeToSession(makeEvent({ id: 42 }));
       const q = getSessionQueue(1);
       q?.dequeue();
       expect(q?.isConsumed(42)).toBe(true);

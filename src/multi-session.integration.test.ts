@@ -182,7 +182,7 @@ describe("multi-session integration", () => {
       const s3 = setupSession("C");
 
       const event = makeEvent();
-      routeToSession(event, "message");
+      routeToSession(event);
 
       // All sessions receive the broadcast
       expect(drain(s1.sid)).toEqual([event]);
@@ -194,14 +194,14 @@ describe("multi-session integration", () => {
       const s1 = setupSession("Solo");
 
       const event = makeEvent();
-      routeToSession(event, "message");
+      routeToSession(event);
 
       expect(drain(s1.sid)).toEqual([event]);
     });
 
     it("no queues: routeToSession is a no-op", () => {
       const event = makeEvent();
-      expect(() => { routeToSession(event, "message"); }).not.toThrow();
+      expect(() => { routeToSession(event); }).not.toThrow();
     });
   });
 
@@ -219,8 +219,8 @@ describe("multi-session integration", () => {
 
       const e1 = makeEvent();
       const e2 = makeEvent();
-      routeToSession(e1, "message");
-      routeToSession(e2, "message");
+      routeToSession(e1);
+      routeToSession(e2);
 
       expect(drain(s2.sid)).toEqual([e1, e2]);
       expect(drain(s1.sid)).toEqual([]);
@@ -265,7 +265,7 @@ describe("multi-session integration", () => {
 
       // New ambiguous message should broadcast to both sessions
       const event = makeEvent();
-      routeToSession(event, "message");
+      routeToSession(event);
       expect(drain(s1.sid)).toEqual([event]);
       expect(drain(s2.sid)).toEqual([event]);
     });
@@ -286,7 +286,7 @@ describe("multi-session integration", () => {
 
       // User replies to message 50
       const reply = replyEvent(50);
-      routeToSession(reply, "message");
+      routeToSession(reply);
 
       expect(drain(s1.sid)).toEqual([]);
       expect(drain(s2.sid)).toEqual([reply]);
@@ -300,7 +300,7 @@ describe("multi-session integration", () => {
       trackMessageOwner(70, s1.sid);
 
       const cb = callbackEvent(70);
-      routeToSession(cb, "response");
+      routeToSession(cb);
 
       expect(drain(s1.sid)).toEqual([cb]);
       expect(drain(s2.sid)).toEqual([]);
@@ -312,7 +312,7 @@ describe("multi-session integration", () => {
 
       // reply_to message ID with no owner → ambiguous → broadcast
       const reply = replyEvent(999);
-      routeToSession(reply, "message");
+      routeToSession(reply);
 
       // Both sessions receive it (broadcast fallback)
       expect(drain(s1.sid)).toEqual([reply]);
@@ -457,7 +457,7 @@ describe("multi-session integration", () => {
 
       // Route targeted reply to s1
       const reply = replyEvent(100);
-      routeToSession(reply, "message");
+      routeToSession(reply);
       expect(drain(s1.sid)).toEqual([reply]);
       expect(drain(s2.sid)).toEqual([]);
 
@@ -493,14 +493,14 @@ describe("multi-session integration", () => {
 
       // Start without governor (broadcast)
       const e1 = makeEvent();
-      routeToSession(e1, "message");
+      routeToSession(e1);
       // All sessions get it (broadcast)
       expect(drain(s1.sid).length + drain(s2.sid).length + drain(s3.sid).length).toBe(3);
 
       // Switch to governor
       setGovernorSid(s2.sid);
       const e2 = makeEvent();
-      routeToSession(e2, "message");
+      routeToSession(e2);
       expect(drain(s2.sid)).toEqual([e2]);
       expect(drain(s1.sid)).toEqual([]);
       expect(drain(s3.sid)).toEqual([]);
@@ -546,7 +546,7 @@ describe("multi-session integration", () => {
       // s1 ownership still works for routing
       createSessionQueue(3); // new session queue
       const reply = replyEvent(50);
-      routeToSession(reply, "message");
+      routeToSession(reply);
       expect(drain(s1.sid)).toEqual([reply]); // still routes to s1
     });
 
@@ -596,7 +596,7 @@ describe("multi-session integration", () => {
 
       // User replies to s1's message — should go to s1, not governor
       const reply = replyEvent(100);
-      routeToSession(reply, "message");
+      routeToSession(reply);
 
       expect(drain(s1.sid)).toEqual([reply]);
       expect(drain(s2.sid)).toEqual([]);
@@ -624,7 +624,7 @@ describe("multi-session integration", () => {
     it("no queues: routeToSession is a no-op", () => {
       // No sessions created — should not throw
       const event = makeEvent();
-      expect(() => { routeToSession(event, "message"); }).not.toThrow();
+      expect(() => { routeToSession(event); }).not.toThrow();
     });
 
     it("DM to self delivers to own queue", () => {
@@ -644,7 +644,7 @@ describe("multi-session integration", () => {
 
       // Send 4 messages
       const events = [makeEvent(), makeEvent(), makeEvent(), makeEvent()];
-      for (const e of events) routeToSession(e, "message");
+      for (const e of events) routeToSession(e);
 
       const got1 = drain(s1.sid);
       const got2 = drain(s2.sid);
@@ -662,7 +662,7 @@ describe("multi-session integration", () => {
       setGovernorSid(99);
 
       const event = makeEvent();
-      routeToSession(event, "message");
+      routeToSession(event);
 
       // Falls back to broadcast
       expect(drain(s1.sid)).toEqual([event]);
@@ -684,7 +684,7 @@ describe("multi-session integration", () => {
 
       // Reply to message 500 — should go only to S2
       const reply = replyEvent(500);
-      routeToSession(reply, "message");
+      routeToSession(reply);
 
       expect(drain(s1.sid)).toHaveLength(0);
       expect(drain(s2.sid)).toHaveLength(1);
@@ -692,7 +692,7 @@ describe("multi-session integration", () => {
 
       // Callback on message 500 — should go only to S2
       const cb = callbackEvent(500);
-      routeToSession(cb, "response");
+      routeToSession(cb);
 
       expect(drain(s1.sid)).toHaveLength(0);
       expect(drain(s2.sid)).toHaveLength(1);
@@ -707,8 +707,8 @@ describe("multi-session integration", () => {
       trackMessageOwner(400, s1.sid);
       trackMessageOwner(401, s2.sid);
 
-      routeToSession(replyEvent(400), "message"); // → S1
-      routeToSession(replyEvent(401), "message"); // → S2
+      routeToSession(replyEvent(400)); // → S1
+      routeToSession(replyEvent(401)); // → S2
 
       expect(drain(s1.sid)).toHaveLength(1);
       expect(drain(s2.sid)).toHaveLength(1);
@@ -721,7 +721,7 @@ describe("multi-session integration", () => {
       setGovernorSid(s2.sid);
 
       const event = makeEvent();
-      routeToSession(event, "message");
+      routeToSession(event);
 
       expect(drain(s1.sid)).toHaveLength(0);
       expect(drain(s2.sid)).toHaveLength(1);
@@ -735,7 +735,7 @@ describe("multi-session integration", () => {
       setGovernorSid(999);
 
       const event = makeEvent();
-      routeToSession(event, "message");
+      routeToSession(event);
 
       expect(drain(s1.sid)).toHaveLength(1);
       expect(drain(s2.sid)).toHaveLength(1);
@@ -753,7 +753,7 @@ describe("multi-session integration", () => {
         event: "reaction",
         content: { type: "reaction", target: 100, added: ["👍"], removed: [] },
       });
-      routeToSession(reaction, "response");
+      routeToSession(reaction);
 
       // Only S1 gets it, S2 does not
       expect(drain(s1.sid)).toHaveLength(1);
@@ -782,10 +782,10 @@ describe("multi-session integration", () => {
       trackMessageOwner(200, s1.sid);
 
       // Targeted → S1, ambiguous → S2 (governor), targeted→S1, ambiguous→S2
-      routeToSession(replyEvent(200), "message");       // → S1 (targeted)
-      routeToSession(makeEvent(), "message");            // → S2 (governor)
-      routeToSession(callbackEvent(200), "response");    // → S1 (targeted)
-      routeToSession(makeEvent(), "message");            // → S2 (governor)
+      routeToSession(replyEvent(200));       // → S1 (targeted)
+      routeToSession(makeEvent());            // → S2 (governor)
+      routeToSession(callbackEvent(200));    // → S1 (targeted)
+      routeToSession(makeEvent());            // → S2 (governor)
 
       const got1 = drain(s1.sid);
       const got2 = drain(s2.sid);
@@ -813,7 +813,7 @@ describe("multi-session integration", () => {
 
       // With no governor, ambiguous messages broadcast to all sessions
       for (let i = 0; i < 10; i++) {
-        routeToSession(makeEvent(), "message");
+        routeToSession(makeEvent());
       }
 
       // Drain S1 only — gets all 10 broadcast messages
@@ -837,7 +837,7 @@ describe("multi-session integration", () => {
       trackMessageOwner(300, s1.sid);
 
       // Reply to 300 → targeted at S1
-      routeToSession(replyEvent(300), "message");
+      routeToSession(replyEvent(300));
 
       // S2 should have nothing
       expect(drain(s2.sid)).toHaveLength(0);
@@ -851,7 +851,7 @@ describe("multi-session integration", () => {
 
       // With broadcast, both sessions get all 6 messages
       for (let i = 0; i < 6; i++) {
-        routeToSession(makeEvent(), "message");
+        routeToSession(makeEvent());
       }
 
       // Close S1 — its queue is removed, S2 unaffected
@@ -878,7 +878,7 @@ describe("multi-session integration", () => {
         const total = 50;
         const sent: TimelineEvent[] = [];
         for (let i = 0; i < total; i++) sent.push(makeEvent());
-        for (const e of sent) routeToSession(e, "message");
+        for (const e of sent) routeToSession(e);
 
         const sentIds = sent.map(e => e.id).sort((a, b) => a - b);
 
@@ -903,16 +903,16 @@ describe("multi-session integration", () => {
         trackMessageOwner(501, s2.sid);
 
         // 3 targeted replies → S2 only
-        routeToSession(replyEvent(500), "message");
-        routeToSession(replyEvent(501), "message");
-        routeToSession(callbackEvent(500), "response");
+        routeToSession(replyEvent(500));
+        routeToSession(replyEvent(501));
+        routeToSession(callbackEvent(500));
 
         // 3 broadcast messages → all sessions (no governor)
         const broadcastEvents: TimelineEvent[] = [];
         for (let i = 0; i < 3; i++) {
           const e = makeEvent();
           broadcastEvents.push(e);
-          routeToSession(e, "message");
+          routeToSession(e);
         }
 
         // Switch to governor mode → S1
@@ -923,7 +923,7 @@ describe("multi-session integration", () => {
         for (let i = 0; i < 3; i++) {
           const e = makeEvent();
           govEvents.push(e);
-          routeToSession(e, "message");
+          routeToSession(e);
         }
 
         const got1 = drain(s1.sid);

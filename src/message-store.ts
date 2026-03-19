@@ -294,7 +294,7 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
     }
 
     if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
-    routeToSession(evt, "response");
+    routeToSession(evt);
     return true;
   }
 
@@ -324,7 +324,7 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
     evictTimeline();
     // Reactions don't overwrite the message index — they reference it
     if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
-    routeToSession(evt, "response");
+    routeToSession(evt);
     return true;
   }
 
@@ -349,7 +349,7 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
     };
     pushEvent(evt);
     if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
-    routeToSession(evt, "message");
+    routeToSession(evt);
 
     // Fire one-shot message hooks for any afterId < this message's id.
     // Non-consuming: the event stays queued for dequeue_update.

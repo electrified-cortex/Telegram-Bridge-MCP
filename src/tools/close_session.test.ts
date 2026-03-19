@@ -363,7 +363,7 @@ describe("close_session tool", () => {
     await call({ identity: [1, 123456] });
 
     expect(mocks.drainQueue).toHaveBeenCalledWith(1);
-    expect(mocks.routeToSession).toHaveBeenCalledWith(orphanedEvent, "message");
+    expect(mocks.routeToSession).toHaveBeenCalledWith(orphanedEvent);
   });
 
   it("reroutes callback events to the response lane", async () => {
@@ -373,7 +373,7 @@ describe("close_session tool", () => {
 
     await call({ identity: [1, 123456] });
 
-    expect(mocks.routeToSession).toHaveBeenCalledWith(callbackEvent, "response");
+    expect(mocks.routeToSession).toHaveBeenCalledWith(callbackEvent);
   });
 
   it("does not reroute orphaned events when no sessions remain", async () => {
