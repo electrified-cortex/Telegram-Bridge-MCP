@@ -26,6 +26,7 @@ import {
   hasTempReaction,
   resetTempReactionForTest,
 } from "./temp-reaction.js";
+import { runInSessionContext } from "./session-context.js";
 
 describe("temp-reaction", () => {
   beforeEach(() => {
@@ -101,5 +102,20 @@ describe("temp-reaction", () => {
     await fireTempReactionRestore();
     expect(mocks.setMessageReaction).toHaveBeenCalledWith(42, 100, []);
     expect(hasTempReaction()).toBe(false);
+  });
+
+  it("timeout restore uses set-time SID even when ALS context is lost in callback", async () => {
+    // setTempReaction runs inside ALS context for SID 7
+    await runInSessionContext(7, () => setTempReaction(100, "👀", "🫡" as never, 5));
+
+    // Verify slot is active for SID 7
+    expect(runInSessionContext(7, () => hasTempReaction())).toBe(true);
+
+    // Advance timers — the callback fires outside any ALS context (getCallerSid() → 0)
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    // Restore must have fired for SID 7, not SID 0
+    expect(mocks.trySetMessageReaction).toHaveBeenLastCalledWith(42, 100, "🫡");
+    expect(runInSessionContext(7, () => hasTempReaction())).toBe(false);
   });
 });

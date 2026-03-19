@@ -49,9 +49,10 @@ export async function setTempReaction(
   const ok = await trySetMessageReaction(resolved, messageId, emoji);
   if (!ok) return false;
 
+  const capturedSid = sid;
   const handle =
     timeoutSeconds != null
-      ? setTimeout(() => { void fireTempReactionRestore(); }, timeoutSeconds * 1000)
+      ? setTimeout(() => { void fireTempReactionRestore(capturedSid); }, timeoutSeconds * 1000)
       : null;
 
   _slots.set(sid, {
@@ -70,13 +71,17 @@ export async function setTempReaction(
  * - If restoreEmoji is set, reverts to it.
  * - If null (no previous reaction recorded), clears the reaction entirely.
  * Safe to call unconditionally — no-ops when no slot is active for this session.
+ *
+ * @param sid - Optional SID override. Pass the captured SID when calling from a
+ *   setTimeout callback where AsyncLocalStorage context is lost. Falls back to
+ *   `getCallerSid()` when not provided (normal outbound-proxy call path).
  */
-export async function fireTempReactionRestore(): Promise<void> {
-  const sid = getCallerSid();
-  const slot = _slots.get(sid);
+export async function fireTempReactionRestore(sid?: number): Promise<void> {
+  const resolvedSid = sid ?? getCallerSid();
+  const slot = _slots.get(resolvedSid);
   if (!slot) return;
   const { chatId, messageId, restoreEmoji } = slot;
-  _clearSlot(sid);
+  _clearSlot(resolvedSid);
 
   if (restoreEmoji) {
     void trySetMessageReaction(chatId, messageId, restoreEmoji);
