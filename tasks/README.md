@@ -6,6 +6,7 @@ Structured task tracking for bugs, features, and big-picture items. Works like a
 
 | Folder | Purpose | Who touches it |
 | --- | --- | --- |
+| `0-backlog` | Back-burner ideas — acknowledged but not prioritized for near-term work | Overseer writes |
 | `1-draft` | Ideas and rough notes — not yet scoped or committed to | Overseer writes |
 | `2-queued` | Scoped and ready to work on — available for pickup | Overseer writes, workers pick up |
 | `3-in-progress` | Claimed and in progress — **only ONE task at a time**; owned by the claiming worker | Owning worker only |
