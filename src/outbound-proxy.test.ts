@@ -443,8 +443,9 @@ describe("outbound-proxy", () => {
       const p = proxy(raw);
       await (p as unknown as FakeApi).sendMessage(42, "Hello world");
 
-      const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🤖 Scout\nHello world");
+      const [, sentText, sentOpts] = raw.sendMessage.mock.calls[0] as [number, string, Record<string, unknown> | undefined];
+      expect(sentText).toBe("🤖 `Scout`\nHello world");
+      expect(sentOpts?.parse_mode).toBe("Markdown");
     });
 
     it("omits header in single-session mode (sendMessage)", async () => {
@@ -488,6 +489,21 @@ describe("outbound-proxy", () => {
       expect(sentText).toBe("🤖 <code>Scout&lt;2&gt;</code>\ncontent");
     });
 
+    it("does not override existing parse_mode when header is injected", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Scout" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).sendMessage(
+        42, "content", { parse_mode: "HTML" },
+      );
+
+      const [, , sentOpts] = raw.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+      expect(sentOpts.parse_mode).toBe("HTML");
+    });
+
     it("prepends header to _rawText in multi-session mode", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getCallerSid.mockReturnValue(1);
@@ -512,8 +528,9 @@ describe("outbound-proxy", () => {
       const p = proxy(raw);
       await (p as unknown as FakeApi).sendMessage(42, "text");
 
-      const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🤖 Session 3\ntext");
+      const [, sentText, sentOpts] = raw.sendMessage.mock.calls[0] as [number, string, Record<string, unknown> | undefined];
+      expect(sentText).toBe("🤖 `Session 3`\ntext");
+      expect(sentOpts?.parse_mode).toBe("Markdown");
     });
 
     it("prepends header to file caption in multi-session mode (sendPhoto)", async () => {
@@ -557,8 +574,9 @@ describe("outbound-proxy", () => {
       const p = proxy(raw);
       await (p as unknown as FakeApi).editMessageText(42, 10, "edited content");
 
-      const [, , editedText] = raw.editMessageText.mock.calls[0] as [number, number, string];
-      expect(editedText).toBe("🤖 Scout\nedited content");
+      const [, , editedText, editOpts] = raw.editMessageText.mock.calls[0] as [number, number, string, Record<string, unknown> | undefined];
+      expect(editedText).toBe("🤖 `Scout`\nedited content");
+      expect(editOpts?.parse_mode).toBe("Markdown");
     });
 
     it("uses HTML code tags in editMessageText when parse_mode is HTML", async () => {
@@ -597,7 +615,7 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendMessage(42, "Hello");
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🟦 🤖 Scout\nHello");
+      expect(sentText).toBe("🟦 🤖 `Scout`\nHello");
     });
 
     it("omits color prefix when session has no color", async () => {
@@ -610,7 +628,7 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendMessage(42, "Hello");
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🤖 Scout\nHello");
+      expect(sentText).toBe("🤖 `Scout`\nHello");
     });
   });
 });
