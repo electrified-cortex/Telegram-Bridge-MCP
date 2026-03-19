@@ -51,19 +51,23 @@ If a worker finds a task **under-specified** — ambiguous scenarios, wrong file
 
 This is quality control, not failure. The overseer rewrites with concrete answers from source code investigation before re-queuing.
 
-## Priority Scheme
+## Naming Convention
 
-Each task is a single `.md` file with a **three-digit priority prefix** — lower number = higher priority.
+Each task is a single `.md` file named: **`PP-NNN-slug.md`**
 
-| Range | Priority |
-| --- | --- |
-| `000`–`099` | Critical / blocking |
-| `100`–`199` | High |
-| `200`–`299` | Medium |
-| `300`–`499` | Normal |
-| `500`–`999` | Low / someday |
+- **`PP`** = two-digit sort priority (00–99). Determines file ordering. Can be changed to reprioritize.
+- **`NNN`** = three-digit ID (auto-incrementing from 001). Permanent — never changes. Always reference tasks by this ID.
+- **`slug`** = short kebab-case description.
 
-Workers always pick the **lowest-numbered** file from the queue.
+**Example:** `10-015-scheduled-reminders.md` → ID 015, priority 10.
+
+**Referencing:** Always say "task 015" or "#015" — the ID. Never reference by priority number.
+
+**Reprioritizing:** Rename `50-012` → `15-012`. Sort order changes; ID stays the same.
+
+**New task ID:** Always increment from the highest existing ID across all folders.
+
+Workers always pick the **lowest-priority-numbered** file from the queue (lowest `PP` = highest priority).
 
 ## Task Document Structure
 
