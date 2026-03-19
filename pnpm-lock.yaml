@@ -18,8 +18,8 @@ importers:
         specifier: ^1.3.2
         version: 1.3.2
       audio-decode:
-        specifier: ^2.2.3
-        version: 2.2.3
+        specifier: ^3.0.0
+        version: 3.2.0
       dotenv:
         specifier: ^17.3.1
         version: 17.3.1
@@ -53,6 +53,30 @@ importers:
         version: 4.1.0(@types/node@25.5.0)(vite@7.3.1(@types/node@25.5.0))
 
 packages:
+
+  '@audio/aac-decode@1.0.2':
+    resolution: {integrity: sha512-uRt4BFvAv9KFKfR8HkBWOfw54CFGRJH8GCTCsYXRwG2WpELjyfovYdKuhTxCe7qxu4ideb8vOYTZgfn/mZm/4A==}
+    engines: {node: '>=16'}
+
+  '@audio/aiff-decode@1.0.0':
+    resolution: {integrity: sha512-p3lkQIJ0qpGXpK/q7l+h6eK8zQZ5ohk4UO52w4tHGSxljXui7OEIqtmYNqDzXUVtkuDuW2yBC8zkomv8kt1IJQ==}
+    engines: {node: '>=16'}
+
+  '@audio/amr-decode@1.0.0':
+    resolution: {integrity: sha512-B9T57nXhQgi7B5aVSET1Te4j9eNZVrMSL8azurD0c/FGyJwp5saLCzuC9EV3J1s/F7z5676xA7r6nsNCwAhyCQ==}
+    engines: {node: '>=16'}
+
+  '@audio/caf-decode@1.0.0':
+    resolution: {integrity: sha512-CwvgCA+rm3rI5e811R5cBjl1DYB4+6BiNNUucwWrU2XSX3eiP+H2Tfn5CsBc/IE8+OXzbzkV8YoDuyX9+3UDyQ==}
+    engines: {node: '>=16'}
+
+  '@audio/webm-decode@1.0.0':
+    resolution: {integrity: sha512-gie0sXNwbi7H5zVfdeKmAsARIqesXC9iVuPY77tkHA+iemOEbs+Q+pnYK/38YaDPNhByPdP47Ao90FHLlMJ6xg==}
+    engines: {node: '>=16'}
+
+  '@audio/wma-decode@1.0.0':
+    resolution: {integrity: sha512-zfJ86djM8QD2wK3coNgiS9cknPCk83E77cS1iNizYx04hsBGSmQ6WMRi3kTIqC04y2ggXlfCzW4CLw1whOEZKg==}
+    engines: {node: '>=16'}
 
   '@babel/helper-string-parser@7.27.1':
     resolution: {integrity: sha512-qMlSxKbpRlAridDExk92nSobyDdpPijUq2DW6oDnUqd0iOGxmQjyqhMIihI9+zv4LPyZdRje2cavWPbCbWm3eA==}
@@ -810,11 +834,8 @@ packages:
   ast-v8-to-istanbul@1.0.0:
     resolution: {integrity: sha512-1fSfIwuDICFA4LKkCzRPO7F0hzFf0B7+Xqrl27ynQaa+Rh0e1Es0v6kWHPott3lU10AyAr7oKHa65OppjLn3Rg==}
 
-  audio-buffer@5.0.0:
-    resolution: {integrity: sha512-gsDyj1wwUp8u7NBB+eW6yhLb9ICf+0eBmDX8NGaAS00w8/fLqFdxUlL5Ge/U8kB64DlQhdonxYC59dXy1J7H/w==}
-
-  audio-decode@2.2.3:
-    resolution: {integrity: sha512-Z0lHvMayR/Pad9+O9ddzaBJE0DrhZkQlStrC1RwcAHF3AhQAsdwKHeLGK8fYKyp2DDU6xHxzGb4CLMui12yVrg==}
+  audio-decode@3.2.0:
+    resolution: {integrity: sha512-ZqpcNHZQ+7HtNb73o1bb58oshHRRBu+lMWfQnvTht5ik0Sx8Ixd2ZfcaS85FLkNmzRvJYYjN5T6Sj7v3JGKvKA==}
 
   audio-type@2.4.0:
     resolution: {integrity: sha512-ugYMgxLpH6gyWUhFWFl2HCJboFL5z/GoqSdonx8ZycfNP8JDHBhRNzYWzrCRa/6htOWfvJAq7qpRloxvx06sRA==}
@@ -1731,6 +1752,21 @@ packages:
 
 snapshots:
 
+  '@audio/aac-decode@1.0.2': {}
+
+  '@audio/aiff-decode@1.0.0': {}
+
+  '@audio/amr-decode@1.0.0': {}
+
+  '@audio/caf-decode@1.0.0': {}
+
+  '@audio/webm-decode@1.0.0':
+    dependencies:
+      '@wasm-audio-decoders/ogg-vorbis': 0.1.20
+      opus-decoder: 0.7.11
+
+  '@audio/wma-decode@1.0.0': {}
+
   '@babel/helper-string-parser@7.27.1': {}
 
   '@babel/helper-validator-identifier@7.28.5': {}
@@ -2377,13 +2413,16 @@ snapshots:
       estree-walker: 3.0.3
       js-tokens: 10.0.0
 
-  audio-buffer@5.0.0: {}
-
-  audio-decode@2.2.3:
+  audio-decode@3.2.0:
     dependencies:
+      '@audio/aac-decode': 1.0.2
+      '@audio/aiff-decode': 1.0.0
+      '@audio/amr-decode': 1.0.0
+      '@audio/caf-decode': 1.0.0
+      '@audio/webm-decode': 1.0.0
+      '@audio/wma-decode': 1.0.0
       '@wasm-audio-decoders/flac': 0.2.10
       '@wasm-audio-decoders/ogg-vorbis': 0.1.20
-      audio-buffer: 5.0.0
       audio-type: 2.4.0
       mpg123-decoder: 1.0.3
       node-wav: 0.0.2

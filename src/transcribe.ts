@@ -65,14 +65,14 @@ async function transcribeRemote(audioBytes: Buffer, filename: string, host: stri
 async function decodeAudioToFloat32(audioBytes: Buffer): Promise<Float32Array> {
   // audio-decode is ESM-only, dynamic import required
   interface DecodedAudio {
-    getChannelData(channel: number): Float32Array;
+    channelData: Float32Array[];
     sampleRate: number;
   }
   const { default: decode } = await import("audio-decode") as { default: (buf: Buffer) => Promise<DecodedAudio> };
   const audioBuffer = await decode(audioBytes);
 
   // Take the first channel
-  const channelData = audioBuffer.getChannelData(0);
+  const channelData = audioBuffer.channelData[0]!
 
   // Resample to 16 kHz if needed
   if (audioBuffer.sampleRate === SAMPLE_RATE) {

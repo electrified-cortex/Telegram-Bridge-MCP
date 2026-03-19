@@ -149,7 +149,7 @@ describe("transcribe.ts", () => {
       vi.doMock("audio-decode", () => ({
         default: vi.fn().mockResolvedValue({
           sampleRate: 16000,
-          getChannelData: () => new Float32Array([0.1, 0.2]),
+          channelData: [new Float32Array([0.1, 0.2])],
         }),
       }));
 

@@ -164,7 +164,7 @@ describe("synthesizeToOgg (openai provider)", () => {
     const fakePcm = new Float32Array([0.05, -0.05, 0.0]);
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
-      getChannelData: () => fakePcm,
+      channelData: [fakePcm],
     });
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
@@ -228,7 +228,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     const fakePcm = new Float32Array([0.1, -0.1, 0.0]);
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
-      getChannelData: () => fakePcm,
+      channelData: [fakePcm],
     });
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
@@ -259,7 +259,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
 
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
-      getChannelData: () => new Float32Array(1),
+      channelData: [new Float32Array(1)],
     });
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
@@ -281,7 +281,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
 
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, getChannelData: () => new Float32Array(1) });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
