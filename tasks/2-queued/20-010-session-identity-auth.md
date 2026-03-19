@@ -16,6 +16,8 @@ Sessions can currently rename themselves or change their color without any user 
 
 ## Implementation Notes
 
-- Add an approval flow: tool sends a confirmation button to the operator, blocks until approved/denied.
-- Consider using the existing `confirm` pattern but routed to the operator rather than the requesting session.
+- This is a **system-level** action — the confirmation is sent by the server, not by the agent. The agent calls `rename_session` or a color-change tool, and the server intercepts it and sends a confirmation button to the operator.
+- Use inline keyboard buttons sent by the bot (system), not the `confirm` tool pattern.
+- The requesting session's tool call should block until the operator approves or denies.
+- If denied, return an error result to the calling session.
 - Governor sessions should also require approval — no exceptions.
