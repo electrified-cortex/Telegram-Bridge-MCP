@@ -6,6 +6,8 @@ import {
 import { resolveParseMode } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import type { ButtonStyle } from "./button-helpers.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Core send primitive — sends a message to the Telegram chat and returns immediately " +
@@ -15,7 +17,8 @@ const DESCRIPTION =
   "When keyboard is provided, handle button presses via dequeue_update and " +
   "answer_callback_query — there is no blocking wait. " +
   "For blocking single-selection, use choose. For yes/no, use confirm. " +
-  "For voice/TTS, use send_text_as_voice.";  
+  "For voice/TTS, use send_text_as_voice. " +
+  "Ensure session_start has been called.";
 
 const buttonSchema = z.object({
   label: z
@@ -61,9 +64,12 @@ export function register(server: McpServer) {
           .int()
           .optional()
           .describe("Thread this message as a reply to the given message ID"),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ text, keyboard, parse_mode, disable_notification, reply_to_message_id }) => {
+    async ({ text, keyboard, parse_mode, disable_notification, reply_to_message_id, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

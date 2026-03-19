@@ -1,6 +1,10 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   resolveChat: vi.fn((): number | string => 123),
   validateText: vi.fn((): null | object => null),
   splitMessage: vi.fn((t: string) => [t]),
@@ -14,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     resolveChat: mocks.resolveChat,
@@ -35,6 +39,12 @@ vi.mock("../tts.js", () => ({
   isTtsEnabled: mocks.isTtsEnabled,
   stripForTts: mocks.stripForTts,
   synthesizeToOgg: mocks.synthesizeToOgg,
+}));
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./send_text_as_voice.js";
@@ -59,6 +69,7 @@ function setupHandler() {
 describe("send_text_as_voice", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
     mocks.resolveChat.mockReturnValue(123);
     mocks.isTtsEnabled.mockReturnValue(true);
     mocks.validateText.mockReturnValue(null);
@@ -80,33 +91,33 @@ describe("send_text_as_voice", () => {
 
   it("returns error when resolveChat is non-number", async () => {
     mocks.resolveChat.mockReturnValue("not configured");
-    const result = await handler({ text: "hello" }) as { content: unknown[] };
+    const result = await handler({ text: "hello", identity: [1, 123456] }) as { content: unknown[] };
     expect(result.content[0]).toHaveProperty("text");
     expect(result).toHaveProperty("isError", true);
   });
 
   it("returns error when TTS is not configured", async () => {
     mocks.isTtsEnabled.mockReturnValue(false);
-    const result = await handler({ text: "hello" }) as { content: { text: string }[] };
+    const result = await handler({ text: "hello", identity: [1, 123456] }) as { content: { text: string }[] };
     expect(result).toHaveProperty("isError", true);
     expect(result.content[0].text).toContain("TTS_NOT_CONFIGURED");
   });
 
   it("returns error when validateText fails", async () => {
     mocks.validateText.mockReturnValue({ code: "INVALID", message: "bad" });
-    const result = await handler({ text: "" }) as { isError: boolean; content: { text: string }[] };
+    const result = await handler({ text: "", identity: [1, 123456] }) as { isError: boolean; content: { text: string }[] };
     expect(result.isError).toBe(true);
   });
 
   it("returns error when stripped text is empty", async () => {
     mocks.stripForTts.mockReturnValue("");
-    const result = await handler({ text: "***" }) as { isError: boolean; content: { text: string }[] };
+    const result = await handler({ text: "***", identity: [1, 123456] }) as { isError: boolean; content: { text: string }[] };
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("EMPTY_MESSAGE");
   });
 
   it("synthesizes and sends a single voice note", async () => {
-    const result = await handler({ text: "Hello world" }) as { content: { text: string }[] };
+    const result = await handler({ text: "Hello world", identity: [1, 123456] }) as { content: { text: string }[] };
     expect(mocks.showTyping).toHaveBeenCalled();
     expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello world", undefined);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledWith(
@@ -124,7 +135,7 @@ describe("send_text_as_voice", () => {
     mocks.sendVoiceDirect
       .mockResolvedValueOnce({ message_id: 10 })
       .mockResolvedValueOnce({ message_id: 11 });
-    const result = await handler({ text: "long text" }) as { content: { text: string }[] };
+    const result = await handler({ text: "long text", identity: [1, 123456] }) as { content: { text: string }[] };
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.message_ids).toEqual([10, 11]);
     expect(parsed.split).toBe(true);
@@ -135,7 +146,7 @@ describe("send_text_as_voice", () => {
     mocks.sendVoiceDirect
       .mockResolvedValueOnce({ message_id: 10 })
       .mockResolvedValueOnce({ message_id: 11 });
-    await handler({ text: "test", reply_to_message_id: 5 });
+    await handler({ text: "test", reply_to_message_id: 5, identity: [1, 123456] });
     expect(mocks.sendVoiceDirect.mock.calls[0][2]).toMatchObject({
       reply_to_message_id: 5,
     });
@@ -148,14 +159,39 @@ describe("send_text_as_voice", () => {
     mocks.sendVoiceDirect.mockRejectedValue(
       new Error("user restricted receiving of voice note messages"),
     );
-    const result = await handler({ text: "hi" }) as { isError: boolean; content: { text: string }[] };
+    const result = await handler({ text: "hi", identity: [1, 123456] }) as { isError: boolean; content: { text: string }[] };
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("VOICE_RESTRICTED");
   });
 
   it("returns generic error for other failures", async () => {
     mocks.synthesizeToOgg.mockRejectedValue(new Error("network"));
-    const result = await handler({ text: "hi" }) as { isError: boolean };
+    const result = await handler({ text: "hi", identity: [1, 123456] }) as { isError: boolean };
     expect(result.isError).toBe(true);
   });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when no identity provided", async () => {
+    const result = await handler({"text":"x"});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await handler({"text":"x","identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when identity is valid", async () => {
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await handler({"text":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+});
+
 });

@@ -5,6 +5,8 @@ import { showTyping, cancelTyping } from "../typing-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getTopic } from "../topic-state.js";
 import { getDefaultVoice } from "../config.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Synthesizes plain text to speech and sends it as a Telegram voice note. " +
@@ -13,7 +15,8 @@ const DESCRIPTION =
   "synthesis — asterisks, underscores, backticks, brackets, and similar " +
   "characters become noise in audio. Write the text as natural spoken language: " +
   "no bullet points, no headers, no code blocks, no URLs. Punctuation like " +
-  "periods and commas helps pacing; everything else should be plain prose.";
+  "periods and commas helps pacing; everything else should be plain prose. " +
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -51,9 +54,12 @@ export function register(server: McpServer) {
             "Inline keyboard attached to the voice message. " +
             "Only applied to the first chunk if the message is split."
           ),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ text, voice, caption, disable_notification, reply_to_message_id, reply_markup }) => {
+    async ({ text, voice, caption, disable_notification, reply_to_message_id, reply_markup, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

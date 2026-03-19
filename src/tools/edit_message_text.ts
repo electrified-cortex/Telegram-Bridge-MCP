@@ -4,6 +4,8 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
 import { recordOutgoingEdit } from "../message-store.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Legacy — use edit_message instead, which handles both text and keyboard " +
@@ -39,9 +41,12 @@ export function register(server: McpServer) {
         })
         .optional()
         .describe("New inline keyboard. Pass { inline_keyboard: [] } to remove buttons."),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ message_id, text, parse_mode, reply_markup }) => {
+    async ({ message_id, text, parse_mode, reply_markup, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const resolved = resolveParseMode(text, parse_mode);

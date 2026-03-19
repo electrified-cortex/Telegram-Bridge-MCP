@@ -4,6 +4,11 @@ import { readFileSync, existsSync, realpathSync } from "fs";
 import path, { resolve } from "path";
 import { tmpdir } from "os";
 import { getBotReaction, recordBotReaction } from "./message-store.js";
+import {
+  recordRateLimit,
+  rateLimitRemainingSecs,
+  resetRateLimiterForTest,
+} from "./rate-limiter.js";
 
 /** Directory where downloaded files are stored — only local paths under this dir are allowed for file uploads. */
 export const SAFE_FILE_DIR = resolve(tmpdir(), "telegram-bridge-mcp");
@@ -82,6 +87,9 @@ export type TelegramErrorCode =
   | "UNAUTHORIZED_CHAT"
   | "VOICE_RESTRICTED"
   | "DUAL_INSTANCE_CONFLICT"
+  | "SID_REQUIRED"
+  | "AUTH_FAILED"
+  | "NAME_CONFLICT"
   | "UNKNOWN";
 
 export interface TelegramError {
@@ -194,6 +202,19 @@ function classifyGrammyError(err: GrammyError): TelegramError {
 
   return { code: "UNKNOWN", message: `Telegram API error ${err.error_code}: ${err.description}`, raw };
 }
+
+// ---------------------------------------------------------------------------
+// Rate limit tracking — delegated to rate-limiter.ts (single source of truth)
+// ---------------------------------------------------------------------------
+
+/** @see recordRateLimit in rate-limiter.ts */
+export const recordRateLimitHit = recordRateLimit;
+
+/** @see rateLimitRemainingSecs in rate-limiter.ts */
+export const getRateLimitRemaining = rateLimitRemainingSecs;
+
+/** Clears the rate limit window. For use in tests only. */
+export const clearRateLimitForTest = resetRateLimiterForTest;
 
 // ---------------------------------------------------------------------------
 // Singleton API client
@@ -611,8 +632,22 @@ export function ackVoiceMessage(messageId: number): void {
  * Wraps a single Telegram API call with automatic rate-limit retry.
  * On a 429 RATE_LIMITED response, waits `retry_after` seconds (capped at 60s)
  * and retries up to `maxRetries` times before re-throwing.
+ * Pre-checks the tracked rate limit window — if Telegram has recently returned
+ * a 429, subsequent calls fail immediately without hitting the API again.
  */
 export async function callApi<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  // Fast-fail if we are inside a known rate limit window
+  const remaining = rateLimitRemainingSecs();
+  if (remaining > 0) {
+    const desc = `Too Many Requests: retry after ${remaining}`;
+    throw new GrammyError(
+      desc,
+      { ok: false, error_code: 429, description: desc, parameters: { retry_after: remaining } },
+      "callApi",
+      {}
+    );
+  }
+
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
@@ -620,6 +655,7 @@ export async function callApi<T>(fn: () => Promise<T>, maxRetries = 3): Promise<
       if (err instanceof GrammyError && attempt < maxRetries) {
         const classified = classifyGrammyError(err);
         if (classified.code === "RATE_LIMITED") {
+          recordRateLimit(classified.retry_after);
           const delay = Math.min((classified.retry_after ?? 5) * 1000, 60_000);
           await new Promise((r) => setTimeout(r, delay));
           continue;

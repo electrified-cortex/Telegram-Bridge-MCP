@@ -2,13 +2,16 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
   applyTopicToText: vi.fn((t: string) => t),
   splitMessage: vi.fn((text: string) => [text]),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({ sendMessage: mocks.sendMessage }),
@@ -21,6 +24,12 @@ vi.mock("../topic-state.js", () => ({
   applyTopicToText: mocks.applyTopicToText,
 }));
 
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: mocks.validateSession,
+}));
+
 import { register } from "./send_text.js";
 
 const BASE_MSG = { message_id: 7, chat: { id: 42 }, date: 0 };
@@ -30,6 +39,7 @@ describe("send_text tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     mocks.splitMessage.mockImplementation((text: string) => [text]);
     const server = createMockServer();
@@ -38,14 +48,14 @@ describe("send_text tool", () => {
   });
 
   it("sends a basic text message and returns message_id", async () => {
-    const result = await call({ text: "Hello" });
+    const result = await call({ text: "Hello", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(7);
   });
 
   it("calls sendMessage with correct chat_id and MarkdownV2 by default", async () => {
-    await call({ text: "Hello" });
+    await call({ text: "Hello", identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -54,7 +64,7 @@ describe("send_text tool", () => {
   });
 
   it("passes reply_to_message_id via reply_parameters", async () => {
-    await call({ text: "Reply", reply_to_message_id: 5 });
+    await call({ text: "Reply", reply_to_message_id: 5, identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -65,7 +75,7 @@ describe("send_text tool", () => {
   });
 
   it("passes disable_notification option", async () => {
-    await call({ text: "Quiet", disable_notification: true });
+    await call({ text: "Quiet", disable_notification: true, identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -74,7 +84,7 @@ describe("send_text tool", () => {
   });
 
   it("uses raw MarkdownV2 when parse_mode is MarkdownV2", async () => {
-    await call({ text: "*bold*", parse_mode: "MarkdownV2" });
+    await call({ text: "*bold*", parse_mode: "MarkdownV2", identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       "*bold*",
@@ -83,7 +93,7 @@ describe("send_text tool", () => {
   });
 
   it("uses HTML parse_mode when specified", async () => {
-    await call({ text: "<b>bold</b>", parse_mode: "HTML" });
+    await call({ text: "<b>bold</b>", parse_mode: "HTML", identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       "<b>bold</b>",
@@ -92,21 +102,21 @@ describe("send_text tool", () => {
   });
 
   it("returns EMPTY_MESSAGE error for empty text", async () => {
-    const result = await call({ text: "" });
+    const result = await call({ text: "", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("returns EMPTY_MESSAGE error for whitespace-only text", async () => {
-    const result = await call({ text: "   " });
+    const result = await call({ text: "   ", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("passes _rawText in sendMessage opts for proxy recording", async () => {
-    await call({ text: "Hello" });
+    await call({ text: "Hello", identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -119,7 +129,7 @@ describe("send_text tool", () => {
     mocks.sendMessage.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request" }, "sendMessage", {}),
     );
-    const result = await call({ text: "fail" });
+    const result = await call({ text: "fail", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
   });
 
@@ -128,7 +138,7 @@ describe("send_text tool", () => {
     mocks.sendMessage
       .mockResolvedValueOnce({ ...BASE_MSG, message_id: 10 })
       .mockResolvedValueOnce({ ...BASE_MSG, message_id: 11 });
-    const result = await call({ text: "long text", reply_to_message_id: 3 });
+    const result = await call({ text: "long text", reply_to_message_id: 3, identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_ids).toEqual([10, 11]);
@@ -139,4 +149,29 @@ describe("send_text tool", () => {
     expect(mocks.sendMessage.mock.calls[0][2]).toMatchObject({ reply_parameters: { message_id: 3 } });
     expect((mocks.sendMessage.mock.calls[1][2] as Record<string, unknown>).reply_parameters).toBeUndefined();
   });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when no identity provided", async () => {
+    const result = await call({"text":"x"});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"text":"x","identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when identity is valid", async () => {
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"text":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+});
+
 });

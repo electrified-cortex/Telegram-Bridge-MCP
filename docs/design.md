@@ -114,7 +114,12 @@ Tools are grouped by abstraction level.
 
 | Tool | Description |
 | --- | --- |
-| `session_start` | Call once at session start. Sends an intro message, checks for pending messages from a previous session, and asks the operator whether to resume or start fresh. Returns `{ action, pending }`. |
+| `session_start` | Call once at session start. Sends an intro message, checks for pending messages from a previous session, and asks the operator whether to resume or start fresh. Returns `{ sid, pin, sessions_active, action }`. |
+| `close_session` | Close the current session. Requires `sid`/`pin` auth. Removes from active list and cleans up per-session queue and ownership entries. |
+| `list_sessions` | List all active sessions (SID, name, creation time) and the currently active session. No auth required. |
+| `send_direct_message` | Send a direct message to another session (internal only, never appears in Telegram). Requires auth. All active sessions can DM each other. |
+| `pass_message` | Pass an ambiguous message to the next session in cascade order. Only available in cascade routing mode. The last session cannot pass. |
+| `route_message` | Route an ambiguous message to a specific target session. Only available in governor mode and only callable by the governor session. |
 | `dump_session_record` | Sends the conversation timeline as a JSON file to the Telegram chat. Returns `{ message_id, event_count, file_id }`. Caption includes the file ID for crash recovery. Accepts optional `limit` (default 100, max 1000). Call only when the operator explicitly requests session history. |
 
 ### Server management
@@ -187,7 +192,7 @@ telegram-bridge-mcp/
 │   ├── typing-state.ts       # Sustained typing indicator loop (show_typing)
 │   ├── update-sanitizer.ts   # Strips large/binary fields from updates before returning to agent
 │   ├── markdown.ts           # Markdown → MarkdownV2 auto-conversion
-│   ├── built-in-commands.ts  # Server-intercepted slash commands (/session)
+│   ├── built-in-commands.ts  # Server-intercepted slash commands (/session, /voice, /routing)
 │   ├── shutdown.ts           # SIGTERM/SIGINT handler; clears slash-command menus
 │   ├── setup.ts              # pnpm pair wizard — writes .env from live bot pairing
 │   └── tools/
@@ -223,6 +228,11 @@ telegram-bridge-mcp/
 │       ├── get_chat.ts
 │       ├── set_reaction.ts
 │       ├── session_start.ts
+│       ├── close_session.ts
+│       ├── list_sessions.ts
+│       ├── send_direct_message.ts
+│       ├── pass_message.ts
+│       ├── route_message.ts
 │       ├── dump_session_record.ts
 │       └── shutdown.ts
 ├── docs/

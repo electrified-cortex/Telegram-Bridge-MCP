@@ -15,10 +15,13 @@ const mocks = vi.hoisted(() => ({
   recordInbound: vi.fn((): boolean => true),
   patchVoiceText: vi.fn(),
   transcribeVoice: vi.fn((): Promise<string> => Promise.resolve("hello world")),
+  hasSessionWaiterForMessage: vi.fn((_id: number): boolean => false),
+  isSessionMessageConsumed: vi.fn((_id: number): boolean => false),
+  deliverVoiceTranscriptionFailed: vi.fn(),
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("./telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({ getUpdates: mocks.getUpdates }),
@@ -38,6 +41,12 @@ vi.mock("./message-store.js", () => ({
   patchVoiceText: mocks.patchVoiceText,
   hasPendingWaiters: vi.fn().mockReturnValue(false),
   isMessageConsumed: vi.fn().mockReturnValue(false),
+}));
+
+vi.mock("./session-queue.js", () => ({
+  hasSessionWaiterForMessage: (id: number) => mocks.hasSessionWaiterForMessage(id),
+  isSessionMessageConsumed: (id: number) => mocks.isSessionMessageConsumed(id),
+  deliverVoiceTranscriptionFailed: mocks.deliverVoiceTranscriptionFailed,
 }));
 
 vi.mock("./transcribe.js", () => ({
@@ -257,9 +266,109 @@ describe("poller", () => {
       const lastCall = reactionCalls[reactionCalls.length - 1];
       expect(lastCall).toEqual([123, 12, "😴"]);
     });
+
+    // -------------------------------------------------------------------------
+    // Session queue waiter awareness (multi-session race condition prevention)
+    // -------------------------------------------------------------------------
+
+    it("skips 😴 when the session holding this message has an active waiter", async () => {
+      // In multi-session mode, hasPendingWaiters() (global) returns false but
+      // the agent is blocked on the session queue that owns this message.
+      // hasSessionWaiterForMessage returns true → 😴 must be suppressed.
+      mocks.hasSessionWaiterForMessage.mockReturnValueOnce(true);
+      // Reset transcription — previous tests may have left mockRejectedValue active
+      mocks.transcribeVoice.mockResolvedValue("hello world");
+      const u = voiceUpdate(20);
+      await runOneCycle([u]);
+
+      const reactionCalls = mocks.trySetMessageReaction.mock.calls;
+      // ✍ should have been set, but 😴 must NOT appear
+      expect(reactionCalls.some(c => c[2] === "✍")).toBe(true);
+      expect(reactionCalls.some(c => c[2] === "😴")).toBe(false);
+    });
+
+    it("sets 😴 when governor has a waiter but voice message is in worker's session queue", async () => {
+      // Regression: old hasAnySessionWaiter() returned true whenever the
+      // governor's dequeue_update loop was active, suppressing 😴 even though
+      // the worker's session queue (which owns the message) had no waiter.
+      // New hasSessionWaiterForMessage() checks only the owning queue →
+      // returns false here → 😴 MUST be set.
+      mocks.hasSessionWaiterForMessage.mockReturnValueOnce(false); // owning queue: no waiter
+      mocks.transcribeVoice.mockResolvedValue("hello world");
+      const u = voiceUpdate(23);
+      await runOneCycle([u]);
+
+      const reactionCalls = mocks.trySetMessageReaction.mock.calls;
+      expect(reactionCalls.some(c => c[2] === "😴")).toBe(true);
+    });
+
+    it("skips 😴 when message already consumed by a session queue (isSessionMessageConsumed=true)", async () => {
+      // The agent dequeued the message from a session queue before or during
+      // transcription. The global isMessageConsumed returns false (message
+      // was never in the global queue in multi-session mode), but the session
+      // queue consumed set has it — so we should not overwrite 🫡 with 😴.
+      mocks.isSessionMessageConsumed.mockReturnValue(true);
+      // Reset transcription — previous tests may have left mockRejectedValue active
+      mocks.transcribeVoice.mockResolvedValue("hello world");
+      const u = voiceUpdate(21);
+      await runOneCycle([u]);
+
+      const reactionCalls = mocks.trySetMessageReaction.mock.calls;
+      expect(reactionCalls.some(c => c[2] === "😴")).toBe(false);
+    });
+
+    it("still sets 😴 when neither global nor session waiters are active", async () => {
+      // No waiter, not consumed — normal queued case, 😴 should fire.
+      mocks.hasSessionWaiterForMessage.mockReturnValue(false);
+      mocks.isSessionMessageConsumed.mockReturnValue(false);
+      // Reset transcription — previous tests may have left mockRejectedValue active
+      mocks.transcribeVoice.mockResolvedValue("hello world");
+      const u = voiceUpdate(22);
+      await runOneCycle([u]);
+
+      const reactionCalls = mocks.trySetMessageReaction.mock.calls;
+      expect(reactionCalls.some(c => c[2] === "😴")).toBe(true);
+    });
+
+    // -------------------------------------------------------------------------
+    // voice_transcription_failed service message delivery
+    // -------------------------------------------------------------------------
+
+    it("delivers voice_transcription_failed service message on transcription error", async () => {
+      mocks.transcribeVoice.mockRejectedValue(new Error("whisper down"));
+      mocks.trySetMessageReaction.mockResolvedValue(undefined);
+      const u = voiceUpdate(30);
+      await runOneCycle([u]);
+
+      expect(mocks.deliverVoiceTranscriptionFailed).toHaveBeenCalledWith(
+        30,
+        "service_error",
+        "whisper down",
+      );
+    });
+
+    it("uses service_timeout reason when error message contains 'timed out'", async () => {
+      mocks.transcribeVoice.mockRejectedValue(new Error("transcription timed out (60s)"));
+      mocks.trySetMessageReaction.mockResolvedValue(undefined);
+      const u = voiceUpdate(31);
+      await runOneCycle([u]);
+
+      expect(mocks.deliverVoiceTranscriptionFailed).toHaveBeenCalledWith(
+        31,
+        "service_timeout",
+        "transcription timed out (60s)",
+      );
+    });
+
+    it("does NOT call deliverVoiceTranscriptionFailed on successful transcription", async () => {
+      mocks.transcribeVoice.mockResolvedValue("hello world");
+      const u = voiceUpdate(32);
+      await runOneCycle([u]);
+
+      expect(mocks.deliverVoiceTranscriptionFailed).not.toHaveBeenCalled();
+    });
   });
 
-  // -- Error handling -------------------------------------------------------
 
   describe("error handling", () => {
     it("does not crash when getUpdates throws", async () => {

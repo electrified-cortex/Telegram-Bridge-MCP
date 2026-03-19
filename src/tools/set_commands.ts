@@ -2,6 +2,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { BUILT_IN_COMMANDS } from "../built-in-commands.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const RE_BOT_COMMAND = /^[a-z0-9_]+$/;
 
@@ -47,9 +49,12 @@ export function register(server: McpServer) {
         .describe(
           '"chat" scopes commands to the active chat only (recommended). "default" sets them globally for all private chats.'
         ),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ commands, scope }) => {
+    async ({ commands, scope, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
 
       // For chat-scoped commands we need the active chat ID

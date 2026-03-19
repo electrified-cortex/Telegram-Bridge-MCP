@@ -15,6 +15,41 @@ import { typingGeneration, cancelTypingIfSameGeneration } from "./typing-state.j
 import { clearPendingTemp } from "./temp-message.js";
 import { recordOutgoing } from "./message-store.js";
 import { fireTempReactionRestore } from "./temp-reaction.js";
+import { getCallerSid } from "./session-context.js";
+import { activeSessionCount, getSession } from "./session-manager.js";
+import { escapeHtml, escapeV2 } from "./markdown.js";
+
+// ---------------------------------------------------------------------------
+// Session header injection
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the `🤖 {name}\n` header when 2+ sessions are active
+ * and the current session has a name, otherwise returns `""` or `"🤖 Session {sid}\n"`.
+ * Uses parse-mode specific formatting for the name portion.
+ */
+function buildHeader(parseMode?: string): { plain: string; formatted: string } {
+  if (activeSessionCount() < 2) return { plain: "", formatted: "" };
+  const sid = getCallerSid();
+  const session = sid > 0 ? getSession(sid) : undefined;
+  const name = session?.name || (sid > 0 ? `Session ${sid}` : "");
+  if (!name) return { plain: "", formatted: "" };
+  const colorPrefix = session?.color ? `${session.color} ` : "";
+  const plain = `${colorPrefix}🤖 ${name}\n`;
+
+  let formatted: string;
+  if (parseMode === "MarkdownV2") {
+    formatted = `${colorPrefix}🤖 \`${escapeV2(name)}\`\n`;
+  } else if (parseMode === "HTML") {
+    formatted = `${colorPrefix}🤖 <code>${escapeHtml(name)}</code>\n`;
+  } else if (parseMode === "Markdown") {
+    formatted = `${colorPrefix}🤖 \`${name}\`\n`;
+  } else {
+    formatted = plain;
+  }
+
+  return { plain, formatted };
+}
 
 // ---------------------------------------------------------------------------
 // Animation interceptor — pluggable slot
@@ -46,14 +81,18 @@ export interface SendInterceptor {
   onEdit: () => void;
 }
 
-let _interceptor: SendInterceptor | null = null;
+const _interceptors = new Map<number, SendInterceptor>();
 
-export function registerSendInterceptor(i: SendInterceptor): void {
-  _interceptor = i;
+export function registerSendInterceptor(sid: number, i: SendInterceptor): void {
+  _interceptors.set(sid, i);
 }
 
-export function clearSendInterceptor(): void {
-  _interceptor = null;
+export function clearSendInterceptor(sid?: number): void {
+  if (sid !== undefined) {
+    _interceptors.delete(sid);
+  } else {
+    _interceptors.clear();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +123,9 @@ export async function notifyBeforeFileSend(): Promise<void> {
   _fileSendTypingGen = typingGeneration();
   clearPendingTemp();
   await fireTempReactionRestore();
-  if (_interceptor) await _interceptor.beforeFileSend();
+  const sid = getCallerSid();
+  const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
+  if (interceptor) await interceptor.beforeFileSend();
 }
 
 /** Call after a custom (non-Grammy) file send. */
@@ -97,7 +138,9 @@ export async function notifyAfterFileSend(
   if (_bypassing) return;
   cancelTypingIfSameGeneration(_fileSendTypingGen);
   recordOutgoing(messageId, contentType, text, caption);
-  if (_interceptor) await _interceptor.afterFileSend();
+  const sid = getCallerSid();
+  const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
+  if (interceptor) await interceptor.afterFileSend();
 }
 
 // ---------------------------------------------------------------------------
@@ -157,19 +200,29 @@ export function createOutboundProxy(realApi: Api): Api {
           const cleanOpts = opts ? { ...opts } : undefined;
           if (cleanOpts) delete cleanOpts._rawText;
 
+          // Session header — prepend "🤖 Name\n" in multi-session mode
+          const parseMode = cleanOpts?.parse_mode as string | undefined;
+          const { plain: headerPlain, formatted: headerFormatted } = buildHeader(parseMode);
+          const finalText = headerFormatted ? headerFormatted + text : text;
+          const finalRawText = rawText !== undefined
+            ? (headerPlain ? headerPlain + rawText : rawText)
+            : undefined;
+
           // Animation promote: edit animation → real content
-          if (_interceptor) {
-            const savedInterceptor = _interceptor;
-            const result = await _interceptor.beforeTextSend(chatId, text, cleanOpts ?? {});
+          const callSid = getCallerSid();
+          const activeInterceptor = callSid > 0 ? _interceptors.get(callSid) : undefined;
+          if (activeInterceptor) {
+            const savedInterceptor = activeInterceptor;
+            const result = await activeInterceptor.beforeTextSend(chatId, finalText, cleanOpts ?? {});
             if (result.intercepted) {
               cancelTypingIfSameGeneration(gen);
-              recordOutgoing(result.message_id, "text", rawText ?? text);
+              recordOutgoing(result.message_id, "text", finalRawText ?? finalText);
               return { message_id: result.message_id };
             }
             // Not intercepted — send normally, then let animation restart below
-            const msg = await fn(chatId, text, cleanOpts);
+            const msg = await fn(chatId, finalText, cleanOpts);
             cancelTypingIfSameGeneration(gen);
-            recordOutgoing(msg.message_id, "text", rawText ?? text);
+            recordOutgoing(msg.message_id, "text", finalRawText ?? finalText);
             if (savedInterceptor.afterTextSend) {
               await savedInterceptor.afterTextSend();
             }
@@ -177,9 +230,9 @@ export function createOutboundProxy(realApi: Api): Api {
           }
 
           // Normal send
-          const msg = await fn(chatId, text, cleanOpts);
+          const msg = await fn(chatId, finalText, cleanOpts);
           cancelTypingIfSameGeneration(gen);
-          recordOutgoing(msg.message_id, "text", rawText ?? text);
+          recordOutgoing(msg.message_id, "text", finalRawText ?? finalText);
           return msg;
         };
       }
@@ -195,26 +248,38 @@ export function createOutboundProxy(realApi: Api): Api {
           await fireTempReactionRestore();
 
           // Suspend animation (delete placeholder)
-          const hadInterceptor = _interceptor != null;
-          if (_interceptor) await _interceptor.beforeFileSend();
+          const fileSid = getCallerSid();
+          const fileInterceptor = fileSid > 0 ? _interceptors.get(fileSid) : undefined;
+          const hadInterceptor = fileInterceptor != null;
+          if (fileInterceptor) await fileInterceptor.beforeFileSend();
 
           try {
+            // Inject session header into caption if multi-session active
+            const optsArg = args[2] as Record<string, unknown> | undefined;
+            const parseMode = optsArg?.parse_mode as string | undefined;
+            const { plain: captionHeader } = buildHeader(parseMode);
+            if (captionHeader && optsArg?.caption) {
+              (args[2] as Record<string, unknown>).caption =
+                captionHeader + (optsArg.caption as string);
+            }
+
             const msg = await fn(...args);
             cancelTypingIfSameGeneration(gen);
 
             // Extract caption for recording
-            const optsArg = args[2] as Record<string, unknown> | undefined;
-            const caption = optsArg?.caption as string | undefined;
+            const finalCaption = (args[2] as Record<string, unknown> | undefined)
+              ?.caption as string | undefined;
 
             // Extract file_id from the response (Grammy returns the full Message)
             const fileId = extractFileId(msg, fileContentType);
-            recordOutgoing(msg.message_id, fileContentType, undefined, caption, fileId);
+            recordOutgoing(msg.message_id, fileContentType, undefined, finalCaption, fileId);
 
             return msg;
           } finally {
             // Resume animation below — runs even if the API call threw
-            if (hadInterceptor && _interceptor) {
-              await _interceptor.afterFileSend();
+            if (hadInterceptor) {
+              const resumeInterceptor = fileSid > 0 ? _interceptors.get(fileSid) : undefined;
+              if (resumeInterceptor) await resumeInterceptor.afterFileSend();
             }
           }
         };
@@ -226,9 +291,21 @@ export function createOutboundProxy(realApi: Api): Api {
           if (_bypassing) return fn(...args);
           const gen = typingGeneration();
           await fireTempReactionRestore();
+
+          // Inject session header into edit text if multi-session active
+          // args: (chatId, messageId, text, opts?)
+          const editOpts = args[3] as Record<string, unknown> | undefined;
+          const parseMode = editOpts?.parse_mode as string | undefined;
+          const { formatted: editHeader } = buildHeader(parseMode);
+          if (editHeader) {
+            args[2] = editHeader + (args[2] as string);
+          }
+
           const result = await fn(...args);
           cancelTypingIfSameGeneration(gen);
-          if (_interceptor) _interceptor.onEdit();
+          const editSid = getCallerSid();
+          const editInterceptor = editSid > 0 ? _interceptors.get(editSid) : undefined;
+          if (editInterceptor) editInterceptor.onEdit();
           return result;
         };
       }
@@ -244,7 +321,7 @@ export function createOutboundProxy(realApi: Api): Api {
 // ---------------------------------------------------------------------------
 
 export function resetOutboundProxyForTest(): void {
-  _interceptor = null;
+  _interceptors.clear();
   _bypassing = false;
   _fileSendTypingGen = 0;
 }

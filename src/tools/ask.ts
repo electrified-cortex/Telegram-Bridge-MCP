@@ -3,7 +3,11 @@ import { z } from "zod";
 import { getApi, resolveChat, toResult, toError, validateText, ackVoiceMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
-import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
+import { dequeueMatch, waitForEnqueue, pendingCount, type TimelineEvent } from "../message-store.js";
+import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
+import { getCallerSid } from "../session-context.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Sends a question to a chat and waits until the user replies. " +
@@ -12,7 +16,10 @@ const DESCRIPTION =
   "or { timed_out: false, text, message_id } for a text reply, " +
   "{ timed_out: false, text, message_id, voice: true } for a transcribed voice reply, " +
   "or { timed_out: false, command, args, message_id } for a bot-command reply. " +
-  "Use for open-ended prompts where a button isn't appropriate.";
+  "Use for open-ended prompts where a button isn't appropriate. " +
+  "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
+  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -34,13 +41,43 @@ export function register(server: McpServer) {
         .min(1)
         .optional()
         .describe("Reply to this message ID — shows quoted message above the question"),
-      },
+      ignore_pending: z
+        .boolean()
+        .optional()
+        .describe("Set true to skip the pending-updates check and block immediately"),
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ question, timeout_seconds, reply_to_message_id }, { signal }) => {
+    async ({ question, timeout_seconds, reply_to_message_id, ignore_pending, identity}, { signal }) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(question);
       if (textErr) return toError(textErr);
+
+      if (!ignore_pending && !reply_to_message_id) {
+        const sid = getCallerSid();
+        const sq = sid > 0 ? getSessionQueue(sid) : undefined;
+        const pending = sq ? sq.pendingCount() : pendingCount();
+        if (pending > 0) {
+          const breakdown = sid > 0 ? peekSessionCategories(sid) : undefined;
+          const summary = breakdown
+            ? Object.entries(breakdown).map(([k, v]) => `${v} ${k}`).join(", ")
+            : undefined;
+          const detail = summary
+            ? `${pending} unread update(s): ${summary}.`
+            : `${pending} unread update(s).`;
+          return toError({
+            code: "PENDING_UPDATES" as const,
+            message:
+              `${detail} Consider draining with dequeue_update(timeout:0) before ` +
+              `calling ask, or pass ignore_pending: true to proceed anyway.`,
+            pending,
+            ...(breakdown ? { breakdown } : {}),
+          });
+        }
+      }
 
       try {
         // Send the question
@@ -52,24 +89,30 @@ export function register(server: McpServer) {
 
         // Poll from the store queue for text or voice messages after our question.
         // Voice messages arrive pre-transcribed by the background poller.
+        const pollSid = getCallerSid();
+        const sq = pollSid > 0
+          ? getSessionQueue(pollSid)
+          : undefined;
         const deadline = Date.now() + timeout_seconds * 1000;
         const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
 
         while (Date.now() < deadline) {
           if (signal.aborted) return toResult({ timed_out: false, aborted: true });
-          const match = dequeueMatch((event: TimelineEvent) => {
+          const matchFn = (event: TimelineEvent) => {
             if (event.event === "message" && event.id > sent.message_id) {
               if (event.content.type === "text"
                 || event.content.type === "command") {
                 return event;
               }
-              // Don't consume voice until transcription is complete (two-phase recording)
               if (event.content.type === "voice" && event.content.text) {
                 return event;
               }
             }
             return undefined;
-          });
+          };
+          const match = sq
+            ? sq.dequeueMatch(matchFn)
+            : dequeueMatch(matchFn);
 
           if (match) {
             if (match.content.type === "voice") {
@@ -101,7 +144,7 @@ export function register(server: McpServer) {
 
           let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
-            waitForEnqueue(),
+            sq ? sq.waitForEnqueue() : waitForEnqueue(),
             new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(remaining, 5000)); }),
             abortPromise,
           ]);

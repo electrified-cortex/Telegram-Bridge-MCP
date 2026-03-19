@@ -22,6 +22,7 @@ import { getDefaultVoice, setDefaultVoice, getConfiguredVoices } from "./config.
 import type { VoiceEntry } from "./config.js";
 import { fetchVoiceList, isTtsEnabled } from "./tts.js";
 
+
 const require = createRequire(import.meta.url);
 const { version: MCP_VERSION } = require("../package.json") as { version: string };
 let _mcpCommit = "dev";
@@ -849,6 +850,8 @@ function buildSessionPanel(): { text: string; keyboard: { text: string; callback
 
   return { text, keyboard };
 }
+
+
 
 /** For testing only: resets module-scoped state. */
 export function resetBuiltInCommandsForTest(): void {

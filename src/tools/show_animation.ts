@@ -2,11 +2,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, resolveChat } from "../telegram.js";
 import { startAnimation, getPreset } from "../animation-state.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Start a server-managed cycling visual placeholder message. The animation " +
   "auto-cancels after timeout seconds of inactivity. One frame = static placeholder. " +
-  "Multiple frames = cycling animation (min 1000ms interval). " +
+  "Multiple frames = cycling animation (min 1000ms interval, default 2000ms). " +
   "Only one animation at a time — starting a new one cancels the previous. " +
   "Cancel with cancel_animation, or let it auto-clean on timeout. " +
   "A single emoji works well as a static placeholder (e.g. [\"🤔\"] or [\"⏳\"]). " +
@@ -60,25 +62,28 @@ export function register(server: McpServer) {
           .boolean()
           .default(false)
           .describe("If true, the initial animation placeholder triggers a notification. Default false = silent (no ping/buzz)."),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify }) => {
+    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
       // Resolve frames: preset > explicit frames > session default
       let resolvedFrames: string[] | undefined;
       if (preset) {
-        const presetFrames = getPreset(preset);
+        const presetFrames = getPreset(_sid, preset);
         if (!presetFrames) return toError(`Unknown animation preset: "${preset}"`);
         resolvedFrames = [...presetFrames];
       } else if (frames) {
         resolvedFrames = frames;
       }
-      // undefined → startAnimation uses getDefaultFrames() internally
+      // undefined → startAnimation uses getDefaultFrames(sid) internally
 
       try {
-        const message_id = await startAnimation(resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify);
+        const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify);
         return toResult({ message_id, persistent });
       } catch (err) {
         return toError(err);

@@ -2,12 +2,24 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 import { GrammyError } from "grammy";
 
-const mocks = vi.hoisted(() => ({ setMyCommands: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
+  setMyCommands: vi.fn(),
+  resolveChat: vi.fn((): number | { code: string; message: string } => 42),
+}));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, getApi: () => mocks, resolveChat: () => 42 };
+  const actual = await importActual<Record<string, unknown>>();
+  return { ...actual, getApi: () => mocks, resolveChat: mocks.resolveChat };
 });
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: mocks.validateSession,
+}));
 
 import { register } from "./set_commands.js";
 import { BUILT_IN_COMMANDS } from "../built-in-commands.js";
@@ -25,6 +37,7 @@ describe("set_commands tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
     const server = createMockServer();
     register(server);
     call = server.getHandler("set_commands");
@@ -32,7 +45,7 @@ describe("set_commands tool", () => {
   });
 
   it("registers commands scoped to active chat (default scope)", async () => {
-    const result = await call({ commands: SAMPLE_COMMANDS });
+    const result = await call({ commands: SAMPLE_COMMANDS, identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -45,7 +58,7 @@ describe("set_commands tool", () => {
   });
 
   it("registers commands with explicit chat scope", async () => {
-    const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat" });
+    const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     expect(mocks.setMyCommands).toHaveBeenCalledWith(MERGED, {
       scope: { type: "chat", chat_id: 42 },
@@ -53,7 +66,7 @@ describe("set_commands tool", () => {
   });
 
   it("registers commands with default (global) scope", async () => {
-    const result = await call({ commands: SAMPLE_COMMANDS, scope: "default" });
+    const result = await call({ commands: SAMPLE_COMMANDS, scope: "default", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.scope).toBe("default");
@@ -63,7 +76,7 @@ describe("set_commands tool", () => {
   });
 
   it("clears agent commands but keeps built-ins when empty array passed", async () => {
-    const result = await call({ commands: [] });
+    const result = await call({ commands: [], identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -103,8 +116,44 @@ describe("set_commands tool", () => {
         {},
       )
     );
-    const result = await call({ commands: SAMPLE_COMMANDS });
+    const result = await call({ commands: SAMPLE_COMMANDS, identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CHAT_NOT_FOUND");
   });
+
+  it("returns error when resolveChat fails for chat scope", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat", identity: [1, 123456]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
+    expect(mocks.setMyCommands).not.toHaveBeenCalled();
+  });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when no identity provided", async () => {
+    const result = await call({"commands":[{"command":"x","description":"y"}]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"commands":[{"command":"x","description":"y"}],"identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when identity is valid", async () => {
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"commands":[{"command":"x","description":"y"}],"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+});
+
 });

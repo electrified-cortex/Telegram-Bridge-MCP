@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
 import { getMessage, recordOutgoingEdit, CURRENT } from "../message-store.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Delta-append text to an existing message. The server reads the current text " +
@@ -26,9 +28,12 @@ export function register(server: McpServer) {
           .enum(["Markdown", "HTML", "MarkdownV2"])
           .default("Markdown")
           .describe("Re-render the accumulated text with this parse mode"),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ message_id, text, separator, parse_mode }) => {
+    async ({ message_id, text, separator, parse_mode, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

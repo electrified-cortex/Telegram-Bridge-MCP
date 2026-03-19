@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat } from "../telegram.js";
 import { markdownToV2, escapeV2, escapeHtml } from "../markdown.js";
 import { applyTopicToTitle } from "../topic-state.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const SEVERITY_PREFIX: Record<string, string> = {
   info: "ℹ️",
@@ -18,7 +20,8 @@ const DESCRIPTION =
   "process events, errors). For conversational replies or long explanations, " +
   "use send_text instead. Default parse_mode is Markdown " +
   "— write standard Markdown in the body and it is auto-converted, no " +
-  "escaping needed.";
+  "escaping needed. " +
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -46,9 +49,12 @@ export function register(server: McpServer) {
         .min(1)
         .optional()
         .describe("Reply to this message ID — shows quoted message above the notification"),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ title, body, severity, parse_mode, disable_notification, reply_to_message_id }) => {
+    async ({ title, body, severity, parse_mode, disable_notification, reply_to_message_id, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {

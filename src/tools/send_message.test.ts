@@ -2,21 +2,31 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
   applyTopicToText: vi.fn((t: string) => t),
+  resolveChat: vi.fn((): number | { code: string; message: string } => 42),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({ sendMessage: mocks.sendMessage }),
-    resolveChat: () => 42,
+    resolveChat: mocks.resolveChat,
   };
 });
 
 vi.mock("../topic-state.js", () => ({
   applyTopicToText: mocks.applyTopicToText,
+}));
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./send_message.js";
@@ -28,6 +38,7 @@ describe("send_message tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     const server = createMockServer();
     register(server);
@@ -35,13 +46,13 @@ describe("send_message tool", () => {
   });
 
   it("sends a basic text message and returns message_id", async () => {
-    const result = await call({ text: "Hello" });
+    const result = await call({ text: "Hello", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     expect(parseResult(result).message_id).toBe(7);
   });
 
   it("calls sendMessage with correct chat_id and MarkdownV2 by default", async () => {
-    await call({ text: "Hello" });
+    await call({ text: "Hello", identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -53,6 +64,7 @@ describe("send_message tool", () => {
     const result = await call({
       text: "Pick one",
       keyboard: [[{ label: "Yes", value: "yes" }, { label: "No", value: "no" }]],
+      identity: [1, 123456],
     });
     expect(isError(result)).toBe(false);
     expect(mocks.sendMessage).toHaveBeenCalledWith(
@@ -73,6 +85,7 @@ describe("send_message tool", () => {
     await call({
       text: "Go",
       keyboard: [[{ label: "OK", value: "ok", style: "success" }]],
+      identity: [1, 123456],
     });
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
@@ -86,13 +99,13 @@ describe("send_message tool", () => {
   });
 
   it("omits reply_markup when no keyboard is given", async () => {
-    await call({ text: "Plain" });
+    await call({ text: "Plain", identity: [1, 123456]});
     const opts = mocks.sendMessage.mock.calls[0][2] as Record<string, unknown>;
     expect(opts.reply_markup).toBeUndefined();
   });
 
   it("passes reply_to_message_id via reply_parameters", async () => {
-    await call({ text: "Reply", reply_to_message_id: 5 });
+    await call({ text: "Reply", reply_to_message_id: 5, identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -101,7 +114,7 @@ describe("send_message tool", () => {
   });
 
   it("passes disable_notification option", async () => {
-    await call({ text: "Quiet", disable_notification: true });
+    await call({ text: "Quiet", disable_notification: true, identity: [1, 123456]});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -114,6 +127,7 @@ describe("send_message tool", () => {
     const result = await call({
       text: "Pick",
       keyboard: [[{ label: "Btn", value: longValue }]],
+      identity: [1, 123456],
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CALLBACK_DATA_TOO_LONG");
@@ -129,7 +143,53 @@ describe("send_message tool", () => {
         {},
       ),
     );
-    const result = await call({ text: "Hello" });
+    const result = await call({ text: "Hello", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
   });
+
+  it("returns BUTTON_DATA_INVALID for label > hard limit", async () => {
+    const longLabel = "x".repeat(65);
+    const result = await call({
+      text: "Pick",
+      keyboard: [[{ label: longLabel, value: "ok" }]],
+      identity: [1, 123456],
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("BUTTON_DATA_INVALID");
+  });
+
+  it("returns error when resolveChat fails", async () => {
+    mocks.resolveChat.mockReturnValueOnce({
+      code: "UNAUTHORIZED_CHAT",
+      message: "no chat",
+    });
+    const result = await call({ text: "Hello", identity: [1, 123456]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
+  });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when no identity provided", async () => {
+    const result = await call({"text":"x"});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"text":"x","identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when identity is valid", async () => {
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"text":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+});
+
 });

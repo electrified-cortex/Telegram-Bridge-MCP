@@ -3,13 +3,16 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Sends a text message to the Telegram chat. Default parse_mode is Markdown — " +
   "write standard Markdown (*bold*, _italic_, `code`, [links](url)) and it is " +
   "auto-converted. Messages longer than 4096 characters are automatically split. " +
   "For structured status with severity styling, use notify instead. " +
-  "For voice/TTS, use send_text_as_voice instead.";
+  "For voice/TTS, use send_text_as_voice instead. " +
+  "Works best after session_start (enables session tracking and message attribution).";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -34,9 +37,12 @@ export function register(server: McpServer) {
           .min(1)
           .optional()
           .describe("Reply to this message ID"),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ text, parse_mode, disable_notification, reply_to_message_id }) => {
+    async ({ text, parse_mode, disable_notification, reply_to_message_id, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

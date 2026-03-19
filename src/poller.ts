@@ -17,6 +17,7 @@ import {
 } from "./telegram.js";
 import { handleIfBuiltIn } from "./built-in-commands.js";
 import { recordInbound, hasPendingWaiters, patchVoiceText, isMessageConsumed } from "./message-store.js";
+import { hasSessionWaiterForMessage, isSessionMessageConsumed, deliverVoiceTranscriptionFailed } from "./session-queue.js";
 import { transcribeVoice } from "./transcribe.js";
 
 const REACT_TRANSCRIBING = "\u270D" as ReactionEmoji;  // ✍
@@ -255,12 +256,20 @@ async function _transcribeAndRecord(u: Update): Promise<void> {
     }
 
     // Phase 2: patch transcribed text and notify waiters
-    const waiterWaiting = hasPendingWaiters();
+    // Capture waiter status before patching — if the specific session queue
+    // that holds this voice message already has an agent blocked in
+    // dequeue_update, it will be notified immediately and set 🫡 itself.
+    // Using hasSessionWaiterForMessage (not hasAnySessionWaiter) ensures a
+    // governor waiter on a *different* session does not suppress 😴 for a
+    // message routed to a worker with no active waiter.
+    const waiterWaiting = hasPendingWaiters() || hasSessionWaiterForMessage(messageId);
     patchVoiceText(messageId, text);
 
     // Only set 😴 if no waiter is blocking AND the message hasn't already
     // been dequeued by the agent (prevents stale 😴 overwriting 🫡).
-    if (!waiterWaiting && !isMessageConsumed(messageId)) {
+    // isSessionMessageConsumed covers multi-session paths where the global
+    // queue is never populated (sessionQueueCount > 0 skips global enqueue).
+    if (!waiterWaiting && !isMessageConsumed(messageId) && !isSessionMessageConsumed(messageId)) {
       const setQueued = await trySetMessageReaction(chatId, messageId, REACT_QUEUED);
       if (!setQueued) process.stderr.write(`[poller] failed to set 😴 on msg ${messageId}\n`);
     }
@@ -268,7 +277,9 @@ async function _transcribeAndRecord(u: Update): Promise<void> {
     const errMsg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[poller] transcription error for msg ${messageId}: ${errMsg}\n`);
     patchVoiceText(messageId, `[transcription failed: ${errMsg}]`);
-    if (!isMessageConsumed(messageId)) {
+    const reason = errMsg.includes("timed out") ? "service_timeout" : "service_error";
+    deliverVoiceTranscriptionFailed(messageId, reason, errMsg);
+    if (!isMessageConsumed(messageId) && !isSessionMessageConsumed(messageId)) {
       await trySetMessageReaction(chatId, messageId, REACT_QUEUED).catch(() => {});
     }
   }

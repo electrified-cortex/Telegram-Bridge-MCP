@@ -1,6 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Deletes a message. The bot can delete its own messages anytime, " +
@@ -13,9 +15,12 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: {
         message_id: z.number().int().min(1).describe("ID of the message to delete"),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ message_id }) => {
+    async ({ message_id, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {

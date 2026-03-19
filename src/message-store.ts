@@ -19,38 +19,9 @@
 
 import type { Update } from "grammy/types";
 import { recordUpdate, recordBotMessage } from "./session-recording.js";
-
-// ---------------------------------------------------------------------------
-// Simple generic queue (replaces @tsdotnet/queue)
-// ---------------------------------------------------------------------------
-
-class SimpleQueue<T> {
-  private _items: T[] = [];
-
-  enqueue(item: T, maxSize?: number): void {
-    if (maxSize && this._items.length >= maxSize) this._items.shift();
-    this._items.push(item);
-  }
-
-  dequeue(): T | undefined {
-    return this._items.shift();
-  }
-
-  /** Destructive drain — empties the queue, returns all items. */
-  dump(): T[] {
-    const items = this._items;
-    this._items = [];
-    return items;
-  }
-
-  clear(): void {
-    this._items = [];
-  }
-
-  get count(): number {
-    return this._items.length;
-  }
-}
+import { getCallerSid } from "./session-context.js";
+import { TemporalQueue } from "./temporal-queue.js";
+import { routeToSession, trackMessageOwner, notifySessionWaiters, sessionQueueCount } from "./session-queue.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,6 +50,16 @@ export interface EventContent {
   reply_to?: number;
   /** Telegram file_id for downloadable media (doc, photo, video, audio, voice, animation). */
   file_id?: string;
+  /** Lifecycle event type — set for service_message events. */
+  event_type?: string;
+  /** Structured details — set for service_message events. */
+  details?: Record<string, unknown>;
+  /**
+   * SID of the session that explicitly routed this message via `route_message`.
+   * Server-injected — cannot be forged by any agent. Absent if the event
+   * arrived naturally (not via governor delegation).
+   */
+  routed_by?: number;
 }
 
 /**
@@ -92,10 +73,12 @@ export interface TimelineEvent {
   timestamp: string;
   /** Event type: message, sent, reaction, callback, edit, user_edit. */
   event: string;
-  /** Who originated: "user" or "bot". */
-  from: "user" | "bot";
+  /** Who originated: "user", "bot", or "system" (server-injected service messages). */
+  from: "user" | "bot" | "system";
   /** Event-specific payload. */
   content: EventContent;
+  /** Session ID that produced this event (0 or absent = single-session). */
+  sid?: number;
   /** Raw Telegram update — stored for get_message full detail. */
   _update?: Update;
 }
@@ -114,9 +97,6 @@ const MAX_TIMELINE = 1000;
 
 /** Maximum unique message_ids in the index. */
 const MAX_MESSAGES = 500;
-
-/** Maximum items per queue lane — bounds memory for slow consumers. */
-const MAX_QUEUE_SIZE = 5000;
 
 /** Version key for the current (latest) state of a message. */
 export const CURRENT = -1;
@@ -148,23 +128,29 @@ export function setOnEvent(callback: ((timelineSize: number) => void) | null): v
   _onEventCallback = callback;
 }
 
-/** Two-lane queue — response lane items drain before message lane. */
-const _responseLane = new SimpleQueue<QueueItem>();
-const _messageLane = new SimpleQueue<QueueItem>();
+/** A queue item is ready unless it's a voice message still waiting for text. */
+function isQueueItemReady(item: QueueItem): boolean {
+  const c = item.event.content;
+  return !(c.type === "voice" && c.text === undefined);
+}
 
-/** Message IDs that have been dequeued by the agent. Used by poller to skip 😴 on already-consumed voice messages. */
-const _consumedMessageIds = new Set<number>();
+/** Heavyweight events act as temporal batch delimiters in the queue. */
+function isQueueItemHeavyweight(item: QueueItem): boolean {
+  const e = item.event;
+  return e.event === "message" && (e.content.type === "text" || e.content.type === "voice");
+}
+
+/** Temporal queue — events delivered in arrival order; heavyweights delimit batches. */
+const _queue = new TemporalQueue<QueueItem>({
+  isHeavyweight: isQueueItemHeavyweight,
+  isReady: isQueueItemReady,
+  getId: (item) => item.event.id,
+});
 
 /** Returns true if the given message_id has already been dequeued. */
 export function isMessageConsumed(messageId: number): boolean {
-  return _consumedMessageIds.has(messageId);
+  return _queue.isConsumed(messageId);
 }
-
-/**
- * Listeners waiting for the next enqueue. Resolved when a new item is
- * pushed to either lane. Used by dequeue_update to wait on empty queue.
- */
-let _waiters: Array<() => void> = [];
 
 /**
  * One-shot hooks registered by send_choice for auto-lock. Fired on the first
@@ -173,6 +159,9 @@ let _waiters: Array<() => void> = [];
  */
 type CallbackHookFn = (event: TimelineEvent) => void;
 const _callbackHooks = new Map<number, CallbackHookFn>();
+
+/** tracks which session registered each callback hook (for teardown). */
+const _callbackHookOwners = new Map<number, number>();
 
 /**
  * One-shot hooks that fire on the first *message* with id > the registered
@@ -204,13 +193,6 @@ function evictIndex(): void {
     const oldest = _insertionOrder.shift();
     if (oldest !== undefined) _index.delete(oldest);
   }
-}
-
-/** Notify any pending dequeue waiters that new data is available. */
-function notifyWaiters(): void {
-  const batch = _waiters;
-  _waiters = [];
-  for (const resolve of batch) resolve();
 }
 
 /** Get or create the version map for a message_id. */
@@ -311,8 +293,8 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
       try { hook(evt); } catch { /* non-fatal */ }
     }
 
-    _responseLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
-    notifyWaiters();
+    if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
+    routeToSession(evt);
     return true;
   }
 
@@ -341,8 +323,8 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
     _timeline.push(evt);
     evictTimeline();
     // Reactions don't overwrite the message index — they reference it
-    _responseLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
-    notifyWaiters();
+    if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
+    routeToSession(evt);
     return true;
   }
 
@@ -366,7 +348,8 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
       _update: update,
     };
     pushEvent(evt);
-    _messageLane.enqueue({ event: evt }, MAX_QUEUE_SIZE);
+    if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
+    routeToSession(evt);
 
     // Fire one-shot message hooks for any afterId < this message's id.
     // Non-consuming: the event stays queued for dequeue_update.
@@ -376,8 +359,6 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
         try { hook(); } catch { /* non-fatal */ }
       }
     }
-
-    notifyWaiters();
 
     return true;
   }
@@ -459,6 +440,7 @@ export function recordOutgoing(
   text?: string,
   caption?: string,
   fileId?: string,
+  sid?: number,
 ): void {
   recordBotMessage({
     message_id: messageId,
@@ -470,14 +452,17 @@ export function recordOutgoing(
   if (text !== undefined) content.text = text;
   if (caption !== undefined) content.caption = caption;
   if (fileId !== undefined) content.file_id = fileId;
+  const activeSid = sid ?? getCallerSid();
   const evt: TimelineEvent = {
     id: messageId,
     timestamp: now(),
     event: "sent",
     from: "bot",
     content,
+    ...(activeSid > 0 && { sid: activeSid }),
   };
   pushEvent(evt);
+  trackMessageOwner(messageId, activeSid);
 }
 
 /**
@@ -488,6 +473,7 @@ export function recordOutgoingEdit(
   messageId: number,
   contentType: string,
   text?: string,
+  sid?: number,
 ): void {
   recordBotMessage({
     message_id: messageId,
@@ -497,12 +483,14 @@ export function recordOutgoingEdit(
   const versions = _index.get(messageId);
   if (!versions) {
     // Message was evicted — record as edit (not "sent") to preserve intent
+    const activeSid = sid ?? getCallerSid();
     const evt: TimelineEvent = {
       id: messageId,
       timestamp: now(),
       event: "edit",
       from: "bot",
       content: { type: contentType, text },
+      ...(activeSid > 0 && { sid: activeSid }),
     };
     pushEvent(evt);
     return;
@@ -515,12 +503,14 @@ export function recordOutgoingEdit(
     versions.set(nextVersion, current);
   }
 
+  const activeSidEdit = sid ?? getCallerSid();
   const evt: TimelineEvent = {
     id: messageId,
     timestamp: now(),
     event: "edit",
     from: "bot",
     content: { type: contentType, text },
+    ...(activeSidEdit > 0 && { sid: activeSidEdit }),
   };
   _timeline.push(evt);
   evictTimeline();
@@ -559,109 +549,38 @@ export function getBotReaction(messageId: number): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Dequeue — consumption by the agent
+// Dequeue — consumption by the agent (delegates to TemporalQueue)
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the next available queue item, response lane first.
- * Skips voice messages that are still waiting for transcription (text is
- * undefined) — they stay queued until patchVoiceText fills them in.
- * Returns undefined if both lanes are empty or only contain pending voice.
+ * Returns the next ready item in temporal order.
+ * Skips voice messages that are still waiting for transcription.
  */
 export function dequeue(): TimelineEvent | undefined {
-  const item = _dequeueReady(_responseLane) ?? _dequeueReady(_messageLane);
-  if (item?.event.id !== undefined) _consumedMessageIds.add(item.event.id);
-  return item?.event;
+  return _queue.dequeue()?.event;
 }
 
 /**
- * Batch dequeue: drain all ready response-lane items (reactions, callbacks)
- * then include up to one ready message-lane item (user message with content).
- * Returns an empty array when nothing is available.
+ * Temporal batch dequeue: collects events in arrival order up to and
+ * including the first heavyweight event (text/voice). Returns empty
+ * array if nothing available or if a voice delimiter is still pending.
  */
 export function dequeueBatch(): TimelineEvent[] {
-  const batch: TimelineEvent[] = [];
-
-  // Drain response lane (non-content events)
-  let resp: QueueItem | undefined;
-  while ((resp = _dequeueReady(_responseLane)) !== undefined) {
-    _consumedMessageIds.add(resp.event.id);
-    batch.push(resp.event);
-  }
-
-  // Include up to one content event from the message lane
-  const msg = _dequeueReady(_messageLane);
-  if (msg) {
-    _consumedMessageIds.add(msg.event.id);
-    batch.push(msg.event);
-  }
-
-  return batch;
-}
-
-/** Dequeue the first item that is NOT a voice-pending-transcription. */
-function _dequeueReady(lane: SimpleQueue<QueueItem>): QueueItem | undefined {
-  const items = lane.dump();
-  let found: QueueItem | undefined;
-  for (const item of items) {
-    if (!found && _isReady(item)) {
-      found = item;
-      continue; // don't re-enqueue the consumed item
-    }
-    lane.enqueue(item);
-  }
-  return found;
-}
-
-/** A queue item is ready unless it's a voice message still waiting for text. */
-function _isReady(item: QueueItem): boolean {
-  const c = item.event.content;
-  return !(c.type === "voice" && c.text === undefined);
+  return _queue.dequeueBatch().map((item) => item.event);
 }
 
 /**
  * Finds and removes the first queued item matching the predicate.
- * Checks response lane first, then message lane.
- * Used by compound tools (ask, choose, confirm) to consume
- * a specific callback/message from the queue.
  */
 export function dequeueMatch<T>(
   predicate: (event: TimelineEvent) => T | undefined,
 ): T | undefined {
-  return scanAndRemove(_responseLane, predicate)
-    ?? scanAndRemove(_messageLane, predicate);
-}
-
-/** Drain a lane, extract the first match, re-enqueue the rest. */
-function scanAndRemove<T>(
-  lane: SimpleQueue<QueueItem>,
-  predicate: (event: TimelineEvent) => T | undefined,
-): T | undefined {
-  const items = lane.dump();
-  let found: T | undefined;
-  let consumedEventId: number | undefined;
-  for (const item of items) {
-    if (found === undefined) {
-      const result = predicate(item.event);
-      if (result !== undefined) {
-        found = result;
-        consumedEventId = item.event.id;
-        continue; // don't re-enqueue the matched item
-      }
-    }
-    lane.enqueue(item);
-  }
-  if (consumedEventId !== undefined) _consumedMessageIds.add(consumedEventId);
-  // Wake waiters when a match was found — even if the lane is now empty (items
-  // may exist in the other lane). The churn-loop concern only applies to *misses*
-  // (found === undefined), which still skip the notify.
-  if (found !== undefined) notifyWaiters();
-  return found;
+  return _queue.dequeueMatch((item) => predicate(item.event));
 }
 
 /** Number of unconsumed items across both lanes. */
 export function pendingCount(): number {
-  return _responseLane.count + _messageLane.count;
+  return _queue.pendingCount();
 }
 
 /**
@@ -669,14 +588,12 @@ export function pendingCount(): number {
  * Used by dequeue_update to wait when the queue is empty.
  */
 export function waitForEnqueue(): Promise<void> {
-  return new Promise((resolve) => {
-    _waiters.push(resolve);
-  });
+  return _queue.waitForEnqueue();
 }
 
 /** True if at least one dequeue_update call is blocked waiting for data. */
 export function hasPendingWaiters(): boolean {
-  return _waiters.length > 0;
+  return _queue.hasPendingWaiters();
 }
 
 // ---------------------------------------------------------------------------
@@ -781,24 +698,46 @@ export function resetStoreForTest(): void {
   _index = new Map();
   _insertionOrder = [];
   _highestMessageId = 0;
-  _responseLane.clear();
-  _messageLane.clear();
-  _waiters = [];
+  _queue.clear();
   _callbackHooks.clear();
+  _callbackHookOwners.clear();
   _messageHooks.clear();
   _botReactionIndex.clear();
-  _consumedMessageIds.clear();
   _onEventCallback = null;
 }
 
 /** Register a one-shot auto-lock hook for a send_choice message. */
-export function registerCallbackHook(messageId: number, fn: CallbackHookFn): void {
+export function registerCallbackHook(messageId: number, fn: CallbackHookFn, ownerSid?: number): void {
   _callbackHooks.set(messageId, fn);
+  if (ownerSid !== undefined && ownerSid > 0) {
+    _callbackHookOwners.set(messageId, ownerSid);
+  }
 }
 
 /** Remove a previously registered callback hook (e.g. on send_choice cleanup). */
 export function clearCallbackHook(messageId: number): void {
   _callbackHooks.delete(messageId);
+  _callbackHookOwners.delete(messageId);
+}
+
+/**
+ * Replace all callback hooks owned by a session with a "Session closed" responder.
+ * Called during session teardown so late button presses get a graceful ack.
+ * Returns the message IDs that were replaced.
+ */
+export function replaceSessionCallbackHooks(
+  sid: number,
+  replacement: CallbackHookFn,
+): number[] {
+  const replaced: number[] = [];
+  for (const [msgId, ownerSid] of _callbackHookOwners) {
+    if (ownerSid === sid) {
+      _callbackHooks.set(msgId, replacement);
+      _callbackHookOwners.delete(msgId);
+      replaced.push(msgId);
+    }
+  }
+  return replaced;
 }
 
 /** Register a one-shot hook that fires on the first message with id > afterId. */
@@ -824,5 +763,6 @@ export function patchVoiceText(messageId: number, text: string): void {
   const current = versions.get(CURRENT);
   if (!current || current.content.type !== "voice") return;
   current.content.text = text;
-  notifyWaiters();
+  _queue.notifyWaiters();
+  notifySessionWaiters();
 }

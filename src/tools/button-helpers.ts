@@ -6,6 +6,7 @@ import { getApi, ackVoiceMessage } from "../telegram.js";
 import { markdownToV2, resolveParseMode } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
+import { getSessionQueue } from "../session-queue.js";
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -63,30 +64,38 @@ export async function pollButtonPress(
   messageId: number,
   timeoutSeconds: number,
   signal?: AbortSignal,
+  sid?: number,
 ): Promise<ButtonResult | null> {
+  const sq = sid && sid > 0
+    ? getSessionQueue(sid)
+    : undefined;
   const deadline = Date.now() + timeoutSeconds * 1000;
   const abortPromise = signal
     ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); })
     : null;
 
+  const matchFn = (event: TimelineEvent) => {
+    if (event.event === "callback" && event.content.target === messageId) {
+      const qid = event.content.qid;
+      const data = event.content.data;
+      if (!qid || !data) return undefined;
+      return { kind: "button" as const, callback_query_id: qid, data, message_id: messageId };
+    }
+    return undefined;
+  };
+
   while (Date.now() < deadline) {
     if (signal?.aborted) return null;
-    const result = dequeueMatch((event: TimelineEvent) => {
-      if (event.event === "callback" && event.content.target === messageId) {
-        const qid = event.content.qid;
-        const data = event.content.data;
-        if (!qid || !data) return undefined;
-        return { kind: "button" as const, callback_query_id: qid, data, message_id: messageId };
-      }
-      return undefined;
-    });
+    const result = sq
+      ? sq.dequeueMatch(matchFn)
+      : dequeueMatch(matchFn);
     if (result) return result;
 
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
 
     await Promise.race([
-      waitForEnqueue(),
+      sq ? sq.waitForEnqueue() : waitForEnqueue(),
       new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
       ...(abortPromise ? [abortPromise] : []),
     ]);
@@ -108,7 +117,11 @@ export async function pollButtonOrTextOrVoice(
   timeoutSeconds: number,
   onVoiceDetected?: () => void,
   signal?: AbortSignal,
+  sid?: number,
 ): Promise<ButtonOrTextResult | null> {
+  const sq = sid && sid > 0
+    ? getSessionQueue(sid)
+    : undefined;
   const deadline = Date.now() + timeoutSeconds * 1000;
   let voiceDetectedFired = false;
   const abortPromise = signal
@@ -119,7 +132,7 @@ export async function pollButtonOrTextOrVoice(
     if (signal?.aborted) return null;
     const state = { hasPendingVoice: false };
 
-    const result = dequeueMatch((event: TimelineEvent) => {
+    const matchFn = (event: TimelineEvent) => {
       // Check for callback on the specific message
       if (event.event === "callback" && event.content.target === messageId) {
         const qid = event.content.qid;
@@ -158,7 +171,10 @@ export async function pollButtonOrTextOrVoice(
         }
       }
       return undefined;
-    });
+    };
+    const result = sq
+      ? sq.dequeueMatch(matchFn)
+      : dequeueMatch(matchFn);
 
     // Fire onVoiceDetected once as soon as a voice message is seen (pre-transcription)
     if (state.hasPendingVoice && !voiceDetectedFired) {
@@ -172,7 +188,7 @@ export async function pollButtonOrTextOrVoice(
     if (remaining <= 0) break;
 
     await Promise.race([
-      waitForEnqueue(),
+      sq ? sq.waitForEnqueue() : waitForEnqueue(),
       new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
       ...(abortPromise ? [abortPromise] : []),
     ]);

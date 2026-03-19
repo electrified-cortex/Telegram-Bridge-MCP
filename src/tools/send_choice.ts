@@ -4,9 +4,12 @@ import {
   toResult, toError, validateText, resolveChat, validateCallbackData, LIMITS, getApi,
 } from "../telegram.js";
 import { registerCallbackHook } from "../message-store.js";
+import { requireAuth } from "../session-gate.js";
 import {
   sendChoiceMessage, type KeyboardOption,
 } from "./button-helpers.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { validateButtonSymbolParity } from "../button-validation.js";
 
 const DESCRIPTION =
   "Non-blocking one-shot keyboard — sends a message with choice buttons and " +
@@ -15,7 +18,8 @@ const DESCRIPTION =
   "The callback_query event still appears in dequeue_update so the agent can read " +
   "which option was picked at its own pace. " +
   "Use choose for blocking single-selection (waits for the press). " +
-  "Use send_message for persistent keyboards that stay live indefinitely.";
+  "Use send_message for persistent keyboards that stay live indefinitely. " +
+  "Ensure session_start has been called.";
 
 const optionSchema = z.object({
   label: z
@@ -67,14 +71,34 @@ export function register(server: McpServer) {
           .min(1)
           .optional()
           .describe("Reply to this message ID"),
-      },
+        ignore_parity: z
+          .boolean()
+          .optional()
+          .describe("Set true to bypass button label emoji-consistency check"),
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ text, options, columns, parse_mode, disable_notification, reply_to_message_id }) => {
+    async ({ text, options, columns, parse_mode, disable_notification, reply_to_message_id, ignore_parity, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
       const textErr = validateText(text);
       if (textErr) return toError(textErr);
+
+      // Validate button symbol parity
+      if (!ignore_parity) {
+        const parity = validateButtonSymbolParity(options.map((o) => o.label));
+        if (!parity.ok) {
+          return toError({
+            code: "BUTTON_SYMBOL_PARITY" as const,
+            message: `Button labels are inconsistent: ${parity.withEmoji.length} of ${options.length} have emoji. Either add emoji to all labels or remove them. Pass ignore_parity: true to send anyway.`,
+            labels_with_emoji: parity.withEmoji,
+            labels_without_emoji: parity.withoutEmoji,
+          });
+        }
+      }
 
       // Validate options — same rules as choose
       const displayMax = columns >= 2
@@ -111,6 +135,7 @@ export function register(server: McpServer) {
 
         // Register one-shot auto-lock: on first press, dismiss the spinner and
         // remove the buttons. The callback_query event is still enqueued normally.
+        // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
         registerCallbackHook(messageId, (evt) => {
           const qid = evt.content.qid;
           void (async () => {
@@ -121,7 +146,7 @@ export function register(server: McpServer) {
               .editMessageReplyMarkup(chatId, messageId, { reply_markup: { inline_keyboard: [] } })
               .catch(() => { /* non-fatal */ });
           })();
-        });
+        }, _sid);
 
         return toResult({ message_id: messageId });
       } catch (err) {

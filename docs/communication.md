@@ -1,6 +1,6 @@
 # Telegram Communication Guide
 
-All agent communication goes through Telegram. The operator is on their phone — not watching the agent panel.
+When the operator has initiated loop mode, all substantive agent communication goes through Telegram. The operator is on their phone — not watching the agent panel.
 
 MCP resource: `telegram-bridge-mcp://communication-guide`
 
@@ -54,6 +54,8 @@ The thinking → working → `show_typing` pipeline gives the operator a live st
 | Build / deploy / error event | `notify` with severity |
 | Multi-step task (3+ steps) | `send_new_checklist` + `pin_message` |
 | Completed work / ready to proceed | `confirm` (single-button CTA, no `no_text`) |
+| Forward user message to another session | `route_message` |
+| Send private note to another session | `send_direct_message` |
 
 ---
 
@@ -92,6 +94,14 @@ Humans strongly prefer tapping a button over typing a reply. When a decision is 
 - Symbols/unicode icons in button labels are strongly encouraged — they add clarity at a glance.
 - **All-or-nothing rule:** if any button in a set has a symbol or emoji, all buttons in that set must have one.
 - Emojis (e.g. 🟢 🔴) only belong in *unstyled* buttons — they clash visually with colored buttons. Use plain text + icon characters (e.g. `✓ Yes`, `✗ No`) when a style is applied.
+
+### Keep confirm prompts short
+
+The operator is usually on a phone with limited screen space. If a `confirm` or `choose` needs context, send the explanation as a **separate message first**, then send the decision prompt as a short follow-up. This keeps the buttons visible without scrolling.
+
+**Bad:** One long message with explanation + `confirm` — buttons scroll off-screen on mobile.
+
+**Good:** `send_text` with the context → `confirm` with a one-line question.
 
 ### Single-button CTA
 
@@ -213,3 +223,51 @@ On timeout (`{ timed_out: true }`): send a brief `notify` ("Still here — are y
 
 1. Send `notify` (severity: "success") summarizing what was done and what's pending.
 2. Confirm all items are saved/committed as needed.
+
+---
+
+## Multi-Session Loop
+
+When 2+ sessions are active, the loop is the same but the `routing` field on dequeued events guides message ownership.
+
+### Routing field on events
+
+```text
+routing: "targeted"   — reply to one of your messages; handle it
+routing: "ambiguous"  — no clear owner; apply context to decide
+(absent)              — single-session mode; no routing decisions needed
+```
+
+### Adjusted loop for governor sessions
+
+```text
+loop:
+  result = dequeue_update()
+  for each event in result.updates:
+    if event.routing == "targeted":
+      handle normally
+    else if event.routing == "ambiguous":
+      if clearly for another session: route_message(...)
+      else: handle it (governor is fallback owner)
+  goto loop
+```
+
+### Governor responsibilities
+
+The governor session (lowest SID) owns ambiguous traffic by default. If you are governor:
+
+- Triage ambiguous messages and route to the right agent when appropriate.
+- Coordinate multi-session workflows.
+- You may become governor unexpectedly if the previous governor closes.
+
+Non-governor sessions: handle your targeted messages, forward genuinely mis-addressed ones.
+
+---
+
+## Memory Safety
+
+Session memory is advisory, not authoritative. Before acting on stored state:
+
+- Re-check live session, queue, and board state with tools
+- Never trust stored SID/PIN or active-task state without verification
+- If memory conflicts with live tool state or current operator instruction, memory loses

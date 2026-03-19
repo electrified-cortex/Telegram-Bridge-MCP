@@ -2,9 +2,13 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { runInSessionContext } from "./session-context.js";
+import { getActiveSession } from "./session-manager.js";
 
 import { register as registerDequeueUpdate } from "./tools/dequeue_update.js";
 import { register as registerGetMessage } from "./tools/get_message.js";
+import { register as registerGetChatHistory } from "./tools/get_chat_history.js";
 import { register as registerSendText } from "./tools/send_text.js";
 import { register as registerSendMessage } from "./tools/send_message.js";
 import { register as registerSendChoice } from "./tools/send_choice.js";
@@ -37,8 +41,14 @@ import { register as registerGetAgentGuide } from "./tools/get_agent_guide.js";
 import { register as registerDumpSessionRecord } from "./tools/dump_session_record.js";
 import { register as registerShutdownServer } from "./tools/shutdown.js";
 import { register as registerSessionStart } from "./tools/session_start.js";
+import { register as registerCloseSession } from "./tools/close_session.js";
+import { register as registerListSessions } from "./tools/list_sessions.js";
 import { register as registerSendNewProgress } from "./tools/send_new_progress.js";
 import { register as registerUpdateProgress } from "./tools/update_progress.js";
+import { register as registerSendDirectMessage } from "./tools/send_direct_message.js";
+import { register as registerRouteMessage } from "./tools/route_message.js";
+import { register as registerRenameSession } from "./tools/rename_session.js";
+import { register as registerGetDebugLog } from "./tools/get_debug_log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -47,6 +57,53 @@ export function createServer(): McpServer {
     name: "telegram-bridge-mcp",
     version: "3.0.0",
   });
+
+  // ── Session context middleware ──────────────────────────────────────────
+  // Wrap every tool handler in AsyncLocalStorage so outbound messages
+  // are attributed to the correct session even when multiple sessions
+  // interleave tool calls concurrently.
+  const _origRegisterTool = server.registerTool.bind(server);
+  type AnyConfig = Parameters<typeof _origRegisterTool>[1];
+  type AnyCallback = Parameters<typeof _origRegisterTool>[2];
+  // `any[]` is intentional: this wrapper must accept any tool callback signature
+  // without knowing the parameter types at compile time. The real type safety
+  // lives in individual tool registrations via their Zod inputSchema.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type CallableCb = (...a: any[]) => unknown;
+  server.registerTool = ((
+    name: string,
+    config: AnyConfig,
+    cb: AnyCallback,
+  ) => {
+    // Inject optional `sid` into every tool's inputSchema so agents
+    // can identify themselves without per-tool changes.
+    const cfg = config as Record<string, unknown>;
+    const schema = cfg.inputSchema as
+      Record<string, unknown> | undefined;
+    if (schema && !("sid" in schema)) {
+      schema.sid = z.number()
+        .int().positive().optional()
+        .describe("Session ID (from session_start). " +
+          "Pass this in multi-session setups.");
+    }
+    const original = cb as unknown as CallableCb;
+    const wrappedCb = (
+      (args: Record<string, unknown>, extra: unknown) => {
+        const sid = (Array.isArray(args.identity) && typeof args.identity[0] === "number")
+          ? args.identity[0]
+          : (typeof args.sid === "number"
+            ? args.sid
+            : getActiveSession());
+        if (sid > 0) {
+          return runInSessionContext(sid, () =>
+            original(args, extra),
+          );
+        }
+        return original(args, extra);
+      }
+    ) as typeof cb;
+    return _origRegisterTool(name, config, wrappedCb);
+  }) as typeof server.registerTool;
 
   // ── High-level agent tools (use these 99% of the time) ─────────────────
   registerGetAgentGuide(server);
@@ -59,6 +116,7 @@ export function createServer(): McpServer {
   // ── Polling ─────────────────────────────────────────────────────────────
   registerDequeueUpdate(server);
   registerGetMessage(server);
+  registerGetChatHistory(server);
 
   // ── Messaging ───────────────────────────────────────────────────────────
   registerSendMessage(server);
@@ -104,7 +162,13 @@ export function createServer(): McpServer {
 
   // ── Session ────────────────────────────────────────────────────────────
   registerSessionStart(server);
+  registerCloseSession(server);
+  registerListSessions(server);
+  registerSendDirectMessage(server);
+  registerRouteMessage(server);
+  registerRenameSession(server);
   registerDumpSessionRecord(server);
+  registerGetDebugLog(server);
 
   // ── System ─────────────────────────────────────────────────────────────
   registerShutdownServer(server);

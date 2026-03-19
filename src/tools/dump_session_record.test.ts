@@ -1,9 +1,12 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, isError } from "./test-utils.js";
+import { createMockServer, isError, errorCode } from "./test-utils.js";
 
 // ── dump_session_record (V3 — sends JSON file to Telegram) ──────────────
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   dumpTimeline: vi.fn(() => [] as Array<Record<string, unknown>>),
   timelineSize: vi.fn(() => 0),
   storeSize: vi.fn(() => 0),
@@ -19,7 +22,7 @@ vi.mock("../message-store.js", () => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({ sendDocument: mocks.sendDocument, editMessageCaption: mocks.editMessageCaption }),
@@ -29,6 +32,12 @@ vi.mock("../telegram.js", async (importActual) => {
 
 vi.mock("../config.js", () => ({
   getSessionLogMode: mocks.getSessionLogMode,
+}));
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: mocks.validateSession,
 }));
 
 import { register as registerDump } from "./dump_session_record.js";
@@ -41,6 +50,7 @@ describe("dump_session_record tool (V3)", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
     mocks.dumpTimeline.mockReturnValue([]);
     mocks.timelineSize.mockReturnValue(0);
     mocks.storeSize.mockReturnValue(0);
@@ -54,12 +64,12 @@ describe("dump_session_record tool (V3)", () => {
 
   it("returns disabled message when session log is off", async () => {
     mocks.getSessionLogMode.mockReturnValue(null);
-    const text = getText(await call({}));
+    const text = getText(await call({ identity: [1, 123456] }));
     expect(text).toContain("disabled");
   });
 
   it("returns 'no events' when timeline is empty", async () => {
-    const text = getText(await call({}));
+    const text = getText(await call({ identity: [1, 123456] }));
     expect(text).toContain("No events captured");
   });
 
@@ -76,7 +86,7 @@ describe("dump_session_record tool (V3)", () => {
       document: { file_id: "abc123" },
     });
 
-    const data = JSON.parse(getText(await call({})));
+    const data = JSON.parse(getText(await call({ identity: [1, 123456] })));
     expect(data.message_id).toBe(99);
     expect(data.event_count).toBe(2);
     expect(data.file_id).toBe("abc123");
@@ -103,18 +113,43 @@ describe("dump_session_record tool (V3)", () => {
     mocks.dumpTimeline.mockReturnValue(events);
     mocks.timelineSize.mockReturnValue(5);
 
-    const data = JSON.parse(getText(await call({ limit: 2 })));
+    const data = JSON.parse(getText(await call({ limit: 2, identity: [1, 123456]})));
     expect(data.event_count).toBe(2);
     expect(mocks.sendDocument).toHaveBeenCalledOnce();
   });
 
   it("does not call sendDocument when timeline is empty", async () => {
-    await call({});
+    await call({ identity: [1, 123456] });
     expect(mocks.sendDocument).not.toHaveBeenCalled();
   });
 
   it("does not error with default params", async () => {
-    const result = await call({});
+    const result = await call({ identity: [1, 123456] });
     expect(isError(result)).toBe(false);
   });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when no identity provided", async () => {
+    const result = await call({});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when identity is valid", async () => {
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+});
+
 });

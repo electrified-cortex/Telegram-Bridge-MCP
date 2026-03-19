@@ -22,6 +22,10 @@ import {
   fireHijackNotification,
   resetApi,
   sendVoiceDirect,
+  ackVoiceMessage,
+  recordRateLimitHit,
+  getRateLimitRemaining,
+  clearRateLimitForTest,
   LIMITS,
   type TelegramError,
 } from "./telegram.js";
@@ -263,6 +267,15 @@ describe("splitMessage", () => {
 // ---------------------------------------------------------------------------
 
 describe("callApi", () => {
+  beforeEach(() => {
+    clearRateLimitForTest();
+  });
+
+  afterEach(() => {
+    clearRateLimitForTest();
+    vi.useRealTimers();
+  });
+
   it("returns the result of a successful call", async () => {
     const fn = vi.fn().mockResolvedValue(42);
     expect(await callApi(fn)).toBe(42);
@@ -286,7 +299,6 @@ describe("callApi", () => {
     await vi.runAllTimersAsync();
     expect(await promise).toBe("ok");
     expect(fn).toHaveBeenCalledTimes(2);
-    vi.useRealTimers();
   });
 
   it("throws immediately for non-rate-limit GrammyError", async () => {
@@ -319,7 +331,114 @@ describe("callApi", () => {
     ]);
     // Called once initially + 2 retries = 3 total
     expect(fn).toHaveBeenCalledTimes(3);
-    vi.useRealTimers();
+  });
+
+  it("pre-check: fails fast when inside a known rate limit window", async () => {
+    recordRateLimitHit(30); // 30-second window
+    const fn = vi.fn().mockResolvedValue("ok");
+    await expect(callApi(fn)).rejects.toBeInstanceOf(GrammyError);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("pre-check: records rate limit window when 429 is encountered", async () => {
+    vi.useFakeTimers();
+    const rateLimitErr = new GrammyError(
+      "Too Many Requests",
+      { ok: false, error_code: 429, description: "Too Many Requests: retry after 10", parameters: { retry_after: 10 } },
+      "sendMessage",
+      {}
+    );
+    const fn = vi.fn().mockRejectedValueOnce(rateLimitErr).mockResolvedValue("ok");
+    const promise = callApi(fn);
+
+    // Flush microtasks: let fn() run, 429 be caught, recordRateLimit(10) be invoked.
+    // The callApi loop is now awaiting a 10 s timer — timers are still frozen.
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Rate-limit window must be recorded immediately after the 429 is caught
+    expect(getRateLimitRemaining()).toBeGreaterThan(0);
+    expect(getRateLimitRemaining()).toBeLessThanOrEqual(10);
+
+    // Advance past the retry window so the retry fires and callApi resolves
+    await vi.runAllTimersAsync();
+    await promise;
+
+    // The retry_after window has elapsed — no longer rate limited
+    expect(getRateLimitRemaining()).toBe(0);
+  });
+
+  it("pre-check: resumes after window expires", async () => {
+    vi.useFakeTimers();
+    recordRateLimitHit(5); // 5-second window
+
+    const fn = vi.fn().mockResolvedValue("ok");
+
+    // Inside window: should fail fast
+    await expect(callApi(fn)).rejects.toBeInstanceOf(GrammyError);
+    expect(fn).not.toHaveBeenCalled();
+
+    // Advance past the window
+    await vi.advanceTimersByTimeAsync(6000);
+
+    // Now should succeed
+    const result = await callApi(fn);
+    expect(result).toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rate limit tracking
+// ---------------------------------------------------------------------------
+
+describe("rate limit tracking", () => {
+  beforeEach(() => { clearRateLimitForTest(); });
+  afterEach(() => { clearRateLimitForTest(); vi.useRealTimers(); });
+
+  it("getRateLimitRemaining returns 0 when not rate limited", () => {
+    expect(getRateLimitRemaining()).toBe(0);
+  });
+
+  it("recordRateLimitHit sets a positive remaining time", () => {
+    recordRateLimitHit(10);
+    expect(getRateLimitRemaining()).toBeGreaterThan(0);
+    expect(getRateLimitRemaining()).toBeLessThanOrEqual(10);
+  });
+
+  it("extends the window if a longer retry_after arrives", () => {
+    recordRateLimitHit(5);
+    const first = getRateLimitRemaining();
+    recordRateLimitHit(60);
+    const second = getRateLimitRemaining();
+    expect(second).toBeGreaterThan(first);
+  });
+
+  it("does NOT shorten the window if a smaller retry_after arrives", () => {
+    recordRateLimitHit(60);
+    const first = getRateLimitRemaining();
+    recordRateLimitHit(5);
+    const second = getRateLimitRemaining();
+    expect(second).toBeGreaterThanOrEqual(first - 1); // allow 1s rounding
+  });
+
+  it("returns 0 after window expires", async () => {
+    vi.useFakeTimers();
+    recordRateLimitHit(1);
+    expect(getRateLimitRemaining()).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(getRateLimitRemaining()).toBe(0);
+  });
+
+  it("clearRateLimitForTest resets the window", () => {
+    recordRateLimitHit(60);
+    clearRateLimitForTest();
+    expect(getRateLimitRemaining()).toBe(0);
+  });
+
+  it("recordRateLimitHit with undefined uses 5s fallback", () => {
+    recordRateLimitHit(undefined);
+    expect(getRateLimitRemaining()).toBeGreaterThan(0);
+    expect(getRateLimitRemaining()).toBeLessThanOrEqual(5);
   });
 });
 
@@ -611,5 +730,85 @@ describe("sendVoiceDirect path restriction", () => {
     await expect(
       sendVoiceDirect("123", safeFile)
     ).rejects.toThrow(/BOT_TOKEN/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ackVoiceMessage — fire-and-forget 🫡 reaction
+// ---------------------------------------------------------------------------
+import { getBotReaction, recordBotReaction, resetStoreForTest } from "./message-store.js";
+
+describe("ackVoiceMessage", () => {
+  let setMessageReactionSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    process.env.BOT_TOKEN = "test_token";
+    process.env.ALLOWED_USER_ID = "12345";
+    resetSecurityConfig();
+    resetApi();
+    resetStoreForTest();
+    setMessageReactionSpy = vi
+      .spyOn(Api.prototype, "setMessageReaction")
+      .mockResolvedValue(true as unknown as never);
+  });
+
+  afterEach(() => {
+    setMessageReactionSpy.mockRestore();
+    delete process.env.BOT_TOKEN;
+    delete process.env.ALLOWED_USER_ID;
+    resetApi();
+    resetSecurityConfig();
+    resetStoreForTest();
+  });
+
+  it("calls setMessageReaction with 🫡 for the given message id", async () => {
+    ackVoiceMessage(100);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(setMessageReactionSpy).toHaveBeenCalledWith(
+      12345, 100, [{ type: "emoji", emoji: "🫡" }],
+    );
+  });
+
+  it("records 🫡 in the bot reaction index on success", async () => {
+    ackVoiceMessage(101);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getBotReaction(101)).toBe("🫡");
+  });
+
+  it("is a no-op when resolveChat returns a non-number (no ALLOWED_USER_ID)", () => {
+    delete process.env.ALLOWED_USER_ID;
+    resetSecurityConfig();
+    ackVoiceMessage(102);
+    // synchronous guard — if we got here without throwing, the check passed.
+    // The spy must NOT have been called (even after async flush it won't fire).
+    expect(setMessageReactionSpy).not.toHaveBeenCalled();
+  });
+
+  it("skips the API call when 🫡 is already in the bot reaction index (dedup)", async () => {
+    // Edge case #5: pre-set the reaction so the dedup guard fires
+    recordBotReaction(103, "🫡");
+    ackVoiceMessage(103);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(setMessageReactionSpy).not.toHaveBeenCalled();
+  });
+
+  it("writes to stderr and does NOT record reaction when API call fails", async () => {
+    setMessageReactionSpy.mockRejectedValue(new Error("api error"));
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    ackVoiceMessage(104);
+    // Three microtask ticks: Promise.race → .then(ok → ..., () => false) → .then(ok => { ...stderr... })
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining("🫡 failed for msg 104"),
+    );
+    expect(getBotReaction(104)).toBeNull();
+    stderrSpy.mockRestore();
   });
 });

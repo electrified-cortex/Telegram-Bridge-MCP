@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("./telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => mocks,

@@ -7,6 +7,8 @@ import {
 import { resolveParseMode } from "../markdown.js";
 import { showTyping } from "../typing-state.js";
 import { extname } from "path";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 // ---------------------------------------------------------------------------
 // Auto-detection
@@ -38,7 +40,8 @@ const DESCRIPTION =
   "Sends a file (photo, document, video, audio, or voice note) to the chat. " +
   "Accepts a local file path, public HTTPS URL, or Telegram file_id. " +
   "Auto-detects the file type by extension when type=\"auto\" (default). " +
-  "For file_id inputs, specify type explicitly since there's no extension to detect.";
+  "For file_id inputs, specify type explicitly since there's no extension to detect. " +
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -93,12 +96,16 @@ export function register(server: McpServer) {
           .int()
           .optional()
           .describe("Reply to this message ID"),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
     async ({
       file, type, caption, parse_mode, duration, performer, title,
       width, height, disable_notification, reply_to_message_id,
+      identity,
     }) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 

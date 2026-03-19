@@ -86,6 +86,7 @@ vi.mock("./message-store.js", () => ({
   setOnEvent: mocks.setOnEvent,
 }));
 
+
 import {
   handleIfBuiltIn,
   isBuiltInPanelQuery,
@@ -611,4 +612,6 @@ describe("built-in-commands", () => {
       expect(mocks.setDefaultVoice).not.toHaveBeenCalled();
     });
   });
+
 });
+

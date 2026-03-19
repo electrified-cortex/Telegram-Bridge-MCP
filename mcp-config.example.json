@@ -1,3 +1,4 @@
 {
-  "sessionLog": 50
+  "sessionLog": 50,
+  "debug": false
 }

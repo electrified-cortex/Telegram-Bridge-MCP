@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { escapeHtml } from "../markdown.js";
 import { applyTopicToTitle } from "../topic-state.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const FILLED = "▓";
 const EMPTY = "░";
@@ -32,7 +34,8 @@ const DESCRIPTION =
   "Use for percentage-based continuous tracking (e.g. 47%). " +
   "For discrete named steps with pass/fail status, use send_new_checklist instead. " +
   "Pass the returned message_id to update_progress to edit in-place. " +
-  "Multiple concurrent progress bars are supported — each is tracked by its own message_id.";
+  "Multiple concurrent progress bars are supported — each is tracked by its own message_id. " +
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -61,9 +64,12 @@ export function register(server: McpServer) {
           .max(40)
           .default(DEFAULT_WIDTH)
           .describe(`Bar width in characters. Default ${DEFAULT_WIDTH}.`),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ percent, title, subtext, width }) => {
+    async ({ percent, title, subtext, width, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {

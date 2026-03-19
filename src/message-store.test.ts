@@ -22,6 +22,11 @@ import {
   clearMessageHook,
   CURRENT,
 } from "./message-store.js";
+import {
+  setActiveSession,
+  resetSessions,
+} from "./session-manager.js";
+import { runInSessionContext } from "./session-context.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — minimal Telegram Update factories
@@ -232,7 +237,8 @@ describe("recordInbound — text messages", () => {
 
   it("captures reply_to from reply_to_message", () => {
     const update = textUpdate(5, "replying to you");
-    (update.message as Record<string, unknown>).reply_to_message = {
+    const message = update.message as unknown as Record<string, unknown>;
+    message.reply_to_message = {
       message_id: 3,
       date: Math.floor(Date.now() / 1000),
       chat: { id: 100, type: "private" },
@@ -317,37 +323,37 @@ describe("recordInbound — documents", () => {
   });
 });
 
-describe("recordInbound — callback queries (response lane)", () => {
-  it("enqueues to response lane and drains before messages", () => {
+describe("recordInbound — callback queries (temporal order)", () => {
+  it("enqueues callbacks in arrival order after prior messages", () => {
     // Enqueue a message first, then a callback
     recordInbound(textUpdate(1, "message first"));
     recordInbound(callbackUpdate(1, "approve"));
 
     expect(pendingCount()).toBe(2);
 
-    // Response lane should drain first
+    // Temporal order: message arrived first, callback arrived second
     const first = dequeue();
-    expect(first!.event).toBe("callback");
-    expect(first!.content.data).toBe("approve");
+    expect(first!.event).toBe("message");
+    expect(first!.content.text).toBe("message first");
 
     const second = dequeue();
-    expect(second!.event).toBe("message");
-    expect(second!.content.text).toBe("message first");
+    expect(second!.event).toBe("callback");
+    expect(second!.content.data).toBe("approve");
   });
 });
 
-describe("recordInbound — reactions (response lane)", () => {
-  it("enqueues reactions to response lane", () => {
+describe("recordInbound — reactions (temporal order)", () => {
+  it("enqueues reactions in arrival order after prior messages", () => {
     recordInbound(textUpdate(1, "some text"));
     recordInbound(reactionUpdate(1, ["👍"]));
 
-    // Reaction drains first (response lane)
+    // Temporal order: message came first
     const first = dequeue();
-    expect(first!.event).toBe("reaction");
-    expect(first!.content.added).toEqual(["👍"]);
+    expect(first!.event).toBe("message");
 
     const second = dequeue();
-    expect(second!.event).toBe("message");
+    expect(second!.event).toBe("reaction");
+    expect(second!.content.added).toEqual(["👍"]);
   });
 });
 
@@ -372,8 +378,8 @@ describe("recordInbound — edited messages (silent update)", () => {
   });
 });
 
-describe("Two-lane priority queue", () => {
-  it("drains response lane before message lane", () => {
+describe("Temporal queue ordering", () => {
+  it("preserves arrival order across all event types", () => {
     recordInbound(textUpdate(1, "msg1"));
     recordInbound(textUpdate(2, "msg2"));
     recordInbound(callbackUpdate(1, "cb1"));
@@ -383,13 +389,13 @@ describe("Two-lane priority queue", () => {
     let evt;
     while ((evt = dequeue())) order.push(evt.event);
 
-    expect(order[0]).toBe("callback");
-    expect(order[1]).toBe("reaction");
-    expect(order[2]).toBe("message");
-    expect(order[3]).toBe("message");
+    expect(order[0]).toBe("message");
+    expect(order[1]).toBe("message");
+    expect(order[2]).toBe("callback");
+    expect(order[3]).toBe("reaction");
   });
 
-  it("returns undefined when both lanes empty", () => {
+  it("returns undefined when queue is empty", () => {
     expect(dequeue()).toBeUndefined();
   });
 });
@@ -472,6 +478,103 @@ describe("recordOutgoing", () => {
     expect(msg!.from).toBe("bot");
     expect(msg!.event).toBe("sent");
     expect(msg!.content.text).toBe("Hi there");
+  });
+});
+
+describe("session tagging on outbound", () => {
+  beforeEach(() => {
+    resetSessions();
+  });
+
+  it("tags recordOutgoing events with active session ID", () => {
+    setActiveSession(3);
+    recordOutgoing(200, "text", "tagged");
+    const evt = getMessage(200);
+    expect(evt!.sid).toBe(3);
+  });
+
+  it("omits sid when active session is 0", () => {
+    setActiveSession(0);
+    recordOutgoing(201, "text", "no session");
+    const evt = getMessage(201);
+    expect(evt!.sid).toBeUndefined();
+  });
+
+  it("tags recordOutgoingEdit events with active session ID", () => {
+    setActiveSession(1);
+    recordOutgoing(300, "text", "original");
+    setActiveSession(2);
+    recordOutgoingEdit(300, "text", "edited");
+    const timeline = dumpTimeline();
+    const editEvt = timeline.find(
+      (e) => e.id === 300 && e.event === "edit",
+    );
+    expect(editEvt!.sid).toBe(2);
+  });
+
+  it("tags orphan edits (evicted message) with active session ID", () => {
+    setActiveSession(5);
+    recordOutgoingEdit(999, "text", "orphan");
+    const timeline = dumpTimeline();
+    const evt = timeline.find((e) => e.id === 999);
+    expect(evt!.sid).toBe(5);
+  });
+
+  // ── AsyncLocalStorage path (getCallerSid) ────────────────────────────────
+
+  it("runInSessionContext: recordOutgoing picks up session from ALS", () => {
+    setActiveSession(0); // global is 0 — proves ALS is used, not global
+    runInSessionContext(7, () => {
+      recordOutgoing(400, "text", "als-tagged");
+    });
+    const evt = getMessage(400);
+    expect(evt!.sid).toBe(7);
+  });
+
+  it("runInSessionContext: explicit sid param overrides ALS", () => {
+    runInSessionContext(7, () => {
+      recordOutgoing(401, "text", "explicit-override", undefined, undefined, 9);
+    });
+    const evt = getMessage(401);
+    expect(evt!.sid).toBe(9);
+  });
+
+  it("runInSessionContext: concurrent contexts tag independently", async () => {
+    // Two concurrent async operations must not cross-contaminate
+    const [p1, p2] = await Promise.all([
+      runInSessionContext(10, async () => {
+        await Promise.resolve();
+        recordOutgoing(500, "text", "from-sid-10");
+        return getMessage(500);
+      }),
+      runInSessionContext(20, async () => {
+        await Promise.resolve();
+        recordOutgoing(501, "text", "from-sid-20");
+        return getMessage(501);
+      }),
+    ]);
+    expect(p1!.sid).toBe(10);
+    expect(p2!.sid).toBe(20);
+  });
+
+  it("runInSessionContext: recordOutgoingEdit picks up session from ALS", () => {
+    setActiveSession(0);
+    recordOutgoing(600, "text", "base");
+    runInSessionContext(11, () => {
+      recordOutgoingEdit(600, "text", "als-edit");
+    });
+    const timeline = dumpTimeline();
+    const editEvt = timeline.find((e) => e.id === 600 && e.event === "edit");
+    expect(editEvt!.sid).toBe(11);
+  });
+
+  it("runInSessionContext: recordOutgoingEdit orphan (evicted) picks up ALS", () => {
+    setActiveSession(0);
+    runInSessionContext(12, () => {
+      recordOutgoingEdit(999, "text", "als-orphan");
+    });
+    const evt = getMessage(999);
+    expect(evt!.sid).toBe(12);
   });
 });
 
@@ -625,7 +728,7 @@ describe("Mixed inbound/outbound scenario", () => {
     // User sends follow-up
     recordInbound(textUpdate(2, "Thanks!"));
 
-    // Reaction (response lane) drains first
+    // Reaction (enqueued before "Thanks!") arrives first in temporal order
     const reaction = dequeue();
     expect(reaction!.event).toBe("reaction");
 

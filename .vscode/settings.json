@@ -1,7 +1,11 @@
 {
     "chat.tools.terminal.autoApprove": {
-        "git commit": false,
-        "git push": false,
+        "git reset": false,
+        "git checkout -- ": false,
+        "git restore": false,
+        "git clean": false,
+        "git stash drop": false,
+        "git branch -D": false,
         "npx tsc": true
     },
     "docker.lsp.experimental.scout.criticalHighVulnerabilities": true

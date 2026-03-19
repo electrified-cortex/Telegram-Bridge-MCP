@@ -5,18 +5,27 @@ const mocks = vi.hoisted(() => ({
   sendChatAction: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 123),
   fireTempReactionRestore: vi.fn().mockResolvedValue(undefined),
+  isAnimationActive: vi.fn(() => false),
+  isAnimationPersistent: vi.fn(() => false),
+  cancelAnimation: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("./temp-reaction.js", () => ({
   fireTempReactionRestore: mocks.fireTempReactionRestore,
 }));
 
+vi.mock("./animation-state.js", () => ({
+  isAnimationActive: () => mocks.isAnimationActive(),
+  isAnimationPersistent: () => mocks.isAnimationPersistent(),
+  cancelAnimation: () => mocks.cancelAnimation(),
+}));
+
 vi.mock("./telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("./telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return { ...actual, getApi: () => mocks, resolveChat: mocks.resolveChat };
 });
 
-import { showTyping, cancelTyping, isTypingActive } from "./typing-state.js";
+import { showTyping, cancelTyping, isTypingActive, typingGeneration, cancelTypingIfSameGeneration } from "./typing-state.js";
 
 describe("typing-state", () => {
   beforeEach(() => {
@@ -92,6 +101,79 @@ describe("typing-state", () => {
       await showTyping(1);
       expect(isTypingActive()).toBe(true);
       await vi.advanceTimersByTimeAsync(1100);
+      expect(isTypingActive()).toBe(false);
+    });
+
+    it("cancels non-persistent animation before starting indicator", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      mocks.isAnimationActive.mockReturnValue(true);
+      mocks.isAnimationPersistent.mockReturnValue(false);
+      await showTyping(5);
+      expect(mocks.cancelAnimation).toHaveBeenCalled();
+      cancelTyping();
+    });
+
+    it("does not cancel persistent animation before starting indicator", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      mocks.isAnimationActive.mockReturnValue(true);
+      mocks.isAnimationPersistent.mockReturnValue(true);
+      await showTyping(5);
+      expect(mocks.cancelAnimation).not.toHaveBeenCalled();
+      cancelTyping();
+    });
+
+    it("cancels when sendChatAction rejects during interval tick", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      await showTyping(10);
+      expect(isTypingActive()).toBe(true);
+      // Subsequent sendChatAction calls (interval ticks) will fail
+      mocks.sendChatAction.mockRejectedValue(new Error("network error"));
+      // Advance past INTERVAL_MS (4000 ms)
+      await vi.advanceTimersByTimeAsync(4100);
+      expect(isTypingActive()).toBe(false);
+    });
+  });
+
+  describe("typingGeneration", () => {
+    it("increases each time showTyping starts a new indicator", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      const gen0 = typingGeneration();
+      await showTyping(5);
+      const gen1 = typingGeneration();
+      cancelTyping();
+      await showTyping(5);
+      const gen2 = typingGeneration();
+      cancelTyping();
+      expect(gen1).toBeGreaterThan(gen0);
+      expect(gen2).toBeGreaterThan(gen1);
+    });
+
+    it("also increments when extending an existing indicator", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      await showTyping(5);
+      const genBefore = typingGeneration();
+      await showTyping(10); // extend
+      expect(typingGeneration()).toBeGreaterThan(genBefore);
+      cancelTyping();
+    });
+  });
+
+  describe("cancelTypingIfSameGeneration", () => {
+    it("returns false and does nothing when generation has changed", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      await showTyping(5);
+      const gen = typingGeneration();
+      await showTyping(10); // advances generation
+      expect(cancelTypingIfSameGeneration(gen)).toBe(false);
+      expect(isTypingActive()).toBe(true);
+      cancelTyping();
+    });
+
+    it("cancels and returns true when generation matches", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      await showTyping(5);
+      const gen = typingGeneration();
+      expect(cancelTypingIfSameGeneration(gen)).toBe(true);
       expect(isTypingActive()).toBe(false);
     });
   });

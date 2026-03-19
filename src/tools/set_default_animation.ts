@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { toResult } from "../telegram.js";
+import { toResult, toError } from "../telegram.js";
+import { requireAuth } from "../session-gate.js";
 import {
   setSessionDefault,
   resetSessionDefault,
@@ -10,6 +11,7 @@ import {
   listBuiltinPresets,
   DEFAULT_FRAMES,
 } from "../animation-state.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Configure the session's default animation frames and manage named presets. " +
@@ -37,45 +39,48 @@ export function register(server: McpServer) {
           .boolean()
           .default(false)
           .describe("Reset the session default back to the built-in animation. Ignores frames/name."),
-      },
+              identity: IDENTITY_SCHEMA,
+},
     },
-    ({ frames, name, reset }) => {
+    ({ frames, name, reset, identity}) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       // Reset mode
       if (reset) {
-        resetSessionDefault();
+        resetSessionDefault(_sid);
         return toResult({
           action: "reset",
           default_frames: [...DEFAULT_FRAMES],
-          presets: listPresets(),
+          presets: listPresets(_sid),
         });
       }
 
       // No-args: query mode
       if (!frames) {
         return toResult({
-          default_frames: [...getDefaultFrames()],
-          session_presets: listPresets(),
+          default_frames: [...getDefaultFrames(_sid)],
+          session_presets: listPresets(_sid),
           builtin_presets: listBuiltinPresets(),
         });
       }
 
       // Register named preset
       if (name) {
-        registerPreset(name, frames);
+        registerPreset(_sid, name, frames);
         return toResult({
           action: "preset_registered",
           name,
           frames,
-          presets: listPresets(),
+          presets: listPresets(_sid),
         });
       }
 
       // Set session default
-      setSessionDefault(frames);
+      setSessionDefault(_sid, frames);
       return toResult({
         action: "default_set",
         default_frames: frames,
-        presets: listPresets(),
+        presets: listPresets(_sid),
       });
     },
   );

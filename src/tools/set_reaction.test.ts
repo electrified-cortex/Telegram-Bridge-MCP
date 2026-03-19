@@ -3,17 +3,26 @@ import { createMockServer, parseResult, isError, errorCode } from "./test-utils.
 import { GrammyError } from "grammy";
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   setMessageReaction: vi.fn(),
   setTempReaction: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return { ...actual, getApi: () => mocks, resolveChat: () => 42 };
 });
 
 vi.mock("../temp-reaction.js", () => ({
   setTempReaction: mocks.setTempReaction,
+}));
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./set_reaction.js";
@@ -23,6 +32,7 @@ describe("set_reaction tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
     const server = createMockServer();
     register(server);
     call = server.getHandler("set_reaction");
@@ -33,7 +43,7 @@ describe("set_reaction tool", () => {
   // ── Permanent reaction ────────────────────────────────────────────────────
 
   it("sets an emoji reaction and returns ok", async () => {
-    const result = await call({ message_id: 100, emoji: "👍" });
+    const result = await call({ message_id: 100, emoji: "👍", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -46,7 +56,7 @@ describe("set_reaction tool", () => {
   });
 
   it("removes reaction when emoji is omitted (empty reaction array)", async () => {
-    const result = await call({ message_id: 55 });
+    const result = await call({ message_id: 55, identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -55,27 +65,27 @@ describe("set_reaction tool", () => {
   });
 
   it("forwards is_big flag to API", async () => {
-    await call({ message_id: 10, emoji: "🎉", is_big: true });
+    await call({ message_id: 10, emoji: "🎉", is_big: true, identity: [1, 123456]});
     const [, , , opts] = mocks.setMessageReaction.mock.calls[0];
     expect(opts.is_big).toBe(true);
   });
 
   it("resolves aliases to canonical emoji", async () => {
-    const result = await call({ message_id: 100, emoji: "rocket" });
+    const result = await call({ message_id: 100, emoji: "rocket", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.emoji).toBe("🚀");
   });
 
   it("rejects an emoji not in the allowed list (returns error)", async () => {
-    const result = await call({ message_id: 1, emoji: "💀" });
+    const result = await call({ message_id: 1, emoji: "💀", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("REACTION_EMOJI_INVALID");
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
   });
 
   it("rejects an arbitrary string that is not an emoji or alias (returns error)", async () => {
-    const result = await call({ message_id: 1, emoji: "notanemoji" });
+    const result = await call({ message_id: 1, emoji: "notanemoji", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("REACTION_EMOJI_INVALID");
   });
@@ -84,7 +94,7 @@ describe("set_reaction tool", () => {
     mocks.setMessageReaction.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: chat not found" }, "setMessageReaction", {}),
     );
-    const result = await call({ message_id: 1, emoji: "👍" });
+    const result = await call({ message_id: 1, emoji: "👍", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CHAT_NOT_FOUND");
   });
@@ -92,7 +102,7 @@ describe("set_reaction tool", () => {
   // ── Temporary reaction ────────────────────────────────────────────────────
 
   it("routes to setTempReaction when temporary=true (no restore_emoji)", async () => {
-    const result = await call({ message_id: 77, emoji: "👀", temporary: true });
+    const result = await call({ message_id: 77, emoji: "👀", temporary: true, identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.temporary).toBe(true);
@@ -103,7 +113,7 @@ describe("set_reaction tool", () => {
   });
 
   it("routes to setTempReaction when restore_emoji is provided", async () => {
-    const result = await call({ message_id: 100, emoji: "reading", restore_emoji: "salute" });
+    const result = await call({ message_id: 100, emoji: "reading", restore_emoji: "salute", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.temporary).toBe(true);
@@ -114,7 +124,7 @@ describe("set_reaction tool", () => {
   });
 
   it("routes to setTempReaction when timeout_seconds is provided", async () => {
-    const result = await call({ message_id: 55, emoji: "👀", timeout_seconds: 300 });
+    const result = await call({ message_id: 55, emoji: "👀", timeout_seconds: 300, identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.temporary).toBe(true);
@@ -123,7 +133,7 @@ describe("set_reaction tool", () => {
   });
 
   it("temporary: restore_emoji=undefined means remove-on-restore (no restore_emoji arg)", async () => {
-    const result = await call({ message_id: 10, emoji: "👀", timeout_seconds: 60 });
+    const result = await call({ message_id: 10, emoji: "👀", timeout_seconds: 60, identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.restore_emoji).toBeNull();
@@ -131,20 +141,20 @@ describe("set_reaction tool", () => {
   });
 
   it("temporary: returns error for invalid restore_emoji", async () => {
-    const result = await call({ message_id: 1, emoji: "👀", restore_emoji: "notanemoji" });
+    const result = await call({ message_id: 1, emoji: "👀", restore_emoji: "notanemoji", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("REACTION_EMOJI_INVALID");
   });
 
   it("temporary: requires emoji when restore_emoji is set", async () => {
-    const result = await call({ message_id: 1, restore_emoji: "salute" });
+    const result = await call({ message_id: 1, restore_emoji: "salute", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("REACTION_EMOJI_INVALID");
   });
 
   it("temporary: returns error when setTempReaction fails", async () => {
     mocks.setTempReaction.mockResolvedValue(false);
-    const result = await call({ message_id: 1, emoji: "👀", restore_emoji: "🫡" });
+    const result = await call({ message_id: 1, emoji: "👀", restore_emoji: "🫡", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
   });
 });
@@ -161,7 +171,7 @@ describe("set_reaction tool", () => {
   });
 
   it("sets an emoji reaction and returns ok", async () => {
-    const result = await call({ message_id: 100, emoji: "👍" });
+    const result = await call({ message_id: 100, emoji: "👍", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -176,7 +186,7 @@ describe("set_reaction tool", () => {
   });
 
   it("removes reaction when emoji is omitted (empty reaction array)", async () => {
-    const result = await call({ message_id: 55 });
+    const result = await call({ message_id: 55, identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -185,13 +195,13 @@ describe("set_reaction tool", () => {
   });
 
   it("forwards is_big flag to API", async () => {
-    await call({ message_id: 10, emoji: "🎉", is_big: true });
+    await call({ message_id: 10, emoji: "🎉", is_big: true, identity: [1, 123456]});
     const [, , , opts] = mocks.setMessageReaction.mock.calls[0];
     expect(opts.is_big).toBe(true);
   });
 
   it("resolves aliases to canonical emoji", async () => {
-    const result = await call({ message_id: 100, emoji: "rocket" });
+    const result = await call({ message_id: 100, emoji: "rocket", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -206,14 +216,14 @@ describe("set_reaction tool", () => {
 
   it("rejects an emoji not in the allowed list (returns error)", async () => {
     // 💀 is not in ALLOWED_EMOJI and not an alias
-    const result = await call({ message_id: 1, emoji: "💀" });
+    const result = await call({ message_id: 1, emoji: "💀", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("REACTION_EMOJI_INVALID");
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
   });
 
   it("rejects an arbitrary string that is not an emoji or alias (returns error)", async () => {
-    const result = await call({ message_id: 1, emoji: "notanemoji" });
+    const result = await call({ message_id: 1, emoji: "notanemoji", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("REACTION_EMOJI_INVALID");
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
@@ -228,8 +238,33 @@ describe("set_reaction tool", () => {
         {},
       ),
     );
-    const result = await call({ message_id: 1, emoji: "👍" });
+    const result = await call({ message_id: 1, emoji: "👍", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CHAT_NOT_FOUND");
   });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when no identity provided", async () => {
+    const result = await call({"message_id":1});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"message_id":1,"identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when identity is valid", async () => {
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"message_id":1,"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+});
+
 });

@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText } from "../telegram.js";
 import { escapeHtml } from "../markdown.js";
 import { applyTopicToTitle } from "../topic-state.js";
+import { requireAuth } from "../session-gate.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 const STEP_STATUS_SCHEMA = z.enum(["pending", "running", "done", "failed", "skipped"]);
 type StepStatus = z.infer<typeof STEP_STATUS_SCHEMA>;
@@ -48,7 +50,8 @@ const CREATE_DESCRIPTION =
   "For percentage-based progress tracking, use send_new_progress instead. " +
   "Call this once at the start of a multi-step agent task to send the " +
   "checklist and get its message_id. Use the returned message_id with " +
-  "update_checklist to edit it in-place as steps progress.";
+  "update_checklist to edit it in-place as steps progress. " +
+  "Ensure session_start has been called.";
 
 const UPDATE_DESCRIPTION =
   "Updates an existing live task checklist message in Telegram. Pass the " +
@@ -63,9 +66,12 @@ export function register(server: McpServer) {
       inputSchema: {
         title: TITLE_INPUT,
         steps: STEPS_INPUT,
+        identity: IDENTITY_SCHEMA,
       },
     },
-    async ({ title, steps }) => {
+    async ({ title, steps, identity }) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {
@@ -100,9 +106,12 @@ export function register(server: McpServer) {
           .int()
           .min(1)
           .describe("ID of the checklist message to update, as returned by send_new_checklist."),
+        identity: IDENTITY_SCHEMA,
       },
     },
-    async ({ title, steps, message_id }) => {
+    async ({ title, steps, message_id, identity }) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       try {

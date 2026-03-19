@@ -4,11 +4,16 @@ import {
   resolveChat,
   toResult, toError, validateText, validateCallbackData, LIMITS,
 } from "../telegram.js";
-import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook } from "../message-store.js";
+import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
+import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
+import { getCallerSid } from "../session-context.js";
+import { requireAuth } from "../session-gate.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   sendChoiceMessage, type KeyboardOption,
 } from "./button-helpers.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { validateButtonSymbolParity } from "../button-validation.js";
 
 const DESCRIPTION =
   "Sends a question with 2–8 labeled option buttons and waits until the " +
@@ -18,7 +23,10 @@ const DESCRIPTION =
   "returns { skipped: true, text_response }. If no input arrives within " +
   "timeout_seconds, returns { timed_out: true } — buttons remain live and " +
   "late clicks are still handled automatically. Multiple choose calls can " +
-  "be chained for questionnaires. Use for any single-selection choice.";
+  "be chained for questionnaires. Use for any single-selection choice. " +
+  "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
+  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
+  "Ensure session_start has been called.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -61,13 +69,60 @@ export function register(server: McpServer) {
         .min(1)
         .optional()
         .describe("Reply to this message ID — shows quoted message above the question"),
-      },
+      ignore_pending: z
+        .boolean()
+        .optional()
+        .describe("Set true to skip the pending-updates check and block immediately"),
+      ignore_parity: z
+        .boolean()
+        .optional()
+        .describe("Set true to bypass button label emoji-consistency check"),
+              identity: IDENTITY_SCHEMA,
+},
     },
-    async ({ question, options, timeout_seconds, columns, reply_to_message_id }, { signal }) => {
+    async ({ question, options, timeout_seconds, columns, reply_to_message_id, ignore_pending, ignore_parity, identity}, { signal }) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
       const textErr = validateText(question);
       if (textErr) return toError(textErr);
+
+      if (!ignore_pending && !reply_to_message_id) {
+        const sid = getCallerSid();
+        const sq = sid > 0 ? getSessionQueue(sid) : undefined;
+        const pending = sq ? sq.pendingCount() : pendingCount();
+        if (pending > 0) {
+          const breakdown = sid > 0 ? peekSessionCategories(sid) : undefined;
+          const summary = breakdown
+            ? Object.entries(breakdown).map(([k, v]) => `${v} ${k}`).join(", ")
+            : undefined;
+          const detail = summary
+            ? `${pending} unread update(s): ${summary}.`
+            : `${pending} unread update(s).`;
+          return toError({
+            code: "PENDING_UPDATES" as const,
+            message:
+              `${detail} Consider draining with dequeue_update(timeout:0) before ` +
+              `calling choose, or pass ignore_pending: true to proceed anyway.`,
+            pending,
+            ...(breakdown ? { breakdown } : {}),
+          });
+        }
+      }
+
+      // Validate button symbol parity
+      if (!ignore_parity) {
+        const parity = validateButtonSymbolParity(options.map((o) => o.label));
+        if (!parity.ok) {
+          return toError({
+            code: "BUTTON_SYMBOL_PARITY" as const,
+            message: `Button labels are inconsistent: ${parity.withEmoji.length} of ${options.length} have emoji. Either add emoji to all labels or remove them. Pass ignore_parity: true to send anyway.`,
+            labels_with_emoji: parity.withEmoji,
+            labels_without_emoji: parity.withoutEmoji,
+          });
+        }
+      }
 
       // Validate all callback data up front
       const displayMax = columns >= 2
@@ -99,13 +154,14 @@ export function register(server: McpServer) {
 
         // Register callback hook — handles button clicks even after poll timeout.
         // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
+        // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
         registerCallbackHook(messageId, (evt) => {
           const chosen = options.find((o) => o.value === evt.content.data);
           const chosenLabel = chosen?.label ?? evt.content.data ?? "";
           clearMessageHook(messageId);
           void ackAndEditSelection(chatId, messageId, question, chosenLabel, evt.content.qid)
             .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${String(e)}\n`));
-        });
+        }, _sid);
 
         // Fires immediately when a voice message is detected (before transcription).
         // This removes the keyboard right away so the user doesn't see a delayed edit.
@@ -116,7 +172,10 @@ export function register(server: McpServer) {
           editWithSkipped(chatId, messageId, question).catch(() => {/* non-fatal */});
         };
 
-        const match = await pollButtonOrTextOrVoice(chatId, messageId, timeout_seconds, onVoiceDetected, signal);
+        const match = await pollButtonOrTextOrVoice(
+          chatId, messageId, timeout_seconds,
+          onVoiceDetected, signal, getCallerSid(),
+        );
 
         if (!match) {
           // Timeout — register a message hook so the next user message

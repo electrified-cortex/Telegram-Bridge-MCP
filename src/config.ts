@@ -22,6 +22,7 @@ interface McpConfig {
   sessionLog?: "manual" | number;
   defaultVoice?: string;
   voices?: VoiceEntry[];
+  debug?: boolean;
 }
 
 export interface VoiceEntry {
@@ -102,6 +103,15 @@ export function sessionLogLabel(): string {
   if (mode === null) return "disabled";
   if (mode === "manual") return "manual";
   return `every ${mode} messages`;
+}
+
+// ---------------------------------------------------------------------------
+// Debug logging
+// ---------------------------------------------------------------------------
+
+/** Whether debug logging is enabled (config file or env var fallback). */
+export function isDebugConfig(): boolean {
+  return _config.debug === true || !!process.env["TELEGRAM_MCP_DEBUG"];
 }
 
 // ---------------------------------------------------------------------------

@@ -1,32 +1,36 @@
 /**
- * Module-level singleton for the active default title.
+ * Per-session singleton for the active default title.
  *
- * **Purpose:** When multiple MCP host instances each run their own MCP server
- * process (one Telegram-facing chat per instance), `set_topic` lets each process
+ * **Purpose:** When multiple sessions are active, `set_topic` lets each session
  * prepend a default title to its outbound messages — e.g. `[Refactor Agent]`
  * or `[Test Runner]` — so you can tell which agent sent what in the same chat.
  *
- * **Scope:** Module-level (process-scoped). Works correctly when there is one
- * MCP server process per host instance. Multiple chat sessions sharing the
- * same host instance share one process and therefore one title — the last
- * call wins.
+ * **Scope:** Per-session, keyed by SID via `getCallerSid()`. In single-session
+ * mode (SID 0) the map has a single entry — behaviour is identical to the old
+ * global singleton.
  */
 
-let _topic: string | null = null;
+import { getCallerSid } from "./session-context.js";
+
+const _topics = new Map<number, string | null>();
+
+function _current(): string | null {
+  return _topics.get(getCallerSid()) ?? null;
+}
 
 export function getTopic(): string | null {
-  return _topic;
+  return _current();
 }
 
 /**
  * Set the active default title. Pass an empty string to clear.
  */
 export function setTopic(topic: string): void {
-  _topic = topic.trim() || null;
+  _topics.set(getCallerSid(), topic.trim() || null);
 }
 
 export function clearTopic(): void {
-  _topic = null;
+  _topics.delete(getCallerSid());
 }
 
 /**
@@ -35,7 +39,8 @@ export function clearTopic(): void {
  * just injects the label inline so it appears inside the bold heading.
  */
 export function applyTopicToTitle(title: string): string {
-  return _topic ? `[${_topic}] ${title}` : title;
+  const topic = _current();
+  return topic ? `[${topic}] ${title}` : title;
 }
 
 /**
@@ -50,14 +55,15 @@ export function applyTopicToText(
   text: string,
   mode: "Markdown" | "MarkdownV2" | "HTML" = "Markdown",
 ): string {
-  if (!_topic) return text;
-  if (mode === "HTML") return `<b>[${_topic}]</b>\n${text}`;
+  const topic = _current();
+  if (!topic) return text;
+  if (mode === "HTML") return `<b>[${topic}]</b>\n${text}`;
   if (mode === "MarkdownV2") return text; // raw V2 — don't inject
   // Markdown — will be converted to MarkdownV2 by markdownToV2()
-  return `**[${_topic}]**\n${text}`;
+  return `**[${topic}]**\n${text}`;
 }
 
-/** For testing only: resets topic state so env is clean between tests. */
+/** For testing only: resets all topic state so env is clean between tests. */
 export function resetTopicStateForTest(): void {
-  _topic = null;
+  _topics.clear();
 }

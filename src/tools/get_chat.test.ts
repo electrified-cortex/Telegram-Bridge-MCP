@@ -1,7 +1,10 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "./test-utils.js";
+import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
+  activeSessionCount: vi.fn(() => 0),
+  getActiveSession: vi.fn(() => 0),
+  validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
   getChat: vi.fn(),
   pollButtonPress: vi.fn(),
@@ -10,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({
@@ -26,14 +29,20 @@ vi.mock("../message-store.js", () => ({
 }));
 
 vi.mock("./button-helpers.js", async (importActual) => {
-  const actual = await importActual<typeof import("./button-helpers.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
-    pollButtonPress: (...args: unknown[]) => mocks.pollButtonPress(...args),
-    ackAndEditSelection: (...args: unknown[]) => mocks.ackAndEditSelection(...args),
-    editWithTimedOut: (...args: unknown[]) => mocks.editWithTimedOut(...args),
+    pollButtonPress: mocks.pollButtonPress,
+    ackAndEditSelection: mocks.ackAndEditSelection,
+    editWithTimedOut: mocks.editWithTimedOut,
   };
 });
+
+vi.mock("../session-manager.js", () => ({
+  activeSessionCount: () => mocks.activeSessionCount(),
+  getActiveSession: () => mocks.getActiveSession(),
+  validateSession: mocks.validateSession,
+}));
 
 import { register } from "./get_chat.js";
 
@@ -42,6 +51,7 @@ describe("get_chat tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
     mocks.sendMessage.mockResolvedValue({ message_id: 1 });
     mocks.ackAndEditSelection.mockResolvedValue(undefined);
     mocks.editWithTimedOut.mockResolvedValue(undefined);
@@ -55,7 +65,7 @@ describe("get_chat tool", () => {
       kind: "button", callback_query_id: "q1", data: "get_chat_yes", message_id: 1,
     });
     mocks.getChat.mockResolvedValue({ id: 99, type: "group", title: "Dev Chat" });
-    const result = await call({});
+    const result = await call({ identity: [1, 123456] });
     expect(isError(result)).toBe(false);
     expect(parseResult(result)).toMatchObject({
       approved: true,
@@ -68,7 +78,7 @@ describe("get_chat tool", () => {
       kind: "button", callback_query_id: "q1", data: "get_chat_yes", message_id: 1,
     });
     mocks.getChat.mockResolvedValue({ id: 99, type: "private" });
-    await call({});
+    await call({ identity: [1, 123456] });
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       99,
       expect.any(String),
@@ -88,7 +98,7 @@ describe("get_chat tool", () => {
     mocks.pollButtonPress.mockResolvedValue({
       kind: "button", callback_query_id: "q2", data: "get_chat_no", message_id: 1,
     });
-    const result = await call({});
+    const result = await call({ identity: [1, 123456] });
     expect(isError(result)).toBe(false);
     expect(parseResult(result)).toMatchObject({ approved: false, timed_out: false });
     expect(mocks.getChat).not.toHaveBeenCalled();
@@ -96,7 +106,7 @@ describe("get_chat tool", () => {
 
   it("returns approved:false timed_out:true on timeout", async () => {
     mocks.pollButtonPress.mockResolvedValue(null);
-    const result = await call({});
+    const result = await call({ identity: [1, 123456] });
     expect(isError(result)).toBe(false);
     expect(parseResult(result)).toMatchObject({ approved: false, timed_out: true });
     expect(mocks.editWithTimedOut).toHaveBeenCalled();
@@ -111,7 +121,32 @@ describe("get_chat tool", () => {
     mocks.getChat.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: chat not found" }, "getChat", {}),
     );
-    const result = await call({});
+    const result = await call({ identity: [1, 123456] });
     expect(isError(result)).toBe(true);
   });
+
+describe("identity gate", () => {
+  it("returns SID_REQUIRED when no identity provided", async () => {
+    const result = await call({});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SID_REQUIRED");
+  });
+
+  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    mocks.validateSession.mockReturnValueOnce(false);
+    const result = await call({"identity":[1,99999]});
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("AUTH_FAILED");
+  });
+
+  it("proceeds when identity is valid", async () => {
+    mocks.validateSession.mockReturnValueOnce(true);
+    let code: string | undefined;
+    try { code = errorCode(await call({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    expect(code).not.toBe("SID_REQUIRED");
+    expect(code).not.toBe("AUTH_FAILED");
+  });
+
+});
+
 });

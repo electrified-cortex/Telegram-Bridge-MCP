@@ -8,9 +8,13 @@ import { getSecurityConfig, getApi, resolveChat, installOutboundProxy, sendServi
 import { clearCommandsOnShutdown } from "./shutdown.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
 import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
+import { startHealthCheck } from "./health-check.js";
+import { setAuthHook } from "./session-gate.js";
+import { touchSession } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
-import { loadConfig, getSessionLogMode, sessionLogLabel } from "./config.js";
+import { loadConfig, getSessionLogMode, sessionLogLabel, isDebugConfig } from "./config.js";
 import { timelineSize } from "./message-store.js";
+import { initDebugLog } from "./debug-log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -21,6 +25,10 @@ getSecurityConfig();
 
 // Load persistent MCP config
 loadConfig();
+
+// Initialize debug logging from config (or env var fallback)
+initDebugLog(isDebugConfig());
+if (isDebugConfig()) process.stderr.write("[info] debug logging enabled\n");
 
 // Warn if TTS/STT remote hosts are using plain HTTP (credentials and audio exposed in transit)
 if (process.env.TTS_HOST && !process.env.TTS_HOST.startsWith("https://")) {
@@ -83,6 +91,10 @@ void (async () => {
 
 startPoller();
 process.stderr.write("[info] background poller started\n");
+
+startHealthCheck();
+setAuthHook(touchSession);
+process.stderr.write("[info] health check started\n");
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
 const logStatus = sessionLogLabel();

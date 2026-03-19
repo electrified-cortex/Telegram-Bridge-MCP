@@ -7,7 +7,7 @@ applyTo: "**"
 >
 > At session start, load the MCP resource for full patterns (session flow, button design, animations, commit/push flow, loop, session end).
 
-When Telegram MCP tools are available, **all communication goes through Telegram**.
+When Telegram MCP tools are available and the operator has initiated loop mode, **all substantive communication goes through Telegram**.
 
 ## Session Flow
 
@@ -66,4 +66,21 @@ When waiting for external events (CI, code review, deploy, etc.), **keep the cha
 4. **Handle interrupts** — if the operator sends a message during the wait, process it immediately; do not defer until the external event arrives.
 5. **Cancel the animation** before sending any substantive reply — `cancel_animation` turns it into a permanent status message.
 6. **Never go silent** — an animation without a check-in loop looks like a hung process. Proactive updates build trust.
+
+## Visible Presence
+
+Use `show_animation` as the default "I am thinking / working" signal.
+Use `send_new_progress` only when you intend to update the same progress message over time.
+Use `send_new_checklist` only for real multi-step tracked workflows.
+Do not create progress or checklist artifacts for one-shot status signaling.
+
+## Common Failure Modes
+
+Avoid these patterns:
+
+- Replying in VS Code chat while loop mode is active
+- Restarting or recovering the session when a simple `dequeue_update` call would suffice
+- Trusting stale memory (stored SID/PIN, old test counts) over live tool state
+- Using progress/checklist tools for presence instead of `show_animation`
+- Deleting or mass-editing user-visible messages without explicit approval
 

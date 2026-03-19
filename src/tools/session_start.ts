@@ -2,28 +2,95 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
-import { dequeue, pendingCount } from "../message-store.js";
-import {
-  pollButtonPress,
-  ackAndEditSelection,
-} from "./button-helpers.js";
+import type { TimelineEvent } from "../message-store.js";
+import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getAvailableColors, COLOR_PALETTE } from "../session-manager.js";
+import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner } from "../session-queue.js";
+import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
+import { runInSessionContext } from "../session-context.js";
 
-const DEFAULT_INTRO = "\u2139\uFE0F Session Start";
+const APPROVAL_TIMEOUT_MS = 60_000;
+const APPROVAL_NO = "approve_no";
+const APPROVE_PREFIX = "approve_";
 
-const FRESH_DATA = "session_fresh";
-const RESUME_DATA = "session_resume";
-const FRESH_LABEL = "Start Fresh";
-const RESUME_LABEL = "\u25B6\uFE0F Resume";
+/**
+ * Send an operator approval prompt for a new session. The prompt shows
+ * available color squares as buttons — tapping a color approves AND assigns
+ * that color in one action. Returns { approved: true, color } on approval
+ * or { approved: false } on denial / timeout.
+ */
+async function requestApproval(
+  chatId: number,
+  name: string,
+  reconnect = false,
+  colorHint?: string,
+): Promise<{ approved: boolean; color?: string }> {
+  const label = reconnect ? "Session reconnecting:" : "New session requesting access:";
+  const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:`;
+  const availableColors = getAvailableColors(colorHint);
+  const colorButtons = availableColors.map((c) => ({
+    text: c,
+    callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
+  }));
+  const sent = await getApi().sendMessage(chatId, text, {
+    parse_mode: "MarkdownV2",
+    reply_markup: {
+      inline_keyboard: [
+        colorButtons,
+        [{ text: "⛔ Deny", callback_data: APPROVAL_NO, style: "danger" }],
+      ],
+    },
+  } as Record<string, unknown>);
+  const msgId: number = sent.message_id;
 
-/** Wait up to 10 minutes — effectively no timeout. */
-const CONFIRM_TIMEOUT_S = 600;
+  const decision = await new Promise<{ approved: boolean; color?: string }>((resolve) => {
+    const timer = setTimeout(() => {
+      clearCallbackHook(msgId);
+      resolve({ approved: false });
+    }, APPROVAL_TIMEOUT_MS);
+
+    registerCallbackHook(msgId, (evt: TimelineEvent) => {
+      clearTimeout(timer);
+      const data: string = evt.content.data ?? "";
+      const qid = evt.content.qid;
+      if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
+      if (data === APPROVAL_NO) {
+        resolve({ approved: false });
+      } else if (data.startsWith(APPROVE_PREFIX)) {
+        const idx = parseInt(data.slice(APPROVE_PREFIX.length), 10);
+        if (idx >= 0 && idx < COLOR_PALETTE.length) {
+          resolve({ approved: true, color: COLOR_PALETTE[idx] });
+        } else {
+          resolve({ approved: false });
+        }
+      } else {
+        resolve({ approved: false });
+      }
+    });
+  });
+
+  // Delete the prompt on approval (it's private UI — a public broadcast is
+  // sent separately). On denial, edit in-place to show the outcome.
+  if (decision.approved) {
+    await getApi().deleteMessage(chatId, msgId).catch(() => {});
+  } else {
+    await getApi().editMessageText(
+      chatId,
+      msgId,
+      `🤖 *Session denied:* ${markdownToV2(name)} ✗`,
+      { parse_mode: "MarkdownV2" },
+    ).catch(() => {});
+  }
+
+  return decision;
+}
 
 const DESCRIPTION =
-  "Call once at the start of every session. Sends an intro " +
-  "message, checks for pending messages from a previous " +
-  "session, and — if any exist — asks the operator whether " +
-  "to resume or start fresh. Returns { action, pending } " +
-  "so the agent knows how to proceed. " +
+  "Call once at the start of every session. Creates a session " +
+  "with a unique ID and PIN, and auto-drains any pending messages " +
+  "from a previous session. " +
+  "Returns { sid, pin, sessions_active, action, pending } so " +
+  "the agent knows its identity and how to proceed. " +
   "Call after get_agent_guide and get_me during session setup.";
 
 export function register(server: McpServer) {
@@ -32,107 +99,165 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        intro: z
+        name: z
           .string()
-          .default(DEFAULT_INTRO)
+          .default("")
           .describe(
-            "Markdown text for the intro message. " +
-            "Defaults to \"ℹ️ Session Start\".",
+            "Human-friendly session name, used as topic prefix. " +
+            "Encouraged when multiple sessions are active.",
+          ),
+        reconnect: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Set to true when reconnecting after a server restart. " +
+            "Sends 'reconnected' messaging instead of 'joined' to the operator and fellow sessions.",
+          ),
+        color: z
+          .string()
+          .optional()
+          .describe(
+            "Preferred color square emoji for this session. " +
+            "Palette meanings: 🟦 Coordinator/overseer · 🟩 Builder/worker · 🟨 Reviewer/QA · " +
+            "🟧 Research/exploration · 🟥 Ops/deployment · 🟪 Specialist/one-off. " +
+            "The operator makes the final choice via the approval dialog color buttons. " +
+            "Your hint goes first in the button list as a suggestion.",
           ),
       },
     },
-    async ({ intro }, { signal }) => {
+    async ({ name, reconnect, color }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
+      const isFirstSession = activeSessionCount() === 0;
+
+      // Default name for the first session; trim before any validation
+      const trimmedName = name.trim();
+      const effectiveName = isFirstSession && !trimmedName ? "Primary" : trimmedName;
+
+      // Second+ sessions must provide a name
+      if (!isFirstSession && !effectiveName) {
+        return toError({
+          code: "NAME_REQUIRED",
+          message: "A name is required when starting a second or later session.",
+        });
+      }
+
+      // Names must be alphanumeric (letters, digits, spaces only)
+      if (effectiveName && !/^[a-zA-Z0-9 ]+$/.test(effectiveName)) {
+        return toError({
+          code: "INVALID_NAME",
+          message: "Session names must be alphanumeric (letters, digits, spaces only).",
+        });
+      }
+
+      // Name collision guard: reject if a session with the same name exists
+      if (effectiveName) {
+        const existing = listSessions().find(
+          s => s.name.toLowerCase() === effectiveName.toLowerCase(),
+        );
+        if (existing) {
+          return toError({
+            code: "NAME_CONFLICT",
+            message:
+              `A session named "${existing.name}" already exists (SID ${existing.sid}). ` +
+              `Choose a different name, or resume your existing session with dequeue_update(sid=${existing.sid}).`,
+          });
+        }
+      }
+
+      // Approval gate: second+ sessions require operator approval
+      let chosenColor: string | undefined = color;
+      if (!isFirstSession) {
+        const decision = await runInSessionContext(0, () =>
+          requestApproval(chatId, effectiveName, reconnect, color),
+        );
+        if (!decision.approved) {
+          return toError({
+            code: "SESSION_DENIED",
+            message: `Session "${effectiveName}" was denied by the operator.`,
+          });
+        }
+        chosenColor = decision.color;
+      }
+
+      const session = createSession(effectiveName, chosenColor);
+      createSessionQueue(session.sid);
+      setActiveSession(session.sid);
+
       try {
-        // 1. Send the intro message
-        const sent = await getApi().sendMessage(
-          chatId,
-          markdownToV2(intro),
-          {
-            parse_mode: "MarkdownV2",
-            disable_notification: true,
-            _rawText: intro,
-          } as Record<string, unknown>,
-        );
-        const introId: number = sent.message_id;
-
-        // 2. Check pending count
-        const pending = pendingCount();
-        if (pending === 0) {
-          return toResult({
-            action: "fresh",
-            pending: 0,
-            intro_message_id: introId,
-          });
-        }
-
-        // 3. Ask the operator
-        const plural = pending === 1 ? "message" : "messages";
-        const confirmText =
-          `${pending} ${plural} from a previous session.`;
-
-        const confirmSent = await getApi().sendMessage(
-          chatId,
-          markdownToV2(confirmText),
-          {
-            parse_mode: "MarkdownV2",
-            reply_markup: {
-              inline_keyboard: [[
-                { text: FRESH_LABEL, callback_data: FRESH_DATA },
-                { text: RESUME_LABEL, callback_data: RESUME_DATA },
-              ]],
-            },
-            _rawText: confirmText,
-          } as Record<string, unknown>,
-        );
-
-        // 4. Wait for button press
-        const result = await pollButtonPress(
-          chatId,
-          confirmSent.message_id,
-          CONFIRM_TIMEOUT_S,
-          signal,
-        );
-
-        if (!result) {
-          // Extremely unlikely (10 min timeout), treat as fresh
-          return toResult({
-            action: "fresh",
-            discarded: 0,
-            intro_message_id: introId,
-          });
-        }
-
-        const chosenLabel =
-          result.data === FRESH_DATA ? FRESH_LABEL : RESUME_LABEL;
-        await ackAndEditSelection(
-          chatId,
-          confirmSent.message_id,
-          confirmText,
-          chosenLabel,
-          result.callback_query_id,
-        );
-
-        if (result.data === RESUME_DATA) {
-          return toResult({
-            action: "resume",
-            pending,
-            intro_message_id: introId,
-          });
-        }
-
-        // 5. Drain all pending messages
+        // Auto-drain any pending messages (always start fresh)
         let discarded = 0;
         while (dequeue() !== undefined) discarded++;
 
-        return toResult({
-          action: "fresh",
-          discarded,
-          intro_message_id: introId,
-        });
+        const res: Record<string, unknown> = {
+          sid: session.sid,
+          pin: session.pin,
+          sessions_active: session.sessionsActive,
+          action: reconnect ? "reconnected" : "fresh",
+          pending: 0,
+        };
+        if (discarded > 0) res.discarded = discarded;
+        if (session.sessionsActive > 1) {
+          const allSessions = listSessions();
+          res.fellow_sessions = allSessions.filter(s => s.sid !== session.sid);
+          if (session.sessionsActive === 2) {
+            // Auto-activate governor: lowest-SID session (the first one) becomes governor
+            const lowestSid = Math.min(...allSessions.map(s => s.sid));
+            setGovernorSid(lowestSid);
+          }
+
+          // Broadcast a visible announcement via the outbound proxy so the
+          // operator (and other sessions) can reply-to-address this session.
+          // runInSessionContext sets the ALS SID so the proxy prepends the
+          // correct name tag ("🟨 🤖 Worker 1\nSession 2 — 🟢 Online").
+          const _announcement = await Promise.resolve(
+            runInSessionContext(session.sid, () =>
+              getApi().sendMessage(chatId, `Session ${session.sid} — 🟢 Online`),
+            ),
+          ).catch(() => undefined);
+          const announcementMsgId = _announcement?.message_id;
+          if (announcementMsgId !== undefined) {
+            trackMessageOwner(announcementMsgId, session.sid);
+          }
+
+          // Notify existing sessions and the new session of the join event
+          const governorSid = getGovernorSid();
+          const governorSession = allSessions.find(s => s.sid === governorSid);
+          const governorLabel = governorSession ? `'${governorSession.name}' (SID ${governorSid})` : `SID ${governorSid}`;
+
+          const joinVerb = reconnect ? "has reconnected" : "has joined";
+          for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
+            const isGovernor = fellow.sid === governorSid;
+            const governorNote = isGovernor
+              ? "You are the governor — ambiguous messages will be routed to you."
+              : `Ambiguous messages go to ${governorLabel}.`;
+            deliverServiceMessage(
+              fellow.sid,
+              `Session '${effectiveName}' (SID ${session.sid}) ${joinVerb}. ${governorNote}`,
+              "session_joined",
+              { sid: session.sid, name: effectiveName, governor_sid: governorSid, reconnect, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
+            );
+          }
+
+          // Notify the new session of its role
+          const newIsGovernor = session.sid === governorSid;
+          const roleNote = newIsGovernor
+            ? `You are the governor (SID ${session.sid}). Ambiguous messages will be routed to you.`
+            : `You are SID ${session.sid}. ${governorLabel} is the governor. Ambiguous messages go to them.`;
+          deliverServiceMessage(
+            session.sid,
+            roleNote,
+            "session_orientation",
+            { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
+          );
+        }
+        return toResult(res);
       } catch (err) {
+        // Rollback: clean up orphaned session on failure
+        removeSessionQueue(session.sid);
+        closeSession(session.sid);
+        setActiveSession(0);
         return toError(err);
       }
     },

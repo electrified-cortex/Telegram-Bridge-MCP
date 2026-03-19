@@ -1,5 +1,5 @@
 /**
- * Module-level singleton for the Telegram "typing" indicator.
+ * Per-session typing indicator manager.
  *
  * Design goals:
  *  - **Idempotent** — calling showTyping() while it's already active just
@@ -8,11 +8,14 @@
  *  - **Send-cancel** — every outbound tool (send_message, notify, choose, …)
  *    calls cancelTyping() after the Telegram API confirms delivery, so the
  *    indicator persists until the message actually appears for the user.
+ *  - **Per-session** — each session has independent typing state so two
+ *    concurrent sessions don't cancel each other's indicators.
  */
 
 import { getApi, resolveChat } from "./telegram.js";
 import { isAnimationActive, isAnimationPersistent, cancelAnimation } from "./animation-state.js";
 import { fireTempReactionRestore } from "./temp-reaction.js";
+import { getCallerSid } from "./session-context.js";
 
 export type TypingAction =
   | "typing"
@@ -22,15 +25,45 @@ export type TypingAction =
   | "upload_document"
   | "upload_video";
 
-let _timer: ReturnType<typeof setInterval> | null = null;
-let _safety: ReturnType<typeof setTimeout> | null = null;
-let _deadline = 0;
-let _generation = 0;
+interface TypingState {
+  timer: ReturnType<typeof setInterval> | null;
+  safety: ReturnType<typeof setTimeout> | null;
+  deadline: number;
+  generation: number;
+}
+
+const _states = new Map<number, TypingState>();
 
 const INTERVAL_MS = 4_000; // Telegram indicator expires in ~5 s; 4 s keeps it seamless
 
+function _get(sid: number): TypingState {
+  let s = _states.get(sid);
+  if (!s) {
+    s = { timer: null, safety: null, deadline: 0, generation: 0 };
+    _states.set(sid, s);
+  }
+  return s;
+}
+
 function unrefTimer(t: ReturnType<typeof setTimeout>): void {
   if (typeof t === "object" && "unref" in t) t.unref();
+}
+
+/** Cancel the typing indicator for a specific SID (used in closures where SID is captured). */
+function _cancelForSid(sid: number): boolean {
+  const s = _states.get(sid);
+  if (!s) return false;
+  const wasActive = !!s.timer;
+  if (s.timer) {
+    clearInterval(s.timer);
+    s.timer = null;
+  }
+  if (s.safety) {
+    clearTimeout(s.safety);
+    s.safety = null;
+  }
+  s.deadline = 0;
+  return wasActive;
 }
 
 /**
@@ -38,22 +71,12 @@ function unrefTimer(t: ReturnType<typeof setTimeout>): void {
  * Returns true if an active indicator was cancelled, false if nothing was running.
  */
 export function cancelTyping(): boolean {
-  const wasActive = !!_timer;
-  if (_timer) {
-    clearInterval(_timer);
-    _timer = null;
-  }
-  if (_safety) {
-    clearTimeout(_safety);
-    _safety = null;
-  }
-  _deadline = 0;
-  return wasActive;
+  return _cancelForSid(getCallerSid());
 }
 
 /** Generation counter — incremented every time showTyping starts or extends. */
 export function typingGeneration(): number {
-  return _generation;
+  return _get(getCallerSid()).generation;
 }
 
 /**
@@ -62,46 +85,49 @@ export function typingGeneration(): number {
  * (re-)started while a send was in flight.
  */
 export function cancelTypingIfSameGeneration(gen: number): boolean {
-  if (_generation !== gen) return false;
-  return cancelTyping();
+  const sid = getCallerSid();
+  const s = _get(sid);
+  if (s.generation !== gen) return false;
+  return _cancelForSid(sid);
 }
 
 /**
- * Show the typing indicator for `timeoutMs` milliseconds.
+ * Show the typing indicator for `timeoutSeconds` seconds.
  *
  * - If not currently running: sends the action immediately and starts the interval.
  * - If already running: extends the deadline only — no duplicate interval,
  *   no extra Telegram call. The existing 4-second tick will handle it.
- */
-/**
+ *
  * Returns true if the indicator was newly started, false if an existing one was just extended.
  */
 export async function showTyping(timeoutSeconds: number, action: TypingAction = "typing"): Promise<boolean> {
   // Cancel temporary animations — typing indicator replaces the placeholder.
   // Persistent animations are agent-controlled and survive show_typing.
-  if (isAnimationActive() && !isAnimationPersistent()) {
-    await cancelAnimation();
+  const sid = getCallerSid();
+  if (isAnimationActive(sid) && !isAnimationPersistent(sid)) {
+    await cancelAnimation(sid);
   }
 
   // Showing typing signals intent to respond — treat as outbound, restore temp reaction.
   await fireTempReactionRestore();
 
+  const s = _get(sid);
   const timeoutMs = timeoutSeconds * 1000;
   const newDeadline = Date.now() + timeoutMs;
-  _generation++;
+  s.generation++;
 
-  if (_timer) {
+  if (s.timer) {
     // Already running — just extend the deadline
-    _deadline = Math.max(_deadline, newDeadline);
+    s.deadline = Math.max(s.deadline, newDeadline);
     // Reset the safety timeout too
-    if (_safety) clearTimeout(_safety);
-    _safety = setTimeout(() => { cancelTyping(); }, Math.max(0, _deadline - Date.now()));
-    unrefTimer(_safety);
+    if (s.safety) clearTimeout(s.safety);
+    s.safety = setTimeout(() => { _cancelForSid(sid); }, Math.max(0, s.deadline - Date.now()));
+    unrefTimer(s.safety);
     return false; // extended, not newly started
   }
 
   // Not running — start fresh
-  _deadline = newDeadline;
+  s.deadline = newDeadline;
 
   const chatId = resolveChat();
   if (typeof chatId !== "number") return false; // misconfigured — silently skip
@@ -114,26 +140,22 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
     return false;
   }
 
-  _timer = setInterval(() => {
-    if (Date.now() >= _deadline) {
-      cancelTyping();
-      return;
-    }
+  s.timer = setInterval(() => {
     getApi().sendChatAction(chatId, action).catch(() => {
-      cancelTyping();
+      _cancelForSid(sid);
     });
   }, INTERVAL_MS);
 
-  unrefTimer(_timer);
+  unrefTimer(s.timer);
 
   // Safety: always stop at deadline even if tick math is off
-  _safety = setTimeout(() => cancelTyping(), timeoutMs);
-  unrefTimer(_safety);
+  s.safety = setTimeout(() => _cancelForSid(sid), timeoutMs);
+  unrefTimer(s.safety);
 
   return true; // newly started
 }
 
-/** True when the typing indicator is currently active. For testing only. */
+/** True when the typing indicator is currently active for the calling session. */
 export function isTypingActive(): boolean {
-  return !!_timer;
+  return !!_get(getCallerSid()).timer;
 }

@@ -1,10 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { toResult, ackVoiceMessage } from "../telegram.js";
+import { toResult, toError, ackVoiceMessage } from "../telegram.js";
+import { requireAuth } from "../session-gate.js";
 import {
-  dequeueBatch, pendingCount, waitForEnqueue,
   type TimelineEvent,
 } from "../message-store.js";
+import { setActiveSession, touchSession } from "../session-manager.js";
+import { getSessionQueue, getMessageOwner } from "../session-queue.js";
+import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
 function ackVoice(event: TimelineEvent): void {
@@ -13,14 +16,22 @@ function ackVoice(event: TimelineEvent): void {
 }
 
 /** Strip _update and timestamp for the compact dequeue format. */
-function compactEvent(event: TimelineEvent): Record<string, unknown> {
+function compactEvent(event: TimelineEvent, sid: number): Record<string, unknown> {
   const { _update: _, timestamp: __, ...rest } = event;
-  return rest;
+  void sid; // reserved for future per-session metadata
+  const result: Record<string, unknown> = rest;
+  const replyTo = event.content.reply_to;
+  const target = event.content.target;
+  const isTargeted =
+    (replyTo !== undefined && getMessageOwner(replyTo) > 0) ||
+    (target !== undefined && getMessageOwner(target) > 0);
+  result.routing = isTargeted ? "targeted" : "ambiguous";
+  return result;
 }
 
 /** Compact a batch of events for the response. */
-function compactBatch(events: TimelineEvent[]): Record<string, unknown>[] {
-  return events.map(compactEvent);
+function compactBatch(events: TimelineEvent[], sid: number): Record<string, unknown>[] {
+  return events.map(e => compactEvent(e, sid));
 }
 
 const DESCRIPTION =
@@ -33,7 +44,8 @@ const DESCRIPTION =
   "Voice messages arrive pre-transcribed as { type: \"voice\", text: \"...\" }. " +
   "pending > 0 means more updates are queued — call again. " +
   "Two modes: omit timeout (default 300 s) to block up to 300 s for the next update; " +
-  "pass timeout: 0 for an instant non-blocking poll (use only for startup drain loops).";
+  "pass timeout: 0 for an instant non-blocking poll (use only for startup drain loops). " +
+  "identity [sid, pin] is always required — pass the tuple returned by session_start.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -48,21 +60,65 @@ export function register(server: McpServer) {
           .max(300)
           .default(300)
           .describe("Seconds to block when queue is empty. Default 300 (5 min) blocks up to 300 s for the next update — optimized for agent listen loops. Pass 0 for an instant non-blocking poll (drain loops only). Max 300."),
+        identity: IDENTITY_SCHEMA,
       },
     },
-    async ({ timeout }, { signal }) => {
+    async ({ timeout, identity }, { signal }) => {
+      const _sid = requireAuth(identity);
+      if (typeof _sid !== "number") return toError(_sid);
+      const sid = _sid;
+
+      const sessionQueue = getSessionQueue(sid);
+
+      if (!sessionQueue) {
+        return toError({
+          code: "SESSION_NOT_FOUND" as const,
+          message:
+            `No session queue for sid=${sid}. ` +
+            `The session may have ended or was never started.`,
+        });
+      }
+
+      const sq = sessionQueue;
+
+      // Keep active session in sync — set at the start AND re-set before
+      // each return so the global is correct when the next tool call dispatches.
+      // (Concurrent tool calls from other sessions can overwrite the global
+      // during the long wait; re-syncing here restores it.)
+      function resyncActiveSession(): void {
+        setActiveSession(sid);
+      }
+
+      resyncActiveSession();
+
+      // Record a heartbeat so the health-check can detect unresponsive sessions.
+      if (sid > 0) touchSession(sid);
+
+      function dequeueBatchAny(): TimelineEvent[] {
+        return sq.dequeueBatch();
+      }
+
+      function pendingCountAny(): number {
+        return sq.pendingCount();
+      }
+
+      function waitForEnqueueAny(): Promise<void> {
+        return sq.waitForEnqueue();
+      }
+
       // Try immediate batch dequeue
-      let batch = dequeueBatch();
+      let batch = dequeueBatchAny();
       if (batch.length > 0) {
         for (const evt of batch) ackVoice(evt);
-        const pending = pendingCount();
-        const result: Record<string, unknown> = { updates: compactBatch(batch) };
+        const pending = pendingCountAny();
+        const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
         if (pending > 0) result.pending = pending;
+        resyncActiveSession();
         return toResult(result);
       }
 
       if (timeout === 0) {
-        return toResult({ empty: true, pending: pendingCount() });
+        return toResult({ empty: true, pending: pendingCountAny() });
       }
 
       // Block until something arrives or timeout expires
@@ -75,23 +131,25 @@ export function register(server: McpServer) {
 
         let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([
-          waitForEnqueue(),
+          waitForEnqueueAny(),
           new Promise<void>((r) => { timeoutHandle = setTimeout(r, remaining); }),
           abortPromise,
         ]);
         clearTimeout(timeoutHandle);
 
-        batch = dequeueBatch();
+        batch = dequeueBatchAny();
         if (batch.length > 0) {
           for (const evt of batch) ackVoice(evt);
-          const pending = pendingCount();
-          const result: Record<string, unknown> = { updates: compactBatch(batch) };
+          const pending = pendingCountAny();
+          const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
           if (pending > 0) result.pending = pending;
+          resyncActiveSession();
           return toResult(result);
         }
       }
 
-      return toResult({ timed_out: true, pending: pendingCount() });
+      resyncActiveSession();
+      return toResult({ timed_out: true, pending: pendingCountAny() });
     },
   );
 }
