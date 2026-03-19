@@ -65,14 +65,11 @@ vi.mock("../session-queue.js", () => ({
 
 import { register } from "./session_start.js";
 
-const INTRO_MSG = { message_id: 100, chat: { id: 42 }, date: 0 };
-
 describe("session_start tool", () => {
   let call: ToolHandler;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
     mocks.editMessageText.mockResolvedValue(undefined);
     mocks.answerCallbackQuery.mockResolvedValue(true);
     mocks.activeSessionCount.mockReturnValue(0);
@@ -98,7 +95,6 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({}));
 
-    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       sid: 1,
       pin: 123456,
@@ -106,98 +102,21 @@ describe("session_start tool", () => {
       action: "fresh",
       pending: 0,
       discarded: 3,
-      intro_message_id: 100,
     });
   });
 
-  it("sends intro message and returns fresh when no pending", async () => {
+  it("creates session and returns fresh when no pending", async () => {
     mocks.pendingCount.mockReturnValue(0);
 
     const result = parseResult(await call({}));
 
-    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
-    // Check intro text was sent
-    const sentCall = mocks.sendMessage.mock.calls[0] as unknown[];
-    expect(sentCall[0]).toBe(42); // chatId
     expect(result).toEqual({
       sid: 1,
       pin: 123456,
       sessions_active: 1,
       action: "fresh",
       pending: 0,
-      intro_message_id: 100,
     });
-  });
-
-  it("uses custom intro text", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-
-    await call({ intro: "Welcome back!" });
-
-    const sentCall = mocks.sendMessage.mock.calls[0] as unknown[];
-    // First session gets "Primary" name by default, so intro is enriched with session identity
-    const opts = sentCall[2] as Record<string, unknown>;
-    expect(opts._rawText).toBe("Welcome back!\n_Session 1 \u2014 Primary_");
-  });
-
-  it("enriches default intro with session identity when name is set", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "scout", sessionsActive: 1 });
-
-    await call({ name: "scout" });
-
-    const opts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
-    expect(opts._rawText).toBe("ℹ️ Session 2 — scout");
-  });
-
-  it("enriches default intro with session identity when multiple sessions active", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 3, pin: 333333, name: "Helper", sessionsActive: 2 });
-    // Collision check: "Helper" not in list
-    mocks.listSessions.mockReturnValueOnce([{ sid: 1, name: "Primary" }]);
-    // fellow_sessions post-creation
-    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary" }, { sid: 3, name: "Helper" }]);
-    // Simulate operator approving
-    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
-    });
-    mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
-      .mockResolvedValue(INTRO_MSG);               // intro message
-
-    await call({ name: "Helper" });
-
-    // The intro message is the 2nd sendMessage call
-    const opts = (mocks.sendMessage.mock.calls[1] as unknown[])[2] as Record<string, unknown>;
-    expect(opts._rawText).toBe("ℹ️ Session 3 — Helper");
-  });
-
-  it("appends session tag to custom intro when multiple sessions active", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 4, pin: 444444, name: "worker", sessionsActive: 3 });
-    // Collision check (pre-creation — no "worker" yet)
-    mocks.listSessions.mockReturnValueOnce([
-      { sid: 1, name: "boss" }, { sid: 2, name: "helper" },
-    ]);
-    // fellow_sessions (post-creation — includes "worker")
-    mocks.listSessions.mockReturnValue([
-      { sid: 1, name: "boss" }, { sid: 2, name: "helper" }, { sid: 4, name: "worker" },
-    ]);
-    // Simulate operator approving
-    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
-    });
-    mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 51 })   // approval prompt
-      .mockResolvedValue(INTRO_MSG);               // intro message
-
-    await call({ intro: "Hello!", name: "worker" });
-
-    // The intro message is the 2nd sendMessage call
-    const opts = (mocks.sendMessage.mock.calls[1] as unknown[])[2] as Record<string, unknown>;
-    expect(opts._rawText).toBe("Hello!\n_Session 4 — worker_");
   });
 
   it("omits discarded when nothing was pending", async () => {
@@ -238,8 +157,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     const result = parseResult(await call({ name: "scout" }));
 
@@ -261,8 +179,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     await call({ name: "Active Test" });
 
@@ -290,8 +207,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
-      .mockResolvedValue(INTRO_MSG);               // intro
+      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt;
 
     const result = parseResult(await call({ name: "scout" }));
 
@@ -320,8 +236,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
-      .mockResolvedValue(INTRO_MSG);               // intro
+      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt;
     mocks.dequeue
       .mockReturnValueOnce({ id: 1 })
       .mockReturnValueOnce({ id: 2 })
@@ -345,11 +260,19 @@ describe("session_start tool", () => {
     expect(result.fellow_sessions).toBeUndefined();
   });
 
-  it("returns an error and rolls back session when the intro message send fails", async () => {
+  it("rolls back session on unexpected error during session setup", async () => {
     mocks.pendingCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 5, pin: 500005, name: undefined, sessionsActive: 1 });
-    mocks.sendMessage.mockRejectedValue(new Error("network error"));
-    const result = await call({});
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 5, pin: 500005, name: "Worker", sessionsActive: 2 });
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary" }])
+      .mockReturnValue([{ sid: 1, name: "Primary" }, { sid: 5, name: "Worker" }]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.deliverServiceMessage.mockImplementationOnce(() => { throw new Error("service error"); });
+    const result = await call({ name: "Worker" });
     expect(isError(result)).toBe(true);
     expect(mocks.closeSession).toHaveBeenCalledWith(5);
     expect(mocks.setActiveSession).toHaveBeenCalledWith(0);
@@ -431,8 +354,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     await call({ name: "Worker" });
 
@@ -465,8 +387,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     await call({ name: "Late" });
 
@@ -492,8 +413,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     await call({ name: "Third" });
 
@@ -531,8 +451,7 @@ describe("session_start tool", () => {
     mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Scout", sessionsActive: 2 });
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 200 })  // approval prompt
-      .mockResolvedValue(INTRO_MSG);               // intro message
+      .mockResolvedValueOnce({ message_id: 200 })  // approval prompt;
     // Simulate operator pressing Approve
     mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "cqid" } }); });
@@ -634,7 +553,6 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout Alpha", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
-    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
 
     const result = await call({ name: "Scout Alpha" });
 
@@ -646,7 +564,6 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
-    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
 
     const result = await call({ name: "  Scout  " });
 
@@ -658,7 +575,6 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Primary", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
-    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
 
     const result = await call({ name: "   " });
 
@@ -670,7 +586,6 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout2", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
-    mocks.sendMessage.mockResolvedValue(INTRO_MSG);
 
     const result = await call({ name: "Scout2" });
 
@@ -697,8 +612,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     await call({ name: "Worker" });
 
@@ -726,8 +640,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     await call({ name: "Worker" });
 
@@ -764,37 +677,6 @@ describe("session_start tool", () => {
     expect(result.action).toBe("reconnected");
   });
 
-  it("reconnect: intro for named first session appends '(reconnected)'", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
-    mocks.listSessions.mockReturnValue([]);
-
-    await call({ reconnect: true });
-
-    const opts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
-    expect(opts._rawText).toBe("ℹ️ Session 1 — Primary (reconnected)");
-  });
-
-  it("reconnect: default intro becomes 'Session Reconnected' for anonymous solo session", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(0);
-    // No name set — but first session gets "Primary" auto-assigned, so use empty to trigger solo path
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "", sessionsActive: 1 });
-    mocks.listSessions.mockReturnValue([]);
-    // Override effectiveName logic: set name explicitly to empty string via isFirstSession=true path
-    // The function assigns "Primary" for first session, so we test with an explicit non-empty name instead.
-    // This test exercises the solo (no name) path by mocking createSession with empty name
-    // and verifying the fallback path in buildIntro.
-    // Because the handler always sets "Primary" for first session, the annotated intro will always have
-    // the tag. Test passing an explicit name via direct template override:
-    await call({ name: "   ", reconnect: true }); // whitespace → trimmed to ""→ "Primary" default
-
-    const opts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
-    // "Primary" name is set, so it takes the named path: ℹ️ Session 1 — Primary (reconnected)
-    expect(opts._rawText).toBe("ℹ️ Session 1 — Primary (reconnected)");
-  });
-
   it("reconnect: approval prompt says 'reconnecting' for second session", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
@@ -809,8 +691,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     await call({ name: "Worker", reconnect: true });
 
@@ -837,8 +718,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     await call({ name: "Worker", reconnect: true });
 
@@ -865,8 +745,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
 
     const result = parseResult(await call({ name: "Worker", reconnect: true }));
 
@@ -882,8 +761,6 @@ describe("session_start tool", () => {
     const result = parseResult(await call({}));
 
     expect(result.action).toBe("fresh");
-    const opts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
-    expect(opts._rawText).toBe("ℹ️ Session 1 — Primary");
   });
 
   // =========================================================================
@@ -899,8 +776,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
     mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
@@ -924,8 +800,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
     mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
@@ -947,8 +822,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
     mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker" });
@@ -966,8 +840,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
     mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker" });
@@ -1020,8 +893,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
     mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker", color: "🟩" });
@@ -1043,8 +915,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
     });
     mocks.sendMessage
-      .mockResolvedValueOnce({ message_id: 50 })
-      .mockResolvedValue(INTRO_MSG);
+      .mockResolvedValueOnce({ message_id: 50 });
     mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker", reconnect: true });

@@ -42,3 +42,9 @@ If the `intro` parameter and `buildIntro()` become dead code after this change, 
 - [ ] Lint clean — `pnpm lint`
 - [ ] All tests pass — `pnpm test`
 - [ ] `changelog/unreleased.md` updated under `## Changed`
+
+## Completion
+
+**Completed:** 2026-03-19
+
+Option A implemented. Removed uildIntro(), DEFAULT_INTRO, DEFAULT_RECONNECT_INTRO, the `intro` input parameter, and `intro_message_id` from result. All 1473 tests pass, typecheck and lint clean.

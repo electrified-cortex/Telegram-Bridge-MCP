@@ -2,6 +2,8 @@
 
 ## Changed
 
+- `session_start` no longer sends an intro message on session creation — removed `buildIntro()`, `DEFAULT_INTRO`, `DEFAULT_RECONNECT_INTRO`, the `intro` input parameter, and `intro_message_id` from the result
+
 - Consolidated rate-limit tracking into `rate-limiter.ts` as the single source of truth — removed duplicate `_rateLimitUntil` state from `telegram.ts`; `recordRateLimitHit`, `getRateLimitRemaining`, and `clearRateLimitForTest` in `telegram.ts` now delegate to `recordRateLimit`, `rateLimitRemainingSecs`, and `resetRateLimiterForTest` in `rate-limiter.ts`; `recordRateLimit` now accepts `number | undefined` (defaults to 5 s, matching previous behaviour)
 - Removed 30 consecutive duplicate `mocks.validateSession.mockReturnValue(true)` lines from tool test files — copy/paste artifacts from the task-300 refactor
 

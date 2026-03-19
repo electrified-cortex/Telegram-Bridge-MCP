@@ -8,8 +8,6 @@ import { createSession, closeSession, setActiveSession, listSessions, activeSess
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 
-const DEFAULT_INTRO = "ℹ️ Session Start";
-const DEFAULT_RECONNECT_INTRO = "ℹ️ Session Reconnected";
 const APPROVAL_TIMEOUT_MS = 60_000;
 const APPROVAL_NO = "approve_no";
 const APPROVE_PREFIX = "approve_";
@@ -84,31 +82,10 @@ async function requestApproval(
   return decision;
 }
 
-/** Build the actual intro text, injecting session identity. */
-function buildIntro(
-  template: string,
-  sid: number,
-  name: string,
-  sessionsActive: number,
-  reconnect = false,
-  color?: string,
-): string {
-  const reconnectSuffix = reconnect ? " (reconnected)" : "";
-  const colorPrefix = color ? `${color} ` : "";
-  const tag = name ? `Session ${sid} — ${colorPrefix}${name}` : `Session ${sid}`;
-  // When multiple sessions are active (or this one has a name), always show identity
-  if (sessionsActive > 1 || name) {
-    return template === DEFAULT_INTRO
-      ? `ℹ️ ${tag}${reconnectSuffix}`
-      : `${template}\n_${tag}_`;
-  }
-  return reconnect && template === DEFAULT_INTRO ? DEFAULT_RECONNECT_INTRO : template;
-}
-
 const DESCRIPTION =
   "Call once at the start of every session. Creates a session " +
-  "with a unique ID and PIN, sends an intro message, and " +
-  "auto-drains any pending messages from a previous session. " +
+  "with a unique ID and PIN, and auto-drains any pending messages " +
+  "from a previous session. " +
   "Returns { sid, pin, sessions_active, action, pending } so " +
   "the agent knows its identity and how to proceed. " +
   "Call after get_agent_guide and get_me during session setup.";
@@ -119,13 +96,6 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        intro: z
-          .string()
-          .default(DEFAULT_INTRO)
-          .describe(
-            "Markdown text for the intro message. " +
-            "Defaults to \"ℹ️ Session Start\".",
-          ),
         name: z
           .string()
           .default("")
@@ -152,7 +122,7 @@ export function register(server: McpServer) {
           ),
       },
     },
-    async ({ intro, name, reconnect, color }) => {
+    async ({ name, reconnect, color }) => {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -211,22 +181,7 @@ export function register(server: McpServer) {
       setActiveSession(session.sid);
 
       try {
-        // 1. Send the intro message
-        const introText = buildIntro(
-          intro, session.sid, effectiveName, session.sessionsActive, reconnect, session.color,
-        );
-        const sent = await getApi().sendMessage(
-          chatId,
-          markdownToV2(introText),
-          {
-            parse_mode: "MarkdownV2",
-            disable_notification: true,
-            _rawText: introText,
-          } as Record<string, unknown>,
-        );
-        const introId: number = sent.message_id;
-
-        // 2. Auto-drain any pending messages (always start fresh)
+        // Auto-drain any pending messages (always start fresh)
         let discarded = 0;
         while (dequeue() !== undefined) discarded++;
 
@@ -236,7 +191,6 @@ export function register(server: McpServer) {
           sessions_active: session.sessionsActive,
           action: reconnect ? "reconnected" : "fresh",
           pending: 0,
-          intro_message_id: introId,
         };
         if (discarded > 0) res.discarded = discarded;
         if (session.sessionsActive > 1) {
