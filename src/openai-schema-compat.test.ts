@@ -7,7 +7,7 @@
  * input schema after Zod→JSON Schema conversion and asserts
  * no property anywhere violates these rules.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z, type ZodType } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +119,10 @@ function walkSchema(
 // ---------------------------------------------------------------------------
 
 describe("OpenAI JSON Schema compatibility — all tools", () => {
+  beforeEach(() => {
+    captured.length = 0;
+  });
+
   // Import createServer which registers all tools on a real McpServer.
   // We then access the private _registeredTools map.
   it("collects all registered tools", async () => {
@@ -132,7 +136,6 @@ describe("OpenAI JSON Schema compatibility — all tools", () => {
     const toolNames = Object.keys(registeredTools);
     // Sanity: we expect 37+ tools
     expect(toolNames.length).toBeGreaterThanOrEqual(37);
-    captured.length = 0;
 
     for (const [name, tool] of Object.entries(registeredTools)) {
       if (tool.inputSchema) {

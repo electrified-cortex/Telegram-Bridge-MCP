@@ -291,8 +291,9 @@ describe("confirm tool", () => {
     expect(mocks.editWithSkipped).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects with PENDING_UPDATES when queue is non-empty", async () => {
-    mocks.pendingCount.mockReturnValue(3);
+  it("rejects with PENDING_UPDATES when session queue is non-empty", async () => {
+    // _sid=1 resolves to mocks.sessionQueue — check that queue's pending count
+    mocks.sessionQueue.pendingCount.mockReturnValue(3);
     const result = await call({ text: "Proceed?", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     const data = parseResult(result);

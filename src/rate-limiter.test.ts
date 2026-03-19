@@ -158,5 +158,28 @@ describe("rate-limiter", () => {
       await p;
       expect(resolved).toBe(true);
     });
+
+    it("concurrent calls are serialized — second fires at least MIN_SEND_INTERVAL_MS after first", async () => {
+      const timestamps: number[] = [];
+      const record = () => { timestamps.push(Date.now()); };
+
+      // Fire two concurrent debounceSend calls
+      const p1 = debounceSend().then(record);
+      const p2 = debounceSend().then(record);
+
+      // Let the first one resolve (no delay on first call)
+      await vi.advanceTimersByTimeAsync(0);
+      await p1;
+
+      // The second should still be waiting
+      expect(timestamps).toHaveLength(1);
+
+      // Advance enough for the second to complete
+      await vi.advanceTimersByTimeAsync(MIN_SEND_INTERVAL_MS);
+      await p2;
+
+      expect(timestamps).toHaveLength(2);
+      expect(timestamps[1]! - timestamps[0]!).toBeGreaterThanOrEqual(MIN_SEND_INTERVAL_MS);
+    });
   });
 });

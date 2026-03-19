@@ -20,8 +20,10 @@ In `src/tools/confirm.ts`, the tool handler validates the session via `requireAu
 
 Replace both `getCallerSid()` calls with `_sid`. If `getCallerSid` is no longer used anywhere in the file, remove the import.
 
-## Acceptance
+## Completion
 
-- Both callsites use `_sid`.
-- Dead import removed if applicable.
-- All tests pass.
+**Status:** Done — 1485/1485 tests pass, build clean.
+
+**Changes:**
+- `src/tools/confirm.ts`: replaced both `getCallerSid()` calls with `_sid`; removed `getCallerSid` import from `session-context.js`
+- `src/tools/confirm.test.ts`: updated "rejects with PENDING_UPDATES when queue is non-empty" to set `mocks.sessionQueue.pendingCount.mockReturnValue(3)` — the old test was checking the global pending count (which was an artifact of `getCallerSid()=0` in tests); with `_sid=1`, the session queue is checked instead

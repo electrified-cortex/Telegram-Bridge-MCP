@@ -34,6 +34,9 @@ let _rateLimitUntil = 0;
 /** Epoch-ms timestamp of the last completed outbound send. */
 let _lastSendAt = 0;
 
+/** Serialises concurrent debounceSend() callers so only one runs at a time. */
+let _sendLock: Promise<void> = Promise.resolve();
+
 /** Minimum gap (ms) between successive outbound sends (debounce floor). */
 export const MIN_SEND_INTERVAL_MS = 1000;
 
@@ -90,13 +93,16 @@ export function enforceRateLimit(): void {
  * Call this immediately before every Telegram API send.
  */
 export async function debounceSend(): Promise<void> {
+  const ticket = _sendLock;
+  let resolve!: () => void;
+  _sendLock = new Promise<void>(r => { resolve = r; });
+  await ticket;
   const gap = Date.now() - _lastSendAt;
   if (gap < MIN_SEND_INTERVAL_MS) {
-    await new Promise<void>((resolve) =>
-      setTimeout(resolve, MIN_SEND_INTERVAL_MS - gap),
-    );
+    await new Promise<void>(r => setTimeout(r, MIN_SEND_INTERVAL_MS - gap));
   }
   _lastSendAt = Date.now();
+  resolve();
 }
 
 // ---------------------------------------------------------------------------
@@ -106,4 +112,5 @@ export async function debounceSend(): Promise<void> {
 export function resetRateLimiterForTest(): void {
   _rateLimitUntil = 0;
   _lastSendAt = 0;
+  _sendLock = Promise.resolve();
 }
