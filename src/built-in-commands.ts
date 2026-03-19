@@ -15,8 +15,8 @@
 import { createRequire } from "module";
 import type { Update } from "grammy/types";
 import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
-import { clearCommandsOnShutdown } from "./shutdown.js";
-import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
+import { elegantShutdown, setShutdownDumpHook } from "./shutdown.js";
+
 import { getSessionLogMode, setSessionLogMode, sessionLogLabel } from "./config.js";
 import { getDefaultVoice, setDefaultVoice, getConfiguredVoices } from "./config.js";
 import type { VoiceEntry } from "./config.js";
@@ -98,6 +98,13 @@ export function applySessionLogConfig(): void {
 export function getAutoDumpThresholdValue(): number | null {
   return _autoDumpThreshold;
 }
+
+// Wire up the session-log dump hook for elegant shutdown (avoids circular import)
+setShutdownDumpHook(async () => {
+  if (getSessionLogMode() !== null) {
+    await doTimelineDump(true);
+  }
+});
 
 /**
  * Unix timestamp (seconds) captured at module load — used to discard stale
@@ -265,21 +272,7 @@ async function handleVersionCommand(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function handleShutdownCommand(): void {
-  stopPoller();
-  const shutdownSequence = (async () => {
-    // Wait for the poll loop to finish (completes in-flight transcriptions)
-    await waitForPollerExit();
-    // Drain any updates received since the last poll iteration
-    await drainPendingUpdates();
-    // Dump session log before shutting down (if not disabled)
-    if (getSessionLogMode() !== null) {
-      try { await doTimelineDump(true); } catch { /* best effort */ }
-    }
-    await sendServiceMessage("⛔️ Shutting down…").catch(() => {});
-  })();
-  const timeout = new Promise<void>((r) => setTimeout(r, 10000));
-  void Promise.race([shutdownSequence, timeout])
-    .finally(() => clearCommandsOnShutdown().finally(() => process.exit(0)));
+  void elegantShutdown();
 }
 
 // ---------------------------------------------------------------------------

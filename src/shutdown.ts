@@ -1,4 +1,7 @@
-import { getApi, resolveChat } from "./telegram.js";
+import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
+import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
+import { listSessions } from "./session-manager.js";
+import { deliverServiceMessage, notifySessionWaiters } from "./session-queue.js";
 
 /**
  * Clears all registered slash-command menus on shutdown.
@@ -16,4 +19,69 @@ export async function clearCommandsOnShutdown(): Promise<void> {
   try {
     await api.setMyCommands([], { scope: { type: "default" } });
   } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Elegant shutdown sequence
+// ---------------------------------------------------------------------------
+
+/** Optional hook for session-log dump — set by built-in-commands at startup. */
+let _dumpHook: (() => Promise<void>) | null = null;
+
+/** Register the session-log dump function (avoids circular import). */
+export function setShutdownDumpHook(hook: () => Promise<void>): void {
+  _dumpHook = hook;
+}
+
+/**
+ * Graceful shutdown: flush all session queues, notify agents, then exit.
+ *
+ * 1. Stop the poller (no new updates)
+ * 2. Wait for the poll loop to finish (in-flight transcriptions)
+ * 3. Drain last-mile pending updates
+ * 4. Deliver a shutdown service message to every active session
+ * 5. Wake up all blocked dequeue_update calls so agents receive it
+ * 6. Brief delay so MCP responses transmit through stdio
+ * 7. Send operator notification
+ * 8. Dump session log (if enabled)
+ * 9. Clear command menus
+ * 10. process.exit(0)
+ */
+export async function elegantShutdown(): Promise<never> {
+  stopPoller();
+
+  // Finish in-flight transcriptions and drain last-mile updates
+  // Timeout: 10s so a hung transcription doesn't stall shutdown indefinitely.
+  await Promise.race([
+    waitForPollerExit(),
+    new Promise<void>((r) => setTimeout(r, 10_000)),
+  ]);
+  await drainPendingUpdates();
+
+  // Notify all active sessions via their DM queues
+  const sessions = listSessions();
+  for (const s of sessions) {
+    deliverServiceMessage(
+      s.sid,
+      "⛔ Server shutting down. To reconnect, try again after a short wait.",
+      "shutdown",
+    );
+  }
+  // Wake up any agents blocked in dequeue_update
+  notifySessionWaiters();
+
+  // Give MCP stdio a moment to transmit responses
+  await new Promise<void>((r) => setTimeout(r, 2000));
+
+  // Operator-facing notification
+  await sendServiceMessage("⛔️ Shutting down…").catch(() => {});
+
+  // Session log dump (best-effort)
+  if (_dumpHook) {
+    try { await _dumpHook(); } catch { /* best effort */ }
+  }
+
+  // Clear command menus and exit
+  await clearCommandsOnShutdown();
+  process.exit(0);
 }

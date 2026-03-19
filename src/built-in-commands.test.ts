@@ -55,6 +55,8 @@ vi.mock("./telegram.js", () => ({
 
 vi.mock("./shutdown.js", () => ({
   clearCommandsOnShutdown: mocks.clearCommandsOnShutdown,
+  elegantShutdown: vi.fn((): Promise<never> => new Promise(() => {})),
+  setShutdownDumpHook: vi.fn(),
 }));
 
 vi.mock("./poller.js", () => ({

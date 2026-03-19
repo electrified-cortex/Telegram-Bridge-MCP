@@ -41,6 +41,14 @@
 - Fixed multi-session outbound name tag rendering for `parse_mode: "HTML"` in `outbound-proxy` — session headers now use `<code>Name</code>` (HTML-escaped) instead of literal backticks in `sendMessage` and `editMessageText`
 - Fixed outbound name tag rendering literal backticks when no `parse_mode` is set — outbound proxy now auto-injects `parse_mode: "Markdown"` in `sendMessage` and `editMessageText` when a backtick-formatted session header is prepended but no parse_mode was provided by the caller; `buildHeader()` default branch restored to backtick formatting; `plain` field remains unformatted for captions and recording
 - Fixed `sendVoiceDirect` missing session name tag — voice messages sent via the direct Telegram API path now inject the session header as a caption with `parse_mode: "Markdown"`; `buildHeader` exported from `outbound-proxy.ts` for reuse
+
+## Changed (Shutdown)
+
+- Implemented elegant shutdown protocol — `elegantShutdown()` in `shutdown.ts` orchestrates a graceful exit: stops the poller, waits for in-flight transcriptions, drains last-mile updates, delivers a `shutdown` service message to every active session queue, wakes blocked `dequeue_update` calls via `notifySessionWaiters()`, pauses for MCP stdio transmission, sends the operator notification, dumps the session log, clears command menus, and exits
+- `/shutdown` built-in command now delegates to `elegantShutdown()` — replaced inline sequence with the shared shutdown protocol
+- `shutdown` MCP tool now uses `elegantShutdown()` and adds a `force: boolean` parameter — when unprocessed messages exist in the queue the tool returns a `PENDING_MESSAGES` error unless `force: true` is passed
+- Added `setShutdownDumpHook()` to `shutdown.ts` — avoids circular import by letting `built-in-commands.ts` register the session-log dump function at module load
+
 - Stopped broadcasting `"sent"` outbound events to the governor — removed `broadcastOutbound()` call from `recordOutgoing()` in `message-store.ts`; the governor's queue now only receives ambiguous inbound messages, not every other session's outgoing chat events; `broadcastOutbound` stays exported for direct use
 - Fixed ALS session context spoofing in `server.ts` middleware — `args.identity[0]` now takes priority over `args.sid` when both are present; a caller with a valid identity tuple can no longer be overridden by a bare `sid` argument
 - Replaced `z.tuple([z.number().int(), z.number().int()])` identity schema with `z.array(z.number().int())` (no `.length(2)`) across all 37 tool files — Zod's tuple serialisation and `.length(N)` both produce `items` as an array that OpenAI's JSON-Schema validator rejects ("is not of type 'object', 'boolean'"); the unconstrained array form produces valid `{ items: { type: "integer" } }`; shared `IDENTITY_SCHEMA` constant in `src/tools/identity-schema.ts`; length enforced at runtime by `requireAuth()` — short arrays fail `validateSession` with `AUTH_FAILED`
