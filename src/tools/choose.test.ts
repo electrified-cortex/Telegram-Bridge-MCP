@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({
@@ -39,19 +39,19 @@ vi.mock("../telegram.js", async (importActual) => {
 vi.mock("../message-store.js", () => ({
   recordOutgoing: vi.fn(),
   pendingCount: () => mocks.pendingCount(),
-  registerCallbackHook: (...args: unknown[]) => mocks.registerCallbackHook(...args),
-  clearCallbackHook: (...args: unknown[]) => mocks.clearCallbackHook(...args),
-  registerMessageHook: (...args: unknown[]) => mocks.registerMessageHook(...args),
-  clearMessageHook: (...args: unknown[]) => mocks.clearMessageHook(...args),
+  registerCallbackHook: mocks.registerCallbackHook,
+  clearCallbackHook: mocks.clearCallbackHook,
+  registerMessageHook: mocks.registerMessageHook,
+  clearMessageHook: mocks.clearMessageHook,
 }));
 
 vi.mock("./button-helpers.js", async (importActual) => {
-  const actual = await importActual<typeof import("./button-helpers.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
-    pollButtonOrTextOrVoice: (...args: unknown[]) => mocks.pollButtonOrTextOrVoice(...args),
-    ackAndEditSelection: (...args: unknown[]) => mocks.ackAndEditSelection(...args),
-    editWithSkipped: (...args: unknown[]) => mocks.editWithSkipped(...args),
+    pollButtonOrTextOrVoice: mocks.pollButtonOrTextOrVoice,
+    ackAndEditSelection: mocks.ackAndEditSelection,
+    editWithSkipped: mocks.editWithSkipped,
   };
 });
 

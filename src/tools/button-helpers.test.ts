@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => mocks,
@@ -56,65 +56,62 @@ describe("button-helpers", () => {
     it("edits message with chosen label and removes buttons", async () => {
       mocks.answerCallbackQuery.mockResolvedValue(true);
       mocks.editMessageText.mockResolvedValue(true);
-      await ackAndEditSelection("42", 1, "Question?", "Yes", "cq1");
+      await ackAndEditSelection(42, 1, "Question?", "Yes", "cq1");
       expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("cq1");
       expect(mocks.editMessageText).toHaveBeenCalledWith(
-        "42", 1,
-        expect.stringContaining("Yes"),
+        42, 1, expect.stringContaining("Yes"),
         expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
       );
     });
 
     it("skips answerCallbackQuery when callbackQueryId is undefined", async () => {
       mocks.editMessageText.mockResolvedValue(true);
-      await ackAndEditSelection("42", 1, "Question?", "Yes", undefined);
+      await ackAndEditSelection(42, 1, "Question?", "Yes", undefined);
       expect(mocks.answerCallbackQuery).not.toHaveBeenCalled();
     });
 
     it("swallows answerCallbackQuery errors (already answered, etc.)", async () => {
       mocks.answerCallbackQuery.mockRejectedValue(new Error("Already answered"));
       mocks.editMessageText.mockResolvedValue(true);
-      await expect(ackAndEditSelection("42", 1, "Question?", "Yes", "cq1")).resolves.toBeUndefined();
+      await expect(ackAndEditSelection(42, 1, "Question?", "Yes", "cq1")).resolves.toBeUndefined();
     });
 
     it("swallows editMessageText errors silently", async () => {
       mocks.answerCallbackQuery.mockResolvedValue(true);
       mocks.editMessageText.mockRejectedValue(new Error("Message not modified"));
-      await expect(ackAndEditSelection("42", 1, "Question?", "Yes", "cq1")).resolves.toBeUndefined();
+      await expect(ackAndEditSelection(42, 1, "Question?", "Yes", "cq1")).resolves.toBeUndefined();
     });
   });
 
   describe("editWithTimedOut", () => {
     it("edits message to show timed-out indicator and removes buttons", async () => {
       mocks.editMessageText.mockResolvedValue(true);
-      await editWithTimedOut("42", 1, "Question?");
+      await editWithTimedOut(42, 1, "Question?");
       expect(mocks.editMessageText).toHaveBeenCalledWith(
-        "42", 1,
-        expect.stringContaining("Timed out"),
+        42, 1, expect.stringContaining("Timed out"),
         expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
       );
     });
 
     it("swallows editMessageText errors silently", async () => {
       mocks.editMessageText.mockRejectedValue(new Error("Message not modified"));
-      await expect(editWithTimedOut("42", 1, "Question?")).resolves.toBeUndefined();
+      await expect(editWithTimedOut(42, 1, "Question?")).resolves.toBeUndefined();
     });
   });
 
   describe("editWithSkipped", () => {
     it("edits message to show skipped indicator and removes buttons", async () => {
       mocks.editMessageText.mockResolvedValue(true);
-      await editWithSkipped("42", 1, "Question?");
+      await editWithSkipped(42, 1, "Question?");
       expect(mocks.editMessageText).toHaveBeenCalledWith(
-        "42", 1,
-        expect.stringContaining("Skipped"),
+        42, 1, expect.stringContaining("Skipped"),
         expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
       );
     });
 
     it("swallows editMessageText errors silently", async () => {
       mocks.editMessageText.mockRejectedValue(new Error("Message not modified"));
-      await expect(editWithSkipped("42", 1, "Question?")).resolves.toBeUndefined();
+      await expect(editWithSkipped(42, 1, "Question?")).resolves.toBeUndefined();
     });
   });
 

@@ -1,14 +1,19 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, type ToolHandler } from "./test-utils.js";
 
+interface ListSessionsResult {
+  sessions: Array<{ sid: number; name: string; createdAt: string }>;
+  active_sid: number;
+}
+
 const mocks = vi.hoisted(() => ({
   listSessions: vi.fn(),
   getActiveSession: vi.fn(),
 }));
 
 vi.mock("../session-manager.js", () => ({
-  listSessions: (...args: unknown[]) => mocks.listSessions(...args),
-  getActiveSession: (...args: unknown[]) => mocks.getActiveSession(...args),
+  listSessions: mocks.listSessions,
+  getActiveSession: mocks.getActiveSession,
 }));
 
 import { register } from "./list_sessions.js";
@@ -26,7 +31,7 @@ describe("list_sessions tool", () => {
   });
 
   it("returns empty array when no sessions exist", async () => {
-    const result = parseResult(await call({}));
+    const result = parseResult<ListSessionsResult>(await call({}));
     expect(result).toEqual({ sessions: [], active_sid: 0 });
   });
 
@@ -37,7 +42,7 @@ describe("list_sessions tool", () => {
     ]);
     mocks.getActiveSession.mockReturnValue(2);
 
-    const result = parseResult(await call({}));
+    const result = parseResult<ListSessionsResult>(await call({}));
 
     expect(result.sessions).toHaveLength(2);
     expect(result.sessions[0]).toEqual({
@@ -55,7 +60,7 @@ describe("list_sessions tool", () => {
     ]);
     mocks.getActiveSession.mockReturnValue(0);
 
-    const result = parseResult(await call({}));
+    const result = parseResult<ListSessionsResult>(await call({}));
     expect(result.active_sid).toBe(0);
   });
 });

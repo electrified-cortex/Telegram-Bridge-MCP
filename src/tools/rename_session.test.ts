@@ -8,9 +8,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../session-manager.js", () => ({
-  listSessions: (...args: unknown[]) => mocks.listSessions(...args),
-  renameSession: (...args: unknown[]) => mocks.renameSession(...args),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  listSessions: mocks.listSessions,
+  renameSession: mocks.renameSession,
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./rename_session.js";

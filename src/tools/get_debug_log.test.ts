@@ -19,7 +19,7 @@ vi.mock("../debug-log.js", () => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     toResult: (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] }),
@@ -29,7 +29,7 @@ vi.mock("../telegram.js", async (importActual) => {
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 let handler: ToolHandler;

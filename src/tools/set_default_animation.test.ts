@@ -14,12 +14,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return { ...actual, resolveChat: () => 42 };
 });
 
 vi.mock("../animation-state.js", async (importActual) => {
-  const actual = await importActual<typeof import("../animation-state.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     setSessionDefault: mocks.setSessionDefault,
@@ -34,7 +34,7 @@ vi.mock("../animation-state.js", async (importActual) => {
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./set_default_animation.js";

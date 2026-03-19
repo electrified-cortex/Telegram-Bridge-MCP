@@ -16,12 +16,12 @@ const mocks = vi.hoisted(() => ({
   patchVoiceText: vi.fn(),
   transcribeVoice: vi.fn((): Promise<string> => Promise.resolve("hello world")),
   hasAnySessionWaiter: vi.fn((): boolean => false),
-  isSessionMessageConsumed: vi.fn((): boolean => false),
+  isSessionMessageConsumed: vi.fn((_id: number): boolean => false),
   deliverVoiceTranscriptionFailed: vi.fn(),
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("./telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({ getUpdates: mocks.getUpdates }),
@@ -46,7 +46,7 @@ vi.mock("./message-store.js", () => ({
 vi.mock("./session-queue.js", () => ({
   hasAnySessionWaiter: () => mocks.hasAnySessionWaiter(),
   isSessionMessageConsumed: (id: number) => mocks.isSessionMessageConsumed(id),
-  deliverVoiceTranscriptionFailed: (...args: unknown[]) => mocks.deliverVoiceTranscriptionFailed(...args),
+  deliverVoiceTranscriptionFailed: mocks.deliverVoiceTranscriptionFailed,
 }));
 
 vi.mock("./transcribe.js", () => ({

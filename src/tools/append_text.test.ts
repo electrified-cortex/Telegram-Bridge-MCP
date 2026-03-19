@@ -2,6 +2,11 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { TelegramError } from "../telegram.js";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 
+interface AppendTextResult {
+  message_id: number;
+  length: number;
+}
+
 const mocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),
   getActiveSession: vi.fn(() => 0),
@@ -14,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({ editMessageText: mocks.editMessageText }),
@@ -32,7 +37,7 @@ vi.mock("../message-store.js", () => ({
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./append_text.js";
@@ -54,7 +59,7 @@ describe("append_text tool", () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     const result = await call({ message_id: 10, text: "Line 2", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
+    const data = parseResult<AppendTextResult>(result);
     expect(data.message_id).toBe(10);
     expect(data.length).toBe("Line 1\nLine 2".length);
   });
@@ -76,7 +81,7 @@ describe("append_text tool", () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "A" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     const result = await call({ message_id: 10, text: "B", separator: " | ", identity: [1, 123456]});
-    const data = parseResult(result);
+    const data = parseResult<AppendTextResult>(result);
     expect(data.length).toBe("A | B".length);
   });
 
@@ -85,7 +90,7 @@ describe("append_text tool", () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     const result = await call({ message_id: 10, text: "First chunk", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
+    const data = parseResult<AppendTextResult>(result);
     expect(data.length).toBe("First chunk".length);
   });
 
@@ -93,7 +98,7 @@ describe("append_text tool", () => {
     mocks.getMessage.mockReturnValue(undefined);
     const result = await call({ message_id: 10, text: "Fresh", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
-    expect(result.content[0].text).toContain("MESSAGE_NOT_FOUND");
+    expect(errorCode(result)).toBe("MESSAGE_NOT_FOUND");
   });
 
   it("calls recordOutgoingEdit with accumulated text", async () => {
@@ -118,7 +123,7 @@ describe("append_text tool", () => {
     mocks.editMessageText.mockResolvedValue(true);
     const result = await call({ message_id: 10, text: "More", identity: [1, 123456]});
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
+    const data = parseResult<AppendTextResult>(result);
     // Falls back to the passed message_id when API returns boolean
     expect(data.message_id).toBe(10);
   });
@@ -151,7 +156,7 @@ describe("append_text tool", () => {
     mocks.getMessage.mockReturnValue({ content: { type: "voice" } });
     const result = await call({ message_id: 10, text: "oops", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
-    expect(result.content[0].text).toContain("MESSAGE_NOT_TEXT");
+    expect(errorCode(result)).toBe("MESSAGE_NOT_TEXT");
   });
 
   it("returns error when resolveChat fails", async () => {
@@ -167,12 +172,12 @@ describe("append_text tool", () => {
   it("returns error when validateText fails", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Old" } });
     mocks.validateText.mockReturnValueOnce({
-      code: "TEXT_TOO_LONG",
+      code: "MESSAGE_TOO_LONG",
       message: "too long",
     });
     const result = await call({ message_id: 10, text: "more", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("TEXT_TOO_LONG");
+    expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
 
 describe("identity gate", () => {

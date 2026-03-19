@@ -9,8 +9,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../session-manager.js", () => ({
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
-  getSession: (...args: unknown[]) => mocks.getSession(...args),
+  validateSession: mocks.validateSession,
+  getSession: mocks.getSession,
 }));
 
 vi.mock("../routing-mode.js", () => ({
@@ -18,7 +18,7 @@ vi.mock("../routing-mode.js", () => ({
 }));
 
 vi.mock("../session-queue.js", () => ({
-  routeMessage: (...args: unknown[]) => mocks.routeMessage(...args),
+  routeMessage: mocks.routeMessage,
 }));
 
 import { register } from "./route_message.js";

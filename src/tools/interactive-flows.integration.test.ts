@@ -8,6 +8,7 @@
  *
  * No production code changes — test file only.
  */
+import type { Update } from "grammy/types";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, type ToolHandler } from "./test-utils.js";
 
@@ -24,7 +25,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({
@@ -34,7 +35,7 @@ vi.mock("../telegram.js", async (importActual) => {
       editMessageReplyMarkup: mocks.editMessageReplyMarkup,
     }),
     resolveChat: () => 42,
-    ackVoiceMessage: (...args: unknown[]) => mocks.ackVoiceMessage(...args),
+    ackVoiceMessage: mocks.ackVoiceMessage,
   };
 });
 
@@ -62,20 +63,20 @@ import { register as registerDequeueUpdate } from "./dequeue_update.js";
 let _nextId = 100; // inbound message IDs — must be > bot's sent message_id (5)
 
 function cbUpdate(targetMsgId: number, data: string, qid = "qid1") {
-  return {
-    callback_query: {
+  return { update_id: 0, callback_query: {
       id: qid,
       from: { id: 999, first_name: "User", is_bot: false },
       message: { message_id: targetMsgId, chat: { id: 42 } },
       chat_instance: "ci1",
       data,
     },
-  };
+  } as unknown as Update;
 }
 
 function textUpdate(text: string) {
   const msgId = _nextId++;
   return {
+    update_id: 0,
     message: {
       message_id: msgId,
       from: { id: 999, first_name: "User", is_bot: false },
@@ -83,12 +84,13 @@ function textUpdate(text: string) {
       date: Math.floor(Date.now() / 1000),
       text,
     },
-  };
+  } as unknown as Update;
 }
 
 function voiceUpdate() {
   const msgId = _nextId++;
   return {
+    update_id: 0,
     message: {
       message_id: msgId,
       from: { id: 999, first_name: "User", is_bot: false },
@@ -96,7 +98,7 @@ function voiceUpdate() {
       date: Math.floor(Date.now() / 1000),
       voice: { file_id: "v_test", file_unique_id: "vu1", duration: 2 },
     },
-  };
+  } as unknown as Update;
 }
 
 // ---------------------------------------------------------------------------

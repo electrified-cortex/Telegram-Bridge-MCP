@@ -1,10 +1,10 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import type { TimelineEvent } from "../message-store.js";
+import type { TimelineEvent } from "./message-store.js";
 
 // ── Hoisted mocks ─────────────────────────────────────────
 
 const mocks = vi.hoisted(() => ({
-  getUnhealthySessions: vi.fn(() => [] as { sid: number; name: string; createdAt: string }[]),
+  getUnhealthySessions: vi.fn((_threshold?: number) => [] as { sid: number; name: string; createdAt: string }[]),
   markUnhealthy: vi.fn(),
   getSession: vi.fn(),
   getGovernorSid: vi.fn(() => 0),
@@ -23,42 +23,42 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./session-manager.js", () => ({
-  getUnhealthySessions: (...args: unknown[]) => mocks.getUnhealthySessions(...(args as [number])),
-  markUnhealthy: (...args: unknown[]) => mocks.markUnhealthy(...args),
-  getSession: (...args: unknown[]) => mocks.getSession(...args),
+  getUnhealthySessions: (threshold?: number) => mocks.getUnhealthySessions(threshold),
+  markUnhealthy: mocks.markUnhealthy,
+  getSession: mocks.getSession,
   listSessions: () => mocks.listSessions(),
 }));
 
 vi.mock("./routing-mode.js", () => ({
   getGovernorSid: () => mocks.getGovernorSid(),
-  setGovernorSid: (...args: unknown[]) => mocks.setGovernorSid(...args),
+  setGovernorSid: mocks.setGovernorSid,
 }));
 
 vi.mock("./session-queue.js", () => ({
-  deliverDirectMessage: (...args: unknown[]) => mocks.deliverDirectMessage(...args),
+  deliverDirectMessage: mocks.deliverDirectMessage,
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("./telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
-    sendServiceMessage: (...args: unknown[]) => mocks.sendServiceMessage(...args),
+    sendServiceMessage: mocks.sendServiceMessage,
     resolveChat: () => mocks.resolveChat(),
     getApi: () => ({
-      sendMessage: (...args: unknown[]) => mocks.sendMessage(...args),
-      editMessageText: (...args: unknown[]) => mocks.editMessageText(...args),
-      answerCallbackQuery: (...args: unknown[]) => mocks.answerCallbackQuery(...args),
+      sendMessage: mocks.sendMessage,
+      editMessageText: mocks.editMessageText,
+      answerCallbackQuery: mocks.answerCallbackQuery,
     }),
   };
 });
 
 vi.mock("./message-store.js", () => ({
-  registerCallbackHook: (...args: unknown[]) => mocks.registerCallbackHook(...args),
-  clearCallbackHook: (...args: unknown[]) => mocks.clearCallbackHook(...args),
+  registerCallbackHook: mocks.registerCallbackHook,
+  clearCallbackHook: mocks.clearCallbackHook,
 }));
 
 vi.mock("./debug-log.js", () => ({
-  dlog: (...args: unknown[]) => mocks.dlog(...args),
+  dlog: mocks.dlog,
 }));
 
 // ── Import after mocks ─────────────────────────────────────

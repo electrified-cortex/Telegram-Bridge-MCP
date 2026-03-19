@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { requireAuth } from "./session-gate.js";
 
 const sessionMocks = vi.hoisted(() => ({
-  validateSession: vi.fn(() => false),
+  validateSession: vi.fn((_sid: number, _pin: number) => false),
 }));
 
 vi.mock("./session-manager.js", () => ({

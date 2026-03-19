@@ -2,23 +2,51 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError } from "./test-utils.js";
 import type { TimelineEvent } from "../message-store.js";
 
+interface CompactEvent {
+  id: number;
+  event: string;
+  from: string;
+  content: Record<string, unknown>;
+  routing?: string;
+  _update?: unknown;
+  timestamp?: string;
+}
+
+interface DequeueResult {
+  updates: CompactEvent[];
+  pending?: number;
+  timed_out?: boolean;
+  empty?: boolean;
+}
+
+interface SessionQueue {
+  dequeueBatch: (...args: unknown[]) => TimelineEvent[];
+  pendingCount: (...args: unknown[]) => number;
+  waitForEnqueue: (...args: unknown[]) => Promise<unknown>;
+}
+
 const mocks = vi.hoisted(() => ({
   dequeueBatch: vi.fn((): TimelineEvent[] => []),
-  pendingCount: vi.fn(),
-  waitForEnqueue: vi.fn(),
-  ackVoiceMessage: vi.fn(),
+  pendingCount: vi.fn((): number => 0),
+  waitForEnqueue: vi.fn((): Promise<void> => Promise.resolve()),
+  ackVoiceMessage: vi.fn((_msgId: number) => {}),
   getActiveSession: vi.fn(() => 0),
-  setActiveSession: vi.fn(),
+  setActiveSession: vi.fn((_sid: number) => {}),
   activeSessionCount: vi.fn(() => 0),
-  getSessionQueue: vi.fn(() => undefined),
-  getMessageOwner: vi.fn(() => 0),
-  touchSession: vi.fn(),
-  validateSession: vi.fn(() => true),
+  getSessionQueue: vi.fn((_sid: number): SessionQueue | undefined => undefined),
+  getMessageOwner: vi.fn((_msgId: number): number => 0),
+  touchSession: vi.fn((_sid: number) => {}),
+  validateSession: vi.fn((_sid: number, _pin: number) => true),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
-  return { ...actual, ackVoiceMessage: (...args: unknown[]) => mocks.ackVoiceMessage(...args) };
+  const actual = await importActual<Record<string, unknown>>();
+  return {
+    ...actual,
+    ackVoiceMessage: (msgId: number) => {
+      mocks.ackVoiceMessage(msgId);
+    },
+  };
 });
 
 vi.mock("../message-store.js", () => ({
@@ -29,16 +57,21 @@ vi.mock("../message-store.js", () => ({
 
 vi.mock("../session-manager.js", () => ({
   getActiveSession: () => mocks.getActiveSession(),
-  setActiveSession: (...args: unknown[]) => mocks.setActiveSession(...args),
+  setActiveSession: (sid: number) => {
+    mocks.setActiveSession(sid);
+  },
   activeSessionCount: () => mocks.activeSessionCount(),
-  touchSession: (...args: unknown[]) => mocks.touchSession(...args),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  touchSession: (sid: number) => {
+    mocks.touchSession(sid);
+  },
+  validateSession: (sid: number, pin: number) => {
+    return mocks.validateSession(sid, pin);
+  },
 }));
 
 vi.mock("../session-queue.js", () => ({
-  // eslint-disable-next-line @typescript-eslint/no-confusing-void-expression -- mock passthrough
-  getSessionQueue: (...args: unknown[]) => mocks.getSessionQueue(...(args as [])),
-  getMessageOwner: (...args: unknown[]) => mocks.getMessageOwner(...(args as [])),
+  getSessionQueue: (sid: number) => mocks.getSessionQueue(sid),
+  getMessageOwner: (msgId: number) => mocks.getMessageOwner(msgId),
 }));
 
 
@@ -81,7 +114,7 @@ function makeVoiceEvent(id: number): TimelineEvent {
 }
 
 describe("dequeue_update tool", () => {
-  let call: (args: Record<string, unknown>) => Promise<unknown>;
+  let call: (args: Record<string, unknown>, extra?: Record<string, unknown>) => Promise<unknown>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -104,7 +137,7 @@ describe("dequeue_update tool", () => {
     mocks.dequeueBatch.mockReturnValueOnce([evt]);
     const result = await call({ timeout: 0, identity: [1, 123456] });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates).toHaveLength(1);
     expect(data.updates[0].id).toBe(1);
     expect(data.updates[0].event).toBe("message");
@@ -115,7 +148,7 @@ describe("dequeue_update tool", () => {
     const evt = makeEvent(2, "Hi");
     mocks.dequeueBatch.mockReturnValueOnce([evt]);
     const result = await call({ timeout: 0, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates[0]._update).toBeUndefined();
     expect(data.updates[0].timestamp).toBeUndefined();
   });
@@ -125,7 +158,7 @@ describe("dequeue_update tool", () => {
     mocks.dequeueBatch.mockReturnValueOnce([evt]);
     mocks.pendingCount.mockReturnValue(2);
     const result = await call({ timeout: 0, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.pending).toBe(2);
   });
 
@@ -134,7 +167,7 @@ describe("dequeue_update tool", () => {
     mocks.dequeueBatch.mockReturnValueOnce([evt]);
     mocks.pendingCount.mockReturnValue(0);
     const result = await call({ timeout: 0, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.pending).toBeUndefined();
   });
 
@@ -142,7 +175,7 @@ describe("dequeue_update tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     const result = await call({ timeout: 0, identity: [1, 123456] });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.empty).toBe(true);
     expect(data.timed_out).toBeUndefined();
     expect(data.pending).toBe(0);
@@ -155,7 +188,7 @@ describe("dequeue_update tool", () => {
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     const result = await call({ timeout: 1, identity: [1, 123456] });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates).toHaveLength(1);
     expect(data.updates[0].id).toBe(5);
     expect(data.updates[0].event).toBe("message");
@@ -168,7 +201,7 @@ describe("dequeue_update tool", () => {
       () => new Promise<void>((r) => setTimeout(r, 50)),
     );
     const result = await call({ timeout: 1, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.timed_out).toBe(true);
     expect(data.pending).toBe(0);
   });
@@ -195,7 +228,7 @@ describe("dequeue_update tool", () => {
       () => new Promise<void>((r) => setTimeout(r, 50)),
     );
     const result = await call({ timeout: 1, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.timed_out).toBe(true);
     expect(data.pending).toBe(3);
   });
@@ -204,7 +237,7 @@ describe("dequeue_update tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.pendingCount.mockReturnValue(0);
     const result = await call({ timeout: 0, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.empty).toBe(true);
     expect(data.timed_out).toBeUndefined();
     expect(data.pending).toBe(0);
@@ -220,7 +253,7 @@ describe("dequeue_update tool", () => {
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     const result = await call({ identity: [1, 123456] });
     expect(mocks.waitForEnqueue).toHaveBeenCalled();
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates).toHaveLength(1);
   });
 
@@ -233,7 +266,7 @@ describe("dequeue_update tool", () => {
     const message = makeEvent(11, "Hello after reaction");
     mocks.dequeueBatch.mockReturnValueOnce([reaction, message]);
     const result = await call({ timeout: 0, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates).toHaveLength(2);
     expect(data.updates[0].event).toBe("reaction");
     expect(data.updates[1].event).toBe("message");
@@ -245,7 +278,7 @@ describe("dequeue_update tool", () => {
     const r2 = makeReaction(11, 6);
     mocks.dequeueBatch.mockReturnValueOnce([r1, r2]);
     const result = await call({ timeout: 0, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates).toHaveLength(2);
     expect(data.updates[0].event).toBe("reaction");
     expect(data.updates[1].event).toBe("reaction");
@@ -365,7 +398,7 @@ describe("dequeue_update tool", () => {
     mocks.getSessionQueue.mockReturnValueOnce(mockSessionQueue);
 
     const result = await call({ timeout: 0, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates[0].id).toBe(55);
     expect(mockSessionQueue.dequeueBatch).toHaveBeenCalled();
   });
@@ -381,7 +414,7 @@ describe("dequeue_update tool", () => {
     mocks.getSessionQueue.mockReturnValue(mockSessionQueue);
 
     const result = await call({ timeout: 1, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates[0].id).toBe(56);
     expect(mockSessionQueue.waitForEnqueue).toHaveBeenCalled();
     mocks.getActiveSession.mockReturnValue(0);
@@ -394,7 +427,7 @@ describe("dequeue_update tool", () => {
     mocks.pendingCount.mockReturnValue(3);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     const result = await call({ timeout: 1, identity: [1, 123456] });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates[0].id).toBe(66);
     expect(data.pending).toBe(3);
   });
@@ -413,7 +446,7 @@ describe("dequeue_update tool", () => {
     );
 
     const result = await call({ identity: [3, 1234], timeout: 0 });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates[0].id).toBe(70);
     // getSessionQueue was called with the explicit sid, not the active one
     expect(mocks.getSessionQueue).toHaveBeenCalledWith(3);
@@ -458,7 +491,7 @@ describe("dequeue_update tool", () => {
     );
 
     const result = await call({ identity: [5, 1234], timeout: 1 });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.updates).toBeDefined();
     // setActiveSession should have been called at least twice (start + return)
     const calls = mocks.setActiveSession.mock.calls.filter(
@@ -481,7 +514,7 @@ describe("dequeue_update tool", () => {
     const controller = new AbortController();
     void Promise.resolve().then(() => { controller.abort(); });
     const result = await call({ identity: [4, 1234], timeout: 60 }, { signal: controller.signal });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.timed_out).toBe(true);
     // resync must fire even on abort path
     expect(mocks.setActiveSession).toHaveBeenCalledWith(4);
@@ -502,7 +535,7 @@ describe("dequeue_update tool", () => {
     const controller = new AbortController();
     controller.abort();
     const result = await call({ timeout: 60, identity: [1, 123456] }, { signal: controller.signal });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.timed_out).toBe(true);
   });
 
@@ -512,7 +545,7 @@ describe("dequeue_update tool", () => {
     const controller = new AbortController();
     void Promise.resolve().then(() => { controller.abort(); });
     const result = await call({ timeout: 60, identity: [1, 123456] }, { signal: controller.signal });
-    const data = parseResult(result);
+    const data = parseResult<DequeueResult>(result);
     expect(data.timed_out).toBe(true);
   });
 
@@ -567,7 +600,7 @@ describe("dequeue_update tool", () => {
       mocks.getSessionQueue.mockReturnValueOnce(mockSessionQueue);
       const result = await call({ identity: [3, 1234], timeout: 0 });
       expect(isError(result)).toBe(false);
-      const data = parseResult(result);
+      const data = parseResult<DequeueResult>(result);
       expect(data.updates[0].id).toBe(2);
     });
   });
@@ -593,7 +626,7 @@ describe("dequeue_update tool", () => {
       const evt = makeEvent(10, "hello");
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
       const result = await call({ timeout: 0, identity: [1, 123456] });
-      const data = parseResult(result);
+      const data = parseResult<DequeueResult>(result);
       expect(data.updates[0].routing).toBe("ambiguous");
     });
 
@@ -602,7 +635,7 @@ describe("dequeue_update tool", () => {
       const evt = makeReplyEvent(10, 50);
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
       const result = await call({ timeout: 0, identity: [1, 123456] });
-      const data = parseResult(result);
+      const data = parseResult<DequeueResult>(result);
       expect(data.updates[0].routing).toBe("targeted");
     });
 
@@ -618,7 +651,7 @@ describe("dequeue_update tool", () => {
       };
       mocks.dequeueBatch.mockReturnValueOnce([cbEvt]);
       const result = await call({ timeout: 0, identity: [1, 123456] });
-      const data = parseResult(result);
+      const data = parseResult<DequeueResult>(result);
       expect(data.updates[0].routing).toBe("targeted");
     });
 
@@ -627,7 +660,7 @@ describe("dequeue_update tool", () => {
       const evt = makeEvent(12, "hi");
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
       const result = await call({ timeout: 0, identity: [1, 123456] });
-      const data = parseResult(result);
+      const data = parseResult<DequeueResult>(result);
       expect(data.updates[0].routing).toBe("ambiguous");
     });
 
@@ -637,7 +670,7 @@ describe("dequeue_update tool", () => {
       const evt2 = makeEvent(15, "second");
       mocks.dequeueBatch.mockReturnValueOnce([evt1, evt2]);
       const result = await call({ timeout: 0, identity: [1, 123456] });
-      const data = parseResult(result);
+      const data = parseResult<DequeueResult>(result);
       expect(data.updates[0].routing).toBe("ambiguous");
       expect(data.updates[1].routing).toBe("ambiguous");
     });
@@ -648,7 +681,7 @@ describe("dequeue_update tool", () => {
       const evt = makeReplyEvent(16, 999);
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
       const result = await call({ timeout: 0, identity: [1, 123456] });
-      const data = parseResult(result);
+      const data = parseResult<DequeueResult>(result);
       expect(data.updates[0].routing).toBe("ambiguous");
     });
   });

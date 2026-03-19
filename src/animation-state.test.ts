@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("./telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getRawApi: () => ({
@@ -209,7 +209,8 @@ describe("animation-state", () => {
       return new GrammyError(
         "Too Many Requests",
         { error_code: 429, ok: false, description: "retry after", parameters: { retry_after: retryAfter } },
-        null,
+        "editMessageText",
+        {},
       );
     }
 

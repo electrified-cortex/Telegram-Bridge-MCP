@@ -17,6 +17,10 @@ import {
   COLOR_PALETTE,
 } from "./session-manager.js";
 
+interface SessionWithoutPin {
+  pin?: unknown;
+}
+
 beforeEach(() => {
   resetSessions();
 });
@@ -219,7 +223,7 @@ describe("listSessions", () => {
   it("does not expose PINs", () => {
     createSession();
     const list = listSessions();
-    const first = list[0] as Record<string, unknown>;
+    const first = list[0] as unknown as SessionWithoutPin;
     expect(first.pin).toBeUndefined();
   });
 });
@@ -347,7 +351,7 @@ describe("health tracking", () => {
       touchSession(s.sid);
       vi.advanceTimersByTime(400_000);
       const result = getUnhealthySessions(360_000);
-      const first = result[0] as Record<string, unknown>;
+      const first = result[0] as unknown as SessionWithoutPin;
       expect(first.pin).toBeUndefined();
       vi.useRealTimers();
     });

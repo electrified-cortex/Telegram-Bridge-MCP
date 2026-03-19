@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({ sendMessage: mocks.sendMessage }),
@@ -27,7 +27,7 @@ vi.mock("../topic-state.js", () => ({
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./send_text.js";

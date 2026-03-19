@@ -11,14 +11,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return { ...actual, getApi: () => mocks, resolveChat: mocks.resolveChat };
 });
 
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./pin_message.js";
@@ -70,7 +70,7 @@ describe("pin_message tool", () => {
     mocks.unpinChatMessage.mockResolvedValue(true);
     const result = await call({ message_id: 5, unpin: true, identity: [1, 123456]});
     expect(isError(result)).toBe(false);
-    expect((parseResult(result) as { unpinned: boolean }).unpinned).toBe(true);
+    expect(parseResult<{ unpinned: boolean }>(result).unpinned).toBe(true);
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 5);
   });
 

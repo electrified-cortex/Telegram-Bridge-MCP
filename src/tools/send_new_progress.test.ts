@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => mocks,
@@ -24,7 +24,7 @@ vi.mock("../telegram.js", async (importActual) => {
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 import { register, renderProgress } from "./send_new_progress.js";
@@ -106,12 +106,12 @@ describe("send_new_progress tool", () => {
 
   it("returns error when validateText fails", async () => {
     mocks.validateText.mockReturnValueOnce({
-      code: "TEXT_TOO_LONG",
+      code: "MESSAGE_TOO_LONG",
       message: "too long",
     });
     const result = await call({ percent: 50, title: "T", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("TEXT_TOO_LONG");
+    expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
 
   describe("identity gate", () => {

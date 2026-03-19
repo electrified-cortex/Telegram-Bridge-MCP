@@ -42,9 +42,12 @@ export function createMockServer(): MockServer & McpServer {
 // Helpers for asserting MCP tool results
 // ---------------------------------------------------------------------------
 
-export function parseResult(result: unknown): Record<string, unknown> {
+export function parseResult<T = Record<string, unknown>>(
+  result: unknown,
+  _hint?: T,
+): T {
   const r = result as { content: { text: string }[] };
-  return JSON.parse(r.content[0].text) as Record<string, unknown>;
+  return JSON.parse(r.content[0].text) as T;
 }
 
 export function isError(result: unknown): boolean {
@@ -52,5 +55,5 @@ export function isError(result: unknown): boolean {
 }
 
 export function errorCode(result: unknown): string {
-  return (parseResult(result) as unknown as TelegramError).code;
+  return parseResult<TelegramError>(result).code;
 }

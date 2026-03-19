@@ -20,11 +20,11 @@ const mocks = vi.hoisted(() => ({
   sessionQueue: {
     pendingCount: vi.fn(() => 0),
   },
-  peekSessionCategories: vi.fn(() => undefined as Record<string, number> | undefined),
+  peekSessionCategories: vi.fn((_sid: number) => undefined as Record<string, number> | undefined),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({
@@ -39,26 +39,26 @@ vi.mock("../telegram.js", async (importActual) => {
 vi.mock("../message-store.js", () => ({
   recordOutgoing: vi.fn(),
   pendingCount: () => mocks.pendingCount(),
-  registerCallbackHook: (...args: unknown[]) => mocks.registerCallbackHook(...args),
-  clearCallbackHook: (...args: unknown[]) => mocks.clearCallbackHook(...args),
-  registerMessageHook: (...args: unknown[]) => mocks.registerMessageHook(...args),
-  clearMessageHook: (...args: unknown[]) => mocks.clearMessageHook(...args),
+  registerCallbackHook: mocks.registerCallbackHook,
+  clearCallbackHook: mocks.clearCallbackHook,
+  registerMessageHook: mocks.registerMessageHook,
+  clearMessageHook: mocks.clearMessageHook,
 }));
 
 vi.mock("./button-helpers.js", async (importActual) => {
-  const actual = await importActual<typeof import("./button-helpers.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
-    pollButtonOrTextOrVoice: (...args: unknown[]) => mocks.pollButtonOrTextOrVoice(...args),
-    ackAndEditSelection: (...args: unknown[]) => mocks.ackAndEditSelection(...args),
-    editWithSkipped: (...args: unknown[]) => mocks.editWithSkipped(...args),
+    pollButtonOrTextOrVoice: mocks.pollButtonOrTextOrVoice,
+    ackAndEditSelection: mocks.ackAndEditSelection,
+    editWithSkipped: mocks.editWithSkipped,
   };
 });
 
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 vi.mock("../session-queue.js", () => ({

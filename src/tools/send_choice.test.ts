@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({
@@ -40,7 +40,7 @@ vi.mock("../message-store.js", () => ({
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./send_choice.js";
@@ -228,12 +228,12 @@ describe("send_choice tool", () => {
 
   it("returns error when validateText fails", async () => {
     mocks.validateText.mockReturnValueOnce({
-      code: "TEXT_TOO_LONG",
+      code: "MESSAGE_TOO_LONG",
       message: "too long",
     });
     const result = await call({ text: "Pick", options: TWO_OPTIONS, identity: [1, 123456]});
     expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("TEXT_TOO_LONG");
+    expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
 
   it("returns BUTTON_LABEL_EXCEEDS_LIMIT for label > hard limit", async () => {

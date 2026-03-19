@@ -207,7 +207,7 @@ React to these events to keep your internal state synchronized:
 
 Use DMs to signal completion:
 
-```
+```text
 "Task complete: summarized PR #40. Ready for next task."
 ```
 
@@ -238,7 +238,7 @@ Bouncing creates confusion and duplicate processing risk.
 
 ## Example: Full Delegation Flow
 
-```
+```text
 Operator: "Can you check the CI status for PR #40?"
 
 Governor queue receives (ambiguous):

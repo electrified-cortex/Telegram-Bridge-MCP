@@ -23,32 +23,36 @@ import { createMockServer, parseResult, isError, errorCode } from "./test-utils.
 // Mocks — telegram network layer only; session infrastructure stays real
 // ---------------------------------------------------------------------------
 
-const mockSendMessage = vi.fn();
-const mockAckVoice = vi.fn();
-const mockSendServiceMessage = vi.fn(() => Promise.resolve());
+const hoistedMocks = vi.hoisted(() => ({
+  sendMessage: vi.fn(),
+  ackVoice: vi.fn(),
+  sendServiceMessage: vi.fn(() => Promise.resolve()),
+  getMessage: vi.fn<() => TimelineEvent | undefined>(),
+}));
+
+const mockSendMessage = hoistedMocks.sendMessage;
+const mockAckVoice = hoistedMocks.ackVoice;
 
 const _fakeApi = {
-  sendMessage: (..._args: unknown[]) => mockSendMessage(),
+  sendMessage: (..._args: unknown[]) => hoistedMocks.sendMessage(),
 };
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => _fakeApi,
     resolveChat: () => 1,
-    ackVoiceMessage: (...args: unknown[]) => mockAckVoice(...args),
-    sendServiceMessage: (...args: unknown[]) => mockSendServiceMessage(...args),
+    ackVoiceMessage: hoistedMocks.ackVoice,
+    sendServiceMessage: hoistedMocks.sendServiceMessage,
   };
 });
 
 // message-store: only getMessage is needed by passMessage / routeMessage.
 // dequeueBatch / waitForEnqueue are only hit when no session queue exists (never
 // in these tests — every test creates an explicit session queue for every SID).
-const mockGetMessage = vi.fn<() => TimelineEvent | undefined>();
-
 vi.mock("../message-store.js", () => ({
-  getMessage: (...args: unknown[]) => mockGetMessage(...args as []),
+  getMessage: hoistedMocks.getMessage,
   CURRENT: -1,
   dequeue: vi.fn(() => undefined),
   dequeueBatch: vi.fn(() => []),

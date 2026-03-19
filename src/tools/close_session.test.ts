@@ -22,24 +22,24 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../session-manager.js", () => ({
-  closeSession: (...args: unknown[]) => mocks.closeSession(...args),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
-  getSession: (...args: unknown[]) => mocks.getSession(...args),
-  getActiveSession: (...args: unknown[]) => mocks.getActiveSession(...args),
-  setActiveSession: (...args: unknown[]) => mocks.setActiveSession(...args),
-  listSessions: (...args: unknown[]) => mocks.listSessions(...args),
+  closeSession: mocks.closeSession,
+  validateSession: mocks.validateSession,
+  getSession: mocks.getSession,
+  getActiveSession: mocks.getActiveSession,
+  setActiveSession: mocks.setActiveSession,
+  listSessions: mocks.listSessions,
 }));
 
 vi.mock("../session-queue.js", () => ({
   removeSessionQueue: vi.fn(),
-  deliverDirectMessage: (...args: unknown[]) => mocks.deliverDirectMessage(...args),
-  deliverServiceMessage: (...args: unknown[]) => mocks.deliverServiceMessage(...args),
-  drainQueue: (...args: unknown[]) => mocks.drainQueue(...args),
-  routeToSession: (...args: unknown[]) => mocks.routeToSession(...args),
+  deliverDirectMessage: mocks.deliverDirectMessage,
+  deliverServiceMessage: mocks.deliverServiceMessage,
+  drainQueue: mocks.drainQueue,
+  routeToSession: mocks.routeToSession,
 }));
 
 vi.mock("../message-store.js", () => ({
-  replaceSessionCallbackHooks: (...args: unknown[]) => mocks.replaceSessionCallbackHooks(...args),
+  replaceSessionCallbackHooks: mocks.replaceSessionCallbackHooks,
 }));
 
 vi.mock("../dm-permissions.js", () => ({
@@ -49,7 +49,7 @@ vi.mock("../dm-permissions.js", () => ({
 
 vi.mock("../routing-mode.js", () => ({
   getGovernorSid: () => mocks.getGovernorSid(),
-  setGovernorSid: (...args: unknown[]) => mocks.setGovernorSid(...args),
+  setGovernorSid: mocks.setGovernorSid,
 }));
 
 vi.mock("../telegram.js", async (importOriginal) => {

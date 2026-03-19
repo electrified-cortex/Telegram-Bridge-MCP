@@ -237,7 +237,8 @@ describe("recordInbound — text messages", () => {
 
   it("captures reply_to from reply_to_message", () => {
     const update = textUpdate(5, "replying to you");
-    (update.message as Record<string, unknown>).reply_to_message = {
+    const message = update.message as unknown as Record<string, unknown>;
+    message.reply_to_message = {
       message_id: 3,
       date: Math.floor(Date.now() / 1000),
       chat: { id: 100, type: "private" },
@@ -504,7 +505,7 @@ describe("session tagging on outbound", () => {
     recordOutgoing(300, "text", "original");
     setActiveSession(2);
     recordOutgoingEdit(300, "text", "edited");
-    const timeline = dumpTimeline(10);
+    const timeline = dumpTimeline();
     const editEvt = timeline.find(
       (e) => e.id === 300 && e.event === "edit",
     );
@@ -514,7 +515,7 @@ describe("session tagging on outbound", () => {
   it("tags orphan edits (evicted message) with active session ID", () => {
     setActiveSession(5);
     recordOutgoingEdit(999, "text", "orphan");
-    const timeline = dumpTimeline(10);
+    const timeline = dumpTimeline();
     const evt = timeline.find((e) => e.id === 999);
     expect(evt!.sid).toBe(5);
   });
@@ -562,7 +563,7 @@ describe("session tagging on outbound", () => {
     runInSessionContext(11, () => {
       recordOutgoingEdit(600, "text", "als-edit");
     });
-    const timeline = dumpTimeline(10);
+    const timeline = dumpTimeline();
     const editEvt = timeline.find((e) => e.id === 600 && e.event === "edit");
     expect(editEvt!.sid).toBe(11);
   });

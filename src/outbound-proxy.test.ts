@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   recordOutgoing: vi.fn(),
   getCallerSid: vi.fn(() => 0),
   activeSessionCount: vi.fn(() => 1),
-  getSession: vi.fn(() => undefined as { name: string; color?: string } | undefined),
+  getSession: vi.fn((_sid: number) => undefined as { name: string; color?: string } | undefined),
 }));
 
 vi.mock("./typing-state.js", () => ({

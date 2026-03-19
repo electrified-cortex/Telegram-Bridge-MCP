@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({
@@ -36,31 +36,31 @@ vi.mock("../telegram.js", async (importActual) => {
 
 vi.mock("../message-store.js", () => ({
   recordOutgoing: vi.fn(),
-  pendingCount: (...args: unknown[]) => mocks.pendingCount(...args),
-  dequeue: (...args: unknown[]) => mocks.dequeue(...args),
-  registerCallbackHook: (...args: unknown[]) => mocks.registerCallbackHook(...args),
-  clearCallbackHook: (...args: unknown[]) => mocks.clearCallbackHook(...args),
+  pendingCount: mocks.pendingCount,
+  dequeue: mocks.dequeue,
+  registerCallbackHook: mocks.registerCallbackHook,
+  clearCallbackHook: mocks.clearCallbackHook,
 }));
 
 vi.mock("../session-manager.js", () => ({
-  createSession: (...args: unknown[]) => mocks.createSession(...args),
-  closeSession: (...args: unknown[]) => mocks.closeSession(...args),
-  setActiveSession: (...args: unknown[]) => mocks.setActiveSession(...args),
-  listSessions: (...args: unknown[]) => mocks.listSessions(...args),
+  createSession: mocks.createSession,
+  closeSession: mocks.closeSession,
+  setActiveSession: mocks.setActiveSession,
+  listSessions: mocks.listSessions,
   activeSessionCount: () => mocks.activeSessionCount(),
-  getAvailableColors: (...args: unknown[]) => mocks.getAvailableColors(...args),
+  getAvailableColors: mocks.getAvailableColors,
   COLOR_PALETTE: ["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"],
 }));
 
 vi.mock("../routing-mode.js", () => ({
-  setGovernorSid: (...args: unknown[]) => mocks.setGovernorSid(...args),
+  setGovernorSid: mocks.setGovernorSid,
   getGovernorSid: () => mocks.getGovernorSid(),
 }));
 
 vi.mock("../session-queue.js", () => ({
   createSessionQueue: vi.fn(),
   removeSessionQueue: vi.fn(),
-  deliverServiceMessage: (...args: unknown[]) => mocks.deliverServiceMessage(...args),
+  deliverServiceMessage: mocks.deliverServiceMessage,
 }));
 
 import { register } from "./session_start.js";

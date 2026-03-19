@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach, type Mock } from "vitest";
 import { isTtsEnabled, stripForTts, synthesizeToOgg, fetchVoiceList, TTS_LIMIT, _resetLocalPipeline } from "./tts.js";
 
 // Mock @huggingface/transformers so no model is downloaded during tests
@@ -15,6 +15,11 @@ vi.mock("./ogg-opus-encoder.js", () => ({
 vi.mock("audio-decode", () => ({
   default: vi.fn(),
 }));
+
+type LocalSynthesizer = (text: string) => Promise<{
+  audio: Float32Array;
+  sampling_rate: number;
+}>;
 
 // ---------------------------------------------------------------------------
 // isTtsEnabled
@@ -398,7 +403,8 @@ describe("synthesizeToOgg (local provider)", () => {
 
     const fakePcm = new Float32Array([0.1, -0.1, 0.0]);
     const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: fakePcm, sampling_rate: 16000 });
-    vi.mocked(pipeline).mockResolvedValue(fakeSynthesizer);
+    (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
+      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
 
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
@@ -415,8 +421,12 @@ describe("synthesizeToOgg (local provider)", () => {
     const { pipeline } = await import("@huggingface/transformers");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
 
-    const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: new Float32Array(1), sampling_rate: 22050 });
-    vi.mocked(pipeline).mockResolvedValue(fakeSynthesizer);
+    const fakeSynthesizer = vi.fn<LocalSynthesizer>().mockResolvedValue({
+      audio: new Float32Array(1),
+      sampling_rate: 22050,
+    });
+    (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
+      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("test");
@@ -428,8 +438,12 @@ describe("synthesizeToOgg (local provider)", () => {
     const { pipeline } = await import("@huggingface/transformers");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
 
-    const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: new Float32Array(1), sampling_rate: 16000 });
-    vi.mocked(pipeline).mockResolvedValue(fakeSynthesizer);
+    const fakeSynthesizer = vi.fn<LocalSynthesizer>().mockResolvedValue({
+      audio: new Float32Array(1),
+      sampling_rate: 16000,
+    });
+    (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
+      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("first call");
@@ -445,8 +459,12 @@ describe("synthesizeToOgg (local provider)", () => {
     const { pipeline } = await import("@huggingface/transformers");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
 
-    const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: new Float32Array(1), sampling_rate: 16000 });
-    vi.mocked(pipeline).mockResolvedValue(fakeSynthesizer);
+    const fakeSynthesizer = vi.fn<LocalSynthesizer>().mockResolvedValue({
+      audio: new Float32Array(1),
+      sampling_rate: 16000,
+    });
+    (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
+      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const result = await synthesizeToOgg("hello");

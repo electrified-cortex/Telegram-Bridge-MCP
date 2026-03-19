@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({
@@ -29,19 +29,19 @@ vi.mock("../message-store.js", () => ({
 }));
 
 vi.mock("./button-helpers.js", async (importActual) => {
-  const actual = await importActual<typeof import("./button-helpers.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
-    pollButtonPress: (...args: unknown[]) => mocks.pollButtonPress(...args),
-    ackAndEditSelection: (...args: unknown[]) => mocks.ackAndEditSelection(...args),
-    editWithTimedOut: (...args: unknown[]) => mocks.editWithTimedOut(...args),
+    pollButtonPress: mocks.pollButtonPress,
+    ackAndEditSelection: mocks.ackAndEditSelection,
+    editWithTimedOut: mocks.editWithTimedOut,
   };
 });
 
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./get_chat.js";

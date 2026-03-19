@@ -9,6 +9,7 @@
  * SC-4 and SC-5: Integration tests using recordInbound to verify that hooked
  * callbacks fire inline AND still route to session queues.
  */
+import type { Update } from "grammy/types";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
@@ -16,7 +17,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 vi.mock("./telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("./telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({
@@ -108,15 +109,14 @@ function reactionEvt(id: number): TimelineEvent {
 
 /** Build a raw callback_query update for recordInbound. */
 function cbUpdate(targetMsgId: number, data = "cb_data", qid = "qid1") {
-  return {
-    callback_query: {
+  return { update_id: 0, callback_query: {
       id: qid,
       from: { id: 999, first_name: "User", is_bot: false },
       message: { message_id: targetMsgId, chat: { id: 42 } },
       chat_instance: "ci1",
       data,
     },
-  };
+  } as unknown as Update;
 }
 
 // ---------------------------------------------------------------------------

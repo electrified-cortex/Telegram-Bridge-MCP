@@ -14,19 +14,19 @@ const mocks = vi.hoisted(() => ({
   _waitResolvers: [] as (() => void)[],
   sessionQueue1: {
     pendingCount: vi.fn(() => 0),
-    dequeueMatch: vi.fn(() => undefined as unknown),
+    dequeueMatch: vi.fn((_predicate: (e: TimelineEvent) => unknown) => undefined as unknown),
     waitForEnqueue: vi.fn(() => new Promise<void>((r) => setTimeout(r, 10))),
   },
   sessionQueue2: {
     pendingCount: vi.fn(() => 0),
-    dequeueMatch: vi.fn(() => undefined as unknown),
+    dequeueMatch: vi.fn((_predicate: (e: TimelineEvent) => unknown) => undefined as unknown),
     waitForEnqueue: vi.fn(() => new Promise<void>((r) => setTimeout(r, 10))),
   },
-  peekSessionCategories: vi.fn(() => undefined as Record<string, number> | undefined),
+  peekSessionCategories: vi.fn((_sid: number) => undefined as Record<string, number> | undefined),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
     getApi: () => ({ sendMessage: mocks.sendMessage }),
@@ -58,7 +58,7 @@ vi.mock("../message-store.js", () => ({
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 vi.mock("../session-queue.js", () => ({

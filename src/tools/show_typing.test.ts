@@ -7,11 +7,11 @@ const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   showTyping: vi.fn(),
   cancelTyping: vi.fn(),
-  resolveChat: vi.fn(() => 99),
+  resolveChat: vi.fn<() => number | { code: string; message: string }>(() => 99),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
-  const actual = await importActual<typeof import("../telegram.js")>();
+  const actual = await importActual<Record<string, unknown>>();
   return { ...actual, resolveChat: mocks.resolveChat };
 });
 
@@ -23,7 +23,7 @@ vi.mock("../typing-state.js", () => ({
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
+  validateSession: mocks.validateSession,
 }));
 
 import { register } from "./show_typing.js";

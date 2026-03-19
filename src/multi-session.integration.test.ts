@@ -238,9 +238,17 @@ describe("multi-session integration", () => {
       mockGetMessage.mockReturnValue(event);
 
       // Governor routes to s3
-      const ok = routeMessage(event.id, s3.sid);
+      const ok = routeMessage(event.id, s3.sid, s2.sid);
       expect(ok).toBe(true);
-      expect(drain(s3.sid)).toEqual([event]);
+      expect(drain(s3.sid)).toEqual([
+        {
+          ...event,
+          content: {
+            ...event.content,
+            routed_by: s2.sid,
+          },
+        },
+      ]);
       expect(drain(s1.sid)).toEqual([]);
     });
 
