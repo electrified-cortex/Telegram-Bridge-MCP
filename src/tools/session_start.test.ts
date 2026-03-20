@@ -433,6 +433,30 @@ describe("session_start tool", () => {
     expect(mocks.setGovernorSid).not.toHaveBeenCalled();
   });
 
+  it("assigns reconnecting session as governor when second session reconnects", async () => {
+    // Reproduces the live bug: Overseer (SID 1) left, Worker (SID 2) survived,
+    // Overseer reconnects as SID 3. Without the fix, SID 2 (lowest) becomes governor
+    // and the Overseer is deaf to ambiguous messages.
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 3, pin: 300003, name: "Overseer", sessionsActive: 2 });
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 2, name: "Worker", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+        { sid: 3, name: "Overseer", createdAt: "2026-03-17" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+
+    await call({ name: "Overseer", reconnect: true });
+
+    // Reconnecting session (SID 3) should be governor, NOT surviving SID 2
+    expect(mocks.setGovernorSid).toHaveBeenCalledWith(3);
+  });
+
   // =========================================================================
   // Approval gate
   // =========================================================================

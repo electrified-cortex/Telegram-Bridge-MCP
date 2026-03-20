@@ -18,5 +18,6 @@
 
 ## Fixed
 
+- Governor auto-assignment no longer defaults to lowest SID on reconnect; reconnecting sessions now take the governor seat (SID 3 beats SID 2 when SID 3 is reconnecting)
 - Regression-tested cascade-after-text-promotion: buried animation resumes correctly after higher-priority animation is consumed by `beforeTextSend`
 - Added 3 new unit tests for cascade-after-text-promotion behavior

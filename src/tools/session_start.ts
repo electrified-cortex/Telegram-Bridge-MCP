@@ -222,9 +222,12 @@ export function register(server: McpServer) {
           const allSessions = listSessions();
           res.fellow_sessions = allSessions.filter(s => s.sid !== session.sid);
           if (session.sessionsActive === 2) {
-            // Auto-activate governor: lowest-SID session (the first one) becomes governor
-            const lowestSid = Math.min(...allSessions.map(s => s.sid));
-            setGovernorSid(lowestSid);
+            // Reconnecting sessions take the governor seat (resuming a prior role).
+            // Fresh joiners use lowest-SID heuristic (original session is the anchor).
+            const governorSid = reconnect
+              ? session.sid
+              : Math.min(...allSessions.map(s => s.sid));
+            setGovernorSid(governorSid);
           }
 
           // Broadcast a visible announcement via the outbound proxy so the
