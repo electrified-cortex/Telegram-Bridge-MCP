@@ -9,7 +9,7 @@
    - Completed tasks still in `0-backlog` or `3-in-progress`.
    - Duplicates across folders.
    - Stale drafts that should be promoted or removed.
-3. Check `2-queued/` — if tasks exist, assign to an available worker immediately ("queued = ready to roll").
+3. Check `2-queued/` — workers pick up queued tasks autonomously via their own reminders. Only DM a worker directly for urgent re-prioritization.
 4. Check `3-in-progress/` — if tasks have been active for a while, verify the assigned worker is making progress.
 5. Fix trivial issues directly. Flag anything needing operator approval.
 

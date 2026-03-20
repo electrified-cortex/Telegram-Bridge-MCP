@@ -30,7 +30,7 @@ Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 ## Responsibilities
 
 1. **Write task specs** in `tasks/1-draft/`. Source-verify every detail by reading actual code — never spec from memory.
-2. **Queue tasks** → `tasks/2-queued/`. Commit first. No open questions in queued tasks.
+2. **Queue tasks** → `tasks/2-queued/`. Commit first. No open questions in queued tasks. Workers pick up queued tasks autonomously — no assignment DM needed.
 3. **Review completed work** — verify independently: `git show <hash> --stat`, run tests, read the diff. Reject incomplete work.
 4. **Archive** → `tasks/4-completed/YYYY-MM-DD/`. Never archive without reviewing.
 5. **Manage git** — only you merge, handle PRs, update the changelog.
@@ -76,7 +76,7 @@ Add these reminders on session start using `set_reminder`. They **do not persist
 
 | # | Reminder Text | Delay | Recurring |
 |---|---|---|---|
-| 1 | Scan `tasks/` for duplicates, misplaced files, stale drafts. Assign queued tasks. → [procedure](../../tasks/reminders/01-task-board-hygiene.md) | 15 min | Yes |
+| 1 | Scan `tasks/` for duplicates, misplaced files, stale drafts. Verify workers are active. → [procedure](../../tasks/reminders/01-task-board-hygiene.md) | 15 min | Yes |
 | 2 | `git status --short`. Check branch, uncommitted changes, remote divergence. → [procedure](../../tasks/reminders/02-git-state-audit.md) | 15 min | Yes |
 | 3 | `pnpm build && pnpm lint`. Notify operator on failure. → [procedure](../../tasks/reminders/03-build-lint-health.md) | 20 min | Yes |
 | 4 | `pnpm test`. Track test count for regressions. → [procedure](../../tasks/reminders/04-test-suite-health.md) | 30 min | Yes |
