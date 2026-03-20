@@ -68,6 +68,7 @@ describe("show_animation tool", () => {
       false,
       false,
       false,
+      0,
     );
   });
 
@@ -85,6 +86,7 @@ describe("show_animation tool", () => {
       false,
       false,
       false,
+      0,
     );
   });
 
@@ -101,6 +103,7 @@ describe("show_animation tool", () => {
       false,
       false,
       false,
+      0,
     );
   });
 
@@ -116,6 +119,7 @@ describe("show_animation tool", () => {
       false,
       false,
       false,
+      0,
     );
   });
 
@@ -149,6 +153,7 @@ describe("show_animation tool", () => {
       true,
       false,
       false,
+      0,
     );
     const data = parseResult(result);
     expect(data.persistent).toBe(true);
