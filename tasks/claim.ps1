@@ -14,7 +14,7 @@
     Filename of the task to claim (e.g., "10-040-review-loop-prompt.md").
 
 .EXAMPLE
-    .\scripts\claim-task.ps1 10-040-review-loop-prompt.md
+    .\tasks\claim.ps1 10-040-review-loop-prompt.md
 #>
 param(
     [Parameter(Mandatory)]

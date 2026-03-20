@@ -29,7 +29,7 @@ Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 
 ## Responsibilities
 
-1. **Write task specs** in `tasks/1-draft/`. Source-verify every detail by reading actual code — never spec from memory.
+1. **Write task specs** in `tasks/1-drafts/`. Source-verify every detail by reading actual code — never spec from memory.
 2. **Queue tasks** → `tasks/2-queued/`. Commit first. No open questions in queued tasks. Workers pick up queued tasks autonomously — no assignment DM needed.
 3. **Review completed work** — verify independently: `git show <hash> --stat`, run tests, read the diff. Reject incomplete work.
 4. **Archive** → `tasks/4-completed/YYYY-MM-DD/`. Never archive without reviewing.
@@ -61,7 +61,7 @@ When a worker session is active:
 ### 2. Subagents (fallback)
 
 When no worker sessions are active, use `runSubagent` with `agentName: "Task Runner"` (Claude Sonnet 4.6):
-- **Claim first**: Run `scripts/claim-task.ps1 <filename>` to stage a baseline and move to `3-in-progress/`.
+- **Claim first**: Run `tasks/claim.ps1 <filename>` to stage a baseline and move to `3-in-progress/`.
 - **Ask operator first** before launching a subagent for implementation tasks. Investigation tasks are pre-approved.
 - **Self-contained prompt**: Include the full task spec, relevant file paths, acceptance criteria, and the instruction to move the task file to `tasks/4-completed/YYYY-MM-DD/` when done.
 - **One task per subagent** — keep scope tight and focused.

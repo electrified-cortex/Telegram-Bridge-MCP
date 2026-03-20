@@ -38,7 +38,7 @@ dequeue → messages? → handle → dequeue
 
 ## Task Execution
 
-**Claim** — run `scripts/claim-task.ps1 <filename>` on the lowest-priority-numbered file in `2-queued/`. This stages a baseline snapshot at `4-completed/YYYY-MM-DD/` via `git mv`, then moves the working copy to `3-in-progress/`. **One task at a time.**
+**Claim** — run `tasks/claim.ps1 <filename>` on the lowest-priority-numbered file in `2-queued/`. This stages a baseline snapshot at `4-completed/YYYY-MM-DD/` via `git mv`, then moves the working copy to `3-in-progress/`. **One task at a time.**
 
 **Delegate to Task Runner** — use `runSubagent` with `agentName: "Task Runner"`. The task file is already in `3-in-progress/`. Include the task file path and full spec in the prompt.
 
@@ -57,7 +57,7 @@ After review, DM the overseer with status:
 
 **Direct execution** — for simple or quick tasks, do the work yourself. Same lifecycle: implement, verify, append `## Completion`, move to `4-completed/`, DM overseer.
 
-**Unclear spec** → prepend `## ⚠️ Needs Clarification`, move back to `1-draft/`, DM overseer.
+**Unclear spec** → prepend `## ⚠️ Needs Clarification`, move back to `1-drafts/`, DM overseer.
 
 ## Git Rules
 

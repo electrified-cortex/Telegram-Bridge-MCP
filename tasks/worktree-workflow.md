@@ -147,7 +147,7 @@ The overseer reviews tasks that arrive in `4-completed/`:
 
 **If unsuccessful:**
 - Add a note to the task file explaining what wasn't done or wasn't right
-- Move the task back to `2-queued/` (needs another pass) or `1-draft/` (needs rethinking)
+- Move the task back to `2-queued/` (needs another pass) or `1-drafts/` (needs rethinking)
 
 ## Rules
 
