@@ -1,76 +1,87 @@
-# Worktree Workflow
+# Task Workflow
 
-Workers use **git worktrees** to isolate code changes from the main workspace. This prevents workers from interfering with the governor, other workers, or any active PR on the dev branch.
+How the governor assigns work and how workers execute it.
 
-## Lifecycle
+## Three Assignment Modes
 
-```text
-governor assigns task (with worktree directive)
-  → worker creates branch + worktree
-  → worker does all work inside worktree
-  → worker commits, tests, pushes in worktree
-  → worker reports completion to governor via DM
-  → governor verifies (reviews diff, runs tests)
-  → governor merges branch into dev branch
-  → governor removes worktree + deletes branch
-  → governor archives task
-```
+The governor picks one per task and specifies it in the task spec:
 
-## Worktree Location
+| Mode | When to use | Task spec includes |
+| --- | --- | --- |
+| **Direct edit** | Simple changes (single-file docs, configs) | No `## Worktree` section |
+| **Worktree** | Code changes, multi-file features, anything that could break the build | `## Worktree` section with branch + directory |
 
-All worktrees live under `.git/.wt/` — hidden inside the git directory, keeping the workspace root clean.
+The merge strategy (direct merge vs PR) is the **governor's decision after the worker reports completion**. Workers don't need to know or care how the merge happens.
 
-Worktree directories use the full task slug from the task filename:
+---
 
-```
-.git/.wt/
-  10-013-worktree-test-run/    ← matches task file 10-013-worktree-test-run.md
-  20-014-readme-overhaul/      ← matches task file 20-014-readme-overhaul.md
-```
+## Worker Responsibilities
 
-## Worker Steps
+Workers do the work. They don't manage the task board, merge branches, or decide the merge strategy.
 
-### 1. Create branch and worktree
+### Direct Edit Tasks
 
-When the task spec includes a worktree directive, use the full task slug:
+If the task spec has no `## Worktree` section:
+1. Edit files directly in the main workspace
+2. Commit and push
+3. DM the governor: done
+
+### Worktree Tasks
+
+If the task spec has a `## Worktree` section:
+
+#### 1. Create branch and worktree
+
+Use the slug from the task spec:
 
 ```bash
-# Example: task file is 10-013-worktree-test-run.md
 git branch task/013-worktree-test-run
 git worktree add .git/.wt/10-013-worktree-test-run task/013-worktree-test-run
 ```
 
-### 2. Work inside the worktree
+All worktrees live under `.git/.wt/` — hidden inside the git directory, keeping the workspace root clean.
 
-All file operations happen inside the worktree directory. Never modify files in the main workspace directory.
+#### 2. Work inside the worktree
+
+All file operations happen inside the worktree. Never modify files in the main workspace.
 
 ```bash
 cd .git/.wt/10-013-worktree-test-run
 # edit files, run tests, etc.
 ```
 
-### 3. Commit and push
-
-Workers can commit freely within their worktree branch:
+#### 3. Commit and push
 
 ```bash
-cd .git/.wt/10-013-worktree-test-run
 git add -A
 git commit -m "feat: description of change"
 git push -u origin task/013-worktree-test-run
 ```
 
-### 4. Report completion
+#### 4. Report completion
 
-DM the governor: "Task 013 complete. Branch `task/013-worktree-test-run`, worktree at `.git/.wt/10-013-worktree-test-run`. Tests passing."
+DM the governor: "Task 013 complete. Branch `task/013-worktree-test-run`. Tests passing."
 
-**Do not** move task files or touch the task board. The governor handles that.
+**Stop here.** Do not merge. Do not move task files. Do not touch the task board. The governor handles everything after this point.
 
-## Governor Steps
+---
 
-### 1. Create task with worktree directive
+## Governor Responsibilities
 
-Include in the task spec:
+The governor manages task assignment, merge strategy, and cleanup. Workers never need to know how their branch gets merged.
+
+### Task Assignment
+
+Decide per-task whether it needs a worktree:
+
+| Task type | Worktree? |
+| --- | --- |
+| Source code (features, fixes, refactors) | **Yes** |
+| Multi-file doc overhauls | Governor's discretion |
+| Single-file edits (README, changelog, config) | **No** — direct edit |
+| Task board changes | **No** |
+
+For worktree tasks, include in the task spec:
 
 ```markdown
 ## Worktree
@@ -79,30 +90,19 @@ Create worktree `10-013-worktree-test-run` from the current dev branch.
 Branch: `task/013-worktree-test-run`
 ```
 
-### 2. Verify worker's output
+### Merge Strategy
 
+After a worker reports completion, the governor picks one:
+
+**Direct merge** — low-risk changes (docs, small fixes, config):
 ```bash
-cd .git/.wt/10-013-worktree-test-run
-pnpm test
-pnpm lint
-git log --oneline -5
-git diff main..task/013-worktree-test-run --stat
+git merge --no-ff task/013-worktree-test-run
 ```
 
-### 3. Merge
-
-The governor picks the merge strategy per task:
-
-**Direct merge** — for low-risk changes (docs, configs, small fixes):
+**PR-based merge** — features, runtime changes, anything needing review:
 ```bash
-# From the main workspace
-git merge task/013-worktree-test-run
-```
-
-**PR-based merge** — for features and anything that changes runtime behavior:
-```bash
-# Worker pushes to origin; governor creates a PR
-# PR gets CI, Copilot review, and operator review before merging
+# Create PR from task/013-worktree-test-run → dev branch
+# CI runs, Copilot reviews, operator approves
 ```
 
 Use PR-based merge when:
@@ -111,34 +111,30 @@ Use PR-based merge when:
 - You want CI validation before merging
 - The operator wants a review checkpoint
 
-Or create a PR if the change warrants review.
+### Verification
 
-### 4. Cleanup
+Before merging (either strategy):
+
+```bash
+cd .git/.wt/10-013-worktree-test-run
+pnpm test
+pnpm lint
+git log --oneline -5
+git diff v4-multi-session..task/013-worktree-test-run --stat
+```
+
+### Cleanup
+
+After the branch is merged:
 
 ```bash
 git worktree remove .git/.wt/10-013-worktree-test-run
 git push origin --delete task/013-worktree-test-run
 ```
 
-Local branch deletion (`git branch -d`) may be policy-blocked in automated sessions. This is fine — stale local branches are harmless refs. The operator can clean them up periodically with `git branch --merged | xargs git branch -d`.
+Local branch deletion (`git branch -d`) may be policy-blocked in automated sessions. Stale local branches are harmless — the operator can clean them up periodically.
 
 Then archive the task file.
-
-## When to Use Worktrees
-
-**Not every task needs a worktree.** Simple edits (README, docs, configs) should be done directly in the main workspace — no branch, no worktree. Worktrees are for code changes that could break the build or conflict with other work.
-
-The governor decides per-task and specifies it in the task spec:
-
-| Task type | Worktree? |
-| --- | --- |
-| Source code (features, fixes, refactors) | **Yes** |
-| Large multi-file documentation overhauls | Governor's discretion |
-| Single-file doc edits (README, changelog) | **No** — edit in place |
-| Config/task board changes | **No** |
-| Research / investigation | **No** |
-
-**If the task spec doesn't include a `## Worktree` section, work directly in the main workspace.**
 
 ## Rules
 
