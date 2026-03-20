@@ -35,3 +35,7 @@ After the session is confirmed as closing (and before the session record is remo
 - After `close_session`, the session's announcement is unpinned from the chat
 - Unpin errors (already unpinned, message deleted) do not fail the close
 - Existing close_session behavior and tests unaffected
+
+## Completion
+
+**Finding: Already implemented.** `close_session.ts` lines 53–58 already call `unpinChatMessage` using the stored `announcement_message_id`, with error swallowing. Tests exist in `close_session.test.ts` (line 517, "does not call unpinChatMessage when no announcement", etc.). This was implemented as part of task #022. No code changes needed — closing as duplicate/audit.
