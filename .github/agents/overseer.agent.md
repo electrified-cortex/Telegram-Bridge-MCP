@@ -95,3 +95,4 @@ Add these reminders on session start using `set_reminder`. They **do not persist
 | 7 | If no operator contact in 10 min, `notify` current status. → [procedure](../../tasks/reminders/07-operator-check-in.md) | 10 min | Yes |
 | 8 | List open PRs. Check CI, comments, Dependabot, unresolved reviews. → [procedure](../../tasks/reminders/08-pr-review-exhaustion.md) | 15 min | Yes |
 | 10 | Check worker sessions. Ping any silent >10 min. Ask workers their reminders to verify behavior. → [procedure](../../tasks/reminders/10-worker-health.md) | 10 min | Yes |
+| 11 | Compare `get_me().mcp_commit` with `dist/tools/build-info.json`. Prompt restart on drift. → [procedure](../../tasks/reminders/11-server-build-drift.md) | 20 min | Yes |
