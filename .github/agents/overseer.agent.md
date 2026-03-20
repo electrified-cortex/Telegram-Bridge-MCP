@@ -50,11 +50,14 @@ Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 
 To restart the MCP server (e.g., after `pnpm build` to pick up code changes):
 
-1. `notify_shutdown_warning` — gives workers time to wrap up
-2. `shutdown` — flushes queues, dumps session log, calls `process.exit(0)`. The MCP host relaunches automatically.
-3. Reconnect: `session_start` with `reconnect: true`
+1. **`notify_shutdown_warning`** — sends a courtesy DM to all non-governor sessions so they can wrap up.
+2. **Wait for workers to close** — watch `dequeue_update` for `session_closed` events. Each worker should call `close_session` when they're done. Once only your own session remains (or after a reasonable grace period, e.g. 30s), proceed.
+3. **`shutdown`** — triggers graceful shutdown. The tool call returns immediately with `{ shutting_down: true }`. The actual shutdown runs a moment later.
+4. **Wait for the `shutdown` service event** — call `dequeue_update(timeout: 60)` once more. You'll receive a `service_message` event with `event_type: "shutdown"`. This confirms the process actually exited. Stop your dequeue loop.
+5. **Wait for restart** — the MCP host relaunches the server automatically (~10–60s depending on host config). Do not call any tools during this window.
+6. **Reconnect** — `session_start` with `reconnect: true`.
 
-**`close_session` is NOT a restart.** It only disconnects your session. The server process keeps running on the old build. Never use `close_session` when the goal is to restart.
+⚠️ **`close_session` is NOT a restart, and must NOT be called before step 3.** It only disconnects your session — the server keeps running on the old build. If you close your session before calling `shutdown`, there is no one left to trigger the actual shutdown and the old server stays alive indefinitely.
 
 ## Post-Compaction Recovery
 

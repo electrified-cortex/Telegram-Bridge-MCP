@@ -16,6 +16,8 @@
 - First-session announcement now includes name tag prefix and is pinned (matching 2nd+ session behavior)
 - Shutdown service message now includes explicit restart guidance: do not retry `dequeue_update`; wait for the server to restart, then call `session_start` to establish a new session
 - Session approval dialog highlights the agent's preferred color with `primary` button style
+- `rename_session` confirmation dialog now shows the requesting session's nametag in single-session mode; broadcasts `session_renamed` service message to all sessions; updates the pinned session announcement text to reflect the new name
+- Overseer and worker agent shutdown protocol updated: governor now waits for worker `session_closed` events before calling `shutdown`; governor waits for `shutdown` service event after calling `shutdown` to confirm actual process exit; workers must call `close_session` (not just go idle) after receiving `notify_shutdown_warning`; docs updated in `overseer.agent.md`, `worker.agent.md`, and `docs/behavior.md`
 
 ## Fixed
 

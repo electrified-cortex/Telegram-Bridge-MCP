@@ -68,6 +68,21 @@ When using a worktree, code edits happen inside the worktree. Exception: moving 
 
 Always stay in the loop. If no tasks, `dequeue_update()` and wait. You will receive messages either from the operator or the overseer. Respond promptly. Reminders will help guide you when no messages are incoming.
 
+## Shutdown Protocol
+
+When you receive a `notify_shutdown_warning` DM from the governor:
+
+1. **Finish your current atomic step** — don't leave things half-done (e.g., complete the current file edit or test run, but don't start new work)
+2. **DM the governor** — "Wrapping up, calling close_session."
+3. **Call `close_session`** — this fires a `session_closed` event to the governor so it knows you're done
+4. **Stop** — do not call `dequeue_update` again on this session. The server will shut down shortly.
+
+When you receive a `shutdown` service event (`event_type: "shutdown"` in a `dequeue_update` response) without prior warning (e.g., operator-initiated shutdown):
+
+1. **Stop the dequeue loop immediately** — do not call `dequeue_update` again
+2. **Wait for the restart** (~10–60s) — the MCP host relaunches the server automatically
+3. **Reconnect** — `session_start` with `reconnect: true`
+
 ## Post-Compaction Recovery
 
 1. `list_sessions` → find your session

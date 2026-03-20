@@ -504,10 +504,14 @@ When the server shuts down, every active session receives a `service_message` ev
 
 **Governor pre-warning flow** (before a planned restart):
 
-1. Governor calls `notify_shutdown_warning` — sends an advisory DM to all other sessions so workers can wrap up
-2. Workers receive the DM, finish in-progress work, enter idle state
-3. Governor calls `shutdown` when ready
-4. Workers receive the `shutdown` service event (step above) and stop
+1. Governor calls `notify_shutdown_warning` — sends a courtesy DM to all non-governor sessions so workers can wrap up
+2. Workers receive the DM, finish their current atomic step, and **call `close_session`** — this fires a `session_closed` event back to the governor confirming they're done
+3. Governor watches `dequeue_update` for `session_closed` events from each worker; once all non-governor sessions have closed (or after a grace period), proceed
+4. Governor calls `shutdown` — the tool call returns `{ shutting_down: true }` immediately; the actual shutdown runs asynchronously a moment later
+5. Governor calls `dequeue_update(timeout: 60)` one final time — receives a `shutdown` service event confirming the process actually exited; governor stops looping
+6. Governor waits for the MCP host to relaunch (~10–60s), then reconnects via `session_start(reconnect: true)`
+
+⚠️ **`close_session` must NOT be called by the governor before `shutdown`.** It disconnects the session but leaves the server running. The `shutdown` tool is the only way to stop the process.
 
 **Tool reference:**
 
