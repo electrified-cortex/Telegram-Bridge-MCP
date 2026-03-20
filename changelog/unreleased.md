@@ -9,7 +9,7 @@
 
 ## Changed
 
-- Shutdown service message now includes explicit restart guidance: do not retry `dequeue_update`, wait ~60s, then call `session_start` to establish a new session
+- Shutdown service message now includes explicit restart guidance: do not retry `dequeue_update`; wait for the server to restart, then call `session_start` to establish a new session
 - Session approval dialog highlights the agent's preferred color with `primary` button style
 
 ## Fixed
