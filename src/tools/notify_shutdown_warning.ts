@@ -26,6 +26,7 @@ export function register(server: McpServer) {
         identity: IDENTITY_SCHEMA,
         reason: z
           .string()
+          .trim()
           .min(1)
           .optional()
           .describe("Optional reason for the restart (e.g. \"code update\", \"config change\")"),

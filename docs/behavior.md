@@ -480,7 +480,9 @@ The `/session` built-in command provides a Telegram-side panel for manual dumps 
 
 ## Restart flow
 
-After a server restart (whether from `shutdown`, a crash, or an external restart), previous sessions are invalidated:
+> **If the server was shut down via `shutdown`**, follow the [Shutdown service event](#shutdown-service-event) instructions — stop `dequeue_update`, wait for the restart, then return here.
+
+After the server has restarted (whether from `shutdown`, a crash, or an external restart), previous sessions are invalidated:
 
 1. **Call `session_start`** to create a new session — old SIDs and PINs no longer work
 2. Drain stale messages: call `dequeue_update(timeout: 0)` in a loop until `pending == 0`
