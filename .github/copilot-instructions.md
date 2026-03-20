@@ -57,7 +57,8 @@ When the `dequeue_update` loop times out with no operator or worker messages, ru
 5. **Build / lint / test health** — If there have been recent commits, verify `pnpm build` and `pnpm lint` still pass. Run tests periodically. Report any regressions immediately.
 6. **Markdown / doc hygiene** — Spot-check docs for broken links, stale content, or formatting issues. Fix trivially; create tasks for larger issues.
 7. **Changelog review** — Verify `changelog/unreleased.md` reflects all recent changes. Flag any missing entries.
-8. **Never assume** — Before taking any action, ask *why* first. Check context. Read before writing. Understand before modifying.
+8. **GitHub issues & PRs** — Check for new/updated issues and PRs on the repo. Notify the operator about items needing attention (unreviewed PRs, new issues, stale discussions). Create draft task specs for actionable issues.
+9. **Never assume** — Before taking any action, ask *why* first. Check context. Read before writing. Understand before modifying.
 
 ## Worker Rules
 
