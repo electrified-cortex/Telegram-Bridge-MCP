@@ -46,6 +46,16 @@ Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 - **When authorized, update agent files** (`.github/agents/`) and governance docs directly.
 - **Investigative tasks are pre-approved.** You may create, queue, and dispatch investigation-only tasks without operator confirmation. The spec must clearly state it's investigation (no fixes). Worker reports findings back.
 
+## Server Restart Procedure
+
+To restart the MCP server (e.g., after `pnpm build` to pick up code changes):
+
+1. `notify_shutdown_warning` — gives workers time to wrap up
+2. `shutdown` — flushes queues, dumps session log, calls `process.exit(0)`. The MCP host relaunches automatically.
+3. Reconnect: `session_start` with `reconnect: true`
+
+**`close_session` is NOT a restart.** It only disconnects your session. The server process keeps running on the old build. Never use `close_session` when the goal is to restart.
+
 ## Post-Compaction Recovery
 
 1. `list_sessions` → find your session
