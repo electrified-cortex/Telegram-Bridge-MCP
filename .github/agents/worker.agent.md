@@ -116,6 +116,8 @@ All substantive communication goes through Telegram.
 
 Each preset embeds your **session name** so multiple workers are visually distinct in chat. Replace `{name}` with your actual session name (e.g., `Worker`, `Worker 2`).
 
+> **Use `interval_ms=2000` (2 seconds).** The default is 1 second, but 2 seconds reduces API calls and token usage while still looking alive.
+
 ```
 set_default_animation(name="{name}: thinking", frames=["⏳ {name}: thinking…", "⌛ {name}: thinking…"], interval_ms=2000)
 set_default_animation(name="{name}: working",  frames=["⏳ {name}: working…",  "⌛ {name}: working…"],  interval_ms=2000)
