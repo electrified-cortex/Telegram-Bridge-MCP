@@ -226,7 +226,7 @@ export const BUILT_IN_COMMANDS = [
   { command: "shutdown", description: "Shut down the MCP server" },
 ] as const;
 
-const _builtInCommandNames = new Set<string>([...BUILT_IN_COMMANDS.map(c => c.command), "governor"]);
+const _builtInCommandNames = new Set<string>([...BUILT_IN_COMMANDS.map(c => c.command), "primary"]);
 
 /**
  * Message IDs for bot-sent session infrastructure messages (panel, dump docs,
@@ -302,7 +302,7 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
         handleShutdownCommand();
         return true;
       }
-      if (raw === "governor") {
+      if (raw === "primary") {
         await handleGovernorCommand();
         return true;
       }
@@ -363,10 +363,10 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
 // /governor panel — runtime governor selection
 // ---------------------------------------------------------------------------
 
-/** Returns the /governor command entry if 2+ sessions are active, null otherwise. */
+/** Returns the /primary command entry if 2+ sessions are active, null otherwise. */
 export function getGovernorCommandEntry(): { command: string; description: string } | null {
   return activeSessionCount() >= 2
-    ? { command: "governor", description: "Switch the governor session" }
+    ? { command: "primary", description: "Switch the primary session" }
     : null;
 }
 
@@ -383,9 +383,9 @@ export function refreshGovernorCommand(): Promise<boolean> {
   return api
     .getMyCommands({ scope: { type: "chat", chat_id: chatId } })
     .then(existingCommands => {
-      // Strip built-ins and /governor — they'll be re-added below
+      // Strip built-ins and /primary — they'll be re-added below
       const custom = existingCommands.filter(
-        cmd => cmd.command !== "governor" && !BUILT_IN_COMMANDS.some(b => b.command === cmd.command),
+        cmd => cmd.command !== "primary" && !BUILT_IN_COMMANDS.some(b => b.command === cmd.command),
       );
 
       const merged: { command: string; description: string }[] = [...BUILT_IN_COMMANDS];
@@ -406,7 +406,7 @@ async function handleGovernorCommand(): Promise<void> {
   const sessions = listSessions();
   if (sessions.length < 2) {
     try {
-      const msg = await api.sendMessage(chatId, "ℹ️ Governor selection requires 2 or more active sessions.");
+      const msg = await api.sendMessage(chatId, "ℹ️ Primary selection requires 2 or more active sessions.");
       markInternalMessage(msg.message_id);
     } catch { /* ignore */ }
     return;
@@ -445,14 +445,14 @@ async function handleGovernorCallback(
 
     const sessions = listSessions();
 
-    // Guard: refuse governor changes when < 2 sessions (panel may be stale)
+    // Guard: refuse primary changes when < 2 sessions (panel may be stale)
     if (sessions.length < 2) {
       _activePanels.delete(panelMsgId);
       try {
         await api.editMessageText(
           chatId,
           panelMsgId,
-          "ℹ️ Governor selection requires 2 or more active sessions.",
+          "ℹ️ Primary selection requires 2 or more active sessions.",
           { reply_markup: { inline_keyboard: [] } },
         );
       } catch { /* ignore */ }
@@ -466,7 +466,7 @@ async function handleGovernorCallback(
         await api.editMessageText(
           chatId,
           panelMsgId,
-          "⚠️ The selected session is no longer active. Please reopen /governor to choose from the current list.",
+          "⚠️ The selected session is no longer active. Please reopen /primary to choose from the current list.",
           { reply_markup: { inline_keyboard: [] } },
         );
       } catch { /* ignore */ }
@@ -482,7 +482,7 @@ async function handleGovernorCallback(
         await api.editMessageText(
           chatId,
           panelMsgId,
-          `${buildGovernorPanel(sessions).text}\n\n▸ ${newGovernor.color} ${newGovernor.name} is already the governor.`,
+          `${buildGovernorPanel(sessions).text}\n\n▸ ${newGovernor.color} ${newGovernor.name} is already the primary.`,
           { reply_markup: { inline_keyboard: [] } },
         );
       } catch { /* ignore */ }
@@ -531,7 +531,7 @@ async function handleGovernorCallback(
       await api.editMessageText(
         chatId,
         panelMsgId,
-        `${buildGovernorPanel(sessions).text}\n\n▸ ✅ Governor set to ${newLabel}`,
+        `${buildGovernorPanel(sessions).text}\n\n▸ ✅ Primary set to ${newLabel}`,
         { reply_markup: { inline_keyboard: [] } },
       );
     } catch { /* ignore */ }
@@ -543,8 +543,8 @@ function buildGovernorPanel(
 ): { text: string; keyboard: { text: string; callback_data: string }[][] } {
   const currentSid = getGovernorSid();
   const text =
-    "The governor receives ambiguous messages and decides how to route them. " +
-    "Choose which session should be the governor:";
+    "The primary session receives ambiguous messages and decides how to route them. " +
+    "Choose which session should be the primary:";
   const keyboard: { text: string; callback_data: string }[][] = [];
   for (const s of sessions) {
     const isGov = s.sid === currentSid;

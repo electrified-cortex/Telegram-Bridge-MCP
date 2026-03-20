@@ -640,9 +640,9 @@ describe("built-in-commands", () => {
     });
   });
 
-  // -- /governor command ---------------------------------------------------
+  // -- /primary command ---------------------------------------------------
 
-  describe("/governor command", () => {
+  describe("/primary command", () => {
     const SESSIONS = [
       { sid: 1, name: "Overseer", color: "🟦", createdAt: "" },
       { sid: 2, name: "Worker", color: "🟩", createdAt: "" },
@@ -654,15 +654,15 @@ describe("built-in-commands", () => {
       mocks.getGovernorSid.mockReturnValue(1);
     });
 
-    it("handles /governor command — returns true", async () => {
+    it("handles /primary command — returns true", async () => {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 800 });
-      const result = await handleIfBuiltIn(cmdUpdate("/governor"));
+      const result = await handleIfBuiltIn(cmdUpdate("/primary"));
       expect(result).toBe(true);
     });
 
     it("sends panel with all sessions as buttons", async () => {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 800 });
-      await handleIfBuiltIn(cmdUpdate("/governor"));
+      await handleIfBuiltIn(cmdUpdate("/primary"));
       const call = mocks.sendMessage.mock.calls[0];
       const keyboard = call[2].reply_markup.inline_keyboard;
       const data = keyboard.flat().map(
@@ -675,7 +675,7 @@ describe("built-in-commands", () => {
 
     it("marks current governor with ✓", async () => {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 800 });
-      await handleIfBuiltIn(cmdUpdate("/governor"));
+      await handleIfBuiltIn(cmdUpdate("/primary"));
       const call = mocks.sendMessage.mock.calls[0];
       const keyboard = call[2].reply_markup.inline_keyboard;
       const buttons = keyboard.flat().map(
@@ -694,7 +694,7 @@ describe("built-in-commands", () => {
     it("shows notice when fewer than 2 sessions are active", async () => {
       mocks.listSessions.mockReturnValue([SESSIONS[0]]);
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 801 });
-      await handleIfBuiltIn(cmdUpdate("/governor"));
+      await handleIfBuiltIn(cmdUpdate("/primary"));
       expect(mocks.sendMessage).toHaveBeenCalledWith(
         123,
         expect.stringContaining("2 or more"),
@@ -703,20 +703,20 @@ describe("built-in-commands", () => {
 
     it("does nothing when resolveChat returns non-number", async () => {
       mocks.resolveChat.mockReturnValue("not configured");
-      await handleIfBuiltIn(cmdUpdate("/governor"));
+      await handleIfBuiltIn(cmdUpdate("/primary"));
       expect(mocks.sendMessage).not.toHaveBeenCalled();
     });
 
     it("panel query is recognised by isBuiltInPanelQuery", async () => {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 802 });
-      await handleIfBuiltIn(cmdUpdate("/governor"));
+      await handleIfBuiltIn(cmdUpdate("/primary"));
       expect(isBuiltInPanelQuery(callbackUpdate(802, "governor:set:2"))).toBe(true);
     });
   });
 
-  // -- /governor callbacks -------------------------------------------------
+  // -- /primary callbacks -------------------------------------------------
 
-  describe("governor panel callbacks", () => {
+  describe("primary panel callbacks", () => {
     const SESSIONS = [
       { sid: 1, name: "Overseer", color: "🟦", createdAt: "" },
       { sid: 2, name: "Worker", color: "🟩", createdAt: "" },
@@ -728,7 +728,7 @@ describe("built-in-commands", () => {
       mocks.activeSessionCount.mockReturnValue(3);
       mocks.getGovernorSid.mockReturnValue(1);
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 900 });
-      await handleIfBuiltIn(cmdUpdate("/governor"));
+      await handleIfBuiltIn(cmdUpdate("/primary"));
       return 900;
     }
 
@@ -798,7 +798,7 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         panelId,
-        expect.stringContaining("already the governor"),
+        expect.stringContaining("already the primary"),
         expect.anything(),
       );
     });
@@ -820,7 +820,7 @@ describe("built-in-commands", () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getGovernorSid.mockReturnValue(1);
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 910 });
-      await handleIfBuiltIn(cmdUpdate("/governor"));
+      await handleIfBuiltIn(cmdUpdate("/primary"));
       mocks.editMessageText.mockResolvedValue(true);
       await handleIfBuiltIn(callbackUpdate(910, "governor:set:2"));
       // Only sid 1 (old gov) and sid 2 (new gov) notified — no third-session "Governor changed" call
@@ -851,19 +851,19 @@ describe("built-in-commands", () => {
   // -- refreshGovernorCommand ----------------------------------------------
 
   describe("refreshGovernorCommand", () => {
-    it("adds /governor to menu when 2+ sessions active", async () => {
+    it("adds /primary to menu when 2+ sessions active", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getMyCommands.mockResolvedValue([]);
       await refreshGovernorCommand();
       expect(mocks.setMyCommands).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ command: "governor" }),
+          expect.objectContaining({ command: "primary" }),
         ]),
         expect.anything(),
       );
     });
 
-    it("omits /governor from menu when fewer than 2 sessions", async () => {
+    it("omits /primary from menu when fewer than 2 sessions", async () => {
       mocks.activeSessionCount.mockReturnValue(1);
       mocks.getMyCommands.mockResolvedValue([]);
       await refreshGovernorCommand();
@@ -872,7 +872,7 @@ describe("built-in-commands", () => {
         [Array<{ command: string }>, ...unknown[]]
       >;
       const cmds = calls[0]?.[0];
-      expect(cmds?.map(c => c.command) ?? []).not.toContain("governor");
+      expect(cmds?.map(c => c.command) ?? []).not.toContain("primary");
     });
 
     it("preserves custom commands from set_commands tool", async () => {
@@ -888,7 +888,7 @@ describe("built-in-commands", () => {
       >;
       const cmds = calls[0]?.[0];
       const names = cmds?.map(c => c.command) ?? [];
-      expect(names).toContain("governor");
+      expect(names).toContain("primary");
       expect(names).toContain("mycmd");
     });
 
@@ -911,7 +911,7 @@ describe("built-in-commands", () => {
     mocks.activeSessionCount.mockReturnValue(2);
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 950 });
-    await handleIfBuiltIn(cmdUpdate("/governor"));
+    await handleIfBuiltIn(cmdUpdate("/primary"));
     mocks.editMessageText.mockResolvedValue(true);
     const result = await handleIfBuiltIn(callbackUpdate(950, "governor:set:2"));
     expect(result).toBe(true);

@@ -2,7 +2,7 @@
 
 ## Added
 
-- Added `/governor` slash command for operator to switch the governor session at runtime; shows all active sessions as inline buttons with current governor marked ✓; notifies all sessions on change; auto-registers/unregisters based on session count
+- Added `/primary` slash command for operator to switch the primary (governor) session at runtime; shows all active sessions as inline buttons with current primary marked ✓; notifies all sessions on change; auto-registers/unregisters based on session count
 - Added `notify_shutdown_warning` tool — sends a pre-shutdown advisory DM to all other active sessions with restart guidance; does not trigger shutdown
 - Added shutdown event section to `docs/behavior.md` — documents stop-loop, don't-retry, wait, and re-engage via `session_start` steps; includes governor pre-warning flow and tool reference table
 - Added debug log lines in `cascade()` and `updateDisplay()` to make cascade events visible in stderr output
@@ -19,6 +19,7 @@
 - `rename_session` confirmation dialog now shows the requesting session's nametag in single-session mode; broadcasts `session_renamed` service message to all sessions; updates the pinned session announcement text to reflect the new name
 - Overseer and worker agent shutdown protocol updated: governor now waits for worker `session_closed` events before calling `shutdown`; governor waits for `shutdown` service event after calling `shutdown` to confirm actual process exit; workers must call `close_session` (not just go idle) after receiving `notify_shutdown_warning`; docs updated in `overseer.agent.md`, `worker.agent.md`, and `docs/behavior.md`
 - `send_text_as_voice` `voice` parameter description now clarifies it is per-call only and recommends `set_voice` for persistent session-scoped voice changes
+- `/governor` slash command renamed to `/primary` for operator-friendly terminology; all user-facing panel text updated; internal routing, callback data, and agent service messages preserve `governor` terminology
 
 ## Fixed
 
