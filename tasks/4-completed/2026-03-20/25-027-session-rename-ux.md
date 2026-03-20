@@ -17,3 +17,16 @@ When an agent calls `rename_session`, the confirmation dialog shows the bot's na
 - `rename_session` tool handler
 - Service message emission
 - Session announcement message management
+
+## Completion
+
+**Commit:** `251e853` on branch `task/027-session-rename-ux`
+**Date:** 2026-03-20
+
+### Changes Made
+
+- `src/tools/rename_session.ts`: Added nametag to approval prompt (single-session mode only; multi-session proxy handles it), broadcast `session_renamed` service message to all sessions after rename, and update pinned announcement message via `bypassProxy/editMessageText`
+- `src/tools/rename_session.test.ts`: Added 6 new tests covering all three behaviors; added mocks for `getSession`, `getSessionAnnouncementMessage`, `activeSessionCount`, `deliverServiceMessage`, `editMessageText`, `resolveChat`, `bypassProxy`
+- `changelog/unreleased.md`: Updated with #027 changes
+
+**Test results:** 1630/1630 pass
