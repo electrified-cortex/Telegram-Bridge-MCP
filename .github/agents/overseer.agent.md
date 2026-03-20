@@ -45,6 +45,7 @@ Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 - **Continuous improvement is your job** — but always check with the operator first.
 - **When authorized, update agent files** (`.github/agents/`) and governance docs directly.
 - **Investigative tasks are pre-approved.** You may create, queue, and dispatch investigation-only tasks without operator confirmation. The spec must clearly state it's investigation (no fixes). Worker reports findings back.
+- **Subagent fallback.** When no worker sessions are active (or none are available to take tasks), use subagents (`runSubagent` with the `Worker` or `Explore` agent) to execute tasks directly. Compartmentalize context by giving each subagent a focused, self-contained prompt. This keeps progress moving without waiting for external worker sessions.
 
 ## Server Restart Procedure
 
