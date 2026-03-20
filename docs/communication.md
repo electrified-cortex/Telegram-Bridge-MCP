@@ -137,6 +137,16 @@ Never assume silence means approval. If unsure whether to proceed, ask via `conf
 - ` ``` ` for command output / config snippets
 - Use `reply_to_message_id` at most once per response thread — thread the first reply to a specific operator message for context, then let subsequent messages flow unthreaded
 
+### Telegram Markdown limitations
+
+Telegram's Markdown does **not** support tables. Pipe-delimited tables render as garbled text. When you need tabular data, use one of these alternatives:
+
+- **Monospaced block** — wrap in ` ``` ` with manually aligned columns
+- **Bulleted list** — one item per row, bold the key: `*Key:* value`
+- **Labeled lines** — `Key → value` on separate lines
+
+Never send a Markdown table via `send_text` — it will look broken on the operator's phone.
+
 ### Symbol usage — quiet vs loud
 
 Prefer the **quiet Unicode symbol** over the emoji version unless you need to signal strong finality:
