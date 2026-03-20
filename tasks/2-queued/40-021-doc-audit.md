@@ -11,10 +11,10 @@ Review all documentation for accuracy, completeness, and consistency with the cu
 
 ## Strategy
 
-**Branch from:** `v4-multi-session`
+**Branch from:** `master`
 **Worktree:** `40-021-doc-audit`
 **Branch name:** `task/021-doc-audit`
-**Separate PR:** Yes — targets `v4-multi-session`
+**Separate PR:** Yes — targets `master`
 
 Documentation-only changes. No code changes expected.
 

@@ -1,7 +1,7 @@
-# 580 — Status Page / Session Status Command
+# Task #003 — Status Page / Session Status Command
 
-**Priority:** 500 (Medium)  
-**Source:** Operator request (voice, 2026-03-22)
+**Priority:** 30 (Medium)  
+**Source:** Operator request
 
 ## Goal
 

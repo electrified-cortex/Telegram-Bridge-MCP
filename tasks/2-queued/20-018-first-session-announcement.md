@@ -11,10 +11,10 @@ When the first session connects (auto-approved, no operator gate), send a visibl
 
 ## Strategy
 
-**Branch from:** `v4-multi-session`
+**Branch from:** `master`
 **Worktree:** `20-018-first-session-announcement`
 **Branch name:** `task/018-first-session-announcement`
-**Separate PR:** Yes — targets `v4-multi-session`
+**Separate PR:** Yes — targets `master`
 
 Small, focused change in `session_start.ts`. Low risk.
 

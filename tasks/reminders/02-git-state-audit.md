@@ -5,7 +5,7 @@
 ## Procedure
 
 1. Run `git status --short`.
-2. Verify current branch matches expected (currently `v4-multi-session`).
+2. Verify current branch matches expected (currently `master`).
 3. Check for:
    - Uncommitted changes — investigate origin.
    - Untracked files — determine if they should be committed or gitignored.
