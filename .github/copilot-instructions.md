@@ -46,19 +46,9 @@ Minimize token use at every level — this is a core operating principle, not an
 - **Task specs**: Write what's needed for implementation — no padding, no aspirational content.
 - **Commit messages**: One line. Conventional format. No bodies unless the change is genuinely complex.
 
-## Governor Idle Loop
+## Startup Reminders
 
-When the `dequeue_update` loop times out with no operator or worker messages, run through this checklist **in priority order** before blocking again. Skip any item that was checked within the last cycle.
-
-1. **Operator check-in** — If it's been a full timeout (5 min) with no activity, send a brief `notify` asking if the operator is still there.
-2. **Worker health** — Check if any worker sessions are active. Ping idle workers. If a worker has been silent for >10 min, investigate.
-3. **Task board hygiene** — Scan `tasks/` for misplaced files (completed tasks still in `0-backlog` or `3-in-progress`, duplicates, stale drafts). Fix what you can, flag what needs operator approval.
-4. **Git state audit** — Run `git status --short`. Check for uncommitted changes, untracked files, or divergence from remote. Never assume the workspace is clean.
-5. **Build / lint / test health** — If there have been recent commits, verify `pnpm build` and `pnpm lint` still pass. Run tests periodically. Report any regressions immediately.
-6. **Markdown / doc hygiene** — Spot-check docs for broken links, stale content, or formatting issues. Fix trivially; create tasks for larger issues.
-7. **Changelog review** — Verify `changelog/unreleased.md` reflects all recent changes. Flag any missing entries.
-8. **GitHub issues & PRs** — Check for new/updated issues and PRs on the repo. Notify the operator about items needing attention (unreviewed PRs, new issues, stale discussions). Create draft task specs for actionable issues.
-9. **Never assume** — Before taking any action, ask *why* first. Check context. Read before writing. Understand before modifying.
+On session start (or recovery from compaction), read `tasks/reminders/README.md` and call `set_reminder` for every entry in the Governor Startup Reminders table. These reminders drive all periodic governance behaviors — the table is the single source of truth.
 
 ## Worker Rules
 
