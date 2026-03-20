@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   deleteMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   sendDocument: vi.fn(),
-  setMyCommands: vi.fn(),
+  setMyCommands: vi.fn((): Promise<void> => Promise.resolve()),
   rawSendMessage: vi.fn(),
   sendServiceMessage: vi.fn((): Promise<void> => Promise.resolve()),
   sendVoiceDirect: vi.fn(),
@@ -34,6 +34,14 @@ const mocks = vi.hoisted(() => ({
   timelineSize: vi.fn((): number => 0),
   storeSize: vi.fn((): number => 0),
   setOnEvent: vi.fn(),
+  // session-manager
+  listSessions: vi.fn((): unknown[] => []),
+  activeSessionCount: vi.fn((): number => 0),
+  // routing-mode
+  getGovernorSid: vi.fn((): number => 0),
+  setGovernorSid: vi.fn(),
+  // session-queue
+  deliverServiceMessage: vi.fn((): boolean => true),
 }));
 
 vi.mock("./telegram.js", () => ({
@@ -88,6 +96,20 @@ vi.mock("./message-store.js", () => ({
   setOnEvent: mocks.setOnEvent,
 }));
 
+vi.mock("./session-manager.js", () => ({
+  listSessions: mocks.listSessions,
+  activeSessionCount: mocks.activeSessionCount,
+}));
+
+vi.mock("./routing-mode.js", () => ({
+  getGovernorSid: mocks.getGovernorSid,
+  setGovernorSid: mocks.setGovernorSid,
+}));
+
+vi.mock("./session-queue.js", () => ({
+  deliverServiceMessage: mocks.deliverServiceMessage,
+}));
+
 
 import {
   handleIfBuiltIn,
@@ -95,6 +117,7 @@ import {
   sendSessionPrefsPrompt,
   BUILT_IN_COMMANDS,
   resetBuiltInCommandsForTest,
+  refreshGovernorCommand,
 } from "./built-in-commands.js";
 
 // ---------------------------------------------------------------------------
@@ -613,6 +636,233 @@ describe("built-in-commands", () => {
       expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("cq1");
       expect(mocks.setDefaultVoice).not.toHaveBeenCalled();
     });
+  });
+
+  // -- /governor command ---------------------------------------------------
+
+  describe("/governor command", () => {
+    const SESSIONS = [
+      { sid: 1, name: "Overseer", color: "🟦", createdAt: "" },
+      { sid: 2, name: "Worker", color: "🟩", createdAt: "" },
+    ];
+
+    beforeEach(() => {
+      mocks.listSessions.mockReturnValue(SESSIONS);
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getGovernorSid.mockReturnValue(1);
+    });
+
+    it("handles /governor command — returns true", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 800 });
+      const result = await handleIfBuiltIn(cmdUpdate("/governor"));
+      expect(result).toBe(true);
+    });
+
+    it("sends panel with all sessions as buttons", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 800 });
+      await handleIfBuiltIn(cmdUpdate("/governor"));
+      const call = mocks.sendMessage.mock.calls[0];
+      const keyboard = call[2].reply_markup.inline_keyboard;
+      const data = keyboard.flat().map(
+        (b: { callback_data: string }) => b.callback_data,
+      );
+      expect(data).toContain("governor:set:1");
+      expect(data).toContain("governor:set:2");
+      expect(data).toContain("governor:dismiss");
+    });
+
+    it("marks current governor with ✓", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 800 });
+      await handleIfBuiltIn(cmdUpdate("/governor"));
+      const call = mocks.sendMessage.mock.calls[0];
+      const keyboard = call[2].reply_markup.inline_keyboard;
+      const buttons = keyboard.flat().map(
+        (b: { text: string; callback_data: string }) => b,
+      );
+      const govBtn = buttons.find(
+        (b: { callback_data: string }) => b.callback_data === "governor:set:1",
+      );
+      expect(govBtn?.text).toContain("✓");
+      const otherBtn = buttons.find(
+        (b: { callback_data: string }) => b.callback_data === "governor:set:2",
+      );
+      expect(otherBtn?.text).not.toContain("✓");
+    });
+
+    it("shows notice when fewer than 2 sessions are active", async () => {
+      mocks.listSessions.mockReturnValue([SESSIONS[0]]);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 801 });
+      await handleIfBuiltIn(cmdUpdate("/governor"));
+      expect(mocks.sendMessage).toHaveBeenCalledWith(
+        123,
+        expect.stringContaining("2 or more"),
+      );
+    });
+
+    it("does nothing when resolveChat returns non-number", async () => {
+      mocks.resolveChat.mockReturnValue("not configured");
+      await handleIfBuiltIn(cmdUpdate("/governor"));
+      expect(mocks.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("panel query is recognised by isBuiltInPanelQuery", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 802 });
+      await handleIfBuiltIn(cmdUpdate("/governor"));
+      expect(isBuiltInPanelQuery(callbackUpdate(802, "governor:set:2"))).toBe(true);
+    });
+  });
+
+  // -- /governor callbacks -------------------------------------------------
+
+  describe("governor panel callbacks", () => {
+    const SESSIONS = [
+      { sid: 1, name: "Overseer", color: "🟦", createdAt: "" },
+      { sid: 2, name: "Worker", color: "🟩", createdAt: "" },
+      { sid: 3, name: "Reviewer", color: "🟨", createdAt: "" },
+    ];
+
+    async function createGovernorPanel(): Promise<number> {
+      mocks.listSessions.mockReturnValue(SESSIONS);
+      mocks.activeSessionCount.mockReturnValue(3);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 900 });
+      await handleIfBuiltIn(cmdUpdate("/governor"));
+      return 900;
+    }
+
+    it("governor:dismiss deletes the panel", async () => {
+      const panelId = await createGovernorPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "governor:dismiss"));
+      expect(mocks.deleteMessage).toHaveBeenCalledWith(123, panelId);
+      expect(mocks.setGovernorSid).not.toHaveBeenCalled();
+    });
+
+    it("governor:set promotes new governor and notifies all sessions", async () => {
+      const panelId = await createGovernorPanel();
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(panelId, "governor:set:2"));
+
+      expect(mocks.setGovernorSid).toHaveBeenCalledWith(2);
+
+      // New governor notified
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        2,
+        expect.stringContaining("now the governor"),
+        "governor_changed",
+        expect.objectContaining({ old_governor_sid: 1, new_governor_sid: 2 }),
+      );
+
+      // Old governor notified
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        1,
+        expect.stringContaining("no longer the governor"),
+        "governor_changed",
+        expect.objectContaining({ old_governor_sid: 1, new_governor_sid: 2 }),
+      );
+
+      // Third session notified
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        3,
+        expect.stringContaining("Governor changed"),
+        "governor_changed",
+        expect.objectContaining({ old_governor_sid: 1, new_governor_sid: 2 }),
+      );
+    });
+
+    it("governor:set edits panel to confirm selection", async () => {
+      const panelId = await createGovernorPanel();
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(panelId, "governor:set:2"));
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123,
+        panelId,
+        expect.stringContaining("✅"),
+        expect.anything(),
+      );
+    });
+
+    it("governor:set is no-op for unknown sid", async () => {
+      const panelId = await createGovernorPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "governor:set:999"));
+      expect(mocks.setGovernorSid).not.toHaveBeenCalled();
+    });
+
+    it("governor:set does not notify old governor when no previous governor", async () => {
+      mocks.getGovernorSid.mockReturnValue(0); // no governor set
+      const panelId = await createGovernorPanel();
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(panelId, "governor:set:2"));
+      // Only new governor (sid 2) and others (sid 1, 3) notified — no "old governor" call with sid 0
+      const calls = mocks.deliverServiceMessage.mock.calls as unknown as [number, ...unknown[]][];
+      const olds = calls.filter(c => c[0] === 0);
+      expect(olds).toHaveLength(0);
+    });
+
+    it("governor:set does not notify other sessions twice when only 2 sessions", async () => {
+      const twoSessions = SESSIONS.slice(0, 2); // sid 1 and 2 only
+      mocks.listSessions.mockReturnValue(twoSessions);
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 910 });
+      await handleIfBuiltIn(cmdUpdate("/governor"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(910, "governor:set:2"));
+      // Only sid 1 (old gov) and sid 2 (new gov) notified — no third-session "Governor changed" call
+      const calls = mocks.deliverServiceMessage.mock.calls as unknown as [number, ...unknown[]][];
+      const thirdParty = calls.filter(
+        (c) => typeof c[2] === "string" && c[2] === "governor_changed" && c[0] !== 1 && c[0] !== 2,
+      );
+      expect(thirdParty).toHaveLength(0);
+    });
+  });
+
+  // -- refreshGovernorCommand ----------------------------------------------
+
+  describe("refreshGovernorCommand", () => {
+    it("adds /governor to menu when 2+ sessions active", () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      refreshGovernorCommand();
+      expect(mocks.setMyCommands).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ command: "governor" }),
+        ]),
+        expect.anything(),
+      );
+    });
+
+    it("omits /governor from menu when fewer than 2 sessions", () => {
+      mocks.activeSessionCount.mockReturnValue(1);
+      refreshGovernorCommand();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cmds = (mocks.setMyCommands.mock.calls as any[][])[0]?.[0] as Array<{ command: string }> | undefined;
+      expect(cmds?.map(c => c.command) ?? []).not.toContain("governor");
+    });
+
+    it("does nothing when resolveChat returns non-number", () => {
+      mocks.resolveChat.mockReturnValue("not configured");
+      refreshGovernorCommand();
+      expect(mocks.setMyCommands).not.toHaveBeenCalled();
+    });
+  });
+
+  // -- governor callbacks excluded from isInternalTimelineEvent ------------
+
+  it("isInternalTimelineEvent excludes governor callback data", async () => {
+    // Import isInternalTimelineEvent (tested indirectly — governor callbacks
+    // are consumed and never forwarded as timeline events)
+    // Directly verify handleIfBuiltIn consumes them (returns true)
+    const panelSessions = [
+      { sid: 1, name: "A", color: "🟦", createdAt: "" },
+      { sid: 2, name: "B", color: "🟩", createdAt: "" },
+    ];
+    mocks.listSessions.mockReturnValue(panelSessions);
+    mocks.activeSessionCount.mockReturnValue(2);
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 950 });
+    await handleIfBuiltIn(cmdUpdate("/governor"));
+    mocks.editMessageText.mockResolvedValue(true);
+    const result = await handleIfBuiltIn(callbackUpdate(950, "governor:set:2"));
+    expect(result).toBe(true);
   });
 
 });

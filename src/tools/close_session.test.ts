@@ -52,6 +52,10 @@ vi.mock("../routing-mode.js", () => ({
   setGovernorSid: mocks.setGovernorSid,
 }));
 
+vi.mock("../built-in-commands.js", () => ({
+  refreshGovernorCommand: vi.fn(),
+}));
+
 vi.mock("../telegram.js", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../telegram.js")>();
   return {

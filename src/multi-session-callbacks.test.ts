@@ -48,6 +48,10 @@ vi.mock("./telegram.js", async (importActual) => {
   };
 });
 
+vi.mock("./built-in-commands.js", () => ({
+  refreshGovernorCommand: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Real module imports — NOT mocked
 // ---------------------------------------------------------------------------

@@ -61,6 +61,10 @@ vi.mock("../message-store.js", () => ({
   replaceSessionCallbackHooks: vi.fn(() => []),
 }));
 
+vi.mock("../built-in-commands.js", () => ({
+  refreshGovernorCommand: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Real session infrastructure (no mock)
 // ---------------------------------------------------------------------------

@@ -38,13 +38,16 @@ export function getVersionString(): string {
 }
 import type { TimelineEvent } from "./message-store.js";
 import { dumpTimeline, dumpTimelineSince, timelineSize, storeSize, setOnEvent } from "./message-store.js";
+import { listSessions, activeSessionCount } from "./session-manager.js";
+import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
+import { deliverServiceMessage } from "./session-queue.js";
 
 // ---------------------------------------------------------------------------
 // Tracking panel message IDs so callback_query intercept can route back
 // ---------------------------------------------------------------------------
 
 /** Maps from message_id → panel type so we can route callback_queries back to us. */
-const _activePanels = new Map<number, "session" | "voice" | "voice-sample" | "approval">();
+const _activePanels = new Map<number, "session" | "voice" | "voice-sample" | "approval" | "governor">();
 
 // ---------------------------------------------------------------------------
 // Operator approval gate — system-level confirmation for sensitive tool calls
@@ -223,7 +226,7 @@ export const BUILT_IN_COMMANDS = [
   { command: "shutdown", description: "Shut down the MCP server" },
 ] as const;
 
-const _builtInCommandNames = new Set<string>(BUILT_IN_COMMANDS.map(c => c.command));
+const _builtInCommandNames = new Set<string>([...BUILT_IN_COMMANDS.map(c => c.command), "governor"]);
 
 /**
  * Message IDs for bot-sent session infrastructure messages (panel, dump docs,
@@ -254,7 +257,8 @@ export function isInternalTimelineEvent(evt: Omit<TimelineEvent, "_update">): bo
     return (
       evt.content.data.startsWith("session:") ||
       evt.content.data.startsWith("voice:") ||
-      evt.content.data.startsWith("approval:")
+      evt.content.data.startsWith("approval:") ||
+      evt.content.data.startsWith("governor:")
     );
   }
   return false;
@@ -298,6 +302,10 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
         handleShutdownCommand();
         return true;
       }
+      if (raw === "governor") {
+        await handleGovernorCommand();
+        return true;
+      }
     }
   }
 
@@ -324,6 +332,12 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
           msgId,
           update.callback_query.data ?? "",
         );
+      } else if (panelType === "governor") {
+        await handleGovernorCallback(
+          update.callback_query.id,
+          msgId,
+          update.callback_query.data ?? "",
+        );
       } else {
         await handleSessionCallback(update.callback_query.id, msgId, update.callback_query.data ?? "");
       }
@@ -339,6 +353,141 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
   }
 
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// /governor panel — runtime governor selection
+// ---------------------------------------------------------------------------
+
+/**
+ * Update the Telegram command menu to show or hide /governor based on
+ * whether 2+ sessions are active. Call after session creation and closure.
+ * Fire-and-forget: errors are suppressed.
+ */
+export function refreshGovernorCommand(): void {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const cmds: { command: string; description: string }[] = [...BUILT_IN_COMMANDS];
+  if (activeSessionCount() >= 2) {
+    cmds.push({ command: "governor", description: "Switch the governor session" });
+  }
+  getApi().setMyCommands(cmds, { scope: { type: "chat", chat_id: chatId } }).catch(() => {});
+}
+
+async function handleGovernorCommand(): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const api = getApi();
+
+  const sessions = listSessions();
+  if (sessions.length < 2) {
+    try {
+      const msg = await api.sendMessage(chatId, "ℹ️ Governor selection requires 2 or more active sessions.");
+      markInternalMessage(msg.message_id);
+    } catch { /* ignore */ }
+    return;
+  }
+
+  const { text, keyboard } = buildGovernorPanel(sessions);
+  try {
+    const msg = await api.sendMessage(chatId, text, {
+      reply_markup: { inline_keyboard: keyboard },
+    });
+    _activePanels.set(msg.message_id, "governor");
+    markInternalMessage(msg.message_id);
+  } catch { /* ignore */ }
+}
+
+async function handleGovernorCallback(
+  callbackQueryId: string,
+  panelMsgId: number,
+  data: string,
+): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const api = getApi();
+
+  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+
+  if (data === "governor:dismiss") {
+    _activePanels.delete(panelMsgId);
+    try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+    return;
+  }
+
+  if (data.startsWith("governor:set:")) {
+    const newSid = parseInt(data.slice("governor:set:".length), 10);
+    if (isNaN(newSid)) return;
+
+    const sessions = listSessions();
+    const newGovernor = sessions.find(s => s.sid === newSid);
+    if (!newGovernor) return;
+
+    const oldSid = getGovernorSid();
+    setGovernorSid(newSid);
+
+    const newLabel = `${newGovernor.color} ${newGovernor.name}`;
+
+    // Notify new governor
+    deliverServiceMessage(
+      newSid,
+      `You are now the governor. Ambiguous messages will be routed to you.`,
+      "governor_changed",
+      { old_governor_sid: oldSid, new_governor_sid: newSid },
+    );
+
+    // Notify old governor if different
+    if (oldSid > 0 && oldSid !== newSid) {
+      const oldGovernor = sessions.find(s => s.sid === oldSid);
+      if (oldGovernor) {
+        deliverServiceMessage(
+          oldSid,
+          `You are no longer the governor. ${newLabel} is now the governor.`,
+          "governor_changed",
+          { old_governor_sid: oldSid, new_governor_sid: newSid },
+        );
+      }
+    }
+
+    // Notify all other sessions
+    for (const s of sessions) {
+      if (s.sid === newSid || s.sid === oldSid) continue;
+      deliverServiceMessage(
+        s.sid,
+        `Governor changed: ${newLabel} is now the governor.`,
+        "governor_changed",
+        { old_governor_sid: oldSid, new_governor_sid: newSid },
+      );
+    }
+
+    // Confirm selection in the panel message and close it
+    _activePanels.delete(panelMsgId);
+    try {
+      await api.editMessageText(
+        chatId,
+        panelMsgId,
+        `${buildGovernorPanel(sessions).text}\n\n▸ ✅ Governor set to ${newLabel}`,
+        { reply_markup: { inline_keyboard: [] } },
+      );
+    } catch { /* ignore */ }
+  }
+}
+
+function buildGovernorPanel(
+  sessions: Array<{ sid: number; name: string; color: string }>,
+): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+  const currentSid = getGovernorSid();
+  const text =
+    "The governor receives ambiguous messages and decides how to route them. " +
+    "Choose which session should be the governor:";
+  const keyboard: { text: string; callback_data: string }[][] = [];
+  for (const s of sessions) {
+    const isGov = s.sid === currentSid;
+    const label = `${s.color} ${s.name}${isGov ? " ✓" : ""}`;
+    keyboard.push([{ text: label, callback_data: `governor:set:${s.sid}` }]);
+  }
+  keyboard.push([{ text: "✖ Dismiss", callback_data: "governor:dismiss" }]);
+  return { text, keyboard };
 }
 
 // ---------------------------------------------------------------------------

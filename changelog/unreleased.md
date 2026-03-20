@@ -2,6 +2,7 @@
 
 ## Added
 
+- Added `/governor` slash command for operator to switch the governor session at runtime; shows all active sessions as inline buttons with current governor marked ✓; notifies all sessions on change; auto-registers/unregisters based on session count
 - Added debug log lines in `cascade()` and `updateDisplay()` to make cascade events visible in stderr output
 
 ## Changed

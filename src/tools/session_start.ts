@@ -8,6 +8,7 @@ import { createSession, closeSession, setActiveSession, listSessions, activeSess
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
+import { refreshGovernorCommand } from "../built-in-commands.js";
 
 const APPROVAL_TIMEOUT_MS = 60_000;
 const APPROVAL_NO = "approve_no";
@@ -253,6 +254,7 @@ export function register(server: McpServer) {
             { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
           );
         }
+        refreshGovernorCommand();
         return toResult(res);
       } catch (err) {
         // Rollback: clean up orphaned session on failure
