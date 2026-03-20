@@ -62,10 +62,15 @@ export function register(server: McpServer) {
           .boolean()
           .default(false)
           .describe("If true, the initial animation placeholder triggers a notification. Default false = silent (no ping/buzz)."),
+        priority: z
+          .number()
+          .int()
+          .default(0)
+          .describe("Priority level for the animation stack (default 0). Higher priority sessions are displayed over lower-priority ones. Ties broken by recency (most recently started wins)."),
               identity: IDENTITY_SCHEMA,
 },
     },
-    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify, identity}) => {
+    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify, priority, identity}) => {
       const _sid = requireAuth(identity);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
@@ -83,7 +88,7 @@ export function register(server: McpServer) {
       // undefined → startAnimation uses getDefaultFrames(sid) internally
 
       try {
-        const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify);
+        const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify, priority);
         return toResult({ message_id, persistent });
       } catch (err) {
         return toError(err);

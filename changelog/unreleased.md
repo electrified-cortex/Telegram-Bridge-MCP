@@ -2,6 +2,9 @@
 
 ## Added
 
+- Added `priority` parameter to `show_animation` tool — higher-priority sessions take the display immediately; lower-priority sessions queue behind and cascade into view when higher-priority ones expire or are cancelled; ties broken by recency (most-recently-started wins)
+- Refactored `animation-state.ts` from single-slot-per-session to a shared priority stack — `_stack: StackEntry[]` replaces per-SID `_states` map; single global display state (`_displayedChatId`, `_displayedMsgId`); buried sessions pass `beforeTextSend` through without intercepting; `cascade()` promotes next entry after expiry or cancel
+
 - Added `reminders/` folder with procedure docs for each governor startup reminder — agents read the doc on reminder fire instead of keeping procedures in memory/context
 - Added "Trust Hierarchy and Agent Authority" section to `docs/inter-agent-communication.md` — four-level table (operator > governor > worker > unverified), escalation principles, and clarification that `routed_by`/`sid` fields are server-stamped (unforgeable) while DM text content is not verifiable as operator intent
 - Added "Trust hierarchy and escalation" subsection to `docs/behavior.md` multi-session area with a pointer to inter-agent-communication.md

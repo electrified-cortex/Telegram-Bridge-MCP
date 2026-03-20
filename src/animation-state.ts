@@ -86,24 +86,41 @@ export function listBuiltinPresets(): string[] {
   return [...BUILTIN_PRESETS.keys()];
 }
 
-interface AnimationState {
+/**
+ * One entry in the priority stack — one slot per session.
+ * The top entry (index 0) is what the operator sees in Telegram.
+ */
+interface StackEntry {
+  sid: number;
+  priority: number;            // higher = shown first; default 0
+  seq: number;                 // insertion sequence — higher = more recently pushed
+  persistent: boolean;         // false = temporary (has timeoutMs), true = no timeout
   chatId: number;
-  messageId: number;
-  persistent: boolean;       // false = one-shot (temporary), true = continuous
-  rawFrames: string[];       // original unprocessed frames (for restart)
-  frames: string[];          // pre-processed MarkdownV2 text
+  rawFrames: string[];         // original unprocessed frames (for restart)
+  frames: string[];            // pre-processed MarkdownV2 text
   parseMode: "HTML" | "MarkdownV2" | undefined;
   intervalMs: number;
-  timeoutMs: number;
+  timeoutMs: number;           // 0 for persistent; wall-clock ms from startedAt
+  startedAt: number;           // Date.now() at push — for recency ordering + timeout
+  notify: boolean;             // disable_notification = !notify on initial send
   frameIndex: number;
-  dispatchCount: number;     // counts actual API dispatches; interval doubles every 20
-  cycleTimer: ReturnType<typeof setInterval> | null;
-  timeoutTimer: ReturnType<typeof setTimeout> | null;
-  resumeTimer: ReturnType<typeof setTimeout> | null;
+  dispatchCount: number;       // counts actual API dispatches; interval doubles every 20
 }
 
-/** Animation state per session (keyed by SID). */
-const _states = new Map<number, AnimationState>();
+/** Priority-ordered stack. [0] = top (displayed). Sort: priority desc, startedAt desc, seq desc. */
+const _stack: StackEntry[] = [];
+
+/** Monotonically increasing sequence counter for recency tiebreaking. */
+let _entrySeq = 0;
+
+/** The single animation message displayed across all sessions. */
+let _displayedChatId: number | null = null;
+let _displayedMsgId: number | null = null;
+
+/** Timers for the currently displayed top entry. */
+let _cycleTimer: ReturnType<typeof setInterval> | null = null;
+let _timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+let _resumeTimer: ReturnType<typeof setTimeout> | null = null;  // 429 recovery
 
 /** Number of dispatched frames per backoff step — interval doubles at each multiple. */
 const DISPATCHES_PER_BACKOFF_STEP = 20;
@@ -114,7 +131,7 @@ interface SavedResume {
   timeoutSeconds: number;
 }
 
-/** Saved resume config per session — held during file-send gap. */
+/** Saved resume config per session — held during file-send gap or deferred restart. */
 const _savedForResumes = new Map<number, SavedResume>();
 
 // ---------------------------------------------------------------------------
@@ -125,83 +142,183 @@ function unrefTimer(t: ReturnType<typeof setTimeout>): void {
   if (typeof t === "object" && "unref" in t) t.unref();
 }
 
-function clearTimers(sid: number): void {
-  const state = _states.get(sid);
-  if (!state) return;
-  if (state.cycleTimer) { clearInterval(state.cycleTimer); state.cycleTimer = null; }
-  if (state.timeoutTimer) { clearTimeout(state.timeoutTimer); state.timeoutTimer = null; }
-  if (state.resumeTimer) { clearTimeout(state.resumeTimer); state.resumeTimer = null; }
+function stopTimers(): void {
+  if (_cycleTimer) { clearInterval(_cycleTimer); _cycleTimer = null; }
+  if (_timeoutTimer) { clearTimeout(_timeoutTimer); _timeoutTimer = null; }
+  if (_resumeTimer) { clearTimeout(_resumeTimer); _resumeTimer = null; }
 }
 
-function startTimeoutTimer(sid: number): void {
-  const state = _states.get(sid);
-  if (!state) return;
-  if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
-  state.timeoutTimer = setTimeout(() => void cancelAnimation(sid), state.timeoutMs);
-  unrefTimer(state.timeoutTimer);
+function startCycleTimer(entry: StackEntry): void {
+  if (_cycleTimer) { clearInterval(_cycleTimer); _cycleTimer = null; }
+  if (entry.frames.length > 1) {
+    _cycleTimer = setInterval(() => void cycleFrame(), entry.intervalMs);
+    unrefTimer(_cycleTimer);
+  }
 }
 
-async function cycleFrame(sid: number): Promise<void> {
-  // Capture state synchronously before any await — state may be replaced
-  // by cancelAnimation() or the send interceptor while the API call is in-flight.
-  const captured = _states.get(sid);
-  if (!captured) return;
-  const { chatId, messageId, frames, parseMode } = captured;
-  const prevText = frames[captured.frameIndex];
-  captured.frameIndex = (captured.frameIndex + 1) % frames.length;
-  const text = frames[captured.frameIndex];
+function startTopTimeoutTimer(): void {
+  if (_timeoutTimer) { clearTimeout(_timeoutTimer); _timeoutTimer = null; }
+  if (_stack.length === 0 || _stack[0].persistent) return;
+  const entry = _stack[0];
+  const remaining = Math.max(0, (entry.startedAt + entry.timeoutMs) - Date.now());
+  _timeoutTimer = setTimeout(() => { _timeoutTimer = null; void cascade(); }, remaining);
+  unrefTimer(_timeoutTimer);
+}
+
+/** Sort comparator: priority desc, then startedAt desc, then seq desc (all → more = better). */
+function compareEntries(a: StackEntry, b: StackEntry): number {
+  if (b.priority !== a.priority) return b.priority - a.priority;
+  if (b.startedAt !== a.startedAt) return b.startedAt - a.startedAt;
+  return b.seq - a.seq;
+}
+
+function getStackEntry(sid: number): StackEntry | undefined {
+  return _stack.find(e => e.sid === sid);
+}
+
+/** Replace/insert an entry for the given SID, re-sort the stack. */
+function pushEntry(entry: StackEntry): void {
+  const idx = _stack.findIndex(e => e.sid === entry.sid);
+  if (idx !== -1) _stack.splice(idx, 1);
+  _stack.push(entry);
+  _stack.sort(compareEntries);
+}
+
+/** Cycle to the next frame for the top display entry. */
+async function cycleFrame(): Promise<void> {
+  if (_stack.length === 0 || _displayedMsgId === null) return;
+  const entry = _stack[0];
+  const msgId = _displayedMsgId;  // capture before await
+  const prevFrame = entry.frames[entry.frameIndex];
+  entry.frameIndex = (entry.frameIndex + 1) % entry.frames.length;
+  const nextFrame = entry.frames[entry.frameIndex];
   // Identical consecutive frames act as a timing delay — skip the API call
-  if (text === prevText) return;
+  if (nextFrame === prevFrame) return;
   try {
     await bypassProxy(() =>
-      getRawApi().editMessageText(chatId, messageId, text, { parse_mode: parseMode }),
+      getRawApi().editMessageText(entry.chatId, msgId, nextFrame, { parse_mode: entry.parseMode }),
     );
   } catch (err) {
     if (err instanceof GrammyError && err.error_code === 429) {
-      // Rate-limited — pause the cycle timer and resume after retry_after
+      // Rate-limited — pause cycle timer and resume after retry_after
       const retryAfter = err.parameters.retry_after ?? 60;
-      dlog("animation", `429 rate-limited, pausing ${retryAfter}s`, { messageId });
-      const s = _states.get(sid);
-      if (s?.cycleTimer) { clearInterval(s.cycleTimer); s.cycleTimer = null; }
+      dlog("animation", `429 rate-limited, pausing ${retryAfter}s`, { msgId });
+      if (_cycleTimer) { clearInterval(_cycleTimer); _cycleTimer = null; }
       // Cancel any prior resume timer to avoid leaking duplicate intervals
-      if (s?.resumeTimer) clearTimeout(s.resumeTimer);
-      const capturedState = s;
-      const timer = setTimeout(() => {
-        const cur = _states.get(sid);
-        if (!cur || cur !== capturedState || cur.cycleTimer) return;
-        cur.resumeTimer = null;
-        cur.cycleTimer = setInterval(() => void cycleFrame(sid), cur.intervalMs);
-        unrefTimer(cur.cycleTimer);
+      if (_resumeTimer) clearTimeout(_resumeTimer);
+      const capturedEntry = entry;
+      _resumeTimer = setTimeout(() => {
+        if (_stack[0] !== capturedEntry || _cycleTimer) return;
+        _resumeTimer = null;
+        startCycleTimer(capturedEntry);
       }, retryAfter * 1000);
-      unrefTimer(timer);
-      const cur = _states.get(sid);
-      if (cur) cur.resumeTimer = timer;
+      unrefTimer(_resumeTimer);
       return;
     }
-    // Any other error — animation placeholder is gone (deleted, expired) — stop cycling
+    // Other error — animation placeholder gone → cascade to next entry
     const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[animation] cycleFrame sid=${sid} failed for msg ${messageId}, stopping: ${msg}\n`);
-    // Only clear state if it still refers to this animation
-    if (_states.get(sid) === captured) {
-      clearTimers(sid);
-      _states.delete(sid);
-      _savedForResumes.delete(sid);
-      clearSendInterceptor(sid);
+    process.stderr.write(`[animation] cycleFrame failed for msg ${msgId}, cascading: ${msg}\n`);
+    if (_stack[0] !== entry) return;  // state changed; don't cascade on stale error
+    _stack.shift();
+    _displayedMsgId = null;
+    _displayedChatId = null;
+    stopTimers();
+    clearSendInterceptor(entry.sid);
+    await cascade();
+    return;
+  }
+  if (_stack[0] !== entry) return;  // state changed during await
+  // Backoff: every DISPATCHES_PER_BACKOFF_STEP dispatches, double the interval
+  entry.dispatchCount++;
+  if (entry.dispatchCount % DISPATCHES_PER_BACKOFF_STEP === 0) {
+    entry.intervalMs *= 2;
+    startCycleTimer(entry);
+  }
+}
+
+/**
+ * Update the displayed animation to the given entry.
+ * Edits the existing Telegram message if present; otherwise sends a new one.
+ */
+async function updateDisplay(entry: StackEntry): Promise<void> {
+  stopTimers();
+  entry.frameIndex = 0;
+  const firstFrame = entry.frames[0] ?? "⏳";
+
+  if (_displayedMsgId !== null) {
+    // Edit existing message in-place (avoids flicker)
+    const existingChatId = _displayedChatId ?? 0;
+    const existingMsgId = _displayedMsgId;
+    try {
+      await bypassProxy(() =>
+        getRawApi().editMessageText(existingChatId, existingMsgId, firstFrame, {
+          parse_mode: entry.parseMode,
+        }),
+      );
+    } catch {
+      // Edit failed — message gone; need to send a new one
+      _displayedMsgId = null;
+      _displayedChatId = null;
+    }
+  }
+
+  if (_displayedMsgId === null) {
+    // No existing message — send a fresh one
+    try {
+      await fireTempReactionRestore();
+      const msg = await bypassProxy(() =>
+        getRawApi().sendMessage(entry.chatId, firstFrame, {
+          parse_mode: entry.parseMode,
+          disable_notification: !entry.notify,
+        }),
+      );
+      _displayedMsgId = msg.message_id;
+      _displayedChatId = entry.chatId;
+      trackMessageId(_displayedMsgId);
+    } catch {
+      // Can't create message — drop this entry and cascade
+      _stack.shift();
+      clearSendInterceptor(entry.sid);
+      await cascade();
+      return;
+    }
+  }
+
+  startCycleTimer(entry);
+  startTopTimeoutTimer();
+}
+
+/**
+ * Cascade: prune expired top entries, then display the next valid one
+ * or delete the animation message if the stack is empty.
+ */
+async function cascade(): Promise<void> {
+  // Remove expired non-persistent entries from the top
+  while (_stack.length > 0) {
+    const top = _stack[0];
+    if (top.persistent) break;  // persistent never expires
+    if (top.startedAt + top.timeoutMs > Date.now()) break;  // still valid
+    _stack.shift();
+    clearSendInterceptor(top.sid);
+  }
+
+  if (_stack.length === 0) {
+    // Stack empty — delete the animation message if it still exists
+    if (_displayedMsgId !== null) {
+      const chatId = _displayedChatId ?? 0;
+      const msgId = _displayedMsgId;
+      _displayedMsgId = null;
+      _displayedChatId = null;
+      stopTimers();
+      try {
+        await bypassProxy(() => getRawApi().deleteMessage(chatId, msgId));
+      } catch { /* message already gone — cosmetic */ }
     }
     return;
   }
-  // Verify state still refers to this animation before mutating
-  if (_states.get(sid) !== captured) return;
-  // Backoff: every DISPATCHES_PER_BACKOFF_STEP dispatches, double the interval
-  captured.dispatchCount++;
-  if (captured.dispatchCount % DISPATCHES_PER_BACKOFF_STEP === 0) {
-    captured.intervalMs = captured.intervalMs * 2;
-    if (captured.cycleTimer) {
-      clearInterval(captured.cycleTimer);
-      captured.cycleTimer = setInterval(() => void cycleFrame(sid), captured.intervalMs);
-      unrefTimer(captured.cycleTimer);
-    }
-  }
+
+  // Display the new top entry
+  await updateDisplay(_stack[0]);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +327,11 @@ async function cycleFrame(sid: number): Promise<void> {
 
 /**
  * Start (or replace) a cycling animation message for the given session.
- * Returns the message_id of the animation placeholder.
+ * Returns the message_id of the displayed animation placeholder.
+ *
+ * Priority stack: if priority is higher than the current displayed entry,
+ * this session takes the display immediately. Otherwise it is queued behind
+ * higher-priority entries and becomes visible when they expire or are cancelled.
  */
 export async function startAnimation(
   sid: number,
@@ -220,6 +341,7 @@ export async function startAnimation(
   persistent = false,
   allowBreakingSpaces = false,
   notify = false,
+  priority = 0,
 ): Promise<number> {
   const chatId = resolveChat();
   if (typeof chatId !== "number") throw new Error("ALLOWED_USER_ID not configured");
@@ -251,172 +373,133 @@ export async function startAnimation(
   const processedFrames = processed.map((p) => p.text);
   const parseMode = processed[0]?.parse_mode;
 
-  const firstFrame = processedFrames[0] ?? "⏳";
-
-  // If an animation is already active for this SID, reuse its message (edit in place)
-  // instead of delete + recreate, avoiding visible flicker.
-  let messageId: number;
-  const existingState = _states.get(sid);
-  if (existingState) {
-    clearTimers(sid);
-    messageId = existingState.messageId;
-    try {
-      await bypassProxy(() =>
-        getRawApi().editMessageText(existingState.chatId, messageId, firstFrame, { parse_mode: parseMode }),
-      );
-    } catch {
-      // Edit failed (message gone?) — fall back to creating a new one
-      _states.delete(sid);
-      await fireTempReactionRestore(); // treat new animation as an outbound action
-      const msg = await bypassProxy(() =>
-        getRawApi().sendMessage(chatId, firstFrame, { parse_mode: parseMode, disable_notification: !notify }),
-      );
-      messageId = msg.message_id;
-      trackMessageId(messageId);
-    }
-  } else {
-    // No existing animation for this SID — cancel any stale resume state and create fresh
-    if (_savedForResumes.has(sid)) {
-      _savedForResumes.delete(sid);
-      clearSendInterceptor(sid);
-    }
-    await fireTempReactionRestore(); // treat new animation as an outbound action
-    const msg = await bypassProxy(() =>
-      getRawApi().sendMessage(chatId, firstFrame, { parse_mode: parseMode, disable_notification: !notify }),
-    );
-    messageId = msg.message_id;
-    trackMessageId(messageId);
-  }
-
-  const newState: AnimationState = {
-    chatId,
-    messageId,
+  // Build the new stack entry for this SID
+  const entry: StackEntry = {
+    sid,
+    priority,
+    seq: ++_entrySeq,
     persistent,
+    chatId,
     rawFrames: paddedFrames,
     frames: processedFrames,
     parseMode,
-    intervalMs: Math.max(intervalMs, 1000), // Telegram rate limit floor
-    timeoutMs: Math.min(timeoutSeconds, 600) * 1000,
+    intervalMs: Math.max(intervalMs, 1000),  // Telegram rate-limit floor
+    timeoutMs: persistent ? 0 : Math.min(timeoutSeconds, 600) * 1000,
+    startedAt: Date.now(),
+    notify,
     frameIndex: 0,
     dispatchCount: 0,
-    cycleTimer: null,
-    timeoutTimer: null,
-    resumeTimer: null,
   };
-  _states.set(sid, newState);
 
-  dlog("animation", `started sid=${sid} msgId=${messageId} frames=${paddedFrames.length} persistent=${persistent}`);
+  // Clean up any stale saved resume for this SID (gap recovery takes priority)
+  if (_savedForResumes.has(sid)) _savedForResumes.delete(sid);
 
-  // Start cycling if multiple frames
-  if (paddedFrames.length > 1) {
-    newState.cycleTimer = setInterval(() => void cycleFrame(sid), newState.intervalMs);
-    unrefTimer(newState.cycleTimer);
+  pushEntry(entry);
+  const isNowTop = _stack[0].sid === sid;
+
+  dlog("animation", `pushed sid=${sid} priority=${priority} isTop=${isNowTop} frames=${paddedFrames.length} persistent=${persistent}`);
+
+  if (isNowTop) {
+    // This session is now displayed — update or create the animation message
+    await updateDisplay(entry);
   }
+  // If buried, the display stays on the current top entry; no Telegram action needed.
 
-  // Start inactivity timeout
-  startTimeoutTimer(sid);
-
-  // Register the per-SID send interceptor for animation promotion
+  // Register the per-SID send interceptor for animation promotion.
+  // Guards inside each callback ensure no-ops when this SID is buried.
   registerSendInterceptor(sid, {
     async beforeTextSend(targetChatId, text, opts) {
-      // ATOMIC: capture and remove this SID's state in one synchronous step.
-      // Prevents re-entrancy — only the first concurrent send processes
-      // the animation; subsequent sends see no state and go through normal path.
-      const captured = _states.get(sid);
-      _states.delete(sid);
-      if (!captured) {
-        process.stderr.write(`[animation] sid=${sid} beforeTextSend: no state, passing through\n`);
+      // Guard: only promote if this SID is the currently displayed top
+      if (_stack[0]?.sid !== sid || _displayedMsgId === null) {
+        process.stderr.write(`[animation] sid=${sid} beforeTextSend: buried or no display, passing through\n`);
         return { intercepted: false };
       }
-      process.stderr.write(`[animation] sid=${sid} beforeTextSend: captured msg ${captured.messageId}, persistent=${captured.persistent}\n`);
+
+      // ATOMIC: capture display refs and remove entry from stack synchronously.
+      // Any concurrent call for this SID will see _stack[0].sid !== sid and pass through.
+      const animMsgId = _displayedMsgId;
+      const animChatId = _displayedChatId ?? 0;
+      const captured = _stack.shift() as StackEntry;
+      _displayedMsgId = null;
+      _displayedChatId = null;
+      stopTimers();
+
+      process.stderr.write(`[animation] sid=${sid} beforeTextSend: captured top msg=${animMsgId}, persistent=${captured.persistent}\n`);
 
       // Can't edit-in-place when message has reply context —
       // editMessageText can't add reply threading to an existing message.
       // Delete animation + restart below instead.
       const hasReplyParameters = "reply_parameters" in opts && opts.reply_parameters != null;
       if (hasReplyParameters) {
-        const { chatId: animChatId, messageId: animMsgId, persistent: isPersistent, rawFrames, intervalMs: ivl, timeoutMs } = captured;
-        if (captured.cycleTimer) clearInterval(captured.cycleTimer);
-        if (captured.timeoutTimer) clearTimeout(captured.timeoutTimer);
-        // Stash resume config BEFORE the yield point — mirrors beforeFileSend pattern.
-        if (isPersistent) {
-          _savedForResumes.set(sid, { rawFrames, intervalMs: ivl, timeoutSeconds: timeoutMs / 1000 });
+        if (captured.persistent) {
+          _savedForResumes.set(sid, { rawFrames: captured.rawFrames, intervalMs: captured.intervalMs, timeoutSeconds: captured.timeoutMs / 1000 });
         } else {
           clearSendInterceptor(sid);
         }
         try {
           await bypassProxy(() => getRawApi().deleteMessage(animChatId, animMsgId));
-        } catch {
-          // Already gone — cosmetic only
-        }
+        } catch { /* cosmetic */ }
+        await cascade();
         return { intercepted: false };
       }
 
-      const { chatId: animChatId, messageId: anim_messageId, persistent: isPersistent, rawFrames, intervalMs: ivl, timeoutMs } = captured;
-      const savedTimeoutSeconds = timeoutMs / 1000;
-
-      // Stop current animation timers (use captured state for timer refs)
-      if (captured.cycleTimer) clearInterval(captured.cycleTimer);
-      if (captured.timeoutTimer) clearTimeout(captured.timeoutTimer);
+      const savedTimeoutSeconds = captured.timeoutMs / 1000;
 
       // Position detection: is the animation still the last message?
       const highestMsg = getHighestMessageId();
-      const isLastMessage = anim_messageId >= highestMsg;
-      process.stderr.write(`[animation] sid=${sid} position check: anim=${anim_messageId} highest=${highestMsg} isLast=${isLastMessage}\n`);
+      const isLastMessage = animMsgId >= highestMsg;
+      process.stderr.write(`[animation] sid=${sid} position check: anim=${animMsgId} highest=${highestMsg} isLast=${isLastMessage}\n`);
 
       if (isLastMessage) {
         // R4: Edit in place — avoids Telegram's visible delete animation
         try {
           await bypassProxy(() =>
-            getRawApi().editMessageText(animChatId, anim_messageId, text, opts),
+            getRawApi().editMessageText(animChatId, animMsgId, text, opts),
           );
-          process.stderr.write(`[animation] sid=${sid} R4 edit succeeded for msg ${anim_messageId}\n`);
+          process.stderr.write(`[animation] sid=${sid} R4 edit succeeded for msg ${animMsgId}\n`);
         } catch (editErr) {
-          // Animation message may still exist if edit failed for a non-deletion reason.
-          // Best-effort delete to avoid leaving an orphaned placeholder (mirrors R5 path).
+          // Best-effort delete to avoid leaving an orphaned placeholder
           try {
-            await bypassProxy(() => getRawApi().deleteMessage(animChatId, anim_messageId));
-          } catch {
-            // Already gone — expected if edit failed because message was deleted
-          }
+            await bypassProxy(() => getRawApi().deleteMessage(animChatId, animMsgId));
+          } catch { /* already gone */ }
           const editMsg = editErr instanceof Error ? editErr.message : String(editErr);
-          process.stderr.write(`[animation] sid=${sid} R4 edit FAILED for msg ${anim_messageId}: ${editMsg}\n`);
-          if (isPersistent) {
-            // Stash for deferred restart via afterTextSend
-            _savedForResumes.set(sid, { rawFrames, intervalMs: ivl, timeoutSeconds: savedTimeoutSeconds });
-            return { intercepted: false };
+          process.stderr.write(`[animation] sid=${sid} R4 edit FAILED for msg ${animMsgId}: ${editMsg}\n`);
+          if (captured.persistent) {
+            _savedForResumes.set(sid, { rawFrames: captured.rawFrames, intervalMs: captured.intervalMs, timeoutSeconds: savedTimeoutSeconds });
+          } else {
+            clearSendInterceptor(sid);
           }
-          clearSendInterceptor(sid);
+          await cascade();
           return { intercepted: false };
         }
 
-        if (isPersistent) {
-          // Restart animation below — inline, since we already edited
+        if (captured.persistent) {
+          // Restart animation below the promoted text — inline restart
           try {
-            const restartId = await startAnimation(sid, rawFrames, ivl, savedTimeoutSeconds, true);
+            const restartId = await startAnimation(sid, captured.rawFrames, captured.intervalMs, savedTimeoutSeconds, true);
             process.stderr.write(`[animation] sid=${sid} persistent restart: new msg ${restartId}\n`);
           } catch (restartErr) {
             const restartMsg = restartErr instanceof Error ? restartErr.message : String(restartErr);
             process.stderr.write(`[animation] sid=${sid} persistent restart FAILED: ${restartMsg}\n`);
           }
         } else {
-          // Temporary: one-shot — done after promotion
+          // Temporary: one-shot — clear interceptor, cascade to next if any
           clearSendInterceptor(sid);
+          await cascade();
         }
-        return { intercepted: true, message_id: anim_messageId };
+        return { intercepted: true, message_id: animMsgId };
       }
 
-      // Not last message — R5: delete animation, let proxy send normally
+      // R5: Not last message — delete animation, let proxy send normally
       try {
-        await bypassProxy(() => getRawApi().deleteMessage(animChatId, anim_messageId));
-      } catch {
-        // Already gone — cosmetic only
-      }
-      if (isPersistent) {
-        _savedForResumes.set(sid, { rawFrames, intervalMs: ivl, timeoutSeconds: savedTimeoutSeconds });
+        await bypassProxy(() => getRawApi().deleteMessage(animChatId, animMsgId));
+      } catch { /* cosmetic */ }
+      if (captured.persistent) {
+        _savedForResumes.set(sid, { rawFrames: captured.rawFrames, intervalMs: captured.intervalMs, timeoutSeconds: savedTimeoutSeconds });
       } else {
         clearSendInterceptor(sid);
       }
+      await cascade();
       return { intercepted: false };
     },
 
@@ -425,52 +508,42 @@ export async function startAnimation(
       const resume = _savedForResumes.get(sid);
       _savedForResumes.delete(sid);
       if (!resume) return;
-      const { rawFrames: rf, intervalMs: iv, timeoutSeconds: ts } = resume;
       try {
-        await startAnimation(sid, rf, iv, ts, true);
-      } catch {
-        // Best-effort — animation is cosmetic
-      }
+        await startAnimation(sid, resume.rawFrames, resume.intervalMs, resume.timeoutSeconds, true);
+      } catch { /* best-effort — animation is cosmetic */ }
     },
 
     async beforeFileSend() {
-      // ATOMIC: capture and remove this SID's state to prevent re-entrancy
-      const captured = _states.get(sid);
-      _states.delete(sid);
-      if (!captured) return;
-      // Delete the animation placeholder — can't edit text → file
-      const { chatId: animChatId, messageId: anim_messageId, persistent: isPersistent } = captured;
-      if (captured.cycleTimer) clearInterval(captured.cycleTimer);
-      if (captured.timeoutTimer) clearTimeout(captured.timeoutTimer);
-      const savedRawFrames = [...captured.rawFrames];
-      const savedIntervalMs = captured.intervalMs;
-      const savedTimeoutSeconds = captured.timeoutMs / 1000;
+      // Only act if this SID is the top (displayed)
+      if (_stack[0]?.sid !== sid || _displayedMsgId === null) return;
+
+      // ATOMIC: remove from stack to prevent re-entrancy
+      const captured = _stack.shift() as StackEntry;
+      const animMsgId = _displayedMsgId;
+      const animChatId = _displayedChatId ?? 0;
+      _displayedMsgId = null;
+      _displayedChatId = null;
+      stopTimers();
 
       try {
-        await bypassProxy(() => getRawApi().deleteMessage(animChatId, anim_messageId));
-      } catch {
-        // Already gone — cosmetic only
-      }
+        await bypassProxy(() => getRawApi().deleteMessage(animChatId, animMsgId));
+      } catch { /* cosmetic */ }
 
-      // Only stash resume config for persistent mode
-      if (isPersistent) {
-        _savedForResumes.set(sid, { rawFrames: savedRawFrames, intervalMs: savedIntervalMs, timeoutSeconds: savedTimeoutSeconds });
+      if (captured.persistent) {
+        _savedForResumes.set(sid, { rawFrames: captured.rawFrames, intervalMs: captured.intervalMs, timeoutSeconds: captured.timeoutMs / 1000 });
       } else {
         clearSendInterceptor(sid);
       }
+      // Do not cascade during the file-send gap; afterFileSend will restore.
     },
 
     async afterFileSend() {
-      // ATOMIC: capture and clear this SID's saved resume to prevent re-entrancy
       const resume = _savedForResumes.get(sid);
       _savedForResumes.delete(sid);
       if (!resume) return;
-      const { rawFrames, intervalMs: ivl, timeoutSeconds: ts } = resume;
       try {
-        await startAnimation(sid, rawFrames, ivl, ts, true);
-      } catch {
-        // Best-effort
-      }
+        await startAnimation(sid, resume.rawFrames, resume.intervalMs, resume.timeoutSeconds, true);
+      } catch { /* best-effort */ }
     },
 
     onEdit() {
@@ -478,61 +551,85 @@ export async function startAnimation(
     },
   });
 
-  return messageId;
+  return _displayedMsgId ?? 0;
 }
 
 /**
  * Cancel the active animation for a session. Optionally replace with real text.
  * Returns { cancelled, message_id? }.
+ *
+ * Only cancels the calling session's own entry — no cross-session cancellation.
+ * If the session is buried, its entry is silently removed without affecting the display.
  */
 export async function cancelAnimation(
   sid: number,
   text?: string,
   parseMode?: "Markdown" | "HTML" | "MarkdownV2",
 ): Promise<{ cancelled: boolean; message_id?: number }> {
-  // Check _savedForResumes too — during a file send, state is deleted but
-  // _savedForResumes holds the config for afterFileSend restart.
-  if (!_states.has(sid) && !_savedForResumes.has(sid)) return { cancelled: false };
+  const inStack = _stack.some(e => e.sid === sid);
+  const inGap = _savedForResumes.has(sid);
+  if (!inStack && !inGap) return { cancelled: false };
 
-  const state = _states.get(sid);
-  const chatId = state?.chatId;
-  const messageId = state?.messageId;
-  clearTimers(sid);
-  _states.delete(sid);
+  const wasTop = inStack && _stack[0]?.sid === sid;
+
+  // Remove entry from stack and resume stash
+  const stackIdx = _stack.findIndex(e => e.sid === sid);
+  if (stackIdx !== -1) _stack.splice(stackIdx, 1);
   _savedForResumes.delete(sid);
-
-  dlog("animation", `cancelled sid=${sid} msgId=${messageId ?? "none"} replacement=${!!text}`);
-
-  // Unregister the proxy interceptor for this session
   clearSendInterceptor(sid);
 
-  // state was null (file-send gap) — no message to edit/delete
-  if (chatId === undefined || messageId === undefined) return { cancelled: true };
+  dlog("animation", `cancelled sid=${sid} wasTop=${wasTop} replacement=${!!text}`);
 
-  if (text) {
-    // Replace animation with real content — message becomes permanent
+  if (!inStack) {
+    // File-send gap — no displayed message (already deleted in beforeFileSend)
+    return { cancelled: true };
+  }
+
+  if (!wasTop) {
+    // Buried entry — remove silently, display is unaffected
+    return { cancelled: true };
+  }
+
+  // Was the displayed top — handle the animation message
+  stopTimers();
+
+  let replacedMsgId: number | undefined;
+
+  if (text && _displayedMsgId !== null) {
+    // Replace the animation placeholder with real content
+    const msgId = _displayedMsgId;
+    const chatId = _displayedChatId ?? 0;
+    _displayedMsgId = null;
+    _displayedChatId = null;
     try {
       const resolved = resolveParseMode(text, parseMode ?? "Markdown");
       await bypassProxy(() =>
-        getRawApi().editMessageText(chatId, messageId, resolved.text, {
+        getRawApi().editMessageText(chatId, msgId, resolved.text, {
           parse_mode: resolved.parse_mode,
         }),
       );
-      recordOutgoing(messageId, "text", text);
-      return { cancelled: true, message_id: messageId };
+      recordOutgoing(msgId, "text", text);
+      replacedMsgId = msgId;
     } catch {
-      // If edit fails (message deleted?), just clean up
-      return { cancelled: true };
+      // Edit failed — message gone; just clean up
     }
+  } else if (_displayedMsgId !== null) {
+    // No replacement — delete the ephemeral animation message
+    const msgId = _displayedMsgId;
+    const chatId = _displayedChatId ?? 0;
+    _displayedMsgId = null;
+    _displayedChatId = null;
+    try {
+      await bypassProxy(() => getRawApi().deleteMessage(chatId, msgId));
+    } catch { /* cosmetic */ }
   }
 
-  // No replacement — delete the ephemeral message
-  try {
-    await bypassProxy(() => getRawApi().deleteMessage(chatId, messageId));
-  } catch {
-    // Already deleted or expired — cosmetic only
-  }
-  return { cancelled: true };
+  // Cascade to next entry if any remain in the stack
+  await cascade();
+
+  return replacedMsgId !== undefined
+    ? { cancelled: true, message_id: replacedMsgId }
+    : { cancelled: true };
 }
 
 /**
@@ -541,20 +638,31 @@ export async function cancelAnimation(
  * stays in place but the timeout is refreshed.
  */
 export function resetAnimationTimeout(sid: number): void {
-  if (!_states.has(sid)) return;
-  startTimeoutTimer(sid);
+  const entry = getStackEntry(sid);
+  if (!entry || entry.persistent) return;
+  entry.startedAt = Date.now();            // extend wall-clock countdown
+  if (_stack[0]?.sid === sid) {
+    startTopTimeoutTimer();                // restart explicit timer for displayed top
+  }
 }
 
 /**
- * Returns the current animation message_id for a session, or null if no animation is active.
+ * Returns the displayed animation message_id if the given session is the current top,
+ * or null if the session is buried or not in the stack.
  */
 export function getAnimationMessageId(sid: number): number | null {
-  return _states.get(sid)?.messageId ?? null;
+  return _stack[0]?.sid === sid ? (_displayedMsgId ?? null) : null;
 }
 
-/** Returns true if an animation is currently active for the session. */
+/**
+ * Returns true if an animation is currently active (top or buried) for the session.
+ * For temporary entries, returns false once wall-clock timeout has elapsed.
+ */
 export function isAnimationActive(sid: number): boolean {
-  return _states.has(sid);
+  const entry = getStackEntry(sid);
+  if (!entry) return false;
+  if (entry.persistent) return true;
+  return entry.startedAt + entry.timeoutMs > Date.now();
 }
 
 /** Alias for `isAnimationActive` — used by health-check as a proof-of-life signal. */
@@ -562,13 +670,16 @@ export const hasActiveAnimation = isAnimationActive;
 
 /** Returns true if the active animation for the session is persistent (survives show_typing). */
 export function isAnimationPersistent(sid: number): boolean {
-  return _states.get(sid)?.persistent ?? false;
+  return getStackEntry(sid)?.persistent ?? false;
 }
 
 /** For testing only: resets all animation state without API calls. */
 export function resetAnimationForTest(): void {
-  for (const sid of _states.keys()) clearTimers(sid);
-  _states.clear();
+  stopTimers();
+  _stack.length = 0;
+  _entrySeq = 0;
+  _displayedMsgId = null;
+  _displayedChatId = null;
   _savedForResumes.clear();
   _sessionDefaults.clear();
   _presetsMap.clear();
