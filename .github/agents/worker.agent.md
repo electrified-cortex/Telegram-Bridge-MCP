@@ -40,9 +40,11 @@ dequeue → messages? → handle → dequeue
 
 **Claim** — pick the lowest-priority-numbered (first from ascending order) file from `2-queued/`, move to `3-in-progress/`. The move is the atomic claim. **One task at a time.**
 
-**Work** — implement and verify (tests · lint · build). Use the `## Worktree` section if present (see [worktree-workflow.md](../../tasks/worktree-workflow.md)). If absent, edit in the main workspace.
+**Delegate to Task Runner** — for focused implementation work, use `runSubagent` with `agentName: "Task Runner"`. The task file is already in `3-in-progress/`. Include the task file path and spec in the prompt. The Task Runner does the work and moves the file to `4-completed/`. Review its output, then commit.
 
-**Complete** — append `## Completion` (see [tasks/README.md](../../tasks/README.md)); move to `4-completed/`; DM overseer.
+**Direct execution** — for simple or quick tasks, do the work yourself. Use the same lifecycle: implement, verify (tests · lint · build), append `## Completion`, move to `4-completed/`, DM overseer.
+
+**Worktrees** — use the `## Worktree` section if present (see [worktree-workflow.md](../../tasks/worktree-workflow.md)). If absent, edit in the main workspace.
 
 **Unclear spec** → prepend `## ⚠️ Needs Clarification`, move back to `1-draft/`, DM overseer.
 
