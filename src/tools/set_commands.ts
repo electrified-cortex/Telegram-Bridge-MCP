@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
-import { BUILT_IN_COMMANDS } from "../built-in-commands.js";
+import { BUILT_IN_COMMANDS, getGovernorCommandEntry } from "../built-in-commands.js";
 import { requireAuth } from "../session-gate.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
@@ -68,7 +68,11 @@ export function register(server: McpServer) {
 
         // Always prepend built-in commands so they survive agent menu updates.
         // If the agent passes [] to clear, honour it — but keep built-ins.
-        const builtIns = [...BUILT_IN_COMMANDS];
+        const builtIns: { command: string; description: string }[] = [...BUILT_IN_COMMANDS];
+        if (scope === "chat") {
+          const govEntry = getGovernorCommandEntry();
+          if (govEntry) builtIns.push(govEntry);
+        }
         const merged = [
           ...builtIns,
           ...commands.filter(c => !builtIns.some(b => b.command === c.command)),

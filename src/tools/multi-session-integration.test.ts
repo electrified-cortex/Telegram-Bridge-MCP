@@ -61,8 +61,13 @@ vi.mock("../message-store.js", () => ({
   replaceSessionCallbackHooks: vi.fn(() => []),
 }));
 
+vi.mock("../built-in-commands.js", async (importActual) => {
+  const actual = await importActual<Record<string, unknown>>();
+  return { ...actual, refreshGovernorCommand: vi.fn() };
+});
+
 // ---------------------------------------------------------------------------
-// Real session infrastructure (no mock)
+// Real session infrastructure (refreshGovernorCommand stubbed above)
 // ---------------------------------------------------------------------------
 
 import {

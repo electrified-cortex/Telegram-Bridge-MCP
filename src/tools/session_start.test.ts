@@ -60,6 +60,11 @@ vi.mock("../routing-mode.js", () => ({
   getGovernorSid: () => mocks.getGovernorSid(),
 }));
 
+vi.mock("../built-in-commands.js", async (importActual) => {
+  const actual = await importActual<Record<string, unknown>>();
+  return { ...actual, refreshGovernorCommand: vi.fn() };
+});
+
 vi.mock("../session-queue.js", () => ({
   createSessionQueue: vi.fn(),
   removeSessionQueue: vi.fn(),

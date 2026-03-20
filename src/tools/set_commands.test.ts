@@ -132,6 +132,16 @@ describe("set_commands tool", () => {
     expect(mocks.setMyCommands).not.toHaveBeenCalled();
   });
 
+  it("includes /governor in merge when 2+ sessions active", async () => {
+    mocks.activeSessionCount.mockReturnValue(2);
+    const result = await call({ commands: SAMPLE_COMMANDS, identity: [1, 123456] });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    const calledWith = mocks.setMyCommands.mock.calls[0]?.[0] as Array<{ command: string }>;
+    expect(calledWith.map(c => c.command)).toContain("governor");
+  });
+
 describe("identity gate", () => {
   it("returns SID_REQUIRED when no identity provided", async () => {
     const result = await call({"commands":[{"command":"x","description":"y"}]});

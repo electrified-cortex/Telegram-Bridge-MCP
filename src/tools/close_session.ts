@@ -8,6 +8,7 @@ import { requireAuth } from "../session-gate.js";
 import { replaceSessionCallbackHooks } from "../message-store.js";
 import { dlog } from "../debug-log.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { refreshGovernorCommand } from "../built-in-commands.js";
 
 const DESCRIPTION =
   "Close the current session. Removes it from the active " +
@@ -136,6 +137,7 @@ export function register(server: McpServer) {
         }
       });
 
+      void refreshGovernorCommand();
       return toResult({ closed: true, sid });
     },
   );
