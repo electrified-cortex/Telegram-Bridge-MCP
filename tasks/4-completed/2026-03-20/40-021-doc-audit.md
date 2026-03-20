@@ -46,10 +46,20 @@ Review each file for accuracy:
 - Verify `changelog/unreleased.md` is accurate and complete
 - Check that prior changelog entries are well-formatted
 
-## Acceptance Criteria
+## Completion
 
-- [ ] README reflects current v4 feature set
-- [ ] All docs reviewed for accuracy
-- [ ] No broken internal links
-- [ ] No stale references to removed features
-- [ ] Changelog entries complete and accurate
+Worktree: `.worktrees/40-021-doc-audit`, branch: `task/021-doc-audit` (pushed to remote, targets `master`)
+
+**Findings:**
+
+- All docs reviewed: `behavior.md`, `security-model.md`, `setup.md`, `super-tools.md`, `restart-protocol.md`, `communication.md`, `formatting.md`, `customization.md`, `design.md`
+- `changelog/unreleased.md` is accurate and well-formatted for the master branch
+
+**Changes made:**
+
+- `README.md`: Updated Docker image version tag from `4.1.0` → `4.2.0`
+- `README.md`: Added `notify_shutdown_warning` to the Utilities tool list (tool exists in codebase but was absent from README)
+- `docs/behavior.md`: Updated built-in commands section — replaced "four built-in commands (list)" with accurate description of four always-on commands plus `/governor` as a dynamic 5th command shown only when 2+ sessions are active
+- `changelog/unreleased.md`: Added two bullets for the README and behavior.md doc changes
+
+No broken links found. No stale feature references found. No code changes.
