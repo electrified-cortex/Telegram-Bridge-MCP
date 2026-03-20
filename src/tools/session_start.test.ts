@@ -719,7 +719,7 @@ describe("session_start tool", () => {
       (c: unknown[]) => String(c[1]).includes("🟢 Online"),
     );
     expect(announceCalls.length).toBeGreaterThanOrEqual(1);
-    const announceText = String(announceCalls[0]![1]);
+    const announceText = String(announceCalls[0][1]);
     expect(announceText).toContain("Primary");
     expect(announceText).toContain("🟦");
   });
