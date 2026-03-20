@@ -943,4 +943,153 @@ describe("animation-state", () => {
       expect(getPreset(1, "bounce")).toEqual(customFrames);
     });
   });
+
+  // -- Priority Stack (multi-session) -----------------------------------------
+
+  describe("priority stack — multi-session", () => {
+    it("same priority: more recently added SID is displayed", async () => {
+      await startAnimation(1, ["A"], 1000, 60);  // SID 1, priority 0, seq 1
+      await startAnimation(2, ["B"], 1000, 60);  // SID 2, priority 0, seq 2 (more recent → wins)
+
+      // SID 2 is on top (more recent), SID 1 is buried
+      expect(isAnimationActive(1)).toBe(true);     // buried but active
+      expect(isAnimationActive(2)).toBe(true);     // on top
+      expect(getAnimationMessageId(1)).toBeNull(); // buried
+      expect(getAnimationMessageId(2)).toBe(42);   // displayed
+
+      // Only one Telegram message created; SID 2 took over by editing it
+      expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", expect.anything());
+    });
+
+    it("higher priority: higher-priority SID stays on top regardless of insertion order", async () => {
+      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1, priority 5 → top
+      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2, priority 0 → buried
+
+      expect(isAnimationActive(1)).toBe(true);
+      expect(isAnimationActive(2)).toBe(true);      // buried
+      expect(getAnimationMessageId(1)).toBe(42);    // displayed
+      expect(getAnimationMessageId(2)).toBeNull();  // buried
+
+      // No edit — SID 1 was already displayed when SID 2 pushed
+      expect(mocks.editMessageText).not.toHaveBeenCalled();
+    });
+
+    it("cascade: top times out → buried SID takes over display", async () => {
+      await startAnimation(1, ["A"], 1000, 60);  // SID 1, seq 1 (will be buried)
+      await startAnimation(2, ["B"], 1000, 5);   // SID 2, seq 2, 5s timeout (takes top)
+
+      expect(getAnimationMessageId(2)).toBe(42);
+      expect(getAnimationMessageId(1)).toBeNull();
+
+      mocks.editMessageText.mockClear();
+
+      // Advance past SID 2's timeout → cascade to SID 1
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(isAnimationActive(2)).toBe(false);
+      expect(isAnimationActive(1)).toBe(true);
+      expect(getAnimationMessageId(1)).toBe(42);  // same Telegram message reused
+
+      // editMessageText called to switch display to SID 1's frame "A"
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "A", expect.anything());
+    });
+
+    it("cancel buried entry: removes only that entry, displayed unchanged", async () => {
+      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1, high priority → top
+      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2, low priority → buried
+
+      expect(getAnimationMessageId(1)).toBe(42);
+      expect(getAnimationMessageId(2)).toBeNull();
+
+      mocks.deleteMessage.mockClear();
+      mocks.editMessageText.mockClear();
+
+      const result = await cancelAnimation(2);
+
+      expect(result).toEqual({ cancelled: true });
+      expect(isAnimationActive(2)).toBe(false);
+      expect(isAnimationActive(1)).toBe(true);
+      expect(getAnimationMessageId(1)).toBe(42);    // still displayed
+      expect(mocks.deleteMessage).not.toHaveBeenCalled();  // no Telegram deletion
+      expect(mocks.editMessageText).not.toHaveBeenCalled(); // display unchanged
+    });
+
+    it("timeout while buried: entry becomes inactive, display unchanged", async () => {
+      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1, high priority → top
+      await startAnimation(2, ["B"], 1000, 3, false, false, false, 0);   // SID 2, 3s timeout → buried
+
+      expect(isAnimationActive(2)).toBe(true);  // buried but active
+
+      await vi.advanceTimersByTimeAsync(3100);
+
+      // SID 2 wall-clock expired → isAnimationActive returns false
+      expect(isAnimationActive(2)).toBe(false);
+      // SID 1 still displayed (unaffected)
+      expect(isAnimationActive(1)).toBe(true);
+      expect(getAnimationMessageId(1)).toBe(42);
+    });
+
+    it("isAnimationActive returns true for buried sessions", async () => {
+      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1 top
+      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2 buried
+
+      expect(isAnimationActive(1)).toBe(true);  // top
+      expect(isAnimationActive(2)).toBe(true);  // buried but active
+    });
+
+    it("getAnimationMessageId returns null for buried session", async () => {
+      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // top
+      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // buried
+
+      expect(getAnimationMessageId(1)).toBe(42);
+      expect(getAnimationMessageId(2)).toBeNull();
+    });
+
+    it("push replaces own entry: updated priority takes effect", async () => {
+      await startAnimation(2, ["B"], 1000, 60, false, false, false, 5);  // SID 2, priority 5 → top
+      await startAnimation(1, ["A"], 1000, 60, false, false, false, 0);  // SID 1, priority 0 → buried
+
+      expect(getAnimationMessageId(2)).toBe(42);
+      expect(getAnimationMessageId(1)).toBeNull();
+
+      mocks.editMessageText.mockClear();
+
+      // SID 1 re-pushes with higher priority → takes top
+      await startAnimation(1, ["A2"], 1000, 60, false, false, false, 10);
+
+      expect(getAnimationMessageId(1)).toBe(42);   // SID 1 now on top
+      expect(getAnimationMessageId(2)).toBeNull(); // SID 2 now buried
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "A2", expect.anything());
+    });
+
+    it("stack empty after all entries removed: animation deleted", async () => {
+      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1 top
+      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2 buried
+
+      await cancelAnimation(1);  // SID 1 cancelled → cascade to SID 2
+      await cancelAnimation(2);  // SID 2 now on top → cancel → stack empty
+
+      expect(isAnimationActive(1)).toBe(false);
+      expect(isAnimationActive(2)).toBe(false);
+    });
+
+    it("buried session beforeTextSend is not intercepted", async () => {
+      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1 top
+      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2 buried
+
+      // Find SID 2's interceptor registration
+      const calls = mocks.registerSendInterceptor.mock.calls as Array<[number, { beforeTextSend: (...a: unknown[]) => unknown }]>;
+      const sid2Call = calls.find(([sid]) => sid === 2);
+      expect(sid2Call).toBeDefined();
+      const sid2Int = sid2Call![1];
+
+      mocks.getHighestMessageId.mockReturnValue(0);
+      const result = await sid2Int.beforeTextSend(123, "hello", {});
+
+      // Buried SID — not intercepted, displayed animation unchanged
+      expect(result).toEqual({ intercepted: false });
+      expect(getAnimationMessageId(1)).toBe(42);
+    });
+  });
 });
