@@ -31,6 +31,7 @@ async function requestApproval(
   const colorButtons = availableColors.map((c) => ({
     text: c,
     callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
+    ...(c === colorHint ? { style: "primary" } : {}),
   }));
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",

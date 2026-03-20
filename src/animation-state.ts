@@ -266,6 +266,7 @@ async function updateDisplay(entry: StackEntry): Promise<void> {
 
   if (_displayedMsgId === null) {
     // No existing message — send a fresh one
+    process.stderr.write(`[animation] updateDisplay: sending new message for sid=${entry.sid}\n`);
     try {
       await fireTempReactionRestore();
       const msg = await bypassProxy(() =>
@@ -297,11 +298,13 @@ async function cascade(): Promise<void> {
     const top = _stack[0];
     if (top.persistent) break;  // persistent never expires
     if (top.startedAt + top.timeoutMs > Date.now()) break;  // still valid
+    process.stderr.write(`[animation] cascade: pruned expired sid=${top.sid}\n`);
     _stack.shift();
     clearSendInterceptor(top.sid);
   }
 
   if (_stack.length === 0) {
+    process.stderr.write(`[animation] cascade: stack empty — deleting display msg ${_displayedMsgId}\n`);
     // Stack empty — delete the animation message if it still exists
     if (_displayedMsgId !== null) {
       const chatId = _displayedChatId ?? 0;
@@ -318,6 +321,7 @@ async function cascade(): Promise<void> {
 
   // Display the new top entry — if it fails, drop it and cascade to the next
   const next = _stack[0];
+  process.stderr.write(`[animation] cascade: promoting sid=${next.sid} priority=${next.priority}\n`);
   try {
     await updateDisplay(next);
   } catch {

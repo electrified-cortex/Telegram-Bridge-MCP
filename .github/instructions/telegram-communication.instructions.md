@@ -30,6 +30,7 @@ announce ready → dequeue_update (loop) → on message:
 6. **Announce before major actions** (`send_text` or `notify`). Require `confirm` for destructive/irreversible ones.
 7. **`dequeue_update` again** after every task, timeout, or error — loop forever.
 8. **Never assume silence means approval.**
+9. **Voice by default.** Use `send_text_as_voice` for conversational replies, explanations, and status updates. Reserve `send_text` for structured content that benefits from Markdown formatting (tables, code blocks, bulleted lists, task boards). When in doubt, use voice.
 
 ## Tool Selection
 
@@ -44,7 +45,8 @@ announce ready → dequeue_update (loop) → on message:
 | Executing / working | `show_animation` (working preset) |
 | Response is imminent | `show_typing` |
 | Cancel an animation | `cancel_animation` |
-| Structured result / explanation | `send_text` (Markdown) |
+| Conversational reply | `send_text_as_voice` — **default for most responses** |
+| Structured result / explanation | `send_text` (Markdown) — tables, code, lists |
 | Build / deploy / error event | `notify` with severity |
 | Multi-step task (3+) | `send_new_checklist` + `pin_message` |
 | Completed work / ready to proceed | `confirm` (single-button CTA) |

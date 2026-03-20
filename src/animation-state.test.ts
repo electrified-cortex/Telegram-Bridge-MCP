@@ -1091,5 +1091,88 @@ describe("animation-state", () => {
       expect(result).toEqual({ intercepted: false });
       expect(getAnimationMessageId(1)).toBe(42);
     });
+
+    it("cascade after R4 text-promotion: buried session resumes with new message", async () => {
+      // SID 2 at priority 0 → initial display (msg 42)
+      mocks.sendMessage
+        .mockResolvedValueOnce({ message_id: 42 })  // SID 2 initial
+        .mockResolvedValueOnce({ message_id: 99 }); // SID 2 cascaded
+      await startAnimation(2, ["think"], 1000, 60, false, false, false, 0);
+      expect(getAnimationMessageId(2)).toBe(42);
+
+      // SID 1 at priority 1 → takes over display by editing msg 42
+      await startAnimation(1, ["work"], 1000, 60, false, false, false, 1);
+      expect(getAnimationMessageId(1)).toBe(42);
+      expect(getAnimationMessageId(2)).toBeNull();  // buried
+
+      // Get SID 1's registered interceptor
+      const calls = mocks.registerSendInterceptor.mock.calls as Array<[number, { beforeTextSend: (...a: unknown[]) => unknown }]>;
+      const sid1Int = calls.find(([sid]) => sid === 1)![1];
+
+      mocks.editMessageText.mockClear();
+      mocks.getHighestMessageId.mockReturnValue(42);  // animation is last msg → R4 path
+
+      // SID 1 sends text → R4: edits msg 42 in place with real text
+      const result = await sid1Int.beforeTextSend(123, "hello", {});
+
+      expect(result).toEqual({ intercepted: true, message_id: 42 });
+      // R4 promoted text into animation slot
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "hello", expect.anything());
+      // Cascade created a new message for SID 2
+      expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+      expect(isAnimationActive(2)).toBe(true);
+      expect(getAnimationMessageId(2)).toBe(99);
+    });
+
+    it("cascade after R5 text-send: buried session resumes with new message", async () => {
+      // SID 2 at priority 0 → initial display (msg 42)
+      mocks.sendMessage
+        .mockResolvedValueOnce({ message_id: 42 })  // SID 2 initial
+        .mockResolvedValueOnce({ message_id: 99 }); // SID 2 cascaded
+      await startAnimation(2, ["think"], 1000, 60, false, false, false, 0);
+
+      // SID 1 at priority 1 → takes over display
+      await startAnimation(1, ["work"], 1000, 60, false, false, false, 1);
+
+      const calls = mocks.registerSendInterceptor.mock.calls as Array<[number, { beforeTextSend: (...a: unknown[]) => unknown }]>;
+      const sid1Int = calls.find(([sid]) => sid === 1)![1];
+
+      mocks.deleteMessage.mockClear();
+      mocks.getHighestMessageId.mockReturnValue(999);  // newer messages exist → R5 path
+
+      // SID 1 sends text → R5: deletes animation + lets proxy send normally
+      const result = await sid1Int.beforeTextSend(123, "hello", {});
+
+      expect(result).toEqual({ intercepted: false });
+      expect(mocks.deleteMessage).toHaveBeenCalledWith(123, 42);
+      // Cascade created a new message for SID 2
+      expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+      expect(isAnimationActive(2)).toBe(true);
+      expect(getAnimationMessageId(2)).toBe(99);
+    });
+
+    it("cancel cascaded animation: works normally after higher-priority consumer", async () => {
+      mocks.sendMessage
+        .mockResolvedValueOnce({ message_id: 42 })  // SID 2 initial
+        .mockResolvedValueOnce({ message_id: 99 }); // SID 2 cascaded after SID 1 consumes
+      await startAnimation(2, ["think"], 1000, 60, false, false, false, 0);
+      await startAnimation(1, ["work"], 1000, 60, false, false, false, 1);
+
+      const calls = mocks.registerSendInterceptor.mock.calls as Array<[number, { beforeTextSend: (...a: unknown[]) => unknown }]>;
+      const sid1Int = calls.find(([sid]) => sid === 1)![1];
+
+      mocks.getHighestMessageId.mockReturnValue(42);
+      await sid1Int.beforeTextSend(123, "hello", {});  // R4 promotes, SID 2 cascades to msg 99
+
+      expect(getAnimationMessageId(2)).toBe(99);
+
+      // Now cancel SID 2's cascaded animation
+      mocks.deleteMessage.mockClear();
+      const cancelResult = await cancelAnimation(2);
+
+      expect(cancelResult).toEqual({ cancelled: true });
+      expect(isAnimationActive(2)).toBe(false);
+      expect(mocks.deleteMessage).toHaveBeenCalledWith(123, 99);
+    });
   });
 });
