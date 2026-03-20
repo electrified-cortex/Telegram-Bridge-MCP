@@ -53,9 +53,16 @@ The implementation should choose whichever approach the operator prefers. Both a
 - `src/tools/session_start.ts:248–276` — session_orientation with governor info
 - `src/built-in-commands.ts:363–395` — `/governor` panel and `refreshGovernorCommand`
 
-## Changelog
+## Completion
 
-```
-### Fixed
-- Governor auto-assignment no longer defaults to lowest SID on reconnect (prevented overseer from receiving ambiguous messages)
-```
+Branch: `task/036-governor-reconnect` (pushed to remote, targets dev)
+
+**Fix applied in `src/tools/session_start.ts`:**
+- Changed governor auto-assignment when `sessionsActive === 2`
+- When `reconnect: true`: joining session takes governor seat (resumes prior role)
+- When `reconnect: false`: retains lowest-SID heuristic (original session is anchor)
+
+**Test added in `src/tools/session_start.test.ts`:**
+- `"assigns reconnecting session as governor when second session reconnects"` — simulates SID 2 surviving + SID 3 reconnecting, verifies `setGovernorSid(3)` not `setGovernorSid(2)`
+
+TypeScript clean, all 58 session_start tests pass. Commit: `fix: assign reconnecting session as governor on rejoin (#036)`
