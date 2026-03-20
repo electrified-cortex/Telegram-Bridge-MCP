@@ -3,6 +3,9 @@
 ## Added
 
 - Added `reminders/` folder with procedure docs for each governor startup reminder — agents read the doc on reminder fire instead of keeping procedures in memory/context
+- Added "Trust Hierarchy and Agent Authority" section to `docs/inter-agent-communication.md` — four-level table (operator > governor > worker > unverified), escalation principles, and clarification that `routed_by`/`sid` fields are server-stamped (unforgeable) while DM text content is not verifiable as operator intent
+- Added "Trust hierarchy and escalation" subsection to `docs/behavior.md` multi-session area with a pointer to inter-agent-communication.md
+- Updated `session_orientation` role note in `session_start.ts` — worker message now identifies the governor as "your first escalation point" and both governor and worker notes include "Call get_agent_guide for trust and routing guidance"
 
 ## Changed
 

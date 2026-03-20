@@ -243,8 +243,8 @@ export function register(server: McpServer) {
           // Notify the new session of its role
           const newIsGovernor = session.sid === governorSid;
           const roleNote = newIsGovernor
-            ? `You are the governor (SID ${session.sid}). Ambiguous messages will be routed to you.`
-            : `You are SID ${session.sid}. ${governorLabel} is the governor. Ambiguous messages go to them.`;
+            ? `You are the governor (SID ${session.sid}). Ambiguous messages will be routed to you. Call get_agent_guide for trust and routing guidance.`
+            : `You are SID ${session.sid}. ${governorLabel} is your first escalation point. Ambiguous messages go to them. Call get_agent_guide for trust and routing guidance.`;
           deliverServiceMessage(
             session.sid,
             roleNote,
