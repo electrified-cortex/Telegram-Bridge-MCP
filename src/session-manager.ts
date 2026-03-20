@@ -15,6 +15,7 @@ export interface Session {
   createdAt: string;
   lastPollAt: number | undefined;
   healthy: boolean;
+  announcementMsgId?: number;
 }
 
 /** Public view returned by `listSessions` — no PIN. */
@@ -197,6 +198,17 @@ export function resetSessions(): void {
   _sessions.clear();
   _nextId = 1;
   _activeSessionId = 0;
+}
+
+/** Store the message ID of the session's online announcement for later unpin. */
+export function setSessionAnnouncementMessage(sid: number, msgId: number): void {
+  const s = _sessions.get(sid);
+  if (s) s.announcementMsgId = msgId;
+}
+
+/** Return the stored announcement message ID for a session, if any. */
+export function getSessionAnnouncementMessage(sid: number): number | undefined {
+  return _sessions.get(sid)?.announcementMsgId;
 }
 
 /**

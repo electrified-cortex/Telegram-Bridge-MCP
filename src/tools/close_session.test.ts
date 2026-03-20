@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(),
   setActiveSession: vi.fn(),
   listSessions: vi.fn().mockReturnValue([]),
+  getSessionAnnouncementMessage: vi.fn().mockReturnValue(undefined),
   revokeAllForSession: vi.fn(),
   getGovernorSid: vi.fn(),
   setGovernorSid: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   routeToSession: vi.fn(),
   replaceSessionCallbackHooks: vi.fn(),
   answerCallbackQuery: vi.fn(),
+  unpinChatMessage: vi.fn().mockResolvedValue(undefined),
   resolveChat: vi.fn().mockReturnValue(1001),
 }));
 
@@ -28,6 +30,7 @@ vi.mock("../session-manager.js", () => ({
   getActiveSession: mocks.getActiveSession,
   setActiveSession: mocks.setActiveSession,
   listSessions: mocks.listSessions,
+  getSessionAnnouncementMessage: (...args: unknown[]) => mocks.getSessionAnnouncementMessage(...args),
 }));
 
 vi.mock("../session-queue.js", () => ({
@@ -64,6 +67,9 @@ vi.mock("../telegram.js", async (importOriginal) => {
     sendServiceMessage: (...args: unknown[]) =>
       mocks.sendServiceMessage(...args),
     resolveChat: () => mocks.resolveChat(),
+    getApi: () => ({
+      unpinChatMessage: mocks.unpinChatMessage,
+    }),
   };
 });
 
@@ -497,5 +503,34 @@ describe("close_session tool", () => {
 
     expect(result.closed).toBe(false);
     expect(mocks.drainQueue).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Unpin announcement message on close (task 022)
+  // =========================================================================
+
+  it("unpins the announcement message when one is stored for the session", async () => {
+    mocks.getSessionAnnouncementMessage.mockReturnValue(77);
+
+    await call({ identity: [1, 123456] });
+
+    expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1001, 77);
+  });
+
+  it("does not call unpinChatMessage when no announcement message is stored", async () => {
+    mocks.getSessionAnnouncementMessage.mockReturnValue(undefined);
+
+    await call({ identity: [1, 123456] });
+
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not unpin when resolveChat returns a non-number", async () => {
+    mocks.getSessionAnnouncementMessage.mockReturnValue(77);
+    mocks.resolveChat.mockReturnValue({ code: "UNAUTHORIZED_CHAT", message: "no chat" } as never);
+
+    await call({ identity: [1, 123456] });
+
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 });

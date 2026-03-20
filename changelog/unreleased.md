@@ -6,6 +6,7 @@
 - Added `notify_shutdown_warning` tool — sends a pre-shutdown advisory DM to all other active sessions with restart guidance; does not trigger shutdown
 - Added shutdown event section to `docs/behavior.md` — documents stop-loop, don't-retry, wait, and re-engage via `session_start` steps; includes governor pre-warning flow and tool reference table
 - Added debug log lines in `cascade()` and `updateDisplay()` to make cascade events visible in stderr output
+- Pinned session announcement message on multi-session join; unpinned on session close
 
 ## Changed
 

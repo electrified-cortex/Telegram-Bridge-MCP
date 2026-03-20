@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   editMessageText: vi.fn().mockResolvedValue(undefined),
   deleteMessage: vi.fn().mockResolvedValue(undefined),
   answerCallbackQuery: vi.fn().mockResolvedValue(true),
+  pinChatMessage: vi.fn().mockResolvedValue(undefined),
   pendingCount: vi.fn(),
   dequeue: vi.fn(),
   createSession: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   getGovernorSid: vi.fn().mockReturnValue(0),
   deliverServiceMessage: vi.fn(),
   trackMessageOwner: vi.fn(),
+  setSessionAnnouncementMessage: vi.fn(),
   resolveChat: vi.fn(() => 42 as number),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock("../telegram.js", async (importActual) => {
       editMessageText: mocks.editMessageText,
       deleteMessage: mocks.deleteMessage,
       answerCallbackQuery: mocks.answerCallbackQuery,
+      pinChatMessage: mocks.pinChatMessage,
     }),
     resolveChat: () => mocks.resolveChat(),
   };
@@ -53,6 +56,7 @@ vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getAvailableColors: mocks.getAvailableColors,
   COLOR_PALETTE: ["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"],
+  setSessionAnnouncementMessage: mocks.setSessionAnnouncementMessage,
 }));
 
 vi.mock("../routing-mode.js", () => ({
@@ -987,6 +991,87 @@ describe("session_start tool", () => {
     await call({ name: "Worker", reconnect: true });
 
     expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩");
+  });
+
+  // =========================================================================
+  // Pin announcement message (task 022)
+  // =========================================================================
+
+  it("pins the announcement message after it is sent for multi-session join", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
+      .mockResolvedValueOnce({ message_id: 77 });  // announcement
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(42, 77, { disable_notification: true });
+  });
+
+  it("stores the announcement message ID via setSessionAnnouncementMessage", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })
+      .mockResolvedValueOnce({ message_id: 88 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    expect(mocks.setSessionAnnouncementMessage).toHaveBeenCalledWith(2, 88);
+  });
+
+  it("does not pin if announcement send fails", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
+      .mockRejectedValueOnce(new Error("send failed")); // announcement fails
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    expect(mocks.pinChatMessage).not.toHaveBeenCalled();
+    expect(mocks.setSessionAnnouncementMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not pin for the first session (single-session, no announcement)", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+
+    await call({});
+
+    expect(mocks.pinChatMessage).not.toHaveBeenCalled();
   });
 });
 
