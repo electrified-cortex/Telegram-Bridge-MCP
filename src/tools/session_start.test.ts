@@ -91,6 +91,7 @@ describe("session_start tool", () => {
       sid: 1,
       pin: 123456,
       name: "Primary",
+      color: "🟦",
       sessionsActive: 1,
     });
     const server = createMockServer();
@@ -440,7 +441,7 @@ describe("session_start tool", () => {
   it("first session is auto-approved without operator interaction", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     const result = parseResult(await call({ name: "Primary" }));
 
@@ -451,7 +452,7 @@ describe("session_start tool", () => {
   it("first session defaults name to 'Primary' when none provided", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     await call({});
 
@@ -668,7 +669,7 @@ describe("session_start tool", () => {
   it("first session receives session_orientation service message", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     await call({});
 
@@ -685,7 +686,7 @@ describe("session_start tool", () => {
   it("first session sends online announcement to chat", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 42 });
 
     await call({});
@@ -694,12 +695,15 @@ describe("session_start tool", () => {
       (c: unknown[]) => String(c[1]).includes("🟢 Online"),
     );
     expect(announceCalls.length).toBeGreaterThanOrEqual(1);
+    const announceText = String(announceCalls[0]![1]);
+    expect(announceText).toContain("Primary");
+    expect(announceText).toContain("🟦");
   });
 
   it("first session announcement is tracked with trackMessageOwner", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 55 });
 
     await call({});
@@ -710,7 +714,7 @@ describe("session_start tool", () => {
   it("first session session_orientation includes announcement_message_id", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 77 });
 
     await call({});
@@ -728,7 +732,7 @@ describe("session_start tool", () => {
   it("reconnect: first session returns action='reconnected'", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
 
     const result = parseResult(await call({ reconnect: true }));
@@ -814,7 +818,7 @@ describe("session_start tool", () => {
   it("reconnect: false (default) keeps fresh/joined behavior unchanged", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
 
     const result = parseResult(await call({}));
@@ -1110,14 +1114,37 @@ describe("session_start tool", () => {
     expect(mocks.setSessionAnnouncementMessage).not.toHaveBeenCalled();
   });
 
-  it("does not pin for the first session (single-session, no announcement)", async () => {
+  it("does not pin when first session announcement fails to send", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.sendMessage.mockResolvedValueOnce(undefined);
 
     await call({});
 
     expect(mocks.pinChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("first session announcement is pinned", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 55 });
+
+    await call({});
+
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(42, 55, { disable_notification: true });
+  });
+
+  it("first session announcement tracked via setSessionAnnouncementMessage", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 88 });
+
+    await call({});
+
+    expect(mocks.setSessionAnnouncementMessage).toHaveBeenCalledWith(1, 88);
   });
 });
 

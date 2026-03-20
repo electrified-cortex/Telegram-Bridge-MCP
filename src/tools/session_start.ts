@@ -201,16 +201,18 @@ export function register(server: McpServer) {
         };
         if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {
-          // Send visible announcement — same format as 2nd+ sessions so the
-          // operator knows a session is online even for the auto-approved first session.
+          // Send visible announcement with name tag — same format as 2nd+ sessions.
+          // buildHeader() intentionally skips single-session mode; compose inline.
           const _announcement = await Promise.resolve(
             runInSessionContext(session.sid, () =>
-              getApi().sendMessage(chatId, `Session ${session.sid} — 🟢 Online`),
+              getApi().sendMessage(chatId, `${session.color} 🤖 ${effectiveName}\nSession ${session.sid} — 🟢 Online`),
             ),
           ).catch(() => undefined);
           const announcementMsgId = _announcement?.message_id;
           if (announcementMsgId !== undefined) {
             trackMessageOwner(announcementMsgId, session.sid);
+            setSessionAnnouncementMessage(session.sid, announcementMsgId);
+            getApi().pinChatMessage(chatId, announcementMsgId, { disable_notification: true }).catch(() => {});
           }
           deliverServiceMessage(
             session.sid,
