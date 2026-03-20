@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getApi, toResult, toError, sendServiceMessage, resolveChat } from "../telegram.js";
-import { closeSession, getSession, getActiveSession, setActiveSession, listSessions } from "../session-manager.js";
+import { closeSession, getSession, getActiveSession, setActiveSession, listSessions, getSessionAnnouncementMessage } from "../session-manager.js";
 import { removeSessionQueue, drainQueue, deliverDirectMessage, deliverServiceMessage, routeToSession } from "../session-queue.js";
 import { revokeAllForSession } from "../dm-permissions.js";
 import { getGovernorSid, setGovernorSid } from "../routing-mode.js";
@@ -32,6 +32,7 @@ export function register(server: McpServer) {
       // Capture session name before closing (used in notifications)
       const sessionInfo = getSession(sid);
       const sessionName = sessionInfo?.name || `Session ${sid}`;
+      const announcementMsgId = getSessionAnnouncementMessage(sid);
 
       const closed = closeSession(sid);
       if (!closed) return toResult({ closed: false, sid });
@@ -48,6 +49,14 @@ export function register(server: McpServer) {
 
       // Always notify the operator that this session disconnected
       sendServiceMessage(`🤖 ${sessionName} has disconnected.`).catch(() => {});
+
+      // Unpin the session's announcement message, if one was pinned
+      if (announcementMsgId !== undefined) {
+        const chatId = resolveChat();
+        if (typeof chatId === "number") {
+          getApi().unpinChatMessage(chatId, announcementMsgId).catch(() => {});
+        }
+      }
 
       if (remaining.length === 1) {
         // 2 → 1: single-session mode restored — always reset routing

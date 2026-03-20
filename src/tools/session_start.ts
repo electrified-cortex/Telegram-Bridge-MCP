@@ -4,7 +4,7 @@ import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getAvailableColors, COLOR_PALETTE } from "../session-manager.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage } from "../session-manager.js";
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
@@ -239,6 +239,8 @@ export function register(server: McpServer) {
           const announcementMsgId = _announcement?.message_id;
           if (announcementMsgId !== undefined) {
             trackMessageOwner(announcementMsgId, session.sid);
+            setSessionAnnouncementMessage(session.sid, announcementMsgId);
+            getApi().pinChatMessage(chatId, announcementMsgId, { disable_notification: true }).catch(() => {});
           }
 
           // Notify existing sessions and the new session of the join event
