@@ -367,11 +367,25 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
 export function refreshGovernorCommand(): void {
   const chatId = resolveChat();
   if (typeof chatId !== "number") return;
-  const cmds: { command: string; description: string }[] = [...BUILT_IN_COMMANDS];
-  if (activeSessionCount() >= 2) {
-    cmds.push({ command: "governor", description: "Switch the governor session" });
-  }
-  getApi().setMyCommands(cmds, { scope: { type: "chat", chat_id: chatId } }).catch(() => {});
+
+  const api = getApi();
+  api
+    .getMyCommands({ scope: { type: "chat", chat_id: chatId } })
+    .then(existingCommands => {
+      // Strip built-ins and /governor — they'll be re-added below
+      const custom = existingCommands.filter(
+        cmd => cmd.command !== "governor" && !BUILT_IN_COMMANDS.some(b => b.command === cmd.command),
+      );
+
+      const merged: { command: string; description: string }[] = [...BUILT_IN_COMMANDS];
+      if (activeSessionCount() >= 2) {
+        merged.push({ command: "governor", description: "Switch the governor session" });
+      }
+      merged.push(...custom);
+
+      return api.setMyCommands(merged, { scope: { type: "chat", chat_id: chatId } });
+    })
+    .catch(() => {});
 }
 
 async function handleGovernorCommand(): Promise<void> {
@@ -424,6 +438,21 @@ async function handleGovernorCallback(
     if (!newGovernor) return;
 
     const oldSid = getGovernorSid();
+
+    // No-op if selecting the already-current governor
+    if (newSid === oldSid) {
+      _activePanels.delete(panelMsgId);
+      try {
+        await api.editMessageText(
+          chatId,
+          panelMsgId,
+          `${buildGovernorPanel(sessions).text}\n\n▸ ${newGovernor.color} ${newGovernor.name} is already the governor.`,
+          { reply_markup: { inline_keyboard: [] } },
+        );
+      } catch { /* ignore */ }
+      return;
+    }
+
     setGovernorSid(newSid);
 
     const newLabel = `${newGovernor.color} ${newGovernor.name}`;
