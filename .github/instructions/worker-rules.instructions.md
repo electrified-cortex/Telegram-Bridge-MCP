@@ -57,6 +57,19 @@ Workers must **notify the governor** before entering an idle or sleep state. The
 
 ---
 
+## Reminder Re-Bootstrap — MANDATORY
+
+**After every session recovery, compaction, or reconnect, re-bootstrap all prescribed reminders.**
+
+Reminders do not persist across session restarts. If you had active reminders before compaction or reconnect, they are gone.
+
+- At session start, check your session memory for any reminder notes you wrote before going dormant.
+- Re-set all prescribed reminders immediately using `set_reminder`.
+- Document active reminders in session memory before setting them, so they survive future compaction.
+- This rule applies to **all agents** — governor and workers alike.
+
+---
+
 ## Workspace Safety
 
 - Do **not** run `git stash`, `git reset`, `git rebase`, or `git cherry-pick` without governor approval.
