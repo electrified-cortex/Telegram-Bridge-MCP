@@ -38,7 +38,20 @@ Docker section shows `4.1.0`. Current release is `4.3.0`.
 
 **Fix:** Update to `4.3.0`.
 
+### 6. worktree-workflow.md — Markdown Lint Violations
+
+MD031 (fenced blocks need blank lines) at lines ~100, 105. MD032 (lists need blank lines) at lines ~111, 144, 149.
+
+**Fix:** Add missing blank lines around fenced code blocks and lists.
+
+### 7. Dockerfile — Floating pnpm Version
+
+`corepack prepare pnpm@latest` in two build stages creates non-reproducible builds.
+
+**Fix:** Pin to `pnpm@10` (or the exact version from `package.json` `packageManager` field if present).
+
 ## Acceptance
 
-- All five issues resolved
+- All seven issues resolved
 - `pnpm lint` passes
+- Markdown diagnostics clean for edited files
