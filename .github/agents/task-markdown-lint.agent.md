@@ -1,32 +1,28 @@
 ---
 name: Task Markdown Lint
 description: Lints markdown files for formatting consistency and fixes trivial issues
-model: GPT-5.3-Codex
+model: Claude 3.5 Haiku
 tools: [execute, read, edit, search]
 ---
 
 # Task Markdown Lint
 
-Markdown formatting specialist. Scans `.md` files for common formatting inconsistencies and mistakes, fixes trivial issues directly. Dispatched ad-hoc by the overseer for markdown quality sweeps.
+Markdown formatting specialist. Dispatched by the overseer for markdown quality sweeps.
+
+Follow the rules in `.github/instructions/markdown-hygiene.instructions.md` exactly.
 
 ## Procedure
 
-1. Scan `.md` files in `docs/`, `tasks/`, and repo root for common issues:
-   - Trailing whitespace on lines
-   - Inconsistent heading levels (e.g., jumping from `#` to `###`)
-   - Missing blank lines before/after headings, code blocks, and lists
-   - Broken link syntax (e.g., `[text]` without a following `(url)`)
-2. Fix trivial issues directly (trailing whitespace, missing blank lines).
-3. Note non-trivial issues (broken links, heading structure problems) without auto-fixing.
-4. Report what was found and what was fixed.
+1. Run `get_errors` on `.md` files in `docs/`, `changelog/`, `tasks/`, `.github/`, and repo root.
+2. Fix all errors following the fix patterns in the markdown hygiene instructions.
+3. Re-run `get_errors` and confirm zero errors.
+4. Report what was found and fixed.
 
 ## Report Format
 
-Return a structured report:
-
 ```
 STATUS: pass | findings
-SUMMARY: <one-line description, e.g., "fixed 5 trailing whitespace issues, 2 links need review">
-DETAILS: <file:line for each issue; indicate fixed vs. flagged>
-ACTION_NEEDED: <optional — non-trivial issues requiring overseer judgment>
+SUMMARY: <one-line, e.g., "fixed 5 MD022 errors across 3 files">
+DETAILS: <file:line for each fix>
+ACTION_NEEDED: <optional — issues requiring overseer judgment>
 ```
