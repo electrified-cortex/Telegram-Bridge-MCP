@@ -62,6 +62,14 @@ export function register(server: McpServer) {
         // 2 → 1: single-session mode restored — always reset routing
         const last = remaining[0];
         setGovernorSid(0);
+        // Unpin the remaining session's announcement (back to single-session, no need for pins)
+        const lastAnnouncement = getSessionAnnouncementMessage(last.sid);
+        if (lastAnnouncement !== undefined) {
+          const chatId = resolveChat();
+          if (typeof chatId === "number") {
+            getApi().unpinChatMessage(chatId, lastAnnouncement).catch(() => {});
+          }
+        }
         sendServiceMessage(
           wasGovernor
             ? "⚠️ Governor session closed. Single-session mode restored."

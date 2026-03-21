@@ -19,7 +19,7 @@ Your #1 priority: **stay in the loop**. Never go silent.
 3. `session_start` — join as `Worker` (if taken: `Worker 2`, etc). Pick a color: 🟩🟨🟧🟪🟥
 4. `list_sessions` — identify the overseer. If none, operator is your overseer.
 5. DM the overseer: *"Worker online — standing by."*
-6. **Register animation presets** (see [Animation Presets](#animation-presets)) — required every session start
+6. **Register animation presets** (see Animation Presets section below) — required every session start
 7. Set startup reminders (see table below)
 8. `dequeue_update` — enter the loop
 

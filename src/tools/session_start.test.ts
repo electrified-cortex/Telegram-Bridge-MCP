@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   deliverServiceMessage: vi.fn(),
   trackMessageOwner: vi.fn(),
   setSessionAnnouncementMessage: vi.fn(),
+  getSessionAnnouncementMessage: vi.fn().mockReturnValue(undefined),
   resolveChat: vi.fn(() => 42 as number),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
@@ -57,6 +58,7 @@ vi.mock("../session-manager.js", () => ({
   getAvailableColors: mocks.getAvailableColors,
   COLOR_PALETTE: ["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"],
   setSessionAnnouncementMessage: mocks.setSessionAnnouncementMessage,
+  getSessionAnnouncementMessage: mocks.getSessionAnnouncementMessage,
 }));
 
 vi.mock("../routing-mode.js", () => ({
@@ -1149,7 +1151,7 @@ describe("session_start tool", () => {
     expect(mocks.pinChatMessage).not.toHaveBeenCalled();
   });
 
-  it("first session announcement is pinned", async () => {
+  it("first session announcement is NOT pinned (deferred until second session joins)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
@@ -1157,7 +1159,64 @@ describe("session_start tool", () => {
 
     await call({});
 
-    expect(mocks.pinChatMessage).toHaveBeenCalledWith(42, 55, { disable_notification: true });
+    expect(mocks.pinChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("second session retroactively pins first session announcement when sessionsActive === 2", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-20" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-20" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-20" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
+      .mockResolvedValueOnce({ message_id: 99 });  // new session announcement
+    // SID 1 had its announcement stored (msg 77)
+    mocks.getSessionAnnouncementMessage.mockReturnValue(77);
+
+    await call({ name: "Worker" });
+
+    // First session's announcement (77) retroactively pinned
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(42, 77, { disable_notification: true });
+    // New session's announcement (99) also pinned
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(42, 99, { disable_notification: true });
+  });
+
+  it("third+ session does not trigger retroactive pinning", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 3, pin: 333333, name: "Third", sessionsActive: 3 });
+    mocks.listSessions
+      .mockReturnValueOnce([
+        { sid: 1, name: "Primary", createdAt: "2026-03-20" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-20" },
+      ])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-20" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-20" },
+        { sid: 3, name: "Third", createdAt: "2026-03-20" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
+      .mockResolvedValueOnce({ message_id: 101 }); // new session announcement
+    mocks.getSessionAnnouncementMessage.mockReturnValue(77);
+
+    await call({ name: "Third" });
+
+    // getSessionAnnouncementMessage should NOT have been called for retroactive pinning
+    // (only the new session's announcement is pinned)
+    expect(mocks.pinChatMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(42, 101, { disable_notification: true });
   });
 
   it("first session announcement tracked via setSessionAnnouncementMessage", async () => {

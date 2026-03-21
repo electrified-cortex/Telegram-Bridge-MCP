@@ -32,7 +32,7 @@ Return to VS Code chat only if the operator explicitly exits the loop or Telegra
 ## Canonical Recipe
 
 ```text
-1. dequeue_update(timeout: 300)
+1. dequeue_update
 2. update arrives → handle it, reply in Telegram
 3. timed_out → call dequeue_update again (stay in loop)
 4. error → report in Telegram, then call dequeue_update again

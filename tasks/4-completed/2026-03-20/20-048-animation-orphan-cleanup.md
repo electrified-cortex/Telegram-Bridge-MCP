@@ -53,3 +53,22 @@ In the `updateDisplay` catch block, attempt to delete the old message before pro
 - [ ] Existing animation tests pass
 - [ ] New test: edit failure → old message deleted, new message sent
 - [ ] No orphaned animation messages left in chat after any failure path
+
+## Completion
+
+**Date:** 2026-03-20
+
+### Changes
+
+- `src/animation-state.ts` — In `updateDisplay()` catch block, added best-effort `deleteMessage` call before resetting `_displayedMsgId` to null. Uses `bypassProxy` for consistency with other API calls in the function. Fire-and-forget (`.catch(() => {})`).
+- `src/animation-state.test.ts` — Added two new tests in `startAnimation` describe block:
+  - `"deletes orphan and sends new message when editMessageText fails on update"` — verifies `deleteMessage` is called with the old message ID and a new message is sent when edit fails.
+  - `"continues (sends new message) even if deleteMessage also fails on orphan cleanup"` — verifies the animation still recovers even if the delete also throws.
+- `changelog/unreleased.md` — Added `Fixed` entry.
+
+### Test Results
+
+- Build: ✅ passed
+- Tests: ✅ 1425 passed (64 files)
+- Lint: ✅ passed
+

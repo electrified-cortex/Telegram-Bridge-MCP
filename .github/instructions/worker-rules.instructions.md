@@ -50,8 +50,8 @@ Workers must **notify the overseer** before entering an idle or sleep state. The
 
 **Workers must always maintain an active `dequeue_update` loop.** This is how the overseer communicates with you.
 
-- **During work:** Call `dequeue_update(timeout: 30)` between work chunks to check for overseer DMs. Process any messages, then continue.
-- **When idle:** After completing a task and DMing the overseer, call `dequeue_update(timeout: 300)` in a loop. Block forever waiting for the next assignment.
+- **During work:** Call `dequeue_update` between work chunks to check for overseer DMs. Uses the default 300 s wait — ensures you stay responsive without wasting tool calls. Process any messages, then continue.
+- **When idle:** After completing a task and DMing the overseer, call `dequeue_update` in a loop. Block waiting for the next assignment.
 - **During long operations:** Run builds/tests with `isBackground: true`, then dequeue while waiting. Stay responsive.
 - **Never go silent.** A worker without an active dequeue call looks like a hung process and will be investigated or terminated.
 

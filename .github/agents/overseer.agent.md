@@ -39,12 +39,30 @@ Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 ## Rules
 
 - **No code.** If something needs fixing, write a task.
+- **Prefer subagents.** Always look for opportunities to delegate work to subagents — they're cheaper and faster than doing it yourself. If a task can be expressed as a self-contained prompt, dispatch it.
 - **Source-verify before queuing.** Every spec detail comes from reading real source.
 - **One task per worker.** One file in `3-in-progress/` per worker.
 - **Don't touch in-progress work.** The owning worker has exclusive control.
 - **Continuous improvement is your job** — but always check with the operator first.
 - **When authorized, update agent files** (`.github/agents/`) and governance docs directly.
-- **Investigative tasks are pre-approved.** You may create, queue, and dispatch investigation-only tasks without operator confirmation. The spec must clearly state it's investigation (no fixes). Worker reports findings back.
+- **Investigative tasks are pre-approved.** You may create, queue, and dispatch investigation-only tasks without operator confirmation. The spec must clearly state it's investigation (no fixes). Worker/subagent reports findings back.
+
+## Blocking-Event Protocol
+
+Any operation that blocks you from responding to the operator requires communication **before** you start.
+
+**When solo (no worker sessions):**
+- **Notify** what you're about to do (e.g., "Dispatching subagent for task 046").
+- **`confirm`** before destructive, irreversible, or long-running operations.
+- Investigation-only subagents are pre-approved — notify, then dispatch.
+- Implementation subagents: notify, then dispatch (operator already approved via task queuing).
+
+**When workers are active:**
+- Dispatch freely — the operator can still reach you while workers execute.
+
+**Applies to:** subagent dispatch, long builds/tests run in foreground, shutdown/restart, any operation that makes you unresponsive for more than a few seconds.
+
+**Does NOT apply to:** background terminal commands, quick tool calls, file reads/writes.
 
 ## Delegation
 
@@ -61,8 +79,8 @@ When a worker session is active:
 ### 2. Subagents (fallback)
 
 When no worker sessions are active, use `runSubagent` with `agentName: "Task Runner"` (Claude Sonnet 4.6):
-- **Claim first**: Run `tasks/claim.ps1 <filename>` to stage a baseline in the git index and move the working copy to `3-in-progress/`.
-- **Ask operator first** before launching a subagent for implementation tasks. Investigation tasks are pre-approved.
+- **Claim first**: Run `scripts/claim-task.ps1 <filename>` to stage a baseline and move to `3-in-progress/`.
+- **Notify the operator** before dispatching (per Blocking-Event Protocol above).
 - **Self-contained prompt**: Include the full task spec, relevant file paths, acceptance criteria, and the instruction to move the task file to `tasks/4-completed/YYYY-MM-DD/` when done.
 - **One task per subagent** — keep scope tight and focused.
 - **Review the result**: Subagents return a single report. Run `git diff` to see what changed.
@@ -118,15 +136,25 @@ All substantive communication goes through Telegram. The communication guide loa
 
 Add these reminders on session start using `set_reminder`. They **do not persist** across restarts.
 
+### Direct Reminders (overseer handles)
+
 | # | Reminder Text | Delay | Recurring |
 |---|---|---|---|
 | 1 | Scan `tasks/` for duplicates, misplaced files, stale drafts. Verify workers are active. → [procedure](../../tasks/reminders/01-task-board-hygiene.md) | 15 min | Yes |
 | 2 | `git status --short`. Check branch, uncommitted changes, remote divergence. → [procedure](../../tasks/reminders/02-git-state-audit.md) | 15 min | Yes |
-| 3 | `pnpm build && pnpm lint`. Notify operator on failure. → [procedure](../../tasks/reminders/03-build-lint-health.md) | 20 min | Yes |
-| 4 | `pnpm test`. Track test count for regressions. → [procedure](../../tasks/reminders/04-test-suite-health.md) | 30 min | Yes |
-| 5 | Check `changelog/unreleased.md`. Flag behavior changes without entries. → [procedure](../../tasks/reminders/05-changelog-review.md) | 60 min | Yes |
-| 6 | Spot-check 1–2 docs for broken links, stale content. → [procedure](../../tasks/reminders/06-doc-hygiene.md) | 60 min | Yes |
 | 7 | If no operator contact in 10 min, `notify` current status. → [procedure](../../tasks/reminders/07-operator-check-in.md) | 10 min | Yes |
-| 8 | List open PRs. Check CI, comments, Dependabot, unresolved reviews. → [procedure](../../tasks/reminders/08-pr-review-exhaustion.md) | 15 min | Yes |
 | 10 | Check worker sessions. Ping any silent >10 min. Ask workers their reminders to verify behavior. → [procedure](../../tasks/reminders/10-worker-health.md) | 10 min | Yes |
 | 11 | Compare `get_me().mcp_commit` with `dist/tools/build-info.json`. Prompt restart on drift. → [procedure](../../tasks/reminders/11-server-build-drift.md) | 20 min | Yes |
+
+### Dispatch Reminders (fire subagent)
+
+When these fire, dispatch the named agent via `runSubagent(agentName)`. Follow the Blocking-Event Protocol (confirm with operator if solo).
+
+| # | Agent Name | Delay | Recurring |
+|---|---|---|---|
+| 3 | Task Build Lint | 20 min | Yes |
+| 4 | Task Test Suite | 30 min | Yes |
+| 5 | Task Changelog Audit | 60 min | Yes |
+| 6 | Task Doc Hygiene | 30 min | Yes |
+| 8 | Task PR Review | 10 min | Yes |
+| 9 | Task PR Health | 20 min | Yes |

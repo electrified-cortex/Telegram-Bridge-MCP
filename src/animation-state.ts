@@ -258,9 +258,10 @@ async function updateDisplay(entry: StackEntry): Promise<void> {
         }),
       );
     } catch {
-      // Edit failed — message gone; need to send a new one
+      // Edit failed — delete the old message to prevent orphaned animation frames
       _displayedMsgId = null;
       _displayedChatId = null;
+      bypassProxy(() => getRawApi().deleteMessage(existingChatId, existingMsgId)).catch(() => {});
     }
   }
 

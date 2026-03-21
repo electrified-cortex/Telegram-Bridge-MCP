@@ -62,3 +62,25 @@ In `src/shutdown.ts` (~line 74–83): Unpins all announcements on graceful shutd
 - [ ] Returning to single-session unpins the last remaining announcement
 - [ ] All existing tests pass + new tests cover the deferred pinning logic
 - [ ] Shutdown cleanup unchanged (still unpins all)
+
+## Completion
+
+**Date:** 2026-03-20
+
+### Files Modified
+
+- `src/tools/session_start.ts` — Added `getSessionAnnouncementMessage` import; removed `pinChatMessage` from first-session branch; added retroactive pinning loop in multi-session branch when `sessionsActive === 2`
+- `src/tools/close_session.ts` — Added `unpinChatMessage` call for remaining session's announcement when closing from 2→1 sessions
+- `src/tools/session_start.test.ts` — Added `getSessionAnnouncementMessage` mock; updated "first session announcement is pinned" test to assert NOT pinned; added two new tests: retroactive pin on second session join, and no retroactive pin for third+ sessions
+- `src/tools/close_session.test.ts` — Added two new tests: unpin remaining session announcement on 2→1 close, and no unpin when no announcement stored
+- `changelog/unreleased.md` — Documented behavioral changes
+
+### Test Results
+
+- Build: ✅ passed (`pnpm build`)
+- Tests: ✅ 1104 passed, 0 failed (42 test files)
+- Lint: ✅ passed (`pnpm lint`)
+
+### Summary
+
+Deferred pinning is now in effect: single-session usage produces zero pin notifications. When a second session joins, both announcements are pinned. When the system returns to single-session, the remaining announcement is unpinned.

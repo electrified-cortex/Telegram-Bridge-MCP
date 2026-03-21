@@ -300,6 +300,33 @@ describe("close_session tool", () => {
     );
   });
 
+  it("unpins remaining session announcement when closing from 2 to 1 sessions", async () => {
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([
+      { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+    ]);
+    // First call: closing session has no announcement; second call: remaining session has msg 88
+    mocks.getSessionAnnouncementMessage
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce(88);
+
+    await call({ identity: [1, 123456] });
+
+    expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1001, 88);
+  });
+
+  it("does not unpin remaining session announcement when none is stored", async () => {
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([
+      { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+    ]);
+    mocks.getSessionAnnouncementMessage.mockReturnValue(undefined);
+
+    await call({ identity: [1, 123456] });
+
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+  });
+
   it("does not deliver DM notification when last session closes", async () => {
     mocks.getGovernorSid.mockReturnValue(0);
     mocks.listSessions.mockReturnValue([]);

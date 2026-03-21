@@ -4,7 +4,7 @@ import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage } from "../session-manager.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage } from "../session-manager.js";
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
@@ -212,7 +212,7 @@ export function register(server: McpServer) {
           if (announcementMsgId !== undefined) {
             trackMessageOwner(announcementMsgId, session.sid);
             setSessionAnnouncementMessage(session.sid, announcementMsgId);
-            getApi().pinChatMessage(chatId, announcementMsgId, { disable_notification: true }).catch(() => {});
+            // Do NOT pin yet — defer until a second session joins
           }
           deliverServiceMessage(
             session.sid,
@@ -245,6 +245,15 @@ export function register(server: McpServer) {
           if (announcementMsgId !== undefined) {
             trackMessageOwner(announcementMsgId, session.sid);
             setSessionAnnouncementMessage(session.sid, announcementMsgId);
+            // When second session joins, retroactively pin the first session's announcement
+            if (session.sessionsActive === 2) {
+              for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
+                const fellowAnnouncement = getSessionAnnouncementMessage(fellow.sid);
+                if (fellowAnnouncement !== undefined) {
+                  getApi().pinChatMessage(chatId, fellowAnnouncement, { disable_notification: true }).catch(() => {});
+                }
+              }
+            }
             getApi().pinChatMessage(chatId, announcementMsgId, { disable_notification: true }).catch(() => {});
           }
 

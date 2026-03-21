@@ -26,7 +26,20 @@ A simple regex for pipe-delimited table rows: a line matching `^\|.*\|$` (at lea
 
 ## Acceptance Criteria
 
-- [ ] `send_text` checks the message body for markdown table patterns
-- [ ] If detected, adds an `info` field to the response JSON with a descriptive warning
-- [ ] No change to message delivery — the message is still sent normally
-- [ ] Test coverage for the detection and warning
+- [x] `send_text` checks the message body for markdown table patterns
+- [x] If detected, adds an `info` field to the response JSON with a descriptive warning
+- [x] No change to message delivery — the message is still sent normally
+- [x] Test coverage for the detection and warning
+
+## Completion
+
+**Files modified:**
+- `src/tools/send_text.ts` — Added `TABLE_WARNING` constant, `containsMarkdownTable()` helper (regex `^\|.*\|$`), and conditional `info` field in both single and split response paths.
+- `src/tools/send_text.test.ts` — Added `describe("markdown table detection")` block with 4 tests: no table → no info, table → info, message still sent, split messages with table include info.
+- `changelog/unreleased.md` — Added `Added` entry for the new advisory warning.
+
+**Results:**
+- `pnpm build` — passed
+- `pnpm test` — 1084 tests passed (40 test files)
+- `pnpm lint` — no errors
+
