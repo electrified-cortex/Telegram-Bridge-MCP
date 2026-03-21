@@ -1,5 +1,9 @@
 # [Unreleased]
 
+## Added
+
+- `send_text`: When the message body contains a markdown table (pipe-delimited rows), the tool response now includes an advisory `info` field warning that Telegram does not render markdown tables.
+
 ## Fixed
 
 - `show_animation`: When `editMessageText` fails during `updateDisplay`, the old animation message is now deleted (best-effort) to prevent orphaned static frames remaining in chat.

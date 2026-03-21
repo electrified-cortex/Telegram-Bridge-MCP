@@ -150,6 +150,49 @@ describe("send_text tool", () => {
     expect((mocks.sendMessage.mock.calls[1][2] as Record<string, unknown>).reply_parameters).toBeUndefined();
   });
 
+describe("markdown table detection", () => {
+  it("does not include info field for normal messages", async () => {
+    const result = await call({ text: "Hello world", identity: [1, 123456] });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.info).toBeUndefined();
+  });
+
+  it("includes info field when message contains a markdown table", async () => {
+    const tableText = "Here is a table:\n| Col1 | Col2 |\n|------|------|\n| A    | B    |";
+    const result = await call({ text: tableText, identity: [1, 123456] });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.info).toBe(
+      "Message sent. Note: markdown tables were detected but not formatted \u2014 Telegram does not support table rendering.",
+    );
+  });
+
+  it("still sends the message successfully when a table is detected", async () => {
+    const tableText = "| A | B |\n|---|---|\n| 1 | 2 |";
+    const result = await call({ text: tableText, identity: [1, 123456] });
+    expect(isError(result)).toBe(false);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    const data = parseResult(result);
+    expect(data.message_id).toBe(7);
+  });
+
+  it("includes info field on split messages with table", async () => {
+    mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
+    mocks.sendMessage
+      .mockResolvedValueOnce({ ...BASE_MSG, message_id: 10 })
+      .mockResolvedValueOnce({ ...BASE_MSG, message_id: 11 });
+    const tableText = "| A | B |\n|---|---|\n| 1 | 2 |";
+    const result = await call({ text: tableText, identity: [1, 123456] });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.split).toBe(true);
+    expect(data.info).toBe(
+      "Message sent. Note: markdown tables were detected but not formatted \u2014 Telegram does not support table rendering.",
+    );
+  });
+});
+
 describe("identity gate", () => {
   it("returns SID_REQUIRED when no identity provided", async () => {
     const result = await call({"text":"x"});

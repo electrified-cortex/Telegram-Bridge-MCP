@@ -14,6 +14,12 @@ const DESCRIPTION =
   "For voice/TTS, use send_text_as_voice instead. " +
   "Works best after session_start (enables session tracking and message attribution).";
 
+const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
+
+function containsMarkdownTable(text: string): boolean {
+  return text.split("\n").some((line) => /^\|.*\|$/.test(line.trim()));
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_text",
@@ -77,10 +83,15 @@ export function register(server: McpServer) {
           message_ids.push(msg.message_id);
         }
 
+        const hasTable = containsMarkdownTable(text);
         if (message_ids.length === 1) {
-          return toResult({ message_id: message_ids[0] });
+          return toResult(hasTable
+            ? { message_id: message_ids[0], info: TABLE_WARNING }
+            : { message_id: message_ids[0] });
         }
-        return toResult({ message_ids, split_count: message_ids.length, split: true });
+        return toResult(hasTable
+          ? { message_ids, split_count: message_ids.length, split: true, info: TABLE_WARNING }
+          : { message_ids, split_count: message_ids.length, split: true });
       } catch (err) {
         return toError(err);
       }
