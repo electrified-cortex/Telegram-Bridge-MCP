@@ -1,7 +1,7 @@
 ---
 name: Task Markdown Lint
 description: Lints markdown files for formatting consistency and fixes trivial issues
-model: Claude 3.5 Haiku
+model: Auto (copilot)
 tools: [execute, read, edit, search]
 ---
 

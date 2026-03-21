@@ -4,20 +4,24 @@
 
 **Date:** 2026-03-20
 
-### Files Modified
+## Files Modified
+
 - `src/startup-pin-cleanup.ts` — new module with `cleanupStalePins()` function
 - `src/startup-pin-cleanup.test.ts` — new test file (9 tests)
 - `src/index.ts` — import and call `cleanupStalePins()` after poller starts, before "Online" notification
 - `changelog/unreleased.md` — Added entry
 
-### Summary
+## Summary
+
 Implemented `cleanupStalePins()` in a dedicated module. On startup it loops: calls `getChat` to get the most recently pinned message, checks if it's a bot-sent session announcement (`from.is_bot === true` + text matches `Session \d+ — 🟢 Online`), unpins it, and repeats until no stale pins remain or a non-bot pin is encountered. Fully best-effort — all errors are swallowed.
 
-### Tests
+## Tests
+
 - 9 new tests (happy path, multi-pin loop, operator pin left alone, non-matching bot pin left alone, error swallowing)
 - Total: 1654 tests, all passing
 
-### Build
+## Build
+
 PASS
 
 ---

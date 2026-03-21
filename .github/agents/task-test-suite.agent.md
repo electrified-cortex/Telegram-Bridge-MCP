@@ -7,7 +7,7 @@ tools: [execute, read, search]
 
 # Task Test Suite
 
-Test suite health monitor. Runs the full test suite, identifies failures, tracks total test count for regressions, and provides failure analysis. Dispatched by the overseer when reminder 04 fires.
+Test suite health monitor. Runs the full test suite, identifies failures, tracks total test count for regressions, and provides failure analysis. Dispatched periodically by the overseer.
 
 ## Procedure
 

@@ -7,7 +7,7 @@
 ## Roles
 
 | Role | Responsibility |
-|---|---|
+| --- | --- |
 | **Overseer** | Coordinates shutdown. Sends pre-warnings. Commits, stages. Writes tasks. Does NOT implement code. |
 | **Worker** | Implements tasks. Responds to pre-warning. Waits for restart. Re-engages after restart. |
 | **Operator** | Initiates restart, waits, and re-engages agents after the server comes back up. |
@@ -38,8 +38,8 @@ Before issuing the actual shutdown, the Overseer notifies all active worker sess
 
 ### Phase 2 — Actual Shutdown
 
-4. Overseer issues `/shutdown` (built-in command) or calls the `shutdown` MCP tool.
-5. `elegantShutdown()` runs automatically:
+1. Overseer issues `/shutdown` (built-in command) or calls the `shutdown` MCP tool.
+2. `elegantShutdown()` runs automatically:
    - Stops the Telegram poller (10 s cap).
    - Drains any remaining pending updates.
    - Delivers a **system-level service message** to every active session — this wakes blocked `dequeue_update` calls.
@@ -56,9 +56,11 @@ The concrete steps:
 
 1. Send a final status message to the operator (or a DM to the overseer) summarising where you stopped.
 2. Run a visible terminal command so the operator can see you have parked:
+
    ```powershell
    Write-Host "Session ended — awaiting operator restart and re-engagement."
    ```
+
 3. **Stop making tool calls.** End your response. Do not call `dequeue_update` or any other MCP tool.
 4. Wait for the operator to re-engage you (new message, new conversation, or a re-engagement prompt).
 
@@ -73,7 +75,12 @@ The concrete steps:
 1. Acknowledge via DM or 👍 reaction — one brief message is enough.
 2. Do not start new tasks or long-running tool calls.
 3. Finish the current tool call only if it will complete in seconds.
-4. Run the "going to sleep" terminal command above.
+4. Run the "going to sleep" terminal command:
+
+   ```powershell
+   Write-Host "Session ended — awaiting operator restart and re-engagement."
+   ```
+
 5. **End your agent turn.** Do not call `dequeue_update` again. You are now parked.
 
 ### On receiving the shutdown service message (Phase 2)
@@ -114,6 +121,7 @@ When the operator re-engages you (new message or re-engagement prompt):
 ### If the pre-warning is not sent (emergency shutdown)
 
 If the operator issues `/shutdown` without a Phase 1 warning:
+
 - Workers will still receive the system service message from `elegantShutdown()`.
 - Workers should treat any `shutdown` service message as an immediate stop signal.
 - Session recovery follows the same "start fresh" procedure above.
@@ -121,6 +129,7 @@ If the operator issues `/shutdown` without a Phase 1 warning:
 ### If a worker's `dequeue_update` times out after restart
 
 If a worker calls `dequeue_update` and receives repeated timeouts (or connection errors) after a restart:
+
 - Assume the server restarted without notification.
 - Wait 60 s, then call `session_start` to establish a fresh session.
 - Notify the operator that a reconnect occurred.
@@ -144,5 +153,6 @@ When restarting the server:
 ## Future Enhancements
 
 See **task 610** for planned improvements:
+
 - Update the `elegantShutdown()` service message to include explicit restart guidance for worker agents.
 - Add a `notify_shutdown` tool or built-in command that the Overseer can use for Phase 1 pre-warnings without triggering full shutdown.

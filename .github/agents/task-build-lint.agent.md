@@ -1,13 +1,13 @@
 ---
 name: Task Build Lint
 description: Runs pnpm build and pnpm lint, reports any failures
-model: GPT-5.3-Codex
+model: Claude Haiku 4.5
 tools: [execute, read]
 ---
 
 # Task Build Lint
 
-Build and lint health checker. Runs the full build pipeline and linter, then reports pass/fail with exact error details. Dispatched by the overseer when reminder 03 fires.
+Build and lint health checker. Runs the full build pipeline and linter, then reports pass/fail with exact error details. Dispatched periodically by the overseer.
 
 ## Procedure
 

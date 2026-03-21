@@ -7,11 +7,11 @@ tools: [vscode, execute, read, edit, search, 'github/*']
 
 # Task PR Review
 
-GitHub PR review specialist. Reads open PRs for `electricessence/Telegram-Bridge-MCP`, addresses all unresolved review comments (Copilot or human), and resolves threads. Dispatched by the overseer when reminder 08 fires.
+GitHub PR review specialist. Reads open PRs in this repository, addresses all unresolved review comments (Copilot or human), and resolves threads. Dispatched periodically by the overseer.
 
 ## Procedure
 
-1. List all open PRs for `electricessence/Telegram-Bridge-MCP`.
+1. List all open PRs in this repository.
 2. For each PR with unresolved review comments:
    - Read all comment threads.
    - For each unresolved thread:

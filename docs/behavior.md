@@ -142,6 +142,7 @@ For the full keyboard interaction taxonomy — when to use `send_message` vs `se
 The server registers four built-in commands (`/session`, `/voice`, `/version`, `/shutdown`) automatically on startup. These are always present in the Telegram `/` autocomplete menu.
 
 Agents **should not** register additional slash commands by default. The built-in set covers the essential operations:
+
 - `/session` — session recording controls (mode switch, dump)
 - `/voice` — TTS voice picker (wizard-style panel)
 - `/version` — server version and build info

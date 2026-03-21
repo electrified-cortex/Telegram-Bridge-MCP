@@ -1,13 +1,13 @@
 ---
 name: Task PR Health
 description: Checks open PRs for CI status, new comments, and Dependabot updates
-model: GPT-5.3-Codex
+model: Claude Sonnet 4.6
 tools: [read, search, execute, 'github/*']
 ---
 
 # Task PR Health
 
-PR health monitor. Scans all open PRs for `electricessence/Telegram-Bridge-MCP` for CI failures, new comments, stale status, and Dependabot PRs. Dispatched by the overseer when reminder 09 fires.
+PR health monitor. Scans all open PRs in this repository for CI failures, new comments, stale status, and Dependabot PRs. Dispatched periodically by the overseer.
 
 ## Procedure
 

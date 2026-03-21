@@ -7,7 +7,7 @@ tools: [read, search, execute]
 
 # Task Changelog Audit
 
-Changelog auditor. Compares recent commits against `changelog/unreleased.md` to find behavior-changing commits that have no changelog entry. Dispatched by the overseer when reminder 05 fires.
+Changelog auditor. Compares recent commits against `changelog/unreleased.md` to find behavior-changing commits that have no changelog entry. Dispatched periodically by the overseer.
 
 ## Procedure
 

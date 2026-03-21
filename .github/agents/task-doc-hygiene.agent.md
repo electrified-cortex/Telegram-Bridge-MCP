@@ -7,7 +7,7 @@ tools: [read, search, execute]
 
 # Task Doc Hygiene
 
-Documentation hygiene checker. Randomly spot-checks docs for broken internal links, outdated content references, and formatting problems. Dispatched by the overseer when reminder 06 fires.
+Documentation hygiene checker. Randomly spot-checks docs for broken internal links, outdated content references, and formatting problems. Dispatched periodically by the overseer.
 
 ## Procedure
 
