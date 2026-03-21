@@ -89,7 +89,7 @@ Include in the task spec for worktree tasks:
 
 Branch: `task/018-feature-name`
 Directory: `.git/.wt/20-018-feature-name`
-Base: `master` at current HEAD
+Base: `dev` at current HEAD
 ```
 
 ### Merge Strategy

@@ -41,6 +41,11 @@ if (-not (Test-Path $queuedPath)) {
     return
 }
 
+if (Test-Path $inProgressPath) {
+    Write-Error "Task already in progress: $inProgressPath"
+    return
+}
+
 # Create completed date directory if needed
 if (-not (Test-Path $completedDir)) {
     New-Item -ItemType Directory -Path $completedDir -Force | Out-Null
