@@ -9,7 +9,7 @@ For code-change tasks, workers use **git worktrees** to isolate their work. See 
 | Folder | Purpose | Who touches it |
 | --- | --- | --- |
 | `0-backlog` | Back-burner ideas — acknowledged but not prioritized for near-term work | Overseer writes |
-| `1-draft` | Ideas and rough notes — not yet scoped or committed to | Overseer writes |
+| `1-drafts` | Ideas and rough notes — not yet scoped or committed to | Overseer writes |
 | `2-queued` | Scoped and ready to work on — available for pickup | Overseer writes, workers pick up |
 | `3-in-progress` | Claimed and in progress — **only ONE task at a time**; owned by the claiming worker | Owning worker only |
 | `4-completed` | Done — awaiting review by overseer/human | Owning worker moves here |
@@ -17,9 +17,9 @@ For code-change tasks, workers use **git worktrees** to isolate their work. See 
 ## Task Flow
 
 ```text
-overseer writes spec → 1-draft
+overseer writes spec → 1-drafts
 overseer verifies & queues → 2-queued
-worker claims (move file) → 3-in-progress
+worker claims (claim.ps1) → 3-in-progress
 worker completes (TDD, report) → 4-completed
 overseer reviews → 4-completed/YYYY-MM-DD/ (archived)
 ```
@@ -48,7 +48,7 @@ If a worker finds a task **under-specified** — ambiguous scenarios, wrong file
 
 1. Prepend a `## ⚠️ Needs Clarification Before Implementation` section listing every blocker.
 2. Add a `## Progress So Far` section documenting any work already done — files created, tests written, approach taken. A different worker may pick this up next.
-3. Move the task back to `1-draft/`.
+3. Move the task back to `1-drafts/`.
 4. Report the rejection to the overseer.
 
 This is quality control, not failure. The overseer rewrites with concrete answers from source code investigation before re-queuing.

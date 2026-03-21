@@ -89,7 +89,7 @@ Include in the task spec for worktree tasks:
 
 Branch: `task/018-feature-name`
 Directory: `.git/.wt/20-018-feature-name`
-Base: `master` at current HEAD
+Base: `dev` at current HEAD
 ```
 
 ### Merge Strategy
@@ -97,17 +97,20 @@ Base: `master` at current HEAD
 After a worker reports completion, the overseer picks one:
 
 **Direct merge** — low-risk changes (docs, small fixes, config):
+
 ```bash
 git merge --no-ff task/013-worktree-test-run
 ```
 
 **PR-based merge** — features, runtime changes, anything needing review:
+
 ```bash
 # Create PR from task/013-worktree-test-run → dev branch
 # CI runs, Copilot reviews, operator approves
 ```
 
 Use PR-based merge when:
+
 - The change modifies source code (`src/`)
 - The feature is large or complex
 - You want CI validation before merging
@@ -122,7 +125,7 @@ cd .git/.wt/10-013-worktree-test-run
 pnpm test
 pnpm lint
 git log --oneline -5
-git diff v4-multi-session..task/013-worktree-test-run --stat
+git diff dev..task/013-worktree-test-run --stat
 ```
 
 ### Cleanup
@@ -141,13 +144,15 @@ Local branch deletion (`git branch -d`) may be policy-blocked in automated sessi
 The overseer reviews tasks that arrive in `4-completed/`:
 
 **If successful:**
+
 - Merge the branch (direct or PR), clean up worktree/branch
 - Move the task file into a dated subfolder: `4-completed/YYYY-MM-DD/`
 - This signals the work is reviewed and accepted
 
 **If unsuccessful:**
+
 - Add a note to the task file explaining what wasn't done or wasn't right
-- Move the task back to `2-queued/` (needs another pass) or `1-draft/` (needs rethinking)
+- Move the task back to `2-queued/` (needs another pass) or `1-drafts/` (needs rethinking)
 
 ## Rules
 
@@ -155,5 +160,5 @@ The overseer reviews tasks that arrive in `4-completed/`:
 - Workers **can** create branches and worktrees when directed by the task spec.
 - Workers **can** commit and push freely within their worktree branch.
 - Workers **must not** merge their branch — the overseer does that.
-- Workers **must not** touch task files — the overseer manages the task board.
+- Workers move their own assigned task file through the pipeline. They do not create, delete, or move other sessions' tasks.
 - If tests fail in the worktree, report the failure to the overseer. Do not merge broken code.

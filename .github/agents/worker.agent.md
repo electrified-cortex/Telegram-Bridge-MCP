@@ -38,13 +38,26 @@ dequeue → messages? → handle → dequeue
 
 ## Task Execution
 
-**Claim** — pick the lowest-priority-numbered (first from ascending order) file from `2-queued/`, move to `3-in-progress/`. The move is the atomic claim. **One task at a time.**
+**Claim** — run `tasks/claim.ps1 <filename>` on the lowest-priority-numbered file in `2-queued/`. This uses `git mv` to stage a baseline snapshot in the git index at path `4-completed/YYYY-MM-DD/`, while placing your working copy in `3-in-progress/`. **One task at a time.**
 
-**Work** — implement and verify (tests · lint · build). Use the `## Worktree` section if present (see [worktree-workflow.md](../../tasks/worktree-workflow.md)). If absent, edit in the main workspace.
+**Delegate to Task Runner** — use `runSubagent` with `agentName: "Task Runner"`. The task file is already in `3-in-progress/`. Include the task file path and full spec in the prompt.
 
-**Complete** — append `## Completion` (see [tasks/README.md](../../tasks/README.md)); move to `4-completed/`; DM overseer.
+**Review after delegation** — when the Task Runner returns:
 
-**Unclear spec** → prepend `## ⚠️ Needs Clarification`, move back to `1-draft/`, DM overseer.
+| Task Type | Review Action |
+| --- | --- |
+| Investigation | Read findings in the task file. No code to verify. |
+| Direct (docs, config, small fixes) | `git diff` to see changes. Run tests/lint if code was touched. If good, `git add` the changed files. |
+| Worktree (branch) | Review commits in the worktree branch. Run tests inside worktree. |
+
+After review, DM the overseer with status:
+- **Direct changes**: "Task #N done, reviewed, staged — ready to commit."
+- **Worktree changes**: "Task #N done, reviewed. Changes in branch `X`, ready for PR or merge."
+- **Issues found**: "Task #N has problems — [details]. Reworking." (then rework or flag)
+
+**Direct execution** — for simple or quick tasks, do the work yourself. Same lifecycle: implement, verify, append `## Completion`, move to `4-completed/`, DM overseer.
+
+**Unclear spec** → prepend `## ⚠️ Needs Clarification`, move back to `1-drafts/`, DM overseer.
 
 ## Git Rules
 
@@ -116,17 +129,15 @@ All substantive communication goes through Telegram.
 
 Each preset embeds your **session name** so multiple workers are visually distinct in chat. Replace `{name}` with your actual session name (e.g., `Worker`, `Worker 2`).
 
-> **Use `interval_ms=2000` (2 seconds).** The default is 1 second, but 2 seconds reduces API calls and token usage while still looking alive.
-
-```
-set_default_animation(name="{name}: thinking", frames=["⏳ {name}: thinking…", "⌛ {name}: thinking…"], interval_ms=2000)
-set_default_animation(name="{name}: working",  frames=["⏳ {name}: working…",  "⌛ {name}: working…"],  interval_ms=2000)
-set_default_animation(name="{name}: testing",  frames=["⏳ {name}: testing…",  "⌛ {name}: testing…"],  interval_ms=2000)
-set_default_animation(name="{name}: waiting",  frames=["⏳ {name}: waiting…",  "⌛ {name}: waiting…"],  interval_ms=2000)
+```text
+set_default_animation(name="{name}: thinking", frames=["⏳ {name}: thinking…", "⌛ {name}: thinking…"])
+set_default_animation(name="{name}: working",  frames=["⏳ {name}: working…",  "⌛ {name}: working…"])
+set_default_animation(name="{name}: testing",  frames=["⏳ {name}: testing…",  "⌛ {name}: testing…"])
+set_default_animation(name="{name}: waiting",  frames=["⏳ {name}: waiting…",  "⌛ {name}: waiting…"])
 ```
 
 | Preset Name | When to Use |
-|---|---|
+| --- | --- |
 | `{name}: thinking` | Analyzing, reading code, planning |
 | `{name}: working` | Editing code, running builds |
 | `{name}: testing` | Running test suite, verifying |

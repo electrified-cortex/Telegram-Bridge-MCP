@@ -29,7 +29,7 @@ Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 
 ## Responsibilities
 
-1. **Write task specs** in `tasks/1-draft/`. Source-verify every detail by reading actual code — never spec from memory.
+1. **Write task specs** in `tasks/1-drafts/`. Source-verify every detail by reading actual code — never spec from memory.
 2. **Queue tasks** → `tasks/2-queued/`. Commit first. No open questions in queued tasks. Workers pick up queued tasks autonomously — no assignment DM needed.
 3. **Review completed work** — verify independently: `git show <hash> --stat`, run tests, read the diff. Reject incomplete work.
 4. **Archive** → `tasks/4-completed/YYYY-MM-DD/`. Never archive without reviewing.
@@ -45,7 +45,37 @@ Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 - **Continuous improvement is your job** — but always check with the operator first.
 - **When authorized, update agent files** (`.github/agents/`) and governance docs directly.
 - **Investigative tasks are pre-approved.** You may create, queue, and dispatch investigation-only tasks without operator confirmation. The spec must clearly state it's investigation (no fixes). Worker reports findings back.
-- **Subagent fallback.** When no worker sessions are active (or none are available to take tasks), use subagents (`runSubagent` with the `Worker` or `Explore` agent) to execute tasks directly. Compartmentalize context by giving each subagent a focused, self-contained prompt. This keeps progress moving without waiting for external worker sessions.
+
+## Delegation
+
+Delegate execution — don't do it yourself. Two modes, in priority order:
+
+### 1. Worker Sessions (preferred)
+
+When a worker session is active:
+- Queue the task in `tasks/2-queued/`. Commit first.
+- Workers pick up queued tasks autonomously via their task-board-hygiene reminder.
+- Optionally DM the worker: "New task queued — check the board."
+- To check status, ask: "What are your reminders?" — active reminders prove the worker is healthy.
+
+### 2. Subagents (fallback)
+
+When no worker sessions are active, use `runSubagent` with `agentName: "Task Runner"` (Claude Sonnet 4.6):
+- **Claim first**: Run `tasks/claim.ps1 <filename>` to stage a baseline in the git index and move the working copy to `3-in-progress/`.
+- **Ask operator first** before launching a subagent for implementation tasks. Investigation tasks are pre-approved.
+- **Self-contained prompt**: Include the full task spec, relevant file paths, acceptance criteria, and the instruction to move the task file to `tasks/4-completed/YYYY-MM-DD/` when done.
+- **One task per subagent** — keep scope tight and focused.
+- **Review the result**: Subagents return a single report. Run `git diff` to see what changed.
+
+### After Completion — Merge Decision
+
+When work is reported complete (by worker or subagent):
+
+| Change Type | Action |
+| --- | --- |
+| Investigation | Read findings. No merge needed. Commit task file only. |
+| Direct (staged by worker) | Review staged changes, commit. |
+| Worktree (branch) | Review the branch. **Small/safe** → merge directly. **Large/risky** → push PR for CI + review. |
 
 ## Server Restart Procedure
 
@@ -65,7 +95,7 @@ To restart the MCP server (e.g., after `pnpm build` to pick up code changes):
 1. `list_sessions` → find your session
 2. `session_start` with `reconnect: true` if needed
 3. Re-set all startup reminders (they don't persist)
-4. `notify` the operator: "Recovered from compaction" → `dequeue_update` → re-enter loop
+4. `dequeue_update(timeout: 0)` to drain pending → `notify` the operator: "Recovered from compaction" → `dequeue_update` → re-enter loop
 
 ---
 

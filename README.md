@@ -213,7 +213,7 @@ Five MCP resources available to any client:
 
 ```text
 ghcr.io/electricessence/telegram-bridge-mcp:latest
-ghcr.io/electricessence/telegram-bridge-mcp:4.1.0
+ghcr.io/electricessence/telegram-bridge-mcp:4.3.1
 ```
 
 Replace the `node` command in any host config above with:

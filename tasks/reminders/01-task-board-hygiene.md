@@ -4,7 +4,7 @@
 
 ## Procedure
 
-1. List `tasks/` subdirectories: `0-backlog`, `1-draft`, `2-queued`, `3-in-progress`, `4-completed`.
+1. List `tasks/` subdirectories: `0-backlog`, `1-drafts`, `2-queued`, `3-in-progress`, `4-completed`.
 2. Check for misplaced files:
    - Completed tasks still in `0-backlog` or `3-in-progress`.
    - Duplicates across folders.
