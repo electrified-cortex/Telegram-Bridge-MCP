@@ -117,6 +117,35 @@ describe("animation-state", () => {
       expect(getAnimationMessageId(1)).toBe(42);
     });
 
+    it("deletes orphan and sends new message when editMessageText fails on update", async () => {
+      mocks.sendMessage
+        .mockResolvedValueOnce({ message_id: 42 })
+        .mockResolvedValueOnce({ message_id: 55 });
+      mocks.editMessageText.mockRejectedValueOnce(new Error("edit failed"));
+
+      await startAnimation(1, ["A"]);
+      await startAnimation(1, ["B"]);
+
+      // Should have tried to delete the orphaned message
+      expect(mocks.deleteMessage).toHaveBeenCalledWith(123, 42);
+      // Should have sent a new message since edit failed
+      expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+      expect(getAnimationMessageId(1)).toBe(55);
+    });
+
+    it("continues (sends new message) even if deleteMessage also fails on orphan cleanup", async () => {
+      mocks.sendMessage
+        .mockResolvedValueOnce({ message_id: 42 })
+        .mockResolvedValueOnce({ message_id: 55 });
+      mocks.editMessageText.mockRejectedValueOnce(new Error("edit failed"));
+      mocks.deleteMessage.mockRejectedValueOnce(new Error("already deleted"));
+
+      await startAnimation(1, ["A"]);
+      // Should not throw even if both edit and delete fail
+      await expect(startAnimation(1, ["B"])).resolves.toBe(55);
+      expect(getAnimationMessageId(1)).toBe(55);
+    });
+
     it("throws if resolveChat returns non-number", async () => {
       mocks.resolveChat.mockReturnValueOnce("not_a_number" as unknown as number);
 
