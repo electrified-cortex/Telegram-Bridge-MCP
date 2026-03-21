@@ -13,10 +13,13 @@ Follow the rules in `.github/instructions/markdown-hygiene.instructions.md` exac
 
 ## Procedure
 
-1. Run `get_errors` on `.md` files in `docs/`, `changelog/`, `tasks/`, `.github/`, and repo root.
-2. Fix all errors following the fix patterns in the markdown hygiene instructions.
-3. Re-run `get_errors` and confirm zero errors.
-4. Report what was found and fixed.
+1. Check the dispatch prompt for a **scope** directive:
+   - `scope: changed` — only scan `.md` files changed since the last commit (`git diff --name-only HEAD~1` or `git diff --name-only --cached` for staged files).
+   - `scope: full` (or no directive) — scan all `.md` files in `docs/`, `changelog/`, `tasks/`, `.github/`, and repo root.
+2. Run `get_errors` on the target files.
+3. Fix all errors following the fix patterns in the markdown hygiene instructions.
+4. Re-run `get_errors` on affected files and confirm zero errors.
+5. Report what was found and fixed.
 
 ## Report Format
 
