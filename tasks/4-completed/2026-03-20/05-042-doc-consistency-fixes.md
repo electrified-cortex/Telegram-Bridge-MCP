@@ -1,6 +1,6 @@
 # 05-042: Agent & Doc Consistency Fixes
 
-**Strategy: Direct**
+## Strategy: Direct
 
 Fix bugs and inconsistencies found during agent file audit and doc review.
 

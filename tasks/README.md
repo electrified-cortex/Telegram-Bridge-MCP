@@ -19,7 +19,7 @@ For code-change tasks, workers use **git worktrees** to isolate their work. See 
 ```text
 overseer writes spec → 1-drafts
 overseer verifies & queues → 2-queued
-worker claims (move file) → 3-in-progress
+worker claims (claim.ps1) → 3-in-progress
 worker completes (TDD, report) → 4-completed
 overseer reviews → 4-completed/YYYY-MM-DD/ (archived)
 ```

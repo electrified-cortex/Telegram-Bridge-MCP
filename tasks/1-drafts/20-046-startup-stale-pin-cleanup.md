@@ -13,6 +13,7 @@ On server startup, before accepting any `session_start` calls, scan for and unpi
 ## Approach
 
 1. **In `src/index.ts`**, after the poller starts and before the "Online" notification, add a startup cleanup step:
+
    - Call `getApi().getChat(chatId)` — the response includes `pinned_message` (the most recently pinned message)
    - Check if the pinned message matches the session announcement pattern (e.g., starts with "📢" or matches the format used by `session_start`)
    - If it matches, unpin it

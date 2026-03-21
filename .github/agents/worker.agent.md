@@ -38,7 +38,7 @@ dequeue → messages? → handle → dequeue
 
 ## Task Execution
 
-**Claim** — run `tasks/claim.ps1 <filename>` on the lowest-priority-numbered file in `2-queued/`. This stages a baseline snapshot at `4-completed/YYYY-MM-DD/` via `git mv`, then moves the working copy to `3-in-progress/`. **One task at a time.**
+**Claim** — run `tasks/claim.ps1 <filename>` on the lowest-priority-numbered file in `2-queued/`. This uses `git mv` to stage a baseline snapshot in the git index at path `4-completed/YYYY-MM-DD/`, while placing your working copy in `3-in-progress/`. **One task at a time.**
 
 **Delegate to Task Runner** — use `runSubagent` with `agentName: "Task Runner"`. The task file is already in `3-in-progress/`. Include the task file path and full spec in the prompt.
 
