@@ -2,6 +2,7 @@
 
 ## Added
 
+- `startup`: On server start, stale session announcement pins from a previous crashed run are automatically unpinned before the "Online" notification is sent.
 - `send_text`: When the message body contains a markdown table (pipe-delimited rows), the tool response now includes an advisory `info` field warning that Telegram does not render markdown tables.
 
 ## Fixed

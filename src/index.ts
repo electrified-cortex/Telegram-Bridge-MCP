@@ -15,6 +15,7 @@ import { createOutboundProxy } from "./outbound-proxy.js";
 import { loadConfig, getSessionLogMode, sessionLogLabel, isDebugConfig } from "./config.js";
 import { timelineSize } from "./message-store.js";
 import { initDebugLog } from "./debug-log.js";
+import { cleanupStalePins } from "./startup-pin-cleanup.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -95,6 +96,9 @@ process.stderr.write("[info] background poller started\n");
 startHealthCheck();
 setAuthHook(touchSession);
 process.stderr.write("[info] health check started\n");
+
+// Best-effort: unpin stale session announcement messages from a prior crashed run
+void cleanupStalePins().catch(() => {});
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
 const logStatus = sessionLogLabel();
