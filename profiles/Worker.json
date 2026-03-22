@@ -1,4 +1,12 @@
 {
+  "voice": "am_michael",
+  "voice_speed": 1.25,
+  "animation_presets": {
+    "thinking": ["⏳ Worker: thinking…", "⌛ Worker: thinking…"],
+    "working": ["⏳ Worker: working…", "⌛ Worker: working…"],
+    "testing": ["⏳ Worker: testing…", "⌛ Worker: testing…"],
+    "waiting": ["⏳ Worker: waiting…", "⌛ Worker: waiting…"]
+  },
   "reminders": [
     {
       "text": "Check tasks/2-queued/ for unassigned tasks — pick up and DM overseer",

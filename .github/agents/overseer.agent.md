@@ -141,12 +141,10 @@ Reminders are stored in `profiles/Overseer.json` and loaded via `load_profile` a
 
 | # | Reminder Text | Delay | Recurring |
 |---|---|---|---|
-| 1 | Scan `tasks/` for duplicates, misplaced files, stale drafts. Verify workers are active. → [procedure](../../tasks/reminders/01-task-board-hygiene.md) | 15 min | Yes |
-| 2 | `git status --short`. Check branch, uncommitted changes, remote divergence. → [procedure](../../tasks/reminders/02-git-state-audit.md) | 15 min | Yes |
-| 7 | If no operator contact in 10 min, `notify` current status. → [procedure](../../tasks/reminders/07-operator-check-in.md) | 10 min | Yes |
-| 10 | Check worker sessions. Ping any silent >10 min. Ask workers their reminders to verify behavior. → [procedure](../../tasks/reminders/10-worker-health.md) | 10 min | Yes |
-| 11 | Compare `get_me().mcp_commit` with `dist/tools/build-info.json`. Prompt restart on drift. → [procedure](../../tasks/reminders/11-server-build-drift.md) | 20 min | Yes |
-| 12 | If idle with no active work, `show_animation(preset: "waiting", persistent: true)` so the operator sees you're alive. `cancel_animation` before any substantive reply. | 5 min | Yes |
+| 1 | **HOUSEKEEPING:** Run `git status --short`. Scan `tasks/` for files in the wrong column (e.g. completed work still in `3-in-progress`). If workers are active, check they're responsive — DM any silent >10 min. | 10 min | Yes |
+| 2 | **OPERATOR CHECK-IN:** If no operator message in the last 10 min, send a brief status update via `notify` (what you're doing or waiting on). | 10 min | Yes |
+| 3 | **BUILD DRIFT:** Compare `get_me().mcp_commit` with current git HEAD. If they differ, ask the operator whether they want a rebuild and restart. Do not restart without approval. | 20 min | Yes |
+| 4 | **IDLE PRESENCE:** If idle with no active work, send a temporary message: "Standing by — ready for input." Cancel any active animation first. | 5 min | Yes |
 
 ### Dispatch Reminders (fire subagent)
 
@@ -154,9 +152,9 @@ When these fire, dispatch the named agent via `runSubagent(agentName)`. Follow t
 
 | # | Agent Name | Delay | Recurring |
 |---|---|---|---|
-| 3 | Task Build Lint | 20 min | Yes |
-| 4 | Task Test Suite | 30 min | Yes |
-| 5 | Task Changelog Audit | 60 min | Yes |
-| 6 | Task Doc Hygiene | 30 min | Yes |
-| 8 | Task PR Review | 10 min | Yes |
-| 9 | Task PR Health | 20 min | Yes |
+| 5 | Task Build Lint | 20 min | Yes |
+| 6 | Task Test Suite | 30 min | Yes |
+| 7 | Task Changelog Audit | 60 min | Yes |
+| 8 | Task Doc Hygiene | 30 min | Yes |
+| 9 | Task PR Review | 10 min | Yes |
+| 10 | Task PR Health | 20 min | Yes |
