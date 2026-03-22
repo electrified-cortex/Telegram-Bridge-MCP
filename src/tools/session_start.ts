@@ -4,8 +4,8 @@ import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage } from "../session-manager.js";
-import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner } from "../session-queue.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage } from "../session-manager.js";
+import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, drainQueue } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
@@ -13,6 +13,8 @@ import { refreshGovernorCommand } from "../built-in-commands.js";
 const APPROVAL_TIMEOUT_MS = 60_000;
 const APPROVAL_NO = "approve_no";
 const APPROVE_PREFIX = "approve_";
+const RECONNECT_YES = "reconnect_yes";
+const RECONNECT_NO = "reconnect_no";
 
 /**
  * Send an operator approval prompt for a new session. The prompt shows
@@ -87,10 +89,63 @@ async function requestApproval(
   return decision;
 }
 
+/**
+ * Show a simple Approve/Deny dialog for a session reconnect request.
+ * Returns true if the operator approves, false on denial or timeout.
+ */
+async function requestReconnectApproval(chatId: number, name: string): Promise<boolean> {
+  const text = `🤖 *Session reconnecting:* ${markdownToV2(name)}\nAuthorize re\\-entry?`;
+  const sent = await getApi().sendMessage(chatId, text, {
+    parse_mode: "MarkdownV2",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Approve", callback_data: RECONNECT_YES, style: "primary" },
+          { text: "⛔ Deny", callback_data: RECONNECT_NO, style: "danger" },
+        ],
+      ],
+    },
+  } as Record<string, unknown>);
+  const msgId: number = sent.message_id;
+
+  const approved = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      clearCallbackHook(msgId);
+      resolve(false);
+    }, APPROVAL_TIMEOUT_MS);
+
+    registerCallbackHook(msgId, (evt: TimelineEvent) => {
+      clearTimeout(timer);
+      const data: string = evt.content.data ?? "";
+      const qid = evt.content.qid;
+      if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
+      resolve(data === RECONNECT_YES);
+    });
+  });
+
+  if (approved) {
+    await getApi().deleteMessage(chatId, msgId).catch(() => {});
+  } else {
+    await getApi()
+      .editMessageText(
+        chatId,
+        msgId,
+        `🤖 *Session reconnect denied:* ${markdownToV2(name)} ✗`,
+        { parse_mode: "MarkdownV2" },
+      )
+      .catch(() => {});
+  }
+
+  return approved;
+}
+
 const DESCRIPTION =
   "Call once at the start of every session. Creates a session " +
   "with a unique ID and PIN, and auto-drains any pending messages " +
   "from a previous session. " +
+  "If you lost your PIN (context loss, crash), call with reconnect: true " +
+  "and the same name to trigger an operator re-authorization dialog; on " +
+  "approval the same SID and PIN are returned. " +
   "Returns { sid, pin, sessions_active, action, pending } so " +
   "the agent knows its identity and how to proceed. " +
   "Call after get_agent_guide and get_me during session setup.";
@@ -112,8 +167,10 @@ export function register(server: McpServer) {
           .boolean()
           .default(false)
           .describe(
-            "Set to true when reconnecting after a server restart. " +
-            "Sends 'reconnected' messaging instead of 'joined' to the operator and fellow sessions.",
+            "Set to true after losing your PIN (context loss, crash, etc.) to request " +
+            "operator re-authorization. If a session with the same name already exists, " +
+            "shows a simple Approve/Deny dialog; on approval returns the same SID and PIN. " +
+            "Also sends 'reconnected' instead of 'joined' messaging on a fresh session start.",
           ),
         color: z
           .string()
@@ -159,12 +216,100 @@ export function register(server: McpServer) {
           s => s.name.toLowerCase() === effectiveName.toLowerCase(),
         );
         if (existing) {
+          if (reconnect) {
+            // Reconnect flow: show simple Approve/Deny dialog (not color-picker)
+            const approved = await runInSessionContext(0, () =>
+              requestReconnectApproval(chatId, existing.name),
+            );
+            if (!approved) {
+              return toError({
+                code: "SESSION_DENIED",
+                message: `Session reconnect for "${existing.name}" was denied by the operator.`,
+              });
+            }
+            // Get full session object (listSessions omits PIN)
+            const fullSession = getSession(existing.sid);
+            if (!fullSession) {
+              return toError({
+                code: "SESSION_NOT_FOUND",
+                message:
+                  `Session "${existing.name}" (SID ${existing.sid}) disappeared unexpectedly.`,
+              });
+            }
+            // Reset health markers and drain stale events from the queue
+            fullSession.lastPollAt = undefined;
+            fullSession.healthy = true;
+            drainQueue(existing.sid);
+            setActiveSession(existing.sid);
+
+            // Deliver service messages
+            const allSessions = listSessions();
+            const reconSessActive = activeSessionCount();
+            if (allSessions.length === 1) {
+              deliverServiceMessage(
+                existing.sid,
+                `Reconnect authorized. You are SID ${existing.sid}. ` +
+                  `You are the only active session.`,
+                "session_orientation",
+                { sid: existing.sid, name: existing.name },
+              );
+            } else {
+              const governorSid = getGovernorSid();
+              const governorSession = allSessions.find(s => s.sid === governorSid);
+              const governorLabel = governorSession
+                ? `'${governorSession.name}' (SID ${governorSid})`
+                : `SID ${governorSid}`;
+              for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
+                const isGovernorFellow = fellow.sid === governorSid;
+                const governorNote = isGovernorFellow
+                  ? "You are the governor — ambiguous messages will be routed to you."
+                  : `Ambiguous messages go to ${governorLabel}.`;
+                deliverServiceMessage(
+                  fellow.sid,
+                  `Session '${existing.name}' (SID ${existing.sid}) has reconnected. ` +
+                    governorNote,
+                  "session_joined",
+                  {
+                    sid: existing.sid,
+                    name: existing.name,
+                    governor_sid: governorSid,
+                    reconnect: true,
+                  },
+                );
+              }
+              const isGovernorReconnect = existing.sid === governorSid;
+              const roleNote = isGovernorReconnect
+                ? `You are the governor (SID ${existing.sid}). ` +
+                  `Ambiguous messages will be routed to you. ` +
+                  `Call get_agent_guide for trust and routing guidance.`
+                : `You are SID ${existing.sid}. ${governorLabel} is your first escalation ` +
+                  `point. Ambiguous messages go to them. ` +
+                  `Call get_agent_guide for trust and routing guidance.`;
+              deliverServiceMessage(
+                existing.sid,
+                `Reconnect authorized. Session state preserved. ${roleNote}`,
+                "session_orientation",
+                { sid: existing.sid, name: existing.name, governor_sid: governorSid },
+              );
+            }
+
+            void refreshGovernorCommand();
+            return toResult({
+              sid: fullSession.sid,
+              pin: fullSession.pin,
+              sessions_active: reconSessActive,
+              action: "reconnected",
+              pending: 0,
+            });
+          }
+
           return toError({
             code: "NAME_CONFLICT",
             message:
               `A session named "${existing.name}" already exists (SID ${existing.sid}). ` +
               `If you still have the PIN, resume with dequeue_update(sid=${existing.sid}). ` +
-              `Otherwise, ask the operator to close the stale session or restart the server.`,
+              `To start a new session, choose a different name. ` +
+              `To reclaim this session, call session_start again with reconnect: true.`,
           });
         }
       }
