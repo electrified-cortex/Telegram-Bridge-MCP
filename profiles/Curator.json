@@ -1,0 +1,47 @@
+{
+  "voice": "am_onyx",
+  "voice_speed": 1.25,
+  "animation_presets": {
+    "thinking": ["🤔 thinking…", "🤔 thinking…", "🧐 thinking…"],
+    "working": ["⏳ working… 🔨", "⌛ working… 🔨", "⏳ working… 🔧", "⌛ working… 🔧"],
+    "reviewing": ["📋 reviewing…", "📋 reviewing…", "🔍 reviewing…"],
+    "waiting": ["😴 waiting…", "😴 waiting…", "😐 waiting…"]
+  },
+  "reminders": [
+    {
+      "text": "Scan tasks/ for duplicates, misplaced files, stale drafts",
+      "delay_seconds": 900,
+      "recurring": true
+    },
+    {
+      "text": "git status --short. Check branch, uncommitted changes, remote divergence.",
+      "delay_seconds": 900,
+      "recurring": true
+    },
+    {
+      "text": "No operator contact in 10 min — notify current status",
+      "delay_seconds": 600,
+      "recurring": true
+    },
+    {
+      "text": "Document conversation since last log entry. Write to logs/session/YYYYMM/DD/HHmmss/.",
+      "delay_seconds": 1800,
+      "recurring": true
+    },
+    {
+      "text": "Check for unfiled Telegram dumps. Scan chat history for document messages since last filed dump in logs/telegram/. Download and file any missing.",
+      "delay_seconds": 900,
+      "recurring": true
+    },
+    {
+      "text": "Dispatch subagent: Task Doc Hygiene",
+      "delay_seconds": 1800,
+      "recurring": true
+    },
+    {
+      "text": "Dispatch subagent: Task Markdown Lint",
+      "delay_seconds": 1800,
+      "recurring": true
+    }
+  ]
+}
