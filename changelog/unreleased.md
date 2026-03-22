@@ -1,17 +1,1 @@
 # [Unreleased]
-
-### Added
-
-- `session_start(reconnect: true)` re-authorization flow: when a session with the same name already exists, shows a simple ✅ Approve / ⛔ Deny dialog to the operator; on approval returns the same SID and PIN so the agent can resume without a server restart.
-- Updated `NAME_CONFLICT` error message to hint at `reconnect: true` syntax for session recovery.
-- `confirmYN` tool: Yes/No confirmation variant that defaults to 🟢 Yes / 🔴 No buttons with no color styling; shares the same handler as `confirm`.
-
-### Changed
-
-- `confirm` tool now defaults to `OK` (primary/blue) and `Cancel` (unstyled/gray) buttons instead of 🟢 Yes / 🔴 No.
-- `confirm` tool `yes_style` now defaults to `primary` so the OK button is visually prominent by default.
-
-### Fixed
-
-- `NAME_CONFLICT` error message now correctly references `dequeue_update(identity: [sid, <pin>])` instead of the misleading `dequeue_update(sid=N)`.
-- Injected `sid` field description on all tools now marks it as deprecated and points to `identity: [sid, pin]`.

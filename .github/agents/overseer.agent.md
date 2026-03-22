@@ -128,7 +128,7 @@ All substantive communication goes through Telegram. The communication guide loa
 5. **`dequeue_update` again** after every task/timeout/error.
 6. **Never assume silence means approval.**
 7. **Voice is preferred.** Use `send_text_as_voice` when the message is plain English. Use `send_text` for structured content (tables, code, lists). Hybrid messages encouraged — voice for the explanation, text for the data.
-8. **Async waits** — `show_animation(persistent: true)` + `dequeue_update` loop. Check in proactively. `cancel_animation` before replying.
+8. **Async waits** — don't eagerly show a waiting animation. A startup reminder handles it: if you've been idle ~5 min, show a persistent waiting animation. `cancel_animation` before replying.
 
 ---
 
@@ -145,6 +145,7 @@ Add these reminders on session start using `set_reminder`. They **do not persist
 | 7 | If no operator contact in 10 min, `notify` current status. → [procedure](../../tasks/reminders/07-operator-check-in.md) | 10 min | Yes |
 | 10 | Check worker sessions. Ping any silent >10 min. Ask workers their reminders to verify behavior. → [procedure](../../tasks/reminders/10-worker-health.md) | 10 min | Yes |
 | 11 | Compare `get_me().mcp_commit` with `dist/tools/build-info.json`. Prompt restart on drift. → [procedure](../../tasks/reminders/11-server-build-drift.md) | 20 min | Yes |
+| 12 | If idle with no active work, `show_animation(preset: "waiting", persistent: true)` so the operator sees you're alive. `cancel_animation` before any substantive reply. | 5 min | Yes |
 
 ### Dispatch Reminders (fire subagent)
 
