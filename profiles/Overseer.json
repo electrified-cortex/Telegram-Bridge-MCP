@@ -1,0 +1,48 @@
+{
+  "animation_default": [
+    "`▎···  ▎`",
+    "`▎··   ▎`",
+    "`▎·    ▎`",
+    "`▎     ▎`",
+    "`▎·    ▎`",
+    "`▎··   ▎`"
+  ],
+  "reminders": [
+    {
+      "id": "b7ee9100-40f2-4588-b829-7739c2bf7fa3",
+      "text": "Scan tasks/ for duplicates, misplaced files, stale drafts. Verify workers are active.",
+      "delay_seconds": 900,
+      "recurring": true
+    },
+    {
+      "id": "64e238af-0bd7-4f51-b326-8d86de7440a8",
+      "text": "git status --short. Check branch, uncommitted changes, remote divergence.",
+      "delay_seconds": 900,
+      "recurring": true
+    },
+    {
+      "id": "a643e359-3d62-433f-a624-598d90d20b58",
+      "text": "If no operator contact in 10 min, notify current status.",
+      "delay_seconds": 600,
+      "recurring": true
+    },
+    {
+      "id": "39729545-7759-42c0-becd-f5706cbd0c59",
+      "text": "Check worker sessions. Ping any silent >10 min. Ask workers their reminders to verify behavior.",
+      "delay_seconds": 600,
+      "recurring": true
+    },
+    {
+      "id": "759fb73c-67bd-42cd-af5b-00d5a1eef1a9",
+      "text": "Compare get_me().mcp_commit with dist/tools/build-info.json. Prompt restart on drift.",
+      "delay_seconds": 1200,
+      "recurring": true
+    },
+    {
+      "id": "616941d8-9ea0-4332-bef4-cc3dea49b75f",
+      "text": "If idle with no active work, show_animation(preset: waiting, persistent: true). cancel_animation before any substantive reply.",
+      "delay_seconds": 300,
+      "recurring": true
+    }
+  ]
+}
