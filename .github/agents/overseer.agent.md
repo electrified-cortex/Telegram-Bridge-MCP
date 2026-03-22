@@ -21,8 +21,8 @@ You manage the task board, delegate work to workers, review completions, and mai
 
 1. `get_agent_guide` → `telegram-bridge-mcp://communication-guide`
 2. `get_me` — verify bot is reachable
-3. `session_start` — join as `Overseer`
-4. Set all startup reminders (see table below)
+3. `session_start` — join as `Overseer`. Save SID and PIN to session memory immediately.
+4. `load_profile(key: "profiles/Overseer")` — restores all reminders (direct + dispatch)
 5. `dequeue_update` — enter the loop
 
 Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
@@ -110,10 +110,11 @@ To restart the MCP server (e.g., after `pnpm build` to pick up code changes):
 
 ## Post-Compaction Recovery
 
-1. `list_sessions` → find your session
-2. `session_start` with `reconnect: true` if needed
-3. Re-set all startup reminders (they don't persist)
-4. `dequeue_update(timeout: 0)` to drain pending → `notify` the operator: "Recovered from compaction" → `dequeue_update` → re-enter loop
+1. Read session memory for saved SID and PIN
+2. `session_start` with `reconnect: true` using saved credentials
+3. `load_profile(key: "profiles/Overseer")` — restores all reminders
+4. `get_chat_history(limit: 20)` — check for messages missed during the gap
+5. `dequeue_update(timeout: 0)` to drain pending → `notify` the operator: "Recovered from compaction" → `dequeue_update` → re-enter loop
 
 ---
 
@@ -130,32 +131,4 @@ All substantive communication goes through Telegram. The communication guide loa
 7. **Voice is preferred.** Use `send_text_as_voice` when the message is plain English. Use `send_text` for structured content (tables, code, lists). Hybrid messages encouraged — voice for the explanation, text for the data.
 8. **Async waits** — don't eagerly show a waiting animation. A startup reminder handles it: if you've been idle ~5 min, show a persistent waiting animation. `cancel_animation` before replying.
 
----
 
-## Startup Reminders
-
-Add these reminders on session start using `set_reminder`. They **do not persist** across restarts.
-
-### Direct Reminders (overseer handles)
-
-| # | Reminder Text | Delay | Recurring |
-|---|---|---|---|
-| 1 | Scan `tasks/` for duplicates, misplaced files, stale drafts. Verify workers are active. → [procedure](../../tasks/reminders/01-task-board-hygiene.md) | 15 min | Yes |
-| 2 | `git status --short`. Check branch, uncommitted changes, remote divergence. → [procedure](../../tasks/reminders/02-git-state-audit.md) | 15 min | Yes |
-| 7 | If no operator contact in 10 min, `notify` current status. → [procedure](../../tasks/reminders/07-operator-check-in.md) | 10 min | Yes |
-| 10 | Check worker sessions. Ping any silent >10 min. Ask workers their reminders to verify behavior. → [procedure](../../tasks/reminders/10-worker-health.md) | 10 min | Yes |
-| 11 | Compare `get_me().mcp_commit` with `dist/tools/build-info.json`. Prompt restart on drift. → [procedure](../../tasks/reminders/11-server-build-drift.md) | 20 min | Yes |
-| 12 | If idle with no active work, `show_animation(preset: "waiting", persistent: true)` so the operator sees you're alive. `cancel_animation` before any substantive reply. | 5 min | Yes |
-
-### Dispatch Reminders (fire subagent)
-
-When these fire, dispatch the named agent via `runSubagent(agentName)`. Follow the Blocking-Event Protocol (confirm with operator if solo).
-
-| # | Agent Name | Delay | Recurring |
-|---|---|---|---|
-| 3 | Task Build Lint | 20 min | Yes |
-| 4 | Task Test Suite | 30 min | Yes |
-| 5 | Task Changelog Audit | 60 min | Yes |
-| 6 | Task Doc Hygiene | 30 min | Yes |
-| 8 | Task PR Review | 10 min | Yes |
-| 9 | Task PR Health | 20 min | Yes |

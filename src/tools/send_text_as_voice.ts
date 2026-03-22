@@ -5,7 +5,7 @@ import { markdownToV2 } from "../markdown.js";
 import { showTyping, cancelTyping } from "../typing-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getTopic } from "../topic-state.js";
-import { getSessionVoice } from "../voice-state.js";
+import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
 import { requireAuth } from "../session-gate.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
@@ -96,11 +96,12 @@ export function register(server: McpServer) {
         // Voice resolution: explicit param > session override > config default > env/provider
         const resolvedVoice =
           voice ?? getSessionVoice() ?? getDefaultVoice() ?? undefined;
+        const resolvedSpeed = getSessionSpeed() ?? undefined;
         const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
         await showTyping(typingSeconds, "record_voice");
         const message_ids: number[] = [];
         for (let i = 0; i < voiceChunks.length; i++) {
-          const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice);
+          const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice, resolvedSpeed);
           const isFirst = i === 0;
           const msg = await sendVoiceDirect(chatId, ogg, {
             caption: isFirst ? resolvedCaption : undefined,

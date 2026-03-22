@@ -1,6 +1,8 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError } from "./test-utils.js";
 
+import { createHash } from "crypto";
+
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   addReminder: vi.fn(),
@@ -14,6 +16,8 @@ vi.mock("../session-manager.js", () => ({
 vi.mock("../reminder-state.js", () => ({
   addReminder: mocks.addReminder,
   MAX_REMINDERS_PER_SESSION: 20,
+  reminderContentHash: (text: string, recurring: boolean) =>
+    createHash("sha256").update(`${text}\0${recurring}`).digest("hex").slice(0, 16),
 }));
 
 import { register } from "./set_reminder.js";
@@ -56,6 +60,17 @@ describe("set_reminder tool", () => {
     await call({ text: "x", id: "my-id", identity: [1, 123456] });
     expect(mocks.addReminder).toHaveBeenCalledWith(
       expect.objectContaining({ id: "my-id" }),
+    );
+  });
+
+  it("uses content hash as default ID when none provided", async () => {
+    await call({ text: "Check CI", identity: [1, 123456] });
+    const expectedHash = createHash("sha256")
+      .update("Check CI\0false")
+      .digest("hex")
+      .slice(0, 16);
+    expect(mocks.addReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expectedHash }),
     );
   });
 

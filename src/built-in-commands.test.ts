@@ -112,6 +112,10 @@ vi.mock("./session-queue.js", () => ({
   deliverServiceMessage: mocks.deliverServiceMessage,
 }));
 
+vi.mock("./voice-state.js", () => ({
+  getSessionSpeed: vi.fn((): number | null => null),
+}));
+
 
 import {
   handleIfBuiltIn,
@@ -535,6 +539,7 @@ describe("built-in-commands", () => {
       expect(mocks.synthesizeToOgg).toHaveBeenCalledWith(
         expect.stringContaining("Onyx"),
         "am_onyx",
+        undefined,
       );
       expect(mocks.sendVoiceDirect).toHaveBeenCalledWith(
         123,

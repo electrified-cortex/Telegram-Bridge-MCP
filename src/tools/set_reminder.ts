@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
-import { addReminder, MAX_REMINDERS_PER_SESSION } from "../reminder-state.js";
+import { addReminder, MAX_REMINDERS_PER_SESSION, reminderContentHash } from "../reminder-state.js";
 import { requireAuth } from "../session-gate.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
@@ -42,7 +42,7 @@ export function register(server: McpServer) {
       const _sid = requireAuth(identity);
       if (typeof _sid !== "number") return toError(_sid);
 
-      const reminderId = id ?? crypto.randomUUID();
+      const reminderId = id ?? reminderContentHash(text, recurring);
 
       let reminder;
       try {

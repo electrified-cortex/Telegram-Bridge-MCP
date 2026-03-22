@@ -183,6 +183,7 @@ async function synthesizeHttpToOgg(
   host: string,
   apiKey: string | null,
   voice?: string,
+  speed?: number,
 ): Promise<Buffer> {
   const model = process.env.TTS_MODEL;
   const envVoice = process.env.TTS_VOICE;
@@ -195,9 +196,10 @@ async function synthesizeHttpToOgg(
   const resolvedVoice =
     voice ?? envVoice ?? (isOpenAi ? "alloy" : undefined);
 
-  const body: Record<string, string> = { input: text, response_format: nativeOgg ? fmt : "wav" };
+  const body: Record<string, string | number> = { input: text, response_format: nativeOgg ? fmt : "wav" };
   if (resolvedModel) body.model = resolvedModel;
   if (resolvedVoice) body.voice = resolvedVoice;
+  if (speed !== undefined && speed !== 1.0) body.speed = speed;
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
@@ -262,14 +264,15 @@ function validateTtsInput(text: string): void {
 export async function synthesizeToOgg(
   text: string,
   voice?: string,
+  speed?: number,
 ): Promise<Buffer> {
   validateTtsInput(text);
 
   const ttsHost = process.env.TTS_HOST?.replace(RE_TRAILING_SLASH, "");
-  if (ttsHost) return synthesizeHttpToOgg(text, ttsHost, process.env.OPENAI_API_KEY ?? null, voice);
+  if (ttsHost) return synthesizeHttpToOgg(text, ttsHost, process.env.OPENAI_API_KEY ?? null, voice, speed);
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) return synthesizeHttpToOgg(text, "https://api.openai.com", apiKey, voice);
+  if (apiKey) return synthesizeHttpToOgg(text, "https://api.openai.com", apiKey, voice, speed);
 
   return synthesizeLocalToOgg(text);
 }

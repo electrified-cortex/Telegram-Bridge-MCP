@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
-import { getSessionVoice, setSessionVoice, clearSessionVoice } from "../voice-state.js";
+import { getSessionVoice, setSessionVoice, clearSessionVoice, getSessionSpeed, setSessionSpeed, clearSessionSpeed } from "../voice-state.js";
 import { requireAuth } from "../session-gate.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
@@ -21,19 +21,30 @@ export function register(server: McpServer) {
           .string()
           .max(64)
           .describe("Voice name to set for this session, e.g. \"alloy\". Pass empty string to clear."),
+        speed: z
+          .number()
+          .min(0.25)
+          .max(4.0)
+          .optional()
+          .describe("TTS speed multiplier (0.25–4.0, default 1.0). Omit to leave speed unchanged."),
         identity: IDENTITY_SCHEMA,
       },
     },
-    ({ voice, identity }) => {
+    ({ voice, speed, identity }) => {
       const _sid = requireAuth(identity);
       if (typeof _sid !== "number") return toError(_sid);
       const previous = getSessionVoice();
+      const previousSpeed = getSessionSpeed();
       if (voice.trim() === "") {
         clearSessionVoice();
-        return toResult({ voice: null, previous, cleared: true });
+        clearSessionSpeed();
+        return toResult({ voice: null, speed: null, previous, previousSpeed, cleared: true });
       }
       setSessionVoice(voice);
-      return toResult({ voice: getSessionVoice(), previous, set: true });
+      if (speed !== undefined) {
+        setSessionSpeed(speed);
+      }
+      return toResult({ voice: getSessionVoice(), speed: getSessionSpeed(), previous, previousSpeed, set: true });
     },
   );
 }

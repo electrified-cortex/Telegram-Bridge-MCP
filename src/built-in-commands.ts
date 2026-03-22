@@ -21,6 +21,7 @@ import { getSessionLogMode, setSessionLogMode, sessionLogLabel } from "./config.
 import { getDefaultVoice, setDefaultVoice, getConfiguredVoices } from "./config.js";
 import type { VoiceEntry } from "./config.js";
 import { fetchVoiceList, isTtsEnabled } from "./tts.js";
+import { getSessionSpeed } from "./voice-state.js";
 
 
 const require = createRequire(import.meta.url);
@@ -688,7 +689,8 @@ async function sendVoiceSample(
     `Hi, this is a sample of the ${displayName} voice. ` +
     "Hopefully it sounds good to you!";
   try {
-    const ogg = await synthOgg(sampleText, voiceName);
+    const resolvedSpeed = getSessionSpeed() ?? undefined;
+    const ogg = await synthOgg(sampleText, voiceName, resolvedSpeed);
     const { sendVoiceDirect: sendVoice } = await import("./telegram.js");
     const msg = await sendVoice(chatId, ogg, {
       disable_notification: true,

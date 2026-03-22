@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   synthesizeToOgg: vi.fn(),
   getTopic: vi.fn((): string | null => null),
   getSessionVoice: vi.fn((): string | null => null),
+  getSessionSpeed: vi.fn((): number | null => null),
   registerTool: vi.fn(),
 }));
 
@@ -50,6 +51,7 @@ vi.mock("../topic-state.js", () => ({
 
 vi.mock("../voice-state.js", () => ({
   getSessionVoice: () => mocks.getSessionVoice(),
+  getSessionSpeed: () => mocks.getSessionSpeed(),
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -91,6 +93,7 @@ describe("send_text_as_voice", () => {
     mocks.sendVoiceDirect.mockResolvedValue({ message_id: 42 });
     mocks.getTopic.mockReturnValue(null);
     mocks.getSessionVoice.mockReturnValue(null);
+    mocks.getSessionSpeed.mockReturnValue(null);
     setupHandler();
   });
 
@@ -132,7 +135,7 @@ describe("send_text_as_voice", () => {
   it("synthesizes and sends a single voice note", async () => {
     const result = await handler({ text: "Hello world", identity: [1, 123456] }) as { content: { text: string }[] };
     expect(mocks.showTyping).toHaveBeenCalled();
-    expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello world", undefined);
+    expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello world", undefined, undefined);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledWith(
       123,
       Buffer.from("ogg"),
@@ -187,20 +190,32 @@ describe("send_text_as_voice", () => {
     it("prefers explicit voice param over session voice", async () => {
       mocks.getSessionVoice.mockReturnValue("nova");
       await handler({ text: "Hello", voice: "alloy", identity: [1, 123456] });
-      expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello", "alloy");
+      expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello", "alloy", undefined);
     });
 
     it("uses session voice when no explicit param", async () => {
       mocks.getSessionVoice.mockReturnValue("echo");
       await handler({ text: "Hello", identity: [1, 123456] });
-      expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello", "echo");
+      expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello", "echo", undefined);
     });
 
     it("falls back to undefined when no explicit param and no session voice", async () => {
       mocks.getSessionVoice.mockReturnValue(null);
       await handler({ text: "Hello", identity: [1, 123456] });
       // getDefaultVoice returns undefined in test env; synthesizeToOgg receives undefined
-      expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello", undefined);
+      expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello", undefined, undefined);
+    });
+
+    it("passes session speed to synthesizeToOgg when set", async () => {
+      mocks.getSessionSpeed.mockReturnValue(1.5);
+      await handler({ text: "Hello", identity: [1, 123456] });
+      expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello", undefined, 1.5);
+    });
+
+    it("passes undefined speed to synthesizeToOgg when no session speed", async () => {
+      mocks.getSessionSpeed.mockReturnValue(null);
+      await handler({ text: "Hello", identity: [1, 123456] });
+      expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("Hello", undefined, undefined);
     });
   });
 

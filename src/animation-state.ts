@@ -64,6 +64,11 @@ export function resetSessionDefault(sid: number): void {
   _sessionDefaults.delete(sid);
 }
 
+/** Returns true if the session has a custom animation default set (not the built-in). */
+export function hasSessionDefault(sid: number): boolean {
+  return _sessionDefaults.has(sid);
+}
+
 /** Register a named animation preset for later recall by key. */
 export function registerPreset(sid: number, key: string, frames: readonly string[]): void {
   let map = _presetsMap.get(sid);

@@ -16,12 +16,11 @@ Your #1 priority: **stay in the loop**. Never go silent.
 
 1. `get_agent_guide` → `telegram-bridge-mcp://communication-guide`
 2. `get_me` — verify bot is reachable
-3. `session_start` — join as `Worker` (if taken: `Worker 2`, etc). Pick a color: 🟩🟨🟧🟪🟥
+3. `session_start` — join as `Worker` (if taken: `Worker 2`, etc). Pick a color: 🟩🟨🟧🟪🟥. **Save SID and PIN to session memory immediately.**
 4. `list_sessions` — identify the overseer. If none, operator is your overseer.
 5. DM the overseer: *"Worker online — standing by."*
-6. **Register animation presets** (see Animation Presets section below) — required every session start
-7. Set startup reminders (see table below)
-8. `dequeue_update` — enter the loop
+6. `load_profile(key: "profiles/Worker")` — restores voice, animation presets, and reminders
+7. `dequeue_update` — enter the loop
 
 Reference [LOOP-PROMPT.md](../../LOOP-PROMPT.md) for the canonical loop recipe.
 
@@ -99,12 +98,11 @@ When you receive a `shutdown` service event (`event_type: "shutdown"` in a `dequ
 
 ## Post-Compaction Recovery
 
-1. `list_sessions` → find your session
-2. `session_start` with `reconnect: true` if needed
-3. Re-set all startup reminders (they don't persist)
-4. Check session memory for in-progress work context
-5. `dequeue_update` → re-enter loop
-6. DM overseer: "Recovered from compaction"
+1. Read session memory for saved SID, PIN, and in-progress work context
+2. `session_start` with `reconnect: true` using saved SID/PIN (or `list_sessions` first if missing)
+3. `load_profile(key: "profiles/Worker")` — restores all reminders
+4. `get_chat_history` — scan recent messages for anything missed during compaction
+5. `dequeue_update(timeout: 0)` — drain pending → DM overseer: "Recovered from compaction" → `dequeue_update` → re-enter loop
 
 ---
 
@@ -123,41 +121,11 @@ All substantive communication goes through Telegram.
 7. **`dequeue_update` again** after every task/timeout/error.
 8. **Voice by default.** `send_text_as_voice` for conversation. `send_text` for structured content.
 
-### Animation Presets
+### Animations
 
-> **MANDATORY** — Register these on every session start with `set_default_animation`. Presets do not persist across restarts.
+Animation presets are loaded from the profile. **Use them constantly** — a silent worker looks like a hung process:
+- `show_animation("thinking")` before reading/planning
+- `show_animation("working")` before editing/building
+- `show_animation("testing")` before running tests
+- `show_animation("waiting", persistent: true)` when blocked on approval/CI
 
-Each preset embeds your **session name** so multiple workers are visually distinct in chat. Replace `{name}` with your actual session name (e.g., `Worker`, `Worker 2`).
-
-```text
-set_default_animation(name="{name}: thinking", frames=["⏳ {name}: thinking…", "⌛ {name}: thinking…"])
-set_default_animation(name="{name}: working",  frames=["⏳ {name}: working…",  "⌛ {name}: working…"])
-set_default_animation(name="{name}: testing",  frames=["⏳ {name}: testing…",  "⌛ {name}: testing…"])
-set_default_animation(name="{name}: waiting",  frames=["⏳ {name}: waiting…",  "⌛ {name}: waiting…"])
-```
-
-| Preset Name | When to Use |
-| --- | --- |
-| `{name}: thinking` | Analyzing, reading code, planning |
-| `{name}: working` | Editing code, running builds |
-| `{name}: testing` | Running test suite, verifying |
-| `{name}: waiting` | Blocked on approval, CI, etc. |
-
-**Use animations constantly** — this is non-negotiable. A silent worker looks like a hung process. Signal your state at the start of every action:
-- Before reading/planning → `show_animation("{name}: thinking")`
-- Before editing files → `show_animation("{name}: working")`
-- Before running tests → `show_animation("{name}: testing")`
-- While waiting for approval or CI → `show_animation("{name}: waiting", persistent: true)`
-
-**When in doubt, show an animation. Never be silent while working.**
-
----
-
-## Startup Reminders
-
-Add these reminders on session start to stay on track when idle using `set_reminder`:
-
-| # | Reminder Text | Delay | Recurring |
-|---|---|---|---|
-| 1 | Check `tasks/2-queued/` for unassigned tasks — pick up and DM overseer | 5 min | Yes |
-| 2 | DM overseer with current status (working/idle/blocked) | 5 min | Yes |

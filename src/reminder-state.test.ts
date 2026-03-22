@@ -11,6 +11,7 @@ import {
   clearSessionReminders,
   resetReminderStateForTest,
   MAX_REMINDERS_PER_SESSION,
+  reminderContentHash,
 } from "./reminder-state.js";
 import { runInSessionContext } from "./session-context.js";
 
@@ -220,6 +221,31 @@ describe("reminder-state", () => {
         const e2 = buildReminderEvent(r);
         expect(e1.id).not.toBe(e2.id);
       });
+    });
+  });
+
+  describe("reminderContentHash", () => {
+    it("is deterministic — same inputs yield same hash", () => {
+      const h1 = reminderContentHash("Check CI", false);
+      const h2 = reminderContentHash("Check CI", false);
+      expect(h1).toBe(h2);
+    });
+
+    it("is 16 hex characters long", () => {
+      const h = reminderContentHash("hello", true);
+      expect(h).toMatch(/^[0-9a-f]{16}$/);
+    });
+
+    it("different recurring flag produces different hash", () => {
+      const hOne = reminderContentHash("Check CI", false);
+      const hRec = reminderContentHash("Check CI", true);
+      expect(hOne).not.toBe(hRec);
+    });
+
+    it("different text produces different hash", () => {
+      const h1 = reminderContentHash("reminder A", false);
+      const h2 = reminderContentHash("reminder B", false);
+      expect(h1).not.toBe(h2);
     });
   });
 });

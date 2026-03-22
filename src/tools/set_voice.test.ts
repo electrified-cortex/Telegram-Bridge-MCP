@@ -6,12 +6,18 @@ const mocks = vi.hoisted(() => ({
   getSessionVoice: vi.fn<() => string | null>(),
   setSessionVoice: vi.fn(),
   clearSessionVoice: vi.fn(),
+  getSessionSpeed: vi.fn<() => number | null>(),
+  setSessionSpeed: vi.fn(),
+  clearSessionSpeed: vi.fn(),
 }));
 
 vi.mock("../voice-state.js", () => ({
   getSessionVoice: mocks.getSessionVoice,
   setSessionVoice: mocks.setSessionVoice,
   clearSessionVoice: mocks.clearSessionVoice,
+  getSessionSpeed: mocks.getSessionSpeed,
+  setSessionSpeed: mocks.setSessionSpeed,
+  clearSessionSpeed: mocks.clearSessionSpeed,
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -27,6 +33,7 @@ describe("set_voice tool", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     mocks.getSessionVoice.mockReturnValue(null);
+    mocks.getSessionSpeed.mockReturnValue(null);
     const server = createMockServer();
     register(server);
     call = server.getHandler("set_voice");

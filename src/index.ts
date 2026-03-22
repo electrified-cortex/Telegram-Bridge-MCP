@@ -7,7 +7,7 @@ import { createServer } from "./server.js";
 import { getSecurityConfig, getApi, resolveChat, installOutboundProxy, sendServiceMessage } from "./telegram.js";
 import { clearCommandsOnShutdown } from "./shutdown.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
-import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
+import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startHealthCheck } from "./health-check.js";
 import { setAuthHook } from "./session-gate.js";
 import { touchSession } from "./session-manager.js";
@@ -89,9 +89,6 @@ void (async () => {
     });
   } catch { /* ignore */ }
 })();
-
-startPoller();
-process.stderr.write("[info] background poller started\n");
 
 startHealthCheck();
 setAuthHook(touchSession);

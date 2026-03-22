@@ -1,0 +1,56 @@
+{
+  "voice": "am_onyx",
+  "voice_speed": 1.1,
+  "reminders": [
+    {
+      "text": "HOUSEKEEPING: Run git status --short. Scan tasks/ for files in the wrong column (e.g. completed work still in 3-in-progress). If workers are active, check they're responsive — DM any silent >10 min.",
+      "delay_seconds": 600,
+      "recurring": true
+    },
+    {
+      "text": "OPERATOR CHECK-IN: If no operator message received in the last 10 min, send a brief status update via notify (what you're doing or waiting on).",
+      "delay_seconds": 600,
+      "recurring": true
+    },
+    {
+      "text": "BUILD DRIFT: Compare get_me().mcp_commit with the current git HEAD. If they differ, ask the operator whether they want a rebuild and restart. Do not restart without approval.",
+      "delay_seconds": 1200,
+      "recurring": true
+    },
+    {
+      "text": "IDLE PRESENCE: If idle with no active work, send a temporary message: 'Standing by — ready for input.' Cancel any active animation first.",
+      "delay_seconds": 300,
+      "recurring": true
+    },
+    {
+      "text": "Dispatch subagent: Task Build Lint",
+      "delay_seconds": 1200,
+      "recurring": true
+    },
+    {
+      "text": "Dispatch subagent: Task Test Suite",
+      "delay_seconds": 1800,
+      "recurring": true
+    },
+    {
+      "text": "Dispatch subagent: Task Changelog Audit",
+      "delay_seconds": 3600,
+      "recurring": true
+    },
+    {
+      "text": "Dispatch subagent: Task Doc Hygiene",
+      "delay_seconds": 1800,
+      "recurring": true
+    },
+    {
+      "text": "Dispatch subagent: Task PR Review",
+      "delay_seconds": 600,
+      "recurring": true
+    },
+    {
+      "text": "Dispatch subagent: Task PR Health",
+      "delay_seconds": 1200,
+      "recurring": true
+    }
+  ]
+}

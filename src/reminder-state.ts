@@ -8,7 +8,20 @@
  * Reminders are keyed by SID (per-session, all in-memory).
  */
 
+import { createHash } from "crypto";
 import { getCallerSid } from "./session-context.js";
+
+/**
+ * Deterministic reminder ID derived from content.
+ * Same text+recurring always yields the same 16-char hex string.
+ * Different `recurring` flag → different hash (one-shot and recurring coexist).
+ */
+export function reminderContentHash(text: string, recurring: boolean): string {
+  return createHash("sha256")
+    .update(`${text}\0${recurring}`)
+    .digest("hex")
+    .slice(0, 16);
+}
 
 export interface Reminder {
   id: string;

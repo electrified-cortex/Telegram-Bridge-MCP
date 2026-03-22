@@ -12,6 +12,7 @@
 import { getCallerSid } from "./session-context.js";
 
 const _voices = new Map<number, string | null>();
+const _speeds = new Map<number, number | null>();
 
 export function getSessionVoice(): string | null {
   return _voices.get(getCallerSid()) ?? null;
@@ -35,7 +36,27 @@ export function getSessionVoiceFor(sid: number): string | null {
   return _voices.get(sid) ?? null;
 }
 
+export function getSessionSpeed(): number | null {
+  return _speeds.get(getCallerSid()) ?? null;
+}
+
+export function setSessionSpeed(speed: number): void {
+  _speeds.set(getCallerSid(), speed);
+}
+
+export function clearSessionSpeed(): void {
+  _speeds.delete(getCallerSid());
+}
+
+/**
+ * Direct SID lookup — used by save_profile to read another session's speed.
+ */
+export function getSessionSpeedFor(sid: number): number | null {
+  return _speeds.get(sid) ?? null;
+}
+
 /** For testing only: resets all voice state so env is clean between tests. */
 export function resetVoiceStateForTest(): void {
   _voices.clear();
+  _speeds.clear();
 }

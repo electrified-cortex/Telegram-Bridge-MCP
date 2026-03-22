@@ -57,6 +57,7 @@ The description should say: "Yes/No confirmation variant. Same as confirm but de
 **Commit:** `4acda16`
 
 **Files changed:**
+
 - `src/tools/confirm.ts` — extracted `confirmHandler` + `makeInputSchema` helpers; changed `confirm` defaults to `OK`/`Cancel`/`primary`; registered `confirmYN` with old `🟢 Yes`/`🔴 No` defaults; removed unnecessary `as ButtonStyle` casts (lint)
 - `src/tools/confirm.test.ts` — updated `ackAndEditSelection` hook test to expect `"OK"`; added `defaults to OK/Cancel` button label/style test; added `confirmYN tool` describe block (6 tests covering defaults, labels, custom overrides); fixed mock state leak (`sessionQueue.pendingCount.mockReturnValue(0)` in confirmYN's beforeEach)
 - `changelog/unreleased.md` — added `Added` entry for `confirmYN`; added `Changed` entries for new `confirm` defaults

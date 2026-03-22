@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   resolveChat: vi.fn(() => 42 as number),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
+  startPoller: vi.fn(),
+  isPollerRunning: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -82,6 +84,11 @@ vi.mock("../session-queue.js", () => ({
   drainQueue: mocks.drainQueue,
 }));
 
+vi.mock("../poller.js", () => ({
+  startPoller: (...args: unknown[]) => mocks.startPoller(...args),
+  isPollerRunning: () => mocks.isPollerRunning(),
+}));
+
 import { register } from "./session_start.js";
 
 describe("session_start tool", () => {
@@ -93,6 +100,7 @@ describe("session_start tool", () => {
     mocks.answerCallbackQuery.mockResolvedValue(true);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.listSessions.mockReturnValue([]);
+    mocks.isPollerRunning.mockReturnValue(false);
     mocks.createSession.mockReturnValue({
       sid: 1,
       pin: 123456,
@@ -122,6 +130,8 @@ describe("session_start tool", () => {
       action: "fresh",
       pending: 0,
       discarded: 3,
+      profile_hint: "Call load_profile(key) to restore saved session configuration.",
+      instructions: expect.any(String),
     });
   });
 
@@ -136,6 +146,8 @@ describe("session_start tool", () => {
       sessions_active: 1,
       action: "fresh",
       pending: 0,
+      profile_hint: "Call load_profile(key) to restore saved session configuration.",
+      instructions: expect.any(String),
     });
   });
 
@@ -1424,6 +1436,96 @@ describe("session_start tool", () => {
     expect(mocks.createSession).toHaveBeenCalled();
     expect(result.sid).toBe(2);
     expect(result.action).toBe("reconnected");
+  });
+
+  // =========================================================================
+  // Lazy poller lifecycle (task 055)
+  // =========================================================================
+
+  it("starts poller when first session is created and poller is idle", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.isPollerRunning.mockReturnValue(false);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+
+    await call({});
+
+    expect(mocks.startPoller).toHaveBeenCalledOnce();
+  });
+
+  it("does not start poller when it is already running", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.isPollerRunning.mockReturnValue(true);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+
+    await call({});
+
+    expect(mocks.startPoller).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // instructions field — persistence & recovery hints (task 056)
+  // =========================================================================
+
+  it("fresh session response includes instructions field", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+
+    const result = parseResult(await call({}));
+
+    expect(typeof result.instructions).toBe("string");
+    expect(result.instructions).toBeTruthy();
+  });
+
+  it("fresh session instructions mention session memory and SID", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+
+    const result = parseResult(await call({}));
+
+    const instructions = result.instructions as string;
+    expect(instructions).toContain("session memory");
+    expect(instructions).toContain("SID");
+  });
+
+  it("reconnect response (name match + approved) includes instructions field", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({
+      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
+      createdAt: "2026-03-17", lastPollAt: 12345, healthy: false,
+    });
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 500 });
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq10" } }); });
+    });
+
+    const result = parseResult(await call({ name: "Overseer", reconnect: true }));
+
+    expect(typeof result.instructions).toBe("string");
+    expect(result.instructions).toBeTruthy();
+  });
+
+  it("reconnect instructions mention SID and session memory", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({
+      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
+      createdAt: "2026-03-17", lastPollAt: 12345, healthy: false,
+    });
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 501 });
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq11" } }); });
+    });
+
+    const result = parseResult(await call({ name: "Overseer", reconnect: true }));
+
+    const instructions = result.instructions as string;
+    expect(instructions).toContain("SID");
+    expect(instructions).toContain("session memory");
   });
 });
 

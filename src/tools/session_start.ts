@@ -9,6 +9,7 @@ import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMes
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
+import { startPoller, isPollerRunning } from "../poller.js";
 
 const APPROVAL_TIMEOUT_MS = 60_000;
 const APPROVAL_NO = "approve_no";
@@ -300,6 +301,10 @@ export function register(server: McpServer) {
               sessions_active: reconSessActive,
               action: "reconnected",
               pending: 0,
+              profile_hint: "Call load_profile(key) to restore saved session configuration.",
+              instructions: "You reconnected after a gap. "
+                + "Call get_chat_history to check for messages you may have missed. "
+                + "Re-save your SID and PIN to session memory if needed.",
             });
           }
 
@@ -332,6 +337,7 @@ export function register(server: McpServer) {
       const session = createSession(effectiveName, chosenColor);
       createSessionQueue(session.sid);
       setActiveSession(session.sid);
+      if (!isPollerRunning()) startPoller();
 
       try {
         // Auto-drain any pending messages (always start fresh)
@@ -344,6 +350,10 @@ export function register(server: McpServer) {
           sessions_active: session.sessionsActive,
           action: reconnect ? "reconnected" : "fresh",
           pending: 0,
+          profile_hint: "Call load_profile(key) to restore saved session configuration.",
+          instructions: "IMPORTANT: Save your SID and PIN to session memory NOW. "
+            + "You will need them to reconnect after context compaction. "
+            + "On reconnect, call get_chat_history to recover any messages missed during the gap.",
         };
         if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {

@@ -380,6 +380,66 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     // OGG passthrough — result is the raw buffer from the server
     expect(result).toEqual(Buffer.from(arrBuf));
   });
+
+  it("includes speed in the request body when speed is provided and not 1.0", async () => {
+    process.env.TTS_HOST = "http://myserver.local";
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    const { default: decode } = await import("audio-decode");
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
+
+    await synthesizeToOgg("hello", undefined, 1.5);
+
+    const [, opts] = mockFetch.mock.calls[0];
+    const body = JSON.parse(opts.body);
+    expect(body.speed).toBe(1.5);
+  });
+
+  it("omits speed from the request body when speed is not provided", async () => {
+    process.env.TTS_HOST = "http://myserver.local";
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    const { default: decode } = await import("audio-decode");
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
+
+    await synthesizeToOgg("hello");
+
+    const [, opts] = mockFetch.mock.calls[0];
+    const body = JSON.parse(opts.body);
+    expect(body.speed).toBeUndefined();
+  });
+
+  it("omits speed from the request body when speed is exactly 1.0", async () => {
+    process.env.TTS_HOST = "http://myserver.local";
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    const { default: decode } = await import("audio-decode");
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
+
+    await synthesizeToOgg("hello", undefined, 1.0);
+
+    const [, opts] = mockFetch.mock.calls[0];
+    const body = JSON.parse(opts.body);
+    expect(body.speed).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
