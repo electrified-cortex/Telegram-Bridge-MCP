@@ -301,6 +301,9 @@ export function register(server: McpServer) {
               sessions_active: reconSessActive,
               action: "reconnected",
               pending: 0,
+              instructions: "You reconnected after a gap. "
+                + "Call get_chat_history to check for messages you may have missed. "
+                + "Re-save your SID and PIN to session memory if needed.",
             });
           }
 
@@ -347,6 +350,9 @@ export function register(server: McpServer) {
           action: reconnect ? "reconnected" : "fresh",
           pending: 0,
           profile_hint: "Call load_profile(key) to restore saved session configuration.",
+          instructions: "IMPORTANT: Save your SID and PIN to session memory NOW. "
+            + "You will need them to reconnect after context compaction. "
+            + "On reconnect, call get_chat_history to recover any messages missed during the gap.",
         };
         if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {

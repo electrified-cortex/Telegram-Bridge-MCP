@@ -8,6 +8,7 @@
 
 ## Added
 
+- `session_start` response includes `instructions` field with persistence and recovery guidance (save SID/PIN to session memory; call `get_chat_history` after reconnect)
 - `set_voice` tool now accepts optional `speed` parameter (0.25–4.0) for per-session TTS speed control
 - `voice_speed` included in profile save/load (`save_profile` captures it, `load_profile` restores it)
 - `save_profile` tool — snapshot session voice, animation default/presets, and reminders to a JSON profile file

@@ -67,3 +67,21 @@ Add under `Added`:
 | `src/tools/session_start.ts` | Add `instructions` to both response paths |
 | `src/tools/session_start.test.ts` | Add tests for instructions field |
 | `changelog/unreleased.md` | Document addition |
+
+## Completion
+
+**Date:** 2026-03-22
+
+### Changes made
+
+| File | Change |
+|---|---|
+| `src/tools/session_start.ts` | Added `instructions` field to fresh session `res` object and to reconnect `toResult(...)` call |
+| `src/tools/session_start.test.ts` | Updated two exact-match `toEqual` tests to include `instructions: expect.any(String)`; added 4 new tests covering fresh and reconnect instructions content |
+| `changelog/unreleased.md` | Added entry under `Added` |
+
+### Results
+
+- `pnpm build` — clean
+- `pnpm test` — 1327 passed (59 test files)
+- `pnpm lint` — clean
