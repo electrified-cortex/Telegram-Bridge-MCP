@@ -33,9 +33,9 @@ export const CHECK_INTERVAL_MS = 60_000;
 
 /**
  * How long a session can go without any tool activity before it is considered
- * unhealthy. Set to 10 minutes to allow room for long-running local operations.
+ * unhealthy. Set to 15 minutes to allow room for long-running local operations.
  */
-export const HEALTH_THRESHOLD_MS = 600_000;
+export const HEALTH_THRESHOLD_MS = 900_000;
 
 const CB_REROUTE_NOW  = "hc_reroute_now";
 const CB_MAKE_PRIMARY = "hc_make_primary";
