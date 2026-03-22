@@ -68,12 +68,24 @@ Agent calls session_start(name: "Overseer", reconnect: true)
 
 ## Acceptance Criteria
 
-- [ ] `session_start(name: "X")` when "X" exists returns NAME_CONFLICT with reconnect hint
-- [ ] `session_start(name: "X", reconnect: true)` when "X" exists shows yes/no dialog
-- [ ] Operator approval returns same SID and same PIN
-- [ ] Operator denial returns SESSION_DENIED
-- [ ] Timeout (60s) returns SESSION_DENIED
-- [ ] Session state (queue, governor, announcement) is preserved
-- [ ] Service messages sent to reconnected session and fellow sessions
-- [ ] Build passes, tests pass, lint passes
-- [ ] Changelog updated
+- [x] `session_start(name: "X")` when "X" exists returns NAME_CONFLICT with reconnect hint
+- [x] `session_start(name: "X", reconnect: true)` when "X" exists shows yes/no dialog
+- [x] Operator approval returns same SID and same PIN
+- [x] Operator denial returns SESSION_DENIED
+- [x] Timeout (60s) returns SESSION_DENIED
+- [x] Session state (queue, governor, announcement) is preserved
+- [x] Service messages sent to reconnected session and fellow sessions
+- [x] Build passes, tests pass, lint passes
+- [x] Changelog updated
+
+## Completion
+
+**Commit:** `e143ab5` (branch `dev`)
+
+**Files changed:**
+- `src/tools/session_start.ts` — Added `requestReconnectApproval` function, reconnect handler in NAME_CONFLICT block, updated DESCRIPTION and reconnect param description. Added imports for `getSession` and `drainQueue`.
+- `src/tools/session_start.test.ts` — Added `getSession` and `drainQueue` mocks; added 9 new reconnect flow tests covering: approval dialog format, same SID/PIN return, health reset, queue drain, denial, timeout, service messages (single and multi-session), dialog edit on denial, and fallthrough-to-new-session when no name collision.
+- `changelog/unreleased.md` — Added entries under `### Added`.
+
+**Test results:** 1468 passed (1558 total including todos/skips), 0 failures.  
+**Build:** clean. **Lint:** clean.
