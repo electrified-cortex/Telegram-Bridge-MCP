@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   deliverServiceMessage: vi.fn(),
   trackMessageOwner: vi.fn(),
   drainQueue: vi.fn().mockReturnValue([]),
+  getSessionQueue: vi.fn().mockReturnValue({ pendingCount: () => 0 }),
   setSessionAnnouncementMessage: vi.fn(),
   getSessionAnnouncementMessage: vi.fn().mockReturnValue(undefined),
   resolveChat: vi.fn(() => 42 as number),
@@ -82,6 +83,7 @@ vi.mock("../session-queue.js", () => ({
   deliverServiceMessage: mocks.deliverServiceMessage,
   trackMessageOwner: mocks.trackMessageOwner,
   drainQueue: mocks.drainQueue,
+  getSessionQueue: (...args: unknown[]) => mocks.getSessionQueue(...args),
 }));
 
 vi.mock("../poller.js", () => ({
@@ -1292,7 +1294,7 @@ describe("session_start tool", () => {
     expect(result.action).toBe("reconnected");
   });
 
-  it("reconnect: true + approved → drains queue and resets health state", async () => {
+  it("reconnect: true + approved → preserves queued messages and resets health state", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     const fakeSession = {
       sid: 1, pin: 999999, name: "Overseer", color: "🟦",
@@ -1308,11 +1310,29 @@ describe("session_start tool", () => {
     const result = parseResult(await call({ name: "Overseer", reconnect: true }));
 
     expect(result.pin).toBe(999999);
-    expect(mocks.drainQueue).toHaveBeenCalledWith(1);
+    expect(mocks.drainQueue).not.toHaveBeenCalled();
     expect(mocks.setActiveSession).toHaveBeenCalledWith(1);
     // Health state reset (mutations on the fakeSession object)
     expect(fakeSession.lastPollAt).toBeUndefined();
     expect(fakeSession.healthy).toBe(true);
+  });
+
+  it("reconnect: true + approved → returns actual pending count from session queue", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({
+      sid: 1, pin: 999999, name: "Overseer", color: "🟦",
+      createdAt: "2026-03-17", lastPollAt: 99999, healthy: false,
+    });
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 401 });
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq2" } }); });
+    });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 5 });
+
+    const result = parseResult(await call({ name: "Overseer", reconnect: true }));
+
+    expect(result.pending).toBe(5);
   });
 
   it("reconnect: true + operator denies → SESSION_DENIED, no session created", async () => {

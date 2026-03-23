@@ -5,7 +5,7 @@ import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
 import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage } from "../session-manager.js";
-import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, drainQueue } from "../session-queue.js";
+import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, getSessionQueue } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
@@ -237,10 +237,10 @@ export function register(server: McpServer) {
                   `Session "${existing.name}" (SID ${existing.sid}) disappeared unexpectedly.`,
               });
             }
-            // Reset health markers and drain stale events from the queue
+            // Reset health markers; preserve queued messages for the reconnecting session
             fullSession.lastPollAt = undefined;
             fullSession.healthy = true;
-            drainQueue(existing.sid);
+            const pending = getSessionQueue(existing.sid)?.pendingCount() ?? 0;
             setActiveSession(existing.sid);
 
             // Deliver service messages
@@ -300,7 +300,7 @@ export function register(server: McpServer) {
               pin: fullSession.pin,
               sessions_active: reconSessActive,
               action: "reconnected",
-              pending: 0,
+              pending,
               profile_hint: "Call load_profile(key) to restore saved session configuration.",
               instructions: "You reconnected after a gap. "
                 + "Call get_chat_history to check for messages you may have missed. "
