@@ -71,7 +71,7 @@ import {
 } from "./session-queue.js";
 import { resetRoutingModeForTest, setGovernorSid } from "./routing-mode.js";
 import { resetDmPermissionsForTest } from "./dm-permissions.js";
-import { runInSessionContext } from "./session-context.js";
+import { runInSessionContext, getCallerSid } from "./session-context.js";
 
 import { register as registerConfirm } from "./tools/confirm.js";
 import { register as registerChoose } from "./tools/choose.js";
@@ -301,5 +301,29 @@ describe("multi-session callback isolation", () => {
     const govEvents = govQueue!.dequeueBatch();
     const govCallbacks = govEvents.filter((e) => e.event === "callback" && e.content.target === 99);
     expect(govCallbacks).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // SC-5: Callback hook fires in owning session's ALS context (regression)
+  // -------------------------------------------------------------------------
+
+  it("SC-5: callback hook runs in owning session's ALS context, not the active session's", async () => {
+    // SID1 (Alpha) is the active session; hook is owned by SID2 (Beta)
+    setActiveSession(sid1);
+
+    let capturedSid = -1;
+    registerCallbackHook(77, () => {
+      // Inside the hook, getCallerSid should return sid2 (the owner),
+      // not sid1 (the active session at the time of the callback)
+      capturedSid = getCallerSid();
+    }, sid2);
+
+    // Fire callback for message 77
+    recordInbound(cbUpdate(77, "some_data", "qid_ctx"));
+    await new Promise<void>((r) => { setTimeout(r, 20); });
+
+    // Without the fix, capturedSid would be sid1 (the global active session).
+    // With the fix, it should be sid2 (the hook owner via runInSessionContext).
+    expect(capturedSid).toBe(sid2);
   });
 });

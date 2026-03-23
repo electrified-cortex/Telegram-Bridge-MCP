@@ -19,7 +19,7 @@
 
 import type { Update } from "grammy/types";
 import { recordUpdate, recordBotMessage } from "./session-recording.js";
-import { getCallerSid } from "./session-context.js";
+import { getCallerSid, runInSessionContext } from "./session-context.js";
 import { TemporalQueue } from "./temporal-queue.js";
 import { routeToSession, trackMessageOwner, notifySessionWaiters, sessionQueueCount } from "./session-queue.js";
 import { dlog } from "./debug-log.js";
@@ -296,8 +296,16 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
     // calling to prevent re-entry; errors are non-fatal.
     const hook = _callbackHooks.get(targetId);
     if (hook) {
+      const ownerSid = _callbackHookOwners.get(targetId) ?? 0;
       _callbackHooks.delete(targetId);
-      try { hook(evt); } catch { /* non-fatal */ }
+      _callbackHookOwners.delete(targetId);
+      try {
+        if (ownerSid > 0) {
+          runInSessionContext(ownerSid, () => hook(evt));
+        } else {
+          hook(evt);
+        }
+      } catch { /* non-fatal */ }
     }
 
     if (sessionQueueCount() === 0) _queue.enqueue({ event: evt });
