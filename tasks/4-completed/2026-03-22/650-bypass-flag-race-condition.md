@@ -74,3 +74,40 @@ Replace the global boolean with `AsyncLocalStorage<boolean>`. Each `bypassProxy(
 ## Risk
 
 Low — `bypassProxy` callers don't need changes (they already pass an async function). The ALS approach is proven in this codebase (`session-context.ts` uses it). Animation test mock (`(fn) => fn()`) is compatible.
+
+## Completion
+
+### Changes made
+
+**`src/outbound-proxy.ts`**:
+- Added `import { AsyncLocalStorage } from "node:async_hooks";`
+- Replaced `let _bypassing = false;` with `const _bypassAls = new AsyncLocalStorage<boolean>();`
+- Rewrote `bypassProxy()` to use `_bypassAls.run(true, fn)` — no try/finally needed
+- Added `isBypassing(): boolean` helper using `_bypassAls.getStore() === true`
+- Replaced all 5 `if (_bypassing)` guards with `if (isBypassing())`
+- Replaced `let _fileSendTypingGen = 0;` with `const _fileSendTypingGenBySid = new Map<number, number>();`
+- Updated `notifyBeforeFileSend` and `notifyAfterFileSend` to key the typing gen map by `getCallerSid()`
+- Updated `resetOutboundProxyForTest()`: removed `_bypassing = false;`, replaced `_fileSendTypingGen = 0;` with `_fileSendTypingGenBySid.clear()`
+
+**`src/outbound-proxy.test.ts`**:
+- Added new test: "does not affect concurrent non-bypassed contexts" in the `bypassProxy` describe block — verifies that a bypassed async context does not suppress hooks in a concurrent non-bypassed context
+
+### Test results
+
+`pnpm test`: **1737 passed (1737)** — all tests pass (1736 baseline + 1 new)
+
+### Build and lint
+
+- `pnpm build`: passed
+- `pnpm lint` on changed files: passed (clean)
+- Note: pre-existing lint error in `src/message-store.ts` line 304 (`no-confusing-void-expression`) — not related to this task, not fixed per task scope constraint
+
+### Acceptance criteria
+
+- [x] `_bypassing` is no longer a global boolean — uses `AsyncLocalStorage`
+- [x] `bypassProxy()` scopes the bypass to only the calling async context
+- [x] `notifyBeforeFileSend` / `notifyAfterFileSend` and the Grammy proxy guards all use `isBypassing()`
+- [x] `_fileSendTypingGen` is per-session (Map keyed by SID)
+- [x] Existing tests pass (1736 baseline)
+- [x] New test: concurrent bypass — one context bypassed, another context is NOT bypassed
+- [x] Build passes, lint clean (changed files)

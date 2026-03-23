@@ -321,6 +321,32 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendMessage(42, "after");
       expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalledOnce();
     });
+
+    it("does not affect concurrent non-bypassed contexts", async () => {
+      // Simulate: bypassProxy is active in one async context,
+      // while notifyAfterFileSend runs in another context concurrently.
+      mocks.getCallerSid.mockReturnValue(1);
+
+      let outsideBypassCalled = false;
+
+      await Promise.all([
+        // Context A: bypassed
+        bypassProxy(async () => {
+          // Simulate an in-flight API call
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }),
+        // Context B: NOT bypassed — should fire hooks normally
+        (async () => {
+          await new Promise(resolve => setTimeout(resolve, 5));
+          await notifyAfterFileSend(99, "voice", "test", undefined);
+          outsideBypassCalled = true;
+        })(),
+      ]);
+
+      // Context B should have recorded the outgoing message
+      expect(outsideBypassCalled).toBe(true);
+      expect(mocks.recordOutgoing).toHaveBeenCalledWith(99, "voice", "test", undefined);
+    });
   });
 
   // -----------------------------------------------------------------------
