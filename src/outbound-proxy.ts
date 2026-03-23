@@ -10,6 +10,7 @@
  * animation-state, or message-store.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { Api } from "grammy";
 import { typingGeneration, cancelTypingIfSameGeneration } from "./typing-state.js";
 import { clearPendingTemp } from "./temp-message.js";
@@ -100,31 +101,31 @@ export function clearSendInterceptor(sid?: number): void {
 // Bypass flag — prevents re-entrancy when the animation system itself sends
 // ---------------------------------------------------------------------------
 
-let _bypassing = false;
+const _bypassAls = new AsyncLocalStorage<boolean>();
 
 /** Execute a callback with the proxy bypassed (for internal animation sends). */
 export async function bypassProxy<T>(fn: () => Promise<T>): Promise<T> {
-  _bypassing = true;
-  try {
-    return await fn();
-  } finally {
-    _bypassing = false;
-  }
+  return _bypassAls.run(true, fn);
+}
+
+/** True only within the async context of a `bypassProxy()` call. */
+function isBypassing(): boolean {
+  return _bypassAls.getStore() === true;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers for sendVoiceDirect (not a Grammy method, needs manual hooks)
 // ---------------------------------------------------------------------------
 
-let _fileSendTypingGen = 0;
+const _fileSendTypingGenBySid = new Map<number, number>();
 
 /** Call before a custom (non-Grammy) file send. */
 export async function notifyBeforeFileSend(): Promise<void> {
-  if (_bypassing) return;
-  _fileSendTypingGen = typingGeneration();
+  if (isBypassing()) return;
+  const sid = getCallerSid();
+  _fileSendTypingGenBySid.set(sid, typingGeneration());
   clearPendingTemp();
   await fireTempReactionRestore();
-  const sid = getCallerSid();
   const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
   if (interceptor) await interceptor.beforeFileSend();
 }
@@ -136,10 +137,10 @@ export async function notifyAfterFileSend(
   text?: string,
   caption?: string,
 ): Promise<void> {
-  if (_bypassing) return;
-  cancelTypingIfSameGeneration(_fileSendTypingGen);
-  recordOutgoing(messageId, contentType, text, caption);
+  if (isBypassing()) return;
   const sid = getCallerSid();
+  cancelTypingIfSameGeneration(_fileSendTypingGenBySid.get(sid) ?? 0);
+  recordOutgoing(messageId, contentType, text, caption);
   const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
   if (interceptor) await interceptor.afterFileSend();
 }
@@ -190,7 +191,7 @@ export function createOutboundProxy(realApi: Api): Api {
           text: string,
           opts?: Record<string, unknown>,
         ) {
-          if (_bypassing) return fn(chatId, text, opts);
+          if (isBypassing()) return fn(chatId, text, opts);
 
           const gen = typingGeneration();
           clearPendingTemp();
@@ -249,7 +250,7 @@ export function createOutboundProxy(realApi: Api): Api {
       const fileContentType = FILE_METHODS[method];
       if (fileContentType) {
         return async function proxiedFileSend(...args: unknown[]) {
-          if (_bypassing) return fn(...args);
+          if (isBypassing()) return fn(...args);
 
           const gen = typingGeneration();
           clearPendingTemp();
@@ -296,7 +297,7 @@ export function createOutboundProxy(realApi: Api): Api {
       // --- editMessageText: cancel typing + reset animation timeout ---
       if (method === "editMessageText") {
         return async function proxiedEditMessageText(...args: unknown[]) {
-          if (_bypassing) return fn(...args);
+          if (isBypassing()) return fn(...args);
           const gen = typingGeneration();
           await fireTempReactionRestore();
 
@@ -335,8 +336,7 @@ export function createOutboundProxy(realApi: Api): Api {
 
 export function resetOutboundProxyForTest(): void {
   _interceptors.clear();
-  _bypassing = false;
-  _fileSendTypingGen = 0;
+  _fileSendTypingGenBySid.clear();
 }
 
 /** Re-export for tests that need to assert temp-reaction interplay. */
