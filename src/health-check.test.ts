@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn().mockResolvedValue({ message_id: 999 }),
   editMessageText: vi.fn().mockResolvedValue(undefined),
   answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+  getCallerSid: vi.fn(() => 1),
 }));
 
 vi.mock("./session-manager.js", () => ({
@@ -61,6 +62,10 @@ vi.mock("./message-store.js", () => ({
 
 vi.mock("./debug-log.js", () => ({
   dlog: mocks.dlog,
+}));
+
+vi.mock("./session-context.js", () => ({
+  getCallerSid: () => mocks.getCallerSid(),
 }));
 
 // ── Import after mocks ─────────────────────────────────────
@@ -175,7 +180,7 @@ describe("health-check", () => {
       mocks.getGovernorSid.mockReturnValue(1);
       mocks.listSessions.mockReturnValue([gov, next]);
       await _runHealthCheckNow();
-      expect(mocks.registerCallbackHook).toHaveBeenCalledWith(999, expect.any(Function));
+      expect(mocks.registerCallbackHook).toHaveBeenCalledWith(999, expect.any(Function), 1);
     });
   });
 

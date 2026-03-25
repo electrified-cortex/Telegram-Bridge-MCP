@@ -25,6 +25,7 @@ import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
 import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
 import { hasActiveAnimation } from "./animation-state.js";
+import { getCallerSid } from "./session-context.js";
 
 // ── Constants ──────────────────────────────────────────────
 
@@ -67,6 +68,12 @@ async function sendGovernorPrompt(
 ): Promise<void> {
   const chatId = resolveChat();
   if (typeof chatId !== "number") return;
+
+  // Capture the active session SID before the async send so the callback hook
+  // runs in the same session context, keeping the name-tag consistent on edit.
+  // getCallerSid() returns 0 when there is no ALS context (e.g. a timer callback);
+  // registerCallbackHook only stores ownerSid when > 0, so pass undefined in that case.
+  const hookOwnerSid = getCallerSid();
 
   const text =
     `⚠️ *${markdownToV2(governorName)}* \\(primary\\) appears unresponsive\\.\n` +
@@ -138,7 +145,7 @@ async function sendGovernorPrompt(
     ).catch(() => {});
 
     dlog("health", `governor rerouted: new governor sid=${targetSid} name=${targetName}`);
-  });
+  }, hookOwnerSid > 0 ? hookOwnerSid : undefined);
 }
 
 // ── Health check tick ─────────────────────────────────────

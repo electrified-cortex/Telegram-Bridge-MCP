@@ -6,7 +6,7 @@ import {
 } from "../telegram.js";
 import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
 import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
-import { getCallerSid } from "../session-context.js";
+import { getCallerSid, runInSessionContext } from "../session-context.js";
 import { requireAuth } from "../session-gate.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
@@ -180,9 +180,13 @@ export function register(server: McpServer) {
         if (!match) {
           // Timeout — register a message hook so the next user message
           // cleans up the stale buttons (callback hook handles late clicks).
+          // Run editWithSkipped in the tool's session context so the session
+          // header remains consistent with the original message.
           registerMessageHook(messageId, () => {
             clearCallbackHook(messageId);
-            editWithSkipped(chatId, messageId, question).catch(() => {/* non-fatal */});
+            void runInSessionContext(_sid, () =>
+              editWithSkipped(chatId, messageId, question),
+            ).catch(() => {/* non-fatal */});
           });
           return toResult({
             timed_out: true,

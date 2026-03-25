@@ -12,6 +12,7 @@ import {
 } from "./button-helpers.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
+import { runInSessionContext } from "../session-context.js";
 
 const DESCRIPTION_CONFIRM =
   "Sends an OK/Cancel confirmation message and waits until the user presses a " +
@@ -143,9 +144,13 @@ async function confirmHandler(
     if (!result) {
       // Timeout — register a message hook so the next user message
       // cleans up the stale buttons (callback hook handles late clicks).
+      // Run editWithSkipped in the tool's session context so the session
+      // header remains consistent with the original message.
       registerMessageHook(sent.message_id, () => {
         clearCallbackHook(sent.message_id);
-        editWithSkipped(chatId, sent.message_id, text).catch(() => {/* non-fatal */});
+        void runInSessionContext(_sid, () =>
+          editWithSkipped(chatId, sent.message_id, text),
+        ).catch(() => {/* non-fatal */});
       });
       return toResult({ timed_out: true, message_id: sent.message_id });
     }
