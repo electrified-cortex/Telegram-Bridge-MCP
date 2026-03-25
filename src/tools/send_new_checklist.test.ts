@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
   editMessageText: vi.fn(),
+  pinChatMessage: vi.fn().mockResolvedValue(true),
+  unpinChatMessage: vi.fn().mockResolvedValue(true),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
 }));
@@ -57,6 +59,12 @@ describe("send_new_checklist tool", () => {
     expect(data.hint).toBeDefined();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
     expect(mocks.editMessageText).not.toHaveBeenCalled();
+  });
+
+  it("auto-pins the message after sending (silent)", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 10, chat: { id: 1 }, date: 0 });
+    await call({ title: "CI Pipeline", steps: STEPS, identity: [1, 123456] });
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(1, 10, { disable_notification: true });
   });
 
   it("renders step statuses with appropriate icons", async () => {
@@ -150,6 +158,34 @@ describe("update_checklist tool", () => {
     expect((parseResult(result)).updated).toBe(true);
     expect(mocks.editMessageText).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not unpin when steps are still in progress", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("auto-unpins when all steps reach terminal status", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    const terminalSteps = [
+      { label: "Install deps", status: "done" },
+      { label: "Build", status: "done" },
+      { label: "Test", status: "failed" },
+      { label: "Deploy", status: "skipped" },
+    ];
+    await update({ title: "CI Pipeline", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 10);
+  });
+
+  it("does not unpin when any step is still pending or running", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    const mixedSteps = [
+      { label: "Install deps", status: "done" },
+      { label: "Build", status: "running" },
+    ];
+    await update({ title: "T", steps: mixedSteps, message_id: 10, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 
   it("handles boolean editMessageText response (channel case)", async () => {

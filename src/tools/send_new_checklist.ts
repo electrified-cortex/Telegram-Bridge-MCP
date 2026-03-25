@@ -45,7 +45,8 @@ const STEPS_INPUT = z
 const TITLE_INPUT = z.string().describe("Bold heading for the status block, e.g. \"Refactoring: src/auth.ts\"");
 
 const CREATE_DESCRIPTION =
-  "Creates a new live task checklist message in Telegram. Use for discrete " +
+  "Creates a new live task checklist message in Telegram, auto-pins it (silent). " +
+  "Use for discrete " +
   "named steps with status (pending/running/done/failed). " +
   "For percentage-based progress tracking, use send_new_progress instead. " +
   "Call this once at the start of a multi-step agent task to send the " +
@@ -56,7 +57,8 @@ const CREATE_DESCRIPTION =
 const UPDATE_DESCRIPTION =
   "Updates an existing live task checklist message in Telegram. Pass the " +
   "message_id previously returned by send_new_checklist to edit it in-place " +
-  "with the latest step statuses.";
+  "with the latest step statuses. " +
+  "Auto-unpins the message when all steps reach a terminal status (done/failed/skipped).";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -84,6 +86,7 @@ export function register(server: McpServer) {
           parse_mode: "HTML",
           _rawText: title,
         } as Record<string, unknown>);
+        getApi().pinChatMessage(chatId, msg.message_id, { disable_notification: true }).catch(() => {});
         return toResult({
           message_id: msg.message_id,
           hint: "Pass this message_id to update_checklist to edit this checklist in-place.",
@@ -127,6 +130,11 @@ export function register(server: McpServer) {
           { parse_mode: "HTML" },
         );
         const edited = typeof result === "boolean" ? { message_id } : result;
+        const TERMINAL: ReadonlySet<StepStatus> = new Set(["done", "failed", "skipped"]);
+        const allTerminal = steps.every(s => TERMINAL.has(s.status));
+        if (allTerminal) {
+          getApi().unpinChatMessage(chatId, message_id).catch(() => {});
+        }
         return toResult({ message_id: edited.message_id, updated: true });
       } catch (err) {
         return toError(err);

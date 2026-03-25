@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
+  pinChatMessage: vi.fn().mockResolvedValue(true),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
 }));
@@ -48,6 +49,12 @@ describe("send_new_progress tool", () => {
     expect(data.message_id).toBe(42);
     expect(data.hint).toBeDefined();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it("auto-pins the message after sending (silent)", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 42, chat: { id: 1 }, date: 0 });
+    await call({ percent: 50, title: "Building", identity: [1, 123456] });
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(1, 42, { disable_notification: true });
   });
 
   it("renders title in HTML bold", async () => {

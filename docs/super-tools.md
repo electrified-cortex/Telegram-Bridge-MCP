@@ -41,20 +41,19 @@ Implemented as of v3 (renamed from `update_status`).
 **API (two-tool pattern):**
 
 ```text
-# Create
+# Create — auto-pins the message (silent)
 { message_id } = send_new_checklist(title, steps)
 
 # Update (in-place edit — requires message_id from send_new_checklist)
+# Auto-unpins when all steps reach a terminal status
 update_checklist(message_id, title, steps)
-
-# Complete (agent-managed — not yet automatic)
-pin_message(message_id, unpin: true)
 ```
 
-**Planned:**
+**Auto-pin / auto-unpin:**
 
-- Auto-pin on first call
-- Auto-reply + unpin when all steps reach a terminal status (`done` / `failed` / `skipped`)
+- `send_new_checklist` pins the message silently on creation
+- `update_checklist` unpins automatically when all steps reach a terminal status
+  (`done` / `failed` / `skipped`)
 
 ---
 
@@ -66,12 +65,14 @@ Implemented as two tools: `send_new_progress` (create) and `update_progress` (ed
 **Example:**
 
 ```text
+# Create — auto-pins the message (silent)
 { message_id } = send_new_progress(title, percent, subtext?)
 
 # Built-in render (50%, default width 10):
 # ▓▓▓▓▓░░░░░  50%
 # Building dist/...
 
+# Update — auto-unpins at 100%
 update_progress(message_id, title, 100, "Done in 4.2s")
 ```
 
@@ -85,6 +86,11 @@ update_progress(message_id, title, 100, "Done in 4.2s")
 | `width` | number (optional) | Bar width in chars; default 10, max 40 |
 | `message_id` | number | Required for `update_progress`; pass the value returned by `send_new_progress` |
 
+**Auto-pin / auto-unpin:**
+
+- `send_new_progress` pins the message silently on creation
+- `update_progress` unpins automatically when `percent` reaches `100`
+
 Multiple concurrent progress bars are supported — each is tracked by its own `message_id`.
 The server is stateless; all parameters must be passed on every `update_progress` call.
 
@@ -94,7 +100,7 @@ The server is stateless; all parameters must be passed on every `update_progress
 
 - **Auto-pin on create** — super tools are important enough to stay visible; no separate
   `pin_message` call required
-- **Auto-unpin on complete** — with a breadcrumb reply so the user can scroll back
+- **Auto-unpin on complete** — unpins when done so the chat stays clean
 - **In-place editing** — one message evolves rather than a stream of status messages
 - **Single-tool API** — create and update share one tool name; `message_id` distinguishes them
 - **Agent-transparent** — agent passes `message_id` around; the tool handles pin state internally

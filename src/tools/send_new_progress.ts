@@ -30,10 +30,11 @@ export function renderProgress(
 }
 
 const DESCRIPTION =
-  "Creates a new progress bar message and returns its message_id. " +
+  "Creates a new progress bar message, auto-pins it (silent), and returns its message_id. " +
   "Use for percentage-based continuous tracking (e.g. 47%). " +
   "For discrete named steps with pass/fail status, use send_new_checklist instead. " +
   "Pass the returned message_id to update_progress to edit in-place. " +
+  "At 100% update_progress auto-unpins the message. " +
   "Multiple concurrent progress bars are supported — each is tracked by its own message_id. " +
   "Ensure session_start has been called.";
 
@@ -81,6 +82,7 @@ export function register(server: McpServer) {
           parse_mode: "HTML",
           _rawText: title ?? "",
         } as Record<string, unknown>);
+        getApi().pinChatMessage(chatId, msg.message_id, { disable_notification: true }).catch(() => {});
         return toResult({
           message_id: msg.message_id,
           hint: "Pass this message_id to update_progress to edit in-place.",

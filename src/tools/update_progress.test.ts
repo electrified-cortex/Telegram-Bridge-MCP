@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   editMessageText: vi.fn(),
+  unpinChatMessage: vi.fn().mockResolvedValue(true),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
 }));
@@ -71,6 +72,18 @@ describe("update_progress tool", () => {
     await call({ message_id: 10, percent: 50, subtext: "half done", identity: [1, 123456]});
     const [, , text] = mocks.editMessageText.mock.calls[0] as [unknown, unknown, string];
     expect(text).toContain("<i>half done</i>");
+  });
+
+  it("auto-unpins when percent reaches 100", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 10);
+  });
+
+  it("does not unpin when percent is less than 100", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await call({ message_id: 10, percent: 99, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 
   it("handles boolean result from editMessageText (Telegram unchanged)", async () => {
