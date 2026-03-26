@@ -89,13 +89,13 @@ Use for simple one-liner status messages.
 ## notify tool
 
 The `notify` tool accepts an optional `parse_mode` parameter.
-Default is `"Markdown"` — write standard Markdown in the body and it
+Default is `"Markdown"` — write standard Markdown in the text field and it
 is auto-converted.
 
 ```json
 {
   "title": "Build finished",
-  "body": "Deployed **v1.2.3** to `production` — all tests passed.",
+  "text": "Deployed **v1.2.3** to `production` — all tests passed.",
   "severity": "success"
 }
 ```

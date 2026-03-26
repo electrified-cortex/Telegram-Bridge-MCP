@@ -19,7 +19,7 @@ const DESCRIPTION =
   "and bold titles. Use for structured status messages (build results, " +
   "process events, errors). For conversational replies or long explanations, " +
   "use send_text instead. Default parse_mode is Markdown " +
-  "— write standard Markdown in the body and it is auto-converted, no " +
+  "— write standard Markdown in the text field and it is auto-converted, no " +
   "escaping needed. " +
   "Ensure session_start has been called.";
 
@@ -30,29 +30,29 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: {
         title: z.string().describe("Short bold heading, e.g. \"Build Failed\""),
-      body: z.string().optional().describe("Optional detail paragraph"),
-      severity: z
-        .enum(["info", "success", "warning", "error"])
-        .default("info")
-        .describe("Controls the emoji prefix"),
-      parse_mode: z
-        .enum(["Markdown", "HTML", "MarkdownV2"])
-        .default("Markdown")
-        .describe("Markdown = standard Markdown auto-converted (default); MarkdownV2 = raw; HTML = HTML tags"),
-      disable_notification: z
-        .boolean()
-        .optional()
-        .describe("Send silently (no phone notification)"),
-      reply_to_message_id: z
-        .number()
-        .int()
-        .min(1)
-        .optional()
-        .describe("Reply to this message ID — shows quoted message above the notification"),
-              identity: IDENTITY_SCHEMA,
-},
+        text: z.string().optional().describe("Optional detail paragraph"),
+        severity: z
+          .enum(["info", "success", "warning", "error"])
+          .default("info")
+          .describe("Controls the emoji prefix"),
+        parse_mode: z
+          .enum(["Markdown", "HTML", "MarkdownV2"])
+          .default("Markdown")
+          .describe("Markdown = standard Markdown auto-converted (default); MarkdownV2 = raw; HTML = HTML tags"),
+        disable_notification: z
+          .boolean()
+          .optional()
+          .describe("Send silently (no phone notification)"),
+        reply_to_message_id: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("Reply to this message ID — shows quoted message above the notification"),
+        identity: IDENTITY_SCHEMA,
+      },
     },
-    async ({ title, body, severity, parse_mode, disable_notification, reply_to_message_id, identity}) => {
+    async ({ title, text, severity, parse_mode, disable_notification, reply_to_message_id, identity }) => {
       const _sid = requireAuth(identity);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
@@ -65,19 +65,20 @@ export function register(server: McpServer) {
           ? `*${escapeV2(topicTitle)}*`
           : `<b>${escapeHtml(topicTitle)}</b>`;
         const lines = [`${prefix} ${titleFormatted}`];
-        if (body?.trim()) {
-          const bodyText = parse_mode === "Markdown" ? markdownToV2(body.trim()) : body.trim();
+        const detail = text?.trim();
+        if (detail) {
+          const bodyText = parse_mode === "Markdown" ? markdownToV2(detail) : detail;
           lines.push("", bodyText);
         }
-        const text = lines.join("\n");
+        const msgText = lines.join("\n");
         const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
 
-        const err = validateText(text);
+        const err = validateText(msgText);
         if (err) return toError(err);
 
-        const rawText = `${title}${body ? "\n" + body : ""}`;
+        const rawText = `${title}${detail ? "\n" + detail : ""}`;
 
-        const msg = await getApi().sendMessage(chatId, text, {
+        const msg = await getApi().sendMessage(chatId, msgText, {
           parse_mode: finalMode,
           disable_notification,
           reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,

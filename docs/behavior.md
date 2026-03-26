@@ -81,7 +81,7 @@ Before any significant action — editing files, running commands, committing, r
 
 Do this proactively, not just for actions that block or require confirmation.
 
-Format: title = short action label, body = brief description of what and why. Keep it concise.
+Format: title = short action label, text = brief description of what and why. Keep it concise.
 
 Examples:
 
@@ -97,7 +97,7 @@ Whenever you finish a task that took meaningful time or effort — regardless of
 
 This applies even when not in a loop prompt session: if you were given a task and it took more than a few seconds, send a `notify` when done. Don't assume the user is watching.
 
-Use `severity: "success"` for clean outcomes, `severity: "error"` if something failed. Keep it brief — title states what finished, body states the result or any action needed.
+Use `severity: "success"` for clean outcomes, `severity: "error"` if something failed. Keep it brief — title states what finished, text states the result or any action needed.
 
 Examples:
 
