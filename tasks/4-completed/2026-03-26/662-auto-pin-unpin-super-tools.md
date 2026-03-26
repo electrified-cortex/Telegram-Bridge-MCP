@@ -120,3 +120,37 @@ Add to `changelog/unreleased.md`:
 - [ ] `docs/super-tools.md` updated
 - [ ] All existing tests still pass
 - [ ] `pnpm build` clean
+
+## Completion
+
+**Date:** 2026-03-26
+
+### Files Modified
+
+- `src/tools/send_new_progress.ts` — Added `await pinChatMessage(...)` (best-effort) after `sendMessage`; updated DESCRIPTION
+- `src/tools/update_progress.ts` — Added `unpinChatMessage(...)` (fire-and-forget) at `percent === 100`; updated DESCRIPTION
+- `src/tools/send_new_checklist.ts` — Added `await pinChatMessage(...)` in create handler; added terminal-check + `unpinChatMessage(...)` in update handler; updated both descriptions
+- `src/tools/send_new_progress.test.ts` — Added `pinChatMessage` mock; added "auto-pins the message after sending (silent)" test
+- `src/tools/update_progress.test.ts` — Added `unpinChatMessage` mock; added unpin-at-100 and no-unpin-below-100 tests
+- `src/tools/send_new_checklist.test.ts` — Added `pinChatMessage`/`unpinChatMessage` mocks; added 4 tests covering pin on create and all unpin conditions
+- `src/message-store.ts` — Fixed pre-existing lint error (`no-confusing-void-expression`)
+- `docs/super-tools.md` — Removed "Planned" sections; documented actual auto-pin/unpin behavior; fixed "Single-tool API" → "Two-tool API" label; updated API examples
+- `changelog/unreleased.md` — Added 4 changelog entries
+
+### Design Notes
+
+- Pin is `await`ed (even though errors are swallowed) so a fast follow-up unpin call cannot race ahead and leave the message re-pinned after completion.
+- Unpin in `update_progress` and `update_checklist` remains fire-and-forget — ordering there is not an issue (it only fires after the edit succeeds).
+
+### Test Results
+
+**94 passed / 94 files — 1746 tests total. All passing.**
+
+### Build Status
+
+Clean (`pnpm build` and `pnpm lint` both exit 0).
+
+### Review Outcome
+
+Code Reviewer: **clean** after two iteration cycles. Initial round flagged an awaiting-race issue (fixed) and a doc label inconsistency (fixed). Second pass was clean.
+

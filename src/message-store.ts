@@ -301,7 +301,7 @@ export function recordInbound(update: Update, transcribedText?: string): boolean
       _callbackHookOwners.delete(targetId);
       try {
         if (ownerSid > 0) {
-          runInSessionContext(ownerSid, () => hook(evt));
+          runInSessionContext(ownerSid, () => { hook(evt); });
         } else {
           hook(evt);
         }

@@ -13,23 +13,11 @@ Super tools instead maintain a **persistent, mutable presence** in the chat:
 
 1. **Create** — sends the message, pins it (silent), returns `message_id`
 2. **Update** — agent edits in-place by passing `message_id`; pinned message stays visible
-3. **Complete** — agent marks done; tool replies to original message, then unpins it;
-   user can scroll back to the pinned message to review the final state
-
-The reply-before-unpin pattern keeps a visible thread breadcrumb in the chat so the user
-can always jump back to the completed task.
+3. **Complete** — tool auto-unpins when done so the chat stays clean
 
 ---
 
-## Skip the reply when no context exists
-
-If no messages arrived after the super-tool message (i.e., the checklist or bar is the
-last message in the chat), skip the reply and just unpin.
-The user can see the final state as the last message directly — a reply-to-self adds clutter.
-
----
-
-## Planned Super Tools
+## Super Tools
 
 ### `send_new_checklist`
 
@@ -41,37 +29,32 @@ Implemented as of v3 (renamed from `update_status`).
 **API (two-tool pattern):**
 
 ```text
-# Create
+# Create — auto-pins the message (silent)
 { message_id } = send_new_checklist(title, steps)
 
 # Update (in-place edit — requires message_id from send_new_checklist)
+# Auto-unpins when all steps reach terminal status (done/failed/skipped)
 update_checklist(message_id, title, steps)
-
-# Complete (agent-managed — not yet automatic)
-pin_message(message_id, unpin: true)
 ```
-
-**Planned:**
-
-- Auto-pin on first call
-- Auto-reply + unpin when all steps reach a terminal status (`done` / `failed` / `skipped`)
 
 ---
 
-### `progress_bar` → `send_new_progress` + `update_progress`
+### `send_new_progress` + `update_progress`
 
 A visual progress bar rendered with emoji blocks.
-Implemented as two tools: `send_new_progress` (create) and `update_progress` (edit in-place).
+Implemented as two tools: `send_new_progress` (create, auto-pins) and `update_progress` (edit in-place, auto-unpins at 100%).
 
 **Example:**
 
 ```text
+# Create — auto-pins the message (silent)
 { message_id } = send_new_progress(title, percent, subtext?)
 
 # Built-in render (50%, default width 10):
 # ▓▓▓▓▓░░░░░  50%
 # Building dist/...
 
+# Update in-place — auto-unpins when percent reaches 100
 update_progress(message_id, title, 100, "Done in 4.2s")
 ```
 
@@ -94,9 +77,9 @@ The server is stateless; all parameters must be passed on every `update_progress
 
 - **Auto-pin on create** — super tools are important enough to stay visible; no separate
   `pin_message` call required
-- **Auto-unpin on complete** — with a breadcrumb reply so the user can scroll back
+- **Auto-unpin on complete** — unpins when done so the chat stays clean
 - **In-place editing** — one message evolves rather than a stream of status messages
-- **Single-tool API** — create and update share one tool name; `message_id` distinguishes them
+- **Two-tool API** — each super tool is a two-tool pair (`send_new_*` to create, `update_*` to edit in-place); `message_id` links them
 - **Agent-transparent** — agent passes `message_id` around; the tool handles pin state internally
 
 ---

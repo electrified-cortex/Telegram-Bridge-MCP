@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
   editMessageText: vi.fn(),
+  pinChatMessage: vi.fn(),
+  unpinChatMessage: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
 }));
@@ -43,6 +45,8 @@ describe("send_new_checklist tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
+    mocks.pinChatMessage.mockResolvedValue(true);
+    mocks.unpinChatMessage.mockResolvedValue(true);
     const server = createMockServer();
     register(server);
     call = server.getHandler("send_new_checklist");
@@ -107,6 +111,12 @@ describe("send_new_checklist tool", () => {
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
 
+  it("auto-pins the message after sending (silent)", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 10, chat: { id: 1 }, date: 0 });
+    await call({ title: "CI Pipeline", steps: STEPS, identity: [1, 123456] });
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(1, 10, { disable_notification: true });
+  });
+
   describe("identity gate", () => {
     it("returns SID_REQUIRED when no identity provided", async () => {
       const result = await call({"title":"T","steps":[{"label":"a","status":"pending"}]});
@@ -138,6 +148,8 @@ describe("update_checklist tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
+    mocks.pinChatMessage.mockResolvedValue(true);
+    mocks.unpinChatMessage.mockResolvedValue(true);
     const server = createMockServer();
     register(server);
     update = server.getHandler("update_checklist");
@@ -181,5 +193,32 @@ describe("update_checklist tool", () => {
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
+  });
+
+  it("auto-unpins when all steps reach terminal status", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    const terminalSteps = [
+      { label: "Build", status: "done" },
+      { label: "Lint", status: "failed" },
+      { label: "Deploy", status: "skipped" },
+    ];
+    await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 10);
+  });
+
+  it("does not unpin when steps are still in progress", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not unpin when any step is still pending or running", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    const mixedSteps = [
+      { label: "Build", status: "done" },
+      { label: "Test", status: "running" },
+    ];
+    await update({ title: "CI", steps: mixedSteps, message_id: 10, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 });

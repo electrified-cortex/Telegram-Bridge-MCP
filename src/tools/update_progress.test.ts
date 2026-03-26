@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   editMessageText: vi.fn(),
+  unpinChatMessage: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
 }));
@@ -35,6 +36,7 @@ describe("update_progress tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
+    mocks.unpinChatMessage.mockResolvedValue(true);
     const server = createMockServer();
     register(server);
     call = server.getHandler("update_progress");
@@ -100,6 +102,18 @@ describe("update_progress tool", () => {
     const result = await call({ message_id: 10, percent: 50, identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
+  });
+
+  it("auto-unpins when percent reaches 100", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 10);
+  });
+
+  it("does not unpin when percent is less than 100", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await call({ message_id: 10, percent: 99, identity: [1, 123456] });
+    expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 
 describe("identity gate", () => {

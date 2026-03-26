@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
+  pinChatMessage: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
 }));
@@ -35,6 +36,7 @@ describe("send_new_progress tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
+    mocks.pinChatMessage.mockResolvedValue(true);
     const server = createMockServer();
     register(server);
     call = server.getHandler("send_new_progress");
@@ -111,6 +113,12 @@ describe("send_new_progress tool", () => {
     const result = await call({ percent: 50, title: "T", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
+  });
+
+  it("auto-pins the message after sending (silent)", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 42, chat: { id: 1 }, date: 0 });
+    await call({ percent: 50, title: "Building", identity: [1, 123456] });
+    expect(mocks.pinChatMessage).toHaveBeenCalledWith(1, 42, { disable_notification: true });
   });
 
   describe("identity gate", () => {

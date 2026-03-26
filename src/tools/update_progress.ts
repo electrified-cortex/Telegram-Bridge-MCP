@@ -12,7 +12,8 @@ const DESCRIPTION =
   "Edits an existing progress bar message in-place. " +
   "Pass the message_id returned by send_new_progress. " +
   "Only percent is required — omit title and subtext to keep the bar-only layout, " +
-  "or pass empty string to clear them.";
+  "or pass empty string to clear them. " +
+  "Auto-unpins the message when percent reaches 100.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -66,6 +67,9 @@ export function register(server: McpServer) {
           { parse_mode: "HTML" },
         );
         const edited = typeof result === "boolean" ? { message_id } : result;
+        if (percent === 100) {
+          getApi().unpinChatMessage(chatId, message_id).catch(() => {});
+        }
         return toResult({ message_id: edited.message_id, updated: true });
       } catch (err) {
         return toError(err);
