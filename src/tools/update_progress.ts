@@ -6,6 +6,14 @@ import { renderProgress } from "./send_new_progress.js";
 import { requireAuth } from "../session-gate.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
+/** Message IDs that have already received a completion reply — prevents duplicates. */
+const _completedMessageIds = new Set<number>();
+
+/** @internal reset for unit tests only */
+export function resetCompletionTrackingForTest(): void {
+  _completedMessageIds.clear();
+}
+
 const DEFAULT_WIDTH = 10;
 
 const DESCRIPTION =
@@ -69,6 +77,13 @@ export function register(server: McpServer) {
         const edited = typeof result === "boolean" ? { message_id } : result;
         if (percent === 100) {
           getApi().unpinChatMessage(chatId, message_id).catch(() => {});
+          if (!_completedMessageIds.has(message_id)) {
+            _completedMessageIds.add(message_id);
+            getApi().sendMessage(chatId, "✅ Complete", {
+              reply_to_message_id: message_id,
+              _skipHeader: true,
+            } as Record<string, unknown>).catch(() => {});
+          }
         }
         return toResult({ message_id: edited.message_id, updated: true });
       } catch (err) {

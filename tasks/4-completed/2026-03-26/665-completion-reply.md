@@ -54,10 +54,47 @@ chat feed even if the original is scrolled off-screen.
 
 ## Acceptance Criteria
 
-- [ ] Completing a checklist sends a "✅ Complete" reply to the checklist message
-- [ ] Reaching 100% progress sends a "✅ Complete" reply to the progress message
-- [ ] Completion replies have no session nametag header
-- [ ] `_skipHeader` is stripped before reaching the real Telegram API
-- [ ] No reply sent for non-terminal/partial updates
-- [ ] All existing tests pass
-- [ ] New tests cover the completion reply and `_skipHeader` behaviors
+- [x] Completing a checklist sends a "✅ Complete" reply to the checklist message
+- [x] Reaching 100% progress sends a "✅ Complete" reply to the progress message
+- [x] Completion replies have no session nametag header
+- [x] `_skipHeader` is stripped before reaching the real Telegram API
+- [x] No reply sent for non-terminal/partial updates
+- [x] All existing tests pass
+- [x] New tests cover the completion reply and `_skipHeader` behaviors
+
+## Completion
+
+**Date:** 2026-03-26
+
+### Files Changed
+
+- `src/outbound-proxy.ts` — Added `_skipHeader` internal flag support in the
+  `sendMessage` proxy. When `_skipHeader: true` is present in opts, skips header
+  injection entirely. Strips `_skipHeader` before passing opts to the real API.
+
+- `src/tools/send_new_checklist.ts` — In `update_checklist`, after
+  `unpinChatMessage` in the `allTerminal` block, sends a best-effort
+  `"✅ Complete"` reply with `reply_to_message_id` and `_skipHeader: true`.
+
+- `src/tools/update_progress.ts` — In `update_progress`, after
+  `unpinChatMessage` in the `percent === 100` block, sends the same best-effort
+  reply.
+
+- `src/outbound-proxy.test.ts` — Added two tests: verify `_skipHeader`
+  suppresses header injection; verify `_skipHeader` is stripped before real API.
+
+- `src/tools/send_new_checklist.test.ts` — Added `sendMessage` default mock in
+  `beforeEach`; added two tests: completion reply sent when all terminal, not
+  sent when partial.
+
+- `src/tools/update_progress.test.ts` — Added `sendMessage` to mocks and
+  `beforeEach`; added two tests: completion reply sent at 100%, not sent below.
+
+- `changelog/unreleased.md` — Added changelog entry.
+
+### Results
+
+- Tests: **1757 passed** (94 test files)
+- Build: **clean** (tsc + gen-build-info)
+- Code review: pending (see below)
+

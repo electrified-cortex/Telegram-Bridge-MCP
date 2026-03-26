@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   editMessageText: vi.fn(),
+  sendMessage: vi.fn(),
   unpinChatMessage: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
@@ -29,6 +30,7 @@ vi.mock("../session-manager.js", () => ({
 }));
 
 import { register } from "./update_progress.js";
+import { resetCompletionTrackingForTest } from "./update_progress.js";
 
 describe("update_progress tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
@@ -37,6 +39,8 @@ describe("update_progress tool", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     mocks.unpinChatMessage.mockResolvedValue(true);
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    resetCompletionTrackingForTest();
     const server = createMockServer();
     register(server);
     call = server.getHandler("update_progress");
@@ -108,6 +112,30 @@ describe("update_progress tool", () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     await call({ message_id: 10, percent: 100, identity: [1, 123456] });
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 10);
+  });
+
+  it("sends completion reply when percent reaches 100", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 11 });
+    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      1,
+      "✅ Complete",
+      expect.objectContaining({ reply_to_message_id: 10, _skipHeader: true }),
+    );
+  });
+
+  it("does not send duplicate completion reply on repeated 100% updates", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
+    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send completion reply when percent is less than 100", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await call({ message_id: 10, percent: 99, identity: [1, 123456] });
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("does not unpin when percent is less than 100", async () => {

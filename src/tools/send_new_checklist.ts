@@ -6,6 +6,14 @@ import { applyTopicToTitle } from "../topic-state.js";
 import { requireAuth } from "../session-gate.js";
 import { IDENTITY_SCHEMA } from "./identity-schema.js";
 
+/** Message IDs that have already received a completion reply — prevents duplicates. */
+const _completedMessageIds = new Set<number>();
+
+/** @internal reset for unit tests only */
+export function resetCompletionTrackingForTest(): void {
+  _completedMessageIds.clear();
+}
+
 const STEP_STATUS_SCHEMA = z.enum(["pending", "running", "done", "failed", "skipped"]);
 type StepStatus = z.infer<typeof STEP_STATUS_SCHEMA>;
 
@@ -133,6 +141,13 @@ export function register(server: McpServer) {
         const allTerminal = steps.every(s => TERMINAL.has(s.status));
         if (allTerminal) {
           getApi().unpinChatMessage(chatId, message_id).catch(() => {});
+          if (!_completedMessageIds.has(message_id)) {
+            _completedMessageIds.add(message_id);
+            getApi().sendMessage(chatId, "✅ Complete", {
+              reply_to_message_id: message_id,
+              _skipHeader: true,
+            } as Record<string, unknown>).catch(() => {});
+          }
         }
         return toResult({ message_id: edited.message_id, updated: true });
       } catch (err) {

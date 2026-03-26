@@ -31,6 +31,7 @@ vi.mock("../session-manager.js", () => ({
 }));
 
 import { register } from "./send_new_checklist.js";
+import { resetCompletionTrackingForTest } from "./send_new_checklist.js";
 
 const STEPS = [
   { label: "Install deps", status: "done" },
@@ -150,6 +151,8 @@ describe("update_checklist tool", () => {
     mocks.validateSession.mockReturnValue(true);
     mocks.pinChatMessage.mockResolvedValue(true);
     mocks.unpinChatMessage.mockResolvedValue(true);
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    resetCompletionTrackingForTest();
     const server = createMockServer();
     register(server);
     update = server.getHandler("update_checklist");
@@ -204,6 +207,38 @@ describe("update_checklist tool", () => {
     ];
     await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 10);
+  });
+
+  it("sends completion reply when all steps reach terminal status", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 11 });
+    const terminalSteps = [
+      { label: "Build", status: "done" },
+      { label: "Lint", status: "failed" },
+      { label: "Deploy", status: "skipped" },
+    ];
+    await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      1,
+      "✅ Complete",
+      expect.objectContaining({ reply_to_message_id: 10, _skipHeader: true }),
+    );
+  });
+
+  it("does not send duplicate completion reply on repeated terminal updates", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    const terminalSteps = [
+      { label: "Build", status: "done" },
+    ];
+    await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
+    await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send completion reply when steps are not all terminal", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+    await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, identity: [1, 123456] });
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("does not unpin when steps are still in progress", async () => {

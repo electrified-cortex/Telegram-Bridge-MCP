@@ -690,5 +690,39 @@ describe("outbound-proxy", () => {
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
       expect(sentText).toBe("🤖 `Scout`\nHello");
     });
+
+    it("_skipHeader suppresses nametag injection in multi-session mode", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Scout" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).sendMessage(42, "✅ Complete", {
+        reply_to_message_id: 99,
+        _skipHeader: true,
+      });
+
+      const [, sentText, sentOpts] = raw.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+      expect(sentText).toBe("✅ Complete");
+      expect(sentOpts.parse_mode).toBeUndefined();
+    });
+
+    it("_skipHeader is stripped before the real API call", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Scout" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).sendMessage(42, "✅ Complete", {
+        reply_to_message_id: 99,
+        _skipHeader: true,
+      });
+
+      const [, , sentOpts] = raw.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+      expect(sentOpts._skipHeader).toBeUndefined();
+      expect(sentOpts.reply_to_message_id).toBe(99);
+    });
   });
 });

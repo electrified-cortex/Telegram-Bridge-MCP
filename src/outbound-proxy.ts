@@ -202,19 +202,23 @@ export function createOutboundProxy(realApi: Api): Api {
           const cleanOpts = opts ? { ...opts } : undefined;
           if (cleanOpts) delete cleanOpts._rawText;
 
+          // _skipHeader: internal flag — skip nametag injection for this call
+          const skipHeader = cleanOpts?._skipHeader === true;
+          if (cleanOpts) delete cleanOpts._skipHeader;
+
           // Session header — prepend "🤖 Name\n" in multi-session mode
           let parseMode = cleanOpts?.parse_mode as string | undefined;
           const { plain: headerPlain, formatted: headerFormatted } = buildHeader(parseMode);
-          const finalText = headerFormatted ? headerFormatted + text : text;
+          const finalText = headerFormatted && !skipHeader ? headerFormatted + text : text;
 
           // Auto-inject parse_mode so the backtick name tag renders
           let finalOpts = cleanOpts;
-          if (headerFormatted && !parseMode) {
+          if (headerFormatted && !skipHeader && !parseMode) {
             finalOpts = { ...cleanOpts, parse_mode: "Markdown" };
             parseMode = "Markdown";
           }
           const finalRawText = rawText !== undefined
-            ? (headerPlain ? headerPlain + rawText : rawText)
+            ? (headerPlain && !skipHeader ? headerPlain + rawText : rawText)
             : undefined;
 
           // Animation promote: edit animation → real content
