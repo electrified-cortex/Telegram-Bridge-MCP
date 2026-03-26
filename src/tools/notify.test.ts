@@ -57,9 +57,9 @@ describe("notify tool", () => {
 
   it("auto-converts Markdown body", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0, text: "" });
-    await call({ title: "T", body: "Done. **v1**", severity: "info", identity: [1, 123456]});
-    const [, text] = mocks.sendMessage.mock.calls[0];
-    expect(text).toContain("Done\\. *v1*");
+    await call({ title: "T", text: "Done. **v1**", severity: "info", identity: [1, 123456]});
+    const [, msgText] = mocks.sendMessage.mock.calls[0];
+    expect(msgText).toContain("Done\\. *v1*");
   });
 
   it("uses HTML bold for title when parse_mode is HTML", async () => {
@@ -70,11 +70,11 @@ describe("notify tool", () => {
     expect(opts.parse_mode).toBe("HTML");
   });
 
-  it("includes body when provided", async () => {
+  it("includes text when provided", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0, text: "" });
-    await call({ title: "T", body: "Details here", severity: "info", identity: [1, 123456]});
-    const [, text] = mocks.sendMessage.mock.calls[0];
-    expect(text).toContain("Details here");
+    await call({ title: "T", text: "Details here", severity: "info", identity: [1, 123456]});
+    const [, msgText] = mocks.sendMessage.mock.calls[0];
+    expect(msgText).toContain("Details here");
   });
 
   it("defaults to info severity", async () => {
@@ -85,7 +85,7 @@ describe("notify tool", () => {
   });
 
   it("returns MESSAGE_TOO_LONG when combined text exceeds limit", async () => {
-    const result = await call({ title: "T", body: "b".repeat(4200), severity: "info", identity: [1, 123456]});
+    const result = await call({ title: "T", text: "b".repeat(4200), severity: "info", identity: [1, 123456]});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
     expect(mocks.sendMessage).not.toHaveBeenCalled();
