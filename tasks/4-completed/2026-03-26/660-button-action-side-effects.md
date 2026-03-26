@@ -54,7 +54,21 @@ badge or attribution.
 
 ## Acceptance Criteria
 
-- [ ] Root cause identified for the rename author-swap behavior
-- [ ] Fix implemented if the cause is clear
-- [ ] Other callback handlers audited for similar issues
-- [ ] No regression in existing button functionality
+- [x] Root cause identified for the rename author-swap behavior
+- [x] Fix implemented if the cause is clear
+- [x] Other callback handlers audited for similar issues
+- [x] No regression in existing button functionality
+
+## Completion
+
+Root cause identified and fixed in **task 663** (session context preservation):
+
+- `requestOperatorApproval()` edits fired from poller context without session ALS
+  context → `getCallerSid()` fell back to `getActiveSession()` → wrong SID → wrong
+  header on edit.
+- Fix: `requestOperatorApproval` now captures `callerSid` on entry and wraps all
+  edits in `runInSessionContext(callerSid, ...)`.
+- Panel command callbacks wrapped in `runInSessionContext(0, ...)` (system context).
+- All callback handlers audited — `confirm`/`choose` use `registerCallbackHook`
+  with `ownerSid`, so they were already safe.
+- 1749 tests passing after the fix (PR #93, merged at 3961c76).
