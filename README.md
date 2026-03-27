@@ -88,6 +88,50 @@ See `mcp-config.example.json` for a complete reference. The core shape for each 
 
 > Do not add to global `~/.claude.json` — multiple instances will fight over `getUpdates`.
 
+### Shared server mode (Streamable HTTP)
+
+Instead of each MCP host spawning its own process via stdio, you can run **one** server instance and connect any number of clients to it over HTTP. This is the recommended setup for Claude Code, multi-window workflows, or any scenario where multiple agents need the same bot.
+
+**1. Start the server:**
+
+```bash
+MCP_PORT=3099 pnpm start
+```
+
+The server listens on `http://127.0.0.1:3099/mcp` using the [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) transport.
+
+**2. Point your MCP hosts at it:**
+
+**Claude Code** (`.mcp.json` in your project root):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
+Each client gets its own MCP session. All sessions share the same Telegram bot and can run concurrently with isolated queues.
+
+> **Tip:** Run the server in a terminal, tmux, or as a background service. It stays up independently of any editor or Claude Code session.
+
 ### 5. Start
 
 Paste `LOOP-PROMPT.md` into your AI assistant's chat. It connects, announces itself on Telegram, and waits for instructions.
