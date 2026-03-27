@@ -133,10 +133,19 @@ if (mcpPort) {
       await transport.handleRequest(req, res, req.body);
       return;
     } else {
+      // Extract the request id (if present) so clients can correlate the error per JSON-RPC 2.0
+      let requestId: string | number | null = null;
+      const body: unknown = req.body;
+      if (body !== null && typeof body === "object" && !Array.isArray(body) && "id" in body) {
+        const candidate = (body as Record<string, unknown>).id;
+        if (typeof candidate === "string" || typeof candidate === "number" || candidate === null) {
+          requestId = candidate;
+        }
+      }
       res.status(400).json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Bad Request: No valid session ID provided" },
-        id: null,
+        id: requestId,
       });
       return;
     }
