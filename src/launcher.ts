@@ -29,8 +29,17 @@ async function probeServer(url: string, timeoutMs: number): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => { controller.abort(); }, timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal, method: "GET" });
-    return res.status < 500;
+    const res = await fetch(url, {
+      signal: controller.signal,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "probe", method: "ping" }),
+    });
+    if (res.status >= 500) return false;
+    const ct = res.headers.get("content-type") ?? "";
+    if (!ct.toLowerCase().includes("application/json")) return false;
+    const data = (await res.json()) as Record<string, unknown>;
+    return data.jsonrpc === "2.0" && ("result" in data || "error" in data);
   } catch {
     return false;
   } finally {

@@ -189,6 +189,38 @@ If you can't run a persistent server, stdio mode spawns a dedicated process per 
 
 A `dist/launcher.js` convenience script is also available — it auto-starts the HTTP server if none is running, then bridges stdio ↔ HTTP. This lets you use a stdio config while still benefiting from a shared server.
 
+**Launcher bridge** (auto-starts the HTTP server):
+
+Instead of starting the server manually, use `dist/launcher.js` as a drop-in stdio replacement. It auto-starts the HTTP server on first use and bridges stdin/stdout ↔ HTTP for all subsequent connections. Credentials come from `.env` — no need to duplicate them in editor config.
+
+**VS Code** (`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "telegram": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/launcher.js"],
+      "cwd": "/absolute/path/to/telegram-bridge-mcp"
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`) / **Claude Code** (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/launcher.js"]
+    }
+  }
+}
+```
+
 </details>
 
 ---

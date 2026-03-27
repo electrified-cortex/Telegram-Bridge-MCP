@@ -131,7 +131,35 @@ If you can't run a persistent server, stdio mode spawns a dedicated process per 
 }
 ```
 
-A `dist/launcher.js` convenience script is also available — it auto-starts the HTTP server if none is running, then bridges stdio ↔ HTTP. This lets you use a stdio config while still benefiting from a shared server behind the scenes.
+**Launcher bridge** — `dist/launcher.js` auto-starts the HTTP server if none is running, then bridges stdio ↔ HTTP. Use it as a drop-in replacement for `dist/index.js` in any stdio config above. Credentials come from `.env` — no need to set `env` in your editor config:
+
+**VS Code** (`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "telegram": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/launcher.js"],
+      "cwd": "/absolute/path/to/telegram-bridge-mcp"
+    }
+  }
+}
+```
+
+**Claude Desktop / Claude Code** (`claude_desktop_config.json` / `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/launcher.js"]
+    }
+  }
+}
+```
 
 </details>
 
@@ -260,7 +288,7 @@ Five MCP resources available to any client:
 
 ```text
 ghcr.io/electricessence/telegram-bridge-mcp:latest
-ghcr.io/electricessence/telegram-bridge-mcp:4.7.0
+ghcr.io/electricessence/telegram-bridge-mcp:4.7.1
 ```
 
 > **Pairing first:** Run steps 2–3 on a machine with Node.js to create your `.env` file, or manually create one from `.env.example`. Docker reads it via `--env-file`.
