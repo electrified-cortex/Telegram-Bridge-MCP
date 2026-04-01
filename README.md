@@ -54,7 +54,52 @@ Verifies your token, generates a pairing code, waits for you to send it to the b
 
 ### 4. Configure your MCP host
 
-See `mcp-config.example.json` for a complete reference. The core shape for each host:
+#### Streamable HTTP (recommended)
+
+Run **one** server instance and connect any number of editors, agents, or Claude Code sessions to it. Each client gets its own MCP session with an isolated queue — no `getUpdates` conflicts.
+
+**1. Start the server** (terminal, tmux, startup script, etc.):
+
+```bash
+MCP_PORT=3099 pnpm start
+```
+
+The server listens on `http://127.0.0.1:3099/mcp` using the [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) transport. All config comes from `.env` — no credentials in your editor config.
+
+**2. Point your MCP hosts at it:**
+
+**VS Code** (`.vscode/mcp.json` or user settings):
+
+```json
+{
+  "servers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
+**Claude Code** (`.mcp.json` in your project root):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
+> Do not add to global `~/.claude.json` — every Claude Code session would connect, generating noise.
+
+<details>
+<summary><strong>stdio mode</strong> (single-instance fallback)</summary>
+
+If you can't run a persistent server, stdio mode spawns a dedicated process per host. Only one host can connect at a time — multiple instances will fight over `getUpdates`.
 
 **VS Code** (`.vscode/mcp.json`):
 
@@ -86,34 +131,7 @@ See `mcp-config.example.json` for a complete reference. The core shape for each 
 }
 ```
 
-> Do not add to global `~/.claude.json` — multiple instances will fight over `getUpdates`.
-
-### Shared server mode (Streamable HTTP)
-
-Instead of each MCP host spawning its own process via stdio, you can run **one** server instance and connect any number of clients to it over HTTP. This is the recommended setup for Claude Code, multi-window workflows, or any scenario where multiple agents need the same bot.
-
-**1. Start the server:**
-
-```bash
-MCP_PORT=3099 pnpm start
-```
-
-The server listens on `http://127.0.0.1:3099/mcp` using the [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) transport.
-
-**2. Point your MCP hosts at it:**
-
-**Claude Code** (`.mcp.json` in your project root):
-
-```json
-{
-  "mcpServers": {
-    "telegram": {
-      "type": "streamable-http",
-      "url": "http://127.0.0.1:3099/mcp"
-    }
-  }
-}
-```
+**Launcher bridge** — `dist/launcher.js` auto-starts the HTTP server if none is running, then bridges stdio ↔ HTTP. Use it as a drop-in replacement for `dist/index.js` in any stdio config above. Credentials come from `.env` — no need to set `env` in your editor config:
 
 **VS Code** (`.vscode/mcp.json`):
 
@@ -121,16 +139,29 @@ The server listens on `http://127.0.0.1:3099/mcp` using the [MCP Streamable HTTP
 {
   "servers": {
     "telegram": {
-      "type": "streamable-http",
-      "url": "http://127.0.0.1:3099/mcp"
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/launcher.js"],
+      "cwd": "/absolute/path/to/telegram-bridge-mcp"
     }
   }
 }
 ```
 
-Each client gets its own MCP session. All sessions share the same Telegram bot and can run concurrently with isolated queues.
+**Claude Desktop / Claude Code** (`claude_desktop_config.json` / `.mcp.json`):
 
-> **Tip:** Run the server in a terminal, tmux, or as a background service. It stays up independently of any editor or Claude Code session.
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/launcher.js"]
+    }
+  }
+}
+```
+
+</details>
 
 ### 5. Start
 
@@ -257,10 +288,26 @@ Five MCP resources available to any client:
 
 ```text
 ghcr.io/electricessence/telegram-bridge-mcp:latest
-ghcr.io/electricessence/telegram-bridge-mcp:4.7.0
+ghcr.io/electricessence/telegram-bridge-mcp:4.7.1
 ```
 
-Replace the `node` command in any host config above with:
+> **Pairing first:** Run steps 2–3 on a machine with Node.js to create your `.env` file, or manually create one from `.env.example`. Docker reads it via `--env-file`.
+
+**Streamable HTTP (recommended)** — run as a long-lived service:
+
+```bash
+docker run -d --name telegram-mcp \
+  --env-file /absolute/path/to/.env \
+  -e MCP_PORT=3099 \
+  -p 3099:3099 \
+  -v telegram-mcp-cache:/home/node/.cache \
+  ghcr.io/electricessence/telegram-bridge-mcp:latest
+```
+
+Then connect your MCP hosts to `http://127.0.0.1:3099/mcp` (same config as above).
+
+<details>
+<summary><strong>stdio mode</strong> (per-host process)</summary>
 
 ```json
 {
@@ -273,6 +320,8 @@ Replace the `node` command in any host config above with:
   ]
 }
 ```
+
+</details>
 
 The cache volume persists Whisper/TTS model weights across restarts.
 

@@ -100,9 +100,56 @@ If you get a `401 Unauthorized` error, the token is wrong — regenerate it with
 
 ## Step 5 — MCP Host Configuration
 
-### VS Code (Copilot / Claude extension)
+### Streamable HTTP (recommended)
 
-Add to your `.vscode/mcp.json` (or user settings):
+Run **one** server instance and connect any number of editors or Claude Code sessions. Each client gets its own MCP session with an isolated queue — no `getUpdates` conflicts.
+
+**1. Start the server** (terminal, tmux, startup script, etc.):
+
+```bash
+MCP_PORT=3099 pnpm start
+```
+
+All config comes from `.env` — no credentials in your editor settings.
+
+**2. Point your MCP hosts at it:**
+
+**VS Code** (`.vscode/mcp.json` or user settings):
+
+```json
+{
+  "servers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
+**Claude Code** (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`): same shape as Claude Code.
+
+> **Do not add to global `~/.claude.json` `mcpServers`.** Global servers spawn in *every* session, generating noise and competing for the same bot.
+
+<details>
+<summary><strong>stdio mode</strong> (single-instance fallback)</summary>
+
+If you can't run a persistent server, stdio mode spawns a dedicated process per host. Only one host can connect at a time — multiple instances will fight over `getUpdates`.
+
+**VS Code** (`.vscode/mcp.json`):
 
 ```json
 {
@@ -121,9 +168,7 @@ Add to your `.vscode/mcp.json` (or user settings):
 }
 ```
 
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
+**Claude Desktop** (`claude_desktop_config.json`):
 
 ```json
 {
@@ -140,49 +185,13 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-### Claude Code
+**Claude Code** (`.mcp.json`): same shape as Claude Desktop.
 
-Add a **project-scoped** `.mcp.json` in your project root:
+A `dist/launcher.js` convenience script is also available — it auto-starts the HTTP server if none is running, then bridges stdio ↔ HTTP. This lets you use a stdio config while still benefiting from a shared server.
 
-```json
-{
-  "mcpServers": {
-    "telegram": {
-      "command": "node",
-      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
-      "env": {
-        "BOT_TOKEN": "YOUR_TOKEN_HERE",
-        "ALLOWED_USER_ID": "123456789"
-      }
-    }
-  }
-}
-```
+**Launcher bridge** (auto-starts the HTTP server):
 
-> **Do not add this to global `~/.claude.json` `mcpServers`.** Global MCP servers are spawned in *every* Claude Code session. If you have multiple sessions open, each one starts its own Telegram MCP process — all competing for the same bot token's `getUpdates` poll. Only the first instance receives updates; the rest get nothing or cause conflicts. Always use a project-scoped `.mcp.json` so the server only runs in sessions opened from that directory.
-
-### Shared server mode (Streamable HTTP)
-
-Instead of each MCP host spawning its own stdio process, you can run **one** server instance and connect any number of clients over HTTP:
-
-```bash
-MCP_PORT=3099 pnpm start
-```
-
-Then point your MCP hosts at it:
-
-**Claude Code** (`.mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "telegram": {
-      "type": "streamable-http",
-      "url": "http://127.0.0.1:3099/mcp"
-    }
-  }
-}
-```
+Instead of starting the server manually, use `dist/launcher.js` as a drop-in stdio replacement. It auto-starts the HTTP server on first use and bridges stdin/stdout ↔ HTTP for all subsequent connections. Credentials come from `.env` — no need to duplicate them in editor config.
 
 **VS Code** (`.vscode/mcp.json`):
 
@@ -190,14 +199,29 @@ Then point your MCP hosts at it:
 {
   "servers": {
     "telegram": {
-      "type": "streamable-http",
-      "url": "http://127.0.0.1:3099/mcp"
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/launcher.js"],
+      "cwd": "/absolute/path/to/telegram-bridge-mcp"
     }
   }
 }
 ```
 
-Each client gets its own MCP session with an isolated queue. This avoids the `getUpdates` conflict problem entirely — one server handles polling, all clients connect to it.
+**Claude Desktop** (`claude_desktop_config.json`) / **Claude Code** (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/launcher.js"]
+    }
+  }
+}
+```
+
+</details>
 
 ---
 
