@@ -126,7 +126,7 @@ function fireSendNotifier(sid: number): void {
   const notifier = _sendNotifiers.get(sid);
   if (notifier) {
     _sendNotifiers.delete(sid);
-    void Promise.resolve().then(notifier);
+    void Promise.resolve().then(notifier).catch(() => {});
   }
 }
 

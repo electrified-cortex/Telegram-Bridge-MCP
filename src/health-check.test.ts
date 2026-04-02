@@ -510,6 +510,24 @@ describe("health-check", () => {
       expect(mocks.registerOnceOnSend).not.toHaveBeenCalled();
     });
 
+    it("does not propagate unhandled rejection when delete fails on hook fire", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.sendServiceMessage.mockResolvedValueOnce(42); // warning id
+      mocks.deleteMessage.mockRejectedValueOnce(new Error("network error"));
+
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      await _runHealthCheckNow();
+
+      mocks.getUnhealthySessions.mockReturnValue([]);
+      mocks.sendServiceMessage.mockResolvedValueOnce(99); // back-online id
+      await _runHealthCheckNow();
+
+      const [, hook] = mocks.registerOnceOnSend.mock.calls[0] as [number, () => void];
+      // Firing the hook when deleteMessage rejects should not throw or leak a rejection
+      await expect(Promise.resolve().then(hook)).resolves.toBeUndefined();
+    });
+
     it("tracks warning message_id for governor-no-other-session case", async () => {
       const gov = makeSession(1, "Primary");
       mocks.getGovernorSid.mockReturnValue(1);
