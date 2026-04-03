@@ -54,6 +54,12 @@ Verifies your token, generates a pairing code, waits for you to send it to the b
 
 ### 4. Configure your MCP host
 
+> **Which mode?**
+> - **Streamable HTTP** — start one server, connect multiple clients (VS Code, Claude Code, Cursor, etc.) simultaneously. Recommended for most users.
+> - **stdio** — no persistent server; each client spawns its own process. Simpler, but only one client at a time.
+>
+> For full per-client snippets and advanced options, see [`docs/setup.md`](docs/setup.md).
+
 #### Streamable HTTP (recommended)
 
 Run **one** server instance and connect any number of editors, agents, or Claude Code sessions to it. Each client gets its own MCP session with an isolated queue — no `getUpdates` conflicts.
@@ -96,6 +102,19 @@ The server listens on `http://127.0.0.1:3099/mcp` using the [MCP Streamable HTTP
 
 > Do not add to global `~/.claude.json` — every Claude Code session would connect, generating noise.
 
+**Cursor** (`.cursor/mcp.json` in your project root):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
 <details>
 <summary><strong>stdio mode</strong> (single-instance fallback)</summary>
 
@@ -131,6 +150,20 @@ If you can't run a persistent server, stdio mode spawns a dedicated process per 
 }
 ```
 
+**Cursor** (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/index.js"],
+      "env": { "BOT_TOKEN": "...", "ALLOWED_USER_ID": "..." }
+    }
+  }
+}
+```
+
 **Launcher bridge** — `dist/launcher.js` auto-starts the HTTP server if none is running, then bridges stdio ↔ HTTP. Use it as a drop-in replacement for `dist/index.js` in any stdio config above. Credentials come from `.env` — no need to set `env` in your editor config:
 
 **VS Code** (`.vscode/mcp.json`):
@@ -149,6 +182,19 @@ If you can't run a persistent server, stdio mode spawns a dedicated process per 
 ```
 
 **Claude Desktop / Claude Code** (`claude_desktop_config.json` / `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/absolute/path/to/telegram-bridge-mcp/dist/launcher.js"]
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`):
 
 ```json
 {
