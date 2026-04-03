@@ -55,9 +55,14 @@ at the socket level.
 Isolate the core logic in a worker thread that can be terminated and re-spawned
 while the main thread holds connections.
 
-### Option D — Fast Restart Optimization
+### Option D — Fast Restart Optimization ✅ SELECTED
 Don't solve hot-reload — instead make cold restart fast enough that it doesn't
 matter. Optimize startup time, add state persistence, ensure reconnect is seamless.
+
+**Rationale:** Options A-C are over-engineering for the current scale. With
+session state persistence (15-197) and seamless silent reconnect, a cold restart
+becomes tolerable. The bounce takes a few seconds, agents reconnect automatically.
+Can revisit A-C if cold restart latency remains painful after D is implemented.
 
 ## What Already Exists
 

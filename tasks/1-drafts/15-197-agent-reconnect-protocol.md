@@ -116,15 +116,19 @@ Agent starts → probe list_sessions (no auth)
 2. **Retry with backoff** instead of immediate operator escalation
 3. **Loop breaker** to prevent infinite reconnect attempts
 
-## Design Questions
+## Design Decisions (Closed)
 
-1. **Dormant TTL:** How long should the bridge hold state for disconnected
-   sessions? Too short = agents lose state. Too long = memory leak.
-2. **Update buffering:** Should the bridge buffer updates for dormant sessions?
-3. **Identity continuity:** Should reconnected sessions keep the same SID?
-4. **Silent vs confirmed:** Should ALL reconnects skip operator approval, or
-   only planned bounces?
-5. **Governor notification:** Should the governor see session state transitions?
+1. **Dormant TTL:** 30 minutes default, configurable via `mcp-config.json`.
+   After TTL expires, session state is discarded and the SID is freed.
+2. **Update buffering:** Yes — buffer up to 100 updates per dormant session.
+   Prevents memory runaway while allowing reasonable catch-up.
+3. **Identity continuity:** Yes — reconnected sessions keep the same SID.
+   The SID is the agent's identity; changing it breaks references.
+4. **Silent vs confirmed:** Silent reconnect when PIN matches AND no other
+   client is actively using the session. Operator approval ONLY on conflict
+   (another client has the session, or PIN doesn't match).
+5. **Governor notification:** Yes — governor receives `session_reconnected`
+   and `session_dormant` events via `dequeue_update`.
 
 ## Acceptance Criteria
 
