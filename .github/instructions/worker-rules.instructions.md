@@ -70,6 +70,40 @@ Reminders do not persist across session restarts. If you had active reminders be
 
 ---
 
+## Friction Protocol
+
+Friction means something is blocking you — stop and report. Pushing through friction creates
+cascading problems: bad commits, corrupted task state, and cleanup work for everyone.
+
+- **One retry max.** A second failure confirms the problem is real, not transient.
+- **Never brute-force.** Retrying the same command wastes tokens and can cause side effects.
+- **Missing files / unexpected state** — stop, DM the overseer with what you tried and what failed.
+- **Report up immediately.** The overseer can unblock you faster than you can unblock yourself.
+
+### Escalation Format
+
+When you hit a blocker you can't resolve after one retry, DM the overseer:
+
+```text
+🚧 Blocked: <task name>
+Tried: <what you attempted>
+Failed: <what went wrong>
+Needed: <specific unblock — decision, file, access, etc.>
+```
+
+Don't wait to be asked. Don't keep trying. Surface the problem immediately.
+
+### Permission Denial
+
+If a tool call is denied:
+
+1. **Stop immediately.** Do not retry the denied action.
+2. **DM the overseer** with the tool name, what you were trying to do, and that you are stopping.
+3. **Do not work around the denial.** If the action was denied, it needs permission review — not
+   an alternate tool that achieves the same blocked outcome.
+
+---
+
 ## Workspace Safety
 
 - Do **not** run `git stash`, `git reset`, `git rebase`, or `git cherry-pick` without overseer approval.
