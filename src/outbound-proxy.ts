@@ -98,6 +98,39 @@ export function clearSendInterceptor(sid?: number): void {
 }
 
 // ---------------------------------------------------------------------------
+// One-shot send notifiers — fire once on next outbound send from a session
+// ---------------------------------------------------------------------------
+
+/** Map of SID → one-shot callback fired on the session's next outbound send. */
+const _sendNotifiers = new Map<number, () => void>();
+
+/**
+ * Register a one-shot callback to be called on the next outbound send from `sid`.
+ * The callback is removed after it fires, or can be cleared explicitly.
+ */
+export function registerOnceOnSend(sid: number, fn: () => void): void {
+  _sendNotifiers.set(sid, fn);
+}
+
+/** Clear the pending one-shot notifier for `sid` (or all if omitted). */
+export function clearOnceOnSend(sid?: number): void {
+  if (sid !== undefined) {
+    _sendNotifiers.delete(sid);
+  } else {
+    _sendNotifiers.clear();
+  }
+}
+
+/** Fire and remove the one-shot notifier for `sid`, if any. */
+function fireSendNotifier(sid: number): void {
+  const notifier = _sendNotifiers.get(sid);
+  if (notifier) {
+    _sendNotifiers.delete(sid);
+    void Promise.resolve().then(notifier).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Bypass flag — prevents re-entrancy when the animation system itself sends
 // ---------------------------------------------------------------------------
 
@@ -141,6 +174,7 @@ export async function notifyAfterFileSend(
   const sid = getCallerSid();
   cancelTypingIfSameGeneration(_fileSendTypingGenBySid.get(sid) ?? 0);
   recordOutgoing(messageId, contentType, text, caption);
+  fireSendNotifier(sid);
   const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
   if (interceptor) await interceptor.afterFileSend();
 }
@@ -230,12 +264,14 @@ export function createOutboundProxy(realApi: Api): Api {
             if (result.intercepted) {
               cancelTypingIfSameGeneration(gen);
               recordOutgoing(result.message_id, "text", finalRawText ?? finalText);
+              fireSendNotifier(callSid);
               return { message_id: result.message_id };
             }
             // Not intercepted — send normally, then let animation restart below
             const msg = await fn(chatId, finalText, finalOpts);
             cancelTypingIfSameGeneration(gen);
             recordOutgoing(msg.message_id, "text", finalRawText ?? finalText);
+            fireSendNotifier(callSid);
             if (savedInterceptor.afterTextSend) {
               await savedInterceptor.afterTextSend();
             }
@@ -246,6 +282,7 @@ export function createOutboundProxy(realApi: Api): Api {
           const msg = await fn(chatId, finalText, finalOpts);
           cancelTypingIfSameGeneration(gen);
           recordOutgoing(msg.message_id, "text", finalRawText ?? finalText);
+          fireSendNotifier(callSid);
           return msg;
         };
       }
@@ -290,6 +327,7 @@ export function createOutboundProxy(realApi: Api): Api {
             // Extract file_id from the response (Grammy returns the full Message)
             const fileId = extractFileId(msg, fileContentType);
             recordOutgoing(msg.message_id, fileContentType, undefined, finalCaption, fileId);
+            fireSendNotifier(fileSid);
 
             return msg;
           } finally {
@@ -345,6 +383,7 @@ export function createOutboundProxy(realApi: Api): Api {
 export function resetOutboundProxyForTest(): void {
   _interceptors.clear();
   _fileSendTypingGenBySid.clear();
+  _sendNotifiers.clear();
 }
 
 /** Re-export for tests that need to assert temp-reaction interplay. */

@@ -21,11 +21,12 @@ import {
 } from "./session-manager.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
 import { deliverDirectMessage, deliverServiceMessage } from "./session-queue.js";
-import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
+import { getApi, getRawApi, resolveChat, sendServiceMessage } from "./telegram.js";
 import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
 import { hasActiveAnimation } from "./animation-state.js";
 import { getCallerSid } from "./session-context.js";
+import { registerOnceOnSend, clearOnceOnSend } from "./outbound-proxy.js";
 
 // ── Constants ──────────────────────────────────────────────
 
@@ -47,7 +48,14 @@ const CB_WAIT         = "hc_wait";
 /** SIDs of sessions that have already been flagged to the operator. */
 const _flaggedSids = new Set<number>();
 
+/** message_id of the "unresponsive" warning posted for each session (SID → message_id). */
+const _unresponsiveMsgIds = new Map<number, number>();
+
+/** message_id of the "back online" message posted for each session (SID → message_id). */
+const _backOnlineMsgIds = new Map<number, number>();
+
 let _intervalHandle: ReturnType<typeof setInterval> | undefined;
+let _isRunning = false;
 
 // ── Internal helpers ──────────────────────────────────────
 
@@ -151,45 +159,96 @@ async function sendGovernorPrompt(
 // ── Health check tick ─────────────────────────────────────
 
 async function runHealthCheck(thresholdMs: number): Promise<void> {
-  const unhealthy = getUnhealthySessions(thresholdMs);
-  const unhealthySids = new Set(unhealthy.map(s => s.sid));
-  const governorSid   = getGovernorSid();
+  if (_isRunning) return;
+  _isRunning = true;
+  try {
+    const unhealthy = getUnhealthySessions(thresholdMs);
+    const unhealthySids = new Set(unhealthy.map(s => s.sid));
+    const governorSid   = getGovernorSid();
 
-  // ── Recovery detection ────────────────────────────────
-  for (const sid of [..._flaggedSids]) {
-    if (unhealthySids.has(sid)) continue; // still unresponsive
-    // Session has polled again — it's healthy again.
-    _flaggedSids.delete(sid);
-    const session = getSession(sid);
-    const name = session?.name ?? `Session ${sid}`;
-    void sendServiceMessage(`✅ ${name} is back online.`).catch(() => {});
-    dlog("health", `session recovered sid=${sid} name=${name}`);
-  }
+    // ── Recovery detection ──────────────────────────────
+    for (const sid of [..._flaggedSids]) {
+      if (unhealthySids.has(sid)) continue; // still unresponsive
+      // Session has polled again — it's healthy again.
+      _flaggedSids.delete(sid);
+      const session = getSession(sid);
+      const name = session?.name ?? `Session ${sid}`;
 
-  // ── Newly unhealthy sessions ──────────────────────────
-  for (const session of unhealthy) {
-    if (_flaggedSids.has(session.sid)) continue; // already handled
-    if (hasActiveAnimation(session.sid)) continue; // animation = proof of life
-    _flaggedSids.add(session.sid);
-    markUnhealthy(session.sid);
-    dlog("health", `session unhealthy sid=${session.sid} name=${session.name}`);
-
-    const isGovernor = session.sid === governorSid && governorSid > 0;
-
-    if (isGovernor) {
-      const next = findNextSession(session.sid);
-      if (next) {
-        await sendGovernorPrompt(session.sid, session.name, next.sid, next.name).catch((e: unknown) => {
-          process.stderr.write(`[health-check] prompt error: ${String(e)}\n`);
-        });
-      } else {
-        void sendServiceMessage(
-          `⚠️ ${session.name} (primary) appears unresponsive and no other session is available.`,
-        ).catch(() => {});
+      // Delete the "unresponsive" warning if we tracked its message_id
+      const warningMsgId = _unresponsiveMsgIds.get(sid);
+      _unresponsiveMsgIds.delete(sid);
+      if (warningMsgId !== undefined) {
+        const chatId = resolveChat();
+        if (typeof chatId === "number") {
+          void getRawApi().deleteMessage(chatId, warningMsgId).catch(() => {});
+        }
       }
-    } else {
-      void sendServiceMessage(`⚠️ ${session.name} appears unresponsive.`).catch(() => {});
+
+      // Evict any previous "back online" message + hook before registering new ones.
+      // If a session recovered but never sent an outbound message (so the one-shot hook
+      // never fired), and then went unhealthy and recovered again — the old message_id
+      // would be lost. Delete it now to prevent orphaned messages.
+      const prevBackOnlineMsgId = _backOnlineMsgIds.get(sid);
+      if (prevBackOnlineMsgId !== undefined) {
+        _backOnlineMsgIds.delete(sid);
+        clearOnceOnSend(sid);
+        const chatId = resolveChat();
+        if (typeof chatId === "number") {
+          void getRawApi().deleteMessage(chatId, prevBackOnlineMsgId).catch(() => {});
+        }
+      }
+
+      // Post "back online" and track its message_id for later deletion
+      const backOnlineMsgId = await sendServiceMessage(`✅ ${name} is back online.`).catch(() => undefined);
+      if (backOnlineMsgId !== undefined) {
+        _backOnlineMsgIds.set(sid, backOnlineMsgId);
+        // Delete "back online" on the session's first real outbound send
+        registerOnceOnSend(sid, () => {
+          const msgId = _backOnlineMsgIds.get(sid);
+          _backOnlineMsgIds.delete(sid);
+          if (msgId !== undefined) {
+            const chatId = resolveChat();
+            if (typeof chatId === "number") {
+              void getRawApi().deleteMessage(chatId, msgId).catch(() => {});
+            }
+          }
+        });
+      }
+
+      dlog("health", `session recovered sid=${sid} name=${name}`);
     }
+
+    // ── Newly unhealthy sessions ────────────────────────
+    for (const session of unhealthy) {
+      if (_flaggedSids.has(session.sid)) continue; // already handled
+      if (hasActiveAnimation(session.sid)) continue; // animation = proof of life
+      _flaggedSids.add(session.sid);
+      markUnhealthy(session.sid);
+      dlog("health", `session unhealthy sid=${session.sid} name=${session.name}`);
+
+      const isGovernor = session.sid === governorSid && governorSid > 0;
+
+      if (isGovernor) {
+        const next = findNextSession(session.sid);
+        if (next) {
+          await sendGovernorPrompt(session.sid, session.name, next.sid, next.name).catch((e: unknown) => {
+            process.stderr.write(`[health-check] prompt error: ${String(e)}\n`);
+          });
+        } else {
+          const msgId = await sendServiceMessage(
+            `⚠️ ${session.name} (primary) appears unresponsive and no other session is available.`,
+          ).catch(() => undefined);
+          if (msgId !== undefined) _unresponsiveMsgIds.set(session.sid, msgId);
+        }
+      } else {
+        const msgId = await sendServiceMessage(
+          `⚠️ ${session.name} appears unresponsive.`,
+        ).catch(() => undefined);
+        if (msgId !== undefined) _unresponsiveMsgIds.set(session.sid, msgId);
+      }
+    }
+  } finally {
+    _isRunning = false;
   }
 }
 
@@ -216,6 +275,10 @@ export function stopHealthCheck(): void {
     _intervalHandle = undefined;
   }
   _flaggedSids.clear();
+  _unresponsiveMsgIds.clear();
+  _backOnlineMsgIds.clear();
+  _isRunning = false;
+  clearOnceOnSend();
 }
 
 /** Exposed for tests — directly run one health check tick. */
