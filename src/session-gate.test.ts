@@ -44,7 +44,7 @@ describe("requireAuth", () => {
   });
 
   describe("identity provided", () => {
-    it("returns AUTH_FAILED when validateSession returns false", () => {
+    it("returns AUTH_FAILED for invalid credentials", () => {
       sessionMocks.validateSession.mockReturnValue(false);
       const result = requireAuth([1, 99999]);
       expect(result).toMatchObject({ code: "AUTH_FAILED" });
@@ -90,6 +90,21 @@ describe("requireAuth", () => {
       expect((result as TelegramError).message).toContain("empty array");
     });
 
+    it("SID_REQUIRED when identity has more than 2 elements", () => {
+      const result = requireAuth([1, 2, 3]);
+      expect(result).toMatchObject({ code: "SID_REQUIRED" });
+      expect((result as TelegramError).message).toContain("3-element array");
+    });
+
+    it("returns AUTH_FAILED without throwing when getSession throws TypeError", () => {
+      sessionMocks.validateSession.mockReturnValue(false);
+      sessionMocks.getSession.mockImplementation(() => {
+        throw new TypeError("getSession is not a function");
+      });
+      const result = requireAuth([5, 99999]);
+      expect(result).toMatchObject({ code: "AUTH_FAILED" });
+    });
+
     it("AUTH_FAILED mentions SID not found when session does not exist", () => {
       sessionMocks.validateSession.mockReturnValue(false);
       sessionMocks.getSession.mockReturnValue(undefined);
@@ -101,7 +116,7 @@ describe("requireAuth", () => {
 
     it("AUTH_FAILED mentions PIN mismatch when session exists but pin is wrong", () => {
       sessionMocks.validateSession.mockReturnValue(false);
-      sessionMocks.getSession.mockReturnValue({ pin: 12345 } as never);
+      sessionMocks.getSession.mockReturnValue({ pin: 12345 });
       const result = requireAuth([1, 99999]);
       expect(result).toMatchObject({ code: "AUTH_FAILED" });
       expect((result as TelegramError).message).toContain("PIN mismatch");
