@@ -32,10 +32,15 @@ async function requestApproval(
   const label = reconnect ? "Session reconnecting:" : "New session requesting access:";
   const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:`;
   const availableColors = getAvailableColors(colorHint);
+  const usedColors = new Set(listSessions().map((s) => s.color));
+  const validHint = colorHint && (COLOR_PALETTE as readonly string[]).includes(colorHint) ? colorHint : undefined;
+  const primaryColor = validHint && !usedColors.has(validHint)
+    ? validHint
+    : availableColors.find((c) => !usedColors.has(c));
   const colorButtons = availableColors.map((c) => ({
     text: c,
     callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
-    ...(c === colorHint ? { style: "primary" } : {}),
+    ...(c === primaryColor ? { style: "primary" } : {}),
   }));
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
@@ -334,7 +339,9 @@ export function register(server: McpServer) {
         chosenColor = decision.color;
       }
 
-      const session = createSession(effectiveName, chosenColor);
+      // forceColor = true when the operator explicitly tapped a color button;
+      // for the first session (no approval dialog) the agent hint is a suggestion only.
+      const session = createSession(effectiveName, chosenColor, !isFirstSession);
       createSessionQueue(session.sid);
       setActiveSession(session.sid);
       if (!isPollerRunning()) startPoller();

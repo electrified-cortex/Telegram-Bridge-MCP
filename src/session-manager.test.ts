@@ -106,6 +106,18 @@ describe("color assignment", () => {
     expect(s7.color).toBe(COLOR_PALETTE[0]);
   });
 
+  it("forceColor=true assigns the requested color even when already in use", () => {
+    createSession("A", "🟦"); // 🟦 now in use
+    const s2 = createSession("B", "🟦", true); // force: operator explicitly chose 🟦
+    expect(s2.color).toBe("🟦");
+  });
+
+  it("forceColor=false (default) falls back when requested color is in use", () => {
+    createSession("A", "🟦"); // 🟦 now in use
+    const s2 = createSession("B", "🟦"); // no force: fall back to LRU auto-assign
+    expect(s2.color).not.toBe("🟦");
+  });
+
   it("listSessions includes color", () => {
     createSession("A");
     createSession("B");
@@ -378,26 +390,33 @@ describe("getAvailableColors", () => {
     expect(colors).toEqual([...COLOR_PALETTE]);
   });
 
-  it("excludes colors already taken by active sessions", () => {
-    createSession("A"); // takes 🟦
-    createSession("B"); // takes 🟩
+  it("orders colors by LRU: never-used before recently-used", () => {
+    createSession("A"); // takes 🟦 (LRU moves 🟦 to end)
+    createSession("B"); // takes 🟩 (LRU moves 🟩 to end)
     const colors = getAvailableColors();
-    expect(colors).not.toContain("🟦");
-    expect(colors).not.toContain("🟩");
-    expect(colors).toHaveLength(4);
+    expect(colors).toHaveLength(6);
+    // Never-used colors must appear before recently-used ones
+    const freshIndex = colors.indexOf("🟨"); // never used → toward left
+    const usedIndex1 = colors.indexOf("🟦");  // used first → near end
+    const usedIndex2 = colors.indexOf("🟩");  // used second → rightmost
+    expect(freshIndex).toBeLessThan(usedIndex1);
+    expect(freshIndex).toBeLessThan(usedIndex2);
+    expect(usedIndex1).toBeLessThan(usedIndex2); // 🟦 used before 🟩, so 🟩 is more recent
   });
 
-  it("places valid available hint first", () => {
+  it("never-used hint placed at far left", () => {
     const colors = getAvailableColors("🟩");
     expect(colors[0]).toBe("🟩");
     expect(colors).toHaveLength(6);
   });
 
-  it("hint that is already taken is not placed first — falls back to natural order", () => {
-    createSession("A"); // takes 🟦
-    const colors = getAvailableColors("🟦"); // 🟦 taken, ignore hint
+  it("previously-used hint stays at its natural LRU position, not forced first", () => {
+    createSession("A", "🟦"); // 🟦 now most-recently-used (rightmost)
+    const colors = getAvailableColors("🟦");
+    expect(colors).toHaveLength(6);
+    // 🟦 was just used → it is rightmost in LRU, not position 0
     expect(colors[0]).not.toBe("🟦");
-    expect(colors).not.toContain("🟦");
+    expect(colors[colors.length - 1]).toBe("🟦");
   });
 
   it("hint that is not in palette is ignored", () => {
@@ -405,21 +424,48 @@ describe("getAvailableColors", () => {
     expect(colors).toEqual([...COLOR_PALETTE]);
   });
 
-  it("returns all 6 when all are taken (allow duplicates)", () => {
+  it("returns all 6 when all are taken", () => {
     for (let i = 0; i < 6; i++) createSession(`S${i}`);
     const colors = getAvailableColors();
     expect(colors).toHaveLength(6);
-    expect(colors).toEqual([...COLOR_PALETTE]);
+    // All colors present, though order reflects LRU
+    expect(new Set(colors)).toEqual(new Set(COLOR_PALETTE));
   });
 
-  it("hint first when only one color available and hint matches", () => {
-    // Take 5 colors, leave only 🟪
+  it("never-used hint placed first even when 5 others are used", () => {
+    // Take 5 colors, leave only 🟪 never-used
     createSession("A", "🟦");
     createSession("B", "🟩");
     createSession("C", "🟨");
     createSession("D", "🟧");
     createSession("E", "🟥");
     const colors = getAvailableColors("🟪");
-    expect(colors).toEqual(["🟪"]);
+    expect(colors).toHaveLength(6);
+    expect(colors[0]).toBe("🟪"); // never-used hint goes first
+    expect(colors.slice(1)).toEqual(expect.arrayContaining(["🟦", "🟩", "🟨", "🟧", "🟥"]));
+  });
+
+  it("assignment order is reflected in LRU position", () => {
+    // Assign in a non-palette order; verify LRU reflects assignment recency
+    createSession("A", "🟥"); // 🟥 = most recently used after this
+    createSession("B", "🟨"); // 🟨 = most recently used
+    const colors = getAvailableColors();
+    // 🟥 assigned before 🟨, so 🟨 is more recent → 🟨 rightmost, 🟥 second-from-right
+    expect(colors[colors.length - 1]).toBe("🟨");
+    expect(colors[colors.length - 2]).toBe("🟥");
+    // Never-used colors come before both
+    const neverUsed = ["🟦", "🟩", "🟧", "🟪"];
+    for (const c of neverUsed) {
+      expect(colors.indexOf(c)).toBeLessThan(colors.indexOf("🟥"));
+    }
+  });
+
+  it("closing a session does not change LRU order — all colors always present", () => {
+    const s = createSession("A", "🟦"); // 🟦 → MRU
+    closeSession(s.sid);
+    const colors = getAvailableColors();
+    // 🟦 was used, so still at rightmost even though session is closed
+    expect(colors[colors.length - 1]).toBe("🟦");
+    expect(colors).toHaveLength(6);
   });
 });
