@@ -52,7 +52,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.28.0",
     "@tsdotnet/queue": "^1.3.2",
     "audio-decode": "^3.3.0",
     "dotenv": "^17.3.1",
