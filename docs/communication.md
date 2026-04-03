@@ -31,7 +31,7 @@ The thinking → working → `show_typing` pipeline gives the operator a live st
 3. **`dequeue_update`** — sole tool for receiving updates. Returns `{ updates: [...] }`: non-content events first, optionally ending with a content message.
 4. **Commit/push** — get explicit operator approval first. Send a `notify` summary before committing.
 5. **`show_typing`** — call when composing a reply. This is the "response is imminent" signal, not a generic receipt.
-6. **👀 is optional — always temporary.** The server automatically manages voice reactions: ✍ while transcribing, 😴 if queued with no active waiter, and 🫡 when your `dequeue_update` returns it to you — no agent action needed. If you choose to set 👀 (to signal active attention on any message), it must always be `temporary: true`. Skip 👀 on text messages — `show_typing` is the acknowledgement.
+6. **👀 is optional — always temporary.** The server automatically manages voice reactions: ✍ while transcribing, 😴 if queued with no active waiter, and 🫡 when your `dequeue_update` returns it to you — no agent action needed. If you choose to set 👀 (to signal active attention on any message), it must always be `temporary: true`. Use it sparingly — reserve it for messages you are genuinely focused on, not as blanket acknowledgement. Skip it entirely when draining a backlog.
 7. **Watch `pending`.** A non-zero `pending` in the `dequeue_update` result means the operator has sent more messages while you were working. They may have changed their mind or added details. Consider calling `dequeue_update` once more before acting, to fold new context into your plan or queue it as the next task.
 
 ---
@@ -40,7 +40,7 @@ The thinking → working → `show_typing` pipeline gives the operator a live st
 
 | Situation | Tool |
 | --- | --- |
-| Pure statement / preference | React (🫡 👍 👀 ❤) — no text reply |
+| Pure statement / preference | React (🫡 👍 👀 🤔 ❤) — no text reply |
 | Yes/No decision | `confirm` |
 | Fixed options | `choose` (blocking, waits for tap) · `send_choice` (non-blocking) |
 | Open-ended input | `ask` (shortcut: send question + wait for reply) |
@@ -63,6 +63,7 @@ The thinking → working → `show_typing` pipeline gives the operator a live st
 
 ```txt
 👀 = "I'm actively considering this" — optional agent signal; always temporary
+🤔 = actively thinking / processing — pair with a thinking animation
 🫡 = got it / acknowledged / understood
 👍 = task complete / confirmed done
 ❤  = great / love it
@@ -71,10 +72,12 @@ The thinking → working → `show_typing` pipeline gives the operator a live st
 **What 👀 means to humans:** it signals that your eyes are on a specific message — you've caught up to it and are actively processing it. It's too static to mean "thinking"; it means "received and in progress." Because of this weight, use it sparingly:
 
 - **Voice messages** — the server manages reactions automatically (✍ → 😴/🫡). No agent action required.
-- **Text messages** — skip 👀 entirely. `show_typing` is the acknowledgement for text.
-- **You may use 👀 on any message** if the situation genuinely warrants it (e.g., a long multi-part request). Always make it temporary (`timeout_seconds ≤ 5`, omit `restore_emoji`) so it auto-clears.
+- **Text messages** — 👀 is allowed when you are genuinely focused on the message (e.g., a long multi-part request). Use it sparingly — not as a blanket acknowledgement for every message.
+- **Draining a backlog** — skip reactions entirely when processing a queue of accumulated messages. Reactions on every item create noise.
+- **👀 is always temporary** — when you set 👀, always use `temporary: true` (`timeout_seconds ≤ 5`, omit `restore_emoji`) so it auto-clears. Other reactions (🫡, 👍, 🤔) may be permanent or temporary depending on context.
+- **🤔 for active thinking** — use 🤔 when you are actively processing or considering a message. Pair it with a thinking animation for a clear signal to the operator.
 
-`show_typing` = response is imminent — not a generic "received" signal. Call it just before you send. The full pipeline: receive → think → work → `show_typing` → send → optionally update reaction to 🫡/👍.
+`show_typing` = response is imminent — not a generic "received" signal. Call it just before you send. The full pipeline: receive → think (🤔 + animation) → work → `show_typing` → send → optionally update reaction to 🫡/👍.
 
 ---
 

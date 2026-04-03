@@ -265,7 +265,7 @@ React to user messages instead of sending a separate acknowledgement text. Commo
 | --- | --- |
 | **Temporary only** | Always call `set_reaction(emoji: "👀", temporary: true)` — never a permanent `👀`. It auto-clears the moment the bot sends any outbound message. |
 | **Optional, never required** | The server automatically manages voice message reactions (✍ while transcribing, 😴 if queued, 🫡 when dequeued to you). You do not need to call `set_reaction` for voice messages. `👀` is a purely voluntary agent signal. |
-| **Avoid on text** | Do **not** react to text messages with 👀 — it adds noise without value. `show_typing` is the right acknowledgement for text. |
+| **Use sparingly on text** | 👀 is allowed on text when you are genuinely focused on the message (e.g., a long multi-part request). Do not use it as blanket acknowledgement for every text. `show_typing` is the right signal when a reply is imminent. |
 | **Auto-restores on outbound** | When any outbound message or animation fires, `fireTempReactionRestore` runs automatically — the `👀` is replaced with the bot's previous reaction (or cleared if none). No manual cleanup needed. |
 | **No-op if already set** | The server silently skips `trySetMessageReaction` when the message already carries the same emoji. No redundant API calls. |
 | **Never leave 👀 stuck** | If you somehow set `👀` manually, it **must** be cleared by your next outbound action. If you set it and then decide not to respond, call `set_reaction(emoji: "")` to clear it explicitly. |

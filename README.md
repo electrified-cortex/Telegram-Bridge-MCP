@@ -162,7 +162,6 @@ If you can't run a persistent server, stdio mode spawns a dedicated process per 
     }
   }
 }
-```
 
 **Launcher bridge** — `dist/launcher.js` auto-starts the HTTP server if none is running, then bridges stdio ↔ HTTP. Use it as a drop-in replacement for `dist/index.js` in any stdio config above. Credentials come from `.env` — no need to set `env` in your editor config:
 
