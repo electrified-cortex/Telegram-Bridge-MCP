@@ -3,18 +3,25 @@ import { z } from "zod";
 /**
  * Zod schema for the identity [sid, pin] parameter.
  *
- * Uses `z.array()` without a length constraint because both `z.tuple()` and
- * `z.array().length(N)` cause the MCP SDK to emit `items: [schema, schema]`
- * (an array), which the GitHub Copilot JSON-Schema validator rejects as
- * "not of type 'object', 'boolean'". A plain array schema emits
- * `{ type: "array", items: { type: "integer" } }` which is valid.
- * Length is enforced at runtime by `requireAuth` — a short array produces
- * `pin === undefined`, which fails `validateSession` with AUTH_FAILED.
+ * Uses `z.unknown()` so that the MCP framework never rejects the call at
+ * schema-validation time — even when a caller mistakenly passes identity as a
+ * JSON string (e.g. `"[1, 852999]"` instead of `[1, 852999]`).  All semantic
+ * validation (type checking, length, auth) is done inside `requireAuth` in
+ * `session-gate.ts`, which returns a structured error message that the caller
+ * can act on.
+ *
+ * Previous schema (`z.array(z.number().int())`) caused the MCP SDK to reject
+ * string inputs with a generic -32602 error BEFORE the handler ran, making the
+ * error message unactionable.
+ *
+ * NOTE: z.unknown() emits no JSON Schema constraints, which is intentional —
+ * the description text and runtime validation provide the contract.
  */
 export const IDENTITY_SCHEMA = z
-  .array(z.number().int())
+  .unknown()
   .optional()
   .describe(
     "Identity tuple [sid, pin] from session_start. " +
-    "Always required — pass your [sid, pin] on every tool call.",
+    "Always required — pass your [sid, pin] on every tool call. " +
+    "Must be a JSON array of two integers, e.g. identity: [sid, pin].",
   );

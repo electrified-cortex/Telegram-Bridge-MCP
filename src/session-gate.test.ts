@@ -123,5 +123,31 @@ describe("requireAuth", () => {
       expect((result as TelegramError).message).toContain("1");
     });
   });
+
+  describe("identity passed as string (common MCP caller mistake)", () => {
+    it("returns INVALID_IDENTITY when identity is a JSON array string", () => {
+      const result = requireAuth("[1, 852999]");
+      expect(result).toMatchObject({ code: "INVALID_IDENTITY" });
+    });
+
+    it("INVALID_IDENTITY message tells caller to pass array not string", () => {
+      const result = requireAuth("[4, 403773]");
+      expect((result as TelegramError).message).toContain("not a string");
+      expect((result as TelegramError).message).toContain("[4, 403773]");
+    });
+
+    it("INVALID_IDENTITY message shows the value without quotes as guidance", () => {
+      // The message should show identity: [1, 852999] (no quotes around the array)
+      const result = requireAuth("[1, 852999]");
+      const msg = (result as TelegramError).message;
+      // Should suggest unquoted form
+      expect(msg).toMatch(/identity:\s*\[1,\s*852999\]/);
+    });
+
+    it("returns INVALID_IDENTITY for any string identity, not just array-shaped strings", () => {
+      const result = requireAuth("bad-input");
+      expect(result).toMatchObject({ code: "INVALID_IDENTITY" });
+    });
+  });
 });
 

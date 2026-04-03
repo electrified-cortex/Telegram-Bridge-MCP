@@ -603,6 +603,17 @@ describe("dequeue_update tool", () => {
       const data = parseResult<DequeueResult>(result);
       expect(data.updates[0].id).toBe(2);
     });
+
+    it("returns INVALID_IDENTITY with actionable message when identity is passed as a string", async () => {
+      // Regression: before this fix, the MCP schema rejected string identity
+      // with a generic -32602 error before the handler ran. Now z.unknown()
+      // lets the string through and requireAuth returns a structured error.
+      const result = await call({ identity: "[1, 852999]", timeout: 0 });
+      expect(isError(result)).toBe(true);
+      const text = JSON.stringify(result);
+      expect(text).toContain("INVALID_IDENTITY");
+      expect(text).toContain("not a string");
+    });
   });
 
   // =========================================================================

@@ -44,7 +44,7 @@ interface ConfirmArgs {
   reply_to_message_id?: number;
   ignore_pending?: boolean;
   ignore_parity?: boolean;
-  identity?: number[];
+  identity?: unknown;
 }
 
 async function confirmHandler(

@@ -89,6 +89,7 @@ export type TelegramErrorCode =
   | "DUAL_INSTANCE_CONFLICT"
   | "SID_REQUIRED"
   | "AUTH_FAILED"
+  | "INVALID_IDENTITY"
   | "NAME_CONFLICT"
   | "UNKNOWN";
 

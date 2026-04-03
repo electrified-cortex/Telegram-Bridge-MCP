@@ -14,11 +14,16 @@ export function setAuthHook(fn: (sid: number) => void): void {
 /**
  * Resolves and authenticates the session for a tool call.
  *
- * Pass the `identity` tuple `[sid, pin]` from the tool args. Always required.
+ * Accepts `unknown` so that callers are not forced to pre-validate the identity
+ * value before calling — this allows `requireAuth` to produce actionable error
+ * messages even when the MCP schema accepts any value (e.g. `z.unknown()`).
  *
- * - Omitted → `SID_REQUIRED` error.
- * - Provided but invalid → `AUTH_FAILED` error.
- * - Valid → resolved SID (number) returned.
+ * - Omitted / null → `SID_REQUIRED` error.
+ * - String (e.g. `"[1, 852999]"`) → `INVALID_IDENTITY` error with guidance.
+ * - Non-array → `SID_REQUIRED` error.
+ * - Array with wrong length → `SID_REQUIRED` error.
+ * - Valid `[sid, pin]` but wrong credentials → `AUTH_FAILED` error.
+ * - Valid credentials → resolved SID (number) returned.
  *
  * Usage in a tool handler:
  * ```ts
@@ -27,26 +32,46 @@ export function setAuthHook(fn: (sid: number) => void): void {
  * ```
  */
 export function requireAuth(
-  identity: readonly number[] | undefined,
+  identity: unknown,
 ): number | TelegramError {
+  // Detect the common mistake of passing identity as a JSON string.
+  if (typeof identity === "string") {
+    return {
+      code: "INVALID_IDENTITY",
+      message:
+        `identity must be a JSON array [sid, pin], not a string — ` +
+        `pass identity: ${identity} not identity: "${identity}"`,
+    };
+  }
+
   if (!identity) {
     return {
       code: "SID_REQUIRED",
       message: "identity [sid, pin] is required. Pass the tuple returned by session_start. Example: identity: [sid, pin]",
     };
   }
-  if (identity.length !== 2) {
-    const received = identity.length === 0
+
+  if (!Array.isArray(identity)) {
+    return {
+      code: "SID_REQUIRED",
+      message: `identity [sid, pin] is required — received ${typeof identity}, expected a 2-element [sid, pin] array. Example: identity: [sid, pin]`,
+    };
+  }
+
+  const arr = identity as unknown[];
+  if (arr.length !== 2) {
+    const received = arr.length === 0
       ? "empty array"
-      : identity.length === 1
-      ? `[${identity[0]}] (missing pin)`
-      : `${identity.length}-element array (expected exactly 2)`;
+      : arr.length === 1
+      ? `[${arr[0]}] (missing pin)`
+      : `${arr.length}-element array (expected exactly 2)`;
     return {
       code: "SID_REQUIRED",
       message: `identity [sid, pin] is required — received ${received}, expected a 2-element [sid, pin] array. Example: identity: [sid, pin]`,
     };
   }
-  const [sid, pin] = identity;
+
+  const [sid, pin] = arr as [number, number];
   if (!validateSession(sid, pin)) {
     let sessionExists = false;
     try { sessionExists = getSession(sid) !== undefined; } catch (e) {
