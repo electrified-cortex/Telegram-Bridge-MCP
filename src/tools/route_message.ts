@@ -5,7 +5,7 @@ import { requireAuth } from "../session-gate.js";
 import { getGovernorSid } from "../routing-mode.js";
 import { getSession } from "../session-manager.js";
 import { routeMessage } from "../session-queue.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Route an ambiguous message to a specific session. Only the " +
@@ -19,7 +19,7 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
         message_id: z
           .number()
           .int()
@@ -32,8 +32,8 @@ export function register(server: McpServer) {
           .describe("Session ID to route the message to"),
       },
     },
-    ({ identity, message_id, target_sid }) => {
-      const _sid = requireAuth(identity);
+    ({ token, message_id, target_sid }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
 
       if (getGovernorSid() === 0) {

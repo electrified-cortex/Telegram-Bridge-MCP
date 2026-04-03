@@ -124,7 +124,7 @@ describe("ask tool", () => {
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     // Reply must have a higher message_id than the sent question (message_id: 10)
     mocks._storeQueue.push(makeTextEvent(11, "sure"));
-    const result = await call({ question: "Continue?", timeout_seconds: 1, identity: [1, 123456]});
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.timed_out).toBe(false);
@@ -135,14 +135,14 @@ describe("ask tool", () => {
     mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
     // Stale message with same message_id as the sent question — should be ignored
     mocks._storeQueue.push(makeTextEvent(10, "old voice reply"));
-    const result = await call({ question: "Continue?", timeout_seconds: 1, identity: [1, 123456]});
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     expect((parseResult(result)).timed_out).toBe(true);
   });
 
   it("returns timed_out when no matching update arrives", async () => {
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     // Empty queue
-    const result = await call({ question: "Continue?", timeout_seconds: 1, identity: [1, 123456]});
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     const data = parseResult(result);
     expect(data.timed_out).toBe(true);
   });
@@ -150,7 +150,7 @@ describe("ask tool", () => {
   it("returns voice transcription from pre-transcribed store event", async () => {
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     mocks._storeQueue.push(makeVoiceEvent(11, "transcribed text"));
-    const result = await call({ question: "Continue?", timeout_seconds: 1, identity: [1, 123456]});
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     const data = parseResult(result);
     expect(data.timed_out).toBe(false);
     expect(data.text).toBe("transcribed text");
@@ -160,12 +160,12 @@ describe("ask tool", () => {
   it("sets 🫡 reaction on voice message dequeue", async () => {
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     mocks._storeQueue.push(makeVoiceEvent(11, "hello"));
-    await call({ question: "Continue?", timeout_seconds: 1, identity: [1, 123456]});
+    await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(11);
   });
 
   it("validates question text before sending", async () => {
-    const result = await call({ question: "", identity: [1, 123456]});
+    const result = await call({ question: "", token: 1_123_456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
     expect(mocks.sendMessage).not.toHaveBeenCalled();
@@ -178,7 +178,7 @@ describe("ask tool", () => {
   it("returns command as a break signal instead of ignoring (#4)", async () => {
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     mocks._storeQueue.push(makeCommandEvent(11, "cancel"));
-    const result = await call({ question: "Continue?", timeout_seconds: 1, identity: [1, 123456]});
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     const data = parseResult(result);
     // Should not time out — command should be treated as a response
     expect(data.timed_out).toBe(false);
@@ -187,7 +187,7 @@ describe("ask tool", () => {
 
   it("rejects with PENDING_UPDATES when queue is non-empty", async () => {
     mocks.pendingCount.mockReturnValue(5);
-    const result = await call({ question: "Continue?", timeout_seconds: 1, identity: [1, 123456]});
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     expect(isError(result)).toBe(true);
     const data = parseResult(result);
     expect(data.code).toBe("PENDING_UPDATES");
@@ -202,7 +202,7 @@ describe("ask tool", () => {
     const result = await call({
       question: "Continue?",
       timeout_seconds: 1,
-      ignore_pending: true, identity: [1, 123456]});
+      ignore_pending: true, token: 1_123_456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.timed_out).toBe(false);
@@ -213,7 +213,7 @@ describe("ask tool", () => {
     mocks.getActiveSession.mockReturnValueOnce(1);
     mocks.sessionQueue1.pendingCount.mockReturnValueOnce(4);
     mocks.peekSessionCategories.mockReturnValueOnce({ text: 2, voice: 1, reaction: 1 });
-    const result = await call({ question: "Continue?", timeout_seconds: 1, identity: [1, 123456] });
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
     expect(isError(result)).toBe(true);
     const data = parseResult(result);
     expect(data.code).toBe("PENDING_UPDATES");
@@ -232,7 +232,7 @@ describe("ask tool", () => {
     const result = await call({
       question: "Continue?",
       timeout_seconds: 1,
-      reply_to_message_id: 99, identity: [1, 123456]});
+      reply_to_message_id: 99, token: 1_123_456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.timed_out).toBe(false);
@@ -248,7 +248,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"question":"x","identity":[1,99999]});
+    const result = await call({"question":"x","token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -256,7 +256,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"question":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"question":"x","token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });
@@ -281,7 +281,7 @@ describe("cross-session isolation", () => {
     );
 
     // runInSessionContext(2) sets getCallerSid() to 2 so ask polls from sessionQueue2
-    const result = await runInSessionContext(2, () => call({ question: "Continue?", timeout_seconds: 1, identity: [2, 123456] }));
+    const result = await runInSessionContext(2, () => call({ question: "Continue?", timeout_seconds: 1, token: 2_123_456 }));
     const data = parseResult(result);
 
     // Got session 2's own event, not session 1's

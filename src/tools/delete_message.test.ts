@@ -36,14 +36,14 @@ describe("delete_message tool", () => {
 
   it("returns ok: true on success", async () => {
     mocks.deleteMessage.mockResolvedValue(true);
-    const result = await call({ message_id: 5, identity: [1, 123456]});
+    const result = await call({ message_id: 5, token: 1123456});
     expect(isError(result)).toBe(false);
     expect((parseResult(result)).ok).toBe(true);
   });
 
   it("passes chat_id and message_id to API", async () => {
     mocks.deleteMessage.mockResolvedValue(true);
-    await call({ message_id: 99, identity: [1, 123456]});
+    await call({ message_id: 99, token: 1123456});
     expect(mocks.deleteMessage).toHaveBeenCalledWith(42, 99);
   });
 
@@ -52,7 +52,7 @@ describe("delete_message tool", () => {
     mocks.deleteMessage.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: message can't be deleted" }, "deleteMessage", {})
     );
-    const result = await call({ message_id: 1, identity: [1, 123456]});
+    const result = await call({ message_id: 1, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_CANT_BE_DELETED");
   });
@@ -62,7 +62,7 @@ describe("delete_message tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ message_id: 1, identity: [1, 123456]});
+    const result = await call({ message_id: 1, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
@@ -76,7 +76,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"message_id":1,"identity":[1,99999]});
+    const result = await call({"message_id":1,"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -84,7 +84,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"message_id":1,"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"message_id":1,"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

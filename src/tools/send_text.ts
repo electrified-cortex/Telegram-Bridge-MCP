@@ -4,7 +4,7 @@ import { getApi, toResult, toError, validateText, resolveChat, splitMessage, cal
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Sends a text message to the Telegram chat. Default parse_mode is Markdown — " +
@@ -43,11 +43,11 @@ export function register(server: McpServer) {
           .min(1)
           .optional()
           .describe("Reply to this message ID"),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ text, parse_mode, disable_notification, reply_to_message_id, identity}) => {
-      const _sid = requireAuth(identity);
+    async ({ text, parse_mode, disable_notification, reply_to_message_id, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

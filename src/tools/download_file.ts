@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getApi, toResult, toError } from "../telegram.js";
 import { cancelTyping, showTyping } from "../typing-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 /** Text-based MIME types and extensions that are safe to read as UTF-8 */
 const TEXT_MIME_PREFIXES = ["text/"];
@@ -50,16 +50,16 @@ export function register(server: McpServer) {
         .string()
         .optional()
         .describe("MIME type hint from the message, used to determine if text contents should be returned."),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ file_id, file_name, mime_type, identity}) => {
-      const _sid = requireAuth(identity);
+    async ({ file_id, file_name, mime_type, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       try {
         await showTyping(30);
-        const token = process.env.BOT_TOKEN;
-        if (!token) {
+        const botToken = process.env.BOT_TOKEN;
+        if (!botToken) {
           return toError({ code: "UNKNOWN" as const, message: "BOT_TOKEN not set — cannot download file." });
         }
 
@@ -70,7 +70,7 @@ export function register(server: McpServer) {
         }
 
         // 2. Download bytes
-        const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
+        const url = `https://api.telegram.org/file/bot${botToken}/${fileInfo.file_path}`;
         const res = await fetch(url);
         if (!res.ok) {
           return toError({ code: "UNKNOWN" as const, message: `Download failed: ${res.status} ${res.statusText}` });

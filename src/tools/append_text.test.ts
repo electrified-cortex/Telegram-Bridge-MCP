@@ -56,7 +56,7 @@ describe("append_text tool", () => {
   it("appends text to existing message with default newline separator", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Line 1" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    const result = await call({ message_id: 10, text: "Line 2", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "Line 2", token: 1_123_456});
     expect(isError(result)).toBe(false);
     const data = parseResult<AppendTextResult>(result);
     expect(data.message_id).toBe(10);
@@ -66,7 +66,7 @@ describe("append_text tool", () => {
   it("passes accumulated text to editMessageText", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Hello" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, text: " World", identity: [1, 123456]});
+    await call({ message_id: 10, text: " World", token: 1_123_456});
     // The text passed to editMessageText will be MarkdownV2-resolved
     expect(mocks.editMessageText).toHaveBeenCalledWith(
       42,
@@ -79,7 +79,7 @@ describe("append_text tool", () => {
   it("uses custom separator", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "A" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    const result = await call({ message_id: 10, text: "B", separator: " | ", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "B", separator: " | ", token: 1_123_456});
     const data = parseResult<AppendTextResult>(result);
     expect(data.length).toBe("A | B".length);
   });
@@ -87,7 +87,7 @@ describe("append_text tool", () => {
   it("handles empty current text (first append)", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    const result = await call({ message_id: 10, text: "First chunk", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "First chunk", token: 1_123_456});
     expect(isError(result)).toBe(false);
     const data = parseResult<AppendTextResult>(result);
     expect(data.length).toBe("First chunk".length);
@@ -95,7 +95,7 @@ describe("append_text tool", () => {
 
   it("returns MESSAGE_NOT_FOUND when message is not in store", async () => {
     mocks.getMessage.mockReturnValue(undefined);
-    const result = await call({ message_id: 10, text: "Fresh", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "Fresh", token: 1_123_456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_NOT_FOUND");
   });
@@ -103,7 +103,7 @@ describe("append_text tool", () => {
   it("calls recordOutgoingEdit with accumulated text", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "X" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, text: "Y", identity: [1, 123456]});
+    await call({ message_id: 10, text: "Y", token: 1_123_456});
     expect(mocks.recordOutgoingEdit).toHaveBeenCalledWith(10, "text", "X\nY");
   });
 
@@ -113,14 +113,14 @@ describe("append_text tool", () => {
     mocks.editMessageText.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: message is not modified" }, "editMessageText", {}),
     );
-    const result = await call({ message_id: 10, text: "Same", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "Same", token: 1_123_456});
     expect(isError(result)).toBe(true);
   });
 
   it("handles boolean result from editMessageText", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Inline" } });
     mocks.editMessageText.mockResolvedValue(true);
-    const result = await call({ message_id: 10, text: "More", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "More", token: 1_123_456});
     expect(isError(result)).toBe(false);
     const data = parseResult<AppendTextResult>(result);
     // Falls back to the passed message_id when API returns boolean
@@ -130,7 +130,7 @@ describe("append_text tool", () => {
   it("uses MarkdownV2 parse mode by default", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Text" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, text: "more", identity: [1, 123456]});
+    await call({ message_id: 10, text: "more", token: 1_123_456});
     expect(mocks.editMessageText).toHaveBeenCalledWith(
       42,
       10,
@@ -142,7 +142,7 @@ describe("append_text tool", () => {
   it("passes HTML parse_mode when specified", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Text" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, text: "more", parse_mode: "HTML", identity: [1, 123456]});
+    await call({ message_id: 10, text: "more", parse_mode: "HTML", token: 1_123_456});
     expect(mocks.editMessageText).toHaveBeenCalledWith(
       42,
       10,
@@ -153,7 +153,7 @@ describe("append_text tool", () => {
 
   it("returns error when message has non-text content type", async () => {
     mocks.getMessage.mockReturnValue({ content: { type: "voice" } });
-    const result = await call({ message_id: 10, text: "oops", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "oops", token: 1_123_456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_NOT_TEXT");
   });
@@ -163,7 +163,7 @@ describe("append_text tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ message_id: 10, text: "x", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "x", token: 1_123_456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
@@ -174,7 +174,7 @@ describe("append_text tool", () => {
       code: "MESSAGE_TOO_LONG",
       message: "too long",
     });
-    const result = await call({ message_id: 10, text: "more", identity: [1, 123456]});
+    const result = await call({ message_id: 10, text: "more", token: 1_123_456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
@@ -188,7 +188,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"message_id":1,"text":"x","identity":[1,99999]});
+    const result = await call({"message_id":1,"text":"x","token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -196,7 +196,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"message_id":1,"text":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"message_id":1,"text":"x","token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

@@ -36,14 +36,14 @@ describe("send_direct_message tool", () => {
 
   it("rejects invalid credentials", async () => {
     mocks.validateSession.mockReturnValue(false);
-    const result = await call({ identity: [1, 999999], target_sid: 2, text: "hi",
+    const result = await call({ token: 1999999, target_sid: 2, text: "hi",
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("AUTH_FAILED");
   });
 
   it("rejects self-DM", async () => {
-    const result = await call({ identity: [1, 123456], target_sid: 1, text: "hi",
+    const result = await call({ token: 1123456, target_sid: 1, text: "hi",
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("DM_SELF");
@@ -51,7 +51,7 @@ describe("send_direct_message tool", () => {
 
   it("rejects when target session does not exist", async () => {
     mocks.getSession.mockReturnValue(undefined);
-    const result = await call({ identity: [1, 123456], target_sid: 99, text: "hi",
+    const result = await call({ token: 1123456, target_sid: 99, text: "hi",
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("SESSION_NOT_FOUND");
@@ -59,7 +59,7 @@ describe("send_direct_message tool", () => {
 
   it("delivers a DM successfully", async () => {
     const result = parseResult(
-      await call({ identity: [1, 123456], target_sid: 2, text: "hello" }),
+      await call({ token: 1123456, target_sid: 2, text: "hello" }),
     );
     expect(result.delivered).toBe(true);
     expect(result.target_sid).toBe(2);
@@ -68,7 +68,7 @@ describe("send_direct_message tool", () => {
 
   it("reports delivery failure when queue missing", async () => {
     mocks.deliverDirectMessage.mockReturnValue(false);
-    const result = await call({ identity: [1, 123456], target_sid: 2, text: "hi",
+    const result = await call({ token: 1123456, target_sid: 2, text: "hi",
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("DM_DELIVERY_FAILED");

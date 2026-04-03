@@ -51,7 +51,7 @@ describe("get_chat_history tool", () => {
     const events = Array.from({ length: 30 }, (_, i) => makeEvent(i + 1, `m${i + 1}`));
     mocks.dumpTimeline.mockReturnValue(events);
 
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
 
     const data = parseResult<{ events: Array<{ id: number }>; has_more: boolean }>(result);
@@ -65,7 +65,7 @@ describe("get_chat_history tool", () => {
     const events = Array.from({ length: 10 }, (_, i) => makeEvent(i + 1, `m${i + 1}`));
     mocks.dumpTimeline.mockReturnValue(events);
 
-    const result = await call({ count: 5, identity: [1, 123456] });
+    const result = await call({ count: 5, token: 1123456 });
     const data = parseResult<{ events: Array<{ id: number }>; has_more: boolean }>(result);
 
     expect(data.events.map(e => e.id)).toEqual([6, 7, 8, 9, 10]);
@@ -82,7 +82,7 @@ describe("get_chat_history tool", () => {
     ];
     mocks.dumpTimeline.mockReturnValue(events);
 
-    const result = await call({ before_id: -3, count: 2, identity: [1, 123456] });
+    const result = await call({ before_id: -3, count: 2, token: 1123456 });
     const data = parseResult<{ events: Array<{ id: number }>; has_more: boolean }>(result);
 
     expect(data.events.map(e => e.id)).toEqual([-100001, 2]);
@@ -93,7 +93,7 @@ describe("get_chat_history tool", () => {
     const events = [makeEvent(1, "a"), makeEvent(2, "b"), makeEvent(3, "c")];
     mocks.dumpTimeline.mockReturnValue(events);
 
-    const result = await call({ count: 5, identity: [1, 123456] });
+    const result = await call({ count: 5, token: 1123456 });
     const data = parseResult<{ events: Array<{ id: number }>; has_more: boolean }>(result);
 
     expect(data.events.map(e => e.id)).toEqual([1, 2, 3]);
@@ -103,7 +103,7 @@ describe("get_chat_history tool", () => {
   it("returns EVENT_NOT_FOUND when before_id is missing", async () => {
     mocks.dumpTimeline.mockReturnValue([makeEvent(1, "a"), makeEvent(2, "b")]);
 
-    const result = await call({ before_id: 999, identity: [1, 123456] });
+    const result = await call({ before_id: 999, token: 1123456 });
 
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EVENT_NOT_FOUND");
@@ -113,7 +113,7 @@ describe("get_chat_history tool", () => {
     mocks.validateSession.mockReturnValue(false);
     mocks.dumpTimeline.mockReturnValue([makeEvent(1, "a")]);
 
-    const result = await call({ identity: [1, 111111] });
+    const result = await call({ token: 1111111 });
 
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");

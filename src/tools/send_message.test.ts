@@ -46,13 +46,13 @@ describe("send_message tool", () => {
   });
 
   it("sends a basic text message and returns message_id", async () => {
-    const result = await call({ text: "Hello", identity: [1, 123456]});
+    const result = await call({ text: "Hello", token: 1123456});
     expect(isError(result)).toBe(false);
     expect(parseResult(result).message_id).toBe(7);
   });
 
   it("calls sendMessage with correct chat_id and MarkdownV2 by default", async () => {
-    await call({ text: "Hello", identity: [1, 123456]});
+    await call({ text: "Hello", token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -64,7 +64,7 @@ describe("send_message tool", () => {
     const result = await call({
       text: "Pick one",
       keyboard: [[{ label: "Yes", value: "yes" }, { label: "No", value: "no" }]],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(isError(result)).toBe(false);
     expect(mocks.sendMessage).toHaveBeenCalledWith(
@@ -85,7 +85,7 @@ describe("send_message tool", () => {
     await call({
       text: "Go",
       keyboard: [[{ label: "OK", value: "ok", style: "success" }]],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
@@ -99,13 +99,13 @@ describe("send_message tool", () => {
   });
 
   it("omits reply_markup when no keyboard is given", async () => {
-    await call({ text: "Plain", identity: [1, 123456]});
+    await call({ text: "Plain", token: 1123456});
     const opts = mocks.sendMessage.mock.calls[0][2] as Record<string, unknown>;
     expect(opts.reply_markup).toBeUndefined();
   });
 
   it("passes reply_to_message_id via reply_parameters", async () => {
-    await call({ text: "Reply", reply_to_message_id: 5, identity: [1, 123456]});
+    await call({ text: "Reply", reply_to_message_id: 5, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -114,7 +114,7 @@ describe("send_message tool", () => {
   });
 
   it("passes disable_notification option", async () => {
-    await call({ text: "Quiet", disable_notification: true, identity: [1, 123456]});
+    await call({ text: "Quiet", disable_notification: true, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -127,7 +127,7 @@ describe("send_message tool", () => {
     const result = await call({
       text: "Pick",
       keyboard: [[{ label: "Btn", value: longValue }]],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CALLBACK_DATA_TOO_LONG");
@@ -143,7 +143,7 @@ describe("send_message tool", () => {
         {},
       ),
     );
-    const result = await call({ text: "Hello", identity: [1, 123456]});
+    const result = await call({ text: "Hello", token: 1123456});
     expect(isError(result)).toBe(true);
   });
 
@@ -152,7 +152,7 @@ describe("send_message tool", () => {
     const result = await call({
       text: "Pick",
       keyboard: [[{ label: longLabel, value: "ok" }]],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("BUTTON_DATA_INVALID");
@@ -163,7 +163,7 @@ describe("send_message tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ text: "Hello", identity: [1, 123456]});
+    const result = await call({ text: "Hello", token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
@@ -177,7 +177,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"text":"x","identity":[1,99999]});
+    const result = await call({"text":"x","token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -185,7 +185,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"text":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"text":"x","token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

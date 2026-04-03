@@ -7,7 +7,7 @@ import { dequeueMatch, waitForEnqueue, pendingCount, type TimelineEvent } from "
 import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
 import { getCallerSid } from "../session-context.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Sends a question to a chat and waits until the user replies. " +
@@ -45,11 +45,11 @@ export function register(server: McpServer) {
         .boolean()
         .optional()
         .describe("Set true to skip the pending-updates check and block immediately"),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ question, timeout_seconds, reply_to_message_id, ignore_pending, identity}, { signal }) => {
-      const _sid = requireAuth(identity);
+    async ({ question, timeout_seconds, reply_to_message_id, ignore_pending, token}, { signal }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

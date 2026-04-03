@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { writeProfile, resolveProfilePath } from "../profile-store.js";
 import { getSessionVoiceFor, getSessionSpeedFor } from "../voice-state.js";
 import { hasSessionDefault, getDefaultFrames, listPresets, getPreset } from "../animation-state.js";
@@ -26,11 +26,11 @@ export function register(server: McpServer) {
           .describe(
             "Profile key. Must be a bare name (e.g. \"Overseer\"). Saves to data/profiles/{key}.json (gitignored).",
           ),
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    ({ key, identity }) => {
-      const _sid = requireAuth(identity);
+    ({ key, token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
 
       if (key.includes("/") || key.includes("\\")) {

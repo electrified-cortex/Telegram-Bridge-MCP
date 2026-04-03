@@ -1,35 +1,42 @@
 import { z } from "zod";
 
 /**
- * Zod schema for the identity [sid, pin] parameter.
- *
- * Uses z.preprocess() to handle the common agent mistake of passing
- * identity as a JSON string (e.g., "[2, 573602]") instead of an array.
- * Parseable strings are silently coerced; non-parseable values pass
- * through to the inner schema for normal rejection.
- *
- * Uses `z.array()` without a length constraint because both `z.tuple()` and
- * `z.array().length(N)` cause the MCP SDK to emit `items: [schema, schema]`
- * (an array), which the GitHub Copilot JSON-Schema validator rejects as
- * "not of type 'object', 'boolean'". A plain array schema emits
- * `{ type: "array", items: { type: "integer" } }` which is valid.
- * Length is enforced at runtime by `requireAuth` — a short array produces
- * `pin === undefined`, which fails `validateSession` with AUTH_FAILED.
+ * Human-readable description for the `token` parameter used in all tool schemas.
  */
-export const IDENTITY_SCHEMA = z
-  .preprocess(
-    (val) => {
-      if (typeof val === "string") {
-        try {
-          const parsed: unknown = JSON.parse(val) as unknown;
-          if (Array.isArray(parsed)) return parsed as number[];
-        } catch { /* fall through — let inner schema reject */ }
-      }
-      return val;
-    },
-    z.array(z.number().int()).optional(),
-  )
-  .describe(
-    "Identity tuple [sid, pin] from session_start. " +
-    "Always required — pass your [sid, pin] on every tool call.",
-  );
+export const TOKEN_PARAM_DESCRIPTION =
+  "Session token from session_start (sid * 1_000_000 + pin). " +
+  "Always required — pass your token on every tool call.";
+
+/**
+ * Zod schema for the `token` parameter.
+ *
+ * A single integer encoding both the session ID and PIN:
+ *   token = sid * 1_000_000 + pin
+ *
+ * Use `decodeToken(token)` to extract `{ sid, pin }`.
+ */
+export const TOKEN_SCHEMA = z
+  .number()
+  .int()
+  .positive()
+  .describe(TOKEN_PARAM_DESCRIPTION);
+
+/**
+ * Decode a session token into its constituent sid and pin.
+ *
+ * @param token  Positive integer: sid * 1_000_000 + pin
+ * @returns      { sid, pin }
+ */
+export function decodeToken(token: number): { sid: number; pin: number } {
+  const pin = token % 1_000_000;
+  const sid = Math.floor(token / 1_000_000);
+  return { sid, pin };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy alias — kept so that any code that still imports IDENTITY_SCHEMA
+// continues to compile while the migration is in progress.
+// Remove once all callers are updated.
+// ---------------------------------------------------------------------------
+/** @deprecated Use TOKEN_SCHEMA instead */
+export const IDENTITY_SCHEMA = TOKEN_SCHEMA;

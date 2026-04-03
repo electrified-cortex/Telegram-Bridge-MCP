@@ -8,7 +8,7 @@ import { resolveParseMode } from "../markdown.js";
 import { recordOutgoingEdit } from "../message-store.js";
 import type { ButtonStyle } from "./button-helpers.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Core edit primitive — modifies an existing message by ID. " +
@@ -55,11 +55,11 @@ export function register(server: McpServer) {
           .enum(["Markdown", "HTML", "MarkdownV2"])
           .default("Markdown")
           .describe("Markdown = auto-converted (default); MarkdownV2 = raw; HTML = HTML tags"),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ message_id, text, keyboard, parse_mode, identity}) => {
-      const _sid = requireAuth(identity);
+    async ({ message_id, text, keyboard, parse_mode, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

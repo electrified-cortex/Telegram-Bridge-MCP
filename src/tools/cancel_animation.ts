@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { cancelAnimation } from "../animation-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Stop the active animation. Without text: deletes the placeholder. " +
@@ -25,11 +25,11 @@ export function register(server: McpServer) {
           .enum(["Markdown", "HTML", "MarkdownV2"])
           .default("Markdown")
           .describe("Parse mode for replacement text"),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ text, parse_mode, identity}) => {
-      const _sid = requireAuth(identity);
+    async ({ text, parse_mode, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       try {
         const result = await cancelAnimation(_sid, text, parse_mode);

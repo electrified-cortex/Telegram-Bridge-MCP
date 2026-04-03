@@ -11,7 +11,7 @@ import {
   listBuiltinPresets,
   DEFAULT_FRAMES,
 } from "../animation-state.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Configure the session's default animation frames and manage named presets. " +
@@ -39,11 +39,11 @@ export function register(server: McpServer) {
           .boolean()
           .default(false)
           .describe("Reset the session default back to the built-in animation. Ignores frames/name."),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    ({ frames, name, reset, identity}) => {
-      const _sid = requireAuth(identity);
+    ({ frames, name, reset, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       // Reset mode
       if (reset) {

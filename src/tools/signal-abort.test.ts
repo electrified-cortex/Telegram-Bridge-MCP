@@ -87,6 +87,7 @@ function cbUpdate(targetMsgId: number, data: string, qid = "qid1") {
 
 let sid: number;
 let pin: number;
+let token: number;
 let handlers: {
   ask: ToolHandler;
   confirm: ToolHandler;
@@ -111,6 +112,7 @@ describe("signal abort — interactive tools", () => {
     const session = createSession("Aborter");
     sid = session.sid;
     pin = session.pin;
+    token = sid * 1_000_000 + pin;
     setActiveSession(sid);
     createSessionQueue(sid);
 
@@ -135,7 +137,7 @@ describe("signal abort — interactive tools", () => {
 
     const controller = new AbortController();
     const toolPromise = handlers.ask(
-      { question: "What is your name?", timeout_seconds: 60, ignore_pending: true, identity: [sid, pin] },
+      { question: "What is your name?", timeout_seconds: 60, ignore_pending: true, token },
       { signal: controller.signal },
     );
 
@@ -162,7 +164,7 @@ describe("signal abort — interactive tools", () => {
     controller.abort(); // pre-aborted
 
     const result = await handlers.ask(
-      { question: "What?", timeout_seconds: 60, ignore_pending: true, identity: [sid, pin] },
+      { question: "What?", timeout_seconds: 60, ignore_pending: true, token },
       { signal: controller.signal },
     );
 
@@ -182,7 +184,7 @@ describe("signal abort — interactive tools", () => {
 
     const controller = new AbortController();
     const toolPromise = handlers.confirm(
-      { text: "Continue?", timeout_seconds: 60, ignore_pending: true, identity: [sid, pin] },
+      { text: "Continue?", timeout_seconds: 60, ignore_pending: true, token },
       { signal: controller.signal },
     );
 
@@ -209,7 +211,7 @@ describe("signal abort — interactive tools", () => {
 
     const controller = new AbortController();
     const toolPromise = handlers.confirm(
-      { text: "Continue?", timeout_seconds: 60, ignore_pending: true, identity: [sid, pin] },
+      { text: "Continue?", timeout_seconds: 60, ignore_pending: true, token },
       { signal: controller.signal },
     );
 
@@ -238,7 +240,7 @@ describe("signal abort — interactive tools", () => {
     const opts = [{ label: "Option A", value: "a" }, { label: "Option B", value: "b" }];
 
     const toolPromise = handlers.choose(
-      { question: "Pick one:", options: opts, timeout_seconds: 60, ignore_pending: true, identity: [sid, pin] },
+      { question: "Pick one:", options: opts, timeout_seconds: 60, ignore_pending: true, token },
       { signal: controller.signal },
     );
 
@@ -269,7 +271,7 @@ describe("signal abort — interactive tools", () => {
 
     const controller = new AbortController();
     const toolPromise = handlers.confirm(
-      { text: "Proceed?", timeout_seconds: 60, ignore_pending: true, identity: [sid, pin] },
+      { text: "Proceed?", timeout_seconds: 60, ignore_pending: true, token },
       { signal: controller.signal },
     );
 

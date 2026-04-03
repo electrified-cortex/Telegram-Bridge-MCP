@@ -4,7 +4,7 @@ import { getApi, toResult, toError, validateText, resolveChat } from "../telegra
 import { markdownToV2, escapeV2, escapeHtml } from "../markdown.js";
 import { applyTopicToTitle } from "../topic-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const SEVERITY_PREFIX: Record<string, string> = {
   info: "ℹ️",
@@ -49,11 +49,11 @@ export function register(server: McpServer) {
           .min(1)
           .optional()
           .describe("Reply to this message ID — shows quoted message above the notification"),
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    async ({ title, text, severity, parse_mode, disable_notification, reply_to_message_id, identity }) => {
-      const _sid = requireAuth(identity);
+    async ({ title, text, severity, parse_mode, disable_notification, reply_to_message_id, token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

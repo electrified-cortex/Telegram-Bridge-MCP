@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { applyProfile } from "./apply-profile.js";
 
 const DESCRIPTION =
@@ -42,11 +42,11 @@ export function register(server: McpServer) {
           )
           .optional()
           .describe("Reminders to register for this session."),
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    ({ voice, voice_speed, animation_default, animation_presets, reminders, identity }) => {
-      const _sid = requireAuth(identity);
+    ({ voice, voice_speed, animation_default, animation_presets, reminders, token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
 
       const profile = {

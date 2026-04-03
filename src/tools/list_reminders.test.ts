@@ -30,7 +30,7 @@ describe("list_reminders tool", () => {
 
   it("returns empty reminders list when none set", async () => {
     mocks.listReminders.mockReturnValue([]);
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.reminders).toEqual([]);
@@ -41,7 +41,7 @@ describe("list_reminders tool", () => {
     mocks.listReminders.mockReturnValue([
       { id: "r1", text: "active!", delay_seconds: 0, recurring: false, state: "active", created_at: now, activated_at: now },
     ]);
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
     expect(data.reminders[0].fires_in_seconds).toBeUndefined();
   });
@@ -51,7 +51,7 @@ describe("list_reminders tool", () => {
     mocks.listReminders.mockReturnValue([
       { id: "r2", text: "later", delay_seconds: 60, recurring: false, state: "deferred", created_at: now, activated_at: null },
     ]);
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
     expect(typeof data.reminders[0].fires_in_seconds).toBe("number");
     expect(data.reminders[0].fires_in_seconds as number).toBeGreaterThan(0);
@@ -67,7 +67,7 @@ describe("list_reminders tool", () => {
 
     it("returns AUTH_FAILED on invalid PIN", async () => {
       mocks.validateSession.mockReturnValue(false);
-      const result = await call({ identity: [1, 0] });
+      const result = await call({ token: 1000000 });
       expect(isError(result)).toBe(true);
       expect(parseResult(result).code).toBe("AUTH_FAILED");
     });

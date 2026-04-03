@@ -36,14 +36,14 @@ describe("pin_message tool", () => {
 
   it("returns ok: true on success", async () => {
     mocks.pinChatMessage.mockResolvedValue(true);
-    const result = await call({ message_id: 5, identity: [1, 123456]});
+    const result = await call({ message_id: 5, token: 1123456});
     expect(isError(result)).toBe(false);
     expect((parseResult(result)).ok).toBe(true);
   });
 
   it("passes disable_notification option", async () => {
     mocks.pinChatMessage.mockResolvedValue(true);
-    await call({ message_id: 5, disable_notification: true, identity: [1, 123456]});
+    await call({ message_id: 5, disable_notification: true, token: 1123456});
     const [, , opts] = mocks.pinChatMessage.mock.calls[0];
     expect(opts.disable_notification).toBe(true);
   });
@@ -53,13 +53,13 @@ describe("pin_message tool", () => {
     mocks.pinChatMessage.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: not enough rights" }, "pinChatMessage", {})
     );
-    const result = await call({ message_id: 5, identity: [1, 123456]});
+    const result = await call({ message_id: 5, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("NOT_ENOUGH_RIGHTS");
   });
 
   it("returns MISSING_MESSAGE_ID when pinning without a message_id", async () => {
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MISSING_MESSAGE_ID");
     expect(mocks.pinChatMessage).not.toHaveBeenCalled();
@@ -67,7 +67,7 @@ describe("pin_message tool", () => {
 
   it("unpins with message_id when provided", async () => {
     mocks.unpinChatMessage.mockResolvedValue(true);
-    const result = await call({ message_id: 5, unpin: true, identity: [1, 123456]});
+    const result = await call({ message_id: 5, unpin: true, token: 1123456});
     expect(isError(result)).toBe(false);
     expect(parseResult<{ unpinned: boolean }>(result).unpinned).toBe(true);
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 5);
@@ -75,7 +75,7 @@ describe("pin_message tool", () => {
 
   it("unpins most recent when unpin: true and no message_id", async () => {
     mocks.unpinChatMessage.mockResolvedValue(true);
-    const result = await call({ unpin: true, identity: [1, 123456]});
+    const result = await call({ unpin: true, token: 1123456});
     expect(isError(result)).toBe(false);
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1);
   });
@@ -85,7 +85,7 @@ describe("pin_message tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ message_id: 5, identity: [1, 123456]});
+    const result = await call({ message_id: 5, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
@@ -99,7 +99,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"identity":[1,99999]});
+    const result = await call({"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -107,7 +107,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

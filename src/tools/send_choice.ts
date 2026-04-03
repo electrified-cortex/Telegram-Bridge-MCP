@@ -8,7 +8,7 @@ import { requireAuth } from "../session-gate.js";
 import {
   sendChoiceMessage, type KeyboardOption,
 } from "./button-helpers.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
 
 const DESCRIPTION =
@@ -75,11 +75,11 @@ export function register(server: McpServer) {
           .boolean()
           .optional()
           .describe("Set true to bypass button label emoji-consistency check"),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ text, options, columns, parse_mode, disable_notification, reply_to_message_id, ignore_parity, identity}) => {
-      const _sid = requireAuth(identity);
+    async ({ text, options, columns, parse_mode, disable_notification, reply_to_message_id, ignore_parity, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

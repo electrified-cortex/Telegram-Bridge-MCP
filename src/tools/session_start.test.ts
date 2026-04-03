@@ -126,6 +126,7 @@ describe("session_start tool", () => {
     const result = parseResult(await call({}));
 
     expect(result).toEqual({
+      token: 1123456,
       sid: 1,
       pin: 123456,
       sessions_active: 1,
@@ -143,6 +144,7 @@ describe("session_start tool", () => {
     const result = parseResult(await call({}));
 
     expect(result).toEqual({
+      token: 1123456,
       sid: 1,
       pin: 123456,
       sessions_active: 1,

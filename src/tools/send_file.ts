@@ -8,7 +8,7 @@ import { resolveParseMode } from "../markdown.js";
 import { showTyping } from "../typing-state.js";
 import { extname } from "path";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 // ---------------------------------------------------------------------------
 // Auto-detection
@@ -96,15 +96,15 @@ export function register(server: McpServer) {
           .int()
           .optional()
           .describe("Reply to this message ID"),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
     async ({
       file, type, caption, parse_mode, duration, performer, title,
       width, height, disable_notification, reply_to_message_id,
-      identity,
+      token,
     }) => {
-      const _sid = requireAuth(identity);
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

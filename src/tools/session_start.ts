@@ -149,11 +149,12 @@ const DESCRIPTION =
   "Call once at the start of every session. Creates a session " +
   "with a unique ID and PIN. Fresh sessions auto-drain pending messages; " +
   "reconnects preserve queued messages and return the actual pending count. " +
-  "If you lost your PIN (context loss, crash), call with reconnect: true " +
+  "If you lost your token (context loss, crash), call with reconnect: true " +
   "and the same name to trigger an operator re-authorization dialog; on " +
-  "approval the same SID and PIN are returned. " +
-  "Returns { sid, pin, sessions_active, action, pending } so " +
+  "approval the same token is returned. " +
+  "Returns { token, sid, pin, sessions_active, action, pending } so " +
   "the agent knows its identity and how to proceed. " +
+  "Save your token — it encodes both sid and pin as a single integer (sid * 1_000_000 + pin). " +
   "Call after get_agent_guide and get_me during session setup.";
 
 export function register(server: McpServer) {
@@ -300,16 +301,19 @@ export function register(server: McpServer) {
             }
 
             void refreshGovernorCommand();
+            const reconToken = fullSession.sid * 1_000_000 + fullSession.pin;
             return toResult({
+              token: reconToken,
               sid: fullSession.sid,
               pin: fullSession.pin,
               sessions_active: reconSessActive,
               action: "reconnected",
               pending,
               profile_hint: "Call load_profile(key) to restore saved session configuration.",
-              instructions: "You reconnected after a gap. "
-                + "Call get_chat_history to check for messages you may have missed. "
-                + "Re-save your SID and PIN to session memory if needed.",
+              instructions: `Your session token is ${reconToken} (SID ${fullSession.sid}). ` +
+                "Save your token to session memory NOW. " +
+                "You reconnected after a gap. " +
+                "Call get_chat_history to check for messages you may have missed.",
             });
           }
 
@@ -317,7 +321,7 @@ export function register(server: McpServer) {
             code: "NAME_CONFLICT",
             message:
               `A session named "${existing.name}" already exists (SID ${existing.sid}). ` +
-              `If you still have the PIN, resume with dequeue_update(identity: [${existing.sid}, <pin>]). ` +
+              `If you still have your token, resume with dequeue_update(token: <token>). ` +
               `To start a new session, choose a different name. ` +
               `To reclaim this session, call session_start again with reconnect: true.`,
           });
@@ -351,16 +355,19 @@ export function register(server: McpServer) {
         let discarded = 0;
         while (dequeue() !== undefined) discarded++;
 
+        const sessionToken = session.sid * 1_000_000 + session.pin;
         const res: Record<string, unknown> = {
+          token: sessionToken,
           sid: session.sid,
           pin: session.pin,
           sessions_active: session.sessionsActive,
           action: reconnect ? "reconnected" : "fresh",
           pending: 0,
           profile_hint: "Call load_profile(key) to restore saved session configuration.",
-          instructions: "IMPORTANT: Save your SID and PIN to session memory NOW. "
-            + "You will need them to reconnect after context compaction. "
-            + "On reconnect, call get_chat_history to recover any messages missed during the gap.",
+          instructions: `IMPORTANT: Your session token is ${sessionToken} (SID ${session.sid}). ` +
+            "Save your token to session memory NOW. " +
+            "You will need it to reconnect after context compaction. " +
+            "On reconnect, call get_chat_history to recover any messages missed during the gap.",
         };
         if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {

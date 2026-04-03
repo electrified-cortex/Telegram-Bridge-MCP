@@ -48,7 +48,7 @@ describe("update_progress tool", () => {
 
   it("edits message in-place and returns updated: true", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    const result = await call({ message_id: 10, percent: 75, identity: [1, 123456]});
+    const result = await call({ message_id: 10, percent: 75, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.updated).toBe(true);
@@ -58,7 +58,7 @@ describe("update_progress tool", () => {
 
   it("renders updated bar with bold title", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, percent: 100, title: "Building", identity: [1, 123456]});
+    await call({ message_id: 10, percent: 100, title: "Building", token: 1123456});
     const [, , text] = mocks.editMessageText.mock.calls[0] as [unknown, unknown, string];
     expect(text).toContain("<b>Building</b>");
     expect(text).toContain("▓▓▓▓▓▓▓▓▓▓  100%");
@@ -66,7 +66,7 @@ describe("update_progress tool", () => {
 
   it("renders bar-only when no title", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, percent: 50, identity: [1, 123456]});
+    await call({ message_id: 10, percent: 50, token: 1123456});
     const [, , text] = mocks.editMessageText.mock.calls[0] as [unknown, unknown, string];
     expect(text).not.toContain("<b>");
     expect(text).toContain("▓▓▓▓▓░░░░░  50%");
@@ -74,14 +74,14 @@ describe("update_progress tool", () => {
 
   it("renders subtext when provided", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, percent: 50, subtext: "half done", identity: [1, 123456]});
+    await call({ message_id: 10, percent: 50, subtext: "half done", token: 1123456});
     const [, , text] = mocks.editMessageText.mock.calls[0] as [unknown, unknown, string];
     expect(text).toContain("<i>half done</i>");
   });
 
   it("handles boolean result from editMessageText (Telegram unchanged)", async () => {
     mocks.editMessageText.mockResolvedValue(true);
-    const result = await call({ message_id: 10, percent: 50, identity: [1, 123456]});
+    const result = await call({ message_id: 10, percent: 50, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(10);
@@ -93,7 +93,7 @@ describe("update_progress tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ message_id: 10, percent: 50, identity: [1, 123456]});
+    const result = await call({ message_id: 10, percent: 50, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
@@ -103,21 +103,21 @@ describe("update_progress tool", () => {
       code: "MESSAGE_TOO_LONG",
       message: "too long",
     });
-    const result = await call({ message_id: 10, percent: 50, identity: [1, 123456]});
+    const result = await call({ message_id: 10, percent: 50, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
 
   it("auto-unpins when percent reaches 100", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
+    await call({ message_id: 10, percent: 100, token: 1123456 });
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 10);
   });
 
   it("sends completion reply when percent reaches 100", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     mocks.sendMessage.mockResolvedValue({ message_id: 11 });
-    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
+    await call({ message_id: 10, percent: 100, token: 1123456 });
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       1,
       "✅ Complete",
@@ -127,20 +127,20 @@ describe("update_progress tool", () => {
 
   it("does not send duplicate completion reply on repeated 100% updates", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
-    await call({ message_id: 10, percent: 100, identity: [1, 123456] });
+    await call({ message_id: 10, percent: 100, token: 1123456 });
+    await call({ message_id: 10, percent: 100, token: 1123456 });
     expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it("does not send completion reply when percent is less than 100", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, percent: 99, identity: [1, 123456] });
+    await call({ message_id: 10, percent: 99, token: 1123456 });
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("does not unpin when percent is less than 100", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await call({ message_id: 10, percent: 99, identity: [1, 123456] });
+    await call({ message_id: 10, percent: 99, token: 1123456 });
     expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 
@@ -153,7 +153,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"message_id":1,"percent":50,"identity":[1,99999]});
+    const result = await call({"message_id":1,"percent":50,"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -161,7 +161,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"message_id":1,"percent":50,"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"message_id":1,"percent":50,"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

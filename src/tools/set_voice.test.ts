@@ -41,7 +41,7 @@ describe("set_voice tool", () => {
 
   it("sets a voice and returns { voice, previous, set: true }", async () => {
     mocks.getSessionVoice.mockReturnValueOnce(null).mockReturnValueOnce("alloy");
-    const result = await call({ voice: "alloy", identity: [1, 123456] });
+    const result = await call({ voice: "alloy", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.set).toBe(true);
@@ -52,7 +52,7 @@ describe("set_voice tool", () => {
 
   it("replaces an existing voice", async () => {
     mocks.getSessionVoice.mockReturnValueOnce("echo").mockReturnValueOnce("nova");
-    const result = await call({ voice: "nova", identity: [1, 123456] });
+    const result = await call({ voice: "nova", token: 1123456 });
     const data = parseResult(result);
     expect(data.previous).toBe("echo");
     expect(data.voice).toBe("nova");
@@ -60,7 +60,7 @@ describe("set_voice tool", () => {
 
   it("clears voice when empty string passed", async () => {
     mocks.getSessionVoice.mockReturnValueOnce("fable");
-    const result = await call({ voice: "", identity: [1, 123456] });
+    const result = await call({ voice: "", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.cleared).toBe(true);
@@ -72,7 +72,7 @@ describe("set_voice tool", () => {
 
   it("clears voice when whitespace-only string passed", async () => {
     mocks.getSessionVoice.mockReturnValueOnce("shimmer");
-    const result = await call({ voice: "   ", identity: [1, 123456] });
+    const result = await call({ voice: "   ", token: 1123456 });
     const data = parseResult(result);
     expect(data.cleared).toBe(true);
     expect(mocks.clearSessionVoice).toHaveBeenCalledOnce();
@@ -88,7 +88,7 @@ describe("set_voice tool", () => {
 
     it("returns AUTH_FAILED when identity has wrong pin", async () => {
       mocks.validateSession.mockReturnValue(false);
-      const result = await call({ voice: "alloy", identity: [1, 999999] });
+      const result = await call({ voice: "alloy", token: 1999999 });
       expect(isError(result)).toBe(true);
       const data = parseResult(result);
       expect(data.code).toBe("AUTH_FAILED");

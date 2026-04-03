@@ -51,7 +51,7 @@ describe("show_animation tool", () => {
 
   it("starts animation and returns message_id", async () => {
     mocks.startAnimation.mockResolvedValue(50);
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(50);
@@ -59,7 +59,7 @@ describe("show_animation tool", () => {
 
   it("passes undefined frames when none specified (uses session default)", async () => {
     mocks.startAnimation.mockResolvedValue(51);
-    await call({ identity: [1, 123456] });
+    await call({ token: 1123456 });
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       1,
       undefined,
@@ -77,7 +77,7 @@ describe("show_animation tool", () => {
     await call({
       frames: ["🔄", "⏳", "✅"],
       interval: 3000,
-      timeout: 60, identity: [1, 123456]});
+      timeout: 60, token: 1123456});
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       1,
       ["🔄", "⏳", "✅"],
@@ -93,7 +93,7 @@ describe("show_animation tool", () => {
   it("resolves preset frames by name", async () => {
     mocks.getPreset.mockReturnValue(["thinking.", "thinking..", "thinking..."]);
     mocks.startAnimation.mockResolvedValue(53);
-    const result = await call({ preset: "thinking", identity: [1, 123456]});
+    const result = await call({ preset: "thinking", token: 1123456});
     expect(isError(result)).toBe(false);
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       1,
@@ -110,7 +110,7 @@ describe("show_animation tool", () => {
   it("preset takes priority over explicit frames", async () => {
     mocks.getPreset.mockReturnValue(["preset."]);
     mocks.startAnimation.mockResolvedValue(54);
-    await call({ preset: "mypreset", frames: ["ignored"], identity: [1, 123456]});
+    await call({ preset: "mypreset", frames: ["ignored"], token: 1123456});
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       1,
       ["preset."],
@@ -125,25 +125,25 @@ describe("show_animation tool", () => {
 
   it("returns error for unknown preset", async () => {
     mocks.getPreset.mockReturnValue(undefined);
-    const result = await call({ preset: "nonexistent", identity: [1, 123456]});
+    const result = await call({ preset: "nonexistent", token: 1123456});
     expect(isError(result)).toBe(true);
   });
 
   it("returns error when startAnimation throws", async () => {
     mocks.startAnimation.mockRejectedValue(new Error("ALLOWED_USER_ID not configured"));
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(true);
   });
 
   it("returns error when resolveChat fails", async () => {
     mocks.startAnimation.mockRejectedValue(new Error("Something went wrong"));
-    const result = await call({ frames: ["⏳"], identity: [1, 123456]});
+    const result = await call({ frames: ["⏳"], token: 1123456});
     expect(isError(result)).toBe(true);
   });
 
   it("passes persistent flag to startAnimation", async () => {
     mocks.startAnimation.mockResolvedValue(55);
-    const result = await call({ persistent: true, identity: [1, 123456]});
+    const result = await call({ persistent: true, token: 1123456});
     expect(isError(result)).toBe(false);
     expect(mocks.startAnimation).toHaveBeenCalledWith(
       1,
@@ -164,7 +164,7 @@ describe("show_animation tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(true);
   });
 
@@ -177,7 +177,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"identity":[1,99999]});
+    const result = await call({"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -185,7 +185,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

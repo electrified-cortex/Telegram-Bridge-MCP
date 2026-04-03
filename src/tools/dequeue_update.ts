@@ -7,7 +7,7 @@ import {
 } from "../message-store.js";
 import { setActiveSession, touchSession } from "../session-manager.js";
 import { getSessionQueue, getMessageOwner } from "../session-queue.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 import {
   promoteDeferred,
   getActiveReminders,
@@ -55,7 +55,7 @@ const DESCRIPTION =
   "pending > 0 means more updates are queued — call again. " +
   "Two modes: omit timeout (default 300 s) to block up to 300 s for the next update; " +
   "pass timeout: 0 for an instant non-blocking poll (use only for startup drain loops). " +
-  "identity [sid, pin] is always required — pass the tuple returned by session_start.";
+  "token is always required — pass the session token returned by session_start.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -70,11 +70,11 @@ export function register(server: McpServer) {
           .max(300)
           .default(300)
           .describe("Seconds to block when queue is empty. Default 300 (5 min) blocks up to 300 s for the next update — optimized for agent listen loops. Pass 0 for an instant non-blocking poll (drain loops only). Max 300."),
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    async ({ timeout, identity }, { signal }) => {
-      const _sid = requireAuth(identity);
+    async ({ timeout, token }, { signal }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const sid = _sid;
 

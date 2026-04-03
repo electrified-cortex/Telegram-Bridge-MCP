@@ -4,7 +4,7 @@ import { getApi, toResult, toError, resolveChat, validateText } from "../telegra
 import { escapeHtml } from "../markdown.js";
 import { applyTopicToTitle } from "../topic-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 /** Message IDs that have already received a completion reply — prevents duplicates. */
 const _completedMessageIds = new Set<number>();
@@ -75,11 +75,11 @@ export function register(server: McpServer) {
       inputSchema: {
         title: TITLE_INPUT,
         steps: STEPS_INPUT,
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    async ({ title, steps, identity }) => {
-      const _sid = requireAuth(identity);
+    async ({ title, steps, token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
@@ -116,11 +116,11 @@ export function register(server: McpServer) {
           .int()
           .min(1)
           .describe("ID of the checklist message to update, as returned by send_new_checklist."),
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    async ({ title, steps, message_id, identity }) => {
-      const _sid = requireAuth(identity);
+    async ({ title, steps, message_id, token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

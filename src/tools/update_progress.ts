@@ -4,7 +4,7 @@ import { getApi, toResult, toError, resolveChat, validateText } from "../telegra
 import { applyTopicToTitle } from "../topic-state.js";
 import { renderProgress } from "./send_new_progress.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 /** Message IDs that have already received a completion reply — prevents duplicates. */
 const _completedMessageIds = new Set<number>();
@@ -55,11 +55,11 @@ export function register(server: McpServer) {
           .max(40)
           .default(DEFAULT_WIDTH)
           .describe(`Bar width in characters. Default ${DEFAULT_WIDTH}.`),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ message_id, percent, title, subtext, width, identity}) => {
-      const _sid = requireAuth(identity);
+    async ({ message_id, percent, title, subtext, width, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

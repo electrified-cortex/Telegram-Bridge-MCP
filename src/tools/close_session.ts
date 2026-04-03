@@ -9,7 +9,7 @@ import { replaceSessionCallbackHooks } from "../message-store.js";
 import { dlog } from "../debug-log.js";
 import { stopPoller } from "../poller.js";
 import { clearSessionReminders } from "../reminder-state.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
 
 const DESCRIPTION =
@@ -23,11 +23,11 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    ({ identity }) => {
-      const _sid = requireAuth(identity);
+    ({ token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const sid = _sid;
 

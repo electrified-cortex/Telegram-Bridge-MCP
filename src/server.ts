@@ -2,7 +2,6 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import { runInSessionContext } from "./session-context.js";
 import { getActiveSession } from "./session-manager.js";
 
@@ -87,25 +86,15 @@ export function createServer(): McpServer {
     config: AnyConfig,
     cb: AnyCallback,
   ) => {
-    // Inject optional `sid` into every tool's inputSchema so agents
-    // can identify themselves without per-tool changes.
-    const cfg = config as Record<string, unknown>;
-    const schema = cfg.inputSchema as
-      Record<string, unknown> | undefined;
-    if (schema && !("sid" in schema)) {
-      schema.sid = z.number()
-        .int().positive().optional()
-        .describe("Deprecated session-context hint. " +
-          "Prefer identity: [sid, pin] for authentication.");
-    }
     const original = cb as unknown as CallableCb;
     const wrappedCb = (
       (args: Record<string, unknown>, extra: unknown) => {
-        const sid = (Array.isArray(args.identity) && typeof args.identity[0] === "number")
-          ? args.identity[0]
-          : (typeof args.sid === "number"
-            ? args.sid
-            : getActiveSession());
+        // Decode sid from token (sid * 1_000_000 + pin) for session context.
+        // Falls back to active session for tools that don't require auth.
+        const token = args.token;
+        const sid = (typeof token === "number" && token > 0)
+          ? Math.floor(token / 1_000_000)
+          : getActiveSession();
         if (sid > 0) {
           return runInSessionContext(sid, () =>
             original(args, extra),

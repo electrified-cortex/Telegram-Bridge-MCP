@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { addReminder, MAX_REMINDERS_PER_SESSION, reminderContentHash } from "../reminder-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Schedule a reminder that fires as a synthetic event after the message queue is idle for 60 seconds. " +
@@ -35,11 +35,11 @@ export function register(server: McpServer) {
           .max(128)
           .optional()
           .describe("Optional ID for cancellation via cancel_reminder. Auto-generated (UUID) if omitted."),
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    ({ text, delay_seconds = 0, recurring = false, id, identity }) => {
-      const _sid = requireAuth(identity);
+    ({ text, delay_seconds = 0, recurring = false, id, token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
 
       const reminderId = id ?? reminderContentHash(text, recurring);

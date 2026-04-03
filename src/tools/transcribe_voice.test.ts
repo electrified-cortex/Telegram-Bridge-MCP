@@ -33,7 +33,7 @@ describe("transcribe_voice tool", () => {
 
   it("returns transcribed text for a file_id", async () => {
     mocks.transcribeWithIndicator.mockResolvedValue("hello world");
-    const result = await call({ file_id: "abc123", identity: [1, 123456]});
+    const result = await call({ file_id: "abc123", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.text).toBe("hello world");
@@ -42,13 +42,13 @@ describe("transcribe_voice tool", () => {
 
   it("passes message_id to transcribeWithIndicator when provided", async () => {
     mocks.transcribeWithIndicator.mockResolvedValue("ok");
-    await call({ file_id: "abc", message_id: 42, identity: [1, 123456]});
+    await call({ file_id: "abc", message_id: 42, token: 1123456});
     expect(mocks.transcribeWithIndicator).toHaveBeenCalledWith("abc", 42);
   });
 
   it("returns an error result if transcription throws", async () => {
     mocks.transcribeWithIndicator.mockRejectedValue(new Error("model not found"));
-    const result = await call({ file_id: "bad", identity: [1, 123456]});
+    const result = await call({ file_id: "bad", token: 1123456});
     expect(isError(result)).toBe(true);
   });
 
@@ -61,7 +61,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"file_id":"x","identity":[1,99999]});
+    const result = await call({"file_id":"x","token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -69,7 +69,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"file_id":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"file_id":"x","token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

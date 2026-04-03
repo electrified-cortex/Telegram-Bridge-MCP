@@ -47,7 +47,7 @@ describe("save_profile tool", () => {
 
   it("saves successfully and returns saved sections", async () => {
     mocks.getSessionVoiceFor.mockReturnValue("nova");
-    const result = await call({ key: "Test", identity: [1, 123456] });
+    const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.saved).toBe(true);
@@ -56,7 +56,7 @@ describe("save_profile tool", () => {
 
   it("omits animation_default when no custom default is set", async () => {
     mocks.hasSessionDefault.mockReturnValue(false);
-    await call({ key: "Test", identity: [1, 123456] });
+    await call({ key: "Test", token: 1123456 });
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     expect(written).not.toHaveProperty("animation_default");
   });
@@ -64,7 +64,7 @@ describe("save_profile tool", () => {
   it("includes animation_default when custom default is set", async () => {
     mocks.hasSessionDefault.mockReturnValue(true);
     mocks.getDefaultFrames.mockReturnValue(["`[working]`"]);
-    await call({ key: "Test", identity: [1, 123456] });
+    await call({ key: "Test", token: 1123456 });
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     expect(written).toHaveProperty("animation_default");
     expect(written.animation_default).toEqual(["`[working]`"]);
@@ -75,7 +75,7 @@ describe("save_profile tool", () => {
       { id: "abc123def456789", text: "Check CI", delay_seconds: 0, recurring: false },
       { id: "xyz987", text: "Stand by", delay_seconds: 300, recurring: true },
     ]);
-    await call({ key: "Test", identity: [1, 123456] });
+    await call({ key: "Test", token: 1123456 });
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     const reminders = written.reminders as Array<Record<string, unknown>>;
     expect(reminders).toHaveLength(2);
@@ -88,21 +88,21 @@ describe("save_profile tool", () => {
     mocks.listReminders.mockReturnValue([
       { id: "abc123", text: "Check CI", delay_seconds: 60, recurring: true },
     ]);
-    await call({ key: "Test", identity: [1, 123456] });
+    await call({ key: "Test", token: 1123456 });
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     const reminders = written.reminders as Array<Record<string, unknown>>;
     expect(reminders[0]).toEqual({ text: "Check CI", delay_seconds: 60, recurring: true });
   });
 
   it("rejects path keys (containing /)", async () => {
-    const result = await call({ key: "profiles/Test", identity: [1, 123456] });
+    const result = await call({ key: "profiles/Test", token: 1123456 });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("INVALID_KEY");
   });
 
   it("returns WRITE_FAILED when writeProfile throws", async () => {
     mocks.writeProfile.mockImplementation(() => { throw new Error("disk full"); });
-    const result = await call({ key: "Test", identity: [1, 123456] });
+    const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("WRITE_FAILED");
   });
@@ -116,7 +116,7 @@ describe("save_profile tool", () => {
 
     it("returns AUTH_FAILED on invalid PIN", async () => {
       mocks.validateSession.mockReturnValue(false);
-      const result = await call({ key: "Test", identity: [1, 0] });
+      const result = await call({ key: "Test", token: 1000000 });
       expect(isError(result)).toBe(true);
       expect(parseResult(result).code).toBe("AUTH_FAILED");
     });

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { setTopic, getTopic, clearTopic } from "../topic-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Sets a default title (e.g. \"Refactor Agent\") that is automatically " +
@@ -23,11 +23,11 @@ export function register(server: McpServer) {
         .string()
         .max(32)
         .describe("Short label to prepend to all outbound messages, e.g. \"Refactor Agent\". Pass empty string to clear."),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    ({ topic, identity}) => {
-      const _sid = requireAuth(identity);
+    ({ topic, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const previous = getTopic();
       if (topic.trim() === "") {

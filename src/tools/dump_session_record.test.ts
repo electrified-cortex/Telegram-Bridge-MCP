@@ -64,12 +64,12 @@ describe("dump_session_record tool (V3)", () => {
 
   it("returns disabled message when session log is off", async () => {
     mocks.getSessionLogMode.mockReturnValue(null);
-    const text = getText(await call({ identity: [1, 123456] }));
+    const text = getText(await call({ token: 1123456 }));
     expect(text).toContain("disabled");
   });
 
   it("returns 'no events' when timeline is empty", async () => {
-    const text = getText(await call({ identity: [1, 123456] }));
+    const text = getText(await call({ token: 1123456 }));
     expect(text).toContain("No events captured");
   });
 
@@ -86,7 +86,7 @@ describe("dump_session_record tool (V3)", () => {
       document: { file_id: "abc123" },
     });
 
-    const data = JSON.parse(getText(await call({ identity: [1, 123456] })));
+    const data = JSON.parse(getText(await call({ token: 1123456 })));
     expect(data.message_id).toBe(99);
     expect(data.event_count).toBe(2);
     expect(data.file_id).toBe("abc123");
@@ -113,18 +113,18 @@ describe("dump_session_record tool (V3)", () => {
     mocks.dumpTimeline.mockReturnValue(events);
     mocks.timelineSize.mockReturnValue(5);
 
-    const data = JSON.parse(getText(await call({ limit: 2, identity: [1, 123456]})));
+    const data = JSON.parse(getText(await call({ limit: 2, token: 1123456})));
     expect(data.event_count).toBe(2);
     expect(mocks.sendDocument).toHaveBeenCalledOnce();
   });
 
   it("does not call sendDocument when timeline is empty", async () => {
-    await call({ identity: [1, 123456] });
+    await call({ token: 1123456 });
     expect(mocks.sendDocument).not.toHaveBeenCalled();
   });
 
   it("does not error with default params", async () => {
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
   });
 
@@ -137,7 +137,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"identity":[1,99999]});
+    const result = await call({"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -145,7 +145,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

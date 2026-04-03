@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toResult, toError } from "../telegram.js";
 import { getDebugLog, debugLogSize, isDebugEnabled, setDebugEnabled, type DebugCategory } from "../debug-log.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const CATEGORIES = ["session", "route", "queue", "cascade", "dm", "animation", "tool", "health"] as const satisfies [string, ...string[]];
 
@@ -29,11 +29,11 @@ export function register(server: McpServer) {
           .describe("Only return entries with id > since (cursor-based pagination)"),
         enable: z.boolean().optional()
           .describe("Set to true/false to toggle debug logging on/off"),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    ({ count, category, since, enable, identity}) => {
-      const _sid = requireAuth(identity);
+    ({ count, category, since, enable, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       if (enable !== undefined) setDebugEnabled(enable);
 

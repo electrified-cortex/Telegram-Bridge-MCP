@@ -239,7 +239,7 @@ Paste `LOOP-PROMPT.md` into your AI assistant's chat. It connects, announces its
 
 | Tool | Description |
 | --- | --- |
-| `session_start` | Authenticate, get identity `[sid, pin]` |
+| `session_start` | Authenticate, returns `token` integer for all subsequent calls |
 | `close_session` | Disconnect gracefully |
 | `list_sessions` | See all active sessions |
 | `rename_session` | Change display name (requires operator approval) |
@@ -265,7 +265,7 @@ Paste `LOOP-PROMPT.md` into your AI assistant's chat. It connects, announces its
 
 Multiple agents can share one bot simultaneously. Each session gets:
 
-- **Identity** — `[sid, pin]` tuple returned by `session_start`, required on every tool call
+- **Identity** — single `token` integer returned by `session_start`, required on every tool call
 - **Isolated queue** — per-session message routing, no cross-talk
 - **Name tags** — outbound messages are prefixed with the session's color + name (e.g., `🟩 🤖 Worker 1`)
 - **Governor model** — first session is primary; others join with operator approval via color-picker keyboard
@@ -308,7 +308,7 @@ Per-session voice override: use the `set_voice` tool or `/voice` in Telegram.
 
 - **`ALLOWED_USER_ID`** — only this user's messages are processed; everything else is silently dropped
 - `chat_id` is never a tool parameter — resolved from `ALLOWED_USER_ID` internally
-- Multi-session auth via `[sid, pin]` identity on every tool call
+- Multi-session auth via single `token` integer on every tool call
 - `rename_session` requires explicit operator approval via inline keyboard
 
 See `docs/security-model.md` for details.

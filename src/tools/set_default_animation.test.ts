@@ -56,7 +56,7 @@ describe("set_default_animation tool", () => {
   it("queries current state when called with no args", async () => {
     mocks.getDefaultFrames.mockReturnValue(["a", "b"]);
     mocks.listPresets.mockReturnValue(["thinking"]);
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.default_frames).toEqual(["a", "b"]);
@@ -65,7 +65,7 @@ describe("set_default_animation tool", () => {
   });
 
   it("sets session default frames", async () => {
-    const result = await call({ frames: ["thinking.", "thinking..", "thinking..."], identity: [1, 123456]});
+    const result = await call({ frames: ["thinking.", "thinking..", "thinking..."], token: 1123456});
     expect(isError(result)).toBe(false);
     expect(mocks.setSessionDefault).toHaveBeenCalledWith(1, ["thinking.", "thinking..", "thinking..."]);
     const data = parseResult(result);
@@ -74,7 +74,7 @@ describe("set_default_animation tool", () => {
 
   it("registers a named preset", async () => {
     mocks.listPresets.mockReturnValue(["cool"]);
-    const result = await call({ frames: ["✨", "💫"], name: "cool", identity: [1, 123456]});
+    const result = await call({ frames: ["✨", "💫"], name: "cool", token: 1123456});
     expect(isError(result)).toBe(false);
     expect(mocks.registerPreset).toHaveBeenCalledWith(1, "cool", ["✨", "💫"]);
     const data = parseResult(result);
@@ -83,7 +83,7 @@ describe("set_default_animation tool", () => {
   });
 
   it("resets session default", async () => {
-    const result = await call({ reset: true, identity: [1, 123456]});
+    const result = await call({ reset: true, token: 1123456});
     expect(isError(result)).toBe(false);
     expect(mocks.resetSessionDefault).toHaveBeenCalledOnce();
     const data = parseResult(result);
@@ -91,7 +91,7 @@ describe("set_default_animation tool", () => {
   });
 
   it("reset ignores frames and name", async () => {
-    await call({ reset: true, frames: ["ignored"], name: "ignored", identity: [1, 123456]});
+    await call({ reset: true, frames: ["ignored"], name: "ignored", token: 1123456});
     expect(mocks.resetSessionDefault).toHaveBeenCalledOnce();
     expect(mocks.setSessionDefault).not.toHaveBeenCalled();
     expect(mocks.registerPreset).not.toHaveBeenCalled();
@@ -106,7 +106,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"identity":[1,99999]});
+    const result = await call({"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -114,7 +114,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

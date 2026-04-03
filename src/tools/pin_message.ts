@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Pins or unpins a message in a chat. Requires the bot to have " +
@@ -30,11 +30,11 @@ export function register(server: McpServer) {
         .boolean()
         .optional()
         .describe("If true, unpin instead of pin"),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ message_id, disable_notification, unpin, identity}) => {
-      const _sid = requireAuth(identity);
+    async ({ message_id, disable_notification, unpin, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

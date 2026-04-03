@@ -49,21 +49,21 @@ describe("load_profile tool", () => {
 
   it("returns NOT_FOUND when profile does not exist", async () => {
     mocks.readProfile.mockReturnValue(null);
-    const result = await call({ key: "Missing", identity: [1, 123456] });
+    const result = await call({ key: "Missing", token: 1123456 });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("NOT_FOUND");
   });
 
   it("returns READ_FAILED when readProfile throws", async () => {
     mocks.readProfile.mockImplementation(() => { throw new Error("disk error"); });
-    const result = await call({ key: "Test", identity: [1, 123456] });
+    const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("READ_FAILED");
   });
 
   it("applies voice and voice_speed from profile", async () => {
     mocks.readProfile.mockReturnValue({ voice: "nova", voice_speed: 1.2 });
-    const result = await call({ key: "Test", identity: [1, 123456] });
+    const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     expect(mocks.setSessionVoice).toHaveBeenCalledWith("nova");
     expect(mocks.setSessionSpeed).toHaveBeenCalledWith(1.2);
@@ -76,7 +76,7 @@ describe("load_profile tool", () => {
     mocks.addReminder.mockImplementation((r: { id: string; text: string; delay_seconds: number; recurring: boolean }) => ({
       ...r, state: "active", created_at: Date.now(), activated_at: Date.now(),
     }));
-    await call({ key: "Test", identity: [1, 123456] });
+    await call({ key: "Test", token: 1123456 });
     const expectedId = contentHash("Check CI", false);
     expect(mocks.addReminder).toHaveBeenCalledWith(
       expect.objectContaining({ id: expectedId }),
@@ -96,14 +96,14 @@ describe("load_profile tool", () => {
 
     // First load — empty list
     mocks.listReminders.mockReturnValue([]);
-    const r1 = await call({ key: "Test", identity: [1, 123456] });
+    const r1 = await call({ key: "Test", token: 1123456 });
     const d1 = parseResult<{ applied: { reminders: { added: string[]; updated: string[] } } }>(r1);
     expect(d1.applied.reminders.added).toContain(existingId);
     expect(d1.applied.reminders.updated).toHaveLength(0);
 
     // Second load — existing reminder already present
     mocks.listReminders.mockReturnValue([stub]);
-    const r2 = await call({ key: "Test", identity: [1, 123456] });
+    const r2 = await call({ key: "Test", token: 1123456 });
     const d2 = parseResult<{ applied: { reminders: { added: string[]; updated: string[]; review_recommended?: boolean } } }>(r2);
     expect(d2.applied.reminders.added).toHaveLength(0);
     expect(d2.applied.reminders.updated).toContain(existingId);
@@ -128,7 +128,7 @@ describe("load_profile tool", () => {
       ...r, state: "active" as const, created_at: Date.now(), activated_at: Date.now(),
     }));
 
-    const result = await call({ key: "Test", identity: [1, 123456] });
+    const result = await call({ key: "Test", token: 1123456 });
     const data = parseResult<{
       applied: { reminders: { added: string[]; updated: string[]; review_recommended?: boolean } };
     }>(result);
@@ -146,7 +146,7 @@ describe("load_profile tool", () => {
 
     it("returns AUTH_FAILED on invalid PIN", async () => {
       mocks.validateSession.mockReturnValue(false);
-      const result = await call({ key: "Test", identity: [1, 0] });
+      const result = await call({ key: "Test", token: 1000000 });
       expect(isError(result)).toBe(true);
       expect(parseResult(result).code).toBe("AUTH_FAILED");
     });

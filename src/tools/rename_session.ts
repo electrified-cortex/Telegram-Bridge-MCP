@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { listSessions, renameSession } from "../session-manager.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { requestOperatorApproval } from "../built-in-commands.js";
 
 const DESCRIPTION =
@@ -18,14 +18,14 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
         new_name: z
           .string()
           .describe("New session name. Must be alphanumeric (letters, digits, spaces only)."),
       },
     },
-    async ({ identity, new_name }) => {
-      const _sid = requireAuth(identity);
+    async ({ token, new_name }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const sid = _sid;
 

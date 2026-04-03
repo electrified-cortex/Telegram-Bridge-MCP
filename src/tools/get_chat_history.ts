@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { dumpTimeline } from "../message-store.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Returns recent conversation history from the timeline. " +
@@ -33,11 +33,11 @@ export function register(server: McpServer) {
             "Return events older than the event with this ID (page backwards). " +
             "Omit to get the most recent events.",
           ),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    ({ count, before_id, identity }) => {
-      const _sid = requireAuth(identity);
+    ({ count, before_id, token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
 
       const timeline = dumpTimeline();

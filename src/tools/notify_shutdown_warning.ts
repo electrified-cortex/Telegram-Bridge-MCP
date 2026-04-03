@@ -5,7 +5,7 @@ import { requireAuth } from "../session-gate.js";
 import { listSessions } from "../session-manager.js";
 import { deliverDirectMessage } from "../session-queue.js";
 import { RESTART_GUIDANCE } from "../restart-guidance.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const BASE_WARNING =
   "⛔ Shutdown warning: the server is restarting soon. " +
@@ -23,7 +23,7 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
         reason: z
           .string()
           .trim()
@@ -38,8 +38,8 @@ export function register(server: McpServer) {
           .describe("Optional estimated wait time in seconds before restart"),
       },
     },
-    ({ identity, reason, wait_seconds }) => {
-      const _sid = requireAuth(identity);
+    ({ token, reason, wait_seconds }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
 
       const others = listSessions().filter(s => s.sid !== _sid);

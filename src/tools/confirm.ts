@@ -10,7 +10,7 @@ import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
   type ButtonStyle,
 } from "./button-helpers.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
 import { runInSessionContext } from "../session-context.js";
 
@@ -44,14 +44,14 @@ interface ConfirmArgs {
   reply_to_message_id?: number;
   ignore_pending?: boolean;
   ignore_parity?: boolean;
-  identity?: number[];
+  token?: number;
 }
 
 async function confirmHandler(
-  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id, ignore_pending, ignore_parity, identity }: ConfirmArgs,
+  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id, ignore_pending, ignore_parity, token }: ConfirmArgs,
   signal: AbortSignal,
 ) {
-  const _sid = requireAuth(identity);
+  const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
@@ -242,7 +242,7 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
       .boolean()
       .optional()
       .describe("Set true to bypass button label emoji-consistency check"),
-    identity: IDENTITY_SCHEMA,
+    token: TOKEN_SCHEMA,
   };
 }
 

@@ -55,7 +55,7 @@ describe("get_message tool", () => {
     const event = makeEvent(10, "Hello world");
     mocks.getMessage.mockReturnValue(event);
     mocks.getVersions.mockReturnValue([-1, 0]);
-    const result = await call({ message_id: 10, identity: [1, 123456]});
+    const result = await call({ message_id: 10, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.id).toBe(10);
@@ -68,7 +68,7 @@ describe("get_message tool", () => {
     const event = makeEvent(10, "Original");
     mocks.getMessage.mockReturnValue(event);
     mocks.getVersions.mockReturnValue([-1, 0, 1]);
-    const result = await call({ message_id: 10, version: 0, identity: [1, 123456]});
+    const result = await call({ message_id: 10, version: 0, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.id).toBe(10);
@@ -77,14 +77,14 @@ describe("get_message tool", () => {
 
   it("returns MESSAGE_NOT_FOUND for missing message_id", async () => {
     mocks.getMessage.mockReturnValue(undefined);
-    const result = await call({ message_id: 999, identity: [1, 123456]});
+    const result = await call({ message_id: 999, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_NOT_FOUND");
   });
 
   it("returns MESSAGE_NOT_FOUND for missing version", async () => {
     mocks.getMessage.mockReturnValue(undefined);
-    const result = await call({ message_id: 10, version: 5, identity: [1, 123456]});
+    const result = await call({ message_id: 10, version: 5, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_NOT_FOUND");
   });
@@ -93,7 +93,7 @@ describe("get_message tool", () => {
     const event = makeEvent(10, "Current text");
     mocks.getMessage.mockReturnValue(event);
     mocks.getVersions.mockReturnValue([-1, 0, 1, 2]);
-    const result = await call({ message_id: 10, identity: [1, 123456]});
+    const result = await call({ message_id: 10, token: 1123456});
     const data = parseResult(result);
     expect(data.versions).toEqual([-1, 0, 1, 2]);
   });
@@ -105,7 +105,7 @@ describe("get_message tool", () => {
     });
     mocks.getMessage.mockReturnValue(event);
     mocks.getVersions.mockReturnValue([-1]);
-    const result = await call({ message_id: 10, identity: [1, 123456]});
+    const result = await call({ message_id: 10, token: 1123456});
     const data = parseResult(result);
     expect(data.raw).toBeUndefined();
     expect(data._update).toBeUndefined();
@@ -118,7 +118,7 @@ describe("get_message tool", () => {
     });
     mocks.getMessage.mockReturnValue(event);
     mocks.getVersions.mockReturnValue([-1]);
-    const result = await call({ message_id: 10, identity: [1, 123456]});
+    const result = await call({ message_id: 10, token: 1123456});
     const data = parseResult(result);
     expect(data.raw).toBeUndefined();
   });
@@ -129,7 +129,7 @@ describe("get_message tool", () => {
     });
     mocks.getMessage.mockReturnValue(event);
     mocks.getVersions.mockReturnValue([-1]);
-    const result = await call({ message_id: 10, identity: [1, 123456]});
+    const result = await call({ message_id: 10, token: 1123456});
     const data = parseResult(result);
     expect(data._update).toBeUndefined();
   });
@@ -143,7 +143,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"message_id":1,"identity":[1,99999]});
+    const result = await call({"message_id":1,"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -151,7 +151,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"message_id":1,"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"message_id":1,"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

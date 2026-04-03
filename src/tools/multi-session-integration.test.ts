@@ -157,7 +157,7 @@ describe("multi-session tool integration", () => {
       registerDequeue(server);
       const dequeue = server.getHandler("dequeue_update");
 
-      const r2 = await dequeue({ timeout: 0, identity: [sid2, pin2] });
+      const r2 = await dequeue({ timeout: 0, token: sid2 * 1_000_000 + pin2 });
       expect(isError(r2)).toBe(false);
       expect(parseTool(r2).empty).toBe(true);
     });
@@ -175,7 +175,7 @@ describe("multi-session tool integration", () => {
       registerDequeue(server);
       const dequeue = server.getHandler("dequeue_update");
 
-      const r1 = await dequeue({ timeout: 0, identity: [sid1, pin1] });
+      const r1 = await dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 });
       expect(isError(r1)).toBe(false);
       const updates = parseTool(r1).updates as unknown[];
       expect(updates).toHaveLength(1);
@@ -218,7 +218,7 @@ describe("multi-session tool integration", () => {
       registerSendText(server);
       const result = await server.getHandler("send_text")({
         text: "hello",
-        identity: [sid1, 99999],
+        token: sid1 * 1_000_000 + 99999,
       });
 
       expect(isError(result)).toBe(true);
@@ -233,7 +233,7 @@ describe("multi-session tool integration", () => {
       registerSendText(server);
       const result = await server.getHandler("send_text")({
         text: "hello",
-        identity: [sid, pin],
+        token: sid * 1_000_000 + pin,
       });
 
       expect(isError(result)).toBe(false);
@@ -263,7 +263,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      await server.getHandler("dequeue_update")({ timeout: 0, identity: [sid, pin] });
+      await server.getHandler("dequeue_update")({ timeout: 0, token: sid * 1_000_000 + pin });
 
       expect(mockAckVoice).toHaveBeenCalledOnce();
       expect(mockAckVoice).toHaveBeenCalledWith(voiceEvent.id);
@@ -277,7 +277,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      await server.getHandler("dequeue_update")({ timeout: 0, identity: [sid, pin] });
+      await server.getHandler("dequeue_update")({ timeout: 0, token: sid * 1_000_000 + pin });
 
       expect(mockAckVoice).not.toHaveBeenCalled();
     });
@@ -296,9 +296,9 @@ describe("multi-session tool integration", () => {
       registerDequeue(server);
 
       // First dequeue gets one message (TwoLaneQueue dequeues one message per batch)
-      await server.getHandler("dequeue_update")({ timeout: 0, identity: [sid, pin] });
+      await server.getHandler("dequeue_update")({ timeout: 0, token: sid * 1_000_000 + pin });
       // Second dequeue gets the next
-      await server.getHandler("dequeue_update")({ timeout: 0, identity: [sid, pin] });
+      await server.getHandler("dequeue_update")({ timeout: 0, token: sid * 1_000_000 + pin });
 
       expect(mockAckVoice).toHaveBeenCalledTimes(2);
     });
@@ -317,7 +317,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerCloseSession(server);
-      await server.getHandler("close_session")({ identity: [sid1, pin1] });
+      await server.getHandler("close_session")({ token: sid1 * 1_000_000 + pin1 });
 
       // 2→1 teardown: single-session mode restored, governor cleared
       expect(getGovernorSid()).toBe(0);
@@ -329,7 +329,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerCloseSession(server);
-      await server.getHandler("close_session")({ identity: [sid1, pin1] });
+      await server.getHandler("close_session")({ token: sid1 * 1_000_000 + pin1 });
 
       expect(getGovernorSid()).toBe(0);
     });
@@ -341,7 +341,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerCloseSession(server);
-      await server.getHandler("close_session")({ identity: [sid2, pin2] });
+      await server.getHandler("close_session")({ token: sid2 * 1_000_000 + pin2 });
 
       // 2→1 teardown: governor cleared regardless of which session closed
       expect(getGovernorSid()).toBe(0);
@@ -354,7 +354,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerCloseSession(server);
-      const result = await server.getHandler("close_session")({ identity: [sid1, 99999] });
+      const result = await server.getHandler("close_session")({ token: sid1 * 1_000_000 + 99999 });
 
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("AUTH_FAILED");
@@ -416,8 +416,8 @@ describe("multi-session tool integration", () => {
       const dequeue = server.getHandler("dequeue_update");
 
       const [r1, r2] = await Promise.all([
-        dequeue({ timeout: 0, identity: [sid1, pin1] }),
-        dequeue({ timeout: 0, identity: [sid2, pin2] }),
+        dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 }),
+        dequeue({ timeout: 0, token: sid2 * 1_000_000 + pin2 }),
       ]);
 
       expect(parseTool(r1).empty).toBe(true);
@@ -434,8 +434,8 @@ describe("multi-session tool integration", () => {
       const dequeue = server.getHandler("dequeue_update");
 
       const [r1, r2] = await Promise.all([
-        dequeue({ timeout: 0, identity: [sid1, pin1] }),
-        dequeue({ timeout: 0, identity: [sid2, pin2] }),
+        dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 }),
+        dequeue({ timeout: 0, token: sid2 * 1_000_000 + pin2 }),
       ]);
 
       expect(Array.isArray(parseTool(r1).updates)).toBe(true);
@@ -460,8 +460,8 @@ describe("multi-session tool integration", () => {
       registerDequeue(server);
       const dequeue = server.getHandler("dequeue_update");
 
-      const r1 = await dequeue({ timeout: 0, identity: [sid1, pin1] });
-      const r2 = await dequeue({ timeout: 0, identity: [sid2, pin2] });
+      const r1 = await dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 });
+      const r2 = await dequeue({ timeout: 0, token: sid2 * 1_000_000 + pin2 });
 
       const updates1 = parseTool(r1).updates as { content: { text: string } }[];
       const updates2 = parseTool(r2).updates as { content: { text: string } }[];
@@ -486,9 +486,9 @@ describe("multi-session tool integration", () => {
       registerDequeue(server);
       const dequeue = server.getHandler("dequeue_update");
 
-      const r1a = await dequeue({ timeout: 0, identity: [sid1, pin1] });
-      const r1b = await dequeue({ timeout: 0, identity: [sid1, pin1] });
-      const r2  = await dequeue({ timeout: 0, identity: [sid2, pin2] });
+      const r1a = await dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 });
+      const r1b = await dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 });
+      const r2  = await dequeue({ timeout: 0, token: sid2 * 1_000_000 + pin2 });
 
       const text = (r: unknown) =>
         (parseTool(r).updates as { content: { text: string } }[])[0].content.text;

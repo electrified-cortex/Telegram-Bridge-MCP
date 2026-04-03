@@ -8,7 +8,7 @@ This document describes the out-of-box experience for multi-session Telegram Bri
 2. Auto-approved (first session, no gate)
 3. SID 1 returned. PIN returned.
 4. No name tags. No routing logic. Everything works like v3.x.
-5. All tools require `identity: [sid, pin]` credentials on every call.
+5. All tools require `token: number` credentials on every call.
 
 ## Second Session Joins
 
@@ -28,7 +28,7 @@ These happen immediately, with no operator or agent action required:
 | Ambiguous → governor | Fresh messages (no reply-to) route to governor's queue |
 | Targeted → owner | Reply-to messages route to the session that sent the original |
 | Both sessions notified | Internal broadcast: "Multi-session active, routing: governor" |
-| SID+PIN required | All gated tools now require `sid` and `pin` parameters |
+| Token required | All gated tools now require `token` parameter |
 
 ## Message Routing
 
@@ -50,7 +50,7 @@ User sends a fresh message → routed to governor (SID 1). Governor dequeues wit
 | --- | --- |
 | Non-governor closes | Nothing changes. Routing continues. |
 | Governor closes | Next-lowest SID promoted to governor. Sessions notified. |
-| Last session closes (back to 1) | Name tags stop. Routing disabled. `sid`/`pin` become optional again. |
+| Last session closes (back to 1) | Name tags stop. Routing disabled. `token` becomes optional again. |
 | All sessions close | Clean slate — next `session_start` is auto-approved as session 1. |
 
 ## Tool Auth Matrix
@@ -58,10 +58,10 @@ User sends a fresh message → routed to governor (SID 1). Governor dequeues wit
 | Tool group | Auth required |
 | --- | --- |
 | `session_start`, `shutdown`, `get_agent_guide`, `get_me`, `list_sessions` | None |
-| All other tools (multi-session active) | `identity: [sid, pin]` tuple |
+| All other tools (multi-session active) | `token: number` |
 | All other tools (single session) | None (backward compat) |
 
-On the wire: `{ "identity": [1, 809146], ... }` — one field, two numbers, minimal tokens.
+On the wire: `{ "token": 1809146, ... }` — one field, one number (encoding: `sid * 1_000_000 + pin`).
 
 ## Task Dependency Chain
 

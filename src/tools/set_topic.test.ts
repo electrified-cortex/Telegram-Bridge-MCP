@@ -38,7 +38,7 @@ describe("set_topic tool", () => {
 
   it("sets a topic and returns { topic, previous, set: true }", async () => {
     mocks.getTopic.mockReturnValueOnce(null).mockReturnValueOnce("Refactor Agent");
-    const result = await call({ topic: "Refactor Agent", identity: [1, 123456]});
+    const result = await call({ topic: "Refactor Agent", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.set).toBe(true);
@@ -49,7 +49,7 @@ describe("set_topic tool", () => {
 
   it("replaces an existing topic", async () => {
     mocks.getTopic.mockReturnValueOnce("Old Topic").mockReturnValueOnce("New Topic");
-    const result = await call({ topic: "New Topic", identity: [1, 123456]});
+    const result = await call({ topic: "New Topic", token: 1123456});
     const data = parseResult(result);
     expect(data.previous).toBe("Old Topic");
     expect(data.topic).toBe("New Topic");
@@ -57,7 +57,7 @@ describe("set_topic tool", () => {
 
   it("clears topic when empty string passed", async () => {
     mocks.getTopic.mockReturnValueOnce("Refactor Agent");
-    const result = await call({ topic: "", identity: [1, 123456]});
+    const result = await call({ topic: "", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.cleared).toBe(true);
@@ -69,7 +69,7 @@ describe("set_topic tool", () => {
 
   it("clears topic when whitespace-only string passed", async () => {
     mocks.getTopic.mockReturnValueOnce("Test Runner");
-    const result = await call({ topic: "   ", identity: [1, 123456]});
+    const result = await call({ topic: "   ", token: 1123456});
     const data = parseResult(result);
     expect(data.cleared).toBe(true);
     expect(mocks.clearTopic).toHaveBeenCalledOnce();
@@ -84,7 +84,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"topic":"x","identity":[1,99999]});
+    const result = await call({"topic":"x","token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -92,7 +92,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"topic":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"topic":"x","token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

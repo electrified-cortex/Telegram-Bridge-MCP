@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { getSessionVoice, setSessionVoice, clearSessionVoice, getSessionSpeed, setSessionSpeed, clearSessionSpeed } from "../voice-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Sets a per-session TTS voice override (e.g. \"alloy\", \"nova\", \"echo\"). " +
@@ -27,11 +27,11 @@ export function register(server: McpServer) {
           .max(4.0)
           .optional()
           .describe("TTS speed multiplier (0.25–4.0, default 1.0). Omit to leave speed unchanged."),
-        identity: IDENTITY_SCHEMA,
+        token: TOKEN_SCHEMA,
       },
     },
-    ({ voice, speed, identity }) => {
-      const _sid = requireAuth(identity);
+    ({ voice, speed, token }) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const previous = getSessionVoice();
       const previousSpeed = getSessionSpeed();

@@ -45,7 +45,7 @@ describe("set_commands tool", () => {
   });
 
   it("registers commands scoped to active chat (default scope)", async () => {
-    const result = await call({ commands: SAMPLE_COMMANDS, identity: [1, 123456]});
+    const result = await call({ commands: SAMPLE_COMMANDS, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -58,7 +58,7 @@ describe("set_commands tool", () => {
   });
 
   it("registers commands with explicit chat scope", async () => {
-    const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat", identity: [1, 123456]});
+    const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat", token: 1123456});
     expect(isError(result)).toBe(false);
     expect(mocks.setMyCommands).toHaveBeenCalledWith(MERGED, {
       scope: { type: "chat", chat_id: 42 },
@@ -66,7 +66,7 @@ describe("set_commands tool", () => {
   });
 
   it("registers commands with default (global) scope", async () => {
-    const result = await call({ commands: SAMPLE_COMMANDS, scope: "default", identity: [1, 123456]});
+    const result = await call({ commands: SAMPLE_COMMANDS, scope: "default", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.scope).toBe("default");
@@ -76,7 +76,7 @@ describe("set_commands tool", () => {
   });
 
   it("clears agent commands but keeps built-ins when empty array passed", async () => {
-    const result = await call({ commands: [], identity: [1, 123456]});
+    const result = await call({ commands: [], token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -88,23 +88,23 @@ describe("set_commands tool", () => {
     });
   });
 
-  it("rejects a command with uppercase letters", () => {
-    expect(() =>
-      call({ commands: [{ command: "Cancel", description: "Stop" }] })
-    ).toThrow();
+  it("rejects a command with uppercase letters", async () => {
+    await expect(
+      call({ token: 1123456, commands: [{ command: "Cancel", description: "Stop" }] })
+    ).rejects.toThrow();
     expect(mocks.setMyCommands).not.toHaveBeenCalled();
   });
 
-  it("rejects a command with a leading slash", () => {
-    expect(() =>
-      call({ commands: [{ command: "/cancel", description: "Stop" }] })
-    ).toThrow();
+  it("rejects a command with a leading slash", async () => {
+    await expect(
+      call({ token: 1123456, commands: [{ command: "/cancel", description: "Stop" }] })
+    ).rejects.toThrow();
   });
 
-  it("rejects a command with spaces", () => {
-    expect(() =>
-      call({ commands: [{ command: "my command", description: "Stop" }] })
-    ).toThrow();
+  it("rejects a command with spaces", async () => {
+    await expect(
+      call({ token: 1123456, commands: [{ command: "my command", description: "Stop" }] })
+    ).rejects.toThrow();
   });
 
   it("maps API errors to TelegramError", async () => {
@@ -116,7 +116,7 @@ describe("set_commands tool", () => {
         {},
       )
     );
-    const result = await call({ commands: SAMPLE_COMMANDS, identity: [1, 123456]});
+    const result = await call({ commands: SAMPLE_COMMANDS, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CHAT_NOT_FOUND");
   });
@@ -126,7 +126,7 @@ describe("set_commands tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat", identity: [1, 123456]});
+    const result = await call({ commands: SAMPLE_COMMANDS, scope: "chat", token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
     expect(mocks.setMyCommands).not.toHaveBeenCalled();
@@ -134,7 +134,7 @@ describe("set_commands tool", () => {
 
   it("includes /primary in merge when 2+ sessions active", async () => {
     mocks.activeSessionCount.mockReturnValue(2);
-    const result = await call({ commands: SAMPLE_COMMANDS, identity: [1, 123456] });
+    const result = await call({ commands: SAMPLE_COMMANDS, token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
@@ -151,7 +151,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"commands":[{"command":"x","description":"y"}],"identity":[1,99999]});
+    const result = await call({"commands":[{"command":"x","description":"y"}],"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -159,7 +159,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"commands":[{"command":"x","description":"y"}],"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"commands":[{"command":"x","description":"y"}],"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

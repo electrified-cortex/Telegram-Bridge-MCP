@@ -90,7 +90,7 @@ describe("confirm tool", () => {
   it("returns confirmed:true when Yes is pressed", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    const result = await call({ text: "Proceed?", identity: [1, 123456]});
+    const result = await call({ text: "Proceed?", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.timed_out).toBe(false);
@@ -102,7 +102,7 @@ describe("confirm tool", () => {
   it("returns confirmed:false when No is pressed", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_no"));
-    const result = await call({ text: "Delete everything?", identity: [1, 123456]});
+    const result = await call({ text: "Delete everything?", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.confirmed).toBe(false);
@@ -112,14 +112,14 @@ describe("confirm tool", () => {
   it("registers a callback hook for the sent message", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", identity: [1, 123456]});
+    await call({ text: "Proceed?", token: 1123456});
     expect(mocks.registerCallbackHook).toHaveBeenCalledWith(5, expect.any(Function), expect.any(Number));
   });
 
   it("calls ackAndEditSelection when hook fires", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", identity: [1, 123456]});
+    await call({ text: "Proceed?", token: 1123456});
     // Simulate the hook being called (as message-store would)
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
@@ -133,7 +133,7 @@ describe("confirm tool", () => {
   it("keeps buttons live on timeout (no editWithTimedOut)", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
-    await call({ text: "Proceed?", identity: [1, 123456]});
+    await call({ text: "Proceed?", token: 1123456});
     // Hook stays registered — no edit, no button removal
     expect(mocks.ackAndEditSelection).not.toHaveBeenCalled();
   });
@@ -141,7 +141,7 @@ describe("confirm tool", () => {
   it("hook shows No label when No is pressed", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_no"));
-    await call({ text: "Proceed?", yes_text: "✔️ Yes", no_text: "✖️ No", identity: [1, 123456]});
+    await call({ text: "Proceed?", yes_text: "✔️ Yes", no_text: "✖️ No", token: 1123456});
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_no", qid: "cq1" } });
     await new Promise((r) => setTimeout(r, 0));
@@ -153,7 +153,7 @@ describe("confirm tool", () => {
   it("respects custom yes_data and no_data", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("approve"));
-    const result = await call({ text: "Approve?", yes_data: "approve", no_data: "reject", identity: [1, 123456]});
+    const result = await call({ text: "Approve?", yes_data: "approve", no_data: "reject", token: 1123456});
     const data = parseResult(result);
     expect(data.confirmed).toBe(true);
     expect(data.value).toBe("approve");
@@ -162,7 +162,7 @@ describe("confirm tool", () => {
   it("defaults to OK / Cancel button labels", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", identity: [1, 123456] });
+    await call({ text: "Proceed?", token: 1123456 });
     const sendOpts = mocks.sendMessage.mock.calls[0][2];
     const buttons = sendOpts.reply_markup.inline_keyboard[0];
     expect(buttons[0].text).toBe("OK");
@@ -174,7 +174,7 @@ describe("confirm tool", () => {
   it("returns timed_out:true when no response arrives", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
-    const result = await call({ text: "Proceed?", identity: [1, 123456]});
+    const result = await call({ text: "Proceed?", token: 1123456});
     const data = parseResult(result);
     expect(data.timed_out).toBe(true);
     // Hook stays registered for late clicks — no ack, no edit
@@ -185,7 +185,7 @@ describe("confirm tool", () => {
     const textResult: TextResult = { kind: "text", message_id: 10, text: "just do it" };
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(textResult);
-    const result = await call({ text: "Proceed?", identity: [1, 123456]});
+    const result = await call({ text: "Proceed?", token: 1123456});
     const data = parseResult(result);
     expect(data.skipped).toBe(true);
     expect(data.text_response).toBe("just do it");
@@ -198,7 +198,7 @@ describe("confirm tool", () => {
     const voiceResult: VoiceResult = { kind: "voice", message_id: 11, text: "yes do it" };
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(voiceResult);
-    const result = await call({ text: "Proceed?", identity: [1, 123456]});
+    const result = await call({ text: "Proceed?", token: 1123456});
     const data = parseResult(result);
     expect(data.skipped).toBe(true);
     expect(data.text_response).toBe("yes do it");
@@ -207,14 +207,14 @@ describe("confirm tool", () => {
 
   it("returns error when sendMessage throws", async () => {
     mocks.sendMessage.mockRejectedValue(new Error("Network error"));
-    const result = await call({ text: "Proceed?", identity: [1, 123456]});
+    const result = await call({ text: "Proceed?", token: 1123456});
     expect(isError(result)).toBe(true);
   });
 
   it("sends with a reply_to_message_id when provided", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", reply_to_message_id: 3, identity: [1, 123456]});
+    await call({ text: "Proceed?", reply_to_message_id: 3, token: 1123456});
     const sendOpts = mocks.sendMessage.mock.calls[0][2];
     expect(sendOpts.reply_parameters).toEqual({ message_id: 3 });
   });
@@ -222,14 +222,14 @@ describe("confirm tool", () => {
   it("registers a message hook on timeout to clean up stale buttons", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
-    await call({ text: "Proceed?", identity: [1, 123456]});
+    await call({ text: "Proceed?", token: 1123456});
     expect(mocks.registerMessageHook).toHaveBeenCalledWith(5, expect.any(Function));
   });
 
   it("message hook clears callback hook and edits with skipped", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
-    await call({ text: "Proceed?", identity: [1, 123456]});
+    await call({ text: "Proceed?", token: 1123456});
     const hookFn = mocks.registerMessageHook.mock.calls[0][1];
     hookFn();
     await new Promise((r) => setTimeout(r, 0));
@@ -240,7 +240,7 @@ describe("confirm tool", () => {
   it("callback hook clears message hook on late button press", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", identity: [1, 123456]});
+    await call({ text: "Proceed?", token: 1123456});
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
     expect(mocks.clearMessageHook).toHaveBeenCalledWith(5);
@@ -250,7 +250,7 @@ describe("confirm tool", () => {
     const commandResult = { kind: "command", message_id: 6, command: "/start", args: "" };
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(commandResult);
-    const result = await call({ text: "Proceed?", identity: [1, 123456]});
+    const result = await call({ text: "Proceed?", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.skipped).toBe(true);
@@ -262,7 +262,7 @@ describe("confirm tool", () => {
   it("single-button CTA: hook ignores button presses that don't match yes_data", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Continue?", no_text: "", identity: [1, 123456]});
+    await call({ text: "Continue?", no_text: "", token: 1123456});
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     // Fire hook with a value that isn't yes_data — guard should short-circuit
     hookFn({ content: { data: "rogue_data", qid: "cq-rogue" } });
@@ -274,7 +274,7 @@ describe("confirm tool", () => {
   it("callback hook handles ackAndEditSelection failures gracefully", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", identity: [1, 123456]});
+    await call({ text: "Proceed?", token: 1123456});
     // Make ackAndEditSelection reject on the next call (simulates network error)
     mocks.ackAndEditSelection.mockRejectedValueOnce(new Error("network"));
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
@@ -293,7 +293,7 @@ describe("confirm tool", () => {
       onVoiceDetected(); // fires immediately — simulates early voice detection
       return Promise.resolve(voiceResult);
     });
-    const result = await call({ text: "Proceed?", identity: [1, 123456]});
+    const result = await call({ text: "Proceed?", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.skipped).toBe(true);
@@ -306,7 +306,7 @@ describe("confirm tool", () => {
   it("rejects with PENDING_UPDATES when session queue is non-empty", async () => {
     // _sid=1 resolves to mocks.sessionQueue — check that queue's pending count
     mocks.sessionQueue.pendingCount.mockReturnValue(3);
-    const result = await call({ text: "Proceed?", identity: [1, 123456]});
+    const result = await call({ text: "Proceed?", token: 1123456});
     expect(isError(result)).toBe(true);
     const data = parseResult(result);
     expect(data.code).toBe("PENDING_UPDATES");
@@ -318,7 +318,7 @@ describe("confirm tool", () => {
     mocks.getActiveSession.mockReturnValue(1);
     mocks.sessionQueue.pendingCount.mockReturnValueOnce(3);
     mocks.peekSessionCategories.mockReturnValueOnce({ text: 1, reaction: 2 });
-    const result = await call({ text: "Proceed?", identity: [1, 123456] });
+    const result = await call({ text: "Proceed?", token: 1123456 });
     expect(isError(result)).toBe(true);
     const data = parseResult(result);
     expect(data.code).toBe("PENDING_UPDATES");
@@ -338,7 +338,7 @@ describe("confirm tool", () => {
     );
     const result = await call({
       text: "Proceed?",
-      ignore_pending: true, identity: [1, 123456]});
+      ignore_pending: true, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.confirmed).toBe(true);
@@ -352,7 +352,7 @@ describe("confirm tool", () => {
     );
     const result = await call({
       text: "Proceed?",
-      reply_to_message_id: 42, identity: [1, 123456]});
+      reply_to_message_id: 42, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.confirmed).toBe(true);
@@ -367,7 +367,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"text":"x","identity":[1,99999]});
+    const result = await call({"text":"x","token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -375,7 +375,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"text":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"text":"x","token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });
@@ -401,7 +401,7 @@ describe("confirmYN tool", () => {
   it("defaults to 🟢 Yes / 🔴 No labels", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Are you sure?", identity: [1, 123456] });
+    await call({ text: "Are you sure?", token: 1123456 });
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
     await new Promise((r) => setTimeout(r, 0));
@@ -413,7 +413,7 @@ describe("confirmYN tool", () => {
   it("hook shows 🔴 No label when No is pressed", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_no"));
-    await call({ text: "Are you sure?", identity: [1, 123456] });
+    await call({ text: "Are you sure?", token: 1123456 });
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_no", qid: "cq1" } });
     await new Promise((r) => setTimeout(r, 0));
@@ -425,7 +425,7 @@ describe("confirmYN tool", () => {
   it("returns confirmed:true when Yes is pressed", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    const result = await call({ text: "Proceed?", identity: [1, 123456] });
+    const result = await call({ text: "Proceed?", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.confirmed).toBe(true);
@@ -435,7 +435,7 @@ describe("confirmYN tool", () => {
   it("returns confirmed:false when No is pressed", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_no"));
-    const result = await call({ text: "Proceed?", identity: [1, 123456] });
+    const result = await call({ text: "Proceed?", token: 1123456 });
     const data = parseResult(result);
     expect(data.confirmed).toBe(false);
   });
@@ -443,7 +443,7 @@ describe("confirmYN tool", () => {
   it("sends buttons without yes_style by default", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", identity: [1, 123456] });
+    await call({ text: "Proceed?", token: 1123456 });
     const sendOpts = mocks.sendMessage.mock.calls[0][2];
     const yesButton = sendOpts.reply_markup.inline_keyboard[0][0];
     expect(yesButton.text).toBe("🟢 Yes");
@@ -453,7 +453,7 @@ describe("confirmYN tool", () => {
   it("accepts custom yes_text and no_text overrides", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", yes_text: "✔️ Yep", no_text: "✖️ Nope", identity: [1, 123456] });
+    await call({ text: "Proceed?", yes_text: "✔️ Yep", no_text: "✖️ Nope", token: 1123456 });
     const sendOpts = mocks.sendMessage.mock.calls[0][2];
     const buttons = sendOpts.reply_markup.inline_keyboard[0];
     expect(buttons[0].text).toBe("✔️ Yep");

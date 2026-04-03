@@ -64,13 +64,13 @@ describe("send_choice tool", () => {
   });
 
   it("sends message with keyboard and returns message_id immediately", async () => {
-    const result = await call({ text: "Pick one", options: TWO_OPTIONS, identity: [1, 123456]});
+    const result = await call({ text: "Pick one", options: TWO_OPTIONS, token: 1123456});
     expect(isError(result)).toBe(false);
     expect(parseResult(result).message_id).toBe(9);
   });
 
   it("sends inline keyboard with one row of two buttons by default", async () => {
-    await call({ text: "Rate it", options: TWO_OPTIONS, identity: [1, 123456]});
+    await call({ text: "Rate it", options: TWO_OPTIONS, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -86,7 +86,7 @@ describe("send_choice tool", () => {
   });
 
   it("respects columns=1 layout", async () => {
-    await call({ text: "Choose", options: TWO_OPTIONS, columns: 1, identity: [1, 123456]});
+    await call({ text: "Choose", options: TWO_OPTIONS, columns: 1, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -106,7 +106,7 @@ describe("send_choice tool", () => {
       { label: "Yes", value: "yes", style: "success" as const },
       { label: "No", value: "no", style: "danger" as const },
     ];
-    await call({ text: "Confirm?", options, identity: [1, 123456]});
+    await call({ text: "Confirm?", options, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -122,13 +122,13 @@ describe("send_choice tool", () => {
   });
 
   it("registers a one-shot callback hook after sending", async () => {
-    await call({ text: "Pick", options: TWO_OPTIONS, identity: [1, 123456]});
+    await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
     expect(mocks.registerCallbackHook).toHaveBeenCalledWith(9, expect.any(Function), expect.any(Number));
   });
 
   it("does NOT block — resolves without waiting for button press", async () => {
     // The tool should resolve without any dequeue/poll happening
-    const result = await call({ text: "Quick?", options: TWO_OPTIONS, identity: [1, 123456]});
+    const result = await call({ text: "Quick?", options: TWO_OPTIONS, token: 1123456});
     expect(isError(result)).toBe(false);
     // answerCallbackQuery and editMessageReplyMarkup are NOT called at send time
     expect(mocks.answerCallbackQuery).not.toHaveBeenCalled();
@@ -136,7 +136,7 @@ describe("send_choice tool", () => {
   });
 
   it("hook invokes answerCallbackQuery and removes keyboard on button press", async () => {
-    await call({ text: "Pick", options: TWO_OPTIONS, identity: [1, 123456]});
+    await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
     const [hookedMessageId, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string } }) => void];
     expect(hookedMessageId).toBe(9);
 
@@ -156,7 +156,7 @@ describe("send_choice tool", () => {
   });
 
   it("hook skips answerCallbackQuery when qid is absent", async () => {
-    await call({ text: "Pick", options: TWO_OPTIONS, identity: [1, 123456]});
+    await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
     const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string } }) => void];
 
     mocks.editMessageReplyMarkup.mockResolvedValue(undefined);
@@ -168,7 +168,7 @@ describe("send_choice tool", () => {
   });
 
   it("passes reply_to_message_id via reply_parameters", async () => {
-    await call({ text: "Reply", options: TWO_OPTIONS, reply_to_message_id: 5, identity: [1, 123456]});
+    await call({ text: "Reply", options: TWO_OPTIONS, reply_to_message_id: 5, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -177,7 +177,7 @@ describe("send_choice tool", () => {
   });
 
   it("passes disable_notification option", async () => {
-    await call({ text: "Quiet", options: TWO_OPTIONS, disable_notification: true, identity: [1, 123456]});
+    await call({ text: "Quiet", options: TWO_OPTIONS, disable_notification: true, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -193,7 +193,7 @@ describe("send_choice tool", () => {
         { label: "A", value: longValue },
         { label: "B", value: "ok" },
       ],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("CALLBACK_DATA_TOO_LONG");
@@ -202,7 +202,7 @@ describe("send_choice tool", () => {
   it("rejects if fewer than 2 options are provided (Zod min constraint)", async () => {
     let threw = false;
     try {
-      await call({ text: "Pick", options: [{ label: "Only", value: "one" }] });
+      await call({ token: 1123456, text: "Pick", options: [{ label: "Only", value: "one" }] });
     } catch {
       threw = true;
     }
@@ -211,7 +211,7 @@ describe("send_choice tool", () => {
 
   it("returns error when sendMessage API fails", async () => {
     mocks.sendMessage.mockRejectedValue(new Error("network error"));
-    const result = await call({ text: "Fail", options: TWO_OPTIONS, identity: [1, 123456]});
+    const result = await call({ text: "Fail", options: TWO_OPTIONS, token: 1123456});
     expect(isError(result)).toBe(true);
   });
 
@@ -220,7 +220,7 @@ describe("send_choice tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ text: "Pick", options: TWO_OPTIONS, identity: [1, 123456]});
+    const result = await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
@@ -230,7 +230,7 @@ describe("send_choice tool", () => {
       code: "MESSAGE_TOO_LONG",
       message: "too long",
     });
-    const result = await call({ text: "Pick", options: TWO_OPTIONS, identity: [1, 123456]});
+    const result = await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
@@ -243,7 +243,7 @@ describe("send_choice tool", () => {
         { label: longLabel, value: "a" },
         { label: "Short", value: "b" },
       ],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("BUTTON_LABEL_EXCEEDS_LIMIT");
@@ -258,7 +258,7 @@ describe("send_choice tool", () => {
         { label: mediumLabel, value: "a" },
         { label: "Short", value: "b" },
       ],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("BUTTON_LABEL_TOO_LONG");
@@ -273,7 +273,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}],"identity":[1,99999]});
+    const result = await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}],"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -281,7 +281,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}],"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}],"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

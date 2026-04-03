@@ -37,7 +37,7 @@ describe("notify_shutdown_warning tool", () => {
     ]);
     mocks.deliverDirectMessage.mockReturnValue(true);
 
-    const result = parseResult(await call({ identity: [1, 111111] }));
+    const result = parseResult(await call({ token: 1111111 }));
     expect(result.notified).toBe(1);
     expect(mocks.deliverDirectMessage).toHaveBeenCalledTimes(1);
     expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(1, 2, expect.stringContaining("restarting soon"));
@@ -47,7 +47,7 @@ describe("notify_shutdown_warning tool", () => {
     mocks.listSessions.mockReturnValue([
       { sid: 1, name: "Governor", color: "🟦", createdAt: "" },
     ]);
-    const result = parseResult(await call({ identity: [1, 111111] }));
+    const result = parseResult(await call({ token: 1111111 }));
     expect(result.notified).toBe(0);
     expect(mocks.deliverDirectMessage).not.toHaveBeenCalled();
   });
@@ -59,7 +59,7 @@ describe("notify_shutdown_warning tool", () => {
     ]);
     mocks.deliverDirectMessage.mockReturnValue(true);
 
-    await call({ identity: [1, 111111], reason: "code update" });
+    await call({ token: 1111111, reason: "code update" });
     const [, , text] = mocks.deliverDirectMessage.mock.calls[0] as [number, number, string];
     expect(text).toContain("code update");
   });
@@ -71,7 +71,7 @@ describe("notify_shutdown_warning tool", () => {
     ]);
     mocks.deliverDirectMessage.mockReturnValue(true);
 
-    await call({ identity: [1, 111111], wait_seconds: 30 });
+    await call({ token: 1111111, wait_seconds: 30 });
     const [, , text] = mocks.deliverDirectMessage.mock.calls[0] as [number, number, string];
     expect(text).toContain("30");
   });
@@ -84,14 +84,14 @@ describe("notify_shutdown_warning tool", () => {
     ]);
     mocks.deliverDirectMessage.mockReturnValue(true);
 
-    const result = parseResult(await call({ identity: [1, 111111] }));
+    const result = parseResult(await call({ token: 1111111 }));
     expect(result.notified).toBe(2);
     expect(mocks.deliverDirectMessage).toHaveBeenCalledTimes(2);
   });
 
   it("returns error when auth fails", async () => {
     mocks.validateSession.mockReturnValue(false);
-    const result = await call({ identity: [1, 999999] });
+    const result = await call({ token: 1999999 });
     expect(isError(result)).toBe(true);
     expect(mocks.deliverDirectMessage).not.toHaveBeenCalled();
   });
@@ -100,7 +100,7 @@ describe("notify_shutdown_warning tool", () => {
     mocks.listSessions.mockReturnValue([
       { sid: 1, name: "Gov", color: "🟦", createdAt: "" },
     ]);
-    const result = parseResult(await call({ identity: [1, 111111] }));
+    const result = parseResult(await call({ token: 1111111 }));
     expect(result.notified).toBe(0);
     expect(result.message).toContain("No other sessions");
   });

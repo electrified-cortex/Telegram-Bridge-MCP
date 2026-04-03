@@ -99,8 +99,10 @@ function cbUpdate(targetMsgId: number, data: string, qid = "qid1") {
 
 let sid1: number;
 let pin1: number;
+let token1: number;
 let sid2: number;
 let pin2: number;
+let token2: number;
 let handlers: {
   confirm: ToolHandler;
   choose: ToolHandler;
@@ -127,8 +129,10 @@ describe("multi-session callback isolation", () => {
     const session2 = createSession("Beta");
     sid1 = session1.sid;
     pin1 = session1.pin;
+    token1 = sid1 * 1_000_000 + pin1;
     sid2 = session2.sid;
     pin2 = session2.pin;
+    token2 = sid2 * 1_000_000 + pin2;
     setActiveSession(sid1);
     createSessionQueue(sid1);
     createSessionQueue(sid2);
@@ -156,7 +160,7 @@ describe("multi-session callback isolation", () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 5, chat: { id: 42 }, date: 0 });
 
     const toolPromise = runInSessionContext(sid1, () =>
-      handlers.confirm({ text: "Confirm?", ignore_pending: true, identity: [sid1, pin1] }),
+      handlers.confirm({ text: "Confirm?", ignore_pending: true, token: token1 }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 
@@ -193,10 +197,10 @@ describe("multi-session callback isolation", () => {
 
     // Start both tool calls concurrently
     const sid1Promise = runInSessionContext(sid1, () =>
-      handlers.confirm({ text: "Continue?", ignore_pending: true, identity: [sid1, pin1] }),
+      handlers.confirm({ text: "Continue?", ignore_pending: true, token: token1 }),
     );
     const sid2Promise = runInSessionContext(sid2, () =>
-      handlers.choose({ question: "Pick a color:", options: opts, ignore_pending: true, identity: [sid2, pin2] }),
+      handlers.choose({ question: "Pick a color:", options: opts, ignore_pending: true, token: token2 }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 
@@ -240,7 +244,7 @@ describe("multi-session callback isolation", () => {
 
     // Close SID1 — this calls replaceSessionCallbackHooks(sid1, replacementFn)
     const closeResult = await runInSessionContext(sid1, () =>
-      handlers.close_session({ identity: [sid1, pin1] }),
+      handlers.close_session({ token: token1 }),
     );
     expect(isError(closeResult)).toBe(false);
     expect(parseResult(closeResult).closed).toBe(true);
@@ -276,7 +280,7 @@ describe("multi-session callback isolation", () => {
 
     // SID2 sends a confirm (hook registered for msg 99, owned by SID2)
     const sid2ConfirmPromise = runInSessionContext(sid2, () =>
-      handlers.confirm({ text: "Proceed?", ignore_pending: true, identity: [sid2, pin2] }),
+      handlers.confirm({ text: "Proceed?", ignore_pending: true, token: token2 }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 

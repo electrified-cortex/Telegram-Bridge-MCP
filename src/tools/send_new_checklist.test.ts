@@ -55,7 +55,7 @@ describe("send_new_checklist tool", () => {
 
   it("creates a new message when called", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 10, chat: { id: 1 }, date: 0 });
-    const result = await call({ title: "CI Pipeline", steps: STEPS, identity: [1, 123456]});
+    const result = await call({ title: "CI Pipeline", steps: STEPS, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(10);
@@ -66,7 +66,7 @@ describe("send_new_checklist tool", () => {
 
   it("renders step statuses with appropriate icons", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
-    await call({ title: "T", steps: STEPS, identity: [1, 123456]});
+    await call({ title: "T", steps: STEPS, token: 1123456});
     const [, text] = mocks.sendMessage.mock.calls[0];
     expect(text).toContain("✅");   // done
     expect(text).toContain("⛔");   // failed
@@ -76,7 +76,7 @@ describe("send_new_checklist tool", () => {
 
   it("includes title in HTML bold", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
-    await call({ title: "Pipeline", steps: [{ label: "X", status: "done" }], identity: [1, 123456] });
+    await call({ title: "Pipeline", steps: [{ label: "X", status: "done" }], token: 1123456 });
     const [, text] = mocks.sendMessage.mock.calls[0];
     expect(text).toContain("<b>Pipeline</b>");
   });
@@ -86,7 +86,7 @@ describe("send_new_checklist tool", () => {
     await call({
       title: "T",
       steps: [{ label: "Build", status: "failed", detail: "exit code 1" }],
-      identity: [1, 123456],
+      token: 1123456,
     });
     const [, text] = mocks.sendMessage.mock.calls[0];
     expect(text).toContain("<i>exit code 1</i>");
@@ -97,7 +97,7 @@ describe("send_new_checklist tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ title: "T", steps: STEPS, identity: [1, 123456]});
+    const result = await call({ title: "T", steps: STEPS, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
@@ -107,14 +107,14 @@ describe("send_new_checklist tool", () => {
       code: "MESSAGE_TOO_LONG",
       message: "too long",
     });
-    const result = await call({ title: "T", steps: STEPS, identity: [1, 123456]});
+    const result = await call({ title: "T", steps: STEPS, token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
 
   it("auto-pins the message after sending (silent)", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 10, chat: { id: 1 }, date: 0 });
-    await call({ title: "CI Pipeline", steps: STEPS, identity: [1, 123456] });
+    await call({ title: "CI Pipeline", steps: STEPS, token: 1123456 });
     expect(mocks.pinChatMessage).toHaveBeenCalledWith(1, 10, { disable_notification: true });
   });
 
@@ -127,7 +127,7 @@ describe("send_new_checklist tool", () => {
 
     it("returns AUTH_FAILED when identity has wrong pin", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
-      const result = await call({"title":"T","steps":[{"label":"a","status":"pending"}],"identity":[1,99999]});
+      const result = await call({"title":"T","steps":[{"label":"a","status":"pending"}],"token": 1099999});
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("AUTH_FAILED");
     });
@@ -135,7 +135,7 @@ describe("send_new_checklist tool", () => {
     it("proceeds when identity is valid", async () => {
       mocks.validateSession.mockReturnValueOnce(true);
       let code: string | undefined;
-      try { code = errorCode(await call({"title":"T","steps":[{"label":"a","status":"pending"}],"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+      try { code = errorCode(await call({"title":"T","steps":[{"label":"a","status":"pending"}],"token": 1099999})); } catch { /* gate passed, other error ok */ }
       expect(code).not.toBe("SID_REQUIRED");
       expect(code).not.toBe("AUTH_FAILED");
     });
@@ -160,7 +160,7 @@ describe("update_checklist tool", () => {
 
   it("edits in-place when message_id is provided", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    const result = await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, identity: [1, 123456] });
+    const result = await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, token: 1123456 });
     expect(isError(result)).toBe(false);
     expect((parseResult(result)).updated).toBe(true);
     expect(mocks.editMessageText).toHaveBeenCalledOnce();
@@ -169,7 +169,7 @@ describe("update_checklist tool", () => {
 
   it("handles boolean editMessageText response (channel case)", async () => {
     mocks.editMessageText.mockResolvedValue(true);
-    const result = await update({ title: "T", steps: STEPS, message_id: 42, identity: [1, 123456] });
+    const result = await update({ title: "T", steps: STEPS, message_id: 42, token: 1123456 });
     expect(isError(result)).toBe(false);
     expect((parseResult(result)).message_id).toBe(42);
   });
@@ -180,7 +180,7 @@ describe("update_checklist tool", () => {
       message: "no chat",
     });
     const result = await update({
-      title: "T", steps: STEPS, message_id: 10, identity: [1, 123456],
+      title: "T", steps: STEPS, message_id: 10, token: 1123456,
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
@@ -192,7 +192,7 @@ describe("update_checklist tool", () => {
       message: "too long",
     });
     const result = await update({
-      title: "T", steps: STEPS, message_id: 10, identity: [1, 123456],
+      title: "T", steps: STEPS, message_id: 10, token: 1123456,
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
@@ -205,7 +205,7 @@ describe("update_checklist tool", () => {
       { label: "Lint", status: "failed" },
       { label: "Deploy", status: "skipped" },
     ];
-    await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
+    await update({ title: "CI", steps: terminalSteps, message_id: 10, token: 1123456 });
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 10);
   });
 
@@ -217,7 +217,7 @@ describe("update_checklist tool", () => {
       { label: "Lint", status: "failed" },
       { label: "Deploy", status: "skipped" },
     ];
-    await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
+    await update({ title: "CI", steps: terminalSteps, message_id: 10, token: 1123456 });
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       1,
       "✅ Complete",
@@ -230,20 +230,20 @@ describe("update_checklist tool", () => {
     const terminalSteps = [
       { label: "Build", status: "done" },
     ];
-    await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
-    await update({ title: "CI", steps: terminalSteps, message_id: 10, identity: [1, 123456] });
+    await update({ title: "CI", steps: terminalSteps, message_id: 10, token: 1123456 });
+    await update({ title: "CI", steps: terminalSteps, message_id: 10, token: 1123456 });
     expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it("does not send completion reply when steps are not all terminal", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, identity: [1, 123456] });
+    await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, token: 1123456 });
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("does not unpin when steps are still in progress", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
-    await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, identity: [1, 123456] });
+    await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, token: 1123456 });
     expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 
@@ -253,7 +253,7 @@ describe("update_checklist tool", () => {
       { label: "Build", status: "done" },
       { label: "Test", status: "running" },
     ];
-    await update({ title: "CI", steps: mixedSteps, message_id: 10, identity: [1, 123456] });
+    await update({ title: "CI", steps: mixedSteps, message_id: 10, token: 1123456 });
     expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 });

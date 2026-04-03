@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toResult, toError, resolveChat } from "../telegram.js";
 import { startAnimation, getPreset } from "../animation-state.js";
 import { requireAuth } from "../session-gate.js";
-import { IDENTITY_SCHEMA } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Start a server-managed cycling visual placeholder message. The animation " +
@@ -67,11 +67,11 @@ export function register(server: McpServer) {
           .int()
           .default(0)
           .describe("Priority level for the animation stack (default 0). Higher priority sessions are displayed over lower-priority ones. Ties broken by recency (most recently started wins)."),
-              identity: IDENTITY_SCHEMA,
+              token: TOKEN_SCHEMA,
 },
     },
-    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify, priority, identity}) => {
-      const _sid = requireAuth(identity);
+    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify, priority, token}) => {
+      const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);

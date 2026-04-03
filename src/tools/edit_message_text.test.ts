@@ -46,13 +46,13 @@ describe("edit_message_text tool", () => {
 
   it("calls API with correct positional args", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 1 });
-    await call({ message_id: 1, text: "Updated", identity: [1, 123456]});
+    await call({ message_id: 1, text: "Updated", token: 1123456});
     expect(mocks.editMessageText).toHaveBeenCalledWith(42, 1, "Updated", expect.any(Object));
   });
 
   it("returns result from API", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 1, text: "Updated" });
-    const result = await call({ message_id: 1, text: "Updated", identity: [1, 123456]});
+    const result = await call({ message_id: 1, text: "Updated", token: 1123456});
     expect(isError(result)).toBe(false);
     expect(parseResult(result)).toMatchObject({ message_id: 1 });
   });
@@ -62,7 +62,7 @@ describe("edit_message_text tool", () => {
     mocks.editMessageText.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request: message can't be edited" }, "editMessageText", {})
     );
-    const result = await call({ message_id: 99, text: "x", identity: [1, 123456]});
+    const result = await call({ message_id: 99, text: "x", token: 1123456});
     expect(isError(result)).toBe(true);
   });
 
@@ -71,7 +71,7 @@ describe("edit_message_text tool", () => {
       code: "UNAUTHORIZED_CHAT",
       message: "no chat",
     });
-    const result = await call({ message_id: 1, text: "x", identity: [1, 123456]});
+    const result = await call({ message_id: 1, text: "x", token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
@@ -81,14 +81,14 @@ describe("edit_message_text tool", () => {
       code: "MESSAGE_TOO_LONG",
       message: "too long",
     });
-    const result = await call({ message_id: 1, text: "x", identity: [1, 123456]});
+    const result = await call({ message_id: 1, text: "x", token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
   });
 
   it("handles boolean result from API (channel case)", async () => {
     mocks.editMessageText.mockResolvedValue(true);
-    const result = await call({ message_id: 7, text: "Updated", identity: [1, 123456]});
+    const result = await call({ message_id: 7, text: "Updated", token: 1123456});
     expect(isError(result)).toBe(false);
     expect(parseResult(result)).toMatchObject({ message_id: 7 });
   });
@@ -102,7 +102,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"message_id":1,"text":"x","identity":[1,99999]});
+    const result = await call({"message_id":1,"text":"x","token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -110,7 +110,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"message_id":1,"text":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"message_id":1,"text":"x","token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

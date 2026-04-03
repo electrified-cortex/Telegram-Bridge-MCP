@@ -41,7 +41,7 @@ describe("route_message tool", () => {
 
   it("rejects invalid credentials", async () => {
     mocks.validateSession.mockReturnValue(false);
-    const result = await call({ identity: [1, 999999], message_id: 100, target_sid: 2,
+    const result = await call({ token: 1999999, message_id: 100, target_sid: 2,
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("AUTH_FAILED");
@@ -49,7 +49,7 @@ describe("route_message tool", () => {
 
   it("rejects when no governor is active", async () => {
     mocks.getGovernorSid.mockReturnValue(0);
-    const result = await call({ identity: [1, 123456], message_id: 100, target_sid: 2,
+    const result = await call({ token: 1123456, message_id: 100, target_sid: 2,
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("NOT_GOVERNOR_MODE");
@@ -57,7 +57,7 @@ describe("route_message tool", () => {
 
   it("rejects when caller is not the governor", async () => {
     mocks.getGovernorSid.mockReturnValue(5);
-    const result = await call({ identity: [1, 123456], message_id: 100, target_sid: 2,
+    const result = await call({ token: 1123456, message_id: 100, target_sid: 2,
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("NOT_GOVERNOR");
@@ -65,14 +65,14 @@ describe("route_message tool", () => {
 
   it("rejects when target session does not exist", async () => {
     mocks.getSession.mockReturnValue(undefined);
-    const result = await call({ identity: [1, 123456], message_id: 100, target_sid: 99,
+    const result = await call({ token: 1123456, message_id: 100, target_sid: 99,
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("SESSION_NOT_FOUND");
   });
 
   it("routes message to target session", async () => {
-    const result = await call({ identity: [1, 123456], message_id: 100, target_sid: 2,
+    const result = await call({ token: 1123456, message_id: 100, target_sid: 2,
     });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
@@ -83,7 +83,7 @@ describe("route_message tool", () => {
 
   it("returns error when route fails", async () => {
     mocks.routeMessage.mockReturnValue(false);
-    const result = await call({ identity: [1, 123456], message_id: 100, target_sid: 2,
+    const result = await call({ token: 1123456, message_id: 100, target_sid: 2,
     });
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("ROUTE_FAILED");

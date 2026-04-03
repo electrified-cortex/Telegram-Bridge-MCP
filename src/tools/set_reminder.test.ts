@@ -45,7 +45,7 @@ describe("set_reminder tool", () => {
   });
 
   it("creates an immediate reminder and returns it", async () => {
-    const result = await call({ text: "Check CI", identity: [1, 123456] });
+    const result = await call({ text: "Check CI", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.text).toBe("Check CI");
@@ -57,14 +57,14 @@ describe("set_reminder tool", () => {
 
   it("uses provided ID instead of UUID", async () => {
     mocks.addReminder.mockReturnValue({ ...stubReminder, id: "my-id" });
-    await call({ text: "x", id: "my-id", identity: [1, 123456] });
+    await call({ text: "x", id: "my-id", token: 1123456 });
     expect(mocks.addReminder).toHaveBeenCalledWith(
       expect.objectContaining({ id: "my-id" }),
     );
   });
 
   it("uses content hash as default ID when none provided", async () => {
-    await call({ text: "Check CI", identity: [1, 123456] });
+    await call({ text: "Check CI", token: 1123456 });
     const expectedHash = createHash("sha256")
       .update("Check CI\0false")
       .digest("hex")
@@ -82,7 +82,7 @@ describe("set_reminder tool", () => {
       state: "deferred",
       activated_at: null,
     });
-    const result = await call({ text: "later", delay_seconds: 300, recurring: true, identity: [1, 123456] });
+    const result = await call({ text: "later", delay_seconds: 300, recurring: true, token: 1123456 });
     const data = parseResult(result);
     expect(data.state).toBe("deferred");
     expect(data.fires_in_seconds).toBe(300);
@@ -92,7 +92,7 @@ describe("set_reminder tool", () => {
     mocks.addReminder.mockImplementation(() => {
       throw new Error("Max reminders per session (20) reached");
     });
-    const result = await call({ text: "overflow", identity: [1, 123456] });
+    const result = await call({ text: "overflow", token: 1123456 });
     expect(isError(result)).toBe(true);
     const data = parseResult(result);
     expect(data.code).toBe("LIMIT_EXCEEDED");
@@ -107,7 +107,7 @@ describe("set_reminder tool", () => {
 
     it("returns AUTH_FAILED on invalid PIN", async () => {
       mocks.validateSession.mockReturnValue(false);
-      const result = await call({ text: "x", identity: [1, 0] });
+      const result = await call({ text: "x", token: 1000000 });
       expect(isError(result)).toBe(true);
       expect(parseResult(result).code).toBe("AUTH_FAILED");
     });

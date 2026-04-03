@@ -49,7 +49,7 @@ beforeEach(async () => {
 
 describe("get_debug_log", () => {
   it("returns empty state when no entries", async () => {
-    const result = parseResult(await handler({ identity: [1, 123456] }));
+    const result = parseResult(await handler({ token: 1123456 }));
     expect(result).toEqual({ enabled: false, total: 0, returned: 0, entries: [] });
   });
 
@@ -59,7 +59,7 @@ describe("get_debug_log", () => {
     mocks.debugLogSize.mockReturnValue(1);
     mocks.getDebugLog.mockReturnValue(entries);
 
-    const result = parseResult(await handler({ identity: [1, 123456] }));
+    const result = parseResult(await handler({ token: 1123456 }));
     expect(result.enabled).toBe(true);
     expect(result.entries).toEqual(entries);
     expect(mocks.getDebugLog).toHaveBeenCalledWith(50, undefined, undefined);
@@ -67,31 +67,31 @@ describe("get_debug_log", () => {
 
   it("passes count and category to getDebugLog", async () => {
     mocks.getDebugLog.mockReturnValue([]);
-    await handler({ count: 10, category: "route", identity: [1, 123456] });
+    await handler({ count: 10, category: "route", token: 1123456 });
     expect(mocks.getDebugLog).toHaveBeenCalledWith(10, "route", undefined);
   });
 
   it("passes since for cursor-based pagination", async () => {
     mocks.getDebugLog.mockReturnValue([]);
-    await handler({ since: 42, identity: [1, 123456] });
+    await handler({ since: 42, token: 1123456 });
     expect(mocks.getDebugLog).toHaveBeenCalledWith(50, undefined, 42);
   });
 
   it("toggles debug on when enable=true", async () => {
     mocks.getDebugLog.mockReturnValue([]);
-    await handler({ enable: true, identity: [1, 123456] });
+    await handler({ enable: true, token: 1123456 });
     expect(mocks.setDebugEnabled).toHaveBeenCalledWith(true);
   });
 
   it("toggles debug off when enable=false", async () => {
     mocks.getDebugLog.mockReturnValue([]);
-    await handler({ enable: false, identity: [1, 123456] });
+    await handler({ enable: false, token: 1123456 });
     expect(mocks.setDebugEnabled).toHaveBeenCalledWith(false);
   });
 
   it("does not call setDebugEnabled when enable is omitted", async () => {
     mocks.getDebugLog.mockReturnValue([]);
-    await handler({ identity: [1, 123456] });
+    await handler({ token: 1123456 });
     expect(mocks.setDebugEnabled).not.toHaveBeenCalled();
   });
 
@@ -104,7 +104,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await handler({"identity":[1,99999]});
+    const result = await handler({"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -112,7 +112,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await handler({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await handler({"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

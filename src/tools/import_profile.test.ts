@@ -54,14 +54,14 @@ describe("import_profile tool", () => {
 
     it("returns AUTH_FAILED on invalid PIN", async () => {
       mocks.validateSession.mockReturnValue(false);
-      const result = await call({ voice: "nova", identity: [1, 0] });
+      const result = await call({ voice: "nova", token: 1000000 });
       expect(isError(result)).toBe(true);
       expect(parseResult(result).code).toBe("AUTH_FAILED");
     });
   });
 
   it("imports voice and voice_speed", async () => {
-    const result = await call({ voice: "nova", voice_speed: 1.1, identity: [1, 123456] });
+    const result = await call({ voice: "nova", voice_speed: 1.1, token: 1123456 });
     expect(isError(result)).toBe(false);
     expect(mocks.setSessionVoice).toHaveBeenCalledWith("nova");
     expect(mocks.setSessionSpeed).toHaveBeenCalledWith(1.1);
@@ -73,7 +73,7 @@ describe("import_profile tool", () => {
 
   it("imports animation_default", async () => {
     const frames = ["🤔", "🤔", "🧐"];
-    const result = await call({ animation_default: frames, identity: [1, 123456] });
+    const result = await call({ animation_default: frames, token: 1123456 });
     expect(isError(result)).toBe(false);
     expect(mocks.setSessionDefault).toHaveBeenCalledWith(1, frames);
     const data = parseResult<{ applied: Record<string, unknown> }>(result);
@@ -82,7 +82,7 @@ describe("import_profile tool", () => {
 
   it("imports animation_presets", async () => {
     const presets = { thinking: ["🤔", "🧐"], working: ["👨‍💻", "🔧"] };
-    const result = await call({ animation_presets: presets, identity: [1, 123456] });
+    const result = await call({ animation_presets: presets, token: 1123456 });
     expect(isError(result)).toBe(false);
     expect(mocks.registerPreset).toHaveBeenCalledWith(1, "thinking", ["🤔", "🧐"]);
     expect(mocks.registerPreset).toHaveBeenCalledWith(1, "working", ["👨‍💻", "🔧"]);
@@ -97,7 +97,7 @@ describe("import_profile tool", () => {
     }));
     const result = await call({
       reminders: [{ text: "Check CI", delay_seconds: 0, recurring: false }],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(isError(result)).toBe(false);
     const expectedId = contentHash("Check CI", false);
@@ -107,7 +107,7 @@ describe("import_profile tool", () => {
   });
 
   it("sparse merge — missing keys do not clear existing state", async () => {
-    const result = await call({ voice: "alloy", identity: [1, 123456] });
+    const result = await call({ voice: "alloy", token: 1123456 });
     expect(isError(result)).toBe(false);
     expect(mocks.setSessionVoice).toHaveBeenCalledWith("alloy");
     expect(mocks.setSessionSpeed).not.toHaveBeenCalled();
@@ -127,14 +127,14 @@ describe("import_profile tool", () => {
 
     // First import
     mocks.listReminders.mockReturnValue([]);
-    const r1 = await call({ reminders: [reminderDef], identity: [1, 123456] });
+    const r1 = await call({ reminders: [reminderDef], token: 1123456 });
     const d1 = parseResult<{ applied: { reminders: { added: string[]; updated: string[] } } }>(r1);
     expect(d1.applied.reminders.added).toContain(existingId);
     expect(d1.applied.reminders.updated).toHaveLength(0);
 
     // Second import — reminder already present
     mocks.listReminders.mockReturnValue([stub]);
-    const r2 = await call({ reminders: [reminderDef], identity: [1, 123456] });
+    const r2 = await call({ reminders: [reminderDef], token: 1123456 });
     const d2 = parseResult<{ applied: { reminders: { added: string[]; updated: string[]; review_recommended?: boolean } } }>(r2);
     expect(d2.applied.reminders.added).toHaveLength(0);
     expect(d2.applied.reminders.updated).toContain(existingId);
@@ -150,7 +150,7 @@ describe("import_profile tool", () => {
       voice_speed: 1.0,
       animation_presets: { thinking: ["🤔"] },
       reminders: [{ text: "Hello", delay_seconds: 60, recurring: true }],
-      identity: [1, 123456],
+      token: 1123456,
     });
     expect(isError(result)).toBe(false);
     const data = parseResult<{ imported: boolean; applied: Record<string, unknown> }>(result);
@@ -162,7 +162,7 @@ describe("import_profile tool", () => {
   });
 
   it("empty call with only identity returns empty applied", async () => {
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult<{ imported: boolean; applied: Record<string, unknown> }>(result);
     expect(data.imported).toBe(true);

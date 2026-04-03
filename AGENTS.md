@@ -216,8 +216,8 @@ Only use if `.env` files are not available and you cannot run the server. Pass c
 After configuration, verify the connection:
 
 1. Call `get_me` — should return the bot's username and ID
-2. Call `session_start` — sends an announcement to Telegram and returns an object such as `{ sid, pin, sessions_active, action, pending }`. Use `[sid, pin]` from that object as the session identity tuple for other tools.
-3. Have the user confirm they see the announcement in Telegram, then store `[sid, pin]` from the result as your identity for all subsequent tool calls.
+2. Call `session_start` — sends an announcement to Telegram and returns an object such as `{ token, sid, pin, sessions_active, action, pending }`. Use the `token` integer from that object as the `token` parameter for all subsequent tool calls.
+3. Have the user confirm they see the announcement in Telegram, then store `token` from the result as your identity for all subsequent tool calls.
 
 If `get_me` fails with `401 Unauthorized`: the token is wrong — ask the user to check it.
 If `session_start` fails: the server may not be running (HTTP mode) or credentials are missing.

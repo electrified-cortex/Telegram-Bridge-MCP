@@ -48,14 +48,14 @@ describe("send_text tool", () => {
   });
 
   it("sends a basic text message and returns message_id", async () => {
-    const result = await call({ text: "Hello", identity: [1, 123456]});
+    const result = await call({ text: "Hello", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(7);
   });
 
   it("calls sendMessage with correct chat_id and MarkdownV2 by default", async () => {
-    await call({ text: "Hello", identity: [1, 123456]});
+    await call({ text: "Hello", token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -64,7 +64,7 @@ describe("send_text tool", () => {
   });
 
   it("passes reply_to_message_id via reply_parameters", async () => {
-    await call({ text: "Reply", reply_to_message_id: 5, identity: [1, 123456]});
+    await call({ text: "Reply", reply_to_message_id: 5, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -75,7 +75,7 @@ describe("send_text tool", () => {
   });
 
   it("passes disable_notification option", async () => {
-    await call({ text: "Quiet", disable_notification: true, identity: [1, 123456]});
+    await call({ text: "Quiet", disable_notification: true, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -84,7 +84,7 @@ describe("send_text tool", () => {
   });
 
   it("uses raw MarkdownV2 when parse_mode is MarkdownV2", async () => {
-    await call({ text: "*bold*", parse_mode: "MarkdownV2", identity: [1, 123456]});
+    await call({ text: "*bold*", parse_mode: "MarkdownV2", token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       "*bold*",
@@ -93,7 +93,7 @@ describe("send_text tool", () => {
   });
 
   it("uses HTML parse_mode when specified", async () => {
-    await call({ text: "<b>bold</b>", parse_mode: "HTML", identity: [1, 123456]});
+    await call({ text: "<b>bold</b>", parse_mode: "HTML", token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       "<b>bold</b>",
@@ -102,21 +102,21 @@ describe("send_text tool", () => {
   });
 
   it("returns EMPTY_MESSAGE error for empty text", async () => {
-    const result = await call({ text: "", identity: [1, 123456]});
+    const result = await call({ text: "", token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("returns EMPTY_MESSAGE error for whitespace-only text", async () => {
-    const result = await call({ text: "   ", identity: [1, 123456]});
+    const result = await call({ text: "   ", token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("passes _rawText in sendMessage opts for proxy recording", async () => {
-    await call({ text: "Hello", identity: [1, 123456]});
+    await call({ text: "Hello", token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
@@ -129,7 +129,7 @@ describe("send_text tool", () => {
     mocks.sendMessage.mockRejectedValue(
       new GrammyError("e", { ok: false, error_code: 400, description: "Bad Request" }, "sendMessage", {}),
     );
-    const result = await call({ text: "fail", identity: [1, 123456]});
+    const result = await call({ text: "fail", token: 1123456});
     expect(isError(result)).toBe(true);
   });
 
@@ -138,7 +138,7 @@ describe("send_text tool", () => {
     mocks.sendMessage
       .mockResolvedValueOnce({ ...BASE_MSG, message_id: 10 })
       .mockResolvedValueOnce({ ...BASE_MSG, message_id: 11 });
-    const result = await call({ text: "long text", reply_to_message_id: 3, identity: [1, 123456]});
+    const result = await call({ text: "long text", reply_to_message_id: 3, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_ids).toEqual([10, 11]);
@@ -152,7 +152,7 @@ describe("send_text tool", () => {
 
 describe("markdown table detection", () => {
   it("does not include info field for normal messages", async () => {
-    const result = await call({ text: "Hello world", identity: [1, 123456] });
+    const result = await call({ text: "Hello world", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.info).toBeUndefined();
@@ -160,7 +160,7 @@ describe("markdown table detection", () => {
 
   it("includes info field when message contains a markdown table", async () => {
     const tableText = "Here is a table:\n| Col1 | Col2 |\n|------|------|\n| A    | B    |";
-    const result = await call({ text: tableText, identity: [1, 123456] });
+    const result = await call({ text: tableText, token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.info).toBe(
@@ -170,7 +170,7 @@ describe("markdown table detection", () => {
 
   it("still sends the message successfully when a table is detected", async () => {
     const tableText = "| A | B |\n|---|---|\n| 1 | 2 |";
-    const result = await call({ text: tableText, identity: [1, 123456] });
+    const result = await call({ text: tableText, token: 1123456 });
     expect(isError(result)).toBe(false);
     expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
     const data = parseResult(result);
@@ -183,7 +183,7 @@ describe("markdown table detection", () => {
       .mockResolvedValueOnce({ ...BASE_MSG, message_id: 10 })
       .mockResolvedValueOnce({ ...BASE_MSG, message_id: 11 });
     const tableText = "| A | B |\n|---|---|\n| 1 | 2 |";
-    const result = await call({ text: tableText, identity: [1, 123456] });
+    const result = await call({ text: tableText, token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.split).toBe(true);
@@ -202,7 +202,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"text":"x","identity":[1,99999]});
+    const result = await call({"text":"x","token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -210,7 +210,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"text":"x","identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"text":"x","token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

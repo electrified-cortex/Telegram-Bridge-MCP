@@ -38,7 +38,7 @@ describe("cancel_animation tool", () => {
 
   it("cancels animation and returns cancelled:true", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: true });
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.cancelled).toBe(true);
@@ -46,7 +46,7 @@ describe("cancel_animation tool", () => {
 
   it("returns cancelled:false when no animation is active", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: false });
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.cancelled).toBe(false);
@@ -54,13 +54,13 @@ describe("cancel_animation tool", () => {
 
   it("passes text and parse_mode to cancelAnimation", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: true, message_id: 10 });
-    await call({ text: "Done!", parse_mode: "HTML", identity: [1, 123456]});
+    await call({ text: "Done!", parse_mode: "HTML", token: 1123456});
     expect(mocks.cancelAnimation).toHaveBeenCalledWith(1, "Done!", "HTML");
   });
 
   it("returns message_id when text replacement is provided", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: true, message_id: 10 });
-    const result = await call({ text: "Complete", identity: [1, 123456]});
+    const result = await call({ text: "Complete", token: 1123456});
     const data = parseResult(result);
     expect(data.cancelled).toBe(true);
     expect(data.message_id).toBe(10);
@@ -68,19 +68,19 @@ describe("cancel_animation tool", () => {
 
   it("uses default Markdown parse_mode when not specified", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: true });
-    await call({ text: "Result", identity: [1, 123456]});
+    await call({ text: "Result", token: 1123456});
     expect(mocks.cancelAnimation).toHaveBeenCalledWith(1, "Result", "Markdown");
   });
 
   it("calls cancelAnimation without text when text is omitted", async () => {
     mocks.cancelAnimation.mockResolvedValue({ cancelled: true });
-    await call({ identity: [1, 123456] });
+    await call({ token: 1123456 });
     expect(mocks.cancelAnimation).toHaveBeenCalledWith(1, undefined, "Markdown");
   });
 
   it("returns error when cancelAnimation throws", async () => {
     mocks.cancelAnimation.mockRejectedValue(new Error("unexpected"));
-    const result = await call({ identity: [1, 123456] });
+    const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(true);
   });
 
@@ -93,7 +93,7 @@ describe("identity gate", () => {
 
   it("returns AUTH_FAILED when identity has wrong pin", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
-    const result = await call({"identity":[1,99999]});
+    const result = await call({"token": 1099999});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("AUTH_FAILED");
   });
@@ -101,7 +101,7 @@ describe("identity gate", () => {
   it("proceeds when identity is valid", async () => {
     mocks.validateSession.mockReturnValueOnce(true);
     let code: string | undefined;
-    try { code = errorCode(await call({"identity":[1,99999]})); } catch { /* gate passed, other error ok */ }
+    try { code = errorCode(await call({"token": 1099999})); } catch { /* gate passed, other error ok */ }
     expect(code).not.toBe("SID_REQUIRED");
     expect(code).not.toBe("AUTH_FAILED");
   });

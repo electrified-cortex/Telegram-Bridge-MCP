@@ -29,7 +29,7 @@ describe("cancel_reminder tool", () => {
 
   it("cancels an existing reminder and returns { cancelled: true, id }", async () => {
     mocks.cancelReminder.mockReturnValue(true);
-    const result = await call({ id: "r1", identity: [1, 123456] });
+    const result = await call({ id: "r1", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.cancelled).toBe(true);
@@ -39,7 +39,7 @@ describe("cancel_reminder tool", () => {
 
   it("returns NOT_FOUND when reminder does not exist", async () => {
     mocks.cancelReminder.mockReturnValue(false);
-    const result = await call({ id: "missing", identity: [1, 123456] });
+    const result = await call({ id: "missing", token: 1123456 });
     expect(isError(result)).toBe(true);
     const data = parseResult(result);
     expect(data.code).toBe("NOT_FOUND");
@@ -54,7 +54,7 @@ describe("cancel_reminder tool", () => {
 
     it("returns AUTH_FAILED on invalid PIN", async () => {
       mocks.validateSession.mockReturnValue(false);
-      const result = await call({ id: "r1", identity: [1, 0] });
+      const result = await call({ id: "r1", token: 1000000 });
       expect(isError(result)).toBe(true);
       expect(parseResult(result).code).toBe("AUTH_FAILED");
     });
