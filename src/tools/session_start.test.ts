@@ -166,7 +166,7 @@ describe("session_start tool", () => {
 
     await call({ name: "Worker Bee" });
 
-    expect(mocks.createSession).toHaveBeenCalledWith("Worker Bee", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Worker Bee", undefined, false);
   });
 
   it("passes 'Primary' when name is omitted for first session", async () => {
@@ -175,7 +175,7 @@ describe("session_start tool", () => {
 
     await call({});
 
-    expect(mocks.createSession).toHaveBeenCalledWith("Primary", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Primary", undefined, false);
   });
 
   it("returns session credentials from createSession", async () => {
@@ -352,7 +352,7 @@ describe("session_start tool", () => {
     const result = parseResult(await call({ name: "Scout" }));
 
     expect(result.sid).toBe(2);
-    expect(mocks.createSession).toHaveBeenCalledWith("Scout", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout", undefined, false);
   });
 
   it("first session gets 'Primary' default even when other sessions exist", async () => {
@@ -364,7 +364,7 @@ describe("session_start tool", () => {
     const result = parseResult(await call({}));
 
     expect(result.sid).toBe(2);
-    expect(mocks.createSession).toHaveBeenCalledWith("Primary", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Primary", undefined, false);
   });
 
   // =========================================================================
@@ -500,7 +500,7 @@ describe("session_start tool", () => {
 
     await call({});
 
-    expect(mocks.createSession).toHaveBeenCalledWith("Primary", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Primary", undefined, false);
   });
 
   it("second session requires operator approval and succeeds on approve", async () => {
@@ -518,7 +518,7 @@ describe("session_start tool", () => {
     const result = parseResult(await call({ name: "Scout" }));
 
     expect(mocks.registerCallbackHook).toHaveBeenCalled();
-    expect(mocks.createSession).toHaveBeenCalledWith("Scout", "🟦");
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout", "🟦", true);
     expect(result.sid).toBe(2);
   });
 
@@ -615,7 +615,7 @@ describe("session_start tool", () => {
     const result = await call({ name: "Scout Alpha" });
 
     expect(isError(result)).toBe(false);
-    expect(mocks.createSession).toHaveBeenCalledWith("Scout Alpha", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout Alpha", undefined, false);
   });
 
   it("trims whitespace before validation — leading/trailing spaces are allowed", async () => {
@@ -626,7 +626,7 @@ describe("session_start tool", () => {
     const result = await call({ name: "  Scout  " });
 
     expect(isError(result)).toBe(false);
-    expect(mocks.createSession).toHaveBeenCalledWith("Scout", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout", undefined, false);
   });
 
   it("whitespace-only name on first session → uses 'Primary' default", async () => {
@@ -637,7 +637,7 @@ describe("session_start tool", () => {
     const result = await call({ name: "   " });
 
     expect(isError(result)).toBe(false);
-    expect(mocks.createSession).toHaveBeenCalledWith("Primary", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Primary", undefined, false);
   });
 
   it("alphanumeric name with digits is accepted", async () => {
@@ -648,7 +648,7 @@ describe("session_start tool", () => {
     const result = await call({ name: "Scout2" });
 
     expect(isError(result)).toBe(false);
-    expect(mocks.createSession).toHaveBeenCalledWith("Scout2", undefined);
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout2", undefined, false);
   });
 
   // =========================================================================
@@ -935,7 +935,7 @@ describe("session_start tool", () => {
     await call({ name: "Worker" });
 
     // createSession should receive the operator-chosen color 🟩
-    expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩");
+    expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩", true);
   });
 
   it("approval prompt deleted (not edited) after operator approves", async () => {
@@ -1188,7 +1188,7 @@ describe("session_start tool", () => {
 
     await call({ name: "Worker", reconnect: true });
 
-    expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩");
+    expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩", true);
   });
 
   // =========================================================================
