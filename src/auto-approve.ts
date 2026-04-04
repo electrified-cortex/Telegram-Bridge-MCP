@@ -15,14 +15,20 @@ export function activateAutoApproveOne(): void {
   _state = { mode: "one" };
 }
 
+const MAX_TIMER_MS = 2_000_000_000;
+
 /** Activate timed auto-approve for `durationMs` milliseconds. */
 export function activateAutoApproveTimed(durationMs: number): void {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return;
   cancelAutoApprove();
   _state = { mode: "timed", expiresAt: Date.now() + durationMs };
   _timer = setTimeout(() => {
-    _state = { mode: "none" };
-    _timer = undefined;
-  }, durationMs);
+    // expiresAt is authoritative; only clear if actually expired
+    if (_state.expiresAt === undefined || Date.now() >= _state.expiresAt) {
+      _state = { mode: "none" };
+      _timer = undefined;
+    }
+  }, Math.min(durationMs, MAX_TIMER_MS));
 }
 
 /** Cancel any active auto-approve. */
