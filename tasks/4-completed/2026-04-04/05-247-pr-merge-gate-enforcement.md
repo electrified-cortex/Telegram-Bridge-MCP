@@ -1,6 +1,6 @@
 ---
 Created: 2026-04-04
-Status: Draft
+Status: Completed
 Priority: 05
 Source: Overseer process violation (PR #112 merged without squash or Copilot exhaustion)
 Type: Task
@@ -12,6 +12,7 @@ Repo: electricessence/Telegram-Bridge-MCP
 ## Context
 
 PR #112 (dev→master, v5.0.0) was merged unilaterally by the Overseer without:
+
 1. Copilot exhaustion review
 2. Squash merge
 3. Curator confirmation
@@ -51,3 +52,16 @@ Make the three-gate merge process mechanically enforceable — not just a policy
 ## Reversal Plan
 
 Branch protection rules can be removed via GitHub repo settings or `gh api`. No data loss.
+
+## Completion
+
+Completed 2026-04-04 by Worker 2.
+
+**Delivered:**
+- `docs/merge-policy.md` — three-gate merge policy with diff hygiene checklist. Gate 1 (Copilot exhaustion) and Gate 3 (Curator review, recommended not required) language corrected per Overseer feedback.
+- Overseer `CLAUDE.md` — `## PR Merge Checklist` section added before `## Shutdown` with matching gate language.
+- GitHub branch protection — squash-merge enforced on master (merge commits and rebase disabled) by Overseer.
+
+**Review:** Doc-only change — code review loop skipped per policy.
+
+**Note:** Hook false positive identified — `\bgit\b.*\bmerge\b` matches `git add docs/merge-policy.md` because "merge" appears as a word boundary in the filename. Overseer committed directly; flagged for hook subtask after 10-228.
