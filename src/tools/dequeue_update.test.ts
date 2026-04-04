@@ -781,19 +781,19 @@ describe("dequeue_update tool", () => {
 
   describe("force gate", () => {
     it("rejects timeout > session default when force is false (default)", async () => {
-      // Default session default is 300; timeout 500 should be rejected
-      mocks.getDequeueDefault.mockReturnValue(300);
-      const result = await call({ timeout: 500, token: 1_123_456 });
+      // Session default is 60; timeout 200 exceeds it → rejected
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ timeout: 200, token: 1_123_456 });
       expect(isError(result)).toBe(false);
       const data = parseResult<Record<string, unknown>>(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
-      expect(data.message).toContain("500");
-      expect(data.message).toContain("300");
+      expect(data.message).toContain("200");
+      expect(data.message).toContain("60");
     });
 
     it("rejects timeout > session default when force is explicitly false", async () => {
-      mocks.getDequeueDefault.mockReturnValue(300);
-      const result = await call({ timeout: 400, force: false, token: 1_123_456 });
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ timeout: 200, force: false, token: 1_123_456 });
       const data = parseResult<Record<string, unknown>>(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
     });
@@ -838,13 +838,59 @@ describe("dequeue_update tool", () => {
     });
 
     it("hint field in structured error response guides the user", async () => {
-      mocks.getDequeueDefault.mockReturnValue(300);
-      const result = await call({ timeout: 600, token: 1_123_456 });
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ timeout: 200, token: 1_123_456 });
       const data = parseResult<Record<string, unknown>>(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(typeof data.hint).toBe("string");
       expect(data.hint as string).toContain("force: true");
       expect(data.hint as string).toContain("set_dequeue_default");
+    });
+
+    // -------------------------------------------------------------------------
+    // Task 10-249: session default interaction tests
+    // -------------------------------------------------------------------------
+
+    it("omitting timeout uses session default not server fallback — gate skipped", async () => {
+      // With session default=1 (small, to avoid long waits), omitting timeout →
+      // effectiveTimeout=1, gate is NOT fired (timeout is undefined).
+      mocks.getDequeueDefault.mockReturnValue(1);
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise<void>((r) => setTimeout(r, 50)),
+      );
+      const result = await call({ token: 1_123_456 }); // no timeout param
+      const data = parseResult<Record<string, unknown>>(result);
+      expect(data.error).toBeUndefined();
+      expect(data.timed_out).toBe(true);
+      expect(mocks.waitForEnqueue).toHaveBeenCalled();
+    });
+
+    it("explicit timeout=1 with session default=2 passes gate without force", async () => {
+      // 1 <= 2 → gate does not fire
+      mocks.getDequeueDefault.mockReturnValue(2);
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise<void>((r) => setTimeout(r, 50)),
+      );
+      const result = await call({ timeout: 1, token: 1_123_456 });
+      const data = parseResult<Record<string, unknown>>(result);
+      expect(data.error).toBeUndefined();
+      expect(data.timed_out).toBe(true);
+    });
+
+    it("explicit timeout=300 with session default=60 triggers gate", async () => {
+      // 300 > 60 and force not set → TIMEOUT_EXCEEDS_DEFAULT
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ timeout: 300, token: 1_123_456 });
+      const data = parseResult<Record<string, unknown>>(result);
+      expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
+      expect(data.message).toContain("300");
+      expect(data.message).toContain("60");
+      // Reset to a value >= 300 so the reminder fire path test is not affected.
+      // vi.clearAllMocks() clears call history but NOT mockReturnValue state,
+      // so a low sessionDefault here would cause the gate to fire in the next test.
+      mocks.getDequeueDefault.mockReturnValue(300);
     });
   });
 

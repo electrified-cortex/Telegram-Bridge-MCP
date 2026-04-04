@@ -53,10 +53,10 @@ const DESCRIPTION =
   "immediately to keep the loop alive), or `{ empty: true }` for instant polls (timeout: 0). " +
   "Voice messages arrive pre-transcribed as { type: \"voice\", text: \"...\" }. " +
   "pending > 0 means more updates are queued — call again. " +
-  "Two modes: omit timeout (default 300 s) to block up to 300 s for the next update; " +
-  "pass timeout: 0 for an instant non-blocking poll (use only for startup drain loops). " +
-  "timeout values above the session default are rejected unless force: true is passed. " +
-  "Use set_dequeue_default to raise your session default for persistent agents. " +
+  "Two modes: omit timeout to block for up to your session default (set via set_dequeue_default, " +
+  "server fallback 300 s); pass timeout: 0 for an instant non-blocking poll (drain loops only). " +
+  "Max timeout: 300 s. Values above the session default are rejected unless force: true is passed. " +
+  "Use set_dequeue_default to configure a persistent default above 300 s (up to 3600 s). " +
   "token is always required — pass the session token returned by session_start.";
 
 export function register(server: McpServer) {
@@ -69,8 +69,9 @@ export function register(server: McpServer) {
           .number()
           .int()
           .min(0)
-          .default(300)
-          .describe("Seconds to block when queue is empty. Default 300 (5 min) blocks up to 300 s for the next update — optimized for agent listen loops. Pass 0 for an instant non-blocking poll (drain loops only). Values above the session default require force: true or set_dequeue_default."),
+          .max(300)
+          .optional()
+          .describe("Seconds to block when queue is empty. Omit to use your session default (set via set_dequeue_default); server fallback is 300 s. Pass 0 for an instant non-blocking poll (drain loops only). Values above the session default require force: true or set_dequeue_default. Max 300 s — use set_dequeue_default to configure persistent agents."),
         force: z
           .boolean()
           .default(false)
@@ -88,7 +89,8 @@ export function register(server: McpServer) {
 
       // Gate: reject timeout values above the session default unless force is set
       const sessionDefault = getDequeueDefault(sid);
-      if (timeout > sessionDefault && !force) {
+      const effectiveTimeout = timeout ?? sessionDefault;
+      if (timeout !== undefined && timeout > sessionDefault && !force) {
         return toResult({
           error: "TIMEOUT_EXCEEDS_DEFAULT",
           message: `timeout ${timeout} exceeds your current default of ${sessionDefault}s.`,
@@ -146,14 +148,14 @@ export function register(server: McpServer) {
         return toResult(result);
       }
 
-      if (timeout === 0) {
+      if (effectiveTimeout === 0) {
         const emptyResult: Record<string, unknown> = { empty: true, pending: pendingCountAny() };
         if (tokenHint) emptyResult.hint = tokenHint;
         return toResult(emptyResult);
       }
 
       // Block until something arrives or timeout expires
-      const deadline = Date.now() + timeout * 1000;
+      const deadline = Date.now() + effectiveTimeout * 1000;
       const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
       const reminderIdleStart = Date.now();
       while (Date.now() < deadline) {
@@ -188,7 +190,7 @@ export function register(server: McpServer) {
         let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([
           waitForEnqueueAny(),
-          new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.max(0, waitMs)); }),
+          new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(Math.max(0, waitMs), 2_000_000_000)); }),
           abortPromise,
         ]);
         clearTimeout(timeoutHandle);
