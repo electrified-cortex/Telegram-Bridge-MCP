@@ -19,11 +19,14 @@ export const TOKEN_PARAM_DESCRIPTION =
  * numeric string instead of an integer. Using AsyncLocalStorage ensures that
  * concurrent HTTP requests cannot observe each other's hint state — each
  * tool-handler invocation runs inside its own async context (established by
- * the `runInSessionContext` wrapper in server.ts).
+ * the `runInTokenHintContext` wrapper in server.ts).
  *
  * Falls back gracefully to `false` outside any async context (e.g. tests
  * that call TOKEN_SCHEMA.safeParse directly without a session wrapper).
  */
+/** Matches a non-empty string of ASCII digits — used to detect numeric-string token coercion. */
+const RE_NUMERIC_STRING = /^\d+$/;
+
 const _tokenStringHintAls = new AsyncLocalStorage<{ wasString: boolean }>();
 
 /**
@@ -58,7 +61,7 @@ export function consumeTokenStringHint(): string | undefined {
 export const TOKEN_SCHEMA = z
   .preprocess(
     (v) => {
-      const wasString = typeof v === "string" && /^\d+$/.test(v as string);
+      const wasString = typeof v === "string" && RE_NUMERIC_STRING.test(v as string);
       const store = _tokenStringHintAls.getStore();
       if (store !== undefined) {
         // Running inside a tool-handler async context — store hint there.

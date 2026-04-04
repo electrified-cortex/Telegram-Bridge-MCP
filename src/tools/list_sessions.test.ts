@@ -44,10 +44,11 @@ describe("list_sessions tool", () => {
 
   describe("no token provided", () => {
     it("returns SID_REQUIRED error when token is omitted", async () => {
-      mocks.requireAuth.mockReturnValue({ code: "SID_REQUIRED", message: "token is required." });
+      // Token validation is rejected at Zod schema level — requireAuth is never reached.
       const result = await call({});
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("SID_REQUIRED");
+      expect(mocks.requireAuth).not.toHaveBeenCalled();
     });
   });
 
