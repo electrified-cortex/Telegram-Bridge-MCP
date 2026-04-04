@@ -58,7 +58,7 @@ const DESCRIPTION =
   "pending > 0 means more updates are queued — call again. " +
   "Two modes: omit timeout to block for up to your session default (set via set_dequeue_default, " +
   "server fallback 300 s); pass timeout: 0 for an instant non-blocking poll (drain loops only). " +
-  "Max timeout: 300 s. Values above the session default are rejected unless force: true is passed. " +
+  "Max explicit timeout argument: 300 s. Values above the session default are rejected unless force: true is passed. " +
   "Use set_dequeue_default to configure a persistent default up to 3600 s — for waits beyond 300 s, set a session default and omit the timeout parameter. " +
   "token is always required — pass the session token returned by session_start.";
 

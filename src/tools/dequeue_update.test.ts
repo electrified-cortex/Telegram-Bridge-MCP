@@ -847,6 +847,12 @@ describe("dequeue_update tool", () => {
       expect(data.hint as string).toContain("set_dequeue_default");
     });
 
+    it("rejects explicit timeout above schema cap (timeout: 301) with a validation error", async () => {
+      // The schema enforces .max(300) — timeout: 301 must be rejected at schema level,
+      // before the handler runs. The mock server re-throws non-token ZodErrors.
+      await expect(call({ timeout: 301, token: 1_123_456 })).rejects.toThrow();
+    });
+
     // -------------------------------------------------------------------------
     // Task 10-249: session default interaction tests
     // -------------------------------------------------------------------------
@@ -899,6 +905,38 @@ describe("dequeue_update tool", () => {
   // =========================================================================
 
   describe("MAX_SET_TIMEOUT_MS clamp", () => {
+    it("clamps setTimeout delay to exactly MAX_SET_TIMEOUT_MS when session default exceeds it", async () => {
+      // Arrange: getDequeueDefault returns 3_000_000 s → waitMs = ~3_000_000_000 ms,
+      // which exceeds MAX_SET_TIMEOUT_MS (2_000_000_000). At least one setTimeout call
+      // should be clamped to exactly 2_000_000_000 ms.
+      const originalSetTimeout = globalThis.setTimeout;
+      const capturedDelays: number[] = [];
+      const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(
+        (fn: TimerHandler, delay?: number, ...args: unknown[]) => {
+          if (typeof delay === "number") capturedDelays.push(delay);
+          return originalSetTimeout(fn as () => void, 0, ...args);
+        },
+      );
+
+      try {
+        mocks.getDequeueDefault.mockReturnValue(3_000_000); // 3B ms → exceeds cap
+        mocks.dequeueBatch.mockReturnValue([]);
+        mocks.waitForEnqueue.mockReturnValue(new Promise(() => {}));
+
+        const controller = new AbortController();
+        void Promise.resolve().then(() => { controller.abort(); });
+
+        await call({ token: 1_123_456 }, { signal: controller.signal });
+
+        const MAX_SET_TIMEOUT_MS = 2_000_000_000;
+        expect(capturedDelays.length).toBeGreaterThan(0);
+        expect(capturedDelays).toContain(MAX_SET_TIMEOUT_MS);
+      } finally {
+        setTimeoutSpy.mockRestore();
+        mocks.getDequeueDefault.mockReturnValue(300);
+      }
+    });
+
     it("clamps setTimeout to MAX_SET_TIMEOUT_MS when waitMs is very large", async () => {
       // Arrange: spy on global setTimeout to capture the delay argument.
       const originalSetTimeout = globalThis.setTimeout;
