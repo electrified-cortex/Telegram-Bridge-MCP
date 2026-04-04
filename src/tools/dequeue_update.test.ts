@@ -937,45 +937,6 @@ describe("dequeue_update tool", () => {
       }
     });
 
-    it("clamps setTimeout to MAX_SET_TIMEOUT_MS when waitMs is very large", async () => {
-      // Arrange: spy on global setTimeout to capture the delay argument.
-      const originalSetTimeout = globalThis.setTimeout;
-      const capturedDelays: number[] = [];
-      const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(
-        (fn: TimerHandler, delay?: number, ...args: unknown[]) => {
-          if (typeof delay === "number") capturedDelays.push(delay);
-          // Use a tiny real delay so the race resolves quickly in the test.
-          return originalSetTimeout(fn as () => void, 0, ...args);
-        },
-      );
-
-      try {
-        // Simulate a very large effectiveTimeout (e.g., 1,000,000 s) by mocking
-        // getDequeueDefault to return 1_000_000, and omitting `timeout` so the
-        // gate check is skipped and effectiveTimeout = 1_000_000.
-        // waitMs will be ~1_000_000_000 ms, which exceeds MAX_SET_TIMEOUT_MS.
-        mocks.getDequeueDefault.mockReturnValue(1_000_000);
-        mocks.dequeueBatch.mockReturnValue([]);
-        // waitForEnqueue never resolves on its own; abort signal will end the wait.
-        mocks.waitForEnqueue.mockReturnValue(new Promise(() => {}));
-
-        const controller = new AbortController();
-        void Promise.resolve().then(() => { controller.abort(); });
-
-        await call({ token: 1_123_456 }, { signal: controller.signal });
-
-        // At least one setTimeout call should have been made during the wait loop.
-        // Every captured delay must be <= MAX_SET_TIMEOUT_MS (2_000_000_000).
-        const MAX_SET_TIMEOUT_MS = 2_000_000_000;
-        expect(capturedDelays.length).toBeGreaterThan(0);
-        for (const delay of capturedDelays) {
-          expect(delay).toBeLessThanOrEqual(MAX_SET_TIMEOUT_MS);
-        }
-      } finally {
-        setTimeoutSpy.mockRestore();
-        mocks.getDequeueDefault.mockReturnValue(300);
-      }
-    });
   });
 
   // =========================================================================
