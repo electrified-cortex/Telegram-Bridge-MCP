@@ -21,6 +21,7 @@ import { loadConfig, getSessionLogMode, sessionLogLabel, isDebugConfig } from ".
 import { timelineSize } from "./message-store.js";
 import { initDebugLog } from "./debug-log.js";
 import { cleanupStalePins } from "./startup-pin-cleanup.js";
+import { resolveHttpPort } from "./cli-args.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -84,19 +85,16 @@ installOutboundProxy(createOutboundProxy);
 // Apply session log config (wires up auto-dump if configured)
 applySessionLogConfig();
 
-const rawMcpPort = process.env.MCP_PORT;
+// Parse --http [port] from argv (takes precedence over MCP_PORT env var)
 let mcpPort: number | undefined;
-
-if (typeof rawMcpPort === "string" && rawMcpPort.length > 0) {
-  const parsed = parseInt(rawMcpPort, 10);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    process.stderr.write(`[error] Invalid MCP_PORT "${rawMcpPort}". Expected an integer between 1 and 65535.\n`);
-    process.exit(1);
-  }
-  mcpPort = parsed;
+try {
+  mcpPort = resolveHttpPort(process.argv, process.env);
+} catch (e) {
+  process.stderr.write(`[error] ${e instanceof Error ? e.message : String(e)}\n`);
+  process.exit(1);
 }
 
-if (mcpPort) {
+if (mcpPort !== undefined) {
   // ── Streamable HTTP mode (shared server, multiple clients) ──
   const app = createMcpExpressApp();
 

@@ -67,7 +67,9 @@ Run **one** server instance and connect any number of editors, agents, or Claude
 **1. Start the server** (terminal, tmux, startup script, etc.):
 
 ```bash
-MCP_PORT=3099 pnpm start
+pnpm start -- --http          # HTTP on port 3099 (default)
+pnpm start -- --http 4000     # HTTP on port 4000
+MCP_PORT=3099 pnpm start      # also works (env var, unchanged)
 ```
 
 The server listens on `http://127.0.0.1:3099/mcp` using the [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) transport. All config comes from `.env` — no credentials in your editor config.
