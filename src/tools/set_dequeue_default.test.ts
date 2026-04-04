@@ -25,17 +25,17 @@ vi.mock("../session-manager.js", () => ({
   validateSession: (sid: number, pin: number) => mocks.validateSession(sid, pin),
   getDequeueDefault: (sid: number) => sessionDefaults.get(sid) ?? 300,
   setDequeueDefault: (sid: number, timeout: number) => { sessionDefaults.set(sid, timeout); },
-  setActiveSession: (sid: number) => mocks.setActiveSession(sid),
+  setActiveSession: (sid: number) => { mocks.setActiveSession(sid); },
   getActiveSession: () => mocks.getActiveSession(),
   activeSessionCount: () => mocks.activeSessionCount(),
-  touchSession: (sid: number) => mocks.touchSession(sid),
+  touchSession: (sid: number) => { mocks.touchSession(sid); },
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
-    ackVoiceMessage: (msgId: number) => mocks.ackVoiceMessage(msgId),
+    ackVoiceMessage: (msgId: number) => { mocks.ackVoiceMessage(msgId); },
   };
 });
 

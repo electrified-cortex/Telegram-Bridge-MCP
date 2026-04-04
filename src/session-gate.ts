@@ -31,7 +31,7 @@ export function setAuthHook(fn: (sid: number) => void): void {
 export function requireAuth(
   token: number | undefined,
 ): number | TelegramError {
-  if (token === undefined || token === null) {
+  if (token === undefined) {
     return {
       code: "SID_REQUIRED",
       message: "token is required. Pass the token returned by session_start. " +

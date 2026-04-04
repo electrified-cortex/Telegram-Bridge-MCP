@@ -213,7 +213,7 @@ describe("consumeTokenStringHint", () => {
         runInTokenHintContext(() => {
           TOKEN_SCHEMA.safeParse("1000000"); // string → wasString = true
           // Yield to allow the other context to run, then consume hint.
-          Promise.resolve().then(() => {
+          void Promise.resolve().then(() => {
             resolve(consumeTokenStringHint());
           });
         });
@@ -221,7 +221,7 @@ describe("consumeTokenStringHint", () => {
       new Promise<string | undefined>((resolve) => {
         runInTokenHintContext(() => {
           TOKEN_SCHEMA.safeParse(1000000); // integer → wasString = false
-          Promise.resolve().then(() => {
+          void Promise.resolve().then(() => {
             resolve(consumeTokenStringHint());
           });
         });

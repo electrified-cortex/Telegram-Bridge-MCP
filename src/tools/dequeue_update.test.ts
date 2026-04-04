@@ -95,7 +95,7 @@ const reminderMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../reminder-state.js", () => ({
-  promoteDeferred: (sid: number) => reminderMocks.promoteDeferred(sid),
+  promoteDeferred: (sid: number) => { reminderMocks.promoteDeferred(sid); },
   getActiveReminders: (sid: number) => reminderMocks.getActiveReminders(sid),
   popActiveReminders: (sid: number) => reminderMocks.popActiveReminders(sid),
   getSoonestDeferredMs: (sid: number) => reminderMocks.getSoonestDeferredMs(sid),
@@ -785,7 +785,7 @@ describe("dequeue_update tool", () => {
       mocks.getDequeueDefault.mockReturnValue(60);
       const result = await call({ timeout: 200, token: 1_123_456 });
       expect(isError(result)).toBe(false);
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(data.message).toContain("200");
       expect(data.message).toContain("60");
@@ -794,7 +794,7 @@ describe("dequeue_update tool", () => {
     it("rejects timeout > session default when force is explicitly false", async () => {
       mocks.getDequeueDefault.mockReturnValue(60);
       const result = await call({ timeout: 200, force: false, token: 1_123_456 });
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
     });
 
@@ -807,7 +807,7 @@ describe("dequeue_update tool", () => {
       );
       const result = await call({ timeout: 2, force: true, token: 1_123_456 });
       // Should NOT return TIMEOUT_EXCEEDS_DEFAULT — actual poll behavior fires
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBeUndefined();
       expect(data.timed_out).toBe(true);
     });
@@ -819,7 +819,7 @@ describe("dequeue_update tool", () => {
         () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBeUndefined();
       expect(data.timed_out).toBe(true);
     });
@@ -832,7 +832,7 @@ describe("dequeue_update tool", () => {
         () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 3, token: 1_123_456 });
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBeUndefined();
       expect(data.timed_out).toBe(true);
     });
@@ -840,7 +840,7 @@ describe("dequeue_update tool", () => {
     it("hint field in structured error response guides the user", async () => {
       mocks.getDequeueDefault.mockReturnValue(60);
       const result = await call({ timeout: 200, token: 1_123_456 });
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(typeof data.hint).toBe("string");
       expect(data.hint as string).toContain("force: true");
@@ -866,7 +866,7 @@ describe("dequeue_update tool", () => {
         () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ token: 1_123_456 }); // no timeout param
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBeUndefined();
       expect(data.timed_out).toBe(true);
       expect(mocks.waitForEnqueue).toHaveBeenCalled();
@@ -880,7 +880,7 @@ describe("dequeue_update tool", () => {
         () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBeUndefined();
       expect(data.timed_out).toBe(true);
     });
@@ -889,7 +889,7 @@ describe("dequeue_update tool", () => {
       // 300 > 60 and force not set → TIMEOUT_EXCEEDS_DEFAULT
       mocks.getDequeueDefault.mockReturnValue(60);
       const result = await call({ timeout: 300, token: 1_123_456 });
-      const data = parseResult<Record<string, unknown>>(result);
+      const data = parseResult(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(data.message).toContain("300");
       expect(data.message).toContain("60");
@@ -970,7 +970,7 @@ describe("dequeue_update tool", () => {
         // Pass token as a string to trigger the tokenHint, with a long timeout
         // (300s deadline). The loop fires reminders before the deadline.
         const result = await call({ timeout: 300, token: "1123456" as unknown as number });
-        const data = parseResult<Record<string, unknown>>(result);
+        const data = parseResult(result);
 
         // The reminder-fire path should have fired
         expect(data.updates).toBeDefined();

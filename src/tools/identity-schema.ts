@@ -61,13 +61,13 @@ export function consumeTokenStringHint(): string | undefined {
 export const TOKEN_SCHEMA = z
   .preprocess(
     (v) => {
-      const wasString = typeof v === "string" && RE_NUMERIC_STRING.test(v as string);
+      const wasString = typeof v === "string" && RE_NUMERIC_STRING.test(v);
       const store = _tokenStringHintAls.getStore();
       if (store !== undefined) {
         // Running inside a tool-handler async context — store hint there.
         store.wasString = wasString;
       }
-      return wasString ? parseInt(v as string, 10) : v;
+      return wasString ? parseInt(v, 10) : v;
     },
     z.number().int().positive(),
   )
