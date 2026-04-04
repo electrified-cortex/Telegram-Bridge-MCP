@@ -20,6 +20,17 @@ vi.mock("../reminder-state.js", () => ({
     createHash("sha256").update(`${text}\0${recurring}`).digest("hex").slice(0, 16),
 }));
 
+const stubStartupReminder = {
+  id: "startup-id",
+  text: "Check task board",
+  delay_seconds: 0,
+  recurring: false,
+  trigger: "startup" as const,
+  state: "startup" as const,
+  created_at: Date.now(),
+  activated_at: null,
+};
+
 import { register } from "./set_reminder.js";
 
 describe("set_reminder tool", () => {
@@ -30,6 +41,7 @@ describe("set_reminder tool", () => {
     text: "Check CI",
     delay_seconds: 0,
     recurring: false,
+    trigger: "time" as const,
     state: "active" as const,
     created_at: Date.now(),
     activated_at: Date.now(),
@@ -96,6 +108,53 @@ describe("set_reminder tool", () => {
     expect(isError(result)).toBe(true);
     const data = parseResult(result);
     expect(data.code).toBe("LIMIT_EXCEEDED");
+  });
+
+  describe("trigger parameter", () => {
+    it("defaults trigger to 'time' when not specified", async () => {
+      await call({ text: "default trigger", token: 1123456 });
+      expect(mocks.addReminder).toHaveBeenCalledWith(
+        expect.objectContaining({ trigger: "time" }),
+      );
+    });
+
+    it("passes trigger='startup' to addReminder", async () => {
+      mocks.addReminder.mockReturnValue(stubStartupReminder);
+      await call({ text: "Check task board", trigger: "startup", token: 1123456 });
+      expect(mocks.addReminder).toHaveBeenCalledWith(
+        expect.objectContaining({ trigger: "startup" }),
+      );
+    });
+
+    it("startup reminder result includes trigger and state=startup", async () => {
+      mocks.addReminder.mockReturnValue(stubStartupReminder);
+      const result = await call({ text: "Check task board", trigger: "startup", token: 1123456 });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.trigger).toBe("startup");
+      expect(data.state).toBe("startup");
+    });
+
+    it("startup reminder does not include fires_in_seconds", async () => {
+      mocks.addReminder.mockReturnValue(stubStartupReminder);
+      const result = await call({ text: "Check task board", trigger: "startup", token: 1123456 });
+      const data = parseResult(result);
+      expect(data.fires_in_seconds).toBeUndefined();
+    });
+
+    it("startup trigger — delay_seconds is optional (omitting does not error)", async () => {
+      mocks.addReminder.mockReturnValue(stubStartupReminder);
+      // No delay_seconds provided
+      const result = await call({ text: "no delay needed", trigger: "startup", token: 1123456 });
+      expect(isError(result)).toBe(false);
+    });
+
+    it("time reminder result includes trigger='time'", async () => {
+      const result = await call({ text: "Check CI", token: 1123456 });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.trigger).toBe("time");
+    });
   });
 
   describe("identity gate", () => {

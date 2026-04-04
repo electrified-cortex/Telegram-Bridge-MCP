@@ -4,6 +4,8 @@ import {
   cancelReminder,
   listReminders,
   getActiveReminders,
+  getStartupReminders,
+  fireStartupReminders,
   promoteDeferred,
   popActiveReminders,
   getSoonestDeferredMs,
@@ -221,6 +223,147 @@ describe("reminder-state", () => {
         const e2 = buildReminderEvent(r);
         expect(e1.id).not.toBe(e2.id);
       });
+    });
+
+    it("includes trigger in the event content", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "s1", text: "Startup reminder", delay_seconds: 0, recurring: false, trigger: "startup" });
+        const evt = buildReminderEvent(r);
+        const content = evt.content as Record<string, unknown>;
+        expect(content.trigger).toBe("startup");
+      });
+    });
+  });
+
+  describe("startup reminders", () => {
+    it("adds a startup reminder with state=startup", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "s1", text: "on startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+        expect(r.state).toBe("startup");
+        expect(r.trigger).toBe("startup");
+        expect(r.activated_at).toBeNull();
+      });
+    });
+
+    it("startup reminder does NOT appear in getActiveReminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "on startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+      });
+      expect(getActiveReminders(1)).toHaveLength(0);
+    });
+
+    it("getStartupReminders returns startup reminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "on startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+        addReminder({ id: "t1", text: "timed", delay_seconds: 0, recurring: false });
+      });
+      const startup = getStartupReminders(1);
+      expect(startup).toHaveLength(1);
+      expect(startup[0].id).toBe("s1");
+    });
+
+    it("fireStartupReminders — one-shot: fires and is removed", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "once", delay_seconds: 0, recurring: false, trigger: "startup" });
+      });
+      const fired = fireStartupReminders(1);
+      expect(fired).toHaveLength(1);
+      expect(fired[0].id).toBe("s1");
+      expect(getStartupReminders(1)).toHaveLength(0);
+    });
+
+    it("fireStartupReminders — recurring: fires and persists", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s2", text: "every start", delay_seconds: 0, recurring: true, trigger: "startup" });
+      });
+      const fired = fireStartupReminders(1);
+      expect(fired).toHaveLength(1);
+      expect(fired[0].id).toBe("s2");
+      // Recurring startup reminder should still be in the list
+      expect(getStartupReminders(1)).toHaveLength(1);
+    });
+
+    it("fireStartupReminders — returns empty when no startup reminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "t1", text: "timed", delay_seconds: 0, recurring: false });
+      });
+      const fired = fireStartupReminders(1);
+      expect(fired).toHaveLength(0);
+    });
+
+    it("fireStartupReminders — does not fire time-trigger reminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "t1", text: "timed", delay_seconds: 0, recurring: false, trigger: "time" });
+        addReminder({ id: "s1", text: "startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+      });
+      const fired = fireStartupReminders(1);
+      expect(fired).toHaveLength(1);
+      expect(fired[0].id).toBe("s1");
+      // Time reminder should remain
+      expect(getActiveReminders(1)).toHaveLength(1);
+    });
+
+    it("startup reminder — timeout is not required (delay_seconds defaults to 0)", () => {
+      runInSessionContext(1, () => {
+        // No delay_seconds provided — should not throw
+        expect(() => {
+          addReminder({ id: "s1", text: "no delay required", delay_seconds: 0, recurring: false, trigger: "startup" });
+        }).not.toThrow();
+      });
+    });
+
+    it("listReminders includes startup reminders with trigger field", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "startup", delay_seconds: 0, recurring: true, trigger: "startup" });
+        addReminder({ id: "t1", text: "timed", delay_seconds: 60, recurring: false, trigger: "time" });
+        const list = listReminders();
+        const startup = list.find(r => r.id === "s1");
+        const timed = list.find(r => r.id === "t1");
+        expect(startup?.trigger).toBe("startup");
+        expect(timed?.trigger).toBe("time");
+      });
+    });
+
+    it("behavior matrix: trigger=time recurring=false fires once then deleted (existing behavior)", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "t1", text: "once timed", delay_seconds: 0, recurring: false, trigger: "time" });
+      });
+      const popped = popActiveReminders(1);
+      expect(popped).toHaveLength(1);
+      expect(getActiveReminders(1)).toHaveLength(0);
+    });
+
+    it("behavior matrix: trigger=time recurring=true fires and re-arms", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "t2", text: "recurring timed", delay_seconds: 0, recurring: true, trigger: "time" });
+      });
+      popActiveReminders(1);
+      runInSessionContext(1, () => {
+        expect(listReminders()).toHaveLength(1);
+      });
+    });
+
+    it("behavior matrix: trigger=startup recurring=false fires once then deleted", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "once startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+      });
+      const fired = fireStartupReminders(1);
+      expect(fired).toHaveLength(1);
+      expect(getStartupReminders(1)).toHaveLength(0);
+    });
+
+    it("behavior matrix: trigger=startup recurring=true fires every session start", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s2", text: "every startup", delay_seconds: 0, recurring: true, trigger: "startup" });
+      });
+      // First session start
+      const fired1 = fireStartupReminders(1);
+      expect(fired1).toHaveLength(1);
+      expect(getStartupReminders(1)).toHaveLength(1);
+      // Second session start
+      const fired2 = fireStartupReminders(1);
+      expect(fired2).toHaveLength(1);
+      expect(getStartupReminders(1)).toHaveLength(1);
     });
   });
 

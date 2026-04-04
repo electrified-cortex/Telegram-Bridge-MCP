@@ -337,6 +337,32 @@ export function deliverServiceMessage(
 }
 
 /**
+ * Inject a reminder event into a session queue.
+ * Used by session_start to deliver startup reminders.
+ * Returns false if the target queue does not exist.
+ */
+export function deliverReminderEvent(
+  targetSid: number,
+  reminderEvent: Record<string, unknown>,
+): boolean {
+  const q = _queues.get(targetSid);
+  if (!q) return false;
+
+  const event: TimelineEvent = {
+    id: reminderEvent.id as number,
+    timestamp: new Date().toISOString(),
+    event: "reminder",
+    from: "system",
+    content: reminderEvent.content as import("./message-store.js").EventContent,
+    sid: 0,
+  };
+
+  q.enqueue(event);
+  dlog("service", `startup reminder → sid=${targetSid}`, { reminderId: (reminderEvent.content as Record<string, unknown>)?.reminder_id });
+  return true;
+}
+
+/**
  * Route a message to a specific target session (governor delegation).
  * Injects `routed_by: routerSid` into the event copy so the recipient can
  * verify the routing came from the server, not the original sender.

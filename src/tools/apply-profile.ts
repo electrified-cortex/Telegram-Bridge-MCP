@@ -52,6 +52,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           text: r.text,
           delay_seconds: r.delay_seconds,
           recurring: r.recurring,
+          trigger: r.trigger,
         });
         if (alreadyExists) {
           updatedReminders.push(reminder.id);

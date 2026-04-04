@@ -9,8 +9,8 @@ export function register(server: McpServer) {
     "list_reminders",
     {
       description:
-        "List all scheduled reminders (deferred + active) for this session. " +
-        "Includes state (deferred/active), delay_seconds, recurring flag, and fires_in_seconds for deferred reminders.",
+        "List all scheduled reminders (deferred + active + startup) for this session. " +
+        "Includes trigger (\"time\" or \"startup\"), state (deferred/active/startup), delay_seconds, recurring flag, and fires_in_seconds for deferred reminders.",
       inputSchema: {
         token: TOKEN_SCHEMA,
       },
@@ -24,6 +24,7 @@ export function register(server: McpServer) {
         const entry: Record<string, unknown> = {
           id: r.id,
           text: r.text,
+          trigger: r.trigger,
           delay_seconds: r.delay_seconds,
           recurring: r.recurring,
           state: r.state,

@@ -23,6 +23,7 @@ export interface ReminderDef {
   text: string;
   delay_seconds: number;
   recurring: boolean;
+  trigger?: "time" | "startup";
 }
 
 export interface ProfileData {
