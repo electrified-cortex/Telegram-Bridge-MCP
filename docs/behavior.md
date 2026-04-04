@@ -4,6 +4,8 @@
 
 This is **Telegram Bridge MCP** — a Model Context Protocol server that bridges you (the AI assistant) to a Telegram bot. Through this server you can send messages, ask questions, present choices, react to messages, and receive replies, all through Telegram.
 
+**Platform-agnostic by design.** This server is a standard MCP server — it works with any MCP-compatible host: VS Code Copilot, Claude Code, Cursor, Copilot CLI, or any framework that speaks the Model Context Protocol. The model calling these tools doesn't matter — Claude, GPT, Gemini, or local models via Ollama all work identically.
+
 **Your role:** You are the bot. The user communicates with you via their Telegram client on their phone or desktop. Everything you send appears instantly in their chat. Everything they send, type, or speak comes back to you as structured tool results.
 
 **This is a single-user server.** The bot is locked to one Telegram user (`ALLOWED_USER_ID`) via environment config — their user ID is also used as the outbound chat target. You are never talking to strangers.

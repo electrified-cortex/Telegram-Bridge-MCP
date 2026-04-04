@@ -1,6 +1,6 @@
 # Telegram Bridge MCP
 
-> Two-way Telegram bridge for AI agents — messaging, voice, multi-session, real-time.
+> Works with any MCP client — VS Code Copilot, Claude Code, Cursor, OpenAI, local models. No proprietary lock-in.
 
 ![Telegram Bridge MCP](logo.png)
 
@@ -8,6 +8,8 @@
 [![Docker](https://github.com/electricessence/Telegram-Bridge-MCP/actions/workflows/publish.yml/badge.svg)](https://github.com/electricessence/Telegram-Bridge-MCP/actions/workflows/publish.yml)
 [![Docker Image](https://img.shields.io/badge/ghcr.io-telegram--bridge--mcp-blue?logo=docker)](https://github.com/electricessence/Telegram-Bridge-MCP/pkgs/container/telegram-bridge-mcp)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+
+> **No Claw? No Problem.** Anthropic restricted Claude Code's native instance API — but this bridge doesn't care. It's a standard MCP server. Any IDE, any model, any agent framework that speaks MCP works out of the box.
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that connects AI assistants to Telegram. Send messages, ask questions, receive voice replies, run multiple agent sessions concurrently — all through a single bot.
 
@@ -25,6 +27,40 @@ Works with VS Code Copilot, Claude Desktop, Claude Code, Cursor, Windsurf, and a
 - **Live animations** — cycling status messages while the agent works
 - **Slash commands** — dynamic bot menu; commands arrive as structured events
 - **No webhooks** — long-polling, no public URL needed
+
+---
+
+## Supported Platforms
+
+The bridge is a standard MCP server — it works with any MCP-compatible host.
+
+### IDEs & Agent Hosts
+
+| Platform | Transport | Notes |
+| --- | --- | --- |
+| VS Code (GitHub Copilot Chat) | Streamable HTTP or stdio | Native MCP support |
+| Claude Code (CLI) | Streamable HTTP or stdio | |
+| Cursor | Streamable HTTP or stdio | |
+| Copilot CLI | stdio | |
+| Any MCP-compatible client | Streamable HTTP or stdio | If it speaks MCP, it works |
+
+### AI Models
+
+The bridge is model-agnostic — it relays tool calls regardless of which model makes them:
+
+- **Anthropic** — Claude (via Claude Code, Claude Desktop, any Anthropic SDK client)
+- **OpenAI** — GPT models (via VS Code Copilot, Copilot CLI, OpenAI SDK)
+- **Google** — Gemini (via any MCP-compatible client)
+- **Local** — Ollama, LM Studio, any local model with MCP support
+- **Any other** — if your agent framework supports MCP tool calls, it works
+
+### Transports
+
+| Transport | Entry point | Use case |
+| --- | --- | --- |
+| **Streamable HTTP** | `MCP_PORT=3099 pnpm start` | Multiple clients share one server (recommended) |
+| **stdio** | `node dist/index.js` | Single client, no persistent server |
+| **Launcher bridge** | `node dist/launcher.js` | Auto-starts HTTP if needed, bridges stdio ↔ HTTP |
 
 ---
 
