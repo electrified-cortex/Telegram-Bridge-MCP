@@ -25,6 +25,10 @@ export function resolveHttpPort(
         );
       }
       return parsed;
+    } else if (nextArg !== undefined && !nextArg.startsWith("--")) {
+      throw new RangeError(
+        `Invalid port "${nextArg}" after --http. Expected a numeric value.`
+      );
     }
     return DEFAULT_HTTP_PORT;
   }

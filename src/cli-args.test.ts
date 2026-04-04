@@ -39,4 +39,8 @@ describe("resolveHttpPort", () => {
     expect(() => resolveHttpPort(["node", "index.js"], { MCP_PORT: "not-a-port" })).toThrow();
     expect(() => resolveHttpPort(["node", "index.js"], { MCP_PORT: "0" })).toThrow();
   });
+
+  it("throws when --http is followed by a non-numeric non-flag value", () => {
+    expect(() => resolveHttpPort(["node", "index.js", "--http", "foo"], {})).toThrow();
+  });
 });
