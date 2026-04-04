@@ -45,7 +45,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
     if (profile.reminders !== undefined) {
       const existing = listReminders();
       for (const r of profile.reminders) {
-        const reminderId = reminderContentHash(r.text, r.recurring);
+        const reminderId = reminderContentHash(r.text, r.recurring, r.trigger ?? "time");
         const alreadyExists = existing.some(e => e.id === reminderId);
         const reminder = addReminder({
           id: reminderId,

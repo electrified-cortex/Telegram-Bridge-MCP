@@ -16,8 +16,8 @@ vi.mock("../session-manager.js", () => ({
 vi.mock("../reminder-state.js", () => ({
   addReminder: mocks.addReminder,
   MAX_REMINDERS_PER_SESSION: 20,
-  reminderContentHash: (text: string, recurring: boolean) =>
-    createHash("sha256").update(`${text}\0${recurring}`).digest("hex").slice(0, 16),
+  reminderContentHash: (text: string, recurring: boolean, trigger: "time" | "startup" = "time") =>
+    createHash("sha256").update(`${text}\0${recurring}\0${trigger}`).digest("hex").slice(0, 16),
 }));
 
 const stubStartupReminder = {
@@ -78,7 +78,7 @@ describe("set_reminder tool", () => {
   it("uses content hash as default ID when none provided", async () => {
     await call({ text: "Check CI", token: 1123456 });
     const expectedHash = createHash("sha256")
-      .update("Check CI\0false")
+      .update("Check CI\0false\0time")
       .digest("hex")
       .slice(0, 16);
     expect(mocks.addReminder).toHaveBeenCalledWith(
