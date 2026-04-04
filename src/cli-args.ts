@@ -1,4 +1,5 @@
 const DEFAULT_HTTP_PORT = 3099;
+const DIGITS_ONLY = /^\d+$/;
 
 /**
  * Resolves the HTTP port from CLI args or environment.
@@ -14,10 +15,13 @@ export function resolveHttpPort(
 
   if (httpFlagIdx !== -1) {
     const nextArg = argv[httpFlagIdx + 1] as string | undefined;
-    if (nextArg !== undefined && /^\d+$/.test(nextArg)) {
+    if (nextArg !== undefined && DIGITS_ONLY.test(nextArg)) {
       const parsed = parseInt(nextArg, 10);
       if (parsed < 1 || parsed > 65535) {
-        throw new RangeError(`Invalid port "${nextArg}" after --http. Expected an integer between 1 and 65535.`);
+        throw new RangeError(
+          `Invalid port "${nextArg}" after --http. ` +
+          "Expected an integer between 1 and 65535."
+        );
       }
       return parsed;
     }
