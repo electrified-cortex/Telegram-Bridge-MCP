@@ -30,7 +30,7 @@ async function requestApproval(
   name: string,
   reconnect = false,
   colorHint?: string,
-): Promise<{ approved: boolean; color?: string }> {
+): Promise<{ approved: boolean; color?: string; forceColor?: boolean }> {
   const label = reconnect ? "Session reconnecting:" : "New session requesting access:";
   const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:`;
   const availableColors = getAvailableColors(colorHint);
@@ -40,7 +40,7 @@ async function requestApproval(
     ? validHint
     : availableColors.find((c) => !usedColors.has(c));
   if (checkAndConsumeAutoApprove()) {
-    return { approved: true, color: primaryColor };
+    return { approved: true, color: colorHint, forceColor: false };
   }
   const colorButtons = availableColors.map((c) => ({
     text: c,
@@ -58,7 +58,7 @@ async function requestApproval(
   } as Record<string, unknown>);
   const msgId: number = sent.message_id;
 
-  const decision = await new Promise<{ approved: boolean; color?: string }>((resolve) => {
+  const decision = await new Promise<{ approved: boolean; color?: string; forceColor?: boolean }>((resolve) => {
     const timer = setTimeout(() => {
       clearCallbackHook(msgId);
       resolve({ approved: false });
@@ -343,8 +343,9 @@ export function register(server: McpServer) {
 
       // Approval gate: second+ sessions require operator approval
       let chosenColor: string | undefined = color;
+      let decision: { approved: boolean; color?: string; forceColor?: boolean } | undefined;
       if (!isFirstSession) {
-        const decision = await runInSessionContext(0, () =>
+        decision = await runInSessionContext(0, () =>
           requestApproval(chatId, effectiveName, reconnect, color),
         );
         if (!decision.approved) {
@@ -357,8 +358,8 @@ export function register(server: McpServer) {
       }
 
       // forceColor = true when the operator explicitly tapped a color button;
-      // for the first session (no approval dialog) the agent hint is a suggestion only.
-      const session = createSession(effectiveName, chosenColor, !isFirstSession);
+      // forceColor = false for the first session (no dialog) or auto-approve (hint only).
+      const session = createSession(effectiveName, chosenColor, decision?.forceColor ?? !isFirstSession);
       createSessionQueue(session.sid);
       setActiveSession(session.sid);
       if (!isPollerRunning()) startPoller();
