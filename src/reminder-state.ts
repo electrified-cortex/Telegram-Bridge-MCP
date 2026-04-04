@@ -68,6 +68,8 @@ export function addReminder(params: {
   let state: Reminder["state"];
   let activated_at: number | null;
   if (trigger === "startup") {
+    // Startup reminders don't use delay — silently normalize to 0
+    params = { ...params, delay_seconds: 0 };
     state = "startup";
     activated_at = null;
   } else {
@@ -185,8 +187,9 @@ export function popActiveReminders(sid: number): Reminder[] {
 
 /**
  * Fire all startup reminders for `sid`.
- * Returns the fired reminders as reminder events.
- * One-shot startup reminders are deleted; recurring ones remain as startup reminders.
+ * Returns the `Reminder[]` that were fired (callers convert them to events via `buildReminderEvent`).
+ * One-shot startup reminders are removed from the list; recurring ones remain and will fire again
+ * on the next `session_start`.
  */
 export function fireStartupReminders(sid: number): Reminder[] {
   const list = _reminders.get(sid);
@@ -210,8 +213,23 @@ export function fireStartupReminders(sid: number): Reminder[] {
   return startupReminders;
 }
 
+/** Typed shape of the event object produced by `buildReminderEvent`. */
+export interface ReminderEvent {
+  id: number;
+  event: string;
+  from: string;
+  content: {
+    type: string;
+    text: string;
+    reminder_id: string;
+    recurring: boolean;
+    trigger: "time" | "startup";
+  };
+  routing: string;
+}
+
 /** Build a compact synthetic event object for a fired reminder (used in dequeue response). */
-export function buildReminderEvent(r: Reminder): Record<string, unknown> {
+export function buildReminderEvent(r: Reminder): ReminderEvent {
   return {
     id: _nextEventId--,
     event: "reminder",

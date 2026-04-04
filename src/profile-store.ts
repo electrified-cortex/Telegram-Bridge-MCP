@@ -19,12 +19,9 @@ const REPO_ROOT = resolve(__dirname, "..");
 // Types
 // ---------------------------------------------------------------------------
 
-export interface ReminderDef {
-  text: string;
-  delay_seconds: number;
-  recurring: boolean;
-  trigger?: "time" | "startup";
-}
+export type ReminderDef =
+  | { trigger?: "time"; text: string; recurring: boolean; delay_seconds: number }
+  | { trigger: "startup"; text: string; recurring: boolean; delay_seconds?: number };
 
 export interface ProfileData {
   voice?: string;

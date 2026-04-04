@@ -45,12 +45,17 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
     if (profile.reminders !== undefined) {
       const existing = listReminders();
       for (const r of profile.reminders) {
-        const reminderId = reminderContentHash(r.text, r.recurring, r.trigger ?? "time");
+        const triggerType = r.trigger ?? "time";
+        // For time-based reminders, delay_seconds is required — skip if missing/invalid
+        if (triggerType === "time" && (r.delay_seconds === undefined || typeof r.delay_seconds !== "number")) {
+          continue;
+        }
+        const reminderId = reminderContentHash(r.text, r.recurring, triggerType);
         const alreadyExists = existing.some(e => e.id === reminderId);
         const reminder = addReminder({
           id: reminderId,
           text: r.text,
-          delay_seconds: r.delay_seconds,
+          delay_seconds: r.delay_seconds ?? 0,
           recurring: r.recurring,
           trigger: r.trigger,
         });

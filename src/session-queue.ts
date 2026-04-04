@@ -17,6 +17,7 @@ import type { TimelineEvent } from "./message-store.js";
 import { getMessage, CURRENT } from "./message-store.js";
 import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
+import type { ReminderEvent } from "./reminder-state.js";
 
 // ---------------------------------------------------------------------------
 // Voice-ready predicate (shared with message-store's queue)
@@ -343,34 +344,33 @@ export function deliverServiceMessage(
  */
 export function deliverReminderEvent(
   targetSid: number,
-  reminderEvent: Record<string, unknown>,
+  reminderEvent: ReminderEvent,
 ): boolean {
   const q = _queues.get(targetSid);
   if (!q) return false;
 
-  const src = reminderEvent.content as Record<string, unknown>;
-  const reminderId = src.reminder_id as string | undefined;
+  const src = reminderEvent.content;
   const event: TimelineEvent = {
-    id: reminderEvent.id as number,
+    id: reminderEvent.id,
     timestamp: new Date().toISOString(),
     event: "reminder",
     from: "system",
     content: {
-      type: String(src.type ?? "reminder"),
-      ...(src.text !== undefined && { text: String(src.text) }),
+      type: src.type,
+      ...(src.text !== undefined && { text: src.text }),
     },
     sid: 0,
   };
   // Preserve reminder-specific fields that consumers depend on, without unsafe cast.
   // EventContent allows extra properties at runtime since it's a structural interface.
   Object.assign(event.content, {
-    reminder_id: reminderId,
+    reminder_id: src.reminder_id,
     recurring: src.recurring,
     trigger: src.trigger,
   });
 
   q.enqueue(event);
-  dlog("service", `startup reminder → sid=${targetSid}`, { reminderId });
+  dlog("service", `startup reminder → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
 }
 
