@@ -45,18 +45,41 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
     if (profile.reminders !== undefined) {
       const existing = listReminders();
       for (const r of profile.reminders) {
-        const reminderId = reminderContentHash(r.text, r.recurring);
-        const alreadyExists = existing.some(e => e.id === reminderId);
-        const reminder = addReminder({
-          id: reminderId,
-          text: r.text,
-          delay_seconds: r.delay_seconds,
-          recurring: r.recurring,
-        });
-        if (alreadyExists) {
-          updatedReminders.push(reminder.id);
+        // Normalize undefined trigger to "time"
+        const trigger = r.trigger ?? "time";
+        if (trigger === "startup") {
+          // Startup reminder — delay_seconds not required
+          const reminderId = reminderContentHash(r.text, r.recurring, "startup");
+          const alreadyExists = existing.some(e => e.id === reminderId);
+          const added = addReminder({
+            id: reminderId,
+            text: r.text,
+            recurring: r.recurring,
+            trigger: "startup",
+            delay_seconds: r.delay_seconds ?? 0,
+          });
+          if (alreadyExists) {
+            updatedReminders.push(added.id);
+          } else {
+            addedReminders.push(added.id);
+          }
         } else {
-          addedReminders.push(reminder.id);
+          // Time reminder — delay_seconds is required; skip if missing/invalid
+          if (typeof r.delay_seconds !== "number" || isNaN(r.delay_seconds)) continue;
+          const reminderId = reminderContentHash(r.text, r.recurring, "time");
+          const alreadyExists = existing.some(e => e.id === reminderId);
+          const added = addReminder({
+            id: reminderId,
+            text: r.text,
+            recurring: r.recurring,
+            trigger: "time",
+            delay_seconds: r.delay_seconds,
+          });
+          if (alreadyExists) {
+            updatedReminders.push(added.id);
+          } else {
+            addedReminders.push(added.id);
+          }
         }
       }
     }

@@ -5,11 +5,12 @@ import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
 import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage } from "../session-manager.js";
-import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, getSessionQueue } from "../session-queue.js";
+import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, getSessionQueue, deliverReminderEvent } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
 import { startPoller, isPollerRunning } from "../poller.js";
+import { fireStartupReminders, buildReminderEvent } from "../reminder-state.js";
 
 const APPROVAL_TIMEOUT_MS = 60_000;
 const APPROVAL_NO = "approve_no";
@@ -301,6 +302,13 @@ export function register(server: McpServer) {
             }
 
             void refreshGovernorCommand();
+
+            // Fire startup reminders for the reconnecting session
+            const reconStartupFired = runInSessionContext(existing.sid, () => fireStartupReminders(existing.sid));
+            for (const r of reconStartupFired) {
+              deliverReminderEvent(existing.sid, buildReminderEvent(r));
+            }
+
             const reconToken = fullSession.sid * 1_000_000 + fullSession.pin;
             return toResult({
               token: reconToken,
@@ -459,6 +467,13 @@ export function register(server: McpServer) {
           );
         }
         void refreshGovernorCommand();
+
+        // Fire startup reminders for the new session
+        const startupFired = runInSessionContext(session.sid, () => fireStartupReminders(session.sid));
+        for (const r of startupFired) {
+          deliverReminderEvent(session.sid, buildReminderEvent(r));
+        }
+
         return toResult(res);
       } catch (err) {
         // Rollback: clean up orphaned session on failure

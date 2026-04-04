@@ -39,7 +39,7 @@ describe("list_reminders tool", () => {
   it("returns active reminders without fires_in_seconds", async () => {
     const now = Date.now();
     mocks.listReminders.mockReturnValue([
-      { id: "r1", text: "active!", delay_seconds: 0, recurring: false, state: "active", created_at: now, activated_at: now },
+      { id: "r1", text: "active!", delay_seconds: 0, recurring: false, trigger: "time", state: "active", created_at: now, activated_at: now },
     ]);
     const result = await call({ token: 1123456 });
     const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
@@ -49,13 +49,36 @@ describe("list_reminders tool", () => {
   it("includes fires_in_seconds for deferred reminders", async () => {
     const now = Date.now();
     mocks.listReminders.mockReturnValue([
-      { id: "r2", text: "later", delay_seconds: 60, recurring: false, state: "deferred", created_at: now, activated_at: null },
+      { id: "r2", text: "later", delay_seconds: 60, recurring: false, trigger: "time", state: "deferred", created_at: now, activated_at: null },
     ]);
     const result = await call({ token: 1123456 });
     const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
     expect(typeof data.reminders[0].fires_in_seconds).toBe("number");
     expect(data.reminders[0].fires_in_seconds as number).toBeGreaterThan(0);
     expect(data.reminders[0].fires_in_seconds as number).toBeLessThanOrEqual(60);
+  });
+
+  it("includes trigger field for each reminder", async () => {
+    const now = Date.now();
+    mocks.listReminders.mockReturnValue([
+      { id: "r1", text: "timed", delay_seconds: 0, recurring: false, trigger: "time", state: "active", created_at: now, activated_at: now },
+      { id: "r2", text: "startup", delay_seconds: 0, recurring: true, trigger: "startup", state: "startup", created_at: now, activated_at: null },
+    ]);
+    const result = await call({ token: 1123456 });
+    const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
+    expect(data.reminders[0].trigger).toBe("time");
+    expect(data.reminders[1].trigger).toBe("startup");
+  });
+
+  it("startup reminders have state=startup in listing", async () => {
+    const now = Date.now();
+    mocks.listReminders.mockReturnValue([
+      { id: "s1", text: "startup", delay_seconds: 0, recurring: false, trigger: "startup", state: "startup", created_at: now, activated_at: null },
+    ]);
+    const result = await call({ token: 1123456 });
+    const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
+    expect(data.reminders[0].state).toBe("startup");
+    expect(data.reminders[0].fires_in_seconds).toBeUndefined();
   });
 
   describe("identity gate", () => {

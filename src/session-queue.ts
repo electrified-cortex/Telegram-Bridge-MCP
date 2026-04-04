@@ -17,6 +17,7 @@ import type { TimelineEvent } from "./message-store.js";
 import { getMessage, CURRENT } from "./message-store.js";
 import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
+import type { ReminderEvent } from "./reminder-state.js";
 
 // ---------------------------------------------------------------------------
 // Voice-ready predicate (shared with message-store's queue)
@@ -333,6 +334,43 @@ export function deliverServiceMessage(
 
   q.enqueue(event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
+  return true;
+}
+
+/**
+ * Inject a reminder event into a session queue.
+ * Used by session_start to deliver startup reminders.
+ * Returns false if the target queue does not exist.
+ */
+export function deliverReminderEvent(
+  targetSid: number,
+  reminderEvent: ReminderEvent,
+): boolean {
+  const q = _queues.get(targetSid);
+  if (!q) return false;
+
+  const src = reminderEvent.content;
+  const event: TimelineEvent = {
+    id: reminderEvent.id,
+    timestamp: new Date().toISOString(),
+    event: "reminder",
+    from: "system",
+    content: {
+      type: src.type,
+      ...(src.text !== undefined && { text: src.text }),
+    },
+    sid: 0,
+  };
+  // Preserve reminder-specific fields that consumers depend on, without unsafe cast.
+  // EventContent allows extra properties at runtime since it's a structural interface.
+  Object.assign(event.content, {
+    reminder_id: src.reminder_id,
+    recurring: src.recurring,
+    trigger: src.trigger,
+  });
+
+  q.enqueue(event);
+  dlog("service", `startup reminder → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
 }
 

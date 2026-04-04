@@ -11,6 +11,7 @@ import {
   broadcastOutbound,
   notifySessionWaiters,
   deliverDirectMessage,
+  deliverReminderEvent,
   resetSessionQueuesForTest,
 } from "./session-queue.js";
 import {
@@ -390,6 +391,61 @@ describe("session-queue", () => {
 
       const q1 = getSessionQueue(1);
       expect(q1?.dequeueBatch()).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // deliverReminderEvent
+  // -------------------------------------------------------------------------
+
+  describe("deliverReminderEvent", () => {
+    it("happy path: delivers reminder event into session queue and returns true", () => {
+      createSessionQueue(5);
+      const reminderEvent = {
+        id: -99001,
+        event: "reminder",
+        from: "system",
+        routing: "ambiguous",
+        content: {
+          type: "reminder",
+          text: "Check CI",
+          reminder_id: "abc123",
+          recurring: false,
+          trigger: "startup",
+        },
+      };
+
+      const result = deliverReminderEvent(5, reminderEvent);
+
+      expect(result).toBe(true);
+      const q = getSessionQueue(5);
+      const batch = q?.dequeueBatch() ?? [];
+      expect(batch).toHaveLength(1);
+      expect(batch[0].event).toBe("reminder");
+      expect(batch[0].from).toBe("system");
+      expect(batch[0].id).toBe(-99001);
+      expect(batch[0].content.type).toBe("reminder");
+    });
+
+    it("missing queue: returns false when session has no queue", () => {
+      // SID 99 has no queue
+      const reminderEvent = {
+        id: -99002,
+        event: "reminder",
+        from: "system",
+        routing: "ambiguous",
+        content: {
+          type: "reminder",
+          text: "Deploy check",
+          reminder_id: "xyz",
+          recurring: false,
+          trigger: "startup",
+        },
+      };
+
+      const result = deliverReminderEvent(99, reminderEvent);
+
+      expect(result).toBe(false);
     });
   });
 

@@ -86,12 +86,33 @@ describe("save_profile tool", () => {
 
   it("includes reminder text, delay_seconds, and recurring in save", async () => {
     mocks.listReminders.mockReturnValue([
-      { id: "abc123", text: "Check CI", delay_seconds: 60, recurring: true },
+      { id: "abc123", text: "Check CI", delay_seconds: 60, recurring: true, trigger: "time" },
     ]);
     await call({ key: "Test", token: 1123456 });
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     const reminders = written.reminders as Array<Record<string, unknown>>;
+    // trigger="time" is the default and not saved to avoid clutter
     expect(reminders[0]).toEqual({ text: "Check CI", delay_seconds: 60, recurring: true });
+  });
+
+  it("saves startup trigger reminders with trigger field included", async () => {
+    mocks.listReminders.mockReturnValue([
+      { id: "s1", text: "Resume tasks", delay_seconds: 0, recurring: true, trigger: "startup" },
+    ]);
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    const reminders = written.reminders as Array<Record<string, unknown>>;
+    expect(reminders[0].trigger).toBe("startup");
+  });
+
+  it("does not save trigger field for time-trigger reminders (omit default)", async () => {
+    mocks.listReminders.mockReturnValue([
+      { id: "t1", text: "timed reminder", delay_seconds: 300, recurring: true, trigger: "time" },
+    ]);
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    const reminders = written.reminders as Array<Record<string, unknown>>;
+    expect(reminders[0]).not.toHaveProperty("trigger");
   });
 
   it("rejects path keys (containing /)", async () => {

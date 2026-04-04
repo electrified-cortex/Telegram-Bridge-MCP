@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   setGovernorSid: vi.fn(),
   getGovernorSid: vi.fn().mockReturnValue(0),
   deliverServiceMessage: vi.fn(),
+  deliverReminderEvent: vi.fn().mockReturnValue(true),
   trackMessageOwner: vi.fn(),
   drainQueue: vi.fn().mockReturnValue([]),
   getSessionQueue: vi.fn().mockReturnValue({ pendingCount: () => 0 }),
@@ -81,6 +82,7 @@ vi.mock("../session-queue.js", () => ({
   createSessionQueue: vi.fn(),
   removeSessionQueue: vi.fn(),
   deliverServiceMessage: mocks.deliverServiceMessage,
+  deliverReminderEvent: (...args: unknown[]) => mocks.deliverReminderEvent(...args),
   trackMessageOwner: mocks.trackMessageOwner,
   drainQueue: mocks.drainQueue,
   getSessionQueue: (...args: unknown[]) => mocks.getSessionQueue(...args),
@@ -92,14 +94,21 @@ vi.mock("../poller.js", () => ({
 }));
 
 import { register } from "./session_start.js";
+import {
+  addReminder,
+  resetReminderStateForTest,
+} from "../reminder-state.js";
+import { runInSessionContext } from "../session-context.js";
 
 describe("session_start tool", () => {
   let call: ToolHandler;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetReminderStateForTest();
     mocks.editMessageText.mockResolvedValue(undefined);
     mocks.answerCallbackQuery.mockResolvedValue(true);
+    mocks.deliverReminderEvent.mockReturnValue(true);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.listSessions.mockReturnValue([]);
     mocks.isPollerRunning.mockReturnValue(false);
@@ -1633,6 +1642,126 @@ describe("session_start tool", () => {
     const instructions = result.instructions as string;
     expect(instructions).toContain("session memory");
     expect(instructions).toContain("SID");
+  });
+
+  // =========================================================================
+  // Startup reminder integration (task 260)
+  // =========================================================================
+
+  describe("startup reminders fired on session_start", () => {
+    beforeEach(() => {
+      resetReminderStateForTest();
+    });
+
+    it("startup reminders are delivered to the session queue after a fresh session_start", async () => {
+      mocks.pendingCount.mockReturnValue(0);
+      mocks.activeSessionCount.mockReturnValue(0);
+      mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+
+      // Pre-load a startup reminder for SID 1
+      runInSessionContext(1, () => {
+        addReminder({ id: "s-fresh", text: "Boot check", delay_seconds: 0, recurring: false, trigger: "startup" });
+      });
+
+      await call({});
+
+      // deliverReminderEvent must have been called for the startup reminder
+      expect(mocks.deliverReminderEvent).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ event: "reminder" }),
+      );
+    });
+
+    it("startup reminders fire after session_start with reconnect: true", async () => {
+      mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+      mocks.getSession.mockReturnValue({
+        sid: 1, pin: 111111, name: "Overseer", color: "🟦",
+        createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
+      });
+      mocks.activeSessionCount.mockReturnValue(1);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 601 });
+      mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+        void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq-sr" } }); });
+      });
+
+      // Pre-load a startup reminder for SID 1 (the reconnecting session)
+      runInSessionContext(1, () => {
+        addReminder({ id: "s-recon", text: "Reconnect check", delay_seconds: 0, recurring: false, trigger: "startup" });
+      });
+
+      await call({ name: "Overseer", reconnect: true });
+
+      expect(mocks.deliverReminderEvent).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ event: "reminder" }),
+      );
+    });
+
+    it("one-shot startup reminder is not present after firing (not re-delivered on second session_start)", async () => {
+      mocks.pendingCount.mockReturnValue(0);
+      mocks.activeSessionCount.mockReturnValue(0);
+      mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Alpha", color: "🟩", sessionsActive: 1 });
+
+      runInSessionContext(2, () => {
+        addReminder({ id: "s-oneshot", text: "One shot", delay_seconds: 0, recurring: false, trigger: "startup" });
+      });
+
+      // First session_start: fires the one-shot
+      await call({ name: "Alpha" });
+
+      const callCountAfterFirst = mocks.deliverReminderEvent.mock.calls.length;
+      expect(callCountAfterFirst).toBeGreaterThanOrEqual(1);
+
+      // Reset mocks and run second session_start — one-shot should NOT fire again
+      vi.clearAllMocks();
+      mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Alpha", color: "🟩", sessionsActive: 1 });
+      mocks.pendingCount.mockReturnValue(0);
+      mocks.activeSessionCount.mockReturnValue(0);
+      mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+      mocks.listSessions.mockReturnValue([]);
+      mocks.isPollerRunning.mockReturnValue(false);
+      mocks.deliverReminderEvent.mockReturnValue(true);
+
+      await call({ name: "Alpha" });
+
+      expect(mocks.deliverReminderEvent).not.toHaveBeenCalled();
+    });
+
+    it("recurring startup reminder fires again on a second session_start", async () => {
+      mocks.pendingCount.mockReturnValue(0);
+      mocks.activeSessionCount.mockReturnValue(0);
+      mocks.createSession.mockReturnValue({ sid: 3, pin: 333333, name: "Beta", color: "🟨", sessionsActive: 1 });
+
+      runInSessionContext(3, () => {
+        addReminder({ id: "s-recurring", text: "Every start", delay_seconds: 0, recurring: true, trigger: "startup" });
+      });
+
+      // First session_start
+      await call({ name: "Beta" });
+
+      expect(mocks.deliverReminderEvent).toHaveBeenCalledWith(
+        3,
+        expect.objectContaining({ event: "reminder" }),
+      );
+
+      // Reset mocks for second call
+      vi.clearAllMocks();
+      mocks.createSession.mockReturnValue({ sid: 3, pin: 333333, name: "Beta", color: "🟨", sessionsActive: 1 });
+      mocks.pendingCount.mockReturnValue(0);
+      mocks.activeSessionCount.mockReturnValue(0);
+      mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+      mocks.listSessions.mockReturnValue([]);
+      mocks.isPollerRunning.mockReturnValue(false);
+      mocks.deliverReminderEvent.mockReturnValue(true);
+
+      // Second session_start — recurring reminder must fire again
+      await call({ name: "Beta" });
+
+      expect(mocks.deliverReminderEvent).toHaveBeenCalledWith(
+        3,
+        expect.objectContaining({ event: "reminder" }),
+      );
+    });
   });
 
   it("reconnect response (name match + approved) includes instructions field", async () => {

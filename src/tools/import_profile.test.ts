@@ -2,8 +2,8 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createHash } from "crypto";
 import { createMockServer, parseResult, isError } from "./test-utils.js";
 
-function contentHash(text: string, recurring: boolean): string {
-  return createHash("sha256").update(`${text}\0${recurring}`).digest("hex").slice(0, 16);
+function contentHash(text: string, recurring: boolean, trigger: "time" | "startup" = "time"): string {
+  return createHash("sha256").update(`${text}\0${recurring}\0${trigger}`).digest("hex").slice(0, 16);
 }
 
 const mocks = vi.hoisted(() => ({
@@ -28,7 +28,7 @@ vi.mock("../animation-state.js", () => ({
 vi.mock("../reminder-state.js", () => ({
   addReminder: mocks.addReminder,
   listReminders: mocks.listReminders,
-  reminderContentHash: (text: string, recurring: boolean) => contentHash(text, recurring),
+  reminderContentHash: (text: string, recurring: boolean, trigger: "time" | "startup" = "time") => contentHash(text, recurring, trigger),
 }));
 
 import { register } from "./import_profile.js";

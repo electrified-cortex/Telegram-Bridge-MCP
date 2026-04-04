@@ -25,7 +25,7 @@ Captures:
 - `voice_speed` — TTS speed multiplier (0.25–4.0, omitted when not set)
 - `animation_default` — default animation frames (omitted when not set)
 - `animation_presets` — named preset map
-- `reminders` — active reminder definitions (text, delay, recurring)
+- `reminders` — reminder definitions (for example: text, delay_seconds, recurring, trigger)
 
 ### `load_profile(key)`
 
@@ -61,7 +61,8 @@ No listing, no discovery. The agent must know its profile key.
   },
   "reminders": [
     { "text": "Check task board for hygiene", "delay_seconds": 900, "recurring": true },
-    { "text": "Git state audit", "delay_seconds": 900, "recurring": true }
+    { "text": "Git state audit", "delay_seconds": 900, "recurring": true },
+    { "text": "Resume any in-progress tasks", "recurring": true, "trigger": "startup" }
   ]
 }
 ```

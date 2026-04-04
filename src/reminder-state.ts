@@ -1,9 +1,10 @@
 /**
  * Per-session reminder state for the Scheduled Reminders feature.
  *
- * **Two-tier queue:**
+ * **Three-tier queue:**
  * - `deferred` — has a `delay_seconds` > 0 that has not yet elapsed. Cannot fire yet.
  * - `active`   — delay has elapsed (or was 0). Fires after 60 s of idle within `dequeue_update`.
+ * - `startup`  — fires on the next `session_start` (including reconnects), not on a timer.
  *
  * Reminders are keyed by SID (per-session, all in-memory).
  */
@@ -13,12 +14,12 @@ import { getCallerSid } from "./session-context.js";
 
 /**
  * Deterministic reminder ID derived from content.
- * Same text+recurring always yields the same 16-char hex string.
- * Different `recurring` flag → different hash (one-shot and recurring coexist).
+ * Same text+recurring+trigger always yields the same 16-char hex string.
+ * Different `recurring` flag or `trigger` → different hash (they coexist).
  */
-export function reminderContentHash(text: string, recurring: boolean): string {
+export function reminderContentHash(text: string, recurring: boolean, trigger: "time" | "startup" = "time"): string {
   return createHash("sha256")
-    .update(`${text}\0${recurring}`)
+    .update(`${text}\0${recurring}\0${trigger}`)
     .digest("hex")
     .slice(0, 16);
 }
@@ -28,9 +29,10 @@ export interface Reminder {
   text: string;
   delay_seconds: number;
   recurring: boolean;
+  trigger: "time" | "startup";
   created_at: number;      // Date.now() when added
-  activated_at: number | null; // Date.now() when promoted to active (null if still deferred)
-  state: "deferred" | "active";
+  activated_at: number | null; // Date.now() when promoted to active (null if still deferred/startup)
+  state: "deferred" | "active" | "startup";
 }
 
 const _reminders = new Map<number, Reminder[]>();
@@ -50,6 +52,7 @@ export function addReminder(params: {
   text: string;
   delay_seconds: number;
   recurring: boolean;
+  trigger?: "time" | "startup";
 }): Reminder {
   const sid = getCallerSid();
   const list = _reminders.get(sid) ?? [];
@@ -61,12 +64,27 @@ export function addReminder(params: {
     throw new Error(`Max reminders per session (${MAX_REMINDERS_PER_SESSION}) reached`);
   }
   const now = Date.now();
-  const isActive = params.delay_seconds === 0;
+  const trigger = params.trigger ?? "time";
+  const normalizedDelay = trigger === "startup" ? 0 : params.delay_seconds;
+  let state: Reminder["state"];
+  let activated_at: number | null;
+  if (trigger === "startup") {
+    state = "startup";
+    activated_at = null;
+  } else {
+    const isActive = normalizedDelay === 0;
+    state = isActive ? "active" : "deferred";
+    activated_at = isActive ? now : null;
+  }
   const reminder: Reminder = {
-    ...params,
+    id: params.id,
+    text: params.text,
+    delay_seconds: normalizedDelay,
+    recurring: params.recurring,
+    trigger,
     created_at: now,
-    activated_at: isActive ? now : null,
-    state: isActive ? "active" : "deferred",
+    activated_at,
+    state,
   };
   list.push(reminder);
   _reminders.set(sid, list);
@@ -88,7 +106,7 @@ export function cancelReminder(id: string): boolean {
 
 // ── Queries ────────────────────────────────────────────────────────────────
 
-/** Return all reminders (deferred + active) for the current caller's session. */
+/** Return all reminders (deferred + active + startup) for the current caller's session. */
 export function listReminders(): Reminder[] {
   return _reminders.get(getCallerSid()) ?? [];
 }
@@ -96,6 +114,11 @@ export function listReminders(): Reminder[] {
 /** Return all active reminders for a specific SID (used by dequeue handler). */
 export function getActiveReminders(sid: number): Reminder[] {
   return (_reminders.get(sid) ?? []).filter(r => r.state === "active");
+}
+
+/** Return all startup reminders for a specific SID. */
+export function getStartupReminders(sid: number): Reminder[] {
+  return (_reminders.get(sid) ?? []).filter(r => r.state === "startup");
 }
 
 /**
@@ -161,8 +184,51 @@ export function popActiveReminders(sid: number): Reminder[] {
   return active;
 }
 
+/**
+ * Fire all startup reminders for `sid`.
+ * Returns the `Reminder[]` that were fired (callers convert them to events via `buildReminderEvent`).
+ * One-shot startup reminders are removed from the list; recurring ones remain and will fire again
+ * on the next `session_start`.
+ */
+export function fireStartupReminders(sid: number): Reminder[] {
+  const list = _reminders.get(sid);
+  if (!list) return [];
+  const startupReminders = list.filter(r => r.state === "startup");
+  if (startupReminders.length === 0) return [];
+
+  const remaining: Reminder[] = [];
+  for (const r of list) {
+    if (r.state === "startup") {
+      if (r.recurring) {
+        // Recurring startup reminders persist — they fire every session_start
+        remaining.push(r);
+      }
+      // one-shot: discarded after firing
+    } else {
+      remaining.push(r);
+    }
+  }
+  _reminders.set(sid, remaining);
+  return startupReminders;
+}
+
+/** Typed shape of the event object produced by `buildReminderEvent`. */
+export interface ReminderEvent {
+  id: number;
+  event: string;
+  from: string;
+  content: {
+    type: string;
+    text: string;
+    reminder_id: string;
+    recurring: boolean;
+    trigger: "time" | "startup";
+  };
+  routing: string;
+}
+
 /** Build a compact synthetic event object for a fired reminder (used in dequeue response). */
-export function buildReminderEvent(r: Reminder): Record<string, unknown> {
+export function buildReminderEvent(r: Reminder): ReminderEvent {
   return {
     id: _nextEventId--,
     event: "reminder",
@@ -172,6 +238,7 @@ export function buildReminderEvent(r: Reminder): Record<string, unknown> {
       text: r.text,
       reminder_id: r.id,
       recurring: r.recurring,
+      trigger: r.trigger,
     },
     routing: "ambiguous",
   };
