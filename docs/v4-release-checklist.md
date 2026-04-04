@@ -1,5 +1,7 @@
 # v4.0.0 Release Checklist
 
+> **Historical record.** This is the v4.0.0-specific checklist. For future releases, use the version-agnostic template: [`release-checklist.md`](release-checklist.md).
+
 ## Blocking — Must Pass
 
 - [x] All automated tests pass (1474+, lint clean, build clean)
