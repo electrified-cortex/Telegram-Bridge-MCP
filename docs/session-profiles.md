@@ -25,7 +25,7 @@ Captures:
 - `voice_speed` — TTS speed multiplier (0.25–4.0, omitted when not set)
 - `animation_default` — default animation frames (omitted when not set)
 - `animation_presets` — named preset map
-- `reminders` — active reminder definitions (text, delay, recurring, trigger)
+- `reminders` — reminder definitions (for example: text, delay_seconds, recurring, trigger)
 
 ### `load_profile(key)`
 
