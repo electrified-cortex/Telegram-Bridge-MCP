@@ -274,7 +274,7 @@ describe("dequeue_update tool", () => {
     expect(data.pending).toBe(0);
   });
 
-  it("defaults to 300 s timeout (max) when no timeout arg is provided", async () => {
+  it("uses session manager default (300 s) when timeout is omitted", async () => {
     // Verify the default is NOT 0 (instant): if it were 0, waitForEnqueue would
     // never be called. Instead we should see it called, then receive the event.
     const evt = makeEvent(99, "Default timeout test");
@@ -781,19 +781,19 @@ describe("dequeue_update tool", () => {
 
   describe("force gate", () => {
     it("rejects timeout > session default when force is false (default)", async () => {
-      // Default session default is 300; timeout 500 should be rejected
-      mocks.getDequeueDefault.mockReturnValue(300);
-      const result = await call({ timeout: 500, token: 1_123_456 });
+      // Session default is 60; timeout 200 exceeds it → rejected
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ timeout: 200, token: 1_123_456 });
       expect(isError(result)).toBe(false);
       const data = parseResult<Record<string, unknown>>(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
-      expect(data.message).toContain("500");
-      expect(data.message).toContain("300");
+      expect(data.message).toContain("200");
+      expect(data.message).toContain("60");
     });
 
     it("rejects timeout > session default when force is explicitly false", async () => {
-      mocks.getDequeueDefault.mockReturnValue(300);
-      const result = await call({ timeout: 400, force: false, token: 1_123_456 });
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ timeout: 200, force: false, token: 1_123_456 });
       const data = parseResult<Record<string, unknown>>(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
     });
@@ -838,14 +838,105 @@ describe("dequeue_update tool", () => {
     });
 
     it("hint field in structured error response guides the user", async () => {
-      mocks.getDequeueDefault.mockReturnValue(300);
-      const result = await call({ timeout: 600, token: 1_123_456 });
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ timeout: 200, token: 1_123_456 });
       const data = parseResult<Record<string, unknown>>(result);
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(typeof data.hint).toBe("string");
       expect(data.hint as string).toContain("force: true");
       expect(data.hint as string).toContain("set_dequeue_default");
     });
+
+    it("rejects explicit timeout above schema cap (timeout: 301) with a validation error", async () => {
+      // The schema enforces .max(300) — timeout: 301 must be rejected at schema level,
+      // before the handler runs. The mock server re-throws non-token ZodErrors.
+      await expect(call({ timeout: 301, token: 1_123_456 })).rejects.toThrow();
+    });
+
+    // -------------------------------------------------------------------------
+    // Task 10-249: session default interaction tests
+    // -------------------------------------------------------------------------
+
+    it("omitting timeout uses session default not server fallback — gate skipped", async () => {
+      // With session default=1 (small, to avoid long waits), omitting timeout →
+      // effectiveTimeout=1, gate is NOT fired (timeout is undefined).
+      mocks.getDequeueDefault.mockReturnValue(1);
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise<void>((r) => setTimeout(r, 50)),
+      );
+      const result = await call({ token: 1_123_456 }); // no timeout param
+      const data = parseResult<Record<string, unknown>>(result);
+      expect(data.error).toBeUndefined();
+      expect(data.timed_out).toBe(true);
+      expect(mocks.waitForEnqueue).toHaveBeenCalled();
+    });
+
+    it("explicit timeout=1 with session default=2 passes gate without force", async () => {
+      // 1 <= 2 → gate does not fire
+      mocks.getDequeueDefault.mockReturnValue(2);
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise<void>((r) => setTimeout(r, 50)),
+      );
+      const result = await call({ timeout: 1, token: 1_123_456 });
+      const data = parseResult<Record<string, unknown>>(result);
+      expect(data.error).toBeUndefined();
+      expect(data.timed_out).toBe(true);
+    });
+
+    it("explicit timeout=300 with session default=60 triggers gate", async () => {
+      // 300 > 60 and force not set → TIMEOUT_EXCEEDS_DEFAULT
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ timeout: 300, token: 1_123_456 });
+      const data = parseResult<Record<string, unknown>>(result);
+      expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
+      expect(data.message).toContain("300");
+      expect(data.message).toContain("60");
+      // Reset to a value >= 300 so the reminder fire path test is not affected.
+      // vi.clearAllMocks() clears call history but NOT mockReturnValue state,
+      // so a low sessionDefault here would cause the gate to fire in the next test.
+      mocks.getDequeueDefault.mockReturnValue(300);
+    });
+  });
+
+  // =========================================================================
+  // Timer overflow guard — MAX_SET_TIMEOUT_MS clamp
+  // =========================================================================
+
+  describe("MAX_SET_TIMEOUT_MS clamp", () => {
+    it("clamps setTimeout delay to exactly MAX_SET_TIMEOUT_MS when session default exceeds it", async () => {
+      // Arrange: getDequeueDefault returns 3_000_000 s → waitMs = ~3_000_000_000 ms,
+      // which exceeds MAX_SET_TIMEOUT_MS (2_000_000_000). At least one setTimeout call
+      // should be clamped to exactly 2_000_000_000 ms.
+      const originalSetTimeout = globalThis.setTimeout;
+      const capturedDelays: number[] = [];
+      const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(
+        (fn: TimerHandler, delay?: number, ...args: unknown[]) => {
+          if (typeof delay === "number") capturedDelays.push(delay);
+          return originalSetTimeout(fn as () => void, 0, ...args);
+        },
+      );
+
+      try {
+        mocks.getDequeueDefault.mockReturnValue(3_000_000); // 3B ms → exceeds cap
+        mocks.dequeueBatch.mockReturnValue([]);
+        mocks.waitForEnqueue.mockReturnValue(new Promise(() => {}));
+
+        const controller = new AbortController();
+        void Promise.resolve().then(() => { controller.abort(); });
+
+        await call({ token: 1_123_456 }, { signal: controller.signal });
+
+        const MAX_SET_TIMEOUT_MS = 2_000_000_000;
+        expect(capturedDelays.length).toBeGreaterThan(0);
+        expect(capturedDelays).toContain(MAX_SET_TIMEOUT_MS);
+      } finally {
+        setTimeoutSpy.mockRestore();
+        mocks.getDequeueDefault.mockReturnValue(300);
+      }
+    });
+
   });
 
   // =========================================================================

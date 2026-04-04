@@ -93,15 +93,15 @@ This helps agents understand what they're holding without having to decode.
 
 ## Acceptance Criteria
 
-- [ ] `session_start` returns `{ token: number }` instead of `{ sid, pin }`
-- [ ] All 50+ tool schemas updated to accept `token: number`
-- [ ] Central token decode/validate function
-- [ ] 10-178 string coercion workarounds removed
-- [ ] All existing tests updated
-- [ ] New tests for token encode/decode edge cases
-- [ ] Changelog entry for major version bump
-- [ ] Agent guide updated
-- [ ] Quick start guide updated
+- [x] `session_start` returns `{ token: number }` instead of `{ sid, pin }`
+- [x] All 50+ tool schemas updated to accept `token: number`
+- [x] Central token decode/validate function
+- [x] 10-178 string coercion workarounds removed
+- [x] All existing tests updated
+- [x] New tests for token encode/decode edge cases
+- [x] Changelog entry for major version bump
+- [x] Agent guide updated
+- [x] Quick start guide updated
 
 ## Migration Path
 

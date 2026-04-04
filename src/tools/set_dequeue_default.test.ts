@@ -104,11 +104,16 @@ describe("set_dequeue_default tool", () => {
     expect(data.timeout).toBe(0);
   });
 
-  it("allows very large timeout (no max constraint)", async () => {
+  it("allows timeout of 3600 (max allowed value)", async () => {
     const result = await call({ token: 1_123_456, timeout: 3600 });
     expect(isError(result)).toBe(false);
     const data = parseResult<{ ok: boolean; timeout: number }>(result);
     expect(data.timeout).toBe(3600);
+  });
+
+  it("rejects timeout above 3600 (overflow guard)", async () => {
+    const result = call({ token: 1_123_456, timeout: 99999 });
+    await expect(result).rejects.toThrow();
   });
 
   it("returns SID_REQUIRED when token is missing", async () => {
@@ -180,13 +185,14 @@ describe("integration: set_dequeue_default affects dequeue_update gate", () => {
     expect(data.timed_out).toBe(true);
   });
 
-  it("with default=300 (server default), timeout=500 is rejected", async () => {
-    // No set_dequeue_default called — server default of 300 applies
-    const result = await callDequeue({ timeout: 500, token: 1_123_456 });
+  it("with default=60 (session default), timeout=200 is rejected", async () => {
+    // Set session default to 60; timeout 200 > 60 → TIMEOUT_EXCEEDS_DEFAULT
+    await callSetDefault({ token: 1_123_456, timeout: 60 });
+    const result = await callDequeue({ timeout: 200, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
     expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
-    expect(data.message).toContain("500");
-    expect(data.message).toContain("300");
+    expect(data.message).toContain("200");
+    expect(data.message).toContain("60");
   });
 
   it("after set_dequeue_default, timeout below new default passes without force", async () => {

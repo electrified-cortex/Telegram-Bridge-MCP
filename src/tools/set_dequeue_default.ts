@@ -24,9 +24,10 @@ export function register(server: McpServer) {
           .number()
           .int()
           .min(0)
+          .max(3600)
           .describe(
             "Default timeout in seconds for dequeue_update. 0 = instant poll mode. " +
-            "No maximum — the agent is responsible for choosing an appropriate value for its host environment.",
+            "Maximum 3600 s (1 hour). Values above 3600 are rejected.",
           ),
       },
     },
