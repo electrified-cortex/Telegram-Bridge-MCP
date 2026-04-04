@@ -11,7 +11,7 @@
 ## Overall Coverage
 
 | Metric      | All Files | src/       | src/tools/ |
-|-------------|-----------|------------|------------|
+| --- | --- | --- | --- |
 | Statements  | 90.05%    | 86.63%     | 96.17%     |
 | Branches    | 83.87%    | 79.02%     | 91.56%     |
 | Functions   | 85.83%    | 84.30%     | 89.10%     |
@@ -28,7 +28,7 @@ Any file where **any** of statements, branches, or functions falls below 80% is 
 ### src/ — Core Files
 
 | File | Statements | Branches | Functions | Lines | Notes |
-|------|-----------|---------|---------|-------|-------|
+| --- | --- | --- | --- | --- | --- |
 | `voice-state.ts` | 66.66% | 60.00% | 55.55% | 66.66% | All metrics well below 80% |
 | `telegram.ts` | 74.80% | 70.83% | 87.80% | 74.65% | Stmts + branches below 80% |
 | `session-queue.ts` | 78.57% | 74.60% | 76.92% | 81.48% | Stmts, branches, funcs below 80% |
@@ -39,7 +39,7 @@ Any file where **any** of statements, branches, or functions falls below 80% is 
 ### src/tools/ — Tool Handler Files
 
 | File | Statements | Branches | Functions | Lines | Notes |
-|------|-----------|---------|---------|-------|-------|
+| --- | --- | --- | --- | --- | --- |
 | `save_profile.ts` | 77.50% | 77.27% | 100.00% | 78.37% | Stmts + branches below 80% |
 
 ---
@@ -47,7 +47,7 @@ Any file where **any** of statements, branches, or functions falls below 80% is 
 ## Files With 0% Coverage (Completely Untested)
 
 | File | Statements | Branches | Functions | Lines | Uncovered Lines |
-|------|-----------|---------|---------|-------|----------------|
+| --- | --- | --- | --- | --- | --- |
 | `src/launcher.ts` | 0.00% | 0.00% | 0.00% | 0.00% | 7–174 (entire file) |
 | `src/two-lane-queue.ts` | 0.00% | 0.00% | 0.00% | 0.00% | entire file |
 
@@ -60,7 +60,7 @@ These files have no test coverage whatsoever and are critical gaps.
 ### `src/session-gate.ts` (auth — refactored in V5)
 
 | Statements | Branches | Functions | Lines | Uncovered Lines |
-|-----------|---------|---------|-------|----------------|
+| --- | --- | --- | --- | --- |
 | 87.50% | 100.00% | **50.00%** | 87.50% | line 12 |
 
 **Assessment:** Function coverage is notably low at 50% — half the functions have no tests. Branch coverage is perfect at 100%, which is good for auth logic. Line 12 is uncovered. The low function coverage means some auth code paths (likely error or edge-case functions) are never exercised. Given this is a security-critical module, the 50% function coverage is a concern.
@@ -68,7 +68,7 @@ These files have no test coverage whatsoever and are critical gaps.
 ### `src/tools/set_dequeue_default.ts` (new in V5)
 
 | Statements | Branches | Functions | Lines | Uncovered Lines |
-|-----------|---------|---------|-------|----------------|
+| --- | --- | --- | --- | --- |
 | 100.00% | 100.00% | 100.00% | 100.00% | none |
 
 **Assessment:** Excellent — fully covered. No gaps.
@@ -76,7 +76,7 @@ These files have no test coverage whatsoever and are critical gaps.
 ### `src/session-queue.ts` (reminder delivery — new in V5)
 
 | Statements | Branches | Functions | Lines | Uncovered Lines |
-|-----------|---------|---------|-------|----------------|
+| --- | --- | --- | --- | --- |
 | 78.57% | 74.60% | 76.92% | 81.48% | includes lines 244–274, 411–426 |
 
 **Assessment:** This file is below the 80% threshold on all three primary metrics (statements, branches, functions). Given this is a new V5 module implementing reminder delivery — which is a user-visible, time-sensitive feature — coverage gaps here are significant. Lines 244–274 and 411–426 are uncovered. These likely represent error-handling paths, edge-case delivery logic, or cancellation flows in the reminder queue.
@@ -84,7 +84,7 @@ These files have no test coverage whatsoever and are critical gaps.
 ### `src/profile-store.ts` (reminder migration — new in V5)
 
 | Statements | Branches | Functions | Lines | Uncovered Lines |
-|-----------|---------|---------|-------|----------------|
+| --- | --- | --- | --- | --- |
 | 95.45% | 91.66% | 100.00% | 95.23% | line 53 |
 
 **Assessment:** Well-covered. Only one line (53) is uncovered. This is likely a defensive error branch in the migration path. No action required beyond a note.

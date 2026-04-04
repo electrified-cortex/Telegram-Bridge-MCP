@@ -6,6 +6,7 @@ import { getGovernorSid } from "../routing-mode.js";
 import { getSession } from "../session-manager.js";
 import { routeMessage } from "../session-queue.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
+import { DIGITS_ONLY } from "../utils/patterns.js";
 
 const DESCRIPTION =
   "Route an ambiguous message to a specific session. Only the " +
@@ -27,7 +28,7 @@ export function register(server: McpServer) {
           .describe("ID of the message to route"),
         target_sid: z
           .preprocess(
-            (v) => typeof v === "string" && /^\d+$/.test(v) ? parseInt(v, 10) : v,
+            (v) => typeof v === "string" && DIGITS_ONLY.test(v) ? parseInt(v, 10) : v,
             z.number().int().positive(),
           )
           .describe("Session ID to route the message to"),

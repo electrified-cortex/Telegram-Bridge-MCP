@@ -5,6 +5,7 @@ import { requireAuth } from "../session-gate.js";
 import { getSession } from "../session-manager.js";
 import { deliverDirectMessage } from "../session-queue.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
+import { DIGITS_ONLY } from "../utils/patterns.js";
 
 const DESCRIPTION =
   "Send a direct message to another session. The message is " +
@@ -21,7 +22,7 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
         target_sid: z
           .preprocess(
-            (v) => typeof v === "string" && /^\d+$/.test(v) ? parseInt(v, 10) : v,
+            (v) => typeof v === "string" && DIGITS_ONLY.test(v) ? parseInt(v, 10) : v,
             z.number().int().positive(),
           )
           .describe("Session ID of the recipient"),
