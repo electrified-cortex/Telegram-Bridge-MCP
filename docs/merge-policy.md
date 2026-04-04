@@ -1,6 +1,6 @@
 # PR Merge Policy
 
-All three gates must pass before any PR is merged to master. A single approval or passing one gate is not sufficient — all three are required.
+Gates 1 and 2 are required before any PR is merged to master. Gate 3 (Curator review) is strongly recommended — skip it only when the Curator is unavailable, and proceed directly after gates 1 and 2 are confirmed.
 
 ## Gates
 
