@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-04
 **Test suite:** vitest v4.1.0 with v8 coverage provider
-**Package version:** telegram-bridge-mcp v5.0.1
+**Package version:** telegram-bridge-mcp v5.1.0
 **Test results:** 97 test files passed, 1897 tests passed, 0 failures
 **Duration:** 25.39s
 
