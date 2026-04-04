@@ -21,8 +21,14 @@ Related tasks: 10-192 (prerequisite), 15-195 (architecture)
 
 ## Goal
 
-Expose Telegram's Managed Bots API as MCP tools. Enable agents to programmatically
-create, manage, and rotate tokens for child bots through the bridge.
+Expose Telegram's Managed Bots API as MCP tools in an **opt-in mode**. The
+current single-bot multi-session architecture remains the default. Managed bots
+support is an optional mode that users can enable for fleet-level Telegram bot
+isolation — each agent gets its own bot identity — without breaking the existing
+setup.
+
+**Design constraint:** The bridge must work identically with managed bots disabled.
+Enabling managed bots mode adds capabilities but doesn't change existing behavior.
 
 ## Bot API 9.6 — Managed Bots Surface
 
@@ -49,14 +55,20 @@ create, manage, and rotate tokens for child bots through the bridge.
 
 ## Design Questions
 
-1. **Token storage:** Where do managed bot tokens live? In-memory only, or
+1. **Opt-in mechanism:** Configuration flag (env var? constructor option?) to
+   enable managed bots mode. When disabled, managed bot tools are not registered
+   and managed bot updates are ignored.
+2. **Token storage:** Where do managed bot tokens live? In-memory only, or
    persisted? Security implications of storing bot tokens.
-2. **Multi-bot sessions:** Should managed bots get their own session manager
+3. **Multi-bot sessions:** Should managed bots get their own session manager
    instances? Or share the parent's poller/store?
-3. **Update routing:** How to handle `ManagedBotUpdated` — new update type in
+4. **Update routing:** How to handle `ManagedBotUpdated` — new update type in
    the poller? New event type in `dequeue_update`?
-4. **Authorization:** Who can call `get_managed_bot_token`? Only the governor?
+5. **Authorization:** Who can call `get_managed_bot_token`? Only the governor?
    Only specific SIDs?
+6. **Graceful coexistence:** If managed bots mode is enabled, do existing
+   single-bot sessions continue working? Can the same bridge serve both
+   managed and unmanaged bots simultaneously?
 
 ## Acceptance Criteria
 
