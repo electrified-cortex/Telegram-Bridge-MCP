@@ -274,7 +274,7 @@ describe("dequeue_update tool", () => {
     expect(data.pending).toBe(0);
   });
 
-  it("defaults to 300 s timeout (max) when no timeout arg is provided", async () => {
+  it("uses session manager default (300 s) when timeout is omitted", async () => {
     // Verify the default is NOT 0 (instant): if it were 0, waitForEnqueue would
     // never be called. Instead we should see it called, then receive the event.
     const evt = makeEvent(99, "Default timeout test");

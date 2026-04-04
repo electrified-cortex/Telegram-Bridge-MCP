@@ -56,7 +56,7 @@ const DESCRIPTION =
   "Two modes: omit timeout to block for up to your session default (set via set_dequeue_default, " +
   "server fallback 300 s); pass timeout: 0 for an instant non-blocking poll (drain loops only). " +
   "Max timeout: 300 s. Values above the session default are rejected unless force: true is passed. " +
-  "Use set_dequeue_default to configure a persistent default above 300 s (up to 3600 s). " +
+  "Use set_dequeue_default to configure a persistent default up to 3600 s — for waits beyond 300 s, set a session default and omit the timeout parameter. " +
   "token is always required — pass the session token returned by session_start.";
 
 export function register(server: McpServer) {
@@ -75,7 +75,7 @@ export function register(server: McpServer) {
         force: z
           .boolean()
           .default(false)
-          .describe("Pass true to allow a one-time override when timeout exceeds your current default."),
+          .describe("Pass true to allow a one-time override when timeout exceeds your current session default. Only applies to values ≤ 300 s (the hard cap on timeout). To wait longer than 300 s by default, use set_dequeue_default instead."),
         token: TOKEN_SCHEMA,
       },
     },
