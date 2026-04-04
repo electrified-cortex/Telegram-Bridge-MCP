@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   clearCallbackHook: vi.fn(),
   startPoller: vi.fn(),
   isPollerRunning: vi.fn().mockReturnValue(false),
+  checkAndConsumeAutoApprove: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -91,6 +92,10 @@ vi.mock("../session-queue.js", () => ({
 vi.mock("../poller.js", () => ({
   startPoller: (...args: unknown[]) => mocks.startPoller(...args),
   isPollerRunning: () => mocks.isPollerRunning(),
+}));
+
+vi.mock("../auto-approve.js", () => ({
+  checkAndConsumeAutoApprove: () => mocks.checkAndConsumeAutoApprove(),
 }));
 
 import { register } from "./session_start.js";
@@ -1799,6 +1804,41 @@ describe("session_start tool", () => {
     const instructions = result.instructions as string;
     expect(instructions).toContain("SID");
     expect(instructions).toContain("session memory");
+  });
+
+  // =========================================================================
+  // Auto-approve integration (task 271)
+  // =========================================================================
+
+  it("requestApproval: when checkAndConsumeAutoApprove returns true, skips approval dialog and returns approved", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Scout", sessionsActive: 2, color: "🟩" });
+    mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
+
+    const result = parseResult(await call({ name: "Scout" }));
+
+    // registerCallbackHook should NOT have been called (no approval dialog was shown)
+    expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
+    expect(result.sid).toBe(2);
+  });
+
+  it("requestReconnectApproval: when checkAndConsumeAutoApprove returns true, skips approval dialog and returns reconnected", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([
+      { sid: 3, name: "Overseer", color: "🟦", createdAt: "2026-03-17" },
+    ]);
+    mocks.getSession.mockReturnValue({ sid: 3, pin: 301000, name: "Overseer", color: "🟦", healthy: true });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+    mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
+
+    const result = parseResult(await call({ name: "Overseer", reconnect: true }));
+
+    // registerCallbackHook should NOT have been called (no approval dialog was shown)
+    expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
+    expect(result.action).toBe("reconnected");
   });
 });
 

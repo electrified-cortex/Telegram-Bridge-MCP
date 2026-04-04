@@ -22,6 +22,7 @@ import { getDefaultVoice, setDefaultVoice, getConfiguredVoices } from "./config.
 import type { VoiceEntry } from "./config.js";
 import { fetchVoiceList, isTtsEnabled } from "./tts.js";
 import { getSessionSpeed } from "./voice-state.js";
+import { activateAutoApproveOne, activateAutoApproveTimed, cancelAutoApprove, getAutoApproveState } from "./auto-approve.js";
 
 
 const require = createRequire(import.meta.url);
@@ -49,7 +50,7 @@ import { getCallerSid, runInSessionContext } from "./session-context.js";
 // ---------------------------------------------------------------------------
 
 /** Maps from message_id → panel type so we can route callback_queries back to us. */
-const _activePanels = new Map<number, "session" | "voice" | "voice-sample" | "approval" | "governor">();
+const _activePanels = new Map<number, "session" | "voice" | "voice-sample" | "approval" | "governor" | "approve">();
 
 // ---------------------------------------------------------------------------
 // Operator approval gate — system-level confirmation for sensitive tool calls
@@ -231,6 +232,7 @@ export const BUILT_IN_COMMANDS = [
   { command: "voice", description: "Change the TTS voice" },
   { command: "version", description: "Show server version and build info" },
   { command: "shutdown", description: "Shut down the MCP server" },
+  { command: "approve", description: "Pre-approve session requests" },
 ] as const;
 
 const _builtInCommandNames = new Set<string>([...BUILT_IN_COMMANDS.map(c => c.command), "primary"]);
@@ -265,6 +267,7 @@ export function isInternalTimelineEvent(evt: Omit<TimelineEvent, "_update">): bo
       evt.content.data.startsWith("session:") ||
       evt.content.data.startsWith("voice:") ||
       evt.content.data.startsWith("approval:") ||
+      evt.content.data.startsWith("approve:") ||
       evt.content.data.startsWith("governor:")
     );
   }
@@ -313,6 +316,10 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
         await handleGovernorCommand();
         return true;
       }
+      if (raw === "approve") {
+        await handleApproveCommand();
+        return true;
+      }
     }
   }
 
@@ -345,6 +352,12 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
           msgId,
           update.callback_query.data ?? "",
         );
+      } else if (panelType === "approve") {
+        await handleApproveCallback(
+          update.callback_query.id,
+          msgId,
+          update.callback_query.data ?? "",
+        );
       } else {
         await handleSessionCallback(update.callback_query.id, msgId, update.callback_query.data ?? "");
       }
@@ -358,6 +371,10 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
       return true;
     }
     if (data.startsWith("governor:")) {
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch { /* ignore */ }
+      return true;
+    }
+    if (data.startsWith("approve:")) {
       try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch { /* ignore */ }
       return true;
     }
@@ -956,6 +973,82 @@ function buildFlatVoiceButtons(
 }
 
 // ---------------------------------------------------------------------------
+// /approve — auto-approve session requests
+// ---------------------------------------------------------------------------
+
+const AUTO_APPROVE_DURATION_MS = 10 * 60 * 1000; // 10 minutes
+
+async function handleApproveCommand(): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const api = getApi();
+
+  const state = getAutoApproveState();
+  let statusLine: string;
+  if (state.mode === "one") {
+    statusLine = "🟡 Auto-approve: next request only";
+  } else if (state.mode === "timed" && state.expiresAt !== undefined) {
+    const remaining = Math.max(0, Math.ceil((state.expiresAt - Date.now()) / 1000));
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    statusLine = `🟢 Auto-approve active (${mins}m ${secs}s remaining)`;
+  } else {
+    statusLine = "⚪ Auto-approve: off";
+  }
+
+  let msg: { message_id: number };
+  try {
+    msg = await api.sendMessage(chatId, `*Session Auto-Approve*\n${statusLine}`, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "Next request", callback_data: "approve:one" },
+          { text: "10 minutes",   callback_data: "approve:timed" },
+          { text: "Dismiss",      callback_data: "approve:dismiss" },
+        ]],
+      },
+    });
+  } catch { return; }
+
+  markInternalMessage(msg.message_id);
+  _activePanels.set(msg.message_id, "approve");
+}
+
+async function handleApproveCallback(
+  callbackQueryId: string,
+  panelMsgId: number,
+  data: string,
+): Promise<void> {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return;
+  const api = getApi();
+
+  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+  _activePanels.delete(panelMsgId);
+
+  if (data === "approve:one") {
+    activateAutoApproveOne();
+    await api.editMessageText(chatId, panelMsgId,
+      "*Session Auto-Approve*\n▸ 🟡 Next session request will be auto-approved",
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [] } }
+    ).catch(() => {/* non-fatal */});
+  } else if (data === "approve:timed") {
+    activateAutoApproveTimed(AUTO_APPROVE_DURATION_MS);
+    await api.editMessageText(chatId, panelMsgId,
+      "*Session Auto-Approve*\n▸ 🟢 Auto-approving all session requests for 10 minutes",
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [] } }
+    ).catch(() => {/* non-fatal */});
+  } else {
+    // dismiss — cancel any active auto-approve and close panel
+    cancelAutoApprove();
+    await api.editMessageText(chatId, panelMsgId,
+      "*Session Auto-Approve*\n▸ ⚪ Dismissed — manual approval restored",
+      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [] } }
+    ).catch(() => {/* non-fatal */});
+  }
+}
+
+// ---------------------------------------------------------------------------
 // /session panel
 // ---------------------------------------------------------------------------
 
@@ -1172,4 +1265,5 @@ export function resetBuiltInCommandsForTest(): void {
   _sessionPrefsAsked = false;
   setAutoDumpThreshold(null);
   _dumpCursor = 0;
+  cancelAutoApprove();
 }

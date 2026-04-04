@@ -128,12 +128,19 @@ vi.mock("./voice-state.js", () => ({
 import {
   handleIfBuiltIn,
   isBuiltInPanelQuery,
+  isInternalTimelineEvent,
   sendSessionPrefsPrompt,
   BUILT_IN_COMMANDS,
   resetBuiltInCommandsForTest,
   refreshGovernorCommand,
   requestOperatorApproval,
 } from "./built-in-commands.js";
+import {
+  activateAutoApproveOne,
+  activateAutoApproveTimed,
+  cancelAutoApprove,
+  getAutoApproveState,
+} from "./auto-approve.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -189,12 +196,13 @@ describe("built-in-commands", () => {
 
   // -- BUILT_IN_COMMANDS constant ------------------------------------------
 
-  it("exports /session, /voice, /version, and /shutdown command metadata", () => {
+  it("exports /session, /voice, /version, /shutdown, and /approve command metadata", () => {
     expect(BUILT_IN_COMMANDS).toEqual([
       { command: "session", description: "Session recording controls" },
       { command: "voice", description: "Change the TTS voice" },
       { command: "version", description: "Show server version and build info" },
       { command: "shutdown", description: "Shut down the MCP server" },
+      { command: "approve", description: "Pre-approve session requests" },
     ]);
   });
 
@@ -941,6 +949,98 @@ describe("built-in-commands", () => {
     mocks.editMessageText.mockResolvedValue(true);
     const result = await handleIfBuiltIn(callbackUpdate(950, "governor:set:2"));
     expect(result).toBe(true);
+  });
+
+  // -- /approve command ---------------------------------------------------
+
+  describe("/approve command", () => {
+    it("dispatches to handleApproveCommand — sends panel with 'Session Auto-Approve'", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 1000 });
+      const result = await handleIfBuiltIn(cmdUpdate("/approve"));
+      expect(result).toBe(true);
+      expect(mocks.sendMessage).toHaveBeenCalledWith(
+        123,
+        expect.stringContaining("Session Auto-Approve"),
+        expect.objectContaining({
+          parse_mode: "Markdown",
+          reply_markup: expect.objectContaining({
+            inline_keyboard: expect.any(Array),
+          }),
+        }),
+      );
+    });
+
+    it("shows '🟡 Auto-approve: next request only' when mode is 'one'", async () => {
+      activateAutoApproveOne();
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 1001 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      const text: string = mocks.sendMessage.mock.calls[0][1];
+      expect(text).toContain("🟡 Auto-approve: next request only");
+      cancelAutoApprove();
+    });
+
+    it("callback approve:one calls activateAutoApproveOne and edits message", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 1002 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(1002, "approve:one"));
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123,
+        1002,
+        expect.stringContaining("🟡 Next session request will be auto-approved"),
+        expect.any(Object),
+      );
+      cancelAutoApprove();
+    });
+
+    it("callback approve:timed calls activateAutoApproveTimed and edits message", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 1003 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(1003, "approve:timed"));
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123,
+        1003,
+        expect.stringContaining("🟢 Auto-approving all session requests for 10 minutes"),
+        expect.any(Object),
+      );
+      cancelAutoApprove();
+    });
+
+    it("callback approve:dismiss calls cancelAutoApprove and edits message", async () => {
+      activateAutoApproveOne();
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 1004 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(1004, "approve:dismiss"));
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123,
+        1004,
+        expect.stringContaining("⚪ Dismissed — manual approval restored"),
+        expect.any(Object),
+      );
+      expect(getAutoApproveState().mode).toBe("none");
+    });
+
+    it("expired approve: callback answers with 'This panel has expired.'", async () => {
+      // Panel not in _activePanels — expired
+      await handleIfBuiltIn(callbackUpdate(9999, "approve:somedata"));
+      expect(mocks.answerCallbackQuery).toHaveBeenCalledWith(
+        "cq1",
+        { text: "This panel has expired." },
+      );
+    });
+
+    it("isInternalTimelineEvent returns true for approve: callback data", () => {
+      const evt = {
+        id: 1,
+        event: "callback" as const,
+        from: "user",
+        timestamp: "",
+        content: { data: "approve:one" },
+      };
+      expect(isInternalTimelineEvent(evt)).toBe(true);
+    });
   });
 
   // -- Session context preservation ---------------------------------------

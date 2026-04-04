@@ -9,6 +9,7 @@ import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMes
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
+import { checkAndConsumeAutoApprove } from "../auto-approve.js";
 import { startPoller, isPollerRunning } from "../poller.js";
 import { fireStartupReminders, buildReminderEvent } from "../reminder-state.js";
 
@@ -38,6 +39,9 @@ async function requestApproval(
   const primaryColor = validHint && !usedColors.has(validHint)
     ? validHint
     : availableColors.find((c) => !usedColors.has(c));
+  if (checkAndConsumeAutoApprove()) {
+    return { approved: true, color: primaryColor };
+  }
   const colorButtons = availableColors.map((c) => ({
     text: c,
     callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
@@ -101,6 +105,7 @@ async function requestApproval(
  * Returns true if the operator approves, false on denial or timeout.
  */
 async function requestReconnectApproval(chatId: number, name: string): Promise<boolean> {
+  if (checkAndConsumeAutoApprove()) return true;
   const text = `🤖 *Session reconnecting:* ${markdownToV2(name)}\nAuthorize re\\-entry?`;
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
