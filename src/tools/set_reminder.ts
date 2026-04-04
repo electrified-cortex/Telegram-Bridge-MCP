@@ -49,7 +49,7 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ text, trigger = "time", delay_seconds = 0, recurring = false, id, token }) => {
+    ({ text, trigger, delay_seconds = 0, recurring = false, id, token }) => {
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
 

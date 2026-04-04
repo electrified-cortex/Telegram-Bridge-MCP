@@ -357,7 +357,7 @@ export function deliverReminderEvent(
     from: "system",
     content: {
       type: src.type,
-      ...(src.text !== undefined && { text: src.text }),
+      text: src.text,
     },
     sid: 0,
   };

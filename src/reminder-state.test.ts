@@ -212,7 +212,7 @@ describe("reminder-state", () => {
         expect(content.reminder_id).toBe("ci-1");
         expect(content.recurring).toBe(false);
         expect(typeof evt.id).toBe("number");
-        expect((evt.id as number)).toBeLessThan(0);
+        expect((evt.id)).toBeLessThan(0);
       });
     });
 

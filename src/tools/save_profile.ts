@@ -78,7 +78,7 @@ export function register(server: McpServer) {
           text: r.text,
           ...(r.trigger !== "startup" ? { delay_seconds: r.delay_seconds } : {}),
           recurring: r.recurring,
-          ...(r.trigger && r.trigger !== "time" ? { trigger: r.trigger } : {}),
+          ...(r.trigger !== "time" ? { trigger: r.trigger } : {}),
         }));
         sections.push("reminders");
       }
