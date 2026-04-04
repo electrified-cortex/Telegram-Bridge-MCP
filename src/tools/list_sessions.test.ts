@@ -1,11 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode, type ToolHandler } from "./test-utils.js";
 
-// Unauthenticated response shape
-interface UnauthenticatedResult {
-  sessions: number[];
-}
-
 // Authenticated response shape
 interface AuthenticatedResult {
   sessions: Array<{ sid: number; name: string; color: string; createdAt: string }>;
@@ -45,43 +40,14 @@ describe("list_sessions tool", () => {
     call = server.getHandler("list_sessions");
   });
 
-  // ── Unauthenticated path ───────────────────────────────────
+  // ── No token path ─────────────────────────────────────────
 
-  describe("unauthenticated (no token)", () => {
-    it("returns empty session ID array when no sessions exist", async () => {
-      const result = parseResult<UnauthenticatedResult>(await call({}));
-      expect(result).toEqual({ sessions: [] });
-    });
-
-    it("returns only SID numbers, not full session objects", async () => {
-      mocks.listSessions.mockReturnValue([
-        { sid: 1, name: "alpha", color: "🟦", createdAt: "2026-01-01T00:00:00.000Z" },
-        { sid: 2, name: "beta", color: "🟩", createdAt: "2026-01-01T00:01:00.000Z" },
-        { sid: 6, name: "gamma", color: "🟥", createdAt: "2026-01-01T00:02:00.000Z" },
-      ]);
-
-      const result = parseResult<UnauthenticatedResult>(await call({}));
-      expect(result).toEqual({ sessions: [1, 2, 6] });
-    });
-
-    it("does not expose names, colors, PINs, or active_sid when unauthenticated", async () => {
-      mocks.listSessions.mockReturnValue([
-        { sid: 3, name: "secret", color: "🟨", createdAt: "2026-01-01T00:00:00.000Z" },
-      ]);
-      mocks.getActiveSession.mockReturnValue(3);
-
-      const result = parseResult<Record<string, unknown>>(await call({}));
-      expect(result).not.toHaveProperty("active_sid");
-      expect(Array.isArray(result.sessions)).toBe(true);
-      // Each element must be a plain number, not an object
-      for (const entry of result.sessions as unknown[]) {
-        expect(typeof entry).toBe("number");
-      }
-    });
-
-    it("does not call requireAuth when token is omitted", async () => {
-      await call({});
-      expect(mocks.requireAuth).not.toHaveBeenCalled();
+  describe("no token provided", () => {
+    it("returns SID_REQUIRED error when token is omitted", async () => {
+      mocks.requireAuth.mockReturnValue({ code: "SID_REQUIRED", message: "token is required." });
+      const result = await call({});
+      expect(isError(result)).toBe(true);
+      expect(errorCode(result)).toBe("SID_REQUIRED");
     });
   });
 
@@ -142,9 +108,8 @@ describe("list_sessions tool", () => {
     it("returns AUTH_FAILED error when token is invalid", async () => {
       mocks.requireAuth.mockReturnValue({
         code: "AUTH_FAILED",
-        message: "Invalid session credentials",
+        message: "Invalid token. Call session_start to get a fresh token.",
       });
-
       const result = await call({ token: 9_999_999 });
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("AUTH_FAILED");

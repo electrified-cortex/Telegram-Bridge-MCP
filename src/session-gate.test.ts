@@ -4,18 +4,15 @@ import type { TelegramError } from "./telegram.js";
 
 const sessionMocks = vi.hoisted(() => ({
   validateSession: vi.fn((_sid: number, _pin: number) => false),
-  getSession: vi.fn((_sid: number) => undefined as { pin: number } | undefined),
 }));
 
 vi.mock("./session-manager.js", () => ({
   validateSession: (sid: number, pin: number) => sessionMocks.validateSession(sid, pin),
-  getSession: (sid: number) => sessionMocks.getSession(sid),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   sessionMocks.validateSession.mockReturnValue(false);
-  sessionMocks.getSession.mockReturnValue(undefined);
 });
 
 describe("requireAuth", () => {
@@ -67,41 +64,41 @@ describe("requireAuth", () => {
     });
   });
 
-  describe("improved error diagnostics", () => {
+  describe("auth failure — generic message (oracle hardening)", () => {
     it("SID_REQUIRED message mentions token when token is undefined", () => {
       const result = requireAuth(undefined);
       expect(result).toMatchObject({ code: "SID_REQUIRED" });
       expect((result as TelegramError).message).toContain("token");
     });
 
-    it("returns AUTH_FAILED without throwing when getSession throws TypeError", () => {
+    it("returns AUTH_FAILED with generic message when session does not exist", () => {
       sessionMocks.validateSession.mockReturnValue(false);
-      sessionMocks.getSession.mockImplementation(() => {
-        throw new TypeError("getSession is not a function");
-      });
-      const token = 5 * 1_000_000 + 99999;
-      const result = requireAuth(token);
-      expect(result).toMatchObject({ code: "AUTH_FAILED" });
-    });
-
-    it("AUTH_FAILED mentions SID not found when session does not exist", () => {
-      sessionMocks.validateSession.mockReturnValue(false);
-      sessionMocks.getSession.mockReturnValue(undefined);
       const token = 42 * 1_000_000 + 99999;
       const result = requireAuth(token);
       expect(result).toMatchObject({ code: "AUTH_FAILED" });
-      expect((result as TelegramError).message).toContain("not found");
-      expect((result as TelegramError).message).toContain("42");
+      const msg = (result as TelegramError).message;
+      expect(msg).not.toContain("not found");
+      expect(msg).not.toContain("42");
+      expect(msg).not.toContain("PIN mismatch");
     });
 
-    it("AUTH_FAILED mentions PIN mismatch when session exists but pin is wrong", () => {
+    it("returns AUTH_FAILED with same generic message when session exists but pin is wrong", () => {
       sessionMocks.validateSession.mockReturnValue(false);
-      sessionMocks.getSession.mockReturnValue({ pin: 12345 });
       const token = 1 * 1_000_000 + 99999;
       const result = requireAuth(token);
       expect(result).toMatchObject({ code: "AUTH_FAILED" });
-      expect((result as TelegramError).message).toContain("PIN mismatch");
-      expect((result as TelegramError).message).toContain("1");
+      const msg = (result as TelegramError).message;
+      expect(msg).not.toContain("PIN mismatch");
+      expect(msg).not.toContain("not found");
+    });
+
+    it("returns same message for existing and non-existing SIDs (no oracle)", () => {
+      sessionMocks.validateSession.mockReturnValue(false);
+      const token1 = 42 * 1_000_000 + 99999;
+      const token2 = 1 * 1_000_000 + 99999;
+      const result1 = requireAuth(token1) as TelegramError;
+      const result2 = requireAuth(token2) as TelegramError;
+      expect(result1.message).toBe(result2.message);
     });
   });
 });
