@@ -3,7 +3,7 @@
 ## Added
 
 - `dist/launcher.js` — stdio-to-HTTP bridge that auto-starts the Streamable HTTP server if none is running, then bridges stdin/stdout to it. Lets stdio-only hosts share a single server instance.
-- `set_reminder`: new `trigger: "startup"` option — fires the reminder as an event in the next `dequeue_update` call on `session_start` (fresh or reconnect). Non-recurring startup reminders self-delete after firing. Startup reminders are preserved by `save_profile` / `load_profile`; `delay_seconds` is optional and ignored for this trigger type.
+- `set_reminder`: new `trigger: "startup"` option — fired as an event in the next `dequeue_update` call on `session_start` (fresh or reconnect). Non-recurring startup reminders self-deleted after firing. Startup reminders were preserved by `save_profile` / `load_profile`; `delay_seconds` was optional and ignored for this trigger type.
 
 ## Breaking Changes
 
