@@ -4,7 +4,7 @@
 # Prevents agent exit when an active Telegram session file is present in
 # Claude Code project memory (~/.claude/projects/).
 #
-# Install: add to .claude/settings.json hooks (see docs/agent-setup.md)
+# Install: add to .claude/settings.local.json hooks (see docs/agent-setup.md)
 
 set -euo pipefail
 
@@ -12,7 +12,7 @@ set -euo pipefail
 input="$(cat)"
 
 # --- Check stop_hook_active to prevent infinite loop ---
-stop_hook_active="$(printf '%s' "$input" | grep -o '"stop_hook_active"\s*:\s*true' || true)"
+stop_hook_active="$(printf '%s' "$input" | grep -o '"stop_hook_active"[[:space:]]*:[[:space:]]*true' || true)"
 if [ -n "$stop_hook_active" ]; then
     exit 0
 fi
