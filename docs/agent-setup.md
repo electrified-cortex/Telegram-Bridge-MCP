@@ -23,14 +23,14 @@ The **loop guard** is a Stop hook that checks for an active Telegram session fil
 
 ### Installation
 
-1. **Copy the hook files** into your project's `.github/hooks/` directory:
+1. **If you cloned this repo**, the hook files are already present at:
 
    ```
    .github/hooks/telegram-loop-guard.json
    .github/hooks/telegram-loop-guard.ps1
    ```
 
-   These files ship in this repo — you can copy them directly.
+   If you are setting up hooks in a **different project**, copy both files into that project's `.github/hooks/` directory.
 
 2. **Restart VS Code** (or reload the window). VS Code auto-discovers hook files from `.github/hooks/` — no additional settings entry required.
 
@@ -129,9 +129,8 @@ For full behavioral rules and tool usage patterns, see [`docs/behavior.md`](beha
 
 ### Agent stopped unexpectedly / hook not firing
 
-- Confirm the hook file path in `settings.json` is correct relative to your project root.
-- In VS Code: check the Output panel for Copilot Chat hook errors.
-- In Claude Code: ensure the `.sh` file has execute permission (`chmod +x`).
+- In VS Code: check the Output panel for Copilot Chat hook errors. Confirm `.github/hooks/telegram-loop-guard.json` and `.ps1` are present in the repo.
+- In Claude Code: confirm the hook is registered in `.claude/settings.local.json` and the `.sh` file has execute permission (`chmod +x`).
 - Verify the session file exists and has content — an empty session file allows stop.
 
 ### Need to stop the agent intentionally
