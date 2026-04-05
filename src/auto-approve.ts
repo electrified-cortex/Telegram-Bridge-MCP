@@ -28,8 +28,7 @@ export function activateAutoApproveTimed(durationMs: number): void {
       _timer = setTimeout(tick, Math.min(remaining, MAX_TIMER_MS));
       return;
     }
-    _state = { mode: "none" };
-    _timer = undefined;
+    cancelAutoApprove();
   };
   _timer = setTimeout(tick, Math.min(durationMs, MAX_TIMER_MS));
 }
@@ -50,11 +49,11 @@ export function cancelAutoApprove(): void {
 export function checkAndConsumeAutoApprove(): boolean {
   if (_state.mode === "none") return false;
   if (_state.mode === "one") {
-    _state = { mode: "none" };
+    cancelAutoApprove();
     return true;
   }
   if (_state.expiresAt !== undefined && Date.now() >= _state.expiresAt) {
-    _state = { mode: "none" };
+    cancelAutoApprove();
     return false;
   }
   return true;
@@ -62,5 +61,5 @@ export function checkAndConsumeAutoApprove(): boolean {
 
 /** Returns the current auto-approve state (for status display). */
 export function getAutoApproveState(): Readonly<AutoApproveState> {
-  return _state;
+  return { ..._state };
 }
