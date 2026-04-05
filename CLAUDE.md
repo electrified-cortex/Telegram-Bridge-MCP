@@ -2,6 +2,19 @@
 
 See `.github/copilot-instructions.md` for changelog and merge policy.
 
+## Agent Behavioral Guide
+
+See [`docs/behavior.md`](docs/behavior.md) for the full agent behavioral guide — dequeue loop pattern, session startup, communication style, multi-session protocol, and shutdown flow.
+
+## Loop Guard Hooks
+
+Pre-built Stop hooks are included to keep agents in the dequeue loop:
+
+- **VS Code / GitHub Copilot Chat:** `.github/hooks/telegram-loop-guard.json` + `.github/hooks/telegram-loop-guard.ps1`
+- **Claude Code:** `.claude/hooks/telegram-loop-guard.sh`
+
+See [`docs/agent-setup.md`](docs/agent-setup.md) for installation instructions.
+
 ## Dependency Policy
 
 This repo has an established audit baseline (post-Grammy security audit, March 2026). All dependency changes are intentional and require review.

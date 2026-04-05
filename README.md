@@ -243,6 +243,13 @@ pnpm pair           # Re-run pairing wizard
 
 ---
 
+## Agent Setup
+
+To keep agents in the Telegram dequeue loop reliably, install the loop guard hook for your host.
+See [`docs/agent-setup.md`](docs/agent-setup.md) for VS Code (GitHub Copilot Chat) and Claude Code installation instructions.
+
+---
+
 ## License
 
 AGPL-3.0-only — see [LICENSE](LICENSE).
