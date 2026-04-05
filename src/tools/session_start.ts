@@ -389,7 +389,7 @@ export function register(server: McpServer) {
           // buildHeader() intentionally skips single-session mode; compose inline.
           const _announcement = await Promise.resolve(
             runInSessionContext(session.sid, () =>
-              getApi().sendMessage(chatId, `${session.color} 🤖 ${effectiveName}\nSession ${session.sid} — 🟢 Online`),
+              getApi().sendMessage(chatId, `${session.color} 🤖 \`${effectiveName}\`\nSession ${session.sid} — 🟢 Online`, { parse_mode: "Markdown" }),
             ),
           ).catch(() => undefined);
           const announcementMsgId = _announcement?.message_id;
