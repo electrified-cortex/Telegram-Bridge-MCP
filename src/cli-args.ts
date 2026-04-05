@@ -1,6 +1,6 @@
 import { DIGITS_ONLY } from "./utils/patterns.js";
 
-const DEFAULT_HTTP_PORT = 3099;
+export const DEFAULT_HTTP_PORT = 3099;
 
 /**
  * Resolves the HTTP port from CLI args or environment.

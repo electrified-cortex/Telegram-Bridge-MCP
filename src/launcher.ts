@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import { config as dotenvConfig } from "dotenv";
 import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
+import { DEFAULT_HTTP_PORT } from "./cli-args.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, "..");
@@ -10,7 +11,6 @@ const projectRoot = join(__dirname, "..");
 // Load .env from the package root before anything else
 dotenvConfig({ path: join(projectRoot, ".env") });
 
-const DEFAULT_PORT = 3099;
 const MCP_PATH = "/mcp";
 const PROBE_TIMEOUT_MS = 2000;
 const WAIT_INTERVAL_MS = 250;
@@ -22,7 +22,7 @@ function getMcpPort(): number {
     const parsed = parseInt(raw, 10);
     if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535) return parsed;
   }
-  return DEFAULT_PORT;
+  return DEFAULT_HTTP_PORT;
 }
 
 async function probeServer(url: string, timeoutMs: number): Promise<boolean> {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { DIGITS_ONLY } from "../utils/patterns.js";
 
 /**
  * Human-readable description for the `token` parameter used in all tool schemas.
@@ -24,8 +25,6 @@ export const TOKEN_PARAM_DESCRIPTION =
  * Falls back gracefully to `false` outside any async context (e.g. tests
  * that call TOKEN_SCHEMA.safeParse directly without a session wrapper).
  */
-/** Matches a non-empty string of ASCII digits — used to detect numeric-string token coercion. */
-const RE_NUMERIC_STRING = /^\d+$/;
 
 const _tokenStringHintAls = new AsyncLocalStorage<{ wasString: boolean }>();
 
@@ -61,7 +60,7 @@ export function consumeTokenStringHint(): string | undefined {
 export const TOKEN_SCHEMA = z
   .preprocess(
     (v) => {
-      const wasString = typeof v === "string" && RE_NUMERIC_STRING.test(v);
+      const wasString = typeof v === "string" && DIGITS_ONLY.test(v);
       const store = _tokenStringHintAls.getStore();
       if (store !== undefined) {
         // Running inside a tool-handler async context — store hint there.
