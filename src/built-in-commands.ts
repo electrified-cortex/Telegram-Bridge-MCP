@@ -988,10 +988,14 @@ async function handleApproveCommand(): Promise<void> {
   if (state.mode === "one") {
     statusLine = "🟡 Auto-approve: next request only";
   } else if (state.mode === "timed" && state.expiresAt !== undefined) {
-    const remaining = Math.max(0, Math.ceil((state.expiresAt - Date.now()) / 1000));
-    const mins = Math.floor(remaining / 60);
-    const secs = remaining % 60;
-    statusLine = `🟢 Auto-approve active (${mins}m ${secs}s remaining)`;
+    const remaining = Math.ceil((state.expiresAt - Date.now()) / 1000);
+    if (remaining <= 0) {
+      statusLine = "⚪ Auto-approve: off";
+    } else {
+      const mins = Math.floor(remaining / 60);
+      const secs = remaining % 60;
+      statusLine = `🟢 Auto-approve active (${mins}m ${secs}s remaining)`;
+    }
   } else {
     statusLine = "⚪ Auto-approve: off";
   }
