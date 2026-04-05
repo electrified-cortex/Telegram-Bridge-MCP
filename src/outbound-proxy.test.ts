@@ -724,5 +724,41 @@ describe("outbound-proxy", () => {
       expect(sentOpts._skipHeader).toBeUndefined();
       expect(sentOpts.reply_to_message_id).toBe(99);
     });
+
+    it("_skipHeader suppresses nametag injection in editMessageText", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Worker 1" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).editMessageText(42, 10, "System panel", {
+        parse_mode: "Markdown",
+        _skipHeader: true,
+      });
+
+      const [, , editedText, editOpts] = raw.editMessageText.mock.calls[0] as [number, number, string, Record<string, unknown> | undefined];
+      expect(editedText).toBe("System panel");
+      expect(editOpts?._skipHeader).toBeUndefined();
+      expect(editOpts?.parse_mode).toBe("Markdown");
+    });
+
+    it("_skipHeader is stripped from editMessageText opts before the real API call", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Worker 1" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).editMessageText(42, 10, "Panel text", {
+        parse_mode: "Markdown",
+        _skipHeader: true,
+        reply_markup: { inline_keyboard: [] },
+      });
+
+      const [, , , sentOpts] = raw.editMessageText.mock.calls[0] as [number, number, string, Record<string, unknown>];
+      expect(sentOpts._skipHeader).toBeUndefined();
+      expect(sentOpts.reply_markup).toBeDefined();
+    });
   });
 });

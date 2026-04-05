@@ -350,14 +350,20 @@ export function createOutboundProxy(realApi: Api): Api {
           // Inject session header into edit text if multi-session active
           // args: (chatId, messageId, text, opts?)
           const editOpts = args[3] as Record<string, unknown> | undefined;
-          let editParseMode = editOpts?.parse_mode as string | undefined;
-          const { formatted: editHeader } = buildHeader(editParseMode);
-          if (editHeader) {
-            args[2] = editHeader + (args[2] as string);
-            // Auto-inject parse_mode so the backtick name tag renders
-            if (!editParseMode) {
-              args[3] = { ...editOpts, parse_mode: "Markdown" };
-              editParseMode = "Markdown";
+          const skipEditHeader = editOpts?._skipHeader === true;
+          const cleanEditOpts = editOpts ? { ...editOpts } : undefined;
+          if (cleanEditOpts) delete cleanEditOpts._skipHeader;
+          args[3] = cleanEditOpts;
+          let editParseMode = cleanEditOpts?.parse_mode as string | undefined;
+          if (!skipEditHeader) {
+            const { formatted: editHeader } = buildHeader(editParseMode);
+            if (editHeader) {
+              args[2] = editHeader + (args[2] as string);
+              // Auto-inject parse_mode so the backtick name tag renders
+              if (!editParseMode) {
+                args[3] = { ...cleanEditOpts, parse_mode: "Markdown" };
+                editParseMode = "Markdown";
+              }
             }
           }
 

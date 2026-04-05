@@ -1004,6 +1004,7 @@ async function handleApproveCommand(): Promise<void> {
   try {
     msg = await api.sendMessage(chatId, `*Session Auto-Approve*\n${statusLine}`, {
       parse_mode: "Markdown",
+      _skipHeader: true,
       reply_markup: {
         inline_keyboard: [[
           { text: "Next request", callback_data: "approve:one" },
@@ -1011,7 +1012,7 @@ async function handleApproveCommand(): Promise<void> {
           { text: "Dismiss",      callback_data: "approve:dismiss" },
         ]],
       },
-    });
+    } as Record<string, unknown>);
   } catch { return; }
 
   markInternalMessage(msg.message_id);
@@ -1034,20 +1035,20 @@ async function handleApproveCallback(
     activateAutoApproveOne();
     await api.editMessageText(chatId, panelMsgId,
       "*Session Auto-Approve*\n▸ 🟡 Next session request will be auto-approved",
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [] } }
+      { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   } else if (data === "approve:timed") {
     activateAutoApproveTimed(AUTO_APPROVE_DURATION_MS);
     await api.editMessageText(chatId, panelMsgId,
       "*Session Auto-Approve*\n▸ 🟢 Auto-approving all session requests for 10 minutes",
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [] } }
+      { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   } else {
     // dismiss — cancel any active auto-approve and close panel
     cancelAutoApprove();
     await api.editMessageText(chatId, panelMsgId,
       "*Session Auto-Approve*\n▸ ⚪ Dismissed — manual approval restored",
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [] } }
+      { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   }
 }

@@ -1040,6 +1040,47 @@ describe("built-in-commands", () => {
       };
       expect(isInternalTimelineEvent(evt)).toBe(true);
     });
+
+    // name-tag suppression — panel messages must carry _skipHeader: true so
+    // the outbound proxy does not prefix them with a worker's session header
+    // when auto-approve is triggered while another session is active.
+
+    it("/approve panel sendMessage carries _skipHeader: true", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 2001 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      const opts = mocks.sendMessage.mock.calls[0][2] as Record<string, unknown>;
+      expect(opts._skipHeader).toBe(true);
+    });
+
+    it("approve:one callback editMessageText carries _skipHeader: true", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 2002 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(2002, "approve:one"));
+      const opts = mocks.editMessageText.mock.calls[0][3] as Record<string, unknown>;
+      expect(opts._skipHeader).toBe(true);
+      cancelAutoApprove();
+    });
+
+    it("approve:timed callback editMessageText carries _skipHeader: true", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 2003 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(2003, "approve:timed"));
+      const opts = mocks.editMessageText.mock.calls[0][3] as Record<string, unknown>;
+      expect(opts._skipHeader).toBe(true);
+      cancelAutoApprove();
+    });
+
+    it("approve:dismiss callback editMessageText carries _skipHeader: true", async () => {
+      activateAutoApproveOne();
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 2004 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(2004, "approve:dismiss"));
+      const opts = mocks.editMessageText.mock.calls[0][3] as Record<string, unknown>;
+      expect(opts._skipHeader).toBe(true);
+    });
   });
 
   // -- Session context preservation ---------------------------------------
