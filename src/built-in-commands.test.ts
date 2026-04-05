@@ -46,6 +46,8 @@ const mocks = vi.hoisted(() => ({
   // session-context
   runInSessionContext: vi.fn(<T>(sid: number, fn: () => T): T => fn()),
   getCallerSid: vi.fn((): number => 0),
+  // local-log
+  rollLog: vi.fn((): string | null => null),
 }));
 
 vi.mock("./telegram.js", () => ({
@@ -122,6 +124,10 @@ vi.mock("./session-context.js", () => ({
 
 vi.mock("./voice-state.js", () => ({
   getSessionSpeed: vi.fn((): number | null => null),
+}));
+
+vi.mock("./local-log.js", () => ({
+  rollLog: (...args: unknown[]) => mocks.rollLog(...args),
 }));
 
 
@@ -332,6 +338,8 @@ describe("built-in-commands", () => {
       await handleIfBuiltIn(callbackUpdate(panelId, "session:dump"));
       // Panel deleted
       expect(mocks.deleteMessage).toHaveBeenCalledWith(123, panelId);
+      // rollLog() was invoked
+      expect(mocks.rollLog).toHaveBeenCalled();
       // Empty incremental dump is silent — no "no events" message, no document sent
       expect(mocks.sendDocument).not.toHaveBeenCalled();
       expect(mocks.sendMessage).not.toHaveBeenCalledWith(
@@ -339,6 +347,27 @@ describe("built-in-commands", () => {
         expect.stringContaining("no events captured"),
         expect.any(Object),
       );
+    });
+
+    it("session:dump sends service notification with log filename when events exist", async () => {
+      mocks.rollLog.mockReturnValue("2025-04-05T143022.json");
+      const panelId = await createPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "session:dump"));
+      // Allow async sendServiceMessage to settle
+      await Promise.resolve();
+      expect(mocks.rollLog).toHaveBeenCalled();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("2025-04-05T143022.json"),
+      );
+    });
+
+    it("session:dump does not send service notification when buffer was empty", async () => {
+      mocks.rollLog.mockReturnValue(null);
+      const panelId = await createPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "session:dump"));
+      await Promise.resolve();
+      expect(mocks.rollLog).toHaveBeenCalled();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
     });
   });
 

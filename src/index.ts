@@ -18,10 +18,11 @@ import { setAuthHook } from "./session-gate.js";
 import { touchSession } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
 import { loadConfig, getSessionLogMode, sessionLogLabel, isDebugConfig } from "./config.js";
-import { timelineSize } from "./message-store.js";
+import { timelineSize, setOnLocalLog } from "./message-store.js";
 import { initDebugLog } from "./debug-log.js";
 import { cleanupStalePins } from "./startup-pin-cleanup.js";
 import { resolveHttpPort } from "./cli-args.js";
+import { enableLogging, isLoggingEnabled, flushCurrentLog, logEvent as logLocalEvent } from "./local-log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -69,6 +70,10 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
       if (getSessionLogMode() !== null && timelineSize() > 0) {
         try { await doTimelineDump(); } catch { /* best effort */ }
       }
+      // Flush local log buffer to disk before exit
+      if (isLoggingEnabled()) {
+        try { flushCurrentLog(); } catch { /* best effort */ }
+      }
       await sendServiceMessage("🔴 Offline").catch((e: unknown) => {
         process.stderr.write(`[shutdown] sendServiceMessage error: ${String(e)}\n`);
       });
@@ -84,6 +89,14 @@ installOutboundProxy(createOutboundProxy);
 
 // Apply session log config (wires up auto-dump if configured)
 applySessionLogConfig();
+
+// Wire up always-on local logging (default: enabled, opt-out via disableLogging())
+enableLogging();
+setOnLocalLog((event) => {
+  // Strip raw Telegram update before logging — it's verbose and contains PII
+  const { _update: _discarded, ...loggableEvent } = event;
+  logLocalEvent(loggableEvent);
+});
 
 // Parse --http [port] from argv (takes precedence over MCP_PORT env var)
 let mcpPort: number | undefined;
@@ -202,4 +215,5 @@ void cleanupStalePins().catch(() => {});
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
 const logStatus = sessionLogLabel();
-void sendServiceMessage(`🟢 Online\nSession record: ${logStatus}\n/session to change settings`).catch(() => {});
+const localLogStatus = isLoggingEnabled() ? "Logging enabled" : "Logging disabled";
+void sendServiceMessage(`🟢 Online\n${localLogStatus}\nSession record: ${logStatus}\n/session to change settings`).catch(() => {});

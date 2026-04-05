@@ -15,6 +15,7 @@
 import { createRequire } from "module";
 import type { Update } from "grammy/types";
 import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
+import { rollLog } from "./local-log.js";
 import { elegantShutdown, setShutdownDumpHook } from "./shutdown.js";
 
 import { getSessionLogMode, setSessionLogMode, sessionLogLabel } from "./config.js";
@@ -39,7 +40,7 @@ export function getVersionString(): string {
   return `v${MCP_VERSION} (${_mcpCommit} ${_mcpBuildTime})`;
 }
 import type { TimelineEvent } from "./message-store.js";
-import { dumpTimeline, dumpTimelineSince, timelineSize, storeSize, setOnEvent } from "./message-store.js";
+import { dumpTimeline, timelineSize, storeSize, setOnEvent } from "./message-store.js";
 import { listSessions, activeSessionCount } from "./session-manager.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
 import { deliverServiceMessage } from "./session-queue.js";
@@ -1139,85 +1140,28 @@ async function handleSessionCallback(
 }
 
 // ---------------------------------------------------------------------------
-// Timeline dump — JSON file sent to Telegram
+// Timeline dump — writes to local log file (no Telegram file send)
 // ---------------------------------------------------------------------------
 
 /**
- * Take a snapshot of the message-store timeline, convert to JSON, and send
- * as a .json file to Telegram. Used by both manual (/session → Dump) and
- * auto-dump (threshold reached).
+ * Roll the local log file. Called by both manual (/session → Dump) and
+ * auto-dump (threshold reached), and at shutdown.
  *
- * @param incremental If true, only dump events since last dump (cursor-based).
- *                    If false (default), dump the full timeline.
+ * The local log is always-on and captures all events continuously via the
+ * setOnLocalLog hook in index.ts. This function triggers a roll so the
+ * current log file is finalized and a new one starts.
+ *
+ * Emits a service notification to chat with the archived filename.
+ *
+ * @param incremental Retained for call-site compatibility; not used for local logs.
  */
-export async function doTimelineDump(incremental = false): Promise<void> {
-  const chatId = resolveChat();
-  if (typeof chatId !== "number") return;
-  const api = getApi();
-
-  let timeline: Array<Record<string, unknown>>;
-  if (incremental) {
-    const result = dumpTimelineSince(_dumpCursor);
-    timeline = result.events.filter(evt => !isInternalTimelineEvent(evt));
-    _dumpCursor = result.nextCursor;
-  } else {
-    timeline = dumpTimeline().filter(evt => !isInternalTimelineEvent(evt));
-    _dumpCursor = timelineSize();
-  }
-
-  if (timeline.length === 0) {
-    if (!incremental) {
-      try {
-        const noEvtMsg = await api.sendMessage(chatId, "🗒 *Session Record*\n_(no events captured)_", {
-          parse_mode: "Markdown",
-        });
-        markInternalMessage(noEvtMsg.message_id);
-      } catch { /* ignore */ }
-    }
-    return;
-  }
-
-  const now = new Date().toISOString();
-  const payload = {
-    generated: now,
-    incremental,
-    event_count: timeline.length,
-    total_timeline: timelineSize(),
-    unique_messages: storeSize(),
-    timeline,
-  };
-
+export async function doTimelineDump(_incremental = false): Promise<void> {
   try {
-    const { InputFile } = await import("grammy");
-    const buf = Buffer.from(JSON.stringify(payload, null, 2), "utf-8");
-    const file = new InputFile(buf, `session-log-${now.replace(/[:.]/g, "-")}.json`);
-    const label = `🗒 Session record · ${timeline.length} events${incremental ? " (incremental)" : ""}`;
-    const msg = await api.sendDocument(chatId, file, { caption: label }) as {
-      message_id: number;
-      document?: { file_id?: string };
-    };
-    markInternalMessage(msg.message_id);
-
-    // Amend caption with file_id so it's recoverable after a crash
-    const fileId = msg.document?.file_id;
-    if (fileId) {
-      try {
-        await api.editMessageCaption(chatId, msg.message_id, {
-          caption: `${label}\nFile ID: \`${fileId}\``,
-          parse_mode: "Markdown",
-        });
-      } catch { /* best effort */ }
+    const filename = rollLog();
+    if (filename) {
+      void sendServiceMessage(`📋 Log file created: \`${filename}\``).catch(() => {});
     }
-  } catch {
-    // Fallback: truncated message
-    try {
-      const json = JSON.stringify(payload);
-      const fallbackMsg = await api.sendMessage(chatId, `\`\`\`json\n${json.slice(0, 3900)}\n\`\`\``, {
-        parse_mode: "Markdown",
-      });
-      markInternalMessage(fallbackMsg.message_id);
-    } catch { /* ignore */ }
-  }
+  } catch { /* best-effort */ }
 }
 
 function buildSessionPanel(): { text: string; keyboard: { text: string; callback_data: string }[][] } {

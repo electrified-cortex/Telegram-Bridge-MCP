@@ -1,19 +1,17 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, resolveChat, toError } from "../telegram.js";
-import { dumpTimeline, timelineSize, storeSize } from "../message-store.js";
-import { getSessionLogMode } from "../config.js";
-import { advanceDumpCursor, isInternalTimelineEvent, markInternalMessage } from "../built-in-commands.js";
+import { toError } from "../telegram.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
+import { rollLog } from "../local-log.js";
+import { sendServiceMessage } from "../telegram.js";
 
 const DESCRIPTION =
-  "Snapshots the conversation timeline as a JSON file and sends it to the Telegram chat " +
-  "as a downloadable document. The file will appear as a bot message that both the user " +
-  "and agent can download later via download_file. " +
-  "Covers all inbound and outbound events since server start (rolling limit of 1000 events). " +
-  "This is a broad history dump containing sensitive user content. " +
-  "Only call when the user explicitly requests session history, context recovery, or an audit.";
+  "Triggers a local log roll: the current session event log is finalized and " +
+  "a new log file starts. Returns the filename of the archived log. " +
+  "Log content is stored locally in data/logs/ — it is never sent to Telegram. " +
+  "Use get_log to read the archived log content. " +
+  "Prefer roll_log for new code — this tool is retained for backward compatibility.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -21,87 +19,32 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(1000)
-          .default(100)
-          .describe("Max events to return (most recent). Default 100."),
-              token: TOKEN_SCHEMA,
-},
+        token: TOKEN_SCHEMA,
+      },
     },
-    async ({ limit, token}) => {
+    async ({ token }) => {
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
+
       try {
-        if (getSessionLogMode() === null) {
+        const archivedFilename = rollLog();
+
+        if (archivedFilename) {
+          void sendServiceMessage(`📋 Log file created: \`${archivedFilename}\``).catch(() => {});
           return {
             content: [{
               type: "text" as const,
-              text: "Session log is disabled. Use /session in Telegram to enable it.",
+              text: JSON.stringify({ filename: archivedFilename, message: "Log rolled. Use get_log to read the file." }),
+            }],
+          };
+        } else {
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({ filename: null, message: "No events in current log — nothing to roll." }),
             }],
           };
         }
-
-        const chatId = resolveChat();
-        if (typeof chatId !== "number") {
-          return { content: [{ type: "text" as const, text: "No chat configured." }] };
-        }
-
-        const full = dumpTimeline().filter(evt => !isInternalTimelineEvent(evt));
-        const timeline = full.length > limit ? full.slice(-limit) : full;
-
-        if (timeline.length === 0) {
-          return { content: [{ type: "text" as const, text: "No events captured yet." }] };
-        }
-
-        const now = new Date().toISOString();
-        const payload = {
-          generated: now,
-          timeline_events: timelineSize(),
-          unique_messages: storeSize(),
-          returned: timeline.length,
-          truncated: full.length > limit,
-          timeline,
-        };
-
-        const { InputFile } = await import("grammy");
-        const buf = Buffer.from(JSON.stringify(payload, null, 2), "utf-8");
-        const file = new InputFile(buf, `session-log-${now.replace(/[:.]/g, "-")}.json`);
-        const label = `🗒 Session record · ${timeline.length} events`;
-        const api = getApi();
-        const msg = await api.sendDocument(chatId, file, {
-          caption: label,
-        }) as { message_id: number; document?: { file_id?: string } };
-
-        markInternalMessage(msg.message_id);
-        advanceDumpCursor();
-
-        const fileId = msg.document?.file_id;
-
-        // Amend caption with file_id so it's recoverable after a crash
-        if (fileId) {
-          try {
-            await api.editMessageCaption(chatId, msg.message_id, {
-              caption: `${label}\nFile ID: \`${fileId}\``,
-              parse_mode: "Markdown",
-            });
-          } catch { /* best effort */ }
-        }
-
-        const result: Record<string, unknown> = {
-          message_id: msg.message_id,
-          event_count: timeline.length,
-        };
-        if (fileId) result.file_id = fileId;
-
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify(result),
-          }],
-        };
       } catch (err) {
         return toError(err);
       }

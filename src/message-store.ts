@@ -129,6 +129,14 @@ export function setOnEvent(callback: ((timelineSize: number) => void) | null): v
   _onEventCallback = callback;
 }
 
+/** Optional callback fired after every timeline push for local logging. Independent of auto-dump. */
+let _onLocalLogCallback: ((event: TimelineEvent) => void) | null = null;
+
+/** Register a callback that receives every new timeline event for local logging. */
+export function setOnLocalLog(callback: ((event: TimelineEvent) => void) | null): void {
+  _onLocalLogCallback = callback;
+}
+
 /** A queue item is ready unless it's a voice message still waiting for text. */
 function isQueueItemReady(item: QueueItem): boolean {
   const c = item.event.content;
@@ -222,6 +230,7 @@ function pushEvent(event: TimelineEvent): void {
   versions.set(CURRENT, event);
   if (event.id > _highestMessageId) _highestMessageId = event.id;
   if (_onEventCallback) _onEventCallback(_timeline.length);
+  if (_onLocalLogCallback) _onLocalLogCallback(event);
 }
 
 // ---------------------------------------------------------------------------
@@ -723,6 +732,7 @@ export function resetStoreForTest(): void {
   _messageHooks.clear();
   _botReactionIndex.clear();
   _onEventCallback = null;
+  _onLocalLogCallback = null;
 }
 
 /** Register a one-shot auto-lock hook for a send_choice message. */

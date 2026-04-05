@@ -43,6 +43,9 @@ import { register as registerGetMe } from "./tools/get_me.js";
 import { register as registerGetChat } from "./tools/get_chat.js";
 import { register as registerGetAgentGuide } from "./tools/get_agent_guide.js";
 import { register as registerDumpSessionRecord } from "./tools/dump_session_record.js";
+import { register as registerRollLog } from "./tools/roll_log.js";
+import { register as registerGetLog } from "./tools/get_log.js";
+import { register as registerDeleteLog } from "./tools/delete_log.js";
 import { register as registerShutdownServer } from "./tools/shutdown.js";
 import { register as registerSessionStart } from "./tools/session_start.js";
 import { register as registerCloseSession } from "./tools/close_session.js";
@@ -184,6 +187,9 @@ export function createServer(): McpServer {
   registerRouteMessage(server);
   registerRenameSession(server);
   registerDumpSessionRecord(server);
+  registerRollLog(server);
+  registerGetLog(server);
+  registerDeleteLog(server);
   registerGetDebugLog(server);
 
   // ── System ─────────────────────────────────────────────────────────────
