@@ -74,7 +74,7 @@ async function requestApproval(
       } else if (data.startsWith(APPROVE_PREFIX)) {
         const idx = parseInt(data.slice(APPROVE_PREFIX.length), 10);
         if (idx >= 0 && idx < COLOR_PALETTE.length) {
-          resolve({ approved: true, color: COLOR_PALETTE[idx] });
+          resolve({ approved: true, color: COLOR_PALETTE[idx], forceColor: true });
         } else {
           resolve({ approved: false });
         }
