@@ -48,6 +48,12 @@ const mocks = vi.hoisted(() => ({
   getCallerSid: vi.fn((): number => 0),
   // local-log
   rollLog: vi.fn((): string | null => null),
+  isLoggingEnabled: vi.fn((): boolean => true),
+  enableLogging: vi.fn(),
+  disableLogging: vi.fn(),
+  listLogs: vi.fn((): string[] => []),
+  getCurrentLogFilename: vi.fn((): string | null => null),
+  deleteLog: vi.fn(),
 }));
 
 vi.mock("./telegram.js", () => ({
@@ -128,6 +134,12 @@ vi.mock("./voice-state.js", () => ({
 
 vi.mock("./local-log.js", () => ({
   rollLog: (...args: unknown[]) => mocks.rollLog(...args),
+  isLoggingEnabled: (...args: unknown[]) => mocks.isLoggingEnabled(...args),
+  enableLogging: (...args: unknown[]) => mocks.enableLogging(...args),
+  disableLogging: (...args: unknown[]) => mocks.disableLogging(...args),
+  listLogs: (...args: unknown[]) => mocks.listLogs(...args),
+  getCurrentLogFilename: (...args: unknown[]) => mocks.getCurrentLogFilename(...args),
+  deleteLog: (...args: unknown[]) => mocks.deleteLog(...args),
 }));
 
 
@@ -201,9 +213,9 @@ describe("built-in-commands", () => {
 
   // -- BUILT_IN_COMMANDS constant ------------------------------------------
 
-  it("exports /session, /voice, /version, /shutdown, and /approve command metadata", () => {
+  it("exports /logging, /voice, /version, /shutdown, and /approve command metadata", () => {
     expect(BUILT_IN_COMMANDS).toEqual([
-      { command: "session", description: "Session recording controls" },
+      { command: "logging", description: "Logging controls" },
       { command: "voice", description: "Change the TTS voice" },
       { command: "version", description: "Show server version and build info" },
       { command: "shutdown", description: "Shut down the MCP server" },
@@ -253,14 +265,14 @@ describe("built-in-commands", () => {
     // Since this is mocked, we verify it was NOT called.
   });
 
-  // -- /session command ----------------------------------------------------
+  // -- /logging command ----------------------------------------------------
 
-  it("handles /session command — sends panel", async () => {
-    const result = await handleIfBuiltIn(cmdUpdate("/session"));
+  it("handles /logging command — sends panel", async () => {
+    const result = await handleIfBuiltIn(cmdUpdate("/logging"));
     expect(result).toBe(true);
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       123,
-      expect.stringContaining("Session Record"),
+      expect.stringContaining("Logging"),
       expect.objectContaining({
         parse_mode: "Markdown",
         reply_markup: expect.objectContaining({
@@ -270,104 +282,147 @@ describe("built-in-commands", () => {
     );
   });
 
-  it("shows mode and action buttons", async () => {
-    mocks.dumpTimeline.mockReturnValue([
-      { id: 1, event: "message", from: "user", timestamp: "", content: { type: "text" } },
-    ]);
-    await handleIfBuiltIn(cmdUpdate("/session"));
+  it("shows On/Off and Dump/Flush buttons when logging enabled", async () => {
+    mocks.isLoggingEnabled.mockReturnValue(true);
+    mocks.listLogs.mockReturnValue([]);
+    await handleIfBuiltIn(cmdUpdate("/logging"));
     const call = mocks.sendMessage.mock.calls[0];
     const keyboard = call[2].reply_markup.inline_keyboard;
     const buttons = keyboard.flat().map(
       (b: { callback_data: string }) => b.callback_data,
     );
-    expect(buttons).toContain("session:disable");
-    expect(buttons).toContain("session:autodump");
-    expect(buttons).toContain("session:dump");
-    expect(buttons).toContain("session:dismiss");
+    expect(buttons).toContain("logging:dump");
+    expect(buttons).toContain("logging:off");
+    expect(buttons).toContain("logging:flush");
+    expect(buttons).toContain("logging:dismiss");
+    expect(buttons).not.toContain("logging:on");
   });
 
-  it("handles /session when resolveChat returns non-number", async () => {
+  it("shows only On button when logging disabled", async () => {
+    mocks.isLoggingEnabled.mockReturnValue(false);
+    await handleIfBuiltIn(cmdUpdate("/logging"));
+    const call = mocks.sendMessage.mock.calls[0];
+    const keyboard = call[2].reply_markup.inline_keyboard;
+    const buttons = keyboard.flat().map(
+      (b: { callback_data: string }) => b.callback_data,
+    );
+    expect(buttons).toContain("logging:on");
+    expect(buttons).toContain("logging:dismiss");
+    expect(buttons).not.toContain("logging:dump");
+    expect(buttons).not.toContain("logging:off");
+  });
+
+  it("handles /logging when resolveChat returns non-number", async () => {
     mocks.resolveChat.mockReturnValue("not configured");
-    const result = await handleIfBuiltIn(cmdUpdate("/session"));
+    const result = await handleIfBuiltIn(cmdUpdate("/logging"));
     expect(result).toBe(true);
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
-  // -- Callback queries: session panel -------------------------------------
+  // -- Callback queries: logging panel -------------------------------------
 
-  describe("session panel callbacks", () => {
-    /** Send /session to create a panel, then return its message_id */
+  describe("logging panel callbacks", () => {
+    /** Send /logging to create a panel, then return its message_id */
     async function createPanel(): Promise<number> {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 200 });
-      await handleIfBuiltIn(cmdUpdate("/session"));
+      await handleIfBuiltIn(cmdUpdate("/logging"));
       return 200;
     }
 
     it("routes callback_query to panel handler", async () => {
       const panelId = await createPanel();
-      expect(isBuiltInPanelQuery(callbackUpdate(panelId, "session:start"))).toBe(true);
+      expect(isBuiltInPanelQuery(callbackUpdate(panelId, "logging:dismiss"))).toBe(true);
     });
 
     it("does not route unknown message_id", () => {
-      expect(isBuiltInPanelQuery(callbackUpdate(999, "session:start"))).toBe(false);
+      expect(isBuiltInPanelQuery(callbackUpdate(999, "logging:dismiss"))).toBe(false);
     });
 
-    it("session:dismiss deletes the panel", async () => {
+    it("logging:dismiss deletes the panel", async () => {
       const panelId = await createPanel();
-      await handleIfBuiltIn(callbackUpdate(panelId, "session:dismiss"));
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:dismiss"));
       expect(mocks.deleteMessage).toHaveBeenCalledWith(123, panelId);
     });
 
-    it("session:disable sets mode to null", async () => {
+    it("logging:on calls enableLogging and refreshes panel", async () => {
+      mocks.isLoggingEnabled.mockReturnValue(false);
       const panelId = await createPanel();
-      await handleIfBuiltIn(callbackUpdate(panelId, "session:disable"));
-      expect(mocks.setSessionLogMode).toHaveBeenCalledWith(null);
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:on"));
+      expect(mocks.enableLogging).toHaveBeenCalled();
       expect(mocks.editMessageText).toHaveBeenCalled();
     });
 
-    it("session:manual sets mode to manual", async () => {
-      mocks.getSessionLogMode.mockReturnValue(null);
+    it("logging:off rolls log then calls disableLogging", async () => {
+      mocks.isLoggingEnabled.mockReturnValue(true);
       const panelId = await createPanel();
-      await handleIfBuiltIn(callbackUpdate(panelId, "session:manual"));
-      expect(mocks.setSessionLogMode).toHaveBeenCalledWith("manual");
-      expect(mocks.editMessageText).toHaveBeenCalled();
-    });
-
-    it("session:dump dumps and deletes panel", async () => {
-      const panelId = await createPanel();
-      await handleIfBuiltIn(callbackUpdate(panelId, "session:dump"));
-      // Panel deleted
-      expect(mocks.deleteMessage).toHaveBeenCalledWith(123, panelId);
-      // rollLog() was invoked
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:off"));
       expect(mocks.rollLog).toHaveBeenCalled();
-      // Empty incremental dump is silent — no "no events" message, no document sent
-      expect(mocks.sendDocument).not.toHaveBeenCalled();
-      expect(mocks.sendMessage).not.toHaveBeenCalledWith(
-        123,
-        expect.stringContaining("no events captured"),
-        expect.any(Object),
-      );
+      expect(mocks.disableLogging).toHaveBeenCalled();
+      expect(mocks.editMessageText).toHaveBeenCalled();
     });
 
-    it("session:dump sends service notification with log filename when events exist", async () => {
+    it("logging:dump rolls log and refreshes panel", async () => {
+      const panelId = await createPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:dump"));
+      expect(mocks.rollLog).toHaveBeenCalled();
+      expect(mocks.editMessageText).toHaveBeenCalled();
+    });
+
+    it("logging:dump sends service notification when rollLog returns filename", async () => {
       mocks.rollLog.mockReturnValue("2025-04-05T143022.json");
       const panelId = await createPanel();
-      await handleIfBuiltIn(callbackUpdate(panelId, "session:dump"));
-      // Allow async sendServiceMessage to settle
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:dump"));
       await Promise.resolve();
-      expect(mocks.rollLog).toHaveBeenCalled();
       expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
         expect.stringContaining("2025-04-05T143022.json"),
       );
     });
 
-    it("session:dump does not send service notification when buffer was empty", async () => {
+    it("logging:dump does not send notification when buffer was empty", async () => {
       mocks.rollLog.mockReturnValue(null);
       const panelId = await createPanel();
-      await handleIfBuiltIn(callbackUpdate(panelId, "session:dump"));
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:dump"));
       await Promise.resolve();
-      expect(mocks.rollLog).toHaveBeenCalled();
       expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    });
+
+    it("logging:flush shows no-logs message when no archived logs", async () => {
+      mocks.listLogs.mockReturnValue([]);
+      const panelId = await createPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:flush"));
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123, panelId,
+        expect.stringContaining("No archived logs"),
+        expect.any(Object),
+      );
+    });
+
+    it("logging:flush shows confirmation when archived logs exist", async () => {
+      mocks.listLogs.mockReturnValue(["2025-04-04T100000.json", "2025-04-05T143022.json"]);
+      const panelId = await createPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:flush"));
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123, panelId,
+        expect.stringContaining("Delete all 2"),
+        expect.any(Object),
+      );
+    });
+
+    it("logging:flush-confirm deletes all archived logs", async () => {
+      mocks.listLogs.mockReturnValue(["2025-04-04T100000.json", "2025-04-05T143022.json"]);
+      const panelId = await createPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:flush-confirm"));
+      expect(mocks.deleteLog).toHaveBeenCalledWith("2025-04-04T100000.json");
+      expect(mocks.deleteLog).toHaveBeenCalledWith("2025-04-05T143022.json");
+      expect(mocks.editMessageText).toHaveBeenCalled();
+    });
+
+    it("logging:flush-cancel refreshes panel without deleting", async () => {
+      mocks.listLogs.mockReturnValue(["2025-04-04T100000.json"]);
+      const panelId = await createPanel();
+      await handleIfBuiltIn(callbackUpdate(panelId, "logging:flush-cancel"));
+      expect(mocks.deleteLog).not.toHaveBeenCalled();
+      expect(mocks.editMessageText).toHaveBeenCalled();
     });
   });
 
@@ -381,32 +436,26 @@ describe("built-in-commands", () => {
     });
   });
 
-  // -- Mode switch via /session panel --------------------------------------
+  // -- expired logging: callbacks ------------------------------------------
 
-  describe("mode switches", () => {
-    async function createPanel(): Promise<number> {
-      mocks.sendMessage.mockResolvedValueOnce({ message_id: 300 });
-      await handleIfBuiltIn(cmdUpdate("/session"));
-      return 300;
-    }
+  it("expired logging: callback answers with 'This panel has expired.'", async () => {
+    // Panel not in _activePanels — expired
+    await handleIfBuiltIn(callbackUpdate(9999, "logging:dismiss"));
+    expect(mocks.answerCallbackQuery).toHaveBeenCalledWith(
+      "cq1",
+      { text: "This panel has expired." },
+    );
+  });
 
-    it("session:setauto:50 persists auto mode", async () => {
-      const panelId = await createPanel();
-      await handleIfBuiltIn(callbackUpdate(panelId, "session:setauto:50"));
-      expect(mocks.setSessionLogMode).toHaveBeenCalledWith(50);
-      expect(mocks.editMessageText).toHaveBeenCalled();
-    });
-
-    it("session:autodump shows threshold picker", async () => {
-      const panelId = await createPanel();
-      await handleIfBuiltIn(callbackUpdate(panelId, "session:autodump"));
-      expect(mocks.editMessageText).toHaveBeenCalledWith(
-        123,
-        panelId,
-        expect.stringContaining("Auto-dump"),
-        expect.any(Object),
-      );
-    });
+  it("isInternalTimelineEvent returns true for logging: callback data", () => {
+    const evt = {
+      id: 1,
+      event: "callback" as const,
+      from: "user",
+      timestamp: "",
+      content: { data: "logging:on" },
+    };
+    expect(isInternalTimelineEvent(evt)).toBe(true);
   });
 
   // -- /voice command ------------------------------------------------------
@@ -940,7 +989,7 @@ describe("built-in-commands", () => {
     it("preserves custom commands from set_commands tool", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getMyCommands.mockResolvedValue([
-        { command: "session", description: "built-in" },
+        { command: "logging", description: "built-in" },
         { command: "mycmd", description: "Custom command" },
       ]);
       await refreshGovernorCommand();
@@ -1159,13 +1208,13 @@ describe("built-in-commands", () => {
     it("panel edits use SID 0", async () => {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 200 });
       mocks.editMessageText.mockResolvedValue(true);
-      await handleIfBuiltIn(cmdUpdate("/session"));
+      await handleIfBuiltIn(cmdUpdate("/logging"));
 
       vi.clearAllMocks();
       mocks.runInSessionContext.mockImplementation(<T>(_sid: number, fn: () => T): T => fn());
       mocks.editMessageText.mockResolvedValue(true);
 
-      await handleIfBuiltIn(callbackUpdate(200, "session:disable"));
+      await handleIfBuiltIn(callbackUpdate(200, "logging:on"));
 
       expect(mocks.runInSessionContext).toHaveBeenCalledWith(0, expect.any(Function));
       expect(mocks.editMessageText).toHaveBeenCalled();

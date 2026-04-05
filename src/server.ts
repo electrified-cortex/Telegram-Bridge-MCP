@@ -45,6 +45,7 @@ import { register as registerGetAgentGuide } from "./tools/get_agent_guide.js";
 import { register as registerDumpSessionRecord } from "./tools/dump_session_record.js";
 import { register as registerRollLog } from "./tools/roll_log.js";
 import { register as registerGetLog } from "./tools/get_log.js";
+import { register as registerListLogs } from "./tools/list_logs.js";
 import { register as registerDeleteLog } from "./tools/delete_log.js";
 import { register as registerShutdownServer } from "./tools/shutdown.js";
 import { register as registerSessionStart } from "./tools/session_start.js";
@@ -189,6 +190,7 @@ export function createServer(): McpServer {
   registerDumpSessionRecord(server);
   registerRollLog(server);
   registerGetLog(server);
+  registerListLogs(server);
   registerDeleteLog(server);
   registerGetDebugLog(server);
 
