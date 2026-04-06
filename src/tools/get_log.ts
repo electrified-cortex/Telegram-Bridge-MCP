@@ -1,14 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toError } from "../telegram.js";
-import { getLog, listLogs } from "../local-log.js";
+import { getLog, listLogs, getCurrentLogFilename } from "../local-log.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Read a local log file by filename and return its content via MCP tool response. " +
   "Log content never transits Telegram. " +
-  "Use list_logs (omit filename) to discover available log files. " +
+  "Omit filename to list available log files (includes current_log for the active session log), or use list_logs to discover them. " +
   "Provide filename to read a specific log.";
 
 export function register(server: McpServer) {
@@ -34,10 +34,15 @@ export function register(server: McpServer) {
       // List mode
       if (!filename) {
         const files = listLogs();
+        const current = getCurrentLogFilename();
         return {
           content: [{
             type: "text" as const,
-            text: JSON.stringify({ log_files: files, count: files.length }, null, 2),
+            text: JSON.stringify({
+              current_log: current,
+              log_files: files,
+              count: files.length,
+            }, null, 2),
           }],
         };
       }

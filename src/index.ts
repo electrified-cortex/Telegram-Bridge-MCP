@@ -23,7 +23,7 @@ import { timelineSize, setOnLocalLog } from "./message-store.js";
 import { initDebugLog } from "./debug-log.js";
 import { cleanupStalePins } from "./startup-pin-cleanup.js";
 import { resolveHttpPort } from "./cli-args.js";
-import { enableLogging, isLoggingEnabled, flushCurrentLog, logEvent as logLocalEvent } from "./local-log.js";
+import { enableLogging, isLoggingEnabled, rollLog, logEvent as logLocalEvent } from "./local-log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -78,9 +78,9 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
       if (getSessionLogMode() !== null && timelineSize() > 0) {
         try { await doTimelineDump(); } catch { /* best effort */ }
       }
-      // Flush local log buffer to disk before exit
+      // Roll the active log on shutdown so the current session log is cleanly archived.
       if (isLoggingEnabled()) {
-        try { flushCurrentLog(); } catch { /* best effort */ }
+        try { rollLog(); } catch { /* best effort */ }
       }
       await sendServiceMessage("🔴 Offline").catch((e: unknown) => {
         process.stderr.write(`[shutdown] sendServiceMessage error: ${String(e)}\n`);

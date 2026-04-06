@@ -9,11 +9,13 @@ const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   getLog: vi.fn((): string => ""),
   listLogs: vi.fn((): string[] => []),
+  getCurrentLogFilename: vi.fn((): string | null => null),
 }));
 
 vi.mock("../local-log.js", () => ({
   getLog: mocks.getLog,
   listLogs: mocks.listLogs,
+  getCurrentLogFilename: mocks.getCurrentLogFilename,
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -91,6 +93,19 @@ describe("get_log tool", () => {
       const result = parseResult(await call({ token: 1123456 }));
       expect(result.count).toBe(0);
       expect(result.log_files).toEqual([]);
+    });
+
+    it("returns null current_log when no events have been logged yet", async () => {
+      mocks.getCurrentLogFilename.mockReturnValue(null);
+      const result = parseResult(await call({ token: 1123456 }));
+      expect(result.current_log).toBeNull();
+    });
+
+    it("returns current_log filename when an active log file exists", async () => {
+      mocks.listLogs.mockReturnValue(["2025-04-05T143022.json"]);
+      mocks.getCurrentLogFilename.mockReturnValue("2025-04-05T143022.json");
+      const result = parseResult(await call({ token: 1123456 }));
+      expect(result.current_log).toBe("2025-04-05T143022.json");
     });
   });
 

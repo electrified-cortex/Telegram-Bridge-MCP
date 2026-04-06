@@ -73,11 +73,20 @@ const require = createRequire(import.meta.url);
 const { version: PKG_VERSION } = require("../package.json") as { version: string };
 
 /**
+ * Sanitize a log field by stripping \r, \n, and other ASCII control characters
+ * to prevent log injection attacks (fake log lines, ANSI escapes, etc.).
+ */
+function normalizeLogField(s: string): string {
+  // Strip \r, \n, and other ASCII control characters to prevent log injection.
+  return s.replace(/[\x00-\x1F\x7F]/g, " ").trim();
+}
+
+/**
  * Writes a [hook:blocked] log line to stderr.
  * Exported so it can be tested independently of the full server setup.
  */
 export function logBlockedToolCall(toolName: string, reason: string): void {
-  process.stderr.write(`[hook:blocked] ${toolName} — ${reason}\n`);
+  process.stderr.write(`[hook:blocked] ${normalizeLogField(toolName)} — ${normalizeLogField(reason)}\n`);
 }
 
 export function createServer(): McpServer {

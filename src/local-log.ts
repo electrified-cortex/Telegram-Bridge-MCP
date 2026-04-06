@@ -50,6 +50,8 @@ function formatTimestamp(d: Date): string {
   );
 }
 
+// Files use .json extension with NDJSON content (one JSON object per line).
+// .json is retained for backward compatibility; each line is individually valid JSON.
 function newFilename(): string {
   return `${formatTimestamp(new Date())}.json`;
 }
