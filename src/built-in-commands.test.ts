@@ -41,6 +41,8 @@ const mocks = vi.hoisted(() => ({
   // routing-mode
   getGovernorSid: vi.fn((): number => 0),
   setGovernorSid: vi.fn(),
+  // session-teardown
+  closeSessionById: vi.fn((): { closed: boolean; sid: number } => ({ closed: true, sid: 0 })),
   // session-queue
   deliverServiceMessage: vi.fn((): boolean => true),
   // session-context
@@ -142,6 +144,10 @@ vi.mock("./local-log.js", () => ({
   deleteLog: (...args: unknown[]) => mocks.deleteLog(...args),
 }));
 
+vi.mock("./session-teardown.js", () => ({
+  closeSessionById: (...args: unknown[]) => mocks.closeSessionById(...args),
+}));
+
 
 import {
   handleIfBuiltIn,
@@ -213,13 +219,15 @@ describe("built-in-commands", () => {
 
   // -- BUILT_IN_COMMANDS constant ------------------------------------------
 
-  it("exports /logging, /voice, /version, /shutdown, and /approve command metadata", () => {
+  it("exports built-in command metadata including /session and /log", () => {
     expect(BUILT_IN_COMMANDS).toEqual([
       { command: "logging", description: "Logging controls" },
       { command: "voice", description: "Change the TTS voice" },
       { command: "version", description: "Show server version and build info" },
       { command: "shutdown", description: "Shut down the MCP server" },
       { command: "approve", description: "Pre-approve session requests" },
+      { command: "session", description: "Manage active sessions" },
+      { command: "log", description: "Session recording controls" },
     ]);
   });
 
@@ -962,16 +970,16 @@ describe("built-in-commands", () => {
   // -- refreshGovernorCommand ----------------------------------------------
 
   describe("refreshGovernorCommand", () => {
-    it("adds /primary to menu when 2+ sessions active", async () => {
+    it("does not add /primary to menu (bundled into /session)", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getMyCommands.mockResolvedValue([]);
       await refreshGovernorCommand();
-      expect(mocks.setMyCommands).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ command: "primary" }),
-        ]),
-        expect.anything(),
-      );
+      expect(mocks.setMyCommands).toHaveBeenCalled();
+      const calls = mocks.setMyCommands.mock.calls as unknown as Array<
+        [Array<{ command: string }>, ...unknown[]]
+      >;
+      const cmds = calls[0]?.[0];
+      expect(cmds?.map(c => c.command) ?? []).not.toContain("primary");
     });
 
     it("omits /primary from menu when fewer than 2 sessions", async () => {
@@ -999,7 +1007,8 @@ describe("built-in-commands", () => {
       >;
       const cmds = calls[0]?.[0];
       const names = cmds?.map(c => c.command) ?? [];
-      expect(names).toContain("primary");
+      // /primary is not added (bundled into /session) but custom commands are kept
+      expect(names).not.toContain("primary");
       expect(names).toContain("mycmd");
     });
 
@@ -1218,6 +1227,214 @@ describe("built-in-commands", () => {
 
       expect(mocks.runInSessionContext).toHaveBeenCalledWith(0, expect.any(Function));
       expect(mocks.editMessageText).toHaveBeenCalled();
+    });
+  });
+
+  // -- /session command -----------------------------------------------------
+
+  describe("/session command", () => {
+    const SESSIONS = [
+      { sid: 1, name: "Overseer", color: "🟦", createdAt: "" },
+      { sid: 2, name: "Worker", color: "🟩", createdAt: "" },
+    ];
+
+    beforeEach(() => {
+      mocks.closeSessionById.mockReturnValue({ closed: true, sid: 0 });
+    });
+
+    it("handleSessionCommand — no sessions: sends notice, no panel created", async () => {
+      mocks.listSessions.mockReturnValue([]);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 3001 });
+      const result = await handleIfBuiltIn(cmdUpdate("/session"));
+      expect(result).toBe(true);
+      expect(mocks.sendMessage).toHaveBeenCalledWith(
+        123,
+        expect.stringContaining("No active sessions"),
+      );
+      // No panel registered — callback would be treated as expired
+      expect(isBuiltInPanelQuery(callbackUpdate(3001, "session:cancel"))).toBe(false);
+    });
+
+    it("handleSessionCommand — with sessions: sends panel, _activePanels maps to 'session'", async () => {
+      mocks.listSessions.mockReturnValue(SESSIONS);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 3010 });
+      await handleIfBuiltIn(cmdUpdate("/session"));
+      expect(mocks.sendMessage).toHaveBeenCalledWith(
+        123,
+        expect.stringContaining("Active sessions"),
+        expect.objectContaining({
+          reply_markup: expect.objectContaining({
+            inline_keyboard: expect.any(Array),
+          }),
+        }),
+      );
+      expect(isBuiltInPanelQuery(callbackUpdate(3010, "session:cancel"))).toBe(true);
+    });
+
+    describe("session panel callbacks", () => {
+      async function createSessionPanel(): Promise<number> {
+        mocks.listSessions.mockReturnValue(SESSIONS);
+        mocks.activeSessionCount.mockReturnValue(2);
+        mocks.getGovernorSid.mockReturnValue(1);
+        mocks.sendMessage.mockResolvedValueOnce({ message_id: 3100 });
+        await handleIfBuiltIn(cmdUpdate("/session"));
+        return 3100;
+      }
+
+      it("session:select:{sid} callback — edits to detail view with Close, Set as Primary, and Back buttons", async () => {
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:select:1"));
+        expect(mocks.editMessageText).toHaveBeenCalled();
+        const call = mocks.editMessageText.mock.calls[0];
+        const keyboard = call[3].reply_markup.inline_keyboard;
+        const data = keyboard.flat().map(
+          (b: { callback_data: string }) => b.callback_data,
+        );
+        expect(data.some((d: string) => d.startsWith("session:close:"))).toBe(true);
+        expect(data.some((d: string) => d.startsWith("session:primary:"))).toBe(true);
+        expect(data).toContain("session:back");
+      });
+
+      it("session:select:{sid} — session not found: falls back to session list", async () => {
+        const panelId = await createSessionPanel();
+        // sid 999 does not exist in SESSIONS
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:select:999"));
+        // renderSessionDetail falls back to list when session not found
+        expect(mocks.editMessageText).toHaveBeenCalled();
+        const call = mocks.editMessageText.mock.calls[0];
+        const text: string = call[2];
+        expect(text).toMatch(/Active sessions|no longer active/i);
+      });
+
+      it("session:close:{sid} callback — edits to confirmation prompt", async () => {
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:close:2"));
+        expect(mocks.editMessageText).toHaveBeenCalled();
+        const call = mocks.editMessageText.mock.calls[0];
+        const text: string = call[2];
+        expect(text).toContain("Worker");
+        const keyboard = call[3].reply_markup.inline_keyboard;
+        const data = keyboard.flat().map(
+          (b: { callback_data: string }) => b.callback_data,
+        );
+        expect(data).toContain("session:close_confirm:2");
+        expect(data).toContain("session:close_cancel:2");
+      });
+
+      it("session:close_confirm:{sid} — success: calls closeSessionById, edits to '✓ Session closed.'", async () => {
+        mocks.closeSessionById.mockReturnValue({ closed: true, sid: 2 });
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:close_confirm:2"));
+        expect(mocks.closeSessionById).toHaveBeenCalledWith(2);
+        expect(mocks.editMessageText).toHaveBeenCalledWith(
+          123,
+          panelId,
+          "✓ Session closed.",
+          expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
+        );
+      });
+
+      it("session:close_confirm:{sid} — already closed: shows 'Session was already closed.'", async () => {
+        mocks.closeSessionById.mockReturnValue({ closed: false, sid: 2 });
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:close_confirm:2"));
+        expect(mocks.closeSessionById).toHaveBeenCalledWith(2);
+        expect(mocks.editMessageText).toHaveBeenCalledWith(
+          123,
+          panelId,
+          "⚠️ Session was already closed.",
+          expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
+        );
+      });
+
+      it("session:close_cancel:{sid} — returns to session detail view", async () => {
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:close_cancel:1"));
+        expect(mocks.editMessageText).toHaveBeenCalled();
+        const call = mocks.editMessageText.mock.calls[0];
+        const keyboard = call[3].reply_markup.inline_keyboard;
+        const data = keyboard.flat().map(
+          (b: { callback_data: string }) => b.callback_data,
+        );
+        // Detail view has Close and Primary buttons
+        expect(data.some((d: string) => d.startsWith("session:close:"))).toBe(true);
+        expect(data).toContain("session:back");
+      });
+
+      it("session:primary:{sid} — calls setGovernorSid and edits to success message", async () => {
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:primary:2"));
+        expect(mocks.setGovernorSid).toHaveBeenCalledWith(2);
+        expect(mocks.editMessageText).toHaveBeenCalled();
+        const call = mocks.editMessageText.mock.calls[0];
+        const text: string = call[2];
+        expect(text).toMatch(/primary|governor/i);
+      });
+
+      it("session:back — re-renders session list", async () => {
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:back"));
+        expect(mocks.editMessageText).toHaveBeenCalled();
+        const call = mocks.editMessageText.mock.calls[0];
+        const text: string = call[2];
+        expect(text).toContain("Active sessions");
+      });
+
+      it("session:cancel — deletes panel message", async () => {
+        const panelId = await createSessionPanel();
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:cancel"));
+        expect(mocks.deleteMessage).toHaveBeenCalledWith(123, panelId);
+      });
+    });
+  });
+
+  // -- /log command ---------------------------------------------------------
+
+  describe("/log command", () => {
+    it("handleLogCommand — sends panel, _activePanels maps to 'log'", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 4000 });
+      const result = await handleIfBuiltIn(cmdUpdate("/log"));
+      expect(result).toBe(true);
+      expect(mocks.sendMessage).toHaveBeenCalledWith(
+        123,
+        expect.stringContaining("Session Recording"),
+        expect.objectContaining({
+          reply_markup: expect.objectContaining({
+            inline_keyboard: expect.any(Array),
+          }),
+        }),
+      );
+      expect(isBuiltInPanelQuery(callbackUpdate(4000, "log:dump"))).toBe(true);
+    });
+
+    it("log:dump callback — calls doTimelineDump (rollLog) and edits message", async () => {
+      mocks.rollLog.mockReturnValue("2025-04-06T120000.json");
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 4010 });
+      await handleIfBuiltIn(cmdUpdate("/log"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(4010, "log:dump"));
+      expect(mocks.rollLog).toHaveBeenCalled();
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123,
+        4010,
+        expect.stringContaining("dumped"),
+        expect.any(Object),
+      );
+    });
+
+    it("log:cancel callback — deletes panel message", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 4020 });
+      await handleIfBuiltIn(cmdUpdate("/log"));
+      await handleIfBuiltIn(callbackUpdate(4020, "log:cancel"));
+      expect(mocks.deleteMessage).toHaveBeenCalledWith(123, 4020);
     });
   });
 

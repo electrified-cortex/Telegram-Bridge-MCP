@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   stopPoller: vi.fn(),
   activeSessionCount: vi.fn().mockReturnValue(0),
   clearSessionReminders: vi.fn(),
+  requestOperatorApproval: vi.fn().mockResolvedValue("approved"),
+  refreshGovernorCommand: vi.fn(),
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -61,7 +63,11 @@ vi.mock("../routing-mode.js", () => ({
 
 vi.mock("../built-in-commands.js", async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
-  return { ...actual, refreshGovernorCommand: vi.fn() };
+  return {
+    ...actual,
+    refreshGovernorCommand: (...args: unknown[]) => mocks.refreshGovernorCommand(...args),
+    requestOperatorApproval: (...args: unknown[]) => mocks.requestOperatorApproval(...args),
+  };
 });
 
 vi.mock("../telegram.js", async (importOriginal) => {
@@ -101,6 +107,7 @@ describe("close_session tool", () => {
     mocks.getSession.mockReturnValue({ token: 1123456, name: "Alpha", createdAt: "2026-03-17" });
     mocks.drainQueue.mockReturnValue([]);
     mocks.resolveChat.mockReturnValue(1001);
+    mocks.requestOperatorApproval.mockResolvedValue("approved");
     const server = createMockServer();
     register(server);
     call = server.getHandler("close_session");
@@ -606,6 +613,85 @@ describe("close_session tool", () => {
     await call({ token: 1123456 });
 
     expect(mocks.stopPoller).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Governor-close path (target_sid)
+  // =========================================================================
+
+  it("governor can close another session after operator confirms", async () => {
+    mocks.getGovernorSid.mockReturnValue(1); // caller (SID 1) is governor
+    // getSession is called once: for the target_sid lookup (SID 2)
+    mocks.getSession.mockReturnValue({ name: "Beta", createdAt: "2026-03-17" });
+    mocks.requestOperatorApproval.mockResolvedValue("approved");
+
+    const result = parseResult(await call({ token: 1123456, target_sid: 2 }));
+
+    expect(mocks.requestOperatorApproval).toHaveBeenCalledWith(
+      expect.stringContaining("Beta"),
+      30_000,
+    );
+    expect(mocks.closeSession).toHaveBeenCalledWith(2);
+    expect(result.closed).toBe(true);
+    expect(result.sid).toBe(2);
+  });
+
+  it("non-governor cannot close another session (PERMISSION_DENIED)", async () => {
+    mocks.getGovernorSid.mockReturnValue(5); // someone else is governor
+    mocks.getSession.mockReturnValue({ token: 1123456, name: "Alpha", createdAt: "2026-03-17" });
+
+    const result = await call({ token: 1123456, target_sid: 2 });
+
+    expect(isError(result)).toBe(true);
+    expect(parseResult(result).code).toBe("PERMISSION_DENIED");
+    expect(mocks.closeSession).not.toHaveBeenCalled();
+  });
+
+  it("governor cannot use target_sid to close itself (INVALID_TARGET)", async () => {
+    mocks.getGovernorSid.mockReturnValue(1); // caller is governor
+    mocks.getSession.mockReturnValue({ token: 1123456, name: "Alpha", createdAt: "2026-03-17" });
+
+    const result = await call({ token: 1123456, target_sid: 1 });
+
+    expect(isError(result)).toBe(true);
+    expect(parseResult(result).code).toBe("INVALID_TARGET");
+    expect(mocks.closeSession).not.toHaveBeenCalled();
+  });
+
+  it("returns SESSION_NOT_FOUND when target session does not exist", async () => {
+    mocks.getGovernorSid.mockReturnValue(1);
+    // getSession is called once for the target lookup — return undefined (not found)
+    mocks.getSession.mockReturnValue(undefined);
+
+    const result = await call({ token: 1123456, target_sid: 99 });
+
+    expect(isError(result)).toBe(true);
+    expect(parseResult(result).code).toBe("SESSION_NOT_FOUND");
+    expect(mocks.closeSession).not.toHaveBeenCalled();
+  });
+
+  it("returns cancelled when operator denies confirmation", async () => {
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.getSession.mockReturnValue({ name: "Beta", createdAt: "2026-03-17" });
+    mocks.requestOperatorApproval.mockResolvedValue("denied");
+
+    const result = parseResult(await call({ token: 1123456, target_sid: 2 }));
+
+    expect(result.closed).toBe(false);
+    expect(result.reason).toBe("cancelled");
+    expect(mocks.closeSession).not.toHaveBeenCalled();
+  });
+
+  it("returns cancelled on confirmation timeout", async () => {
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.getSession.mockReturnValue({ name: "Beta", createdAt: "2026-03-17" });
+    mocks.requestOperatorApproval.mockResolvedValue("timed_out");
+
+    const result = parseResult(await call({ token: 1123456, target_sid: 2 }));
+
+    expect(result.closed).toBe(false);
+    expect(result.reason).toBe("cancelled");
+    expect(mocks.closeSession).not.toHaveBeenCalled();
   });
 
   // =========================================================================
