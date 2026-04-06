@@ -147,6 +147,9 @@ export function getLog(filename: string): string {
  */
 export function deleteLog(filename: string): void {
   const safe = sanitizeFilename(filename);
+  if (_currentFilename !== null && safe === _currentFilename) {
+    throw new Error("Cannot delete active log — roll first");
+  }
   const filePath = resolve(LOGS_DIR, safe);
   if (!existsSync(filePath)) {
     throw new Error(`Log file not found: ${safe}`);

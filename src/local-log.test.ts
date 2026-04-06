@@ -32,6 +32,7 @@ import {
   disableLogging,
   isLoggingEnabled,
   resetLocalLogForTest,
+  getCurrentLogFilename,
 } from "./local-log.js";
 
 // ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ function allAppendedEvents(): Array<{ ts: string; event: unknown }> {
   const calls = fsMocks.appendFileSync.mock.calls;
   if (calls.length === 0) return [];
   return calls.flatMap(([, content]: [string, string]) =>
-    (content as string).split('\n').filter(Boolean).map(line => JSON.parse(line))
+    content.split('\n').filter(Boolean).map(line => JSON.parse(line))
   );
 }
 
@@ -88,7 +89,7 @@ describe("logEvent", () => {
 
   it("does not throw when appendFileSync throws", () => {
     fsMocks.appendFileSync.mockImplementation(() => { throw new Error("disk full"); });
-    expect(() => logEvent({ type: "event" })).not.toThrow();
+    expect(() => { logEvent({ type: "event" }); }).not.toThrow();
   });
 });
 
@@ -234,11 +235,20 @@ describe("deleteLog", () => {
 
   it("throws when file does not exist", () => {
     fsMocks.existsSync.mockReturnValue(false);
-    expect(() => deleteLog(validFilename)).toThrow("not found");
+    expect(() => { deleteLog(validFilename); }).toThrow("not found");
   });
 
   it("throws on invalid (path traversal) filename", () => {
-    expect(() => deleteLog("../../etc/passwd")).toThrow("Invalid log filename");
+    expect(() => { deleteLog("../../etc/passwd"); }).toThrow("Invalid log filename");
+    expect(fsMocks.unlinkSync).not.toHaveBeenCalled();
+  });
+
+  it("throws when the filename matches the active log file", () => {
+    fsMocks.existsSync.mockReturnValue(true);
+    logEvent({ type: "event" }); // sets _currentFilename
+    const active = getCurrentLogFilename();
+    expect(active).not.toBeNull();
+    expect(() => { deleteLog(active!); }).toThrow("Cannot delete active log");
     expect(fsMocks.unlinkSync).not.toHaveBeenCalled();
   });
 });
