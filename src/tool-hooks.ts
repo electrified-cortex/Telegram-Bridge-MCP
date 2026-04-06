@@ -1,8 +1,8 @@
 /**
  * Pre-tool-use hook registry.
  *
- * Hooks fire after auth (token already validated) and before the original
- * tool handler executes.  A hook can block a call by returning
+ * Hooks fire before the original tool handler executes (before authentication
+ * in the handler). A hook can block a call by returning
  * `{ allowed: false, reason: "..." }`.
  *
  * Usage:
@@ -77,7 +77,7 @@ export function buildDenyPatternHook(patterns: string[]): PreToolHook {
 
   return (toolName) => {
     for (let i = 0; i < compiled.length; i++) {
-      if (compiled[i]!(toolName)) {
+      if (compiled[i]?.(toolName)) {
         return { allowed: false, reason: `Tool "${toolName}" is blocked by deny pattern "${patterns[i]}"` };
       }
     }

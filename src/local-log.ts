@@ -14,7 +14,7 @@
  *  - listLogs(): list archived log files
  */
 
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, readdirSync, existsSync } from "fs";
+import { mkdirSync, appendFileSync, readFileSync, unlinkSync, readdirSync, existsSync } from "fs";
 import { resolve, dirname, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -27,8 +27,9 @@ const LOGS_DIR = resolve(__dirname, "..", "data", "logs");
 
 let _enabled = true;
 let _currentFilename: string | null = null;
-/** Buffer of events for the current log file (JSON array entries, not yet written). */
-let _buffer: unknown[] = [];
+
+/** Validates that a filename matches the YYYY-MM-DDTHHMMSS.json pattern. */
+const TIMESTAMP_FILENAME_RE = /^\d{4}-\d{2}-\d{2}T\d{6}\.json$/;
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -60,21 +61,6 @@ function currentFilePath(): string {
   return resolve(LOGS_DIR, _currentFilename);
 }
 
-/** Flush buffer to disk as a complete JSON file. */
-function flushToDisk(filePath: string, events: unknown[]): void {
-  try {
-    ensureLogsDir();
-    const payload = {
-      generated: new Date().toISOString(),
-      event_count: events.length,
-      events,
-    };
-    writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf-8");
-  } catch {
-    // Best-effort — never throw from logging
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -102,50 +88,39 @@ export function getCurrentLogFilename(): string | null {
 }
 
 /**
- * Append an event to the current log buffer.
- * The buffer is written on roll() or at shutdown.
+ * Append an event to the current log file immediately (NDJSON format).
  * No-op if logging is disabled.
  */
 export function logEvent(event: unknown): void {
   if (!_enabled) return;
-  _buffer.push(event);
-  // Ensure filename is assigned even before roll
-  currentFilePath();
+  const filePath = currentFilePath();
+  try {
+    ensureLogsDir();
+    appendFileSync(filePath, JSON.stringify({ ts: new Date().toISOString(), event }) + '\n', 'utf-8');
+  } catch {
+    // Best-effort — never throw from logging
+  }
 }
 
 /**
  * Roll the current log:
- *  1. Flush current buffer to the current file.
- *  2. Start a fresh file.
- *  3. Returns the filename that was just closed (or null if buffer was empty).
+ *  1. Captures the current filename.
+ *  2. Resets _currentFilename so the next event opens a new file.
+ *  3. Returns the filename that was just closed (or null if nothing logged yet).
  */
 export function rollLog(): string | null {
-  if (_buffer.length === 0 && _currentFilename === null) {
-    // Nothing to roll — create a new file but return null
-    _currentFilename = newFilename();
-    return null;
-  }
-
-  // Flush current
-  const filePath = currentFilePath();
-  const filename = _currentFilename!;
-  flushToDisk(filePath, _buffer);
-
-  // Reset for new file
-  _buffer = [];
-  _currentFilename = newFilename();
-
+  if (_currentFilename === null) return null;
+  const filename = _currentFilename;
+  _currentFilename = null;
   return filename;
 }
 
 /**
- * Flush the current buffer to disk without rolling.
- * Used at shutdown to preserve in-flight events.
+ * No-op: events are written to disk immediately in logEvent().
+ * Retained for API compatibility.
  */
 export function flushCurrentLog(): void {
-  if (_buffer.length === 0) return;
-  const filePath = currentFilePath();
-  flushToDisk(filePath, _buffer);
+  // No-op: events are written to disk immediately in logEvent()
 }
 
 /**
@@ -197,7 +172,7 @@ function sanitizeFilename(filename: string): string {
   // Strip any directory components
   const base = basename(filename);
   // Allow only timestamped .json files
-  if (!/^\d{4}-\d{2}-\d{2}T\d{6}\.json$/.test(base)) {
+  if (!TIMESTAMP_FILENAME_RE.test(base)) {
     throw new Error(`Invalid log filename: ${base}`);
   }
   return base;
@@ -207,5 +182,4 @@ function sanitizeFilename(filename: string): string {
 export function resetLocalLogForTest(): void {
   _enabled = true;
   _currentFilename = null;
-  _buffer = [];
 }

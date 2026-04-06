@@ -1,5 +1,4 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import { toResult, toError, resolveChat, sendServiceMessage } from "../telegram.js";
 import { rollLog } from "../local-log.js";
 import { requireAuth } from "../session-gate.js";

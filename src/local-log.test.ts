@@ -7,7 +7,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 const fsMocks = vi.hoisted(() => ({
   existsSync: vi.fn((): boolean => false),
   mkdirSync: vi.fn(),
-  writeFileSync: vi.fn(),
+  appendFileSync: vi.fn(),
   readFileSync: vi.fn((): string => ""),
   unlinkSync: vi.fn(),
   readdirSync: vi.fn((): string[] => []),
@@ -16,7 +16,7 @@ const fsMocks = vi.hoisted(() => ({
 vi.mock("fs", () => ({
   existsSync: fsMocks.existsSync,
   mkdirSync: fsMocks.mkdirSync,
-  writeFileSync: fsMocks.writeFileSync,
+  appendFileSync: fsMocks.appendFileSync,
   readFileSync: fsMocks.readFileSync,
   unlinkSync: fsMocks.unlinkSync,
   readdirSync: fsMocks.readdirSync,
@@ -38,12 +38,13 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Capture the JSON written to `writeFileSync` and parse it. */
-function lastWrittenPayload(): { generated: string; event_count: number; events: unknown[] } {
-  const calls = fsMocks.writeFileSync.mock.calls;
-  if (calls.length === 0) throw new Error("writeFileSync was not called");
-  const [, content] = calls[calls.length - 1] as [string, string, string];
-  return JSON.parse(content) as { generated: string; event_count: number; events: unknown[] };
+/** Parse NDJSON lines appended via appendFileSync calls. */
+function allAppendedEvents(): Array<{ ts: string; event: unknown }> {
+  const calls = fsMocks.appendFileSync.mock.calls;
+  if (calls.length === 0) return [];
+  return calls.flatMap(([, content]: [string, string]) =>
+    (content as string).split('\n').filter(Boolean).map(line => JSON.parse(line))
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -66,27 +67,28 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("logEvent", () => {
-  it("accumulates events in buffer", () => {
+  it("writes events to disk immediately", () => {
     logEvent({ type: "message", text: "hello" });
     logEvent({ type: "message", text: "world" });
-
-    const filename = rollLog();
-    expect(filename).not.toBeNull();
-
-    const payload = lastWrittenPayload();
-    expect(payload.event_count).toBe(2);
-    expect(payload.events).toHaveLength(2);
+    // Both events are already on disk (no roll needed)
+    const events = allAppendedEvents();
+    expect(events).toHaveLength(2);
+    expect(events[0].event).toEqual({ type: "message", text: "hello" });
+    expect(events[1].event).toEqual({ type: "message", text: "world" });
   });
 
   it("is a no-op when logging is disabled", () => {
     disableLogging();
     logEvent({ type: "message", text: "ignored" });
-    enableLogging(); // restore before roll
-
-    // Nothing in buffer — roll returns null
+    enableLogging();
+    expect(fsMocks.appendFileSync).not.toHaveBeenCalled();
     const filename = rollLog();
     expect(filename).toBeNull();
-    expect(fsMocks.writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when appendFileSync throws", () => {
+    fsMocks.appendFileSync.mockImplementation(() => { throw new Error("disk full"); });
+    expect(() => logEvent({ type: "event" })).not.toThrow();
   });
 });
 
@@ -121,37 +123,26 @@ describe("rollLog", () => {
     expect(result).toBeNull();
   });
 
-  it("creates a file when events are buffered", () => {
+  it("returns filename after events were written", () => {
     logEvent({ type: "test" });
     const filename = rollLog();
 
     expect(filename).not.toBeNull();
     expect(filename).toMatch(/^\d{4}-\d{2}-\d{2}T\d{6}\.json$/);
-    expect(fsMocks.writeFileSync).toHaveBeenCalledOnce();
+    // appendFileSync was called by logEvent, not rollLog
+    expect(fsMocks.appendFileSync).toHaveBeenCalledOnce();
   });
 
-  it("writes correct payload structure to disk", () => {
+  it("writes NDJSON events to disk", () => {
     logEvent({ type: "msg", id: 1 });
     logEvent({ type: "msg", id: 2 });
-    rollLog();
-
-    const payload = lastWrittenPayload();
-    expect(payload.event_count).toBe(2);
-    expect(payload.events).toEqual([{ type: "msg", id: 1 }, { type: "msg", id: 2 }]);
-    expect(typeof payload.generated).toBe("string");
+    const events = allAppendedEvents();
+    expect(events).toHaveLength(2);
+    expect(events.map(e => e.event)).toEqual([{ type: "msg", id: 1 }, { type: "msg", id: 2 }]);
+    expect(typeof events[0].ts).toBe("string");
   });
 
-  it("resets buffer after roll — second roll without new events returns null (clean slate)", () => {
-    // After a roll the implementation sets _currentFilename to a new name.
-    // A subsequent rollLog() with an empty buffer AND no prior currentFilename
-    // returns null. This test confirms the state is correctly isolated via
-    // resetLocalLogForTest() between tests — the first roll itself IS verified
-    // separately via the "creates a file when events are buffered" test.
-    //
-    // Specifically: only rollLog() with _buffer.length === 0 AND
-    // _currentFilename === null returns null. After a roll, _currentFilename
-    // is assigned, so a second roll flushes an empty file.  Use resetLocalLogForTest
-    // to confirm that a fresh instance returns null for an empty buffer.
+  it("rollLog returns null when nothing has been logged", () => {
     resetLocalLogForTest();
     const result = rollLog();
     expect(result).toBeNull();
@@ -165,14 +156,22 @@ describe("rollLog", () => {
     expect(fsMocks.mkdirSync).toHaveBeenCalledOnce();
   });
 
-  it("returns the archived filename (not the next filename)", () => {
+  it("returns the archived filename", () => {
     logEvent({ type: "event" });
     const archived = rollLog();
 
     expect(archived).not.toBeNull();
-    // The returned filename is the one written to disk
-    const writtenPath = (fsMocks.writeFileSync.mock.calls[0] as [string, string, string])[0];
+    const writtenPath = (fsMocks.appendFileSync.mock.calls[0] as [string, string, string])[0];
     expect(writtenPath).toContain(archived!);
+  });
+
+  it("second rollLog with no new events returns null", () => {
+    logEvent({ type: "event" });
+    const first = rollLog();
+    expect(first).not.toBeNull();
+    // No new events — _currentFilename is null after first roll
+    const second = rollLog();
+    expect(second).toBeNull();
   });
 });
 

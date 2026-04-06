@@ -1,10 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { toError } from "../telegram.js";
+import { toError, sendServiceMessage } from "../telegram.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { rollLog } from "../local-log.js";
-import { sendServiceMessage } from "../telegram.js";
 
 const DESCRIPTION =
   "Triggers a local log roll: the current session event log is finalized and " +

@@ -117,10 +117,19 @@ export function createServer(): McpServer {
           : getActiveSession();
 
         const run = async () => {
-          // Pre-tool hook fires after auth context is established but before
-          // the original handler executes.  A hook returning allowed:false
-          // short-circuits the call and returns a 403-style error.
-          const hookResult = await invokePreToolHook(name, args);
+          // Pre-tool hook fires before the original handler executes.
+          // A hook returning allowed:false short-circuits the call and
+          // returns a 403-style error.  If the hook itself throws, we
+          // fail safe by treating it as blocked.
+          let hookResult: { allowed: boolean; reason?: string };
+          try {
+            hookResult = await invokePreToolHook(name, args);
+          } catch (err) {
+            // Hook threw — treat as blocked to fail safe
+            const reason = err instanceof Error ? err.message : "Hook error";
+            logBlockedToolCall(name, reason);
+            return toError({ code: "HOOK_ERROR", message: `Pre-tool hook error: ${reason}` });
+          }
           if (!hookResult.allowed) {
             const reason = hookResult.reason ?? "Blocked by pre-tool hook";
             logBlockedToolCall(name, reason);
