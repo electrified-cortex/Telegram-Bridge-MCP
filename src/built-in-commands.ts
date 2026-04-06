@@ -1114,19 +1114,19 @@ async function handleLoggingCallback(
       const archivedCount = listLogs().length;
       if (archivedCount === 0) {
         await runInSessionContext(0, () => api.editMessageText(chatId, panelMsgId,
-          "ℹ️ No archived logs to flush.", { parse_mode: "Markdown",
-            reply_markup: { inline_keyboard: [[{ text: "✖ Dismiss", callback_data: "logging:dismiss" }]] } }));
+          "ℹ️ No archived logs to flush.", { parse_mode: "Markdown", _skipHeader: true,
+            reply_markup: { inline_keyboard: [[{ text: "✖ Dismiss", callback_data: "logging:dismiss" }]] } } as Record<string, unknown>));
       } else {
         await runInSessionContext(0, () => api.editMessageText(chatId, panelMsgId,
           `⚠️ *Delete all ${archivedCount} archived log(s)?*\n\nThe active log is untouched.`, {
-            parse_mode: "Markdown",
+            parse_mode: "Markdown", _skipHeader: true,
             reply_markup: { inline_keyboard: [
               [
                 { text: "No — Cancel", callback_data: "logging:flush-cancel" },
                 { text: "Delete All", callback_data: "logging:flush-confirm" },
               ],
             ]},
-          }));
+          } as Record<string, unknown>));
       }
     } catch { /* ignore */ }
     return;
@@ -1143,9 +1143,9 @@ async function handleLoggingCallback(
   const { text, keyboard } = buildLoggingPanel();
   try {
     await runInSessionContext(0, () => api.editMessageText(chatId, panelMsgId, text, {
-      parse_mode: "Markdown",
+      parse_mode: "Markdown", _skipHeader: true,
       reply_markup: { inline_keyboard: keyboard },
-    }));
+    } as Record<string, unknown>));
   } catch { /* ignore */ }
 }
 
