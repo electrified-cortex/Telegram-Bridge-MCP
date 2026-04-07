@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   stopPoller: vi.fn(),
   activeSessionCount: vi.fn().mockReturnValue(0),
   clearSessionReminders: vi.fn(),
+  cancelAnimation: vi.fn().mockResolvedValue({ cancelled: true }),
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -83,6 +84,10 @@ vi.mock("../poller.js", () => ({
 
 vi.mock("../reminder-state.js", () => ({
   clearSessionReminders: (...args: unknown[]) => mocks.clearSessionReminders(...args),
+}));
+
+vi.mock("../animation-state.js", () => ({
+  cancelAnimation: (...args: unknown[]) => mocks.cancelAnimation(...args),
 }));
 
 import { register } from "./close_session.js";
@@ -618,6 +623,26 @@ describe("close_session tool", () => {
     await call({ token: 1123456 });
 
     expect(mocks.clearSessionReminders).toHaveBeenCalledWith(1);
+  });
+
+  // =========================================================================
+  // Animation cleanup on session close (task 351)
+  // =========================================================================
+
+  it("cancels active animation when session closes", async () => {
+    mocks.listSessions.mockReturnValue([]);
+
+    await call({ token: 1123456 });
+
+    expect(mocks.cancelAnimation).toHaveBeenCalledWith(1);
+  });
+
+  it("does not cancel animation when close_session fails", async () => {
+    mocks.closeSession.mockReturnValue(false);
+
+    await call({ token: 1123456 });
+
+    expect(mocks.cancelAnimation).not.toHaveBeenCalled();
   });
 });
 
