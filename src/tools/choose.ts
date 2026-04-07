@@ -16,17 +16,11 @@ import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
 
 const DESCRIPTION =
-  "Sends a question with 2–8 labeled option buttons and waits until the " +
-  "user presses one. Returns { label, value } of the chosen option. " +
-  "Automatically removes the buttons and updates the message to show the " +
-  "chosen option. If the user sends a text or voice message instead, " +
-  "returns { skipped: true, text_response }. If no input arrives within " +
-  "timeout_seconds, returns { timed_out: true } — buttons remain live and " +
-  "late clicks are still handled automatically. Multiple choose calls can " +
-  "be chained for questionnaires. Use for any single-selection choice. " +
-  "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
-  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
-  "Ensure session_start has been called.";
+  "Send a question with 2–8 buttons and wait for the user to press one. " +
+  "Returns { label, value } on selection; { skipped: true, text_response } if the user types instead; " +
+  "{ timed_out: true } on deadline (buttons stay live, late clicks still handled). " +
+  "Drain pending updates with dequeue_update(timeout:0) before calling, or pass ignore_pending: true. " +
+  "Call `help(topic: 'choose')` for details.";
 
 export function register(server: McpServer) {
   server.registerTool(
