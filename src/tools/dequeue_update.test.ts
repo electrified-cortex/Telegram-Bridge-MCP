@@ -551,7 +551,7 @@ describe("dequeue_update tool", () => {
     expect(mocks.setActiveSession).toHaveBeenCalledWith(4);
   });
 
-  it("does not call setActiveSession on SESSION_NOT_FOUND error path", async () => {
+  it("does not call setActiveSession on session_closed path", async () => {
     mocks.getSessionQueue.mockReturnValue(undefined);
     await call({ token: 99_001_234 });
     expect(mocks.setActiveSession).not.toHaveBeenCalled();
@@ -580,13 +580,22 @@ describe("dequeue_update tool", () => {
     expect(data.timed_out).toBe(true);
   });
 
-  it("returns error when explicit sid has no session queue", async () => {
+  it("returns session_closed (not an error) when explicit sid has no session queue", async () => {
     mocks.getSessionQueue.mockReturnValue(undefined);
     const result = await call({ token: 42_001_234 });
-    expect(isError(result)).toBe(true);
-    const content = (result as { content: { text: string }[] }).content[0];
-    expect(content.text).toContain("SESSION_NOT_FOUND");
-    expect(content.text).toContain("sid=42");
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.error).toBe("session_closed");
+    expect((data.message as string)).toContain("42");
+  });
+
+  it("returns session_closed when session queue does not exist", async () => {
+    mocks.getSessionQueue.mockReturnValue(undefined);
+    const result = await call({ token: 7_001_234 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.error).toBe("session_closed");
+    expect((data.message as string)).toContain("7");
   });
 
   // =========================================================================
@@ -724,7 +733,7 @@ describe("dequeue_update tool", () => {
   describe("touchSession heartbeat", () => {
     it("calls touchSession with the resolved sid when sid > 0 (explicit sid)", async () => {
       // Must provide a session queue for the explicit-sid path, otherwise
-      // dequeue_update returns SESSION_NOT_FOUND before calling touchSession.
+      // dequeue_update returns session_closed before calling touchSession.
       const mockSessionQueue = {
         dequeueBatch: vi.fn(() => [makeEvent(1, "hi")] as TimelineEvent[]),
         pendingCount: vi.fn(() => 0),

@@ -104,11 +104,9 @@ export function register(server: McpServer) {
       const sessionQueue = getSessionQueue(sid);
 
       if (!sessionQueue) {
-        return toError({
-          code: "SESSION_NOT_FOUND" as const,
-          message:
-            `No session queue for sid=${sid}. ` +
-            `The session may have ended or was never started.`,
+        return toResult({
+          error: "session_closed",
+          message: `Session ${sid} no longer exists.`,
         });
       }
 
