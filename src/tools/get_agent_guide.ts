@@ -7,6 +7,7 @@ import { toResult, toError } from "../telegram.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const DESCRIPTION =
+  "[DEPRECATED: use help(topic: \"guide\") instead] " +
   "Returns the agent behavior guide for this MCP server. Call this " +
   "first — before session_start — to understand how to communicate with " +
   "the user, which tools to use, and all behavioral conventions. " +
@@ -19,6 +20,9 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
     },
     () => {
+      process.stderr.write(
+        "[deprecation] get_agent_guide is deprecated — use help(topic: \"guide\") instead\n"
+      );
       try {
         const content = readFileSync(
           join(__dirname, "..", "..", "docs", "behavior.md"),
