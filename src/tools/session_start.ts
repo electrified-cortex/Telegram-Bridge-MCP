@@ -38,7 +38,7 @@ async function requestApproval(
   const availableColors = getAvailableColors(colorHint);
   const usedColors = new Set(listSessions().map((s) => s.color));
   const validHint = colorHint && (COLOR_PALETTE as readonly string[]).includes(colorHint) ? colorHint : undefined;
-  const primaryColor = validHint && !usedColors.has(validHint)
+  const primaryColor = validHint
     ? validHint
     : availableColors.find((c) => !usedColors.has(c));
   if (checkAndConsumeAutoApprove()) {
@@ -61,7 +61,18 @@ async function requestApproval(
   const msgId: number = sent.message_id;
 
   const decision = await new Promise<ApprovalDecision>((resolve) => {
-    registerPendingApproval(name, resolve);
+    registerPendingApproval(name, resolve, colorHint);
+
+    // Notify governor of pending approval
+    const governorSid = getGovernorSid();
+    if (governorSid) {
+      deliverServiceMessage(
+        governorSid,
+        `Session "${name}" is requesting access. Call approve_agent(target_name: "${name}") to approve, or wait for operator decision via Telegram buttons.`,
+        "pending_approval",
+        { target_name: name },
+      );
+    }
 
     const timer = setTimeout(() => {
       clearPendingApproval(name);
@@ -391,6 +402,8 @@ export function register(server: McpServer) {
         };
         if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {
+          // First session is the governor by default
+          setGovernorSid(session.sid);
           // Send visible announcement with name tag — same format as 2nd+ sessions.
           // buildHeader() intentionally skips single-session mode; compose inline.
           const _announcement = await Promise.resolve(

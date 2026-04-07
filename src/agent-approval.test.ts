@@ -162,7 +162,7 @@ describe("agent-approval module", () => {
     });
 
     it("clearPendingApproval is a no-op for unknown names", () => {
-      expect(() => clearPendingApproval("ghost")).not.toThrow();
+      expect(() => { clearPendingApproval("ghost"); }).not.toThrow();
     });
 
     it("registrations are keyed by name — different names are independent", () => {

@@ -51,6 +51,9 @@ export default tseslint.config(
       // Partial mock objects don't match full type shapes — guards
       // that are "unnecessary" per the type may be required at runtime.
       "@typescript-eslint/no-unnecessary-condition": "off",
+      // Mock method references are intentionally separated from their
+      // objects in assertions (e.g. expect(mock.method).toHaveBeenCalled).
+      "@typescript-eslint/unbound-method": "off",
     },
   },
 );

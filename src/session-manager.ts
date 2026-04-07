@@ -125,12 +125,8 @@ export function getAvailableColors(hint?: string): string[] {
   ];
 
   if (hint && (COLOR_PALETTE as readonly string[]).includes(hint)) {
-    if (!_everUsedColors.has(hint)) {
-      // Never-used hint: place at far left (top recommendation)
-      return [hint, ...sorted.filter(c => c !== hint)];
-    }
-    // Previously-used hint: leave at natural sorted position
-    return sorted;
+    // Hint always goes first as top recommendation, regardless of prior usage
+    return [hint, ...sorted.filter(c => c !== hint)];
   }
   return sorted;
 }

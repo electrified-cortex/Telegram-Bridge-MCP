@@ -17,7 +17,8 @@ import { startHealthCheck } from "./health-check.js";
 import { setAuthHook } from "./session-gate.js";
 import { touchSession } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
-import { loadConfig, getSessionLogMode, sessionLogLabel, isDebugConfig, getPreToolDenyPatterns } from "./config.js";
+import { loadConfig, getSessionLogMode, sessionLogLabel, isDebugConfig, getPreToolDenyPatterns, getSessionApproval } from "./config.js";
+import { setDelegationEnabled } from "./agent-approval.js";
 import { setPreToolHook, buildDenyPatternHook } from "./tool-hooks.js";
 import { timelineSize, setOnLocalLog } from "./message-store.js";
 import { initDebugLog } from "./debug-log.js";
@@ -34,6 +35,12 @@ getSecurityConfig();
 
 // Load persistent MCP config
 loadConfig();
+
+// Auto-enable delegation if configured
+if (getSessionApproval() === "governor") {
+  setDelegationEnabled(true);
+  process.stderr.write("[info] session approval: governor — delegation auto-enabled\n");
+}
 
 // Initialize debug logging from config (or env var fallback)
 initDebugLog(isDebugConfig());
