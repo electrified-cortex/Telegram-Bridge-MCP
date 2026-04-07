@@ -104,27 +104,35 @@ function assignColor(requested?: string, force = false): string {
 // ── Public API ─────────────────────────────────────────────
 
 /**
- * Returns all palette colors ordered by the LRU queue: leftmost = least recently
- * used (freshest for next assignment), rightmost = most recently used.
+ * Returns all palette colors sorted so that **currently unused colors appear
+ * first** (LRU order within group) and **currently in-use colors appear last**
+ * (LRU order within group).
  *
  * If `hint` is a valid palette color that has **never** been assigned, it is
  * moved to the far left (position 0) as the top recommendation. If `hint` has
- * been used before, it stays at its natural LRU position.
+ * been used before, it stays at its natural sorted position.
  *
  * All 6 colors are always returned regardless of current active-session usage.
  */
 export function getAvailableColors(hint?: string): string[] {
+  const usedColors = new Set([..._sessions.values()].map((s) => s.color));
   const allColors = [..._colorLRU]; // LRU order: [0]=least-recently-used … [5]=most-recently-used
+
+  // Sort: unused colors first (LRU order within group), in-use colors last
+  const sorted = [
+    ...allColors.filter(c => !usedColors.has(c)),
+    ...allColors.filter(c => usedColors.has(c)),
+  ];
 
   if (hint && (COLOR_PALETTE as readonly string[]).includes(hint)) {
     if (!_everUsedColors.has(hint)) {
       // Never-used hint: place at far left (top recommendation)
-      return [hint, ...allColors.filter(c => c !== hint)];
+      return [hint, ...sorted.filter(c => c !== hint)];
     }
-    // Previously-used hint: leave at natural LRU position
-    return allColors;
+    // Previously-used hint: leave at natural sorted position
+    return sorted;
   }
-  return allColors;
+  return sorted;
 }
 
 export function createSession(name = "", colorHint?: string, forceColor = false): SessionCreateResult {
