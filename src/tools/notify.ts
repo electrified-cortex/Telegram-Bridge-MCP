@@ -18,7 +18,7 @@ const DESCRIPTION =
   "styling (info/success/warning/error) automatically with emoji prefixes " +
   "and bold titles. Use for structured status messages (build results, " +
   "process events, errors). For conversational replies or long explanations, " +
-  "use send_text instead. Default parse_mode is Markdown " +
+  "use send instead. Default parse_mode is Markdown " +
   "— write standard Markdown in the text field and it is auto-converted, no " +
   "escaping needed. " +
   "Ensure session_start has been called.";

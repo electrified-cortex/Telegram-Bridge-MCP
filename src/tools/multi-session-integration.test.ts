@@ -93,7 +93,7 @@ import { resetDmPermissionsForTest } from "../dm-permissions.js";
 // ---------------------------------------------------------------------------
 
 import { register as registerDequeue } from "./dequeue_update.js";
-import { register as registerSendText } from "./send_text.js";
+import { register as registerSend } from "./send.js";
 import { register as registerCloseSession } from "./close_session.js";
 
 // ---------------------------------------------------------------------------
@@ -198,25 +198,25 @@ describe("multi-session tool integration", () => {
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("send_text without identity returns SID_REQUIRED when 2+ sessions active", async () => {
+    it("send without identity returns SID_REQUIRED when 2+ sessions active", async () => {
       const { sid: sid1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
 
       const server = createMockServer();
-      registerSendText(server);
-      const result = await server.getHandler("send_text")({ text: "hello" });
+      registerSend(server);
+      const result = await server.getHandler("send")({ text: "hello" });
 
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("send_text with wrong pin returns AUTH_FAILED when 2+ sessions active", async () => {
+    it("send with wrong pin returns AUTH_FAILED when 2+ sessions active", async () => {
       const { sid: sid1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
 
       const server = createMockServer();
-      registerSendText(server);
-      const result = await server.getHandler("send_text")({
+      registerSend(server);
+      const result = await server.getHandler("send")({
         text: "hello",
         token: sid1 * 1_000_000 + 99999,
       });
@@ -225,13 +225,13 @@ describe("multi-session tool integration", () => {
       expect(errorCode(result)).toBe("AUTH_FAILED");
     });
 
-    it("send_text with valid identity succeeds in multi-session mode", async () => {
+    it("send with valid identity succeeds in multi-session mode", async () => {
       const { sid, pin } = createSession(); createSessionQueue(sid);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
 
       const server = createMockServer();
-      registerSendText(server);
-      const result = await server.getHandler("send_text")({
+      registerSend(server);
+      const result = await server.getHandler("send")({
         text: "hello",
         token: sid * 1_000_000 + pin,
       });
@@ -240,10 +240,10 @@ describe("multi-session tool integration", () => {
       expect(parseResult(result)).toMatchObject({ message_id: 1 });
     });
 
-    it("send_text without identity returns SID_REQUIRED in all modes", async () => {
+    it("send without identity returns SID_REQUIRED in all modes", async () => {
       const server = createMockServer();
-      registerSendText(server);
-      const result = await server.getHandler("send_text")({ text: "hello" });
+      registerSend(server);
+      const result = await server.getHandler("send")({ text: "hello" });
 
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("SID_REQUIRED");

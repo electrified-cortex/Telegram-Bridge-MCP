@@ -15,8 +15,7 @@ import {
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
-import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
-import { getDefaultVoice } from "../config.js";
+import { getSessionSpeed } from "../voice-state.js";
 import { showTyping, cancelTyping } from "../typing-state.js";
 import { applyTopicToText } from "../topic-state.js";
 
@@ -77,9 +76,10 @@ export function register(server: McpServer) {
         .optional()
         .describe("Set true to bypass button label emoji-consistency check"),
       voice: z
-        .boolean()
+        .string()
+        .min(1)
         .optional()
-        .describe("When true, TTS the question and send it as a voice note with the inline keyboard attached. Requires TTS to be configured."),
+        .describe("Voice name for TTS — send the question as a voice note with the inline keyboard attached. Uses the specified voice (or session default if omitted). Requires TTS to be configured."),
               token: TOKEN_SCHEMA,
 },
     },
@@ -160,7 +160,7 @@ export function register(server: McpServer) {
           if (!plainText) {
             return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
           }
-          const resolvedVoice = getSessionVoice() ?? getDefaultVoice() ?? undefined;
+          const resolvedVoice = voice;
           const resolvedSpeed = getSessionSpeed() ?? undefined;
           const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
           await showTyping(typingSeconds, "record_voice");
