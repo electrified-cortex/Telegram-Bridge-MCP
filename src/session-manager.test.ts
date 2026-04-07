@@ -426,8 +426,6 @@ describe("getAvailableColors", () => {
     closeSession(s.sid); // 🟦 no longer in-use (but LRU history unchanged)
     const colorsAfter = getAvailableColors();
     // 🟦 was closed → it's now in the unused group
-    // The only used-ever color with no active session → still rightmost within unused group
-    const inUseAfterClose = new Set([...[].values()].map((s: Session) => (s as Session).color));
     // All colors are now unused; 🟦 is the most-recently-used among them → rightmost
     expect(colorsAfter[colorsAfter.length - 1]).toBe("🟦");
     expect(colorsAfter).toHaveLength(6);
