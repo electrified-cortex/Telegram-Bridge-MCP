@@ -115,6 +115,24 @@ describe("notify tool", () => {
     expect(errorCode(result)).toBe("UNAUTHORIZED_CHAT");
   });
 
+  it("accepts message param as alias for text", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 99 }, date: 0, text: "" });
+    const result = await call({ title: "T", message: "Body via message", severity: "info", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    expect(mocks.sendMessage).toHaveBeenCalled();
+    const [, text] = mocks.sendMessage.mock.calls[0];
+    expect(text).toContain("Body via message");
+  });
+
+  it("text takes precedence over message when both provided", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 99 }, date: 0, text: "" });
+    await call({ title: "T", text: "explicit text", message: "message alias", severity: "info", token: 1123456 });
+    expect(mocks.sendMessage).toHaveBeenCalled();
+    const [, text] = mocks.sendMessage.mock.calls[0];
+    expect(text).toContain("explicit text");
+    expect(text).not.toContain("message alias");
+  });
+
 describe("identity gate", () => {
   it("returns SID_REQUIRED when no identity provided", async () => {
     const result = await call({"title":"x"});
