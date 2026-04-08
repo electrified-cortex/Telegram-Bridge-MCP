@@ -229,5 +229,5 @@ process.stderr.write("[info] health check started\n");
 void cleanupStalePins().catch(() => {});
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
-const localLogStatus = isLoggingEnabled() ? "*Logging enabled*" : "Logging disabled";
+const localLogStatus = isLoggingEnabled() ? "`Logging enabled`" : "Logging disabled";
 void sendServiceMessage(`🟢 Online\n${localLogStatus}\n/logging to change settings`).catch(() => {});
