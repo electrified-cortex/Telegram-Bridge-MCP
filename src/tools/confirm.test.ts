@@ -448,7 +448,7 @@ describe("identity gate", () => {
       yes_data: "yes",
       no_data: "no",
       timeout_seconds: 10,
-      audio: "am_echo",
+      voice: "am_echo",
       token: 1_123_456,
     };
 

@@ -132,10 +132,10 @@ describe("send tool", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Case 3: voice-only (object)
+  // Case 3: audio-only with voice+speed override
   // ---------------------------------------------------------------------------
-  it("voice-only (object): calls TTS with alloy voice and sends voice note", async () => {
-    const result = await call({ audio: { text: "hello", voice: "alloy" }, token: TOKEN });
+  it("audio-only with voice override: calls TTS with specified voice", async () => {
+    const result = await call({ audio: "hello", voice: "alloy", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);

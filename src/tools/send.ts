@@ -20,22 +20,13 @@ function containsMarkdownTable(text: string): boolean {
 }
 
 const DESCRIPTION =
-  "Send a message as text, voice, or both. " +
+  "Send a message as text, audio (TTS), or both. " +
   "text only → text message with auto-split and Markdown. " +
-  "audio only → TTS voice note. " +
+  "audio only → TTS voice note (spoken content). " +
   "Both → voice note with text as caption (keep brief — topic context before playback). " +
   "At least one of text or audio is required. " +
   "For structured status, use notify. For file attachments, use send_file. " +
   "For interactive prompts, use ask, choose, or confirm.";
-
-const voiceSchema = z.union([
-  z.string().min(1),
-  z.object({
-    text: z.string().min(1).describe("The spoken content (required when voice is object)"),
-    voice: z.string().min(1).optional().describe("Voice name override"),
-    speed: z.number().optional().describe("Speed override"),
-  }),
-]);
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -46,14 +37,24 @@ export function register(server: McpServer) {
         text: z
           .string()
           .optional()
-          .describe("Text message OR caption when voice is present. At least one of text/voice required."),
-        audio: voiceSchema
+          .describe("Text message OR caption when audio is also provided. At least one of text/audio required."),
+        audio: z
+          .string()
+          .min(1)
           .optional()
           .describe(
-            "When string: spoken text, uses session/default voice settings. " +
-            "When object: { text (spoken content), voice? (name override), speed? (override) }. " +
-            "Requires TTS to be configured.",
+            "Spoken TTS content. When present, sends a voice note. " +
+            "Use voice/speed to override TTS settings. Requires TTS to be configured.",
           ),
+        voice: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("TTS voice name override. Falls back to session/global default."),
+        speed: z
+          .number()
+          .optional()
+          .describe("TTS speed override. Falls back to session/global default."),
         parse_mode: z
           .enum(["Markdown", "HTML", "MarkdownV2"])
           .default("Markdown")
@@ -71,7 +72,7 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ text, audio, parse_mode, disable_notification, reply_to_message_id, token }) => {
+    async ({ text, audio, voice, speed, parse_mode, disable_notification, reply_to_message_id, token }) => {
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
@@ -92,11 +93,7 @@ export function register(server: McpServer) {
         }
 
         // Resolve spoken text and voice params
-        const spokenText = typeof audio === "string" ? audio : audio.text;
-        const voiceName = typeof audio === "string"
-          ? undefined
-          : audio.voice;
-        const voiceSpeed = typeof audio === "object" && "speed" in audio ? audio.speed : undefined;
+        const spokenText = audio;
 
         const spokenErr = validateText(spokenText);
         if (spokenErr) return toError(spokenErr);
@@ -106,9 +103,9 @@ export function register(server: McpServer) {
           return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS." } as const);
         }
 
-        // Voice resolution: explicit voice param > explicit voice object > session default > config default
-        const resolvedVoice = voiceName ?? getSessionVoice() ?? getDefaultVoice() ?? undefined;
-        const resolvedSpeed = voiceSpeed ?? getSessionSpeed() ?? undefined;
+        // Voice resolution: explicit voice param > session default > config default
+        const resolvedVoice = voice ?? getSessionVoice() ?? getDefaultVoice() ?? undefined;
+        const resolvedSpeed = speed ?? getSessionSpeed() ?? undefined;
 
         // Caption resolution (text param becomes caption on voice note)
         let resolvedCaption: string | undefined;

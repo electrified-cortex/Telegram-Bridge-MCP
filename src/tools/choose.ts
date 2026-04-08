@@ -15,7 +15,8 @@ import {
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
-import { getSessionSpeed } from "../voice-state.js";
+import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
+import { getDefaultVoice } from "../config.js";
 import { showTyping, cancelTyping } from "../typing-state.js";
 import { applyTopicToText } from "../topic-state.js";
 import { markdownToV2 } from "../markdown.js";
@@ -76,15 +77,18 @@ export function register(server: McpServer) {
         .boolean()
         .optional()
         .describe("Set true to bypass button label emoji-consistency check"),
-      audio: z
+      voice: z
         .string()
-        .min(1)
         .optional()
-        .describe("Voice name for TTS — send the question as a voice note with the inline keyboard attached. Uses the specified voice (or session default if omitted). Requires TTS to be configured."),
+        .describe("Voice name for TTS — send the question as a voice note with the inline keyboard attached. Pass \"\" or a specific name; falls back to session/global default if empty. Requires TTS to be configured."),
+      speed: z
+        .number()
+        .optional()
+        .describe("TTS speed override. Falls back to session/global default."),
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ question, options, timeout_seconds, columns, reply_to_message_id, ignore_pending, ignore_parity, audio, token}, { signal }) => {
+    async ({ question, options, timeout_seconds, columns, reply_to_message_id, ignore_pending, ignore_parity, voice, speed, token}, { signal }) => {
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
@@ -150,7 +154,7 @@ export function register(server: McpServer) {
       try {
         let messageId: number;
 
-        if (audio) {
+        if (voice !== undefined) {
           if (!isTtsEnabled()) {
             return toError({
               code: "TTS_NOT_CONFIGURED" as const,
@@ -161,8 +165,8 @@ export function register(server: McpServer) {
           if (!plainText) {
             return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
           }
-          const resolvedVoice = audio;
-          const resolvedSpeed = getSessionSpeed() ?? undefined;
+          const resolvedVoice = voice || getSessionVoice() || getDefaultVoice() || undefined;
+          const resolvedSpeed = speed ?? getSessionSpeed() ?? undefined;
           const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
           await showTyping(typingSeconds, "record_voice");
           try {
@@ -204,7 +208,7 @@ export function register(server: McpServer) {
           const chosen = options.find((o) => o.value === evt.content.data);
           const chosenLabel = chosen?.label ?? evt.content.data ?? "";
           clearMessageHook(messageId);
-          void ackAndEditSelection(chatId, messageId, question, chosenLabel, evt.content.qid, !!audio)
+          void ackAndEditSelection(chatId, messageId, question, chosenLabel, evt.content.qid, !!voice)
             .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${String(e)}\n`));
         }, _sid);
 
@@ -214,7 +218,7 @@ export function register(server: McpServer) {
         const onVoiceDetected = () => {
           skippedEditDone = true;
           clearCallbackHook(messageId);
-          editWithSkipped(chatId, messageId, question, !!audio).catch(() => {/* non-fatal */});
+          editWithSkipped(chatId, messageId, question, !!voice).catch(() => {/* non-fatal */});
         };
 
         const match = await pollButtonOrTextOrVoice(
@@ -230,7 +234,7 @@ export function register(server: McpServer) {
           registerMessageHook(messageId, () => {
             clearCallbackHook(messageId);
             void runInSessionContext(_sid, () =>
-              editWithSkipped(chatId, messageId, question, !!audio),
+              editWithSkipped(chatId, messageId, question, !!voice),
             ).catch(() => {/* non-fatal */});
           });
           return toResult({
@@ -241,7 +245,7 @@ export function register(server: McpServer) {
 
         if (match.kind === "text") {
           clearCallbackHook(messageId);
-          await editWithSkipped(chatId, messageId, question, !!audio);
+          await editWithSkipped(chatId, messageId, question, !!voice);
           return toResult({
             skipped: true,
             text_response: match.text,
@@ -253,7 +257,7 @@ export function register(server: McpServer) {
         if (match.kind === "voice") {
           clearCallbackHook(messageId);
           // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
-          if (!skippedEditDone) await editWithSkipped(chatId, messageId, question, !!audio);
+          if (!skippedEditDone) await editWithSkipped(chatId, messageId, question, !!voice);
           return toResult({
             skipped: true,
             text_response: match.text ?? "[no transcription]",
@@ -265,7 +269,7 @@ export function register(server: McpServer) {
 
         if (match.kind === "command") {
           clearCallbackHook(messageId);
-          await editWithSkipped(chatId, messageId, question, !!audio);
+          await editWithSkipped(chatId, messageId, question, !!voice);
           return toResult({
             skipped: true,
             command: match.command,
