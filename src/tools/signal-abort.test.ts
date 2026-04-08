@@ -240,7 +240,7 @@ describe("signal abort — interactive tools", () => {
     const opts = [{ label: "Option A", value: "a" }, { label: "Option B", value: "b" }];
 
     const toolPromise = handlers.choose(
-      { question: "Pick one:", options: opts, timeout_seconds: 60, ignore_pending: true, token },
+      { text: "Pick one:", options: opts, timeout_seconds: 60, ignore_pending: true, token },
       { signal: controller.signal },
     );
 

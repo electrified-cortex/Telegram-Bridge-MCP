@@ -207,7 +207,7 @@ describe("interactive flows — end-to-end integration", () => {
       { label: "Gamma", value: "c" },
     ];
     const toolPromise = runInSessionContext(sid, () =>
-      handlers.choose({ question: "Pick one:", options: opts, ignore_pending: true, token }),
+      handlers.choose({ text: "Pick one:", options: opts, ignore_pending: true, token }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 
@@ -343,7 +343,7 @@ describe("interactive flows — end-to-end integration", () => {
   it("SC-7: choose returns skipped+voice when user sends a transcribed voice message", async () => {
     const opts = [{ label: "A", value: "a" }, { label: "B", value: "b" }];
     const toolPromise = runInSessionContext(sid, () =>
-      handlers.choose({ question: "A or B?", options: opts, ignore_pending: true, token }),
+      handlers.choose({ text: "A or B?", options: opts, ignore_pending: true, token }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 

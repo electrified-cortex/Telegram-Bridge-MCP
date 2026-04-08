@@ -44,17 +44,8 @@ export function register(server: McpServer) {
           .optional()
           .describe(
             "Spoken TTS content. When present, sends a voice note. " +
-            "Use voice/speed to override TTS settings. Requires TTS to be configured.",
+            "Requires TTS to be configured.",
           ),
-        voice: z
-          .string()
-          .min(1)
-          .optional()
-          .describe("TTS voice name override. Falls back to session/global default."),
-        speed: z
-          .number()
-          .optional()
-          .describe("TTS speed override. Falls back to session/global default."),
         parse_mode: z
           .enum(["Markdown", "HTML", "MarkdownV2"])
           .default("Markdown")
@@ -72,7 +63,7 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ text, audio, voice, speed, parse_mode, disable_notification, reply_to_message_id, token }) => {
+    async ({ text, audio, parse_mode, disable_notification, reply_to_message_id, token }) => {
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
@@ -103,9 +94,9 @@ export function register(server: McpServer) {
           return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS." } as const);
         }
 
-        // Voice resolution: explicit voice param > session default > config default
-        const resolvedVoice = voice ?? getSessionVoice() ?? getDefaultVoice() ?? undefined;
-        const resolvedSpeed = speed ?? getSessionSpeed() ?? undefined;
+        // Voice resolution: session default > config default
+        const resolvedVoice = getSessionVoice() ?? getDefaultVoice() ?? undefined;
+        const resolvedSpeed = getSessionSpeed() ?? undefined;
 
         // Caption resolution (text param becomes caption on voice note)
         let resolvedCaption: string | undefined;

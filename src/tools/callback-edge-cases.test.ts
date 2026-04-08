@@ -165,7 +165,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
       { label: "Gamma", value: "c" },
     ];
     const toolPromise = runInSessionContext(sid, () =>
-      handlers.choose({ question: "Pick one:", options: opts, ignore_pending: true, token }),
+      handlers.choose({ text: "Pick one:", options: opts, ignore_pending: true, token }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 

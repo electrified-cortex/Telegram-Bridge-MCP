@@ -132,15 +132,15 @@ describe("send tool", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Case 3: audio-only with voice+speed override
+  // Case 3: audio-only (no voice override — uses session/default)
   // ---------------------------------------------------------------------------
-  it("audio-only with voice override: calls TTS with specified voice", async () => {
-    const result = await call({ audio: "hello", voice: "alloy", token: TOKEN });
+  it("audio-only: calls TTS with session voice (or undefined if none set)", async () => {
+    const result = await call({ audio: "hello", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
     expect(data.audio).toBe(true);
-    expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("hello", "alloy", undefined);
+    expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("hello", undefined, undefined);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
   });
 

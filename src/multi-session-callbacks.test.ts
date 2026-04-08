@@ -200,7 +200,7 @@ describe("multi-session callback isolation", () => {
       handlers.confirm({ text: "Continue?", ignore_pending: true, token: token1 }),
     );
     const sid2Promise = runInSessionContext(sid2, () =>
-      handlers.choose({ question: "Pick a color:", options: opts, ignore_pending: true, token: token2 }),
+      handlers.choose({ text: "Pick a color:", options: opts, ignore_pending: true, token: token2 }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 
