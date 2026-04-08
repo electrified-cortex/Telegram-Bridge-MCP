@@ -115,14 +115,12 @@ export function register(server: McpServer) {
         let captionParseMode: "MarkdownV2" | undefined;
         let captionTruncated = false;
         if (text) {
-          // text is the caption — apply topic prefix
+          // text is the caption — apply topic prefix, convert to MarkdownV2,
+          // then clip the final string (post-conversion length is what Telegram counts).
           const MAX_CAPTION = 1024 - 60;
-          const captionWithTopic = applyTopicToText(text, "Markdown");
-          captionTruncated = captionWithTopic.length > MAX_CAPTION;
-          const trimmedCaption = captionTruncated
-            ? captionWithTopic.slice(0, MAX_CAPTION)
-            : captionWithTopic;
-          resolvedCaption = markdownToV2(trimmedCaption);
+          const converted = markdownToV2(applyTopicToText(text, "Markdown"));
+          captionTruncated = converted.length > MAX_CAPTION;
+          resolvedCaption = captionTruncated ? converted.slice(0, MAX_CAPTION) : converted;
           captionParseMode = "MarkdownV2";
         } else {
           // Voice-only: still apply topic label as caption if topic is set
