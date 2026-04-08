@@ -13,8 +13,10 @@ import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
 
+const MARKDOWN_TABLE_RE = /^\|.*\|$/;
+
 function containsMarkdownTable(text: string): boolean {
-  return text.split("\n").some((line) => /^\|.*\|$/.test(line.trim()));
+  return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
 }
 
 const DESCRIPTION =

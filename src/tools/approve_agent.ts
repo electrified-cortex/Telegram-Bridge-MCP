@@ -1,4 +1,4 @@
-﻿import type { RegisteredTool, McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { RegisteredTool, McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
 import { requireAuth } from "../session-gate.js";

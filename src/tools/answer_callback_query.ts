@@ -8,7 +8,7 @@ const DESCRIPTION =
   "Acknowledges a callback query from an inline button press. " +
   "Only needed when handling button presses manually — " +
   "choose, confirm, and send_choice auto-ack button presses automatically. " +
-  "For non-blocking keyboards, use choose or send_choice. " +
+  "For non-blocking keyboards, use send_choice. " +
   "Must be called within 30 s of receiving the update. " +
   "Optionally shows a toast or alert to the user.";
 

@@ -108,9 +108,9 @@ function assignColor(requested?: string, force = false): string {
  * first** (LRU order within group) and **currently in-use colors appear last**
  * (LRU order within group).
  *
- * If `hint` is a valid palette color that has **never** been assigned, it is
- * moved to the far left (position 0) as the top recommendation. If `hint` has
- * been used before, it stays at its natural sorted position.
+ * If `hint` is a valid palette color that is **not currently in use**, it is
+ * moved to the far left (position 0) as the top recommendation. If `hint` is
+ * currently in use, it stays at its natural sorted position.
  *
  * All 6 colors are always returned regardless of current active-session usage.
  */
