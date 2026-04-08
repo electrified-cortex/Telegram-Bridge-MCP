@@ -189,41 +189,7 @@ const DESCRIPTION =
   "Save your token — it encodes both sid and pin as a single integer (sid * 1_000_000 + pin). " +
   "Call after get_agent_guide and get_me during session setup.";
 
-export function register(server: McpServer) {
-  server.registerTool(
-    "session_start",
-    {
-      description: DESCRIPTION,
-      inputSchema: {
-        name: z
-          .string()
-          .default("")
-          .describe(
-            "Human-friendly session name, used as topic prefix. " +
-            "Encouraged when multiple sessions are active.",
-          ),
-        reconnect: z
-          .boolean()
-          .default(false)
-          .describe(
-            "Set to true after losing your PIN (context loss, crash, etc.) to request " +
-            "operator re-authorization. If a session with the same name already exists, " +
-            "shows a simple Approve/Deny dialog; on approval returns the same SID and PIN. " +
-            "Also sends 'reconnected' instead of 'joined' messaging on a fresh session start.",
-          ),
-        color: z
-          .string()
-          .optional()
-          .describe(
-            "Preferred color square emoji for this session. " +
-            "Palette meanings: 🟦 Coordinator/overseer · 🟩 Builder/worker · 🟨 Reviewer/QA · " +
-            "🟧 Research/exploration · 🟥 Ops/deployment · 🟪 Specialist/one-off. " +
-            "The operator makes the final choice via the approval dialog color buttons. " +
-            "Your hint goes first in the button list as a suggestion.",
-          ),
-      },
-    },
-    async ({ name, reconnect, color }) => {
+export async function handleSessionStart({ name, reconnect, color }: { name: string; reconnect: boolean; color?: string }) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -516,6 +482,42 @@ export function register(server: McpServer) {
         setActiveSession(0);
         return toError(err);
       }
+}
+
+export function register(server: McpServer) {
+  server.registerTool(
+    "session_start",
+    {
+      description: DESCRIPTION,
+      inputSchema: {
+        name: z
+          .string()
+          .default("")
+          .describe(
+            "Human-friendly session name, used as topic prefix. " +
+            "Encouraged when multiple sessions are active.",
+          ),
+        reconnect: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Set to true after losing your PIN (context loss, crash, etc.) to request " +
+            "operator re-authorization. If a session with the same name already exists, " +
+            "shows a simple Approve/Deny dialog; on approval returns the same SID and PIN. " +
+            "Also sends 'reconnected' instead of 'joined' messaging on a fresh session start.",
+          ),
+        color: z
+          .string()
+          .optional()
+          .describe(
+            "Preferred color square emoji for this session. " +
+            "Palette meanings: 🟦 Coordinator/overseer · 🟩 Builder/worker · 🟨 Reviewer/QA · " +
+            "🟧 Research/exploration · 🟥 Ops/deployment · 🟪 Specialist/one-off. " +
+            "The operator makes the final choice via the approval dialog color buttons. " +
+            "Your hint goes first in the button list as a suggestion.",
+          ),
+      },
     },
+    handleSessionStart,
   );
 }

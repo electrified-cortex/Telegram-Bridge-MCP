@@ -63,6 +63,7 @@ import { register as registerLoadProfile } from "./tools/load_profile.js";
 import { register as registerImportProfile } from "./tools/import_profile.js";
 import { register as registerSetDequeueDefault } from "./tools/set_dequeue_default.js";
 import { initAgentApprovalTool } from "./agent-approval.js";
+import { register as registerAction } from "./tools/action.js";
 
 import { createRequire } from "module";
 
@@ -234,6 +235,9 @@ export function createServer(): McpServer {
   registerDeleteLog(server);
   registerToggleLogging(server);
   registerGetDebugLog(server);
+
+  // ── v6 action router ───────────────────────────────────────────────────
+  registerAction(server);
 
   // ── System ─────────────────────────────────────────────────────────────
   registerShutdownServer(server);
