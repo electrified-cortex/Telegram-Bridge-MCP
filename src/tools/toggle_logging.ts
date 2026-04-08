@@ -8,7 +8,7 @@ import { TOKEN_SCHEMA } from "./identity-schema.js";
 const DESCRIPTION =
   "Enable or disable local session logging. " +
   "When disabled, no new events are written to the log file. " +
-  "Events are written synchronously — to archive the current log before disabling, call roll_log first. " +
+  "Events are queued for async write — to archive the current log before disabling, call roll_log first. " +
   "Returns the current logging state after the change.";
 
 export function register(server: McpServer) {

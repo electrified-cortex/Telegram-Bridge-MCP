@@ -14,7 +14,8 @@
  *  - listLogs(): list archived log files
  */
 
-import { mkdirSync, appendFileSync, readFileSync, unlinkSync, readdirSync, existsSync } from "fs";
+import { mkdirSync, readFileSync, unlinkSync, readdirSync, existsSync } from "fs";
+import { appendFile } from "fs/promises";
 import { resolve, dirname, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -27,6 +28,8 @@ const LOGS_DIR = resolve(__dirname, "..", "data", "logs");
 
 let _enabled = true;
 let _currentFilename: string | null = null;
+/** Serial write queue — chains append operations to preserve event ordering. */
+let _writeQueue: Promise<void> = Promise.resolve();
 
 /** Validates that a filename matches the YYYY-MM-DDTHHMMSS.json pattern. */
 const TIMESTAMP_FILENAME_RE = /^\d{4}-\d{2}-\d{2}T\d{6}\.json$/;
@@ -90,21 +93,18 @@ export function getCurrentLogFilename(): string | null {
 }
 
 /**
- * Append an event to the current log file immediately (NDJSON format).
- * Uses appendFileSync — synchronous by design for crash safety (operator
- * directive: no in-memory buffer). Acceptable for low-frequency events;
- * refactor to async queue if logging becomes a throughput concern.
- * No-op if logging is disabled.
+ * Enqueue an event for async write to the current log file (NDJSON format).
+ * Uses a serial promise queue to preserve event ordering without blocking
+ * the event loop. No-op if logging is disabled.
  */
 export function logEvent(event: unknown): void {
   if (!_enabled) return;
   const filePath = currentFilePath();
-  try {
+  const line = JSON.stringify({ ts: new Date().toISOString(), event }) + '\n';
+  _writeQueue = _writeQueue.then(() => {
     ensureLogsDir();
-    appendFileSync(filePath, JSON.stringify({ ts: new Date().toISOString(), event }) + '\n', 'utf-8');
-  } catch {
-    // Best-effort — never throw from logging
-  }
+    return appendFile(filePath, line, 'utf-8');
+  }).catch(() => { /* Best-effort — never reject the queue */ });
 }
 
 /**
@@ -121,11 +121,11 @@ export function rollLog(): string | null {
 }
 
 /**
- * No-op: events are written to disk immediately in logEvent().
- * Retained for API compatibility.
+ * Await all pending async log writes. Call before shutdown or roll to ensure
+ * no queued events are lost.
  */
-export function flushCurrentLog(): void {
-  // No-op: events are written to disk immediately in logEvent()
+export function flushCurrentLog(): Promise<void> {
+  return _writeQueue;
 }
 
 /**
@@ -190,4 +190,5 @@ function sanitizeFilename(filename: string): string {
 export function resetLocalLogForTest(): void {
   _enabled = true;
   _currentFilename = null;
+  _writeQueue = Promise.resolve();
 }
