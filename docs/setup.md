@@ -104,13 +104,23 @@ If you get a `401 Unauthorized` error, the token is wrong — regenerate it with
 
 Run **one** server instance and connect any number of editors or Claude Code sessions. Each client gets its own MCP session with an isolated queue — no `getUpdates` conflicts.
 
-**1. Start the server** (terminal, tmux, startup script, etc.):
+**1. Start the server** in its own terminal window:
 
 ```bash
-MCP_PORT=3099 pnpm start
+pnpm start --http
 ```
 
-All config comes from `.env` — no credentials in your editor settings.
+The `--http` flag enables Streamable HTTP mode on the port configured in `.env`
+(`MCP_PORT`, default 3099). All other config comes from `.env` — no credentials
+in your editor settings.
+
+> **Resilience tip:** Run the server in a **standalone terminal window** outside
+> your editor. If the editor crashes, the MCP server stays up and agent sessions
+> survive. On Windows, you can spawn an independent window from PowerShell:
+>
+> ```powershell
+> Start-Process pwsh -ArgumentList "-NoExit","-Command","cd 'path/to/telegram-bridge-mcp'; pnpm start --http"
+> ```
 
 **2. Point your MCP hosts at it:**
 
@@ -155,12 +165,11 @@ All config comes from `.env` — no credentials in your editor settings.
 }
 ```
 
-> **Do not add to global `~/.claude.json` `mcpServers`.** Global servers spawn in *every* session, generating noise and competing for the same bot.
+> **Scope tip:** A project-scoped config (`.mcp.json`, `.vscode/mcp.json`) keeps Telegram tools out of unrelated sessions. A global config works fine with Streamable HTTP or the launcher bridge — each session gets its own isolated queue. Avoid global configs with raw stdio (`dist/index.js`) though — multiple instances will fight over `getUpdates`.
 
-<details>
-<summary><strong>stdio mode</strong> (single-instance fallback)</summary>
+### stdio mode
 
-If you can't run a persistent server, stdio mode spawns a dedicated process per host. Only one host can connect at a time — multiple instances will fight over `getUpdates`.
+stdio mode spawns a dedicated process per host. Only one host can connect at a time — multiple instances will fight over `getUpdates`.
 
 **VS Code** (`.vscode/mcp.json`):
 
@@ -262,8 +271,6 @@ Instead of starting the server manually, use `dist/launcher.js` as a drop-in std
   }
 }
 ```
-
-</details>
 
 ---
 
