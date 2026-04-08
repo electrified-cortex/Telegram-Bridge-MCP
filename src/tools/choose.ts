@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   resolveChat,
-  toResult, toError, validateText, validateCallbackData, LIMITS,
+  toResult, toError, validateText, validateCallbackData, LIMITS, sendVoiceDirect,
 } from "../telegram.js";
 import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
 import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
@@ -10,23 +10,21 @@ import { getCallerSid, runInSessionContext } from "../session-context.js";
 import { requireAuth } from "../session-gate.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
-  sendChoiceMessage, type KeyboardOption,
+  sendChoiceMessage, buildKeyboardRows, type KeyboardOption,
 } from "./button-helpers.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
+import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
+import { getSessionSpeed } from "../voice-state.js";
+import { showTyping, cancelTyping } from "../typing-state.js";
+import { applyTopicToText } from "../topic-state.js";
 
 const DESCRIPTION =
-  "Sends a question with 2–8 labeled option buttons and waits until the " +
-  "user presses one. Returns { label, value } of the chosen option. " +
-  "Automatically removes the buttons and updates the message to show the " +
-  "chosen option. If the user sends a text or voice message instead, " +
-  "returns { skipped: true, text_response }. If no input arrives within " +
-  "timeout_seconds, returns { timed_out: true } — buttons remain live and " +
-  "late clicks are still handled automatically. Multiple choose calls can " +
-  "be chained for questionnaires. Use for any single-selection choice. " +
-  "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
-  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
-  "Ensure session_start has been called.";
+  "Send a question with 2–8 buttons and wait for the user to press one. " +
+  "Returns { label, value } on selection; { skipped: true, text_response } if the user types instead; " +
+  "{ timed_out: true } on deadline (buttons stay live, late clicks still handled). " +
+  "Drain pending updates with dequeue_update(timeout:0) before calling, or pass ignore_pending: true. " +
+  "Call `help(topic: 'choose')` for details.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -77,10 +75,15 @@ export function register(server: McpServer) {
         .boolean()
         .optional()
         .describe("Set true to bypass button label emoji-consistency check"),
+      voice: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Voice name for TTS — send the question as a voice note with the inline keyboard attached. Uses the specified voice (or session default if omitted). Requires TTS to be configured."),
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ question, options, timeout_seconds, columns, reply_to_message_id, ignore_pending, ignore_parity, token}, { signal }) => {
+    async ({ question, options, timeout_seconds, columns, reply_to_message_id, ignore_pending, ignore_parity, voice, token}, { signal }) => {
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
@@ -144,13 +147,49 @@ export function register(server: McpServer) {
       }
 
       try {
-        const messageId = await sendChoiceMessage(chatId, {
-          text: question,
-          options: options as KeyboardOption[],
-          columns,
-          parseMode: "Markdown",
-          replyToMessageId: reply_to_message_id,
-        });
+        let messageId: number;
+
+        if (voice) {
+          if (!isTtsEnabled()) {
+            return toError({
+              code: "TTS_NOT_CONFIGURED" as const,
+              message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice mode.",
+            });
+          }
+          const plainText = stripForTts(question);
+          if (!plainText) {
+            return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
+          }
+          const resolvedVoice = voice;
+          const resolvedSpeed = getSessionSpeed() ?? undefined;
+          const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
+          await showTyping(typingSeconds, "record_voice");
+          try {
+            const ogg = await synthesizeToOgg(plainText, resolvedVoice, resolvedSpeed);
+            // Apply topic prefix to caption (not to TTS input — don't read the prefix aloud).
+            // Reserve 60 chars for the session header that sendVoiceDirect prepends, to stay under the 1024 caption limit.
+            const MAX_CAPTION = 1024 - 60;
+            const captionWithTopic = applyTopicToText(question, "Markdown");
+            const caption = captionWithTopic.length > MAX_CAPTION ? captionWithTopic.slice(0, MAX_CAPTION) : captionWithTopic;
+            const rows = buildKeyboardRows(options as KeyboardOption[], columns);
+            const msg = await sendVoiceDirect(chatId, ogg, {
+              caption,
+              reply_to_message_id,
+              reply_markup: { inline_keyboard: rows },
+            });
+            messageId = msg.message_id;
+          } finally {
+            cancelTyping();
+          }
+        } else {
+          messageId = await sendChoiceMessage(chatId, {
+            text: question,
+            options: options as KeyboardOption[],
+            columns,
+            parseMode: "Markdown",
+            replyToMessageId: reply_to_message_id,
+          });
+        }
 
         // Register callback hook — handles button clicks even after poll timeout.
         // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
@@ -159,7 +198,7 @@ export function register(server: McpServer) {
           const chosen = options.find((o) => o.value === evt.content.data);
           const chosenLabel = chosen?.label ?? evt.content.data ?? "";
           clearMessageHook(messageId);
-          void ackAndEditSelection(chatId, messageId, question, chosenLabel, evt.content.qid)
+          void ackAndEditSelection(chatId, messageId, question, chosenLabel, evt.content.qid, !!voice)
             .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${String(e)}\n`));
         }, _sid);
 
@@ -169,7 +208,7 @@ export function register(server: McpServer) {
         const onVoiceDetected = () => {
           skippedEditDone = true;
           clearCallbackHook(messageId);
-          editWithSkipped(chatId, messageId, question).catch(() => {/* non-fatal */});
+          editWithSkipped(chatId, messageId, question, !!voice).catch(() => {/* non-fatal */});
         };
 
         const match = await pollButtonOrTextOrVoice(
@@ -185,7 +224,7 @@ export function register(server: McpServer) {
           registerMessageHook(messageId, () => {
             clearCallbackHook(messageId);
             void runInSessionContext(_sid, () =>
-              editWithSkipped(chatId, messageId, question),
+              editWithSkipped(chatId, messageId, question, !!voice),
             ).catch(() => {/* non-fatal */});
           });
           return toResult({
@@ -196,7 +235,7 @@ export function register(server: McpServer) {
 
         if (match.kind === "text") {
           clearCallbackHook(messageId);
-          await editWithSkipped(chatId, messageId, question);
+          await editWithSkipped(chatId, messageId, question, !!voice);
           return toResult({
             skipped: true,
             text_response: match.text,
@@ -208,7 +247,7 @@ export function register(server: McpServer) {
         if (match.kind === "voice") {
           clearCallbackHook(messageId);
           // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
-          if (!skippedEditDone) await editWithSkipped(chatId, messageId, question);
+          if (!skippedEditDone) await editWithSkipped(chatId, messageId, question, !!voice);
           return toResult({
             skipped: true,
             text_response: match.text ?? "[no transcription]",
@@ -220,7 +259,7 @@ export function register(server: McpServer) {
 
         if (match.kind === "command") {
           clearCallbackHook(messageId);
-          await editWithSkipped(chatId, messageId, question);
+          await editWithSkipped(chatId, messageId, question, !!voice);
           return toResult({
             skipped: true,
             command: match.command,

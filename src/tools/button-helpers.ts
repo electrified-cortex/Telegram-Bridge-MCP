@@ -205,13 +205,24 @@ async function appendSuffixAndEdit(
   messageId: number,
   text: string,
   suffix: string,
+  isVoice?: boolean,
 ): Promise<void> {
-  await getApi()
-    .editMessageText(chatId, messageId, markdownToV2(`${text}\n\n${suffix}`), {
-      parse_mode: "MarkdownV2",
-      reply_markup: { inline_keyboard: [] },
-    })
-    .catch((e: unknown) => { console.error("[button-helpers] editMessageText failed:", e); });
+  if (isVoice) {
+    await getApi()
+      .editMessageCaption(chatId, messageId, {
+        caption: markdownToV2(`${text}\n\n${suffix}`),
+        parse_mode: "MarkdownV2",
+        reply_markup: { inline_keyboard: [] },
+      })
+      .catch((e: unknown) => { console.error("[button-helpers] editMessageCaption failed:", e); });
+  } else {
+    await getApi()
+      .editMessageText(chatId, messageId, markdownToV2(`${text}\n\n${suffix}`), {
+        parse_mode: "MarkdownV2",
+        reply_markup: { inline_keyboard: [] },
+      })
+      .catch((e: unknown) => { console.error("[button-helpers] editMessageText failed:", e); });
+  }
 }
 
 /**
@@ -224,13 +235,14 @@ export async function ackAndEditSelection(
   originalText: string,
   chosenLabel: string,
   callbackQueryId: string | undefined,
+  isVoice?: boolean,
 ): Promise<void> {
   if (callbackQueryId) {
     await getApi()
       .answerCallbackQuery(callbackQueryId)
       .catch(() => {/* non-fatal */});
   }
-  await appendSuffixAndEdit(chatId, messageId, originalText, `▸ *${chosenLabel}*`);
+  await appendSuffixAndEdit(chatId, messageId, originalText, `▸ *${chosenLabel}*`, isVoice);
 }
 
 /**
@@ -241,8 +253,9 @@ export async function editWithTimedOut(
   chatId: number,
   messageId: number,
   originalText: string,
+  isVoice?: boolean,
 ): Promise<void> {
-  await appendSuffixAndEdit(chatId, messageId, originalText, "⏱ _Timed out_");
+  await appendSuffixAndEdit(chatId, messageId, originalText, "⏱ _Timed out_", isVoice);
 }
 
 /**
@@ -253,8 +266,9 @@ export async function editWithSkipped(
   chatId: number,
   messageId: number,
   originalText: string,
+  isVoice?: boolean,
 ): Promise<void> {
-  await appendSuffixAndEdit(chatId, messageId, originalText, "⏭ _Skipped_");
+  await appendSuffixAndEdit(chatId, messageId, originalText, "⏭ _Skipped_", isVoice);
 }
 
 // ---------------------------------------------------------------------------

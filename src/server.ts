@@ -11,15 +11,13 @@ import { toError } from "./telegram.js";
 import { register as registerDequeueUpdate } from "./tools/dequeue_update.js";
 import { register as registerGetMessage } from "./tools/get_message.js";
 import { register as registerGetChatHistory } from "./tools/get_chat_history.js";
-import { register as registerSendText } from "./tools/send_text.js";
-import { register as registerSendMessage } from "./tools/send_message.js";
+import { register as registerSend } from "./tools/send.js";
 import { register as registerSendChoice } from "./tools/send_choice.js";
 import { register as registerSendFile } from "./tools/send_file.js";
 import { register as registerAppendText } from "./tools/append_text.js";
 import { register as registerShowAnimation } from "./tools/show_animation.js";
 import { register as registerCancelAnimation } from "./tools/cancel_animation.js";
 import { register as registerSetDefaultAnimation } from "./tools/set_default_animation.js";
-import { register as registerSendTextAsVoice } from "./tools/send_text_as_voice.js";
 import { register as registerNotify } from "./tools/notify.js";
 import { register as registerEditMessageText } from "./tools/edit_message_text.js";
 import { register as registerEditMessage } from "./tools/edit_message.js";
@@ -44,6 +42,7 @@ import { register as registerListReminders } from "./tools/list_reminders.js";
 import { register as registerGetMe } from "./tools/get_me.js";
 import { register as registerGetChat } from "./tools/get_chat.js";
 import { register as registerGetAgentGuide } from "./tools/get_agent_guide.js";
+import { register as registerHelp } from "./tools/help.js";
 import { register as registerDumpSessionRecord } from "./tools/dump_session_record.js";
 import { register as registerRollLog } from "./tools/roll_log.js";
 import { register as registerGetLog } from "./tools/get_log.js";
@@ -162,6 +161,7 @@ export function createServer(): McpServer {
   }) as typeof server.registerTool;
 
   // ── High-level agent tools (use these 99% of the time) ─────────────────
+  registerHelp(server);
   registerGetAgentGuide(server);
   registerSetTopic(server);
   registerSetVoice(server);
@@ -183,10 +183,8 @@ export function createServer(): McpServer {
   registerGetChatHistory(server);
 
   // ── Messaging ───────────────────────────────────────────────────────────
-  registerSendMessage(server);
+  registerSend(server);
   registerEditMessage(server);
-  registerSendText(server);
-  registerSendTextAsVoice(server);
   registerSendFile(server);
   registerEditMessageText(server);
   registerAppendText(server);

@@ -26,6 +26,7 @@ export interface PendingApproval {
   name: string;
   resolve: (d: ApprovalDecision) => void;
   registeredAt: number;
+  colorHint?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,13 +55,6 @@ export function isDelegationEnabled(): boolean {
  */
 export function setDelegationEnabled(enabled: boolean): void {
   _enabled = enabled;
-  if (_tool) {
-    if (enabled) {
-      _tool.enable();
-    } else {
-      _tool.disable();
-    }
-  }
   if (_server) {
     _server.sendToolListChanged();
   }
@@ -73,8 +67,9 @@ export function setDelegationEnabled(enabled: boolean): void {
 export function registerPendingApproval(
   name: string,
   resolve: (d: ApprovalDecision) => void,
+  colorHint?: string,
 ): void {
-  _pending.set(name, { name, resolve, registeredAt: Date.now() });
+  _pending.set(name, { name, resolve, registeredAt: Date.now(), colorHint });
 }
 
 /** Remove a pending approval entry (called after the promise resolves). */
@@ -96,6 +91,4 @@ export function getPendingApproval(name: string): PendingApproval | undefined {
 export function initAgentApprovalTool(server: McpServer): void {
   _server = server;
   _tool = registerApproveAgent(server);
-  // Start disabled — operator must opt in via /approve panel
-  _tool.disable();
 }

@@ -404,17 +404,54 @@ describe("getAvailableColors", () => {
     expect(usedIndex1).toBeLessThan(usedIndex2); // 🟦 used before 🟩, so 🟩 is more recent
   });
 
+  it("unused colors (no active session) appear before in-use colors", () => {
+    // 🟦 is in use by an active session; all others are unused
+    createSession("A", "🟦");
+    const colors = getAvailableColors();
+    expect(colors).toHaveLength(6);
+    // 🟦 is in-use → must appear after all unused colors
+    const inUseIndex = colors.indexOf("🟦");
+    for (const c of COLOR_PALETTE) {
+      if (c !== "🟦") {
+        expect(colors.indexOf(c)).toBeLessThan(inUseIndex);
+      }
+    }
+  });
+
+  it("closing a session moves its color back to the unused group", () => {
+    const s = createSession("A", "🟦"); // 🟦 in-use
+    const colorsBefore = getAvailableColors();
+    // 🟦 should be in the in-use group (last position: most-recently-used and in-use)
+    expect(colorsBefore[colorsBefore.length - 1]).toBe("🟦");
+    closeSession(s.sid); // 🟦 no longer in-use (but LRU history unchanged)
+    const colorsAfter = getAvailableColors();
+    // 🟦 was closed → it's now in the unused group
+    // All colors are now unused; 🟦 is the most-recently-used among them → rightmost
+    expect(colorsAfter[colorsAfter.length - 1]).toBe("🟦");
+    expect(colorsAfter).toHaveLength(6);
+  });
+
+  it("when all colors are in use, order is pure LRU (no unused group)", () => {
+    for (let i = 0; i < 6; i++) createSession(`S${i}`);
+    const colors = getAvailableColors();
+    expect(colors).toHaveLength(6);
+    // All colors in use → no unused group; order is LRU
+    expect(new Set(colors)).toEqual(new Set(COLOR_PALETTE));
+    // Last color is most-recently-used (COLOR_PALETTE[5] = 🟪, assigned 6th)
+    expect(colors[colors.length - 1]).toBe(COLOR_PALETTE[5]);
+  });
+
   it("never-used hint placed at far left", () => {
     const colors = getAvailableColors("🟩");
     expect(colors[0]).toBe("🟩");
     expect(colors).toHaveLength(6);
   });
 
-  it("previously-used hint stays at its natural LRU position, not forced first", () => {
-    createSession("A", "🟦"); // 🟦 now most-recently-used (rightmost)
+  it("previously-used hint stays at its natural sorted position, not forced first", () => {
+    createSession("A", "🟦"); // 🟦 in-use and most-recently-used
     const colors = getAvailableColors("🟦");
     expect(colors).toHaveLength(6);
-    // 🟦 was just used → it is rightmost in LRU, not position 0
+    // 🟦 is in-use → sorted to in-use group (last); hint does not force it to position 0
     expect(colors[0]).not.toBe("🟦");
     expect(colors[colors.length - 1]).toBe("🟦");
   });
@@ -445,17 +482,17 @@ describe("getAvailableColors", () => {
     expect(colors.slice(1)).toEqual(expect.arrayContaining(["🟦", "🟩", "🟨", "🟧", "🟥"]));
   });
 
-  it("assignment order is reflected in LRU position", () => {
-    // Assign in a non-palette order; verify LRU reflects assignment recency
-    createSession("A", "🟥"); // 🟥 = most recently used after this
-    createSession("B", "🟨"); // 🟨 = most recently used
+  it("assignment order is reflected in LRU position within the in-use group", () => {
+    // Assign in a non-palette order; verify LRU reflects assignment recency within in-use group
+    createSession("A", "🟥"); // 🟥 in-use, used first
+    createSession("B", "🟨"); // 🟨 in-use, used second (most recent)
     const colors = getAvailableColors();
-    // 🟥 assigned before 🟨, so 🟨 is more recent → 🟨 rightmost, 🟥 second-from-right
+    // 🟥 and 🟨 are both in-use → appear last; 🟨 more recent → rightmost
     expect(colors[colors.length - 1]).toBe("🟨");
     expect(colors[colors.length - 2]).toBe("🟥");
-    // Never-used colors come before both
-    const neverUsed = ["🟦", "🟩", "🟧", "🟪"];
-    for (const c of neverUsed) {
+    // Never-used + not-in-use colors come before both
+    const unusedGroup = ["🟦", "🟩", "🟧", "🟪"];
+    for (const c of unusedGroup) {
       expect(colors.indexOf(c)).toBeLessThan(colors.indexOf("🟥"));
     }
   });
@@ -464,8 +501,20 @@ describe("getAvailableColors", () => {
     const s = createSession("A", "🟦"); // 🟦 → MRU
     closeSession(s.sid);
     const colors = getAvailableColors();
-    // 🟦 was used, so still at rightmost even though session is closed
+    // 🟦 session closed → no longer in-use; now in unused group at rightmost (MRU within unused)
     expect(colors[colors.length - 1]).toBe("🟦");
     expect(colors).toHaveLength(6);
+  });
+
+  it("two active sessions: their colors are in in-use group; rest are in unused group", () => {
+    createSession("A", "🟨"); // 🟨 in-use
+    createSession("B", "🟪"); // 🟪 in-use, more recent
+    const colors = getAvailableColors();
+    const unusedColors = ["🟦", "🟩", "🟧", "🟥"];
+    const inUseColors = ["🟨", "🟪"];
+    // All unused colors appear before all in-use colors
+    const maxUnusedIdx = Math.max(...unusedColors.map(c => colors.indexOf(c)));
+    const minInUseIdx = Math.min(...inUseColors.map(c => colors.indexOf(c)));
+    expect(maxUnusedIdx).toBeLessThan(minInUseIdx);
   });
 });

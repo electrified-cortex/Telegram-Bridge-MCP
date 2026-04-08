@@ -411,13 +411,13 @@ describe("session_start tool", () => {
     expect(mocks.setGovernorSid).toHaveBeenCalledWith(1);
   });
 
-  it("does not set governor SID when first session starts", async () => {
+  it("sets governor SID when first session starts", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "", sessionsActive: 1 });
 
     await call({});
 
-    expect(mocks.setGovernorSid).not.toHaveBeenCalled();
+    expect(mocks.setGovernorSid).toHaveBeenCalledWith(1);
   });
 
   it("selects lowest SID as governor when gap exists", async () => {
@@ -693,7 +693,7 @@ describe("session_start tool", () => {
 
     // Existing session (the governor) notified of the join
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const toExisting = calls.find((c: unknown[]) => c[0] === 1);
+    const toExisting = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_joined");
     expect(toExisting).toBeDefined();
     expect(toExisting![2]).toBe("session_joined");
     expect(String(toExisting![1])).toContain("Worker");
@@ -847,7 +847,7 @@ describe("session_start tool", () => {
     await call({ name: "Worker", reconnect: true });
 
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const toExisting = calls.find((c: unknown[]) => c[0] === 1);
+    const toExisting = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_joined");
     expect(toExisting).toBeDefined();
     expect(String(toExisting![1])).toContain("has reconnected");
     // Also verify the reconnect flag is in the details

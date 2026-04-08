@@ -104,14 +104,10 @@ function resolveEmoji(input: string): string[] | null {
 }
 
 const DESCRIPTION =
-  "Sets an emoji reaction on a message. Non-premium bots can set up to 1 " +
-  "reaction per message. Pass an empty string to remove all reactions. " +
-  "Supports semantic aliases like 'thinking', 'done', 'salute', or raw emoji. " +
-  "Set temporary=true to auto-revert the reaction on the next outbound " +
-  "action (or after timeout_seconds). Optionally specify restore_emoji to " +
-  "revert to a specific emoji instead of removing the reaction. " +
-  "Classic use: set 'reading' (👀) with temporary=true to signal " +
-  "'processing' and auto-clear once you reply.";
+  "Set an emoji reaction on a message (max 1 for non-premium bots). " +
+  "Accepts aliases (thinking, done, salute, reading, approve…) or raw emoji; omit/empty to remove. " +
+  "temporary=true auto-reverts on next outbound action or timeout_seconds. " +
+  "Call `help(topic: 'set_reaction')` for details.";
 
 export function register(server: McpServer) {
   server.registerTool(

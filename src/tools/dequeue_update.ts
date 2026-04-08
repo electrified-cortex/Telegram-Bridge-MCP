@@ -48,19 +48,12 @@ function compactBatch(events: TimelineEvent[], sid: number): Record<string, unkn
 }
 
 const DESCRIPTION =
-  "Consume queued updates in a single batch. Non-content events (reactions, " +
-  "callbacks) are drained first, then up to one content event (user message " +
-  "with text, media, or voice) is appended. Returns `{ updates: [{ id, event, from, content }, ...] }` " +
-  "with optional `pending` (count of remaining queued updates, when > 0). " +
-  "When no update is available: returns `{ timed_out: true }` when a blocking wait expires (call again " +
-  "immediately to keep the loop alive), or `{ empty: true }` for instant polls (timeout: 0). " +
-  "Voice messages arrive pre-transcribed as { type: \"voice\", text: \"...\" }. " +
-  "pending > 0 means more updates are queued — call again. " +
-  "Two modes: omit timeout to block for up to your session default (set via set_dequeue_default, " +
-  "server fallback 300 s); pass timeout: 0 for an instant non-blocking poll (drain loops only). " +
-  "Max explicit timeout argument: 300 s. Values above the session default are rejected unless force: true is passed. " +
-  "Use set_dequeue_default to configure a persistent default up to 3600 s — for waits beyond 300 s, set a session default and omit the timeout parameter. " +
-  "token is always required — pass the session token returned by session_start.";
+  "Consume queued updates. Non-content events drain first, then up to one content event (text, media, voice) is appended. " +
+  "Returns: `{ updates, pending? }` with data; `{ timed_out: true }` on blocking-wait expiry (call again immediately); " +
+  "`{ empty: true }` for instant polls (timeout: 0); " +
+  "`{ error: \"session_closed\", message }` (isError: false) when the session queue is gone — stop looping. " +
+  "pending > 0 → call again. Omit timeout to use session default (set_dequeue_default, fallback 300 s); max explicit: 300 s. " +
+  "Call `help(topic: 'dequeue_update')` for details.";
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -104,11 +97,9 @@ export function register(server: McpServer) {
       const sessionQueue = getSessionQueue(sid);
 
       if (!sessionQueue) {
-        return toError({
-          code: "SESSION_NOT_FOUND" as const,
-          message:
-            `No session queue for sid=${sid}. ` +
-            `The session may have ended or was never started.`,
+        return toResult({
+          error: "session_closed",
+          message: `Session ${sid} no longer exists.`,
         });
       }
 

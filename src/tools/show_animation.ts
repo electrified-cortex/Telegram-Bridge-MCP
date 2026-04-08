@@ -6,21 +6,15 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
-  "Start a server-managed cycling visual placeholder message. The animation " +
-  "auto-cancels after timeout seconds of inactivity. One frame = static placeholder. " +
-  "Multiple frames = cycling animation (min 1000ms interval, default 2000ms). " +
-  "Only one animation at a time — starting a new one cancels the previous. " +
-  "Cancel with cancel_animation, or let it auto-clean on timeout. " +
-  "A single emoji works well as a static placeholder (e.g. [\"🤔\"] or [\"⏳\"]). " +
-  "Avoid cycling multiple emoji-only frames — Telegram renders solo emoji as large animated stickers, so rapid edits look jarring. " +
-  "Pass a preset name to recall saved or built-in frames without re-specifying them. " +
-  "Built-in presets: bounce (default tracer), dots, working, thinking, loading. " +
-  "Two modes: temporary (default) = one-shot, disappears on next bot message or show_typing. " +
-  "Persistent = continuous, restarts after each bot message until explicitly cancelled. " +
-  "By default all regular spaces in frames are replaced with non-breaking spaces to prevent layout shift; " +
-  "set allow_breaking_spaces: true to opt out. " +
-  "Animations are silent by default (no notification). Set notify: true to trigger a notification on the initial placeholder. " +
-  "For a brief native typing indicator in the chat header (seconds, pre-reply), use show_typing instead.";
+  "Post a cycling placeholder message managed by the server. " +
+  "One frame = static; multiple frames = cycling animation (min 1000ms interval). " +
+  "Only one animation runs at a time — new one cancels the previous. " +
+  "Modes: temporary (default, disappears on next bot message) or persistent (restarts after each message). " +
+  "Built-in presets: bounce, dots, working, thinking, loading. " +
+  "Avoid cycling emoji-only frames — Telegram renders solo emoji as large animated stickers. " +
+  "Spaces become non-breaking by default (prevents layout shift); set allow_breaking_spaces: true to opt out. " +
+  "For a native typing indicator in the chat header, use show_typing instead. " +
+  "Call `help(topic: 'show_animation')` for details.";
 
 export function register(server: McpServer) {
   server.registerTool(

@@ -18,7 +18,7 @@ const DESCRIPTION =
   "styling (info/success/warning/error) automatically with emoji prefixes " +
   "and bold titles. Use for structured status messages (build results, " +
   "process events, errors). For conversational replies or long explanations, " +
-  "use send_text instead. Default parse_mode is Markdown " +
+  "use send instead. Default parse_mode is Markdown " +
   "— write standard Markdown in the text field and it is auto-converted, no " +
   "escaping needed. " +
   "Ensure session_start has been called.";
@@ -31,6 +31,7 @@ export function register(server: McpServer) {
       inputSchema: {
         title: z.string().describe("Short bold heading, e.g. \"Build Failed\""),
         text: z.string().optional().describe("Optional detail paragraph"),
+        message: z.string().optional().describe("Alias for text. If both text and message are provided, text takes precedence."),
         severity: z
           .enum(["info", "success", "warning", "error"])
           .default("info")
@@ -52,7 +53,7 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ title, text, severity, parse_mode, disable_notification, reply_to_message_id, token }) => {
+    async ({ title, text, message, severity, parse_mode, disable_notification, reply_to_message_id, token }) => {
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
@@ -65,7 +66,7 @@ export function register(server: McpServer) {
           ? `*${escapeV2(topicTitle)}*`
           : `<b>${escapeHtml(topicTitle)}</b>`;
         const lines = [`${prefix} ${titleFormatted}`];
-        const detail = text?.trim();
+        const detail = (text ?? message)?.trim();
         if (detail) {
           const bodyText = parse_mode === "Markdown" ? markdownToV2(detail) : detail;
           lines.push("", bodyText);

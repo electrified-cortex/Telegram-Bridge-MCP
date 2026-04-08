@@ -10,16 +10,11 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
-  "Sends a question to a chat and waits until the user replies. " +
-  "Returns one of three shapes: { timed_out: true } on deadline expiry; " +
-  "{ timed_out: false, aborted: true } on MCP cancellation; " +
-  "or { timed_out: false, text, message_id } for a text reply, " +
-  "{ timed_out: false, text, message_id, voice: true } for a transcribed voice reply, " +
-  "or { timed_out: false, command, args, message_id } for a bot-command reply. " +
-  "Use for open-ended prompts where a button isn't appropriate. " +
-  "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
-  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
-  "Ensure session_start has been called.";
+  "Send a question and wait for the user to reply. " +
+  "Returns { timed_out: true } on expiry; { timed_out: false, aborted: true } on MCP cancel; " +
+  "or { timed_out: false, text, message_id } for text, voice, or bot-command replies (voice adds voice: true; commands add command/args). " +
+  "Drain pending updates first or pass ignore_pending: true. " +
+  "Call `help(topic: 'ask')` for details.";
 
 export function register(server: McpServer) {
   server.registerTool(

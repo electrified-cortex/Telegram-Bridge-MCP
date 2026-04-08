@@ -65,7 +65,9 @@ export function register(server: McpServer): RegisteredTool {
       }
       const resolvedColor: string = color && (COLOR_PALETTE as readonly string[]).includes(color)
         ? color
-        : (getAvailableColors()[0] ?? COLOR_PALETTE[0]);
+        : (pending.colorHint && (COLOR_PALETTE as readonly string[]).includes(pending.colorHint)
+            ? pending.colorHint
+            : (getAvailableColors()[0] ?? COLOR_PALETTE[0]));
 
       clearPendingApproval(target_name);
       pending.resolve({ approved: true, color: resolvedColor, forceColor: true });

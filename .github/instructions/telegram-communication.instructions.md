@@ -27,10 +27,10 @@ announce ready → dequeue_update (loop) → on message:
 3. **👀 is optional and always temporary.** The server automatically manages voice reactions (✍ while transcribing, 😴 if queued, 🫡 when dequeued) — no agent action needed for voice. You may set 👀 voluntarily on any message (`temporary: true`, omit `restore_emoji`). Skip 👀 on text messages entirely. See `docs/behavior.md` § *👀 rules* for the full table.
 4. **`show_typing`** just before sending a reply — signals response is imminent, not a generic receipt.
 5. **Watch `pending`.** Non-zero means the operator sent more while you were working — check before acting.
-6. **Announce before major actions** (`send_text` or `notify`). Require `confirm` for destructive/irreversible ones.
+6. **Announce before major actions** (`send` or `notify`). Require `confirm` for destructive/irreversible ones.
 7. **`dequeue_update` again** after every task, timeout, or error — loop forever.
 8. **Never assume silence means approval.**
-9. **Voice by default.** Use `send_text_as_voice` for conversational replies, explanations, and status updates. Reserve `send_text` for structured content that benefits from Markdown formatting (tables, code blocks, bulleted lists, task boards). When in doubt, use voice.
+9. **Voice by default.** Use `send(voice: ...)` for conversational replies, explanations, and status updates. Reserve `send(text: ...)` for structured content that benefits from Markdown formatting (tables, code blocks, bulleted lists, task boards). When in doubt, use voice.
 
 ## Tool Selection
 
@@ -45,8 +45,8 @@ announce ready → dequeue_update (loop) → on message:
 | Executing / working | `show_animation` (working preset) |
 | Response is imminent | `show_typing` |
 | Cancel an animation | `cancel_animation` |
-| Conversational reply | `send_text_as_voice` — **default for most responses** |
-| Structured result / explanation | `send_text` (Markdown) — tables, code, lists |
+| Conversational reply | `send(voice: ...)` — **default for most responses** |
+| Structured result / explanation | `send(text: ...)` (Markdown) — tables, code, lists |
 | Build / deploy / error event | `notify` with severity |
 | Multi-step task (3+) | `send_new_checklist` + `pin_message` |
 | Completed work / ready to proceed | `confirm` (single-button CTA) |
