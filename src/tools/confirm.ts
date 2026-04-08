@@ -25,7 +25,7 @@ const DESCRIPTION_CONFIRM =
   "chosen option. Returns { confirmed: true|false }, or { timed_out: true } " +
   "if the timeout expires without input. " +
   "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
-  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
+  "dequeue(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
   "Ensure session_start has been called.";
 
 const DESCRIPTION_CONFIRM_YN =
@@ -78,7 +78,7 @@ async function confirmHandler(
       return toError({
         code: "PENDING_UPDATES" as const,
         message:
-          `${detail} Consider draining with dequeue_update(timeout:0) before ` +
+          `${detail} Consider draining with dequeue(timeout:0) before ` +
           `calling confirm, or pass ignore_pending: true to proceed anyway.`,
         pending,
         ...(breakdown ? { breakdown } : {}),
@@ -166,7 +166,7 @@ async function confirmHandler(
     const sent = { message_id: sentMessageId };
 
     // Register callback hook — handles button clicks even after poll timeout.
-    // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
+    // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue.
     // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
     registerCallbackHook(sent.message_id, (evt) => {
       const confirmed = evt.content.data === yes_data;

@@ -12,7 +12,7 @@ When Telegram MCP tools are available and the operator has initiated loop mode, 
 ## Session Flow
 
 ```text
-announce ready → dequeue_update (loop) → on message:
+announce ready → dequeue (loop) → on message:
   a) voice? → server already set 🫡 (ackVoiceMessage fires on dequeue) — no manual reaction needed
   b) show thinking animation
   c) plan clear? → switch to working animation
@@ -28,7 +28,7 @@ announce ready → dequeue_update (loop) → on message:
 4. **`show_typing`** just before sending a reply — signals response is imminent, not a generic receipt.
 5. **Watch `pending`.** Non-zero means the operator sent more while you were working — check before acting.
 6. **Announce before major actions** (`send` or `notify`). Require `confirm` for destructive/irreversible ones.
-7. **`dequeue_update` again** after every task, timeout, or error — loop forever.
+7. **`dequeue` again** after every task, timeout, or error — loop forever.
 8. **Never assume silence means approval.**
 9. **Voice by default.** Use `send(voice: ...)` for conversational replies, explanations, and status updates. Reserve `send(text: ...)` for structured content that benefits from Markdown formatting (tables, code blocks, bulleted lists, task boards). When in doubt, use voice.
 
@@ -63,7 +63,7 @@ announce ready → dequeue_update (loop) → on message:
 When waiting for external events (CI, code review, deploy, etc.), **keep the channel alive**:
 
 1. **Use a persistent animation** — `show_animation` with `persistent: true` to signal you are watching.
-2. **Stay in the loop** — call `dequeue_update` (default 300 s) repeatedly; on timeout, check in and loop again.
+2. **Stay in the loop** — call `dequeue` (default 300 s) repeatedly; on timeout, check in and loop again.
 3. **Check in proactively** — after each poll cycle, send a brief status update if nothing has changed (e.g., "still waiting on CI...").
 4. **Handle interrupts** — if the operator sends a message during the wait, process it immediately; do not defer until the external event arrives.
 5. **Cancel the animation** before sending any substantive reply — `cancel_animation` turns it into a permanent status message.
@@ -81,7 +81,7 @@ Do not create progress or checklist artifacts for one-shot status signaling.
 Avoid these patterns:
 
 - Replying in VS Code chat while loop mode is active
-- Restarting or recovering the session when a simple `dequeue_update` call would suffice
+- Restarting or recovering the session when a simple `dequeue` call would suffice
 - Trusting stale memory (stored SID/PIN, old test counts) over live tool state
 - Using progress/checklist tools for presence instead of `show_animation`
 - Deleting or mass-editing user-visible messages without explicit approval

@@ -11,7 +11,7 @@ const DESCRIPTION =
   "version=-1 (default) = latest; 0 = original; 1+ = edit history (bot messages only). " +
   "Returns all available version keys so the agent knows what history exists. " +
   "Only call for message IDs already known to this agent session " +
-  "(e.g. delivered via dequeue_update or referenced by the user). " +
+  "(e.g. delivered via dequeue or referenced by the user). " +
   "Do not probe arbitrary IDs to discover conversation history.";
 
 export function register(server: McpServer) {

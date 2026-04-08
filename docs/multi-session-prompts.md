@@ -23,7 +23,7 @@ Your responsibilities:
   Update it as the overall focus shifts.
 
 Loop:
-1. dequeue_update — handle events.
+1. dequeue — handle events.
 2. For routing: "targeted" events, handle normally.
 3. For routing: "ambiguous" events:
    a. Is this clearly for a specific worker? route_message(target_sid).
@@ -54,7 +54,7 @@ Your responsibilities:
   route_message or ignore it — do not reply with an error.
 
 Loop:
-1. dequeue_update — handle events.
+1. dequeue — handle events.
 2. All events arriving here are either targeted directly at you or routed by
    the governor. Handle them and report back.
 3. Use send_direct_message to signal key milestones to the governor without

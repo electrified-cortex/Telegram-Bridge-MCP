@@ -161,7 +161,7 @@ pile up unanswered. The system detects this via heartbeat tracking.
 
 ### Heartbeat
 
-Every `dequeue_update` call records a timestamp on the session. This is the
+Every `dequeue` call records a timestamp on the session. This is the
 heartbeat. A session that hasn't polled within the timeout threshold is marked
 unhealthy.
 

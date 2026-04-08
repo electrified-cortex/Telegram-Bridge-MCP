@@ -143,7 +143,7 @@ describe("set_dequeue_default tool", () => {
 });
 
 // =========================================================================
-// Integration: set_dequeue_default affects dequeue_update gate logic
+// Integration: set_dequeue_default affects dequeue gate logic
 // =========================================================================
 
 describe("integration: set_dequeue_default affects dequeue gate", () => {

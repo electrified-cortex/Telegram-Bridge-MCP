@@ -87,7 +87,7 @@ Set me up: https://github.com/electricessence/Telegram-Bridge-MCP
 | `send_new_checklist` | Live checklist (edits in-place) |
 | `send_new_progress` / `update_progress` | Emoji progress bar |
 | `show_animation` / `cancel_animation` | Cycling status message |
-| `dequeue_update` | Wait for next inbound event |
+| `dequeue` | Wait for next inbound event |
 
 ### Messaging
 

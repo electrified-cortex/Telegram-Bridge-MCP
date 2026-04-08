@@ -155,9 +155,9 @@ After modifying TypeScript source files, run `pnpm build` then call the `shutdow
 1. Runs `pnpm build` (compiles TypeScript)
 2. `shutdown` exits the MCP server process
 3. The MCP host detects the exit and relaunches
-4. Calls `dequeue_update` to drain stale messages
+4. Calls `dequeue` to drain stale messages
 5. Sends a "back online" notification
-6. Returns to `dequeue_update` loop
+6. Returns to `dequeue` loop
 
 **Important:** The loop prompt enforces that after a restart, the assistant immediately drains updates and re-engages. No session state is lost.
 
@@ -199,7 +199,7 @@ This prevents cascading failures and keeps you in control.
 
 ## Voice-Driven Development
 
-All inbound voice messages are **automatically transcribed** via local Whisper before being delivered through `dequeue_update`. Voice arrives as `{ type: "voice", text: "..." }` — no special handling needed.
+All inbound voice messages are **automatically transcribed** via local Whisper before being delivered through `dequeue`. Voice arrives as `{ type: "voice", text: "..." }` — no special handling needed.
 
 To send voice back, call `send_text_as_voice(text)`. The text is synthesized via TTS (Kokoro, OpenAI, or the bundled ONNX fallback) and delivered as a voice note. Use `set_voice` to set a per-session voice override, or send `/voice` in Telegram to pick the global default interactively.
 

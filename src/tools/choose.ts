@@ -25,7 +25,7 @@ const DESCRIPTION =
   "Send a prompt with 2–8 buttons and wait for the user to press one. " +
   "Returns { label, value } on selection; { skipped: true, text_response } if the user types instead; " +
   "{ timed_out: true } on deadline (buttons stay live, late clicks still handled). " +
-  "Drain pending updates with dequeue_update(timeout:0) before calling, or pass ignore_pending: true. " +
+  "Drain pending updates with dequeue(timeout:0) before calling, or pass ignore_pending: true. " +
   "Call `help(topic: 'choose')` for details.";
 
 export function register(server: McpServer) {
@@ -107,7 +107,7 @@ export function register(server: McpServer) {
           return toError({
             code: "PENDING_UPDATES" as const,
             message:
-              `${detail} Consider draining with dequeue_update(timeout:0) before ` +
+              `${detail} Consider draining with dequeue(timeout:0) before ` +
               `calling choose, or pass ignore_pending: true to proceed anyway.`,
             pending,
             ...(breakdown ? { breakdown } : {}),
@@ -198,7 +198,7 @@ export function register(server: McpServer) {
         }
 
         // Register callback hook — handles button clicks even after poll timeout.
-        // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
+        // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue.
         // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
         registerCallbackHook(messageId, (evt) => {
           const chosen = options.find((o) => o.value === evt.content.data);

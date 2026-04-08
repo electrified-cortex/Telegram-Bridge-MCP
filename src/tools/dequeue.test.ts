@@ -141,7 +141,7 @@ function makeVoiceEvent(id: number): TimelineEvent {
   };
 }
 
-describe("dequeue_update tool", () => {
+describe("dequeue tool", () => {
   let call: (args: Record<string, unknown>, extra?: Record<string, unknown>) => Promise<unknown>;
 
   beforeEach(() => {
@@ -733,7 +733,7 @@ describe("dequeue_update tool", () => {
   describe("touchSession heartbeat", () => {
     it("calls touchSession with the resolved sid when sid > 0 (explicit sid)", async () => {
       // Must provide a session queue for the explicit-sid path, otherwise
-      // dequeue_update returns session_closed before calling touchSession.
+      // dequeue returns session_closed before calling touchSession.
       const mockSessionQueue = {
         dequeueBatch: vi.fn(() => [makeEvent(1, "hi")] as TimelineEvent[]),
         pendingCount: vi.fn(() => 0),
@@ -962,7 +962,7 @@ describe("dequeue_update tool", () => {
       const fakeStart = realDateNow();
       let dateNowCallCount = 0;
       Date.now = () => {
-        // Calls in dequeue_update.ts (in order):
+        // Calls in dequeue.ts (in order):
         //   0: deadline = Date.now() + timeout * 1000   → fakeStart (normal)
         //   1: reminderIdleStart = Date.now()           → fakeStart (normal)
         //   2: while (Date.now() < deadline)            → fakeStart (enters loop)

@@ -1103,7 +1103,7 @@ describe("registerMessageHook", () => {
     expect(hook).not.toHaveBeenCalled();
   });
 
-  it("event is still enqueued for dequeue_update (non-consuming)", () => {
+  it("event is still enqueued for dequeue (non-consuming)", () => {
     const hook = vi.fn();
     registerMessageHook(5, hook);
     recordInbound(textUpdate(6, "hello"));

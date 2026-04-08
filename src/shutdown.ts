@@ -41,7 +41,7 @@ export function setShutdownDumpHook(hook: () => Promise<void>): void {
  * 2. Wait for the poll loop to finish (in-flight transcriptions)
  * 3. Drain last-mile pending updates
  * 4. Deliver a shutdown service message to every active session
- * 5. Wake up all blocked dequeue_update calls so agents receive it
+ * 5. Wake up all blocked dequeue calls so agents receive it
  * 6. Brief delay so MCP responses transmit through stdio
  * 7. Send operator notification
  * 8. Dump session log (if enabled)
@@ -68,7 +68,7 @@ export async function elegantShutdown(): Promise<never> {
       "shutdown",
     );
   }
-  // Wake up any agents blocked in dequeue_update
+  // Wake up any agents blocked in dequeue
   notifySessionWaiters();
 
   // Unpin all session announcement messages (best-effort)

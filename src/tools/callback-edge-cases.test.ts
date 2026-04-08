@@ -86,7 +86,7 @@ let handlers: {
   confirm: ToolHandler;
   choose: ToolHandler;
   send_choice: ToolHandler;
-  dequeue_update: ToolHandler;
+  dequeue: ToolHandler;
 };
 
 describe("callback edge-cases — rapid clicks and expired queries", () => {
@@ -121,7 +121,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
       confirm: server.getHandler("confirm"),
       choose: server.getHandler("choose"),
       send_choice: server.getHandler("send_choice"),
-      dequeue_update: server.getHandler("dequeue"),
+      dequeue: server.getHandler("dequeue"),
     };
   });
 
@@ -221,7 +221,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
   // SC-4: send_choice — second click after hook consumed
   // -------------------------------------------------------------------------
 
-  it("SC-4: send_choice second click after hook consumed — keyboard only removed once, second callback queues for dequeue_update", async () => {
+  it("SC-4: send_choice second click after hook consumed — keyboard only removed once, second callback queues for dequeue", async () => {
     const sendResult = await runInSessionContext(sid, () =>
       handlers.send_choice({
         text: "Pick an option:",
@@ -249,9 +249,9 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
     // answerCallbackQuery NOT called again (no hook to fire it)
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
 
-    // Second callback appears in dequeue_update as an unhandled event
+    // Second callback appears in dequeue as an unhandled event
     const dqResult = await runInSessionContext(sid, () =>
-      handlers.dequeue_update({ timeout: 0, token }),
+      handlers.dequeue({ timeout: 0, token }),
     );
     expect(isError(dqResult)).toBe(false);
     const dq = parseResult(dqResult);

@@ -41,7 +41,7 @@ export function register(server: McpServer) {
       inputSchema: {
         file_id: z
         .string()
-        .describe("The Telegram file_id from a message event (e.g. document.file_id, voice.file_id) delivered by dequeue_update or get_message"),
+        .describe("The Telegram file_id from a message event (e.g. document.file_id, voice.file_id) delivered by dequeue or get_message"),
       file_name: z
         .string()
         .optional()

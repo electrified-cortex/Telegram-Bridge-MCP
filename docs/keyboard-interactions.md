@@ -33,7 +33,7 @@ send_message(keyboard?)         ← Level 1 — raw send, no wait, no lock
               └── confirm            ← Level 4 — choose specialised for yes/no
 ```
 
-`choose` is essentially `send_choice` + a blocking `dequeue_update` loop that waits for
+`choose` is essentially `send_choice` + a blocking `dequeue` loop that waits for
 the specific message's callback\_query and returns the result.
 
 ---
@@ -51,16 +51,16 @@ Examples:
 - A live dashboard with "Refresh" and "Export" buttons
 - A longrunning task with a "Cancel" button
 
-The agent handles each press via `dequeue_update` → `answer_callback_query` → act.
+The agent handles each press via `dequeue` → `answer_callback_query` → act.
 Buttons stay visible until the agent explicitly removes them with `edit_message`.
 
 ### `send_choice`
 
 Use when the agent **sends a prompt and continues doing other work**, but the first button
 press should cleanly lock (remove buttons, dismiss spinner) regardless of when the agent
-gets around to reading `dequeue_update`.
+gets around to reading `dequeue`.
 
-The callback\_query event still flows normally through `dequeue_update`.
+The callback\_query event still flows normally through `dequeue`.
 
 Examples:
 
@@ -115,7 +115,7 @@ poller, the hook fires **before the event is enqueued**:
 1. `answerCallbackQuery(qid)` — dismisses the Telegram spinner.
 2. `editMessageReplyMarkup(chatId, messageId, { inline_keyboard: [] })` — removes buttons.
 
-The event is still enqueued normally so `dequeue_update` sees it.
+The event is still enqueued normally so `dequeue` sees it.
 
 The hook is one-shot: it removes itself from the registry before calling, preventing
 re-entry.

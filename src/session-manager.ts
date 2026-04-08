@@ -190,7 +190,7 @@ export function activeSessionCount(): number {
   return _sessions.size;
 }
 
-/** Record a heartbeat for a session — called by dequeue_update on every poll. */
+/** Record a heartbeat for a session — called by dequeue on every poll. */
 export function touchSession(sid: number): void {
   const s = _sessions.get(sid);
   if (!s) return;

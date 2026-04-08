@@ -66,7 +66,7 @@ export function register(server: McpServer) {
           return toError({
             code: "PENDING_UPDATES" as const,
             message:
-              `${detail} Consider draining with dequeue_update(timeout:0) before ` +
+              `${detail} Consider draining with dequeue(timeout:0) before ` +
               `calling ask, or pass ignore_pending: true to proceed anyway.`,
             pending,
             ...(breakdown ? { breakdown } : {}),

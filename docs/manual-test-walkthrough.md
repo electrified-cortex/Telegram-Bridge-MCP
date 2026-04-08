@@ -36,7 +36,7 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 | --- | --- | --- |
 | A2.1 | [Agent] `send_text("Hello")` | Message appears in Telegram |
 | A2.2 | [Agent] `send_message` with 2-button inline keyboard | Message + buttons appear |
-| A2.3 | [Op] Press a button | [Agent] receives callback via `dequeue_update` with `data`, `qid`, `target` |
+| A2.3 | [Op] Press a button | [Agent] receives callback via `dequeue` with `data`, `qid`, `target` |
 | A2.4 | [Agent] `answer_callback_query(qid)` | Toast notification shown to operator |
 | A2.5 | [Agent] `notify(title, text, severity: "info")` | Notification appears in chat |
 | A2.6 | [Agent] `send_text` → capture msg\_id → `edit_message_text(msg_id, new_text)` | Message content updated in-place |
@@ -52,7 +52,7 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 | A3.2 | [Agent] `confirm("Test?")` → [Op] presses No | Returns `{ confirmed: false }` |
 | A3.3 | [Agent] `choose(3 options)` → [Op] picks one | Returns `{ label, value }` matching selection |
 | A3.4 | [Agent] `ask("Type something")` → [Op] types response | Returns `{ text }` with operator's input |
-| A3.5 | [Agent] `send_choice(2 options)` → [Op] presses one | Callback received via `dequeue_update` |
+| A3.5 | [Agent] `send_choice(2 options)` → [Op] presses one | Callback received via `dequeue` |
 
 ### A4. Animations and Typing
 
@@ -99,15 +99,15 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A9.1 | [Agent] `send_text` → [Op] replies to it → [Agent] `dequeue_update` | Reply received with `reply_to` field, `routing: "targeted"` |
+| A9.1 | [Agent] `send_text` → [Op] replies to it → [Agent] `dequeue` | Reply received with `reply_to` field, `routing: "targeted"` |
 | A9.2 | [Agent] `confirm` → [Op] presses button | Callback has `routing: "targeted"`, `target` = prompt msg\_id |
 
 ### A10. Edge Cases
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A10.1 | [Op] Sends 5 messages rapidly → [Agent] `dequeue_update` loop | All 5 received in order, no drops, no duplicates |
-| A10.2 | [Op] Sends voice message → [Agent] `dequeue_update` | Voice event with `text` (transcription) and `file_id`; 🫡 reaction auto-set |
+| A10.1 | [Op] Sends 5 messages rapidly → [Agent] `dequeue` loop | All 5 received in order, no drops, no duplicates |
+| A10.2 | [Op] Sends voice message → [Agent] `dequeue` | Voice event with `text` (transcription) and `file_id`; 🫡 reaction auto-set |
 | A10.3 | [Agent] `set_commands([{command: "test", description: "Test"}])` → [Op] sends `/test` | Command received as message event |
 
 ---

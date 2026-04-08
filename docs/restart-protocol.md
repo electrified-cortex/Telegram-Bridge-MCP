@@ -16,7 +16,7 @@
 
 ## Why Sessions Are Invalidated on Restart
 
-Each session (SID) is held in memory by the running server process. When that process exits and restarts, all session state is wiped — pending queues, session IDs, registered commands. A worker that tries to call `dequeue_update` after a restart will receive an error (or hang) because its SID no longer exists.
+Each session (SID) is held in memory by the running server process. When that process exits and restarts, all session state is wiped — pending queues, session IDs, registered commands. A worker that tries to call `dequeue` after a restart will receive an error (or hang) because its SID no longer exists.
 
 **Workers must start a fresh session after every restart.** The old SID is dead.
 
@@ -42,7 +42,7 @@ Before issuing the actual shutdown, the Overseer notifies all active worker sess
 2. `elegantShutdown()` runs automatically:
    - Stops the Telegram poller (10 s cap).
    - Drains any remaining pending updates.
-   - Delivers a **system-level service message** to every active session — this wakes blocked `dequeue_update` calls.
+   - Delivers a **system-level service message** to every active session — this wakes blocked `dequeue` calls.
    - Waits 2 s for MCP transport to flush.
    - Sends a final operator notification and calls `process.exit(0)`.
 
@@ -61,7 +61,7 @@ The concrete steps:
    Write-Host "Session ended — awaiting operator restart and re-engagement."
    ```
 
-3. **Stop making tool calls.** End your response. Do not call `dequeue_update` or any other MCP tool.
+3. **Stop making tool calls.** End your response. Do not call `dequeue` or any other MCP tool.
 4. Wait for the operator to re-engage you (new message, new conversation, or a re-engagement prompt).
 
 > This is the protocol equivalent of putting a sign on your desk that says "gone for restart — back shortly". The operator knows where you stopped, and they control when you resume.
@@ -81,13 +81,13 @@ The concrete steps:
    Write-Host "Session ended — awaiting operator restart and re-engagement."
    ```
 
-5. **End your agent turn.** Do not call `dequeue_update` again. You are now parked.
+5. **End your agent turn.** Do not call `dequeue` again. You are now parked.
 
 ### On receiving the shutdown service message (Phase 2)
 
-If you are still in the `dequeue_update` loop when shutdown fires, you will receive an event with `type: "service"` and `subtype: "shutdown"`:
+If you are still in the `dequeue` loop when shutdown fires, you will receive an event with `type: "service"` and `subtype: "shutdown"`:
 
-1. Do not call `dequeue_update` again on this session.
+1. Do not call `dequeue` again on this session.
 2. Send a brief final status message (if your MCP channel is still open).
 3. Run the "going to sleep" terminal command.
 4. **End your agent turn.** The MCP connection will close when the server exits — this is expected.
@@ -98,7 +98,7 @@ The Overseer is **also subject to this protocol.** After calling the `shutdown` 
 
 1. Send one final operator message confirming shutdown was issued.
 2. Run the "going to sleep" terminal command.
-3. **End your agent turn immediately.** Do not make any further tool calls — not even `dequeue_update`.
+3. **End your agent turn immediately.** Do not make any further tool calls — not even `dequeue`.
 4. Wait for the operator to re-engage you after the server restarts.
 
 ### After the server restarts
@@ -108,7 +108,7 @@ When the operator re-engages you (new message or re-engagement prompt):
 1. Call `session_start` to register a new session. Your old SID is dead — do not reuse it.
 2. The new `session_start` response gives you a fresh `sid` and `pin`. Use these for all subsequent tool calls.
 3. Resume from the last known task state (check your task file or the terminal output left by the "going to sleep" command).
-4. Re-enter the `dequeue_update` loop as normal.
+4. Re-enter the `dequeue` loop as normal.
 
 > **Do not hardcode or remember old SIDs.** Always obtain a fresh SID from `session_start` after a restart.
 >
@@ -126,9 +126,9 @@ If the operator issues `/shutdown` without a Phase 1 warning:
 - Workers should treat any `shutdown` service message as an immediate stop signal.
 - Session recovery follows the same "start fresh" procedure above.
 
-### If a worker's `dequeue_update` times out after restart
+### If a worker's `dequeue` times out after restart
 
-If a worker calls `dequeue_update` and receives repeated timeouts (or connection errors) after a restart:
+If a worker calls `dequeue` and receives repeated timeouts (or connection errors) after a restart:
 
 - Assume the server restarted without notification.
 - Wait 60 s, then call `session_start` to establish a fresh session.

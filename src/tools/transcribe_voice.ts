@@ -7,7 +7,7 @@ import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
   "Transcribes a Telegram voice message by its file_id. " +
-  "Voice messages returned by dequeue_update are already pre-transcribed — " +
+  "Voice messages returned by dequeue are already pre-transcribed — " +
   "only call this to re-process (e.g. transcription failed previously or " +
   "you want to re-run with updated settings).";
 

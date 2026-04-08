@@ -16,7 +16,7 @@ Return to VS Code chat only if the operator explicitly exits the loop or Telegra
 3. Call `get_me` — if it fails, report the error to the user and stop
 4. `session_start` — intro + handles pending messages from previous session
 5. **Save your SID and PIN** — write them to your auto-memory directory immediately after `session_start`. After context compaction you will lose in-context state; the saved PIN lets you call `session_start(reconnect: true)` to reclaim your session without operator re-approval.
-6. `dequeue_update` — enter the loop
+6. `dequeue` — enter the loop
 
 ## Loop
 
@@ -28,18 +28,18 @@ Return to VS Code chat only if the operator explicitly exits the loop or Telegra
 → work
 → `show_typing` (will cancel animation unless set to persistent)
 → reply/interact
-→ `dequeue_update`
+→ `dequeue`
 
 ## Canonical Recipe
 
 ```text
-1. dequeue_update
+1. dequeue
 2. update arrives → handle it, reply in Telegram
-3. timed_out → call dequeue_update again (stay in loop)
-4. error → report in Telegram, then call dequeue_update again
+3. timed_out → call dequeue again (stay in loop)
+4. error → report in Telegram, then call dequeue again
 ```
 
-Do not restart, shut down, re-bootstrap, or re-announce the session just because the operator says "resume the loop" or "stay in the loop." That means: call `dequeue_update` again.
+Do not restart, shut down, re-bootstrap, or re-announce the session just because the operator says "resume the loop" or "stay in the loop." That means: call `dequeue` again.
 
 ## Instruction Precedence
 
@@ -67,14 +67,14 @@ When your context is compacted (prior messages compressed), you may lose your SI
 1. Check your auto-memory directory for saved credentials
 2. Call `session_start(name: "<your name>", reconnect: true)` with the same session name
 3. Call `get_chat_history` to catch up on missed messages
-4. Resume the `dequeue_update` loop
+4. Resume the `dequeue` loop
 
 Do **not** call a fresh `session_start` if you can reconnect — it wastes operator approval and creates a duplicate session announcement.
 
 ## Common Failure Modes
 
 - Replying in VS Code chat while the loop is active
-- Restarting/recovering the session when a simple `dequeue_update` call would suffice
+- Restarting/recovering the session when a simple `dequeue` call would suffice
 - Trusting stale memory over live tool state (stored SID/PIN, old test counts, outdated board state)
 - Using progress/checklist tools for presence instead of `show_animation`
 - Deleting or mass-editing user-visible messages without explicit approval

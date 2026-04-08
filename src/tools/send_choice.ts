@@ -15,7 +15,7 @@ const DESCRIPTION =
   "Non-blocking one-shot keyboard — sends a message with choice buttons and " +
   "returns immediately with a message_id. The first button press is auto-locked: " +
   "the keyboard is removed and the callback_query is answered automatically. " +
-  "The callback_query event still appears in dequeue_update so the agent can read " +
+  "The callback_query event still appears in dequeue so the agent can read " +
   "which option was picked at its own pace. " +
   "Use choose for blocking single-selection (waits for the press). " +
   "For a blocking yes/no or multi-option selection, use confirm or choose. " +

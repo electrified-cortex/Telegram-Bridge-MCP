@@ -31,7 +31,7 @@ The server records every inbound and outbound event in an **always-on, in-memory
 
 - **Timeline** — up to 1000 events, evicted oldest-first.
 - **Index** — last 500 messages by ID, with full edit history.
-- **Queue** — inbound events waiting for `dequeue_update`.
+- **Queue** — inbound events waiting for `dequeue`.
 
 All data is in-memory only and lost on server restart.
 
@@ -112,7 +112,7 @@ get_message(message_id: number, version?: number)
 
 Returns message text/caption, file metadata, reply context, and for bot messages the full edit history.
 
-**When to call:** Only for message IDs already seen in this agent session (received via `dequeue_update` or sent by the agent). Do not probe arbitrary IDs.
+**When to call:** Only for message IDs already seen in this agent session (received via `dequeue` or sent by the agent). Do not probe arbitrary IDs.
 
 ## Context recovery
 

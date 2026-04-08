@@ -19,7 +19,7 @@ import {
 /** Defensive clamp for a single setTimeout call, kept below Node.js's ~2^31-1 ms overflow limit. */
 const MAX_SET_TIMEOUT_MS = 2_000_000_000;
 
-/** Seconds an active reminder must be idle before it fires within dequeue_update. */
+/** Seconds an active reminder must be idle before it fires within dequeue. */
 const REMINDER_IDLE_THRESHOLD_MS = 60_000;
 
 /** Auto-salute voice messages on dequeue so the user knows we received them. */

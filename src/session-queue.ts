@@ -237,7 +237,7 @@ export function notifySessionWaiters(): void {
 
 /**
  * Returns true if any session queue has a pending waiter (agent blocked in
- * dequeue_update). Used by the poller to decide whether to skip setting 😴 —
+ * dequeue). Used by the poller to decide whether to skip setting 😴 —
  * if a session agent is waiting, it will dequeue and set 🫡 itself.
  */
 export function hasAnySessionWaiter(): boolean {
@@ -249,7 +249,7 @@ export function hasAnySessionWaiter(): boolean {
 
 /**
  * Returns true if the specific session queue that holds this message has an
- * active waiter (agent blocked in dequeue_update). Unlike `hasAnySessionWaiter`,
+ * active waiter (agent blocked in dequeue). Unlike `hasAnySessionWaiter`,
  * this checks only the queue that actually contains the voice message — so a
  * governor waiter on a different session does NOT suppress 😴 for a message
  * routed to a worker with no active waiter.

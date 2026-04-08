@@ -67,8 +67,8 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 > it must route to that session, not the governor.
 
 1. **[Op]** Reply to S2's intro message (the "ℹ️ Session Start" message from Phase 1.2): "Welcome, Scout."
-2. **[S2]** `dequeue_update` → receives the reply
-3. **[Verify]** S1 does NOT receive it (call `dequeue_update(timeout: 0)` to confirm empty)
+2. **[S2]** `dequeue` → receives the reply
+3. **[Verify]** S1 does NOT receive it (call `dequeue(timeout: 0)` to confirm empty)
 4. **[Debug]** `get_debug_log` → find `targeted event=X → sid=2` (the reply was routed by reply-to ownership, not governor)
 5. **[Verify]** This proves that intro messages are correctly registered in the message owner map
 
@@ -76,15 +76,15 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 1. **[S1]** `send_text("I'm session 1")`
 2. **[Op]** Reply to S1's message: "Got it, S1."
-3. **[S1]** `dequeue_update` → receives the reply
-4. **[Verify]** S2 does NOT receive it (`dequeue_update(timeout: 0)` returns empty)
+3. **[S1]** `dequeue` → receives the reply
+4. **[Verify]** S2 does NOT receive it (`dequeue(timeout: 0)` returns empty)
 5. **[Debug]** `get_debug_log` → find `targeted event=X → sid=1`
 
 ### 2.3 Reply-To — Session 2
 
 1. **[S2]** `send_text("I'm session 2")`
 2. **[Op]** Reply to S2's message: "Got it, S2."
-3. **[S2]** `dequeue_update` → receives the reply
+3. **[S2]** `dequeue` → receives the reply
 4. **[Verify]** S1 does NOT receive it
 5. **[Debug]** `get_debug_log` → find `targeted event=X → sid=2`
 
@@ -92,7 +92,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 1. **[S1]** `confirm("Ready to continue?")`
 2. **[Op]** Press the button
-3. **[S1]** receives the callback via `dequeue_update`
+3. **[S1]** receives the callback via `dequeue`
 4. **[Verify]** S2 does NOT receive it
 5. **[Debug]** `get_debug_log` → find `targeted event=X → sid=1` for the callback
 
@@ -105,8 +105,8 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 2. **[S2]** `send_text("S2 says hello")`
 3. **[Op]** Reply to S1's message: "For S1 only"
 4. **[Op]** Reply to S2's message: "For S2 only"
-5. **[S1]** `dequeue_update` → receives "For S1 only" but NOT "For S2 only"
-6. **[S2]** `dequeue_update` → receives "For S2 only" but NOT "For S1 only"
+5. **[S1]** `dequeue` → receives "For S1 only" but NOT "For S2 only"
+6. **[S2]** `dequeue` → receives "For S2 only" but NOT "For S1 only"
 7. **[Debug]** `get_debug_log` → two targeted entries, one for each session
 
 ---
@@ -124,8 +124,8 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 ### 3.2 Ambiguous Message
 
 1. **[Op]** Send a plain text message (not a reply): "Hello, who gets this?"
-2. **[S1]** `dequeue_update` → receives it
-3. **[Verify]** S2 `dequeue_update(timeout: 0)` returns empty — S2 did NOT receive it
+2. **[S1]** `dequeue` → receives it
+3. **[Verify]** S2 `dequeue(timeout: 0)` returns empty — S2 did NOT receive it
 4. **[Debug]** `get_debug_log` → find `governor event=X → sid=1`
 
 ### 3.3 Governor Delegation
@@ -165,7 +165,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 ### 4.1 Send DM (Auto-Granted)
 
 1. **[S2]** `send_direct_message(target_sid: 1, text: "Hey S1, found something.")`
-2. **[Verify]** S1 receives a `direct_message` event via `dequeue_update`
+2. **[Verify]** S1 receives a `direct_message` event via `dequeue`
 3. **[Verify]** Event has sender SID field
 4. **[Debug]** `delivered DM from sid=2 → sid=1`
 

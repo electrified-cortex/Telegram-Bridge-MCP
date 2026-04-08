@@ -6,7 +6,7 @@ This guide covers how to configure AI agents to stay in the Telegram dequeue loo
 
 ## What is the loop guard?
 
-When an agent is running a Telegram Bridge MCP session, it must remain alive and call `dequeue_update` continuously to receive messages. Without a loop guard, the host IDE may terminate the agent conversation at any time — dropping the session silently.
+When an agent is running a Telegram Bridge MCP session, it must remain alive and call `dequeue` continuously to receive messages. Without a loop guard, the host IDE may terminate the agent conversation at any time — dropping the session silently.
 
 The **loop guard** is a Stop hook that checks for an active Telegram session file before allowing the host to shut down the agent. If a session file is found with content, the hook blocks the stop and prompts the agent to resume the dequeue loop. If no session file exists (or it is empty), the hook exits cleanly and allows normal shutdown.
 
@@ -111,12 +111,12 @@ Claude Code agents write their session credentials to a `telegram/session.md` fi
 Agents using this MCP must not exit between messages. The correct pattern is:
 
 ```text
-session_start → drain (dequeue_update timeout:0 until empty) → block (dequeue_update) → handle → drain → block → ...
+session_start → drain (dequeue timeout:0 until empty) → block (dequeue) → handle → drain → block → ...
 ```
 
-- **Drain first** — call `dequeue_update(timeout: 0)` in a loop until `empty: true` to clear any backlog.
-- **Block** — call `dequeue_update()` (no args) to wait up to 300 seconds for the next message.
-- **On timeout** — call `dequeue_update()` again immediately. Optionally send a brief check-in notify.
+- **Drain first** — call `dequeue(timeout: 0)` in a loop until `empty: true` to clear any backlog.
+- **Block** — call `dequeue()` (no args) to wait up to 300 seconds for the next message.
+- **On timeout** — call `dequeue()` again immediately. Optionally send a brief check-in notify.
 - **On message** — handle it, then drain, then block again.
 
 **There is no exit condition.** The agent loops until it receives a shutdown signal or `close_session` is called. The loop guard enforces this at the host level — if the host tries to stop the agent while a session is active, the guard blocks it.

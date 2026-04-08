@@ -351,7 +351,7 @@ export function register(server: McpServer) {
             code: "NAME_CONFLICT",
             message:
               `A session named "${existing.name}" already exists (SID ${existing.sid}). ` +
-              `If you still have your token, resume with dequeue_update(token: <token>). ` +
+              `If you still have your token, resume with dequeue(token: <token>). ` +
               `To start a new session, choose a different name. ` +
               `To reclaim this session, call session_start again with reconnect: true.`,
           });

@@ -289,7 +289,7 @@ describe("poller", () => {
 
     it("sets 😴 when governor has a waiter but voice message is in worker's session queue", async () => {
       // Regression: old hasAnySessionWaiter() returned true whenever the
-      // governor's dequeue_update loop was active, suppressing 😴 even though
+      // governor's dequeue loop was active, suppressing 😴 even though
       // the worker's session queue (which owns the message) had no waiter.
       // New hasSessionWaiterForMessage() checks only the owning queue →
       // returns false here → 😴 MUST be set.

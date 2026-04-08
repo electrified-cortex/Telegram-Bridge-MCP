@@ -3,7 +3,7 @@
  *
  * **Three-tier queue:**
  * - `deferred` — has a `delay_seconds` > 0 that has not yet elapsed. Cannot fire yet.
- * - `active`   — delay has elapsed (or was 0). Fires after 60 s of idle within `dequeue_update`.
+ * - `active`   — delay has elapsed (or was 0). Fires after 60 s of idle within `dequeue`.
  * - `startup`  — fires on the next `session_start` (including reconnects), not on a timer.
  *
  * Reminders are keyed by SID (per-session, all in-memory).

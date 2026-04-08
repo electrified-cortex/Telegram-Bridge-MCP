@@ -107,7 +107,7 @@ let handlers: {
   confirm: ToolHandler;
   choose: ToolHandler;
   close_session: ToolHandler;
-  dequeue_update: ToolHandler;
+  dequeue: ToolHandler;
 };
 
 describe("multi-session callback isolation", () => {
@@ -147,7 +147,7 @@ describe("multi-session callback isolation", () => {
       confirm: server.getHandler("confirm"),
       choose: server.getHandler("choose"),
       close_session: server.getHandler("close_session"),
-      dequeue_update: server.getHandler("dequeue"),
+      dequeue: server.getHandler("dequeue"),
     };
   });
 

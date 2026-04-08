@@ -34,7 +34,7 @@ const _tokenStringHintAls = new AsyncLocalStorage<{ wasString: boolean }>();
  * already an integer.
  *
  * Call this in tool handlers that want to nudge the LLM toward passing the
- * correct type. Currently used by `dequeue_update`.
+ * correct type. Currently used by `dequeue`.
  */
 export function consumeTokenStringHint(): string | undefined {
   const store = _tokenStringHintAls.getStore();

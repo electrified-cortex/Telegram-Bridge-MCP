@@ -361,11 +361,11 @@ Agents can set a per-session TTS voice with the `set_voice` MCP tool, overriding
 - Telegram silently ignores edits where the text is identical to the current content.
 - This is not an error — the message is already up to date.
 
-### `dequeue_update` returns `{ empty: true }` or `{ timed_out: true }` with no updates
+### `dequeue` returns `{ empty: true }` or `{ timed_out: true }` with no updates
 
 - `{ empty: true }` — expected when `timeout` is 0 (instant poll) and there are no pending updates.
 - `{ timed_out: true }` — expected when a blocking wait (default 300 s) expires with no updates. Call again immediately.
-- Use `dequeue_update()` with no arguments to block up to 300 s for the next update.
+- Use `dequeue()` with no arguments to block up to 300 s for the next update.
 
 ### Multiple instances competing / messages arriving in wrong session
 

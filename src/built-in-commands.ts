@@ -2,7 +2,7 @@
  * Built-in server-level slash commands.
  *
  * These commands are intercepted in the update pipeline *before* any update
- * is delivered to the agent via dequeue_update. The agent never
+ * is delivered to the agent via dequeue. The agent never
  * sees them — the server handles them directly and responds to the user.
  *
  * Currently registered:
@@ -244,7 +244,7 @@ const _builtInCommandNames = new Set<string>([...BUILT_IN_COMMANDS.map(c => c.co
 /**
  * Message IDs for bot-sent session infrastructure messages (panel, dump docs,
  * notices) that should be excluded from the session record dump.
- * The events still appear in the timeline and flow through dequeue_update —
+ * The events still appear in the timeline and flow through dequeue —
  * they just shouldn't show up when recording the session.
  */
 const _internalMessageIds = new Set<number>();
@@ -258,7 +258,7 @@ export function markInternalMessage(messageId: number): void {
  * Returns true if a timeline event is an internal server event (built-in
  * slash command, session-panel callback, or bot-sent session infrastructure
  * message) that should be excluded from the session record dump. The event
- * is still stored in the timeline and visible to dequeue_update — it just
+ * is still stored in the timeline and visible to dequeue — it just
  * shouldn't pollute the record.
  */
 export function isInternalTimelineEvent(evt: Omit<TimelineEvent, "_update">): boolean {
