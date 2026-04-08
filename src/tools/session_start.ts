@@ -12,7 +12,7 @@ import { refreshGovernorCommand } from "../built-in-commands.js";
 import { checkAndConsumeAutoApprove } from "../auto-approve.js";
 import { startPoller, isPollerRunning } from "../poller.js";
 import { fireStartupReminders, buildReminderEvent } from "../reminder-state.js";
-import { registerPendingApproval, clearPendingApproval } from "../agent-approval.js";
+import { registerPendingApproval, clearPendingApproval, getPendingApproval } from "../agent-approval.js";
 import type { ApprovalDecision } from "../agent-approval.js";
 
 const APPROVAL_TIMEOUT_MS = 60_000;
@@ -42,7 +42,7 @@ async function requestApproval(
     ? validHint
     : availableColors.find((c) => !usedColors.has(c));
   if (checkAndConsumeAutoApprove()) {
-    return { approved: true, color: colorHint, forceColor: true };
+    return { approved: true, color: availableColors[0] ?? COLOR_PALETTE[0], forceColor: true };
   }
   const colorButtons = availableColors.map((c) => ({
     text: c,
@@ -99,6 +99,15 @@ async function requestApproval(
         resolve({ approved: false });
       }
     });
+
+    // Expose cleanup so approve_agent can cancel the timer and hook on early resolution.
+    const entry = getPendingApproval(name);
+    if (entry) {
+      entry.cleanup = () => {
+        clearTimeout(timer);
+        clearCallbackHook(msgId);
+      };
+    }
   });
 
   // Delete the prompt on approval (it's private UI — a public broadcast is

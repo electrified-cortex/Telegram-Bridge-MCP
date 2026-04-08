@@ -7,9 +7,10 @@ import { createMockServer, parseResult, isError, errorCode, type ToolHandler } f
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => true),
   isDelegationEnabled: vi.fn(() => false),
-  getPendingApproval: vi.fn(() => undefined as { resolve: ReturnType<typeof vi.fn>; name: string; registeredAt: number } | undefined),
+  getPendingApproval: vi.fn(() => undefined as { resolve: ReturnType<typeof vi.fn>; cleanup?: ReturnType<typeof vi.fn>; name: string; registeredAt: number } | undefined),
   clearPendingApproval: vi.fn(),
   getAvailableColors: vi.fn(() => ["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"] as string[]),
+  getGovernorSid: vi.fn(() => 0),
   stderrWrite: vi.fn(),
 }));
 
@@ -25,6 +26,10 @@ vi.mock("../agent-approval.js", () => ({
   isDelegationEnabled: () => mocks.isDelegationEnabled(),
   getPendingApproval: (...args: unknown[]) => mocks.getPendingApproval(...(args as [string])),
   clearPendingApproval: (...args: unknown[]) => mocks.clearPendingApproval(...args),
+}));
+
+vi.mock("../routing-mode.js", () => ({
+  getGovernorSid: () => mocks.getGovernorSid(),
 }));
 
 import { register } from "./approve_agent.js";
@@ -49,6 +54,7 @@ describe("approve_agent tool", () => {
       registeredAt: Date.now(),
     });
     mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.getGovernorSid.mockReturnValue(0);
 
     vi.spyOn(process.stderr, "write").mockImplementation(mocks.stderrWrite);
 
@@ -90,7 +96,32 @@ describe("approve_agent tool", () => {
       expect(String(parsed.message)).toContain("DELEGATION_DISABLED");
     });
   });
+  // -------------------------------------------------------------------------
+  // Governor check
+  // -------------------------------------------------------------------------
 
+  describe("governor check", () => {
+    it("allows approval when governor SID is 0 (no governor set)", async () => {
+      mocks.getGovernorSid.mockReturnValue(0);
+      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" }));
+      expect(result.approved).toBe(true);
+    });
+
+    it("returns UNAUTHORIZED when caller is not the governor", async () => {
+      mocks.getGovernorSid.mockReturnValue(99); // caller SID is 1, governor is 99
+      const result = await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" });
+      expect(isError(result)).toBe(true);
+      expect(errorCode(result)).toBe("UNAUTHORIZED");
+      const parsed = parseResult(result);
+      expect(String(parsed.message)).toContain("GOVERNOR_ONLY");
+    });
+
+    it("allows approval when caller IS the governor", async () => {
+      mocks.getGovernorSid.mockReturnValue(1); // caller SID is 1 == governor
+      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" }));
+      expect(result.approved).toBe(true);
+    });
+  });
   // -------------------------------------------------------------------------
   // NOT_PENDING
   // -------------------------------------------------------------------------
@@ -125,6 +156,20 @@ describe("approve_agent tool", () => {
   // -------------------------------------------------------------------------
 
   describe("happy path", () => {
+    it("calls cleanup before pending.resolve when cleanup is provided", async () => {
+      const cleanupMock = vi.fn();
+      mocks.getPendingApproval.mockReturnValue({
+        name: "Worker",
+        resolve: mockResolve,
+        cleanup: cleanupMock,
+        registeredAt: Date.now(),
+      });
+      await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" });
+      const cleanupCallOrder = cleanupMock.mock.invocationCallOrder[0];
+      const resolveCallOrder = mockResolve.mock.invocationCallOrder[0];
+      expect(cleanupCallOrder).toBeLessThan(resolveCallOrder);
+    });
+
     it("calls clearPendingApproval BEFORE pending.resolve", async () => {
       const callOrder: string[] = [];
       mocks.clearPendingApproval.mockImplementation(() => { callOrder.push("clear"); });

@@ -26,6 +26,8 @@ export type ApprovalDecision = { approved: boolean; color?: string; forceColor?:
 export interface PendingApproval {
   name: string;
   resolve: (d: ApprovalDecision) => void;
+  /** Cancels the timeout + callback hook when approve_agent resolves early. */
+  cleanup?: () => void;
   registeredAt: number;
   colorHint?: string;
 }

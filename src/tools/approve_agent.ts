@@ -5,6 +5,7 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { isDelegationEnabled, getPendingApproval, clearPendingApproval } from "../agent-approval.js";
 import { getAvailableColors, COLOR_PALETTE } from "../session-manager.js";
+import { getGovernorSid } from "../routing-mode.js";
 
 const DESCRIPTION =
   "Approve a pending session_start request by name. " +
@@ -44,6 +45,15 @@ export function register(server: McpServer): RegisteredTool {
         });
       }
 
+      const governorSid = getGovernorSid();
+      if (governorSid !== 0 && sid !== governorSid) {
+        return toError({
+          code: "UNAUTHORIZED",
+          message:
+            `GOVERNOR_ONLY: Only the governor session (SID ${governorSid}) can approve agents.`,
+        });
+      }
+
       const pending = getPendingApproval(target_name);
       if (!pending) {
         return toError({
@@ -70,6 +80,7 @@ export function register(server: McpServer): RegisteredTool {
             : (getAvailableColors()[0] ?? COLOR_PALETTE[0]));
 
       clearPendingApproval(target_name);
+      pending.cleanup?.();
       pending.resolve({ approved: true, color: resolvedColor, forceColor: true });
 
       process.stderr.write(

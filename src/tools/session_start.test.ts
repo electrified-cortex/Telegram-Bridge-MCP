@@ -1826,7 +1826,8 @@ describe("session_start tool", () => {
     // registerCallbackHook should NOT have been called (no approval dialog was shown)
     expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
     expect(result.sid).toBe(2);
-    expect(mocks.createSession).toHaveBeenCalledWith("Scout", undefined, true);
+    // Auto-approve now uses availableColors[0] (not the raw hint) to avoid duplicate colors
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout", "🟦", true);
   });
 
   it("requestReconnectApproval: when checkAndConsumeAutoApprove returns true, skips approval dialog and returns reconnected", async () => {
