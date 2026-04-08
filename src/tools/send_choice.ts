@@ -38,6 +38,96 @@ const optionSchema = z.object({
     .describe("Button color: success (green), primary (blue), danger (red). Omit for default."),
 });
 
+export type ChoiceOption = { label: string; value: string; style?: "success" | "primary" | "danger" };
+
+export async function handleSendChoice({
+  text, options, columns = 2, parse_mode = "Markdown", disable_notification,
+  reply_to_message_id, ignore_parity, token,
+}: {
+  text: string;
+  options: ChoiceOption[];
+  columns?: number;
+  parse_mode?: "Markdown" | "HTML" | "MarkdownV2";
+  disable_notification?: boolean;
+  reply_to_message_id?: number;
+  ignore_parity?: boolean;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+
+  const textErr = validateText(text);
+  if (textErr) return toError(textErr);
+
+  // Validate button symbol parity
+  if (!ignore_parity) {
+    const parity = validateButtonSymbolParity(options.map((o) => o.label));
+    if (!parity.ok) {
+      return toError({
+        code: "BUTTON_SYMBOL_PARITY" as const,
+        message: `Button labels are inconsistent: ${parity.withEmoji.length} of ${options.length} have emoji. Either add emoji to all labels or remove them. Pass ignore_parity: true to send anyway.`,
+        labels_with_emoji: parity.withEmoji,
+        labels_without_emoji: parity.withoutEmoji,
+      });
+    }
+  }
+
+  // Validate options — same rules as choose
+  const displayMax = columns >= 2
+    ? LIMITS.BUTTON_DISPLAY_MULTI_COL
+    : LIMITS.BUTTON_DISPLAY_SINGLE_COL;
+  for (const opt of options) {
+    const dataErr = validateCallbackData(opt.value);
+    if (dataErr) return toError(dataErr);
+    if (opt.label.length > LIMITS.BUTTON_TEXT) {
+      return toError({
+        code: "BUTTON_LABEL_EXCEEDS_LIMIT" as const,
+        message: `Button label "${opt.label}" is ${opt.label.length} chars; hard limit is ${LIMITS.BUTTON_TEXT}.`,
+      });
+    }
+    if (opt.label.length > displayMax) {
+      return toError({
+        code: "BUTTON_LABEL_TOO_LONG" as const,
+        message:
+          `Button label "${opt.label}" (${opt.label.length} chars) will be cut off on mobile. ` +
+          `With columns=${columns}, keep labels under ${displayMax} chars.`,
+      });
+    }
+  }
+
+  try {
+    const messageId = await sendChoiceMessage(chatId, {
+      text,
+      options: options as KeyboardOption[],
+      columns,
+      parseMode: parse_mode,
+      disableNotification: disable_notification,
+      replyToMessageId: reply_to_message_id,
+    });
+
+    // Register one-shot auto-lock: on first press, dismiss the spinner and
+    // remove the buttons. The callback_query event is still enqueued normally.
+    // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
+    registerCallbackHook(messageId, (evt) => {
+      const qid = evt.content.qid;
+      void (async () => {
+        if (qid) {
+          await getApi().answerCallbackQuery(qid).catch(() => { /* non-fatal */ });
+        }
+        await getApi()
+          .editMessageReplyMarkup(chatId, messageId, { reply_markup: { inline_keyboard: [] } })
+          .catch(() => { /* non-fatal */ });
+      })();
+    }, _sid);
+
+    return toResult({ message_id: messageId });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_choice",
@@ -78,80 +168,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ text, options, columns, parse_mode, disable_notification, reply_to_message_id, ignore_parity, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-
-      const textErr = validateText(text);
-      if (textErr) return toError(textErr);
-
-      // Validate button symbol parity
-      if (!ignore_parity) {
-        const parity = validateButtonSymbolParity(options.map((o) => o.label));
-        if (!parity.ok) {
-          return toError({
-            code: "BUTTON_SYMBOL_PARITY" as const,
-            message: `Button labels are inconsistent: ${parity.withEmoji.length} of ${options.length} have emoji. Either add emoji to all labels or remove them. Pass ignore_parity: true to send anyway.`,
-            labels_with_emoji: parity.withEmoji,
-            labels_without_emoji: parity.withoutEmoji,
-          });
-        }
-      }
-
-      // Validate options — same rules as choose
-      const displayMax = columns >= 2
-        ? LIMITS.BUTTON_DISPLAY_MULTI_COL
-        : LIMITS.BUTTON_DISPLAY_SINGLE_COL;
-      for (const opt of options) {
-        const dataErr = validateCallbackData(opt.value);
-        if (dataErr) return toError(dataErr);
-        if (opt.label.length > LIMITS.BUTTON_TEXT) {
-          return toError({
-            code: "BUTTON_LABEL_EXCEEDS_LIMIT" as const,
-            message: `Button label "${opt.label}" is ${opt.label.length} chars; hard limit is ${LIMITS.BUTTON_TEXT}.`,
-          });
-        }
-        if (opt.label.length > displayMax) {
-          return toError({
-            code: "BUTTON_LABEL_TOO_LONG" as const,
-            message:
-              `Button label "${opt.label}" (${opt.label.length} chars) will be cut off on mobile. ` +
-              `With columns=${columns}, keep labels under ${displayMax} chars.`,
-          });
-        }
-      }
-
-      try {
-        const messageId = await sendChoiceMessage(chatId, {
-          text,
-          options: options as KeyboardOption[],
-          columns,
-          parseMode: parse_mode,
-          disableNotification: disable_notification,
-          replyToMessageId: reply_to_message_id,
-        });
-
-        // Register one-shot auto-lock: on first press, dismiss the spinner and
-        // remove the buttons. The callback_query event is still enqueued normally.
-        // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
-        registerCallbackHook(messageId, (evt) => {
-          const qid = evt.content.qid;
-          void (async () => {
-            if (qid) {
-              await getApi().answerCallbackQuery(qid).catch(() => { /* non-fatal */ });
-            }
-            await getApi()
-              .editMessageReplyMarkup(chatId, messageId, { reply_markup: { inline_keyboard: [] } })
-              .catch(() => { /* non-fatal */ });
-          })();
-        }, _sid);
-
-        return toResult({ message_id: messageId });
-      } catch (err) {
-        return toError(err);
-      }
-    },
+    handleSendChoice,
   );
 }

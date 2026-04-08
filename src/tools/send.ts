@@ -10,6 +10,18 @@ import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
+// Type-routing handlers (v6 Phase 2)
+import { handleSendFile } from "./send_file.js";
+import { handleNotify } from "./notify.js";
+import { handleSendChoice } from "./send_choice.js";
+import { handleSendDirectMessage } from "./send_direct_message.js";
+import { handleAppendText } from "./append_text.js";
+import { handleShowAnimation } from "./show_animation.js";
+import { handleSendNewChecklist } from "./send_new_checklist.js";
+import { handleSendNewProgress } from "./send_new_progress.js";
+import { handleAsk } from "./ask.js";
+import { handleChoose } from "./choose.js";
+import { handleConfirm } from "./confirm.js";
 
 const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
 
@@ -19,6 +31,9 @@ function containsMarkdownTable(text: string): boolean {
   return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
 }
 
+const SEND_TYPES = ["text", "file", "notification", "choice", "direct", "append", "animation", "checklist", "progress", "question"] as const;
+type SendType = (typeof SEND_TYPES)[number];
+
 const DESCRIPTION =
   "Send a message as text, audio (TTS), or both. " +
   "text only → text message with auto-split and Markdown. " +
@@ -26,7 +41,21 @@ const DESCRIPTION =
   "Both → voice note with text as caption (keep brief — topic context before playback). " +
   "At least one of text or audio is required. " +
   "For structured status, use notify. For file attachments, use send_file. " +
-  "For interactive prompts, use ask, choose, or confirm.";
+  "For interactive prompts, use ask, choose, or confirm. " +
+  "Pass type: \"<type>\" to route to a specific mode. " +
+  "Call with no args to see available types.";
+
+const BUTTON_STYLE_SCHEMA = z.enum(["success", "primary", "danger"]);
+const OPTION_SCHEMA = z.object({
+  label: z.string(),
+  value: z.string(),
+  style: BUTTON_STYLE_SCHEMA.optional(),
+});
+const STEP_SCHEMA = z.object({
+  label: z.string(),
+  status: z.enum(["pending", "running", "done", "failed", "skipped"]),
+  detail: z.string().optional(),
+});
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -34,6 +63,11 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
+        type: z
+          .enum(SEND_TYPES)
+          .optional()
+          .describe('Emission mode: "text" (default), "file", "notification", "choice", "direct", "append", "animation", "checklist", "progress", "question". Omit all args to list types.'),
+        // ── text / voice ───────────────────────────────────────────────────
         text: z
           .string()
           .optional()
@@ -42,178 +76,321 @@ export function register(server: McpServer) {
           .string()
           .min(1)
           .optional()
-          .describe(
-            "Spoken TTS content. When present, sends a voice note. " +
-            "Requires TTS to be configured.",
-          ),
+          .describe("Spoken TTS content. When present, sends a voice note. Requires TTS to be configured."),
         parse_mode: z
           .enum(["Markdown", "HTML", "MarkdownV2"])
           .default("Markdown")
           .describe("For text content only. Default Markdown (auto-converted)."),
-        disable_notification: z
-          .boolean()
-          .optional()
-          .describe("Send silently (no sound/notification)"),
-        reply_to_message_id: z
-          .number()
-          .int()
-          .min(1)
-          .optional()
-          .describe("Reply to this message ID"),
+        disable_notification: z.boolean().optional().describe("Send silently (no sound/notification)"),
+        reply_to_message_id: z.number().int().min(1).optional().describe("Reply to this message ID"),
+        // ── file ───────────────────────────────────────────────────────────
+        file: z.string().optional().describe("Local path, HTTPS URL, or file_id (for type: \"file\")"),
+        file_type: z
+          .enum(["auto", "photo", "document", "video", "audio", "voice"])
+          .default("auto")
+          .describe("Media type for file upload (default: auto-detect by extension)"),
+        caption: z.string().optional().describe("File caption (for type: \"file\")"),
+        // ── notification ───────────────────────────────────────────────────
+        title: z.string().optional().describe("Heading (for type: \"notification\", \"checklist\", \"progress\")"),
+        severity: z
+          .enum(["info", "success", "warning", "error"])
+          .default("info")
+          .describe("Severity level for notifications"),
+        message: z.string().optional().describe("Alias for text in notification mode"),
+        // ── direct ─────────────────────────────────────────────────────────
+        target_sid: z.number().int().optional().describe("Target session ID (for type: \"direct\")"),
+        // ── append ─────────────────────────────────────────────────────────
+        message_id: z.number().int().optional().describe("Message ID to append to (for type: \"append\")"),
+        separator: z.string().default("\n").describe("Separator for append mode"),
+        // ── choice / question.choose ────────────────────────────────────────
+        options: z.array(OPTION_SCHEMA).optional().describe("Button options (for type: \"choice\")"),
+        choose: z.array(OPTION_SCHEMA).optional().describe("Button options for type: \"question\" choose mode"),
+        columns: z.number().int().min(1).max(4).default(2).describe("Buttons per row (default 2)"),
+        ignore_parity: z.boolean().optional().describe("Bypass button emoji parity check"),
+        // ── animation ──────────────────────────────────────────────────────
+        preset: z.string().optional().describe("Animation preset name"),
+        frames: z.array(z.string()).optional().describe("Animation frame strings"),
+        interval: z.number().int().min(1000).max(10000).default(1000).describe("Frame interval ms"),
+        animation_timeout: z.number().int().min(5).max(600).default(600).describe("Animation auto-cleanup timeout (seconds)"),
+        persistent: z.boolean().default(false).describe("Keep animation running after messages"),
+        allow_breaking_spaces: z.boolean().default(false).describe("Allow breaking spaces in animation"),
+        notify_animation: z.boolean().default(false).describe("Notify on animation start"),
+        priority: z.number().int().default(0).describe("Animation priority level"),
+        // ── checklist ──────────────────────────────────────────────────────
+        steps: z.array(STEP_SCHEMA).optional().describe("Checklist steps (for type: \"checklist\")"),
+        // ── progress ───────────────────────────────────────────────────────
+        percent: z.number().int().min(0).max(100).optional().describe("Progress percentage 0–100 (for type: \"progress\")"),
+        width: z.number().int().min(1).max(40).default(10).describe("Progress bar width (default 10)"),
+        subtext: z.string().optional().describe("Progress bar subtext"),
+        // ── question sub-types ─────────────────────────────────────────────
+        ask: z.string().optional().describe("Free-text question for type: \"question\" ask mode"),
+        confirm: z.string().optional().describe("Confirmation text for type: \"question\" confirm mode"),
+        timeout_seconds: z.number().int().min(1).max(300).default(60).describe("Timeout for interactive question types (seconds)"),
+        ignore_pending: z.boolean().optional().describe("Skip pending-updates check for interactive types"),
+        yes_text: z.string().default("OK").describe("Affirmative button label (for confirm)"),
+        no_text: z.string().default("Cancel").describe("Negative button label (for confirm)"),
+        yes_data: z.string().default("confirm_yes").describe("Affirmative callback data"),
+        no_data: z.string().default("confirm_no").describe("Negative callback data"),
+        yes_style: BUTTON_STYLE_SCHEMA.optional().describe("Affirmative button color"),
+        no_style: BUTTON_STYLE_SCHEMA.optional().describe("Negative button color"),
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ text, audio, parse_mode, disable_notification, reply_to_message_id, token }) => {
-      const _sid = requireAuth(token);
+    async (args, { signal }) => {
+      const { type, text, audio } = args;
+
+      const _sid = requireAuth(args.token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
-      // Require at least one of text or voice
-      if (!text && !audio) {
-        return toError({ code: "MISSING_CONTENT", message: "At least one of 'text' or 'audio' is required." });
+      // Discovery mode: no type, text, or audio → list available types
+      if (!type && !text && !audio) {
+        return toResult({
+          available_types: SEND_TYPES,
+          hint: 'Pass type: "<type>" with required params, or just text/audio for plain text mode.',
+          help: 'Call help(topic: "send") for full documentation.',
+        });
       }
 
-      // ── Voice mode ───────────────────────────────────────────────────────
-      if (audio) {
-        if (!isTtsEnabled()) {
-          return toError({
-            code: "TTS_NOT_CONFIGURED",
-            message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice.",
-          } as const);
-        }
+      switch (type ?? ("text" as SendType)) {
+        case "text": {
+          if (!text && !audio) {
+            return toError({ code: "MISSING_CONTENT", message: "At least one of 'text' or 'audio' is required." });
+          }
+          const { parse_mode, disable_notification, reply_to_message_id } = args;
 
-        // Resolve spoken text and voice params
-        const spokenText = audio;
+          // ── Voice mode ───────────────────────────────────────────────────
+          if (audio) {
+            if (!isTtsEnabled()) {
+              return toError({ code: "TTS_NOT_CONFIGURED", message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice." } as const);
+            }
+            const plainText = stripForTts(audio);
+            if (!plainText) {
+              return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS." } as const);
+            }
+            const resolvedVoice = getSessionVoice() ?? getDefaultVoice() ?? undefined;
+            const resolvedSpeed = getSessionSpeed() ?? undefined;
+            let resolvedCaption: string | undefined;
+            let captionParseMode: "MarkdownV2" | undefined;
+            let captionTruncated = false;
+            if (text) {
+              const MAX_CAPTION = 1024 - 60;
+              const converted = markdownToV2(applyTopicToText(text, "Markdown"));
+              captionTruncated = converted.length > MAX_CAPTION;
+              resolvedCaption = captionTruncated ? converted.slice(0, MAX_CAPTION).replace(/\\$/, "") : converted;
+              captionParseMode = "MarkdownV2";
+            } else {
+              const topic = getTopic();
+              if (topic) {
+                resolvedCaption = markdownToV2(`**[${topic}]**`);
+                captionParseMode = "MarkdownV2";
+              }
+            }
+            const voiceChunks = splitMessage(plainText);
+            for (const chunk of voiceChunks) {
+              const chunkErr = validateText(chunk);
+              if (chunkErr) return toError(chunkErr);
+            }
+            const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
+            try {
+              await showTyping(typingSeconds, "record_voice");
+              const message_ids: number[] = [];
+              for (let i = 0; i < voiceChunks.length; i++) {
+                const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice, resolvedSpeed);
+                const isFirst = i === 0;
+                const msg = await sendVoiceDirect(chatId, ogg, {
+                  caption: isFirst ? resolvedCaption : undefined,
+                  ...(captionParseMode ? { parse_mode: captionParseMode } : {}),
+                  disable_notification,
+                  reply_to_message_id: isFirst ? reply_to_message_id : undefined,
+                });
+                message_ids.push(msg.message_id);
+              }
+              if (message_ids.length === 1) {
+                return toResult({ message_id: message_ids[0], audio: true, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
+              }
+              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              if (msg.includes("user restricted receiving of voice note messages")) {
+                return toError({
+                  code: "VOICE_RESTRICTED",
+                  message: "Telegram blocked voice delivery — the user's privacy settings restrict voice notes from bots. To fix: Telegram → Settings → Privacy and Security → Voice Messages → Add Exceptions → Always Allow → add this bot.",
+                } as const);
+              }
+              return toError(err);
+            } finally {
+              cancelTyping();
+            }
+          }
 
-        const plainText = stripForTts(spokenText);
-        if (!plainText) {
-          return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS." } as const);
-        }
-
-        // Voice resolution: session default > config default
-        const resolvedVoice = getSessionVoice() ?? getDefaultVoice() ?? undefined;
-        const resolvedSpeed = getSessionSpeed() ?? undefined;
-
-        // Caption resolution (text param becomes caption on voice note)
-        let resolvedCaption: string | undefined;
-        let captionParseMode: "MarkdownV2" | undefined;
-        let captionTruncated = false;
-        if (text) {
-          // text is the caption — apply topic prefix, convert to MarkdownV2,
-          // then clip the final string (post-conversion length is what Telegram counts).
-          const MAX_CAPTION = 1024 - 60;
-          const converted = markdownToV2(applyTopicToText(text, "Markdown"));
-          captionTruncated = converted.length > MAX_CAPTION;
-          // Strip trailing escape backslash to avoid malformed MarkdownV2 after truncation
-          resolvedCaption = captionTruncated ? converted.slice(0, MAX_CAPTION).replace(/\\$/, "") : converted;
-          captionParseMode = "MarkdownV2";
-        } else {
-          // Voice-only: still apply topic label as caption if topic is set
-          const topic = getTopic();
-          if (topic) {
-            const topicLabel = `**[${topic}]**`;
-            resolvedCaption = markdownToV2(topicLabel);
-            captionParseMode = "MarkdownV2";
+          // ── Text-only mode ───────────────────────────────────────────────
+          const textWithTopic = applyTopicToText(text ?? "", parse_mode);
+          const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;
+          const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
+          if (!finalText || finalText.trim().length === 0) {
+            return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text must not be empty." });
+          }
+          const chunks = splitMessage(finalText);
+          try {
+            const message_ids: number[] = [];
+            for (let i = 0; i < chunks.length; i++) {
+              const chunk = chunks[i];
+              const textErr = validateText(chunk);
+              if (textErr) return toError(textErr);
+              const msg = await callApi(() =>
+                getApi().sendMessage(chatId, chunk, {
+                  parse_mode: finalMode,
+                  disable_notification,
+                  reply_parameters:
+                    i === 0 && reply_to_message_id !== undefined
+                      ? { message_id: reply_to_message_id }
+                      : undefined,
+                  _rawText: chunks.length === 1 ? text : undefined,
+                } as Record<string, unknown>),
+              );
+              message_ids.push(msg.message_id);
+            }
+            const hasTable = containsMarkdownTable(text ?? "");
+            if (message_ids.length === 1) {
+              return toResult(hasTable ? { message_id: message_ids[0], info: TABLE_WARNING } : { message_id: message_ids[0] });
+            }
+            return toResult(hasTable ? { message_ids, split_count: message_ids.length, split: true, info: TABLE_WARNING } : { message_ids, split_count: message_ids.length, split: true });
+          } catch (err) {
+            return toError(err);
           }
         }
 
-        const voiceChunks = splitMessage(plainText);
-        // Validate all chunks before sending any — preserves atomic behavior (no partial delivery)
-        for (const chunk of voiceChunks) {
-          const chunkErr = validateText(chunk);
-          if (chunkErr) return toError(chunkErr);
-        }
-        const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
-        try {
-          await showTyping(typingSeconds, "record_voice");
-          const message_ids: number[] = [];
-          for (let i = 0; i < voiceChunks.length; i++) {
-            const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice, resolvedSpeed);
-            const isFirst = i === 0;
-            const msg = await sendVoiceDirect(chatId, ogg, {
-              caption: isFirst ? resolvedCaption : undefined,
-              ...(captionParseMode ? { parse_mode: captionParseMode } : {}),
-              disable_notification,
-              reply_to_message_id: isFirst ? reply_to_message_id : undefined,
-            });
-            message_ids.push(msg.message_id);
-          }
-          if (message_ids.length === 1) {
-            return toResult({
-              message_id: message_ids[0],
-              audio: true,
-              ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}),
-            });
-          }
-          return toResult({
-            message_ids,
-            split_count: message_ids.length,
-            split: true,
-            audio: true,
-            ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}),
+        case "file":
+          if (!args.file) return toError({ code: "MISSING_PARAM" as const, message: 'type: "file" requires a "file" param (path, URL, or file_id).' });
+          return handleSendFile({
+            file: args.file,
+            type: args.file_type,
+            caption: args.caption,
+            parse_mode: args.parse_mode,
+            disable_notification: args.disable_notification,
+            reply_to_message_id: args.reply_to_message_id,
+            token: args.token,
           });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (msg.includes("user restricted receiving of voice note messages")) {
-            return toError({
-              code: "VOICE_RESTRICTED",
-              message:
-                "Telegram blocked voice delivery — the user's privacy settings restrict voice notes from bots. " +
-                "To fix: Telegram → Settings → Privacy and Security → Voice Messages → " +
-                "Add Exceptions → Always Allow → add this bot.",
-            } as const);
+
+        case "notification":
+          if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "notification" requires a "title" param.' });
+          return handleNotify({
+            title: args.title,
+            text: args.text,
+            message: args.message,
+            severity: args.severity,
+            parse_mode: args.parse_mode,
+            disable_notification: args.disable_notification,
+            reply_to_message_id: args.reply_to_message_id,
+            token: args.token,
+          });
+
+        case "choice":
+          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires a "text" param.' });
+          if (!args.options?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires an "options" array.' });
+          return handleSendChoice({
+            text: args.text,
+            options: args.options,
+            columns: args.columns,
+            parse_mode: args.parse_mode,
+            disable_notification: args.disable_notification,
+            reply_to_message_id: args.reply_to_message_id,
+            ignore_parity: args.ignore_parity,
+            token: args.token,
+          });
+
+        case "direct":
+          if (!args.target_sid) return toError({ code: "MISSING_PARAM" as const, message: 'type: "direct" requires a "target_sid" param.' });
+          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "direct" requires a "text" param.' });
+          return handleSendDirectMessage({ token: args.token, target_sid: args.target_sid, text: args.text });
+
+        case "append":
+          if (!args.message_id) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "message_id" param.' });
+          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "text" param.' });
+          return handleAppendText({
+            message_id: args.message_id,
+            text: args.text,
+            separator: args.separator,
+            parse_mode: args.parse_mode,
+            token: args.token,
+          });
+
+        case "animation":
+          return handleShowAnimation({
+            preset: args.preset,
+            frames: args.frames,
+            interval: args.interval,
+            timeout: args.animation_timeout,
+            persistent: args.persistent,
+            allow_breaking_spaces: args.allow_breaking_spaces,
+            notify: args.notify_animation,
+            priority: args.priority,
+            token: args.token,
+          });
+
+        case "checklist":
+          if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.' });
+          if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.' });
+          return handleSendNewChecklist({ title: args.title, steps: args.steps, token: args.token });
+
+        case "progress":
+          if (args.percent === undefined) return toError({ code: "MISSING_PARAM" as const, message: 'type: "progress" requires a "percent" param (0–100).' });
+          return handleSendNewProgress({
+            percent: args.percent,
+            title: args.title,
+            subtext: args.subtext,
+            width: args.width,
+            token: args.token,
+          });
+
+        case "question": {
+          if (args.ask !== undefined) {
+            return handleAsk({
+              question: args.ask,
+              timeout_seconds: args.timeout_seconds,
+              reply_to_message_id: args.reply_to_message_id,
+              ignore_pending: args.ignore_pending,
+              token: args.token,
+            }, signal);
           }
-          return toError(err);
-        } finally {
-          cancelTyping();
-        }
-      }
-
-      // ── Text-only mode ───────────────────────────────────────────────────
-      // text is guaranteed non-empty here (checked above)
-      const textWithTopic = applyTopicToText(text ?? "", parse_mode);
-      const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;
-      const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
-
-      if (!finalText || finalText.trim().length === 0) {
-        return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text must not be empty." });
-      }
-
-      const chunks = splitMessage(finalText);
-
-      try {
-        const message_ids: number[] = [];
-        for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i];
-          const textErr = validateText(chunk);
-          if (textErr) return toError(textErr);
-
-          const msg = await callApi(() =>
-            getApi().sendMessage(chatId, chunk, {
-              parse_mode: finalMode,
-              disable_notification,
-              reply_parameters:
-                i === 0 && reply_to_message_id !== undefined
-                  ? { message_id: reply_to_message_id }
-                  : undefined,
-              _rawText: chunks.length === 1 ? text : undefined,
-            } as Record<string, unknown>),
-          );
-          message_ids.push(msg.message_id);
+          if (args.choose !== undefined) {
+            if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "question" with choose requires a "text" param (prompt shown above buttons).' });
+            return handleChoose({
+              text: args.text,
+              options: args.choose,
+              timeout_seconds: args.timeout_seconds,
+              columns: args.columns,
+              reply_to_message_id: args.reply_to_message_id,
+              ignore_pending: args.ignore_pending,
+              ignore_parity: args.ignore_parity,
+              audio: args.audio,
+              token: args.token,
+            }, signal);
+          }
+          if (args.confirm !== undefined) {
+            return handleConfirm({
+              text: args.confirm,
+              yes_text: args.yes_text,
+              no_text: args.no_text,
+              yes_data: args.yes_data,
+              no_data: args.no_data,
+              yes_style: args.yes_style,
+              no_style: args.no_style,
+              timeout_seconds: args.timeout_seconds,
+              reply_to_message_id: args.reply_to_message_id,
+              ignore_pending: args.ignore_pending,
+              ignore_parity: args.ignore_parity,
+              audio: args.audio,
+              token: args.token,
+            }, signal);
+          }
+          return toError({ code: "MISSING_QUESTION_TYPE" as const, message: 'For type "question", provide one of: ask (string), choose (ChoiceOption[]), or confirm (string).' });
         }
 
-        const hasTable = containsMarkdownTable(text ?? "");
-        if (message_ids.length === 1) {
-          return toResult(hasTable
-            ? { message_id: message_ids[0], info: TABLE_WARNING }
-            : { message_id: message_ids[0] });
-        }
-        return toResult(hasTable
-          ? { message_ids, split_count: message_ids.length, split: true, info: TABLE_WARNING }
-          : { message_ids, split_count: message_ids.length, split: true });
-      } catch (err) {
-        return toError(err);
+        default:
+          return toError({ code: "UNKNOWN_TYPE" as const, message: `Unknown type: "${type}". Available types: ${SEND_TYPES.join(", ")}.` });
       }
     },
   );

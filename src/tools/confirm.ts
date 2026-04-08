@@ -36,7 +36,7 @@ const NO_TEXT_DESC = "Label for the negative button. Set to empty string to show
 const YES_STYLE_DESC = "Optional color for the Yes button: success (green), primary (blue), danger (red). Omit for app-default style.";
 const NO_STYLE_DESC = "Optional color for the No button: success (green), primary (blue), danger (red). Omit for app-default (gray/neutral).";
 
-interface ConfirmArgs {
+export interface ConfirmArgs {
   text: string;
   yes_text: string;
   no_text: string;
@@ -52,7 +52,7 @@ interface ConfirmArgs {
   token?: number;
 }
 
-async function confirmHandler(
+export async function confirmHandler(
   { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id, ignore_pending, ignore_parity, audio, token }: ConfirmArgs,
   signal: AbortSignal,
 ) {
@@ -300,6 +300,8 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
     token: TOKEN_SCHEMA,
   };
 }
+
+export { confirmHandler as handleConfirm };
 
 export function register(server: McpServer) {
   server.registerTool(

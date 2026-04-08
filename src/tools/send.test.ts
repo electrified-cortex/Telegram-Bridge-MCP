@@ -162,12 +162,16 @@ describe("send tool", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Case 5: MISSING_CONTENT
+  // Case 5: discovery mode (no args) → returns available types
   // ---------------------------------------------------------------------------
-  it("MISSING_CONTENT: neither text nor voice returns error", async () => {
+  it("discovery mode: no args returns available types list", async () => {
     const result = await call({ token: TOKEN });
-    expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("MISSING_CONTENT");
+    expect(isError(result)).toBe(false);
+    const content = (result.content as Array<{ type: string; text: string }>)[0].text;
+    const data = JSON.parse(content) as { available_types: string[] };
+    expect(data.available_types).toContain("text");
+    expect(data.available_types).toContain("file");
+    expect(data.available_types).toContain("question");
   });
 
   // ---------------------------------------------------------------------------
@@ -260,5 +264,104 @@ describe("send tool", () => {
     // No synthesis or delivery — validation runs before the send loop
     expect(mocks.synthesizeToOgg).not.toHaveBeenCalled();
     expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Type routing tests
+// =============================================================================
+describe("send type routing", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("no args → discovery mode returns available_types", async () => {
+    const result = await call({ token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result) as { available_types: string[] };
+    expect(Array.isArray(data.available_types)).toBe(true);
+    expect(data.available_types).toContain("text");
+    expect(data.available_types).toContain("file");
+    expect(data.available_types).toContain("question");
+  });
+
+  it("type: text routes to text mode", async () => {
+    const result = await call({ type: "text", text: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+  });
+
+  it("type: text with no text or audio returns MISSING_CONTENT", async () => {
+    const result = await call({ type: "text", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_CONTENT");
+  });
+
+  it("type: file without file param returns MISSING_PARAM", async () => {
+    const result = await call({ type: "file", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: notification without title returns MISSING_PARAM", async () => {
+    const result = await call({ type: "notification", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: choice without text returns MISSING_PARAM", async () => {
+    const result = await call({
+      type: "choice",
+      options: [{ label: "A", value: "a" }, { label: "B", value: "b" }],
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: direct without target_sid returns MISSING_PARAM", async () => {
+    const result = await call({ type: "direct", text: "hi", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: append without message_id returns MISSING_PARAM", async () => {
+    const result = await call({ type: "append", text: "more", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: checklist without title returns MISSING_PARAM", async () => {
+    const result = await call({
+      type: "checklist",
+      steps: [{ label: "Step 1", status: "pending" }],
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: progress without percent returns MISSING_PARAM", async () => {
+    const result = await call({ type: "progress", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: question without sub-type returns MISSING_QUESTION_TYPE", async () => {
+    const result = await call({ type: "question", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_QUESTION_TYPE");
   });
 });

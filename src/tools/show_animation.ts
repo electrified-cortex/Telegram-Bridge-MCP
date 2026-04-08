@@ -16,6 +16,44 @@ const DESCRIPTION =
   "For a native typing indicator in the chat header, use show_typing instead. " +
   "Call `help(topic: 'show_animation')` for details.";
 
+export async function handleShowAnimation({
+  preset, frames, interval = 1000, timeout = 600, persistent = false,
+  allow_breaking_spaces = false, notify = false, priority = 0, token,
+}: {
+  preset?: string;
+  frames?: string[];
+  interval?: number;
+  timeout?: number;
+  persistent?: boolean;
+  allow_breaking_spaces?: boolean;
+  notify?: boolean;
+  priority?: number;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+
+  // Resolve frames: preset > explicit frames > session default
+  let resolvedFrames: string[] | undefined;
+  if (preset) {
+    const presetFrames = getPreset(_sid, preset);
+    if (!presetFrames) return toError(`Unknown animation preset: "${preset}"`);
+    resolvedFrames = [...presetFrames];
+  } else if (frames) {
+    resolvedFrames = frames;
+  }
+  // undefined → startAnimation uses getDefaultFrames(sid) internally
+
+  try {
+    const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify, priority);
+    return toResult({ message_id, persistent });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "show_animation",
@@ -64,29 +102,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify, priority, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-
-      // Resolve frames: preset > explicit frames > session default
-      let resolvedFrames: string[] | undefined;
-      if (preset) {
-        const presetFrames = getPreset(_sid, preset);
-        if (!presetFrames) return toError(`Unknown animation preset: "${preset}"`);
-        resolvedFrames = [...presetFrames];
-      } else if (frames) {
-        resolvedFrames = frames;
-      }
-      // undefined → startAnimation uses getDefaultFrames(sid) internally
-
-      try {
-        const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify, priority);
-        return toResult({ message_id, persistent });
-      } catch (err) {
-        return toError(err);
-      }
-    },
+    handleShowAnimation,
   );
 }

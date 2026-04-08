@@ -28,6 +28,237 @@ const DESCRIPTION =
   "Drain pending updates with dequeue(timeout:0) before calling, or pass ignore_pending: true. " +
   "Call `help(topic: 'choose')` for details.";
 
+
+export type ChooseOption = { label: string; value: string; style?: "success" | "primary" | "danger" };
+
+export async function handleChoose(
+  {
+    text,
+    options,
+    timeout_seconds = 300,
+    columns = 2,
+    reply_to_message_id,
+    ignore_pending,
+    ignore_parity,
+    audio,
+    token,
+  }: {
+    text: string;
+    options: ChooseOption[];
+    timeout_seconds?: number;
+    columns?: number;
+    reply_to_message_id?: number;
+    ignore_pending?: boolean;
+    ignore_parity?: boolean;
+    audio?: string;
+    token: number;
+  },
+  signal: AbortSignal,
+) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+  const textErr = validateText(text);
+  if (textErr) return toError(textErr);
+
+  if (!ignore_pending && !reply_to_message_id) {
+    const sid = getCallerSid();
+    const sq = sid > 0 ? getSessionQueue(sid) : undefined;
+    const pending = sq ? sq.pendingCount() : pendingCount();
+    if (pending > 0) {
+      const breakdown = sid > 0 ? peekSessionCategories(sid) : undefined;
+      const summary = breakdown
+        ? Object.entries(breakdown).map(([k, v]) => `${v} ${k}`).join(", ")
+        : undefined;
+      const detail = summary
+        ? `${pending} unread update(s): ${summary}.`
+        : `${pending} unread update(s).`;
+      return toError({
+        code: "PENDING_UPDATES" as const,
+        message:
+          `${detail} Consider draining with dequeue(timeout:0) before ` +
+          `calling choose, or pass ignore_pending: true to proceed anyway.`,
+        pending,
+        ...(breakdown ? { breakdown } : {}),
+      });
+    }
+  }
+
+  // Validate button symbol parity
+  if (!ignore_parity) {
+    const parity = validateButtonSymbolParity(options.map((o) => o.label));
+    if (!parity.ok) {
+      return toError({
+        code: "BUTTON_SYMBOL_PARITY" as const,
+        message: `Button labels are inconsistent: ${parity.withEmoji.length} of ${options.length} have emoji. Either add emoji to all labels or remove them. Pass ignore_parity: true to send anyway.`,
+        labels_with_emoji: parity.withEmoji,
+        labels_without_emoji: parity.withoutEmoji,
+      });
+    }
+  }
+
+  // Validate all callback data up front
+  const displayMax = columns >= 2
+    ? LIMITS.BUTTON_DISPLAY_MULTI_COL
+    : LIMITS.BUTTON_DISPLAY_SINGLE_COL;
+  for (const opt of options) {
+    const dataErr = validateCallbackData(opt.value);
+    if (dataErr) return toError(dataErr);
+    if (opt.label.length > LIMITS.BUTTON_TEXT)
+      return toError({
+        code: "BUTTON_DATA_INVALID" as const,
+        message: `Button label "${opt.label}" is ${opt.label.length} chars but the Telegram limit is ${LIMITS.BUTTON_TEXT}.`,
+      });
+    if (opt.label.length > displayMax)
+      return toError({
+        code: "BUTTON_LABEL_TOO_LONG" as const,
+        message: `Button label "${opt.label}" (${opt.label.length} chars) will be cut off on mobile. With columns=${columns}, keep labels under ${displayMax} chars. Use columns=1 for longer labels (max ${LIMITS.BUTTON_DISPLAY_SINGLE_COL} chars).`,
+      });
+  }
+
+  try {
+    let messageId: number;
+
+    if (audio !== undefined) {
+      if (!isTtsEnabled()) {
+        return toError({
+          code: "TTS_NOT_CONFIGURED" as const,
+          message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice mode.",
+        });
+      }
+      const plainText = stripForTts(audio);
+      if (!plainText) {
+        return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
+      }
+      const resolvedVoice = getSessionVoice() || getDefaultVoice() || undefined;
+      const resolvedSpeed = getSessionSpeed() ?? undefined;
+      const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
+      await showTyping(typingSeconds, "record_voice");
+      try {
+        const ogg = await synthesizeToOgg(plainText, resolvedVoice, resolvedSpeed);
+        // Apply topic prefix to caption (not to TTS input — don't read the prefix aloud).
+        // Reserve 60 chars for the session header that sendVoiceDirect prepends, to stay under the 1024 caption limit.
+        const MAX_CAPTION = 1024 - 60;
+        const rawCaption = applyTopicToText(text, "Markdown");
+        let caption = markdownToV2(rawCaption);
+        if (caption.length > MAX_CAPTION) {
+          caption = caption.slice(0, MAX_CAPTION);
+          if (caption.endsWith("\\")) caption = caption.slice(0, -1);
+        }
+        const rows = buildKeyboardRows(options as KeyboardOption[], columns);
+        const msg = await sendVoiceDirect(chatId, ogg, {
+          caption,
+          parse_mode: "MarkdownV2",
+          reply_to_message_id,
+          reply_markup: { inline_keyboard: rows },
+        });
+        messageId = msg.message_id;
+      } finally {
+        cancelTyping();
+      }
+    } else {
+      messageId = await sendChoiceMessage(chatId, {
+        text: text,
+        options: options as KeyboardOption[],
+        columns,
+        parseMode: "Markdown",
+        replyToMessageId: reply_to_message_id,
+      });
+    }
+
+    // Register callback hook — handles button clicks even after poll timeout.
+    // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue.
+    // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
+    registerCallbackHook(messageId, (evt) => {
+      const chosen = options.find((o) => o.value === evt.content.data);
+      const chosenLabel = chosen?.label ?? evt.content.data ?? "";
+      clearMessageHook(messageId);
+      void ackAndEditSelection(chatId, messageId, text, chosenLabel, evt.content.qid, !!audio)
+        .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${String(e)}\n`));
+    }, _sid);
+
+    // Fires immediately when a voice message is detected (before transcription).
+    // This removes the keyboard right away so the user doesn't see a delayed edit.
+    let skippedEditDone = false;
+    const onVoiceDetected = () => {
+      skippedEditDone = true;
+      clearCallbackHook(messageId);
+      editWithSkipped(chatId, messageId, text, !!audio).catch(() => {/* non-fatal */});
+    };
+
+    const match = await pollButtonOrTextOrVoice(
+      chatId, messageId, timeout_seconds,
+      onVoiceDetected, signal, getCallerSid(),
+    );
+
+    if (!match) {
+      // Timeout — register a message hook so the next user message
+      // cleans up the stale buttons (callback hook handles late clicks).
+      // Run editWithSkipped in the tool's session context so the session
+      // header remains consistent with the original message.
+      registerMessageHook(messageId, () => {
+        clearCallbackHook(messageId);
+        void runInSessionContext(_sid, () =>
+          editWithSkipped(chatId, messageId, text, !!audio),
+        ).catch(() => {/* non-fatal */});
+      });
+      return toResult({
+        timed_out: true,
+        message_id: messageId,
+      });
+    }
+
+    if (match.kind === "text") {
+      clearCallbackHook(messageId);
+      await editWithSkipped(chatId, messageId, text, !!audio);
+      return toResult({
+        skipped: true,
+        text_response: match.text,
+        text_message_id: match.message_id,
+        message_id: messageId,
+      });
+    }
+
+    if (match.kind === "voice") {
+      clearCallbackHook(messageId);
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
+      if (!skippedEditDone) await editWithSkipped(chatId, messageId, text, !!audio);
+      return toResult({
+        skipped: true,
+        text_response: match.text ?? "[no transcription]",
+        text_message_id: match.message_id,
+        message_id: messageId,
+        voice: true,
+      });
+    }
+
+    if (match.kind === "command") {
+      clearCallbackHook(messageId);
+      await editWithSkipped(chatId, messageId, text, !!audio);
+      return toResult({
+        skipped: true,
+        command: match.command,
+        args: match.args,
+        message_id: messageId,
+      });
+    }
+
+    // Button was pressed — hook already acked + edited.
+    const chosen = options.find((o) => o.value === match.data);
+    const chosenLabel = chosen?.label ?? match.data;
+
+    return toResult({
+      timed_out: false,
+      label: chosenLabel,
+      value: match.data,
+      message_id: messageId,
+    });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "choose",
@@ -84,209 +315,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ text, options, timeout_seconds, columns, reply_to_message_id, ignore_pending, ignore_parity, audio, token }, { signal }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-      const textErr = validateText(text);
-      if (textErr) return toError(textErr);
-
-      if (!ignore_pending && !reply_to_message_id) {
-        const sid = getCallerSid();
-        const sq = sid > 0 ? getSessionQueue(sid) : undefined;
-        const pending = sq ? sq.pendingCount() : pendingCount();
-        if (pending > 0) {
-          const breakdown = sid > 0 ? peekSessionCategories(sid) : undefined;
-          const summary = breakdown
-            ? Object.entries(breakdown).map(([k, v]) => `${v} ${k}`).join(", ")
-            : undefined;
-          const detail = summary
-            ? `${pending} unread update(s): ${summary}.`
-            : `${pending} unread update(s).`;
-          return toError({
-            code: "PENDING_UPDATES" as const,
-            message:
-              `${detail} Consider draining with dequeue(timeout:0) before ` +
-              `calling choose, or pass ignore_pending: true to proceed anyway.`,
-            pending,
-            ...(breakdown ? { breakdown } : {}),
-          });
-        }
-      }
-
-      // Validate button symbol parity
-      if (!ignore_parity) {
-        const parity = validateButtonSymbolParity(options.map((o) => o.label));
-        if (!parity.ok) {
-          return toError({
-            code: "BUTTON_SYMBOL_PARITY" as const,
-            message: `Button labels are inconsistent: ${parity.withEmoji.length} of ${options.length} have emoji. Either add emoji to all labels or remove them. Pass ignore_parity: true to send anyway.`,
-            labels_with_emoji: parity.withEmoji,
-            labels_without_emoji: parity.withoutEmoji,
-          });
-        }
-      }
-
-      // Validate all callback data up front
-      const displayMax = columns >= 2
-        ? LIMITS.BUTTON_DISPLAY_MULTI_COL
-        : LIMITS.BUTTON_DISPLAY_SINGLE_COL;
-      for (const opt of options) {
-        const dataErr = validateCallbackData(opt.value);
-        if (dataErr) return toError(dataErr);
-        if (opt.label.length > LIMITS.BUTTON_TEXT)
-          return toError({
-            code: "BUTTON_DATA_INVALID" as const,
-            message: `Button label "${opt.label}" is ${opt.label.length} chars but the Telegram limit is ${LIMITS.BUTTON_TEXT}.`,
-          });
-        if (opt.label.length > displayMax)
-          return toError({
-            code: "BUTTON_LABEL_TOO_LONG" as const,
-            message: `Button label "${opt.label}" (${opt.label.length} chars) will be cut off on mobile. With columns=${columns}, keep labels under ${displayMax} chars. Use columns=1 for longer labels (max ${LIMITS.BUTTON_DISPLAY_SINGLE_COL} chars).`,
-          });
-      }
-
-      try {
-        let messageId: number;
-
-        if (audio !== undefined) {
-          if (!isTtsEnabled()) {
-            return toError({
-              code: "TTS_NOT_CONFIGURED" as const,
-              message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice mode.",
-            });
-          }
-          const plainText = stripForTts(audio);
-          if (!plainText) {
-            return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
-          }
-          const resolvedVoice = getSessionVoice() || getDefaultVoice() || undefined;
-          const resolvedSpeed = getSessionSpeed() ?? undefined;
-          const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
-          await showTyping(typingSeconds, "record_voice");
-          try {
-            const ogg = await synthesizeToOgg(plainText, resolvedVoice, resolvedSpeed);
-            // Apply topic prefix to caption (not to TTS input — don't read the prefix aloud).
-            // Reserve 60 chars for the session header that sendVoiceDirect prepends, to stay under the 1024 caption limit.
-            const MAX_CAPTION = 1024 - 60;
-            const rawCaption = applyTopicToText(text, "Markdown");
-            let caption = markdownToV2(rawCaption);
-            if (caption.length > MAX_CAPTION) {
-              caption = caption.slice(0, MAX_CAPTION);
-              if (caption.endsWith("\\")) caption = caption.slice(0, -1);
-            }
-            const rows = buildKeyboardRows(options as KeyboardOption[], columns);
-            const msg = await sendVoiceDirect(chatId, ogg, {
-              caption,
-              parse_mode: "MarkdownV2",
-              reply_to_message_id,
-              reply_markup: { inline_keyboard: rows },
-            });
-            messageId = msg.message_id;
-          } finally {
-            cancelTyping();
-          }
-        } else {
-          messageId = await sendChoiceMessage(chatId, {
-            text: text,
-            options: options as KeyboardOption[],
-            columns,
-            parseMode: "Markdown",
-            replyToMessageId: reply_to_message_id,
-          });
-        }
-
-        // Register callback hook — handles button clicks even after poll timeout.
-        // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue.
-        // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
-        registerCallbackHook(messageId, (evt) => {
-          const chosen = options.find((o) => o.value === evt.content.data);
-          const chosenLabel = chosen?.label ?? evt.content.data ?? "";
-          clearMessageHook(messageId);
-          void ackAndEditSelection(chatId, messageId, text, chosenLabel, evt.content.qid, !!audio)
-            .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${String(e)}\n`));
-        }, _sid);
-
-        // Fires immediately when a voice message is detected (before transcription).
-        // This removes the keyboard right away so the user doesn't see a delayed edit.
-        let skippedEditDone = false;
-        const onVoiceDetected = () => {
-          skippedEditDone = true;
-          clearCallbackHook(messageId);
-          editWithSkipped(chatId, messageId, text, !!audio).catch(() => {/* non-fatal */});
-        };
-
-        const match = await pollButtonOrTextOrVoice(
-          chatId, messageId, timeout_seconds,
-          onVoiceDetected, signal, getCallerSid(),
-        );
-
-        if (!match) {
-          // Timeout — register a message hook so the next user message
-          // cleans up the stale buttons (callback hook handles late clicks).
-          // Run editWithSkipped in the tool's session context so the session
-          // header remains consistent with the original message.
-          registerMessageHook(messageId, () => {
-            clearCallbackHook(messageId);
-            void runInSessionContext(_sid, () =>
-              editWithSkipped(chatId, messageId, text, !!audio),
-            ).catch(() => {/* non-fatal */});
-          });
-          return toResult({
-            timed_out: true,
-            message_id: messageId,
-          });
-        }
-
-        if (match.kind === "text") {
-          clearCallbackHook(messageId);
-          await editWithSkipped(chatId, messageId, text, !!audio);
-          return toResult({
-            skipped: true,
-            text_response: match.text,
-            text_message_id: match.message_id,
-            message_id: messageId,
-          });
-        }
-
-        if (match.kind === "voice") {
-          clearCallbackHook(messageId);
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
-          if (!skippedEditDone) await editWithSkipped(chatId, messageId, text, !!audio);
-          return toResult({
-            skipped: true,
-            text_response: match.text ?? "[no transcription]",
-            text_message_id: match.message_id,
-            message_id: messageId,
-            voice: true,
-          });
-        }
-
-        if (match.kind === "command") {
-          clearCallbackHook(messageId);
-          await editWithSkipped(chatId, messageId, text, !!audio);
-          return toResult({
-            skipped: true,
-            command: match.command,
-            args: match.args,
-            message_id: messageId,
-          });
-        }
-
-        // Button was pressed — hook already acked + edited.
-        const chosen = options.find((o) => o.value === match.data);
-        const chosenLabel = chosen?.label ?? match.data;
-
-        return toResult({
-          timed_out: false,
-          label: chosenLabel,
-          value: match.data,
-          message_id: messageId,
-        });
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    async (args, { signal }) => handleChoose(args, signal),
   );
 }

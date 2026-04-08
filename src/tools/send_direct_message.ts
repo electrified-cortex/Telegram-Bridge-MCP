@@ -13,6 +13,36 @@ const DESCRIPTION =
   "All active sessions can DM each other. The target session receives the message " +
   "in its dequeue stream as a direct_message event.";
 
+export function handleSendDirectMessage({ token, target_sid, text }: { token: number; target_sid: number; text: string }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  if (_sid === target_sid) {
+    return toError({
+      code: "DM_SELF",
+      message: "Cannot send a DM to yourself",
+    });
+  }
+
+  const target = getSession(target_sid);
+  if (!target) {
+    return toError({
+      code: "SESSION_NOT_FOUND",
+      message: `Session ${target_sid} does not exist`,
+    });
+  }
+
+  const delivered = deliverDirectMessage(_sid, target_sid, text);
+  if (!delivered) {
+    return toError({
+      code: "DM_DELIVERY_FAILED",
+      message: `Session ${target_sid} queue not available`,
+    });
+  }
+
+  return toResult({ delivered: true, target_sid });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_direct_message",
@@ -32,34 +62,6 @@ export function register(server: McpServer) {
           .describe("Message text to send"),
       },
     },
-    ({ token, target_sid, text }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      if (_sid === target_sid) {
-        return toError({
-          code: "DM_SELF",
-          message: "Cannot send a DM to yourself",
-        });
-      }
-
-      const target = getSession(target_sid);
-      if (!target) {
-        return toError({
-          code: "SESSION_NOT_FOUND",
-          message: `Session ${target_sid} does not exist`,
-        });
-      }
-
-      const delivered = deliverDirectMessage(_sid, target_sid, text);
-      if (!delivered) {
-        return toError({
-          code: "DM_DELIVERY_FAILED",
-          message: `Session ${target_sid} queue not available`,
-        });
-      }
-
-      return toResult({ delivered: true, target_sid });
-    },
+    handleSendDirectMessage,
   );
 }

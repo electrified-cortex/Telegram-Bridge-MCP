@@ -48,6 +48,164 @@ const DESCRIPTION =
   "Ensure session_start has been called. " +
   "WARNING: " + CDN_WARNING;
 
+export async function handleSendFile({
+  file, type = "auto", caption, parse_mode = "Markdown", duration, performer, title,
+  width, height, disable_notification, reply_to_message_id, token,
+}: {
+  file: string;
+  type?: "auto" | "photo" | "document" | "video" | "audio" | "voice";
+  caption?: string;
+  parse_mode?: "Markdown" | "HTML" | "MarkdownV2";
+  duration?: number;
+  performer?: string;
+  title?: string;
+  width?: number;
+  height?: number;
+  disable_notification?: boolean;
+  reply_to_message_id?: number;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+
+  if (caption) {
+    const capErr = validateCaption(caption);
+    if (capErr) return toError(capErr);
+  }
+
+  const resolvedCaption = caption
+    ? resolveParseMode(caption, parse_mode)
+    : { text: undefined, parse_mode: undefined };
+
+  const fileType: FileType = type === "auto" ? detectType(file) : type;
+
+  // Validate media source for all types (rejects http://, path traversal)
+  if (fileType !== "voice") {
+    const mediaResult = resolveMediaSource(file);
+    if ("code" in mediaResult) return toError(mediaResult);
+  } else if (typeof file === "string" && file.startsWith("http://")) {
+    // Voice bypasses resolveMediaSource for Buffer/file_id paths,
+    // but http:// must still be rejected for consistency.
+    const voiceResult = resolveMediaSource(file);
+    if ("code" in voiceResult) return toError(voiceResult);
+  }
+
+  const replyParams = reply_to_message_id
+    ? { message_id: reply_to_message_id }
+    : undefined;
+
+  try {
+    switch (fileType) {
+      case "photo": {
+        const mediaResult = resolveMediaSource(file);
+        if ("code" in mediaResult) return toError(mediaResult);
+        await showTyping(30, "upload_photo");
+        const msg = await callApi(() =>
+          getApi().sendPhoto(chatId, mediaResult.source, {
+            caption: resolvedCaption.text,
+            parse_mode: resolvedCaption.parse_mode,
+            disable_notification,
+            reply_parameters: replyParams,
+          }),
+        );
+        return toResult({
+          message_id: msg.message_id,
+          type: "photo",
+          caption: msg.caption,
+          warning: CDN_WARNING,
+        });
+      }
+
+      case "video": {
+        await showTyping(120, "upload_video");
+        const mediaResult = resolveMediaSource(file);
+        if ("code" in mediaResult) return toError(mediaResult);
+        const msg = await callApi(() =>
+          getApi().sendVideo(chatId, mediaResult.source, {
+            caption: resolvedCaption.text,
+            parse_mode: resolvedCaption.parse_mode,
+            duration, width, height,
+            disable_notification,
+            reply_parameters: replyParams,
+          }),
+        );
+        return toResult({
+          message_id: msg.message_id,
+          type: "video",
+          file_id: msg.video.file_id,
+          duration: msg.video.duration,
+          warning: CDN_WARNING,
+        });
+      }
+
+      case "audio": {
+        await showTyping(60, "upload_document");
+        const mediaResult = resolveMediaSource(file);
+        if ("code" in mediaResult) return toError(mediaResult);
+        const msg = await callApi(() =>
+          getApi().sendAudio(chatId, mediaResult.source, {
+            caption: resolvedCaption.text,
+            parse_mode: resolvedCaption.parse_mode,
+            duration, performer, title,
+            disable_notification,
+            reply_parameters: replyParams,
+          }),
+        );
+        return toResult({
+          message_id: msg.message_id,
+          type: "audio",
+          file_id: msg.audio.file_id,
+          title: msg.audio.title,
+          warning: CDN_WARNING,
+        });
+      }
+
+      case "voice": {
+        await showTyping(30, "upload_voice");
+        const msg = await sendVoiceDirect(chatId, file, {
+          caption: resolvedCaption.text,
+          parse_mode: resolvedCaption.parse_mode,
+          duration,
+          disable_notification,
+          reply_to_message_id,
+        });
+        return toResult({
+          message_id: msg.message_id,
+          type: "voice",
+          file_id: msg.voice?.file_id,
+          warning: CDN_WARNING,
+        });
+      }
+
+      case "document":
+      default: {
+        await showTyping(60, "upload_document");
+        const mediaResult = resolveMediaSource(file);
+        if ("code" in mediaResult) return toError(mediaResult);
+        const msg = await callApi(() =>
+          getApi().sendDocument(chatId, mediaResult.source, {
+            caption: resolvedCaption.text,
+            parse_mode: resolvedCaption.parse_mode,
+            disable_notification,
+            reply_parameters: replyParams,
+          }),
+        );
+        return toResult({
+          message_id: msg.message_id,
+          type: "document",
+          file_id: msg.document.file_id,
+          file_name: msg.document.file_name,
+          warning: CDN_WARNING,
+        });
+      }
+    }
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_file",
@@ -104,150 +262,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    async ({
-      file, type, caption, parse_mode, duration, performer, title,
-      width, height, disable_notification, reply_to_message_id,
-      token,
-    }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-
-      if (caption) {
-        const capErr = validateCaption(caption);
-        if (capErr) return toError(capErr);
-      }
-
-      const resolvedCaption = caption
-        ? resolveParseMode(caption, parse_mode)
-        : { text: undefined, parse_mode: undefined };
-
-      const fileType: FileType = type === "auto" ? detectType(file) : type;
-
-      // Validate media source for all types (rejects http://, path traversal)
-      if (fileType !== "voice") {
-        const mediaResult = resolveMediaSource(file);
-        if ("code" in mediaResult) return toError(mediaResult);
-      } else if (typeof file === "string" && file.startsWith("http://")) {
-        // Voice bypasses resolveMediaSource for Buffer/file_id paths,
-        // but http:// must still be rejected for consistency.
-        const voiceResult = resolveMediaSource(file);
-        if ("code" in voiceResult) return toError(voiceResult);
-      }
-
-      const replyParams = reply_to_message_id
-        ? { message_id: reply_to_message_id }
-        : undefined;
-
-      try {
-        switch (fileType) {
-          case "photo": {
-            const mediaResult = resolveMediaSource(file);
-            if ("code" in mediaResult) return toError(mediaResult);
-            await showTyping(30, "upload_photo");
-            const msg = await callApi(() =>
-              getApi().sendPhoto(chatId, mediaResult.source, {
-                caption: resolvedCaption.text,
-                parse_mode: resolvedCaption.parse_mode,
-                disable_notification,
-                reply_parameters: replyParams,
-              }),
-            );
-            return toResult({
-              message_id: msg.message_id,
-              type: "photo",
-              caption: msg.caption,
-              warning: CDN_WARNING,
-            });
-          }
-
-          case "video": {
-            await showTyping(120, "upload_video");
-            const mediaResult = resolveMediaSource(file);
-            if ("code" in mediaResult) return toError(mediaResult);
-            const msg = await callApi(() =>
-              getApi().sendVideo(chatId, mediaResult.source, {
-                caption: resolvedCaption.text,
-                parse_mode: resolvedCaption.parse_mode,
-                duration, width, height,
-                disable_notification,
-                reply_parameters: replyParams,
-              }),
-            );
-            return toResult({
-              message_id: msg.message_id,
-              type: "video",
-              file_id: msg.video.file_id,
-              duration: msg.video.duration,
-              warning: CDN_WARNING,
-            });
-          }
-
-          case "audio": {
-            await showTyping(60, "upload_document");
-            const mediaResult = resolveMediaSource(file);
-            if ("code" in mediaResult) return toError(mediaResult);
-            const msg = await callApi(() =>
-              getApi().sendAudio(chatId, mediaResult.source, {
-                caption: resolvedCaption.text,
-                parse_mode: resolvedCaption.parse_mode,
-                duration, performer, title,
-                disable_notification,
-                reply_parameters: replyParams,
-              }),
-            );
-            return toResult({
-              message_id: msg.message_id,
-              type: "audio",
-              file_id: msg.audio.file_id,
-              title: msg.audio.title,
-              warning: CDN_WARNING,
-            });
-          }
-
-          case "voice": {
-            await showTyping(30, "upload_voice");
-            const msg = await sendVoiceDirect(chatId, file, {
-              caption: resolvedCaption.text,
-              parse_mode: resolvedCaption.parse_mode,
-              duration,
-              disable_notification,
-              reply_to_message_id,
-            });
-            return toResult({
-              message_id: msg.message_id,
-              type: "voice",
-              file_id: msg.voice?.file_id,
-              warning: CDN_WARNING,
-            });
-          }
-
-          case "document":
-          default: {
-            await showTyping(60, "upload_document");
-            const mediaResult = resolveMediaSource(file);
-            if ("code" in mediaResult) return toError(mediaResult);
-            const msg = await callApi(() =>
-              getApi().sendDocument(chatId, mediaResult.source, {
-                caption: resolvedCaption.text,
-                parse_mode: resolvedCaption.parse_mode,
-                disable_notification,
-                reply_parameters: replyParams,
-              }),
-            );
-            return toResult({
-              message_id: msg.message_id,
-              type: "document",
-              file_id: msg.document.file_id,
-              file_name: msg.document.file_name,
-              warning: CDN_WARNING,
-            });
-          }
-        }
-      } catch (err) {
-        return toError(err);
-      }
-    },
+    handleSendFile,
   );
 }
