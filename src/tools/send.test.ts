@@ -225,4 +225,40 @@ describe("send tool", () => {
     // Caption truncation info is present
     expect(data.info).toBe("Caption was truncated to fit Telegram's 1024-character limit.");
   });
+
+  // ---------------------------------------------------------------------------
+  // Case 10: combined mode — trailing backslash strip after caption truncation
+  // ---------------------------------------------------------------------------
+  it("combined mode: strips trailing backslash from truncated caption", async () => {
+    const MAX_CAPTION = 964; // 1024 - 60
+    // markdownToV2 returns a string where position MAX_CAPTION-1 (0-indexed) is a backslash,
+    // with one extra char to trigger truncation (length = MAX_CAPTION + 1 = 965)
+    const converted = "A".repeat(MAX_CAPTION - 1) + "\\B"; // "A"*963 + "\B", length=965
+    // After slice(0, MAX_CAPTION): "A"*963 + "\" — ends with backslash → must be stripped
+    mocks.markdownToV2.mockReturnValue(converted);
+    const result = await call({ text: "some text", audio: "shimmer", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    expect(mocks.sendVoiceDirect).toHaveBeenCalled();
+    const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
+    const caption = voiceCallArgs[2].caption ?? "";
+    expect(caption.endsWith("\\")).toBe(false);
+    expect(caption.endsWith("A")).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Case 11: voice mode — validateText called per-chunk, not pre-split
+  // ---------------------------------------------------------------------------
+  it("voice mode: returns error for invalid chunk without partial delivery", async () => {
+    mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
+    // First chunk passes, second chunk fails validation
+    mocks.validateText
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({ code: "MESSAGE_TOO_LONG", message: "chunk too long" });
+    const result = await call({ audio: "hello world", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
+    // No synthesis or delivery — validation runs before the send loop
+    expect(mocks.synthesizeToOgg).not.toHaveBeenCalled();
+    expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
+  });
 });

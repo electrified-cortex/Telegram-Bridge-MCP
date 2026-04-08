@@ -86,9 +86,6 @@ export function register(server: McpServer) {
         // Resolve spoken text and voice params
         const spokenText = audio;
 
-        const spokenErr = validateText(spokenText);
-        if (spokenErr) return toError(spokenErr);
-
         const plainText = stripForTts(spokenText);
         if (!plainText) {
           return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS." } as const);
@@ -108,7 +105,8 @@ export function register(server: McpServer) {
           const MAX_CAPTION = 1024 - 60;
           const converted = markdownToV2(applyTopicToText(text, "Markdown"));
           captionTruncated = converted.length > MAX_CAPTION;
-          resolvedCaption = captionTruncated ? converted.slice(0, MAX_CAPTION) : converted;
+          // Strip trailing escape backslash to avoid malformed MarkdownV2 after truncation
+          resolvedCaption = captionTruncated ? converted.slice(0, MAX_CAPTION).replace(/\\$/, "") : converted;
           captionParseMode = "MarkdownV2";
         } else {
           // Voice-only: still apply topic label as caption if topic is set
@@ -121,6 +119,11 @@ export function register(server: McpServer) {
         }
 
         const voiceChunks = splitMessage(plainText);
+        // Validate all chunks before sending any — preserves atomic behavior (no partial delivery)
+        for (const chunk of voiceChunks) {
+          const chunkErr = validateText(chunk);
+          if (chunkErr) return toError(chunkErr);
+        }
         const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
         try {
           await showTyping(typingSeconds, "record_voice");
