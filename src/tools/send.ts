@@ -22,9 +22,9 @@ function containsMarkdownTable(text: string): boolean {
 const DESCRIPTION =
   "Send a message as text, voice, or both. " +
   "text only → text message with auto-split and Markdown. " +
-  "voice only → TTS voice note. " +
+  "audio only → TTS voice note. " +
   "Both → voice note with text as caption (keep brief — topic context before playback). " +
-  "At least one of text or voice is required. " +
+  "At least one of text or audio is required. " +
   "For structured status, use notify. For file attachments, use send_file. " +
   "For interactive prompts, use ask, choose, or confirm.";
 
@@ -47,7 +47,7 @@ export function register(server: McpServer) {
           .string()
           .optional()
           .describe("Text message OR caption when voice is present. At least one of text/voice required."),
-        voice: voiceSchema
+        audio: voiceSchema
           .optional()
           .describe(
             "When string: spoken text, uses session/default voice settings. " +
@@ -71,19 +71,19 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ text, voice, parse_mode, disable_notification, reply_to_message_id, token }) => {
+    async ({ text, audio, parse_mode, disable_notification, reply_to_message_id, token }) => {
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
       // Require at least one of text or voice
-      if (!text && !voice) {
-        return toError({ code: "MISSING_CONTENT", message: "At least one of 'text' or 'voice' is required." });
+      if (!text && !audio) {
+        return toError({ code: "MISSING_CONTENT", message: "At least one of 'text' or 'audio' is required." });
       }
 
       // ── Voice mode ───────────────────────────────────────────────────────
-      if (voice) {
+      if (audio) {
         if (!isTtsEnabled()) {
           return toError({
             code: "TTS_NOT_CONFIGURED",
@@ -92,11 +92,11 @@ export function register(server: McpServer) {
         }
 
         // Resolve spoken text and voice params
-        const spokenText = typeof voice === "string" ? voice : voice.text;
-        const voiceName = typeof voice === "string"
+        const spokenText = typeof audio === "string" ? audio : audio.text;
+        const voiceName = typeof audio === "string"
           ? undefined
-          : voice.voice;
-        const voiceSpeed = typeof voice === "object" && "speed" in voice ? voice.speed : undefined;
+          : audio.voice;
+        const voiceSpeed = typeof audio === "object" && "speed" in audio ? audio.speed : undefined;
 
         const spokenErr = validateText(spokenText);
         if (spokenErr) return toError(spokenErr);
@@ -151,7 +151,7 @@ export function register(server: McpServer) {
           if (message_ids.length === 1) {
             return toResult({
               message_id: message_ids[0],
-              voice: true,
+              audio: true,
               ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}),
             });
           }
@@ -159,7 +159,7 @@ export function register(server: McpServer) {
             message_ids,
             split_count: message_ids.length,
             split: true,
-            voice: true,
+            audio: true,
             ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}),
           });
         } catch (err) {

@@ -21,6 +21,7 @@
 
 ## Changed
 
+- `send`, `confirm`, `confirmYN`, `choose` — `voice` parameter renamed to `audio`; inner `voice` field inside the audio object (TTS voice selection) is unchanged
 - `dequeue_update` now returns `session_closed` events when the active session is terminated during a wait
 - Cold-start governor workflow fixed — first-session approval no longer requires a pre-existing session context
 - Tool descriptions tightened across all registered tools to minimize per-call context usage

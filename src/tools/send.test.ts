@@ -112,7 +112,7 @@ describe("send tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
-    expect(data.voice).toBeUndefined();
+    expect(data.audio).toBeUndefined();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
     expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
   });
@@ -121,11 +121,11 @@ describe("send tool", () => {
   // Case 2: voice-only (string)
   // ---------------------------------------------------------------------------
   it("voice-only (string): calls TTS and sends voice note", async () => {
-    const result = await call({ voice: "nova", token: TOKEN });
+    const result = await call({ audio: "nova", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
-    expect(data.voice).toBe(true);
+    expect(data.audio).toBe(true);
     expect(mocks.synthesizeToOgg).toHaveBeenCalledOnce();
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
@@ -135,11 +135,11 @@ describe("send tool", () => {
   // Case 3: voice-only (object)
   // ---------------------------------------------------------------------------
   it("voice-only (object): calls TTS with alloy voice and sends voice note", async () => {
-    const result = await call({ voice: { text: "hello", voice: "alloy" }, token: TOKEN });
+    const result = await call({ audio: { text: "hello", voice: "alloy" }, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
-    expect(data.voice).toBe(true);
+    expect(data.audio).toBe(true);
     expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("hello", "alloy", undefined);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
   });
@@ -148,11 +148,11 @@ describe("send tool", () => {
   // Case 4: combined mode (text + voice)
   // ---------------------------------------------------------------------------
   it("combined mode: sends voice note with text as caption", async () => {
-    const result = await call({ text: "caption text", voice: "shimmer", token: TOKEN });
+    const result = await call({ text: "caption text", audio: "shimmer", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
-    expect(data.voice).toBe(true);
+    expect(data.audio).toBe(true);
     // Voice was sent (not text message)
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
@@ -175,7 +175,7 @@ describe("send tool", () => {
   // ---------------------------------------------------------------------------
   it("TTS_NOT_CONFIGURED: voice provided but TTS disabled returns error", async () => {
     mocks.isTtsEnabled.mockReturnValue(false);
-    const result = await call({ voice: "nova", token: TOKEN });
+    const result = await call({ audio: "nova", token: TOKEN });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("TTS_NOT_CONFIGURED");
   });
@@ -214,14 +214,14 @@ describe("send tool", () => {
   it("combined mode: truncates caption and returns info when text exceeds 964 chars", async () => {
     const longText = "A".repeat(965); // 965 chars > MAX_CAPTION (964)
     // applyTopicToText returns the text as-is (mock default)
-    const result = await call({ text: longText, voice: "nova", token: TOKEN });
+    const result = await call({ text: longText, audio: "nova", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     // Voice note was sent
     expect(mocks.synthesizeToOgg).toHaveBeenCalledOnce();
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     // Result is success
-    expect(data.voice).toBe(true);
+    expect(data.audio).toBe(true);
     // Caption truncation info is present
     expect(data.info).toBe("Caption was truncated to fit Telegram's 1024-character limit.");
   });

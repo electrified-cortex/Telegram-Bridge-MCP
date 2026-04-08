@@ -47,12 +47,12 @@ interface ConfirmArgs {
   reply_to_message_id?: number;
   ignore_pending?: boolean;
   ignore_parity?: boolean;
-  voice?: string;
+  audio?: string;
   token?: number;
 }
 
 async function confirmHandler(
-  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id, ignore_pending, ignore_parity, voice, token }: ConfirmArgs,
+  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id, ignore_pending, ignore_parity, audio, token }: ConfirmArgs,
   signal: AbortSignal,
 ) {
   const _sid = requireAuth(token);
@@ -115,7 +115,7 @@ async function confirmHandler(
 
     let sentMessageId: number;
 
-    if (voice) {
+    if (audio) {
       if (!isTtsEnabled()) {
         return toError({
           code: "TTS_NOT_CONFIGURED" as const,
@@ -126,7 +126,7 @@ async function confirmHandler(
       if (!plainText) {
         return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
       }
-      const resolvedVoice = voice;
+      const resolvedVoice = audio;
       const resolvedSpeed = getSessionSpeed() ?? undefined;
       const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
       await showTyping(typingSeconds, "record_voice");
@@ -173,7 +173,7 @@ async function confirmHandler(
       if (!confirmed && !no_text) return;
       clearMessageHook(sent.message_id);
       const chosenLabel = confirmed ? yes_text : no_text;
-      void ackAndEditSelection(chatId, sent.message_id, text, chosenLabel, evt.content.qid, !!voice)
+        void ackAndEditSelection(chatId, sent.message_id, text, chosenLabel, evt.content.qid, !!audio)
         .catch((e: unknown) => process.stderr.write(`[warn] confirm hook failed: ${String(e)}\n`));
     }, _sid);
 
@@ -183,7 +183,7 @@ async function confirmHandler(
     const onVoiceDetected = () => {
       editState.done = true;
       clearCallbackHook(sent.message_id);
-      editWithSkipped(chatId, sent.message_id, text, !!voice).catch(() => {/* non-fatal */});
+      editWithSkipped(chatId, sent.message_id, text, !!audio).catch(() => {/* non-fatal */});
     };
 
     const result = await pollButtonOrTextOrVoice(
@@ -199,7 +199,7 @@ async function confirmHandler(
       registerMessageHook(sent.message_id, () => {
         clearCallbackHook(sent.message_id);
         void runInSessionContext(_sid, () =>
-          editWithSkipped(chatId, sent.message_id, text, !!voice),
+          editWithSkipped(chatId, sent.message_id, text, !!audio),
         ).catch(() => {/* non-fatal */});
       });
       return toResult({ timed_out: true, message_id: sent.message_id });
@@ -208,7 +208,7 @@ async function confirmHandler(
     // User typed or spoke instead of pressing a button — mark as skipped
     if (result.kind === "text" || result.kind === "voice") {
       clearCallbackHook(sent.message_id);
-      if (!editState.done) await editWithSkipped(chatId, sent.message_id, text, !!voice);
+      if (!editState.done) await editWithSkipped(chatId, sent.message_id, text, !!audio);
       return toResult({
         skipped: true,
         text_response: result.text,
@@ -220,7 +220,7 @@ async function confirmHandler(
     // Slash command interrupted the confirmation — mark as skipped
     if (result.kind === "command") {
       clearCallbackHook(sent.message_id);
-      await editWithSkipped(chatId, sent.message_id, text, !!voice);
+      await editWithSkipped(chatId, sent.message_id, text, !!audio);
       return toResult({
         skipped: true,
         command: result.command,
@@ -292,7 +292,7 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
       .boolean()
       .optional()
       .describe("Set true to bypass button label emoji-consistency check"),
-    voice: z
+    audio: z
       .string()
       .min(1)
       .optional()
