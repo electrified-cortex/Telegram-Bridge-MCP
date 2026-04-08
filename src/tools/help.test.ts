@@ -3,6 +3,33 @@ import { createMockServer, parseResult, isError, errorCode } from "./test-utils.
 
 const MOCK_GUIDE = "# Behavior Guide\n\nThis is the mock guide content.";
 
+const mocks = vi.hoisted(() => ({
+  getMe: vi.fn(),
+  validateSession: vi.fn(() => true),
+}));
+
+vi.mock("../telegram.js", async (importActual) => {
+  const actual = await importActual<Record<string, unknown>>();
+  return { ...actual, getApi: () => mocks };
+});
+
+vi.mock("../session-manager.js", () => ({
+  validateSession: mocks.validateSession,
+}));
+
+vi.mock("module", async (importActual) => {
+  const actual = await importActual<Record<string, unknown>>();
+  const mod = Object.assign(Object.create(null) as object, actual);
+  return Object.assign(mod, {
+    createRequire: () => (path: string) => {
+      if (path.endsWith("package.json")) return { version: "0.0.0-test" };
+      if (path.endsWith("build-info.json"))
+        return { BUILD_COMMIT: "t3stc0mm", BUILD_TIME: "2025-01-01T00:00:00.000Z" };
+      throw new Error(`Unexpected require: ${path}`);
+    },
+  });
+});
+
 vi.mock("fs", async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
   return {
@@ -23,6 +50,7 @@ describe("help tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
     const server = createMockServer();
     register(server);
     call = server.getHandler("help");
@@ -62,5 +90,37 @@ describe("help tool", () => {
     const parsed = parseResult<{ message: string }>(result);
     expect(parsed.message).toContain("Unknown topic: 'unknown_tool'");
     expect(parsed.message).toContain("help()");
+  });
+
+  describe("topic: 'identity'", () => {
+    const VALID_TOKEN = 1123456; // sid=1, pin=123456
+
+    it("returns bot info + mcp metadata when token is valid", async () => {
+      const bot = { id: 1, is_bot: true, first_name: "Bot", username: "test_bot" };
+      mocks.getMe.mockResolvedValue(bot);
+      const result = await call({ topic: "identity", token: VALID_TOKEN });
+      expect(isError(result)).toBe(false);
+      const parsed = parseResult<Record<string, unknown>>(result);
+      expect(parsed.mcp_version).toBe("0.0.0-test");
+      expect(parsed.mcp_commit).toBe("t3stc0mm");
+      expect(parsed.mcp_build_time).toBe("2025-01-01T00:00:00.000Z");
+      expect(parsed.id).toBe(1);
+      expect(parsed.is_bot).toBe(true);
+      expect(parsed.first_name).toBe("Bot");
+      expect(parsed.username).toBe("test_bot");
+    });
+
+    it("returns AUTH_FAILED error when token is invalid", async () => {
+      mocks.validateSession.mockReturnValue(false);
+      const result = await call({ topic: "identity", token: VALID_TOKEN });
+      expect(isError(result)).toBe(true);
+      expect(errorCode(result)).toBe("AUTH_FAILED");
+    });
+
+    it("returns SID_REQUIRED error when token is omitted", async () => {
+      const result = await call({ topic: "identity" });
+      expect(isError(result)).toBe(true);
+      expect(errorCode(result)).toBe("SID_REQUIRED");
+    });
   });
 });

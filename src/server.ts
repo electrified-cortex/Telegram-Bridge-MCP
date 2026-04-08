@@ -39,7 +39,6 @@ import { register as registerSetVoice } from "./tools/set_voice.js";
 import { register as registerSetReminder } from "./tools/set_reminder.js";
 import { register as registerCancelReminder } from "./tools/cancel_reminder.js";
 import { register as registerListReminders } from "./tools/list_reminders.js";
-import { register as registerGetMe } from "./tools/get_me.js";
 import { register as registerGetChat } from "./tools/get_chat.js";
 import { register as registerHelp } from "./tools/help.js";
 import { register as registerDumpSessionRecord } from "./tools/dump_session_record.js";
@@ -214,7 +213,7 @@ export function createServer(): McpServer {
   registerSetCommands(server);
 
   // ── Info ───────────────────────────────────────────────────────────────
-  registerGetMe(server);
+
   registerGetChat(server);
 
   // ── Progress ───────────────────────────────────────────────────────────

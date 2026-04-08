@@ -1,9 +1,31 @@
+import { createRequire } from "module";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { toResult, toError } from "../telegram.js";
+import { getApi, toResult, toError } from "../telegram.js";
+import { requireAuth } from "../session-gate.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
+
+const _require = createRequire(import.meta.url);
+let MCP_VERSION = "unknown";
+try {
+  const pkg = _require("../../package.json") as { version: string };
+  MCP_VERSION = pkg.version;
+} catch {
+  // package.json not found (deployment artifact without it)
+}
+
+let mcpCommit = "dev";
+let mcpBuildTime = "unknown";
+try {
+  const info = _require("./build-info.json") as { BUILD_COMMIT: string; BUILD_TIME: string };
+  mcpCommit = info.BUILD_COMMIT;
+  mcpBuildTime = info.BUILD_TIME;
+} catch {
+  // build-info.json not generated yet (local dev without a build)
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -20,7 +42,7 @@ const DESCRIPTION =
  * added in the future, this list should be updated to match.
  */
 const TOOL_INDEX: Record<string, string> = {
-  help: "Discovery tool — overview, communication guide, and per-tool docs. No auth required.",
+  help: "Discovery tool — overview, communication guide, and per-tool docs. No auth required for most topics; topic: 'identity' requires a session token.",
   session_start: "Authenticate and start a named agent session. Returns a token for all subsequent calls.",
   close_session: "End the current agent session and release its slot.",
   list_sessions: "List all active sessions with their SIDs and display names.",
@@ -60,7 +82,6 @@ const TOOL_INDEX: Record<string, string> = {
   set_reminder: "Schedule a future reminder event delivered via dequeue.",
   cancel_reminder: "Cancel a scheduled reminder by ID.",
   list_reminders: "List all pending reminders for the current session.",
-  get_me: "Return the bot's own Telegram user info.",
   get_chat: "Return info about the configured Telegram chat.",
   save_profile: "Save the current session's profile (name, color, voice) to disk.",
   load_profile: "Load a saved profile and apply it to the current session.",
@@ -105,14 +126,29 @@ export function register(server: McpServer) {
           .string()
           .optional()
           .describe(
-            "Omit for overview. Pass 'guide' for full communication guide. Pass a tool name for detailed docs on that tool."
+            "Omit for overview. Pass 'guide' for full communication guide. Pass 'identity' for bot info + server version. Pass a tool name for detailed docs on that tool."
           ),
+        token: TOKEN_SCHEMA
+          .optional()
+          .describe("Session token — required only for topic: 'identity'. Omit for all other topics."),
       },
     },
-    ({ topic }) => {
+    async ({ topic, token }) => {
       // No topic → full overview with tool index
       if (!topic) {
         return toResult({ content: buildOverview() });
+      }
+
+      // topic: "identity" → bot info + MCP server version/build fingerprint
+      if (topic === "identity") {
+        const _sid = requireAuth(token);
+        if (typeof _sid !== "number") return toError(_sid);
+        try {
+          const botInfo = await getApi().getMe();
+          return toResult({ mcp_version: MCP_VERSION, mcp_commit: mcpCommit, mcp_build_time: mcpBuildTime, ...botInfo });
+        } catch (err) {
+          return toError(err);
+        }
       }
 
       // topic: "guide" → full agent communication guide
