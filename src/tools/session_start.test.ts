@@ -757,8 +757,11 @@ describe("session_start tool", () => {
     );
     expect(announceCalls.length).toBeGreaterThanOrEqual(1);
     const announceText = String(announceCalls[0][1]);
+    const announceOpts = announceCalls[0][2] as Record<string, unknown>;
     expect(announceText).toContain("`Primary`");
     expect(announceText).toContain("🟦");
+    // Announcement must use MarkdownV2 (defense against injection via session names)
+    expect(announceOpts.parse_mode).toBe("MarkdownV2");
   });
 
   it("first session announcement is tracked with trackMessageOwner", async () => {
