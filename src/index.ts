@@ -221,7 +221,10 @@ process.stderr.write("[info] health check started\n");
 // Best-effort: unpin stale session announcement messages from a prior crashed run
 void cleanupStalePins().catch(() => {});
 
-// Best-effort startup notification — bypasses proxy (operational, not agent content)
-const logStatus = sessionLogLabel();
-const localLogStatus = isLoggingEnabled() ? "Logging enabled" : "Logging disabled";
-void sendServiceMessage(`🟢 Online\n${localLogStatus}\nSession record: ${logStatus}\n/logging to change settings`).catch(() => {});
+// Best-effort startup notification — only when TELEGRAM_ANNOUNCE_STARTUP is set
+if (process.env.TELEGRAM_ANNOUNCE_STARTUP) {
+  const logStatus = sessionLogLabel();
+  const localLogStatus = isLoggingEnabled() ? "Logging enabled" : "Logging disabled";
+  void sendServiceMessage(`🟢 Online\n${localLogStatus}\nSession record: ${logStatus}\n/logging to change settings`).catch(() => {});
+}
+
