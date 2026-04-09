@@ -15,7 +15,7 @@ all through the user's Telegram app.
 
 ## Quick Decision Tree
 
-```
+```txt
 Are credentials already configured? (.env or env vars present)
 ├── YES → skip to "Connect Your Client"
 └── NO  → go to "First-Time Setup"
@@ -57,9 +57,11 @@ Transport mode:
 ### Step 2 — Get Your User ID
 
 Visit this URL in a browser (replace `<TOKEN>` with your token):
-```
+
+```txt
 https://api.telegram.org/bot<TOKEN>/getUpdates
 ```
+
 Look for `message.from.id` in the JSON — that's your `ALLOWED_USER_ID`.
 
 **Shortcut:** `pnpm pair` automates both steps — run it, send the pairing code to your bot,

@@ -5,7 +5,7 @@
 [![Docker Image](https://img.shields.io/badge/ghcr.io-telegram--bridge--mcp-blue?logo=docker)](https://github.com/electricessence/Telegram-Bridge-MCP/pkgs/container/telegram-bridge-mcp)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
-<img align="right" src="interaction.jpg" width="320" alt="AI agents coordinating through Telegram Bridge MCP">
+<img align="right" src="interaction.jpg" width="320" alt="AI agents coordinating through Telegram Bridge MCP" />
 
 ## No Claw? No Problem.
 
