@@ -61,6 +61,30 @@ import { handleUpdateProgress } from "./update_progress.js";
 import { handleSendChatAction } from "./send_chat_action.js";
 import { handleSetCommands } from "./set_commands.js";
 
+/** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
+function findClosestMatch(input: string, candidates: readonly string[]): string | null {
+  if (candidates.length === 0 || input.length === 0) return null;
+  const lower = input.toLowerCase();
+  const sub = candidates.find(c => c.toLowerCase().includes(lower) || lower.includes(c.toLowerCase()));
+  if (sub) return sub;
+  const withDist = candidates.map(c => ({ c, d: levenshtein(lower, c.toLowerCase()) }));
+  const best = withDist.reduce((a, b) => (a.d < b.d ? a : b));
+  return best.d <= 3 ? best.c : null;
+}
+
+/** Simple Levenshtein distance. */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+
 /**
  * Register all Phase 1 action paths. Called once at server startup.
  * Idempotent — can safely be called multiple times (last write wins).
@@ -516,6 +540,7 @@ export function register(server: McpServer): void {
             return toError({
               code: "NOT_GOVERNOR",
               message: "This action requires governor privileges. Only the governor session can call this path.",
+              hint: "Only the governor session can call this action. Use action(token: <governor_token>, ...).",
             });
           }
         }
@@ -540,12 +565,17 @@ export function register(server: McpServer): void {
       }
 
       // ── Unknown path ─────────────────────────────────────────────────
+      const allCategories = listCategories();
+      const suggestion = findClosestMatch(type, allCategories);
       return toError({
         code: "UNKNOWN_ACTION",
         message:
           `Unknown action path: "${type}". ` +
           `Use action() with no params to see available categories, ` +
           `or action(type: "<category>") to list sub-paths.`,
+        hint: suggestion
+          ? `Did you mean "${suggestion}"? Call help(topic: 'action') for all paths.`
+          : `Call help(topic: 'action') to see all available action paths.`,
       });
     },
   );
