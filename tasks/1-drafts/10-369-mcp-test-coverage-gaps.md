@@ -20,7 +20,7 @@ Commit `7f2b2f2` resolved critical cold-start regressions in the Telegram MCP
 distinct new behaviors lack unit-level verification. These were deferred from
 10-368 to maintain stability during an autonomous period.
 
-**Repo:** `D:\Users\essence\Development\cortex.lan\Telegram MCP` (`dev` branch)
+**Repo:** Telegram MCP (this repo) (`dev` branch)
 
 ## Missing Tests
 

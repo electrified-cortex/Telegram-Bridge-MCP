@@ -2,7 +2,7 @@
  * Voice message transcription — external Whisper server or local ONNX fallback.
  *
  * STT_HOST (optional): base URL of an OpenAI-compatible ASR server, e.g.
- *   http://voice.cortex.lan  →  POST {STT_HOST}/v1/audio/transcriptions
+ *   http://your-stt-server  →  POST {STT_HOST}/v1/audio/transcriptions
  *   Audio bytes are forwarded as-is (multipart/form-data). No local decode.
  *
  * When STT_HOST is not set, falls back to the embedded ONNX pipeline:

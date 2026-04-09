@@ -19,7 +19,7 @@ disastrous.
 ## Scope
 
 - **Branch:** `dev` (current HEAD after all v6 work merged)
-- **Repo:** `D:\Users\essence\Development\cortex.lan\Telegram MCP`
+- **Repo:** Telegram MCP (this repo)
 - **Focus:** Information leakage, not code quality
 
 ## What to Scan For

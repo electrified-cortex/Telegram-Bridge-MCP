@@ -34,11 +34,11 @@ local log system (`roll_log`, `get_log`, `list_logs`). The `dump_session_record`
 tool is already just a thin wrapper around `roll_log`. The operator confirmed the
 entire feature can go.
 
-**Codebase:** `D:\Users\essence\Development\cortex.lan\Telegram MCP` (dev branch)
+**Codebase:** Telegram MCP (dev branch)
 
 ## Completion
 
-**Branch:** `10-361` in `D:\Users\essence\Development\cortex.lan\Telegram MCP`
+**Branch:** `10-361` in Telegram MCP
 **Commit:** `c6791e2`
 **Files changed:** 22 files, 864 deletions, 20 insertions
 **Review:** APPROVED by Curator (2026-04-07)
