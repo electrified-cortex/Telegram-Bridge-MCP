@@ -139,20 +139,21 @@ export function setupActionRegistry(): void {
   // standalone
   registerAction("show-typing", handleShowTyping as unknown as ActionHandler);
   // confirm/* presets (preset buttons, caller only needs to supply `text`)
-  const makeConfirmHandler = (yesText: string, noText: string) =>
+  const makeConfirmHandler = (yesText: string, noText: string, yesStyle?: "success" | "primary" | "danger") =>
     ((args: Record<string, unknown>) => handleConfirm({
       text: (args.text as string | undefined) ?? "",
       yes_text: yesText,
       no_text: noText,
       yes_data: "confirm_yes",
       no_data: "confirm_no",
+      yes_style: (args.yes_style as "success" | "primary" | "danger" | undefined) ?? yesStyle,
       timeout_seconds: (args.timeout_seconds as number | undefined) ?? 600,
       ignore_pending: args.ignore_pending as boolean | undefined,
       token: args.token as number,
     }, undefined as unknown as AbortSignal)) as unknown as ActionHandler;
-  registerAction("confirm/ok", makeConfirmHandler("OK", ""));
-  registerAction("confirm/ok-cancel", makeConfirmHandler("OK", "Cancel"));
-  registerAction("confirm/yn", makeConfirmHandler("Yes", "No"));
+  registerAction("confirm/ok", makeConfirmHandler("OK", "", "primary"));
+  registerAction("confirm/ok-cancel", makeConfirmHandler("OK", "Cancel", "primary"));
+  registerAction("confirm/yn", makeConfirmHandler("🟢 Yes", "🔴 No"));
   registerAction("approve", handleApproveAgent as unknown as ActionHandler, { governor: true });
   registerAction("shutdown", handleShutdown as unknown as ActionHandler, { governor: true });
   registerAction("shutdown/warn", handleNotifyShutdownWarning as unknown as ActionHandler, { governor: true });
