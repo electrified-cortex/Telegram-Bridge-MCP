@@ -11,9 +11,9 @@ Return to VS Code chat only if the operator explicitly exits the loop or Telegra
 
 ## Setup
 
-1. Call `get_agent_guide`
+1. Call `help` — read tool descriptions and orient yourself
 2. Read `telegram-bridge-mcp://communication-guide`
-3. Call `get_me` — if it fails, report the error to the user and stop
+3. Call `help(topic: "identity")` to verify bot/build identity — if it fails, report the error to the user and stop
 4. `session_start` — intro + handles pending messages from previous session
 5. **Save your SID and PIN** — write them to your auto-memory directory immediately after `session_start`. After context compaction you will lose in-context state; the saved PIN lets you call `session_start(reconnect: true)` to reclaim your session without operator re-approval.
 6. `dequeue` — enter the loop

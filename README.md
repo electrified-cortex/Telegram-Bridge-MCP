@@ -46,7 +46,7 @@ The bridge is a standard MCP server — it works with any MCP-compatible host.
 
 | Transport | Entry point | Use case |
 | --- | --- | --- |
-| **Streamable HTTP** | `pnpm start --http` | Multiple clients share one server (recommended) |
+| **Streamable HTTP** | `pnpm start -- --http` | Multiple clients share one server (recommended) |
 | **stdio** | `node dist/index.js` | Single client, no persistent server |
 | **Launcher bridge** | `node dist/launcher.js` | Auto-starts HTTP if needed, bridges stdio ↔ HTTP |
 

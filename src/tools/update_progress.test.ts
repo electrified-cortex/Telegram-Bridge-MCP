@@ -121,7 +121,7 @@ describe("update_progress tool", () => {
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       1,
       "✅ Complete",
-      expect.objectContaining({ reply_to_message_id: 10, _skipHeader: true }),
+      expect.objectContaining({ reply_parameters: { message_id: 10 }, _skipHeader: true }),
     );
   });
 

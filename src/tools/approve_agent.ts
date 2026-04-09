@@ -60,11 +60,11 @@ export function handleApproveAgent({ token, target_name, color }: { token: numbe
     : (getAvailableColors(pending.colorHint)[0] ?? COLOR_PALETTE[0]);
 
   clearPendingApproval(target_name);
-  pending.cleanup?.();
   pending.resolve({ approved: true, color: resolvedColor, forceColor: true });
 
+  const safeName = target_name.replace(/[\x00-\x1F\x7F-\x9F]/g, "?");
   process.stderr.write(
-    `[agent-approval] approved name=${target_name} by_sid=${sid} color=${resolvedColor} at=${new Date().toISOString()}\n`,
+    `[agent-approval] approved name=${safeName} by_sid=${sid} color=${resolvedColor} at=${new Date().toISOString()}\n`,
   );
 
   return toResult({ approved: true, target_name, color: resolvedColor });

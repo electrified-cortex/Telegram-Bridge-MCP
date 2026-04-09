@@ -61,7 +61,16 @@ async function requestApproval(
   const msgId: number = sent.message_id;
 
   const decision = await new Promise<ApprovalDecision>((resolve) => {
-    registerPendingApproval(name, resolve, colorHint);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let resolved = false;
+    const resolveOnce = (value: ApprovalDecision) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
+      clearCallbackHook(msgId);
+      resolve(value);
+    };
+    registerPendingApproval(name, resolveOnce, colorHint);
 
     // Notify governor of pending approval
     const governorSid = getGovernorSid();
@@ -74,40 +83,29 @@ async function requestApproval(
       );
     }
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       clearPendingApproval(name);
-      clearCallbackHook(msgId);
-      resolve({ approved: false });
+      resolveOnce({ approved: false });
     }, APPROVAL_TIMEOUT_MS);
 
     registerCallbackHook(msgId, (evt: TimelineEvent) => {
       clearPendingApproval(name);
-      clearTimeout(timer);
       const data: string = evt.content.data ?? "";
       const qid = evt.content.qid;
       if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
       if (data === APPROVAL_NO) {
-        resolve({ approved: false });
+        resolveOnce({ approved: false });
       } else if (data.startsWith(APPROVE_PREFIX)) {
         const idx = parseInt(data.slice(APPROVE_PREFIX.length), 10);
         if (idx >= 0 && idx < COLOR_PALETTE.length) {
-          resolve({ approved: true, color: COLOR_PALETTE[idx], forceColor: true });
+          resolveOnce({ approved: true, color: COLOR_PALETTE[idx], forceColor: true });
         } else {
-          resolve({ approved: false });
+          resolveOnce({ approved: false });
         }
       } else {
-        resolve({ approved: false });
+        resolveOnce({ approved: false });
       }
     });
-
-    // Expose cleanup so approve_agent can cancel the timer and hook on early resolution.
-    const entry = getPendingApproval(name);
-    if (entry) {
-      entry.cleanup = () => {
-        clearTimeout(timer);
-        clearCallbackHook(msgId);
-      };
-    }
   });
 
   // Delete the prompt on approval (it's private UI — a public broadcast is

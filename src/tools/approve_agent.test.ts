@@ -7,7 +7,7 @@ import { createMockServer, parseResult, isError, errorCode, type ToolHandler } f
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => true),
   isDelegationEnabled: vi.fn(() => false),
-  getPendingApproval: vi.fn(() => undefined as { resolve: ReturnType<typeof vi.fn>; cleanup?: ReturnType<typeof vi.fn>; name: string; registeredAt: number } | undefined),
+  getPendingApproval: vi.fn(() => undefined as { resolve: ReturnType<typeof vi.fn>; name: string; registeredAt: number } | undefined),
   clearPendingApproval: vi.fn(),
   getAvailableColors: vi.fn(() => ["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"] as string[]),
   getGovernorSid: vi.fn(() => 0),
@@ -156,20 +156,6 @@ describe("approve_agent tool", () => {
   // -------------------------------------------------------------------------
 
   describe("happy path", () => {
-    it("calls cleanup before pending.resolve when cleanup is provided", async () => {
-      const cleanupMock = vi.fn();
-      mocks.getPendingApproval.mockReturnValue({
-        name: "Worker",
-        resolve: mockResolve,
-        cleanup: cleanupMock,
-        registeredAt: Date.now(),
-      });
-      await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" });
-      const cleanupCallOrder = cleanupMock.mock.invocationCallOrder[0];
-      const resolveCallOrder = mockResolve.mock.invocationCallOrder[0];
-      expect(cleanupCallOrder).toBeLessThan(resolveCallOrder);
-    });
-
     it("calls clearPendingApproval BEFORE pending.resolve", async () => {
       const callOrder: string[] = [];
       mocks.clearPendingApproval.mockImplementation(() => { callOrder.push("clear"); });

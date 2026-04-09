@@ -52,7 +52,7 @@ export async function handleUpdateProgress({ message_id, percent, title, subtext
       if (!_completedMessageIds.has(message_id)) {
         _completedMessageIds.add(message_id);
         getApi().sendMessage(chatId, "✅ Complete", {
-          reply_to_message_id: message_id,
+          reply_parameters: { message_id },
           _skipHeader: true,
         } as Record<string, unknown>).catch(() => {});
       }

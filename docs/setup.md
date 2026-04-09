@@ -107,7 +107,7 @@ Run **one** server instance and connect any number of editors or Claude Code ses
 **1. Start the server** in its own terminal window:
 
 ```bash
-pnpm start --http
+pnpm start -- --http
 ```
 
 The `--http` flag enables Streamable HTTP mode on the port configured in `.env`
@@ -119,7 +119,7 @@ in your editor settings.
 > survive. On Windows, you can spawn an independent window from PowerShell:
 >
 > ```powershell
-> Start-Process pwsh -ArgumentList "-NoExit","-Command","cd 'path/to/telegram-bridge-mcp'; pnpm start --http"
+> Start-Process pwsh -ArgumentList "-NoExit","-Command","cd 'path/to/telegram-bridge-mcp'; pnpm start -- --http"
 > ```
 
 **2. Point your MCP hosts at it:**

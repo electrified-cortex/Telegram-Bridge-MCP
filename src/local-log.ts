@@ -112,7 +112,11 @@ async function _flush(): Promise<void> {
   _flushTimer = null;
   if (_buffer.count === 0) return;
   const lines: string[] = [];
-  while (_buffer.count > 0) lines.push(_buffer.dequeue()!);
+  while (_buffer.count > 0) {
+    const line = _buffer.dequeue();
+    if (line === undefined) break;
+    lines.push(line);
+  }
   ensureLogsDir();
   const filePath = currentFilePath();
   await appendFile(filePath, lines.join(''), 'utf-8').catch(() => { /* best-effort */ });

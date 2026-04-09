@@ -6,6 +6,8 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { requestOperatorApproval } from "../built-in-commands.js";
 
+const VALID_NAME_RE = /^[a-zA-Z0-9 ]+$/;
+
 const DESCRIPTION =
   "Rename the current session. The new name must not be taken " +
   "by another active session (checked case-insensitively). " +
@@ -26,7 +28,6 @@ export async function handleRenameSession({ token, new_name }: { token: number; 
     });
   }
 
-  const VALID_NAME_RE = /^[a-zA-Z0-9 ]+$/;
   if (!VALID_NAME_RE.test(trimmed)) {
     return toError({
       code: "INVALID_NAME",
