@@ -54,11 +54,10 @@ export function handleApproveAgent({ token, target_name, color }: { token: numbe
         `Valid options: ${COLOR_PALETTE.join(", ")}`,
     });
   }
+  // Use getAvailableColors(hint) so an in-use colorHint is never selected directly.
   const resolvedColor: string = color && (COLOR_PALETTE as readonly string[]).includes(color)
     ? color
-    : (pending.colorHint && (COLOR_PALETTE as readonly string[]).includes(pending.colorHint)
-        ? pending.colorHint
-        : (getAvailableColors()[0] ?? COLOR_PALETTE[0]));
+    : (getAvailableColors(pending.colorHint)[0] ?? COLOR_PALETTE[0]);
 
   clearPendingApproval(target_name);
   pending.cleanup?.();
