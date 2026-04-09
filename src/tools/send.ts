@@ -127,8 +127,8 @@ export function register(server: McpServer) {
         message_id: z.number().int().optional().describe("Message ID to append to (for type: \"append\")"),
         separator: z.string().default("\n").describe("Separator for append mode"),
         // ── choice / question.choose ────────────────────────────────────────
-        options: z.array(OPTION_SCHEMA).optional().describe("Button options (for type: \"choice\")"),
-        choose: z.array(OPTION_SCHEMA).optional().describe("Button options for type: \"question\" choose mode"),
+        options: z.array(OPTION_SCHEMA).optional().describe("Button options (for type: \"choice\"; also accepted as alias for \"choose\" in type: \"question\")"),
+        choose: z.array(OPTION_SCHEMA).optional().describe("Button options for type: \"question\" choose mode (alias: \"options\")"),
         columns: z.number().int().min(1).max(4).default(2).describe("Buttons per row (default 2)"),
         ignore_parity: z.boolean().optional().describe("Bypass button emoji parity check"),
         // ── animation ──────────────────────────────────────────────────────
@@ -391,11 +391,12 @@ export function register(server: McpServer) {
               token: args.token,
             }, signal);
           }
-          if (args.choose !== undefined) {
+          if (args.choose !== undefined || args.options !== undefined) {
+            const chooseButtons = args.choose ?? args.options;
             if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "question" with choose requires a "text" param (prompt shown above buttons).', hint: "Call help(topic: 'send') for question param requirements." });
             return handleChoose({
               text: args.text,
-              options: args.choose,
+              options: chooseButtons,
               timeout_seconds: args.timeout_seconds,
               columns: args.columns,
               reply_to_message_id: args.reply_to_message_id,

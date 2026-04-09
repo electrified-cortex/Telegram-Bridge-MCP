@@ -168,4 +168,19 @@ describe("import_profile tool", () => {
     expect(data.imported).toBe(true);
     expect(data.applied).toEqual({});
   });
+
+  it("recurring defaults to false when omitted from reminders", async () => {
+    mocks.addReminder.mockImplementation((r: { id: string; text: string; delay_seconds: number; recurring: boolean }) => ({
+      ...r, state: "active", created_at: Date.now(), activated_at: Date.now(),
+    }));
+    const result = await call({
+      // recurring intentionally omitted — should default to false
+      reminders: [{ text: "One-shot", delay_seconds: 30, recurring: undefined as unknown as boolean }],
+      token: 1123456,
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.addReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "One-shot", recurring: false }),
+    );
+  });
 });

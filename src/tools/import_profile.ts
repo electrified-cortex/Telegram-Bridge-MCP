@@ -62,7 +62,7 @@ export function register(server: McpServer) {
             z.object({
               text: z.string(),
               delay_seconds: z.number(),
-              recurring: z.boolean(),
+              recurring: z.boolean().default(false),
             }),
           )
           .optional()
