@@ -83,9 +83,11 @@ cp "$IN_PROGRESS_PATH" "$COMPLETED_PATH"
 # Step 3 & 4: Git staging
 cd "$REPO_ROOT"
 
-# Safety: clear GIT_INDEX_FILE if set (15-300 removal — see 10-314).
-# Belt-and-suspenders: even without this, the pathspec commit below
-# ensures only claim files are committed.
+# SAFETY: Clear GIT_INDEX_FILE before ANY git operation.
+# If this var is set by a concurrent process (common in multi-agent environments),
+# ALL git commands below would operate on a foreign index — corrupting staging,
+# losing commits, or wiping another agent's work. This MUST come first.
+# See docs/git-index-safety.md for full context.
 unset GIT_INDEX_FILE 2>/dev/null || true
 
 # Remove old queued entry from the git index (may not be tracked — that's fine)

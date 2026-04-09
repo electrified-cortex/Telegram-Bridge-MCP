@@ -94,6 +94,13 @@ try {
     # Step 3 & 4: Git staging
     Push-Location $repoRoot
     try {
+        # SAFETY: Clear GIT_INDEX_FILE before ANY git operation.
+        # If this var is set by a concurrent process (common in multi-agent environments),
+        # ALL git commands below would operate on a foreign index — corrupting staging,
+        # losing commits, or wiping another agent's work. This MUST be first.
+        # See docs/git-index-safety.md for full context.
+        Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue
+
         # Remove old queued entry from the git index (may not be tracked — that's fine)
         git rm --cached "tasks/2-queued/$TaskFile" 2>$null
         if ($LASTEXITCODE -ne 0) {
@@ -105,9 +112,6 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw "git add failed with exit code $LASTEXITCODE"
         }
-
-        # Safety: clear GIT_INDEX_FILE if set (15-300 removal — see 10-314)
-        if ($env:GIT_INDEX_FILE) { Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue }
 
         # Step 5: Targeted commit — only include the specific claim paths.
         # Prevents staging contamination regardless of shared index state.

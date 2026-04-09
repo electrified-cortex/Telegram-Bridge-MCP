@@ -245,6 +245,9 @@ pnpm coverage       # Coverage report
 pnpm pair           # Re-run pairing wizard
 ```
 
+See [docs/git-index-safety.md](docs/git-index-safety.md) for important safety notes
+on running git operations in multi-agent environments.
+
 ---
 
 ## Agent Setup
