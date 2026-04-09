@@ -31,6 +31,30 @@ function containsMarkdownTable(text: string): boolean {
   return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
 }
 
+/** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
+function findClosestMatch(input: string, candidates: readonly string[]): string | null {
+  if (candidates.length === 0 || input.length === 0) return null;
+  const lower = input.toLowerCase();
+  const sub = candidates.find(c => c.toLowerCase().includes(lower) || lower.includes(c.toLowerCase()));
+  if (sub) return sub;
+  const withDist = candidates.map(c => ({ c, d: levenshtein(lower, c.toLowerCase()) }));
+  const best = withDist.reduce((a, b) => (a.d < b.d ? a : b));
+  return best.d <= 3 ? best.c : null;
+}
+
+/** Simple Levenshtein distance. */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+
 const SEND_TYPES = ["text", "file", "notification", "choice", "direct", "append", "animation", "checklist", "progress", "question"] as const;
 type SendType = (typeof SEND_TYPES)[number];
 
@@ -64,7 +88,7 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: {
         type: z
-          .enum(SEND_TYPES)
+          .string()
           .optional()
           .describe('Emission mode: "text" (default), "file", "notification", "choice", "direct", "append", "animation", "checklist", "progress", "question". Omit all args to list types.'),
         // ── text / voice ───────────────────────────────────────────────────
@@ -119,7 +143,7 @@ export function register(server: McpServer) {
         // ── checklist ──────────────────────────────────────────────────────
         steps: z.array(STEP_SCHEMA).optional().describe("Checklist steps (for type: \"checklist\")"),
         // ── progress ───────────────────────────────────────────────────────
-        percent: z.number().int().min(0).max(100).optional().describe("Progress percentage 0–100 (for type: \"progress\")"),
+        percent: z.number().int().min(0, { message: "percent must be 0\u2013100. Call help(topic: 'send') for progress usage." }).max(100, { message: "percent must be 0\u2013100. Call help(topic: 'send') for progress usage." }).optional().describe("Progress percentage 0\u2013100 (for type: \"progress\")"),
         width: z.number().int().min(1).max(40).default(10).describe("Progress bar width (default 10)"),
         subtext: z.string().optional().describe("Progress bar subtext"),
         // ── question sub-types ─────────────────────────────────────────────
@@ -153,21 +177,33 @@ export function register(server: McpServer) {
         });
       }
 
-      switch (type ?? ("text" as SendType)) {
+      // Validate type against the known enum before entering the switch
+      if (type !== undefined && !(SEND_TYPES as readonly string[]).includes(type)) {
+        const suggestion = findClosestMatch(type, SEND_TYPES);
+        return toError({
+          code: "UNKNOWN_TYPE" as const,
+          message: `Unknown type: "${type}". Available types: ${SEND_TYPES.join(", ")}.`,
+          hint: suggestion
+            ? `Did you mean type: "${suggestion}"? Call help(topic: 'send') for usage.`
+            : `Call help(topic: 'send') to see all available types and their required params.`,
+        });
+      }
+
+      switch ((type as SendType | undefined) ?? ("text" as SendType)) {
         case "text": {
           if (!text && !audio) {
-            return toError({ code: "MISSING_CONTENT", message: "At least one of 'text' or 'audio' is required." });
+            return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Call help(topic: 'send') for usage. Both text and audio are optional individually but at least one is required." });
           }
           const { parse_mode, disable_notification, reply_to_message_id } = args;
 
           // ── Voice mode ───────────────────────────────────────────────────
           if (audio) {
             if (!isTtsEnabled()) {
-              return toError({ code: "TTS_NOT_CONFIGURED", message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice." } as const);
+              return toError({ code: "TTS_NOT_CONFIGURED", message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice.", hint: "Set TTS_HOST or OPENAI_API_KEY environment variable to enable voice." } as const);
             }
             const plainText = stripForTts(audio);
             if (!plainText) {
-              return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS." } as const);
+              return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS.", hint: "Provide non-empty audio text for TTS." } as const);
             }
             const resolvedVoice = getSessionVoice() ?? getDefaultVoice() ?? undefined;
             const resolvedSpeed = getSessionSpeed() ?? undefined;
@@ -263,7 +299,7 @@ export function register(server: McpServer) {
         }
 
         case "file":
-          if (!args.file) return toError({ code: "MISSING_PARAM" as const, message: 'type: "file" requires a "file" param (path, URL, or file_id).' });
+          if (!args.file) return toError({ code: "MISSING_PARAM" as const, message: 'type: "file" requires a "file" param (path, URL, or file_id).', hint: "Call help(topic: 'send') \u2014 type: \"file\" requires a file path or URL." });
           return handleSendFile({
             file: args.file,
             type: args.file_type,
@@ -275,7 +311,7 @@ export function register(server: McpServer) {
           });
 
         case "notification":
-          if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "notification" requires a "title" param.' });
+          if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "notification" requires a "title" param.', hint: "Call help(topic: 'send') for the required params for this type." });
           return handleNotify({
             title: args.title,
             text: args.text,
@@ -288,8 +324,8 @@ export function register(server: McpServer) {
           });
 
         case "choice":
-          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires a "text" param.' });
-          if (!args.options?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires an "options" array.' });
+          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
+          if (!args.options?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires an "options" array.', hint: "Call help(topic: 'send') for the required params for this type." });
           return handleSendChoice({
             text: args.text,
             options: args.options,
@@ -302,13 +338,13 @@ export function register(server: McpServer) {
           });
 
         case "direct":
-          if (!args.target_sid) return toError({ code: "MISSING_PARAM" as const, message: 'type: "direct" requires a "target_sid" param.' });
-          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "direct" requires a "text" param.' });
+          if (!args.target_sid) return toError({ code: "MISSING_PARAM" as const, message: 'type: "direct" requires a "target_sid" param.', hint: "Call help(topic: 'send') for the required params for this type." });
+          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "direct" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
           return handleSendDirectMessage({ token: args.token, target_sid: args.target_sid, text: args.text });
 
         case "append":
-          if (!args.message_id) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "message_id" param.' });
-          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "text" param.' });
+          if (!args.message_id) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "message_id" param.', hint: "Call help(topic: 'send') for the required params for this type." });
+          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
           return handleAppendText({
             message_id: args.message_id,
             text: args.text,
@@ -331,12 +367,12 @@ export function register(server: McpServer) {
           });
 
         case "checklist":
-          if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.' });
-          if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.' });
+          if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
+          if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
           return handleSendNewChecklist({ title: args.title, steps: args.steps, token: args.token });
 
         case "progress":
-          if (args.percent === undefined) return toError({ code: "MISSING_PARAM" as const, message: 'type: "progress" requires a "percent" param (0–100).' });
+          if (args.percent === undefined) return toError({ code: "MISSING_PARAM" as const, message: 'type: "progress" requires a "percent" param (0\u2013100).', hint: "type: \"progress\" requires a percent (0\u2013100). Call help(topic: 'send')." });
           return handleSendNewProgress({
             percent: args.percent,
             title: args.title,
@@ -356,7 +392,7 @@ export function register(server: McpServer) {
             }, signal);
           }
           if (args.choose !== undefined) {
-            if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "question" with choose requires a "text" param (prompt shown above buttons).' });
+            if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "question" with choose requires a "text" param (prompt shown above buttons).', hint: "Call help(topic: 'send') for question param requirements." });
             return handleChoose({
               text: args.text,
               options: args.choose,
@@ -386,11 +422,13 @@ export function register(server: McpServer) {
               token: args.token,
             }, signal);
           }
-          return toError({ code: "MISSING_QUESTION_TYPE" as const, message: 'For type "question", provide one of: ask (string), choose (ChoiceOption[]), or confirm (string).' });
+          return toError({ code: "MISSING_QUESTION_TYPE" as const, message: 'For type "question", provide one of: ask (string), choose (ChoiceOption[]), or confirm (string).', hint: "Pass one of: ask (string), choose (array), or confirm (string) with type: \"question\"." });
         }
 
         default:
-          return toError({ code: "UNKNOWN_TYPE" as const, message: `Unknown type: "${type}". Available types: ${SEND_TYPES.join(", ")}.` });
+          // This path is unreachable at runtime — unknown types are caught above
+          // before the switch. TypeScript exhaustiveness check only.
+          return toError({ code: "UNKNOWN_TYPE" as const, message: `Unknown type: "${type as string}".` });
       }
     },
   );
