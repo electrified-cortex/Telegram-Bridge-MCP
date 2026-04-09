@@ -15,6 +15,71 @@ const DESCRIPTION =
   "When target_sid is given, the operator is asked to confirm before the close " +
   "takes effect.";
 
+export async function handleCloseSession({ token, target_sid }: { token?: string; target_sid?: number }) {
+  const _sid = requireAuth(token as unknown as number);
+  if (typeof _sid !== "number") return toError(_sid);
+  const callerSid = _sid;
+
+  // ── Self-close path (no target_sid) ───────────────────────────────────
+  if (target_sid === undefined) {
+    const result = closeSessionById(callerSid);
+    void refreshGovernorCommand();
+    return toResult(result);
+  }
+
+  // ── Governor-close path (target_sid provided) ─────────────────────────
+
+  // 1. Caller must be the current governor
+  if (getGovernorSid() !== callerSid) {
+    return toError({
+      code: "PERMISSION_DENIED",
+      message: "Only the governor can close another session.",
+    });
+  }
+
+  // 2. Governor cannot close itself via this path
+  if (target_sid === callerSid) {
+    return toError({
+      code: "INVALID_TARGET",
+      message: "Use close_session without target_sid to close your own session.",
+    });
+  }
+
+  // 3. Target session must exist
+  const targetInfo = getSession(target_sid);
+  if (!targetInfo) {
+    return toError({
+      code: "SESSION_NOT_FOUND",
+      message: `Session ${target_sid} not found.`,
+    });
+  }
+
+  const targetName = targetInfo.name || `Session ${target_sid}`;
+
+  // 4. Operator confirmation
+  const decision = await requestOperatorApproval(
+    `🔒 *Close Session Request*\n\nClose session *${targetName}* (SID ${target_sid})? This cannot be undone.`,
+    30_000,
+  );
+
+  if (decision !== "approved") {
+    return toResult({ closed: false, sid: target_sid, reason: "cancelled" });
+  }
+
+  // 5. Re-check governor role — could have changed during the approval wait
+  if (getGovernorSid() !== callerSid) {
+    return toError({
+      code: "GOVERNOR_CHANGED",
+      message: "Governor role changed during confirmation — close aborted.",
+    });
+  }
+
+  // 6. Execute close
+  const result = closeSessionById(target_sid);
+  void refreshGovernorCommand();
+  return toResult(result);
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "close_session",
@@ -32,69 +97,6 @@ export function register(server: McpServer) {
           ),
       },
     },
-    async ({ token, target_sid }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const callerSid = _sid;
-
-      // ── Self-close path (no target_sid) ───────────────────────────────────
-      if (target_sid === undefined) {
-        const result = closeSessionById(callerSid);
-        void refreshGovernorCommand();
-        return toResult(result);
-      }
-
-      // ── Governor-close path (target_sid provided) ─────────────────────────
-
-      // 1. Caller must be the current governor
-      if (getGovernorSid() !== callerSid) {
-        return toError({
-          code: "PERMISSION_DENIED",
-          message: "Only the governor can close another session.",
-        });
-      }
-
-      // 2. Governor cannot close itself via this path
-      if (target_sid === callerSid) {
-        return toError({
-          code: "INVALID_TARGET",
-          message: "Use close_session without target_sid to close your own session.",
-        });
-      }
-
-      // 3. Target session must exist
-      const targetInfo = getSession(target_sid);
-      if (!targetInfo) {
-        return toError({
-          code: "SESSION_NOT_FOUND",
-          message: `Session ${target_sid} not found.`,
-        });
-      }
-
-      const targetName = targetInfo.name || `Session ${target_sid}`;
-
-      // 4. Operator confirmation
-      const decision = await requestOperatorApproval(
-        `🔒 *Close Session Request*\n\nClose session *${targetName}* (SID ${target_sid})? This cannot be undone.`,
-        30_000,
-      );
-
-      if (decision !== "approved") {
-        return toResult({ closed: false, sid: target_sid, reason: "cancelled" });
-      }
-
-      // 5. Re-check governor role — could have changed during the approval wait
-      if (getGovernorSid() !== callerSid) {
-        return toError({
-          code: "GOVERNOR_CHANGED",
-          message: "Governor role changed during confirmation — close aborted.",
-        });
-      }
-
-      // 6. Execute close
-      const result = closeSessionById(target_sid);
-      void refreshGovernorCommand();
-      return toResult(result);
-    },
+    async ({ token, target_sid }) => handleCloseSession({ token: token as unknown as string, target_sid }),
   );
 }
