@@ -7,6 +7,7 @@
 ## Added
 
 - `send` MCP tool — unified text/voice messaging tool replacing `send_text`, `send_message`, and `send_text_as_voice`; selects voice or text mode via `audio` parameter
+- Error guidance hints — all error responses include a `hint` field with actionable next steps; unknown `type` and `action` values trigger fuzzy (Levenshtein) matching that suggests the closest valid value; `dequeue` timeout validation messages are human-readable
 - `approve_agent` MCP tool — governor-only session approval; always registered but returns a `BLOCKED` error at runtime unless agent delegation is enabled
 - `toggle_logging` MCP tool — enables or disables disk logging for the current session
 - `delete_log` MCP tool — deletes a specific local log file by filename
