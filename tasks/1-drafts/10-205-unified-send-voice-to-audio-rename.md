@@ -1,5 +1,23 @@
 # 10-205: Rename `voice` to `audio` in unified send tool
 
+## ⚠️ Pre-Flight Rejection
+
+**Rejected:** 2026-04-09 by Worker
+**Reason:** Work already delivered — superseded by v6 API consolidation
+
+All acceptance criteria are already met in the current codebase:
+- `src/tools/send.ts`: `audio` parameter already in schema (line 75), handler already uses `audio` (line 140+)
+- `src/tools/confirm.ts`: `audio` parameter already present
+- `src/tools/choose.ts`: `audio` parameter already present
+- `changelog/unreleased.md`: Already updated — `Changed` section documents `audio` parameter; `Added` section describes `send` tool with `audio` mode
+- `voice` parameter no longer accepted (it was never in the v6 API surface)
+
+Note: The third acceptance criterion (`send(audio: {text: "hello", voice: "am_onyx"})`) is no longer applicable — the changelog explicitly states "per-message `voice` and `speed` override params removed from all tools". The design evolved. The `audio` param is now string-only; voice overrides use session/global settings.
+
+This task's core work was completed as part of the v6 API consolidation effort (10-404 epic).
+
+---
+
 **Priority:** 10 (critical)
 **Scope:** `src/tools/send.ts`, `src/tools/confirm.ts`, `src/tools/choose.ts`, docs
 **Branch:** `dev`
