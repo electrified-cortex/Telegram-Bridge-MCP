@@ -93,7 +93,7 @@ The bot needs your numeric Telegram user ID for `ALLOWED_USER_ID`. For private 1
 
 ## Step 4 — Verify the Token Works
 
-Use the `get_me` MCP tool. It should return the bot's username and ID.
+Use `action(type: "history/chat")` to verify the bot connection. It should return chat info confirming the session is active.
 If you get a `401 Unauthorized` error, the token is wrong — regenerate it with `/revoke` in BotFather.
 
 ---
@@ -287,7 +287,7 @@ WHISPER_CACHE_DIR=/path/to/cache            # optional — cache model files her
 
 ### Text-to-Speech (outbound)
 
-`send_text_as_voice` picks a TTS provider in priority order:
+`send(type: "text", audio: "...")` picks a TTS provider in priority order:
 
 | Priority | Env var | Provider |
 | --- | --- | --- |
@@ -410,9 +410,9 @@ Agents can set a per-session TTS voice with the `set_voice` MCP tool, overriding
 ## Quick Test Sequence (for agent validation)
 
 ```text
-1. get_me                         → confirm bot identity
-2. notify (chat_id, "MCP Online") → confirm message delivery
-3. choose (chat_id, "Test?", [{label:"OK", value:"ok"}]) → confirm interactivity
+1. action(type: "history/chat")                              → confirm bot/session identity
+2. send(type: "notification", text: "MCP Online")            → confirm message delivery
+3. send(type: "question", choose: [{label:"OK",value:"ok"}], text: "Test?") → confirm interactivity
 ```
 
 If all three succeed, the integration is working correctly.

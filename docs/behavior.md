@@ -28,8 +28,8 @@ When starting a new session with this MCP:
 
 1. Call `help(topic: "guide")` to load behavioral rules.
 2. Read the `telegram-bridge-mcp://communication-guide` resource — compact communication patterns, tool selection rules, and loop behavior.
-3. Call `get_me` — verifies the Telegram connection. If it fails, stop and notify the user.
-4. Call `session_start` — sends an intro message and handles pending messages from a previous session (offers Resume / Start Fresh if any exist).
+3. Call `action(type: "history/chat")` — verifies the Telegram connection. If it fails, stop and notify the user.
+4. Call `action(type: "session/start")` — sends an intro message and handles pending messages from a previous session (offers Resume / Start Fresh if any exist).
 5. Enter the `dequeue` loop — call with no arguments to block up to 300 s (the default).
 
 **`help` tool:** Call `help()` for a tool overview, `help(topic: "guide")` for this guide, or `help(topic: "<tool>")` for per-tool documentation.
@@ -77,15 +77,15 @@ Use `get_message(message_id)` to retrieve a previously seen message by its ID. R
 
 The operator should **always** know what you are doing. Silence is confusing.
 
-**While working:** Send frequent `notify` (silent) updates — brief, one per significant action (editing a file, running a command, thinking about a design decision).
+**While working:** Send frequent `send(type: "notification")` (silent) updates — brief, one per significant action (editing a file, running a command, thinking about a design decision).
 
 **When done:** Explicitly say so. Never leave an animation running or go silent while waiting for input. Cancel any animation and send a completion message before entering a wait.
 
 **Rule: never confuse working with waiting.** An active animation while idle misleads the operator.
 
-Before any significant action, send a **silent** `notify` (`disable_notification: true`): title = short action label, text = brief description of what and why.
+Before any significant action, send a **silent** `send(type: "notification", disable_notification: true)`: title = short action label, text = brief description of what and why.
 
-**On completion:** Send a `notify` with the outcome whenever a task took meaningful time — even outside an active loop. Use `severity: "success"` or `severity: "error"`. The user may have walked away; a completion notification is how they know to come back.
+**On completion:** Send a `send(type: "notification")` with the outcome whenever a task took meaningful time — even outside an active loop. Use `severity: "success"` or `severity: "error"`. The user may have walked away; a completion notification is how they know to come back.
 
 ---
 
@@ -102,18 +102,18 @@ When sending a follow-up about a specific earlier message, reply to that message
 
 ## Questions and pending answers
 
-If the agent sent a `choose` or `ask` question, the user's **next** message is the answer — even if they sent another message before the question was asked. The stale-message filter (message_id guard) handles this automatically.
+If the agent sent a `send(type: "question", choose: [...])` or `send(type: "question", ask: "...")` question, the user's **next** message is the answer — even if they sent another message before the question was asked. The stale-message filter (message_id guard) handles this automatically.
 
 Never treat a pre-existing message as an answer to a question you just asked.
 
 ---
 
-## Tool usage: `choose` for confirmations
+## Tool usage: `send(type: "question")` for confirmations
 
-**Never** ask a finite-answer question using `notify`/`send_text` + `dequeue` or `ask`.  
-Whenever the user's response can be one of a predictable set of options — yes/no, proceed/cancel, option A/B/C — use `choose` with labeled buttons.
+**Never** ask a finite-answer question using `send(type: "notification")`/`send(type: "text")` + `dequeue` or `send(type: "question", ask: "...")`.  
+Whenever the user's response can be one of a predictable set of options — yes/no, proceed/cancel, option A/B/C — use `send(type: "question", choose: [...])` with labeled buttons.
 
-Only use `ask` or `dequeue` for truly open-ended free-text input where choices cannot be enumerated.
+Only use `send(type: "question", ask: "...")` or `dequeue` for truly open-ended free-text input where choices cannot be enumerated.
 
 For the full keyboard interaction taxonomy — when to use `send_message` vs `send_choice` vs `choose` vs `confirm`, button types, and implementation notes — see [`docs/keyboard-interactions.md`](keyboard-interactions.md).
 
@@ -154,7 +154,7 @@ Call `set_topic` once at session start to brand every outbound message with a `[
 
 **Behavior:**
 
-- Applies to: `send_text`, `notify`, `ask`, `choose`, `confirm`, `send_new_checklist`
+- Applies to: `send(type: "text")`, `send(type: "notification")`, `send(type: "question")`, `send(type: "checklist")`
 - Does **not** apply to: `send_file`
 - The tag always appears — no per-message override
 - Pass an empty string to clear: `set_topic("")`
@@ -208,15 +208,15 @@ Prefer checklists when tasks have named milestones the operator cares about trac
 ## Tool usage: timeout strategy
 
 - `dequeue`: 300 s (default) — blocks until a message arrives or timeout
-- `ask`, `choose`, `confirm`: 60 s — reasonable wait when expecting a response
+- `send(type: "question")` (ask/choose/confirm): 60 s — reasonable wait when expecting a response
 
 All tools support up to 300 s max. Use shorter timeouts for more responsive feedback loops.
 
 ---
 
-## Tool usage: `choose` confirmation display
+## Tool usage: `send(type: "question")` confirmation display
 
-When the user selects an option in `choose`, the confirmation edit uses `▸` (triangle), not ✅. This is intentional — checkmarks imply "correct" which is wrong for neutral choices.
+When the user selects an option in `send(type: "question", choose: [...])`, the confirmation edit uses `▸` (triangle), not ✅. This is intentional — checkmarks imply "correct" which is wrong for neutral choices.
 
 ---
 
@@ -258,7 +258,7 @@ Keep labels short. Use `columns=1` for longer option text.
 
 ## Formatting: default parse_mode
 
-`send_text`, `notify`, `edit_message_text`, `append_text`, and `send_file` all default to `"Markdown"`.
+`send(type: "text")`, `send(type: "notification")`, `action(type: "message/edit")`, `send(type: "append")`, and `send(type: "file")` all default to `"Markdown"`.
 Standard Markdown (bold, italic, code, links, headings) is auto-converted to Telegram MarkdownV2. No manual escaping needed.
 
 See the `formatting-guide` resource (`telegram-bridge-mcp://formatting-guide`) for the full reference.
@@ -409,9 +409,9 @@ The `/session` built-in command provides a Telegram-side panel for manual dumps 
 
 After the server has restarted (whether from `shutdown`, a crash, or an external restart), previous sessions are invalidated:
 
-1. **Call `session_start`** to create a new session — old SIDs and PINs no longer work
+1. **Call `action(type: "session/start")`** to create a new session — old SIDs and PINs no longer work
 2. Drain stale messages: call `dequeue(timeout: 0)` in a loop until `pending == 0`
-3. Send a "back online" `notify` describing what changed
+3. Send a "back online" `send(type: "notification")` describing what changed
 4. Return to `dequeue` loop
 
 ---
@@ -425,23 +425,23 @@ When the server shuts down, every active session receives a `service_message` ev
 1. **Stop the dequeue loop immediately.** Do not call `dequeue` again — the server is shutting down.
 2. **Do not retry.** The shutdown message is delivered once.
 3. **Wait for the restart** (~10–60s depending on host config).
-4. **Re-engage via `session_start`.** Previous session IDs and PINs are invalidated on restart.
+4. **Re-engage via `action(type: "session/start")`.** Previous session IDs and PINs are invalidated on restart.
 
 **Governor pre-warning flow** (before a planned restart):
 
-1. Governor calls `notify_shutdown_warning` — sends a courtesy DM to all non-governor sessions so workers can wrap up
-2. Workers receive the DM, finish their current atomic step, and call `close_session` — fires a `session_closed` event back to the governor
+1. Governor calls `action(type: "shutdown/warn")` — sends a courtesy DM to all non-governor sessions so workers can wrap up
+2. Workers receive the DM, finish their current atomic step, and call `action(type: "session/close")` — fires a `session_closed` event back to the governor
 3. Governor watches `dequeue` for `session_closed` events; once all non-governor sessions have closed (or after a grace period), proceed
-4. Governor calls `shutdown` — returns `{ shutting_down: true }` immediately; actual shutdown runs asynchronously
+4. Governor calls `action(type: "shutdown")` — returns `{ shutting_down: true }` immediately; actual shutdown runs asynchronously
 5. Governor calls `dequeue(timeout: 60)` one final time — receives a `shutdown` service event confirming exit; stops looping
-6. Governor waits for the MCP host to relaunch, then reconnects via `session_start(reconnect: true)`
+6. Governor waits for the MCP host to relaunch, then reconnects via `action(type: "session/start", reconnect: true)`
 
-⚠️ **`close_session` must NOT be called by the governor before `shutdown`.** It disconnects the session but leaves the server running.
+⚠️ **`action(type: "session/close")` must NOT be called by the governor before `action(type: "shutdown")`.** It disconnects the session but leaves the server running.
 
-| Tool | Purpose |
+| Action path | Purpose |
 | --- | --- |
-| `notify_shutdown_warning` | Advisory pre-shutdown DM to all other sessions. Does not shut down. |
-| `shutdown` | Clean exit: flushes queues, notifies agents, exits process. |
+| `action(type: "shutdown/warn")` | Advisory pre-shutdown DM to all other sessions. Does not shut down. |
+| `action(type: "shutdown")` | Clean exit: flushes queues, notifies agents, exits process. |
 
 ---
 
@@ -455,7 +455,7 @@ When 2+ agent sessions are active simultaneously, additional rules apply.
 
 ### Session identity
 
-`session_start` returns a `sid` (session ID), your session `name` (if set), and a `fellow_sessions` list of co-active agents.
+`action(type: "session/start")` returns a `sid` (session ID), your session `name` (if set), and a `fellow_sessions` list of co-active agents.
 
 Your outbound messages automatically include a `🤖 YourName` header line — you do not need to add it manually.
 
@@ -566,7 +566,7 @@ The `dequeue` loop is the agent's heartbeat. If an agent exits the loop without 
 **Agents must never exit the loop except on:**
 
 - A `shutdown` service event (server is restarting)
-- An explicit `close_session` call (graceful shutdown on operator instruction)
+- An explicit `action(type: "session/close")` call (graceful shutdown on operator instruction)
 
 Any other exit — context limit, host timeout, unhandled error — is an unclean stop.
 

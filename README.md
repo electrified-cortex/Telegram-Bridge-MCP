@@ -74,48 +74,52 @@ Set me up: https://github.com/electricessence/Telegram-Bridge-MCP
 
 ## Tools
 
-### Interaction
+Telegram Bridge MCP v6 exposes **4 tools** with type-based routing.
 
-| Tool | Description |
+### `send` — Outbound Messaging
+
+| Type | Description |
 | --- | --- |
-| `send_text` | Send a formatted message |
-| `send_text_as_voice` | TTS voice note |
-| `notify` | Notification with severity |
-| `ask` | Question → blocks for text/voice reply |
-| `choose` | 2–8 buttons → blocks for selection or voice |
-| `confirm` | Yes/No prompt with button styles |
-| `send_new_checklist` | Live checklist (edits in-place) |
-| `send_new_progress` / `update_progress` | Emoji progress bar |
-| `show_animation` / `cancel_animation` | Cycling status message |
-| `dequeue` | Wait for next inbound event |
+| `text` | Send formatted Markdown text (or TTS voice via `audio` param) |
+| `file` | Send a file (photo, document, video, audio, voice) |
+| `notification` | Notification with severity (info/success/warning/error) |
+| `choice` | Message with inline buttons (non-blocking) |
+| `direct` | DM another session (requires `target_sid`) |
+| `append` | Append text to an existing message |
+| `animation` | Start a cycling status animation |
+| `checklist` | Create a pinned live checklist |
+| `progress` | Create an emoji progress bar |
+| `question` | Blocking question — route with `ask`, `confirm`, or `choose` param |
 
-### Messaging
+### `dequeue` — Receive Events
 
-`send_message` · `send_choice` · `edit_message` · `edit_message_text` · `append_text` · `delete_message` · `pin_message` · `send_file` · `show_typing` · `send_chat_action` · `answer_callback_query` · `get_message` · `get_chat_history`
+Wait for the next inbound Telegram event (message, button press, voice note, etc.). Supports configurable timeout.
 
-### Session
+### `help` — Documentation
 
-| Tool | Description |
-| --- | --- |
-| `session_start` | Authenticate, returns `token` integer for all subsequent calls |
-| `close_session` | Disconnect gracefully |
-| `list_sessions` | See all active sessions |
-| `rename_session` | Change display name (requires operator approval) |
-| `send_direct_message` | DM another session |
-| `route_message` | Forward an event to another session |
-| `dump_session_record` | Export timeline as JSON |
+Discover tool capabilities interactively. Call with optional `topic` for targeted docs.
 
-### Reminders
+### `action` — Universal Dispatcher
 
-| Tool | Description |
-| --- | --- |
-| `set_reminder` | Schedule a reminder event after a delay |
-| `cancel_reminder` | Cancel a pending reminder by ID |
-| `list_reminders` | List all reminders for the current session |
+RESTful path routing via `type` parameter. Supports progressive discovery:
 
-### Utilities
+- Omit `type` → list all categories
+- Pass a category (e.g. `session`) → list sub-paths
+- Pass a full path (e.g. `session/start`) → execute
 
-`get_me` · `get_chat` · `get_agent_guide` · `get_debug_log` · `set_reaction` · `set_commands` · `set_topic` · `set_default_animation` · `set_voice` · `download_file` · `transcribe_voice` · `shutdown`
+**Session:** `session/start` · `session/close` · `session/list` · `session/rename`
+
+**Config:** `config/voice` · `config/topic` · `config/commands` · `config/profile/save` · `config/profile/load` · `config/profile/import` · `config/reminder/set` · `config/reminder/cancel` · `config/reminder/list` · `config/dequeue-default` · `config/animation/default` · `config/logging/toggle`
+
+**Message:** `message/edit` · `message/delete` · `message/pin` · `message/react` · `message/acknowledge` · `message/route` · `message/chat-action`
+
+**History:** `history/chat` · `history/message`
+
+**Log** (governor-only): `log/get` · `log/list` · `log/roll` · `log/delete` · `log/debug` · `log/dump`
+
+**Standalone:** `show-typing` · `animation/cancel` · `approve` · `shutdown` · `shutdown/warn` · `transcribe` · `download` · `checklist/update` · `progress/update`
+
+See [`docs/migration-v5-to-v6.md`](docs/migration-v5-to-v6.md) for a complete mapping from v5 tool names.
 
 ---
 
@@ -123,7 +127,7 @@ Set me up: https://github.com/electricessence/Telegram-Bridge-MCP
 
 Multiple agents can share one bot simultaneously. Each session gets:
 
-- **Identity** — single `token` integer returned by `session_start`, required on every tool call
+- **Identity** — single `token` integer returned by `action(type: "session/start")`, required on every tool call
 - **Isolated queue** — per-session message routing, no cross-talk
 - **Name tags** — outbound messages are prefixed with the session's color + name (e.g., `🟩 🤖 Worker 1`)
 - **Governor model** — first session is primary; others join with operator approval via color-picker keyboard
@@ -148,7 +152,7 @@ WHISPER_CACHE_DIR=/path/to/cache            # optional
 
 ### Text-to-Speech (outbound)
 
-`send_text_as_voice` picks a provider automatically:
+`send(type: "text", audio: "...")` picks a TTS provider automatically:
 
 | Env var | Provider |
 | --- | --- |
@@ -158,7 +162,7 @@ WHISPER_CACHE_DIR=/path/to/cache            # optional
 
 **Kokoro** (recommended local TTS) — `docker run -d --name kokoro -p 8880:8880 ghcr.io/hexgrad/kokoro-onnx-server:latest`, then set `TTS_HOST=http://localhost:8880 TTS_FORMAT=ogg TTS_VOICE=af_heart`. 25+ voices — send `/voice` in Telegram to browse and sample.
 
-Per-session voice override: use the `set_voice` tool or `/voice` in Telegram.
+Per-session voice override: use `action(type: "config/voice")` or `/voice` in Telegram.
 
 ---
 

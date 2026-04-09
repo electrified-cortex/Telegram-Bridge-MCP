@@ -47,6 +47,13 @@
 - `logBlockedToolCall` sanitizes `toolName` and `reason` fields by replacing ASCII control characters (U+0000–U+001F, U+007F) with spaces before writing to stderr, preventing log-injection attacks
 - `buildDenyPatternHook` now escapes all regex metacharacters in glob patterns (including `?`, `-`, `#`, whitespace) before compiling, preventing pattern bypass via metacharacter injection
 
+### Documentation
+
+- Added `docs/migration-v5-to-v6.md` — complete v5→v6 tool mapping, before/after examples, breaking changes
+- Updated `README.md` to reflect 4-tool v6 architecture
+- Updated `docs/setup.md` to remove v5 tool name references
+- Updated `docs/behavior.md` and `LOOP-PROMPT.md` for v6 tool names
+
 ## Deprecated
 
 - All v5 standalone tools (e.g. `send_text`, `ask`, `choose`, `notify`, `edit_message`, `session_start`, etc.) — fully retired; functionality available via `send`, `dequeue`, `help`, and `action`
