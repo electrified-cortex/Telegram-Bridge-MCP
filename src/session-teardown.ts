@@ -28,6 +28,7 @@ import { replaceSessionCallbackHooks } from "./message-store.js";
 import { dlog } from "./debug-log.js";
 import { stopPoller } from "./poller.js";
 import { clearSessionReminders } from "./reminder-state.js";
+import { cancelAnimation } from "./animation-state.js";
 
 /**
  * Perform the full teardown for a session identified by `sid`.
@@ -55,6 +56,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
 
   removeSessionQueue(sid);
   clearSessionReminders(sid);
+  // Cancel any active animation owned by this session
+  cancelAnimation(sid).catch(() => {});
   revokeAllForSession(sid);
   if (getActiveSession() === sid) setActiveSession(0);
 
