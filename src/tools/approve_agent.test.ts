@@ -232,5 +232,46 @@ describe("approve_agent tool", () => {
       const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
       expect(result.color).toBe("🟦");
     });
+
+    it("passes colorHint to getAvailableColors so an in-use hint is not selected directly", async () => {
+      mocks.getPendingApproval.mockReturnValue({
+        name: "Worker",
+        resolve: mockResolve,
+        registeredAt: Date.now(),
+        colorHint: "🟩",
+      });
+      mocks.getAvailableColors.mockReturnValue(["🟧", "🟩"]);
+      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
+      expect(mocks.getAvailableColors).toHaveBeenCalledWith("🟩");
+      expect(result.color).toBe("🟧");
+    });
+
+    it("does not use an in-use colorHint — defers to getAvailableColors result", async () => {
+      // colorHint is 🟩 but 🟩 is in use, so getAvailableColors promotes another color first
+      mocks.getPendingApproval.mockReturnValue({
+        name: "Worker",
+        resolve: mockResolve,
+        registeredAt: Date.now(),
+        colorHint: "🟩",
+      });
+      // Simulate 🟩 in-use: getAvailableColors returns available colors with 🟩 at the end
+      mocks.getAvailableColors.mockReturnValue(["🟦", "🟧", "🟩"]);
+      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
+      expect(result.color).toBe("🟦");
+    });
+
+    it("passes undefined colorHint to getAvailableColors when pending has no hint", async () => {
+      // pending.colorHint is undefined — getAvailableColors should still be called (with undefined)
+      mocks.getPendingApproval.mockReturnValue({
+        name: "Worker",
+        resolve: mockResolve,
+        registeredAt: Date.now(),
+        // no colorHint property
+      });
+      mocks.getAvailableColors.mockReturnValue(["🟦", "🟧"]);
+      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
+      expect(mocks.getAvailableColors).toHaveBeenCalledWith(undefined);
+      expect(result.color).toBe("🟦");
+    });
   });
 });
