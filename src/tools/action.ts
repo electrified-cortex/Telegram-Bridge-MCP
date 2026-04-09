@@ -58,6 +58,8 @@ import { handleTranscribeVoice } from "./transcribe_voice.js";
 import { handleDownloadFile } from "./download_file.js";
 import { handleUpdateChecklist } from "./send_new_checklist.js";
 import { handleUpdateProgress } from "./update_progress.js";
+import { handleSendChatAction } from "./send_chat_action.js";
+import { handleSetCommands } from "./set_commands.js";
 
 /**
  * Register all Phase 1 action paths. Called once at server startup.
@@ -119,6 +121,19 @@ export function setupActionRegistry(): void {
   registerAction("download", handleDownloadFile as unknown as ActionHandler);
   registerAction("checklist/update", handleUpdateChecklist as unknown as ActionHandler);
   registerAction("progress/update", handleUpdateProgress as unknown as ActionHandler);
+  registerAction("message/chat-action", ((args: Record<string, unknown>) =>
+    handleSendChatAction({
+      action: (args.chat_action ?? "typing") as Parameters<typeof handleSendChatAction>[0]["action"],
+      token: args.token as number,
+    })
+  ) as unknown as ActionHandler);
+  registerAction("config/commands", ((args: Record<string, unknown>) =>
+    handleSetCommands({
+      commands: (args.commands ?? []) as Parameters<typeof handleSetCommands>[0]["commands"],
+      scope: args.scope as "chat" | "default" | undefined,
+      token: args.token as number,
+    })
+  ) as unknown as ActionHandler);
 }
 
 const DESCRIPTION =
@@ -458,6 +473,24 @@ export function register(server: McpServer): void {
           .max(40)
           .optional()
           .describe("progress/update: Bar width in characters (default 10)."),
+        // message/chat-action params
+        chat_action: z
+          .enum(["typing", "upload_photo", "record_video", "upload_video", "record_voice", "upload_voice", "upload_document", "find_location", "record_video_note", "upload_video_note", "choose_sticker"])
+          .optional()
+          .describe('message/chat-action: Chat action indicator to broadcast. Defaults to "typing".'),
+        // config/commands params
+        commands: z
+          .array(z.object({
+            command: z.string().min(1).max(32).regex(/^[a-z0-9_]+$/, "Command must be lowercase letters, digits, or underscores — no slash prefix"),
+            description: z.string().min(1).max(256),
+          }))
+          .optional()
+          .default([])
+          .describe("config/commands: Slash commands to register. Pass [] to clear the menu."),
+        scope: z
+          .enum(["chat", "default"])
+          .optional()
+          .describe('config/commands: "chat" scopes commands to active chat (default). "default" sets globally.'),
       },
     },
     async (args) => {

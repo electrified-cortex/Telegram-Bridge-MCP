@@ -134,8 +134,8 @@ describe("OpenAI JSON Schema compatibility — all tools", () => {
       ._registeredTools as Record<string, { inputSchema?: unknown }>;
 
     const toolNames = Object.keys(registeredTools);
-    // Sanity: we expect 37+ tools
-    expect(toolNames.length).toBeGreaterThanOrEqual(37);
+    // Sanity: we expect 4 registered v6 tools (send, dequeue, help, action)
+    expect(toolNames.length).toBe(4);
 
     for (const [name, tool] of Object.entries(registeredTools)) {
       if (tool.inputSchema) {
@@ -150,7 +150,7 @@ describe("OpenAI JSON Schema compatibility — all tools", () => {
   it.each(["draft-2020-12", "openapi-3.0"] as const)(
     "no tool schema contains prefixItems or array-form items (target: %s)",
     (target) => {
-      expect(captured.length).toBeGreaterThanOrEqual(37);
+      expect(captured.length).toBe(4);
 
       const allViolations: Array<{ tool: string } & Violation> = [];
 

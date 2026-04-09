@@ -16,6 +16,52 @@ const DESCRIPTION =
   'conversation. Use scope "default" to set bot-wide defaults for all ' +
   'private chats.';
 
+export async function handleSetCommands({
+  commands, scope = "chat", token,
+}: {
+  commands: { command: string; description: string }[];
+  scope?: "chat" | "default";
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+
+  // For chat-scoped commands we need the active chat ID
+  if (scope === "chat" && typeof chatId !== "number") return toError(chatId);
+
+  try {
+    const botCommandScope =
+      scope === "chat"
+        ? { type: "chat" as const, chat_id: chatId as number }
+        : { type: "default" as const };
+
+    // Always prepend built-in commands so they survive agent menu updates.
+    // If the agent passes [] to clear, honour it — but keep built-ins.
+    const builtIns: { command: string; description: string }[] = [...BUILT_IN_COMMANDS];
+    if (scope === "chat") {
+      const govEntry = getGovernorCommandEntry();
+      if (govEntry) builtIns.push(govEntry);
+    }
+    const merged = [
+      ...builtIns,
+      ...commands.filter(c => !builtIns.some(b => b.command === c.command)),
+    ];
+
+    await getApi().setMyCommands(merged, { scope: botCommandScope });
+
+    return toResult({
+      ok: true,
+      count: merged.length,
+      scope,
+      commands: merged.length > 0 ? merged : null,
+      cleared: commands.length === 0,
+    });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "set_commands",
@@ -52,44 +98,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ commands, scope, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-
-      // For chat-scoped commands we need the active chat ID
-      if (scope === "chat" && typeof chatId !== "number") return toError(chatId);
-
-      try {
-        const botCommandScope =
-          scope === "chat"
-            ? { type: "chat" as const, chat_id: chatId as number }
-            : { type: "default" as const };
-
-        // Always prepend built-in commands so they survive agent menu updates.
-        // If the agent passes [] to clear, honour it — but keep built-ins.
-        const builtIns: { command: string; description: string }[] = [...BUILT_IN_COMMANDS];
-        if (scope === "chat") {
-          const govEntry = getGovernorCommandEntry();
-          if (govEntry) builtIns.push(govEntry);
-        }
-        const merged = [
-          ...builtIns,
-          ...commands.filter(c => !builtIns.some(b => b.command === c.command)),
-        ];
-
-        await getApi().setMyCommands(merged, { scope: botCommandScope });
-
-        return toResult({
-          ok: true,
-          count: merged.length,
-          scope,
-          commands: merged.length > 0 ? merged : null,
-          cleared: commands.length === 0,
-        });
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    async ({ commands, scope, token}) => handleSetCommands({ commands, scope, token })
   );
 }

@@ -1,5 +1,9 @@
 # [Unreleased]
 
+## Breaking
+
+- **v6 API surface finalized** — All v5 standalone tool registrations removed. Only `send`, `dequeue`, `help`, and `action` are now registered as MCP tools. All previous capabilities remain accessible through these 4 tools.
+
 ## Added
 
 - `send` MCP tool — unified text/voice messaging tool replacing `send_text`, `send_message`, and `send_text_as_voice`; selects voice or text mode via `audio` parameter
@@ -44,4 +48,5 @@
 
 ## Deprecated
 
-- `get_agent_guide` — replaced by `help`; still registered but returns stub response
+- `get_agent_guide` — replaced by `help`; removed
+- All v5 standalone tools (e.g. `send_text`, `ask`, `choose`, `notify`, `edit_message`, `session_start`, etc.) — fully retired; functionality available via `send`, `dequeue`, `help`, and `action`
