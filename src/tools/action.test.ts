@@ -441,5 +441,16 @@ describe("action tool", () => {
       const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
       expect(calledArgs.file_id).toBe("AgAC123");
     });
+
+    // 10-425 regression: log/debug category param accepts any string (no enum rejection)
+    it("log/debug: routes category string param to handler (no schema rejection)", async () => {
+      const fakeHandler = vi.fn().mockResolvedValue({ content: [{ type: "text", text: JSON.stringify({ entries: [] }) }] });
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: {} });
+      const result = await call({ type: "log/debug", category: "animation", token: VALID_TOKEN });
+      expect(isError(result)).toBe(false);
+      expect(fakeHandler).toHaveBeenCalledOnce();
+      const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
+      expect(calledArgs.category).toBe("animation");
+    });
   });
 });

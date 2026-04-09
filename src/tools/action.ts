@@ -401,9 +401,9 @@ export function register(server: McpServer): void {
           .describe("log/get: Log filename to read. log/delete: Log filename to delete. Omit log/get to list files."),
         // log/debug params
         category: z
-          .enum(["session", "route", "queue", "cascade", "dm", "animation", "tool", "health"])
+          .string()
           .optional()
-          .describe("log/debug: Filter to a single debug category."),
+          .describe("log/debug: Filter to a single debug category. Valid values: session, route, queue, cascade, dm, animation, tool, health."),
         since: z
           .number()
           .int()
