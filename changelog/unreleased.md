@@ -19,6 +19,10 @@
 
 ## Fixed
 
+- Startup now probes the configured HTTP port before loading any config or Telegram state; a port conflict exits immediately with a clear `[fatal]` message instead of silently taking over an existing instance
+- `app.listen()` now uses `exclusive: true` for stronger OS-level port locking and an explicit `EADDRINUSE` error handler as a safety net
+- Replaced em dashes (U+2014) with ASCII dashes in all `stderr` output to prevent garbled text in non-UTF-8 terminals
+
 ## Removed
 
 ## Security
