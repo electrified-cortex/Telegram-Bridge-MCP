@@ -81,13 +81,15 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
       // Drain any updates received since the last poll iteration
       const drained = await drainPendingUpdates();
       if (drained > 0) process.stderr.write(`[shutdown] drained ${drained} pending update(s)\n`);
-      // Dump session log before exit (if not disabled)
+      // Roll the active log on shutdown so the current session log is cleanly archived.
+      // Flush before timeline dump to prevent double-roll (doTimelineDump also calls rollLog).
+      if (isLoggingEnabled()) {
+        try { await flushCurrentLog(); } catch { /* best effort */ }
+      }
       if (getSessionLogMode() !== null && timelineSize() > 0) {
         try { doTimelineDump(); } catch { /* best effort */ }
-      }
-      // Roll the active log on shutdown so the current session log is cleanly archived.
-      if (isLoggingEnabled()) {
-        try { await flushCurrentLog(); rollLog(); } catch { /* best effort */ }
+      } else if (isLoggingEnabled()) {
+        try { rollLog(); } catch { /* best effort */ }
       }
       await sendServiceMessage("🔴 Offline").catch((e: unknown) => {
         process.stderr.write(`[shutdown] sendServiceMessage error: ${String(e)}\n`);

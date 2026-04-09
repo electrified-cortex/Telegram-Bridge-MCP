@@ -120,6 +120,32 @@ describe("hook blocks call", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Hook exception handling
+// ---------------------------------------------------------------------------
+
+describe("hook throws or rejects", () => {
+  it("returns allowed:false when hook throws synchronously", async () => {
+    setPreToolHook(() => {
+      throw new Error("sync boom");
+    });
+    const result = await invokePreToolHook("any_tool", {});
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("Hook error:");
+    expect(result.reason).toContain("sync boom");
+  });
+
+  it("returns allowed:false when hook rejects asynchronously", async () => {
+    setPreToolHook(async () => {
+      throw new Error("async boom");
+    });
+    const result = await invokePreToolHook("any_tool", {});
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("Hook error:");
+    expect(result.reason).toContain("async boom");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildDenyPatternHook — pattern matching
 // ---------------------------------------------------------------------------
 

@@ -55,7 +55,11 @@ export async function invokePreToolHook(
   args: Record<string, unknown>,
 ): Promise<PreToolHookResult> {
   if (!_hook) return { allowed: true };
-  return _hook(toolName, args);
+  try {
+    return await _hook(toolName, args);
+  } catch (err) {
+    return { allowed: false, reason: `Hook error: ${String(err)}` };
+  }
 }
 
 // ---------------------------------------------------------------------------

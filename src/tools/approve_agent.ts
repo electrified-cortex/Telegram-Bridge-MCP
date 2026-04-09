@@ -85,7 +85,7 @@ export function register(server: McpServer): RegisteredTool {
           .optional()
           .describe(
             "Color to assign to the approved session (emoji from the color palette). " +
-            "Falls back to the first available color if omitted or invalid.",
+            "Falls back to the first available color if omitted. Invalid colors return an error.",
           ),
       },
     },
