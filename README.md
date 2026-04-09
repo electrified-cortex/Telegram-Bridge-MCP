@@ -132,7 +132,7 @@ Multiple agents can share one bot simultaneously. Each session gets:
 - **Name tags** — outbound messages are prefixed with the session's color + name (e.g., `🟩 🤖 Worker 1`)
 - **Governor model** — first session is primary; others join with operator approval via color-picker keyboard
 - **Health monitoring** — unresponsive sessions trigger operator prompts to reroute or promote
-- **DMs** — inter-session messaging via `send_direct_message`
+- **DMs** — inter-session messaging via `send(type: "direct")`
 - **Graceful teardown** — orphaned events rerouted, callback hooks replaced on close
 
 See `docs/multi-session-protocol.md` for the full routing protocol.

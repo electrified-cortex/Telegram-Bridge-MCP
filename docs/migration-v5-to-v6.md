@@ -54,7 +54,7 @@ The four v6 tools:
 | `session_start(name: "Worker")` | `action(type: "session/start", name: "Worker")` |
 | `close_session()` | `action(type: "session/close")` |
 | `list_sessions()` | `action(type: "session/list")` |
-| `rename_session(name: "New Name")` | `action(type: "session/rename", name: "New Name")` |
+| `rename_session(name: "New Name")` | `action(type: "session/rename", new_name: "New Name")` |
 
 ### Configuration
 
@@ -382,7 +382,7 @@ This discovery pattern means you can navigate like a REST API rather than memori
 
 3. **Voice parameter removed** — The per-message `voice` and `speed` override parameters were removed from `ask`, `choose`, `confirm`, and `send_text`. TTS now uses session-level voice settings only. Use `action(type: "config/voice")` to set the session voice.
 
-4. **`choose` parameter renamed** — In the old `choose` tool, the display prompt was named `question`. In v6 `send(type: "question", choose: [...])`, the prompt parameter is `text`.
+4. **`choose` parameter renamed** — In the old `choose` tool, the display prompt was named `text`. In v6 `send(type: "question", choose: [...])`, the prompt parameter is `text`.
 
 5. **`confirmYN` merged** — `confirmYN` and `confirm` are now the same path: `send(type: "question", confirm: "...")`.
 
