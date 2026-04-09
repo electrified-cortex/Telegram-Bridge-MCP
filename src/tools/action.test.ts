@@ -466,5 +466,24 @@ describe("action tool", () => {
       expect(fakeHandler).toHaveBeenCalledOnce();
       expect(isError(result)).toBe(false);
     });
+
+    it("passes parse_mode: 'Markdown' by default when not supplied (message/edit regression)", async () => {
+      const fakeHandler = vi.fn().mockReturnValue({ content: [{ type: "text", text: JSON.stringify({ ok: true }) }] });
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: {} });
+      // Omit parse_mode — must default to "Markdown" so auto-conversion runs
+      await call({ type: "message/edit", token: VALID_TOKEN, message_id: 1, text: "*bold*" });
+      expect(fakeHandler).toHaveBeenCalledOnce();
+      const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
+      expect(calledArgs.parse_mode).toBe("Markdown");
+    });
+
+    it("passes parse_mode: 'MarkdownV2' through when explicitly supplied", async () => {
+      const fakeHandler = vi.fn().mockReturnValue({ content: [{ type: "text", text: JSON.stringify({ ok: true }) }] });
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: {} });
+      await call({ type: "message/edit", token: VALID_TOKEN, message_id: 1, text: "*bold*", parse_mode: "MarkdownV2" });
+      expect(fakeHandler).toHaveBeenCalledOnce();
+      const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
+      expect(calledArgs.parse_mode).toBe("MarkdownV2");
+    });
   });
 });

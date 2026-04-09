@@ -237,8 +237,13 @@ export function register(server: McpServer): void {
           .describe("message/edit: Inline keyboard rows. Pass null to remove all buttons."),
         parse_mode: z
           .enum(["Markdown", "HTML", "MarkdownV2"])
-          .optional()
-          .describe("message/edit, animation/cancel: Parse mode for text (default: Markdown)."),
+          .default("Markdown")
+          .describe(
+            "message/edit, animation/cancel: Parse mode for text. " +
+            "'Markdown' (default) — standard markdown auto-converted; " +
+            "'MarkdownV2' — raw Telegram MarkdownV2 pass-through (special chars must be manually escaped); " +
+            "'HTML' — HTML tags.",
+          ),
         // message/pin params
         disable_notification: z
           .boolean()
