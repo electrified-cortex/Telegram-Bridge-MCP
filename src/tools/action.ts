@@ -123,6 +123,9 @@ export function setupActionRegistry(): void {
   }) as unknown as ActionHandler);
   registerAction("message/get", handleGetMessage as unknown as ActionHandler);
 
+  // chat/*
+  registerAction("chat/info", handleGetChat as unknown as ActionHandler);
+
   // log/* (governor-only)
   registerAction("log/get", handleGetLog as unknown as ActionHandler, { governor: true });
   registerAction("log/list", handleListLogs as unknown as ActionHandler, { governor: true });

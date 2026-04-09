@@ -333,6 +333,11 @@ describe("action tool", () => {
       expect(registeredPaths).toContain("message/get");
     });
 
+    it("calls registerAction for chat/info", () => {
+      const registeredPaths = mocks.registerAction.mock.calls.map((c) => c[0] as string);
+      expect(registeredPaths).toContain("chat/info");
+    });
+
     it("calls registerAction for all Phase 2 log/* paths", () => {
       const registeredPaths = mocks.registerAction.mock.calls.map((c) => c[0] as string);
       expect(registeredPaths).toContain("log/get");
@@ -440,6 +445,15 @@ describe("action tool", () => {
       expect(fakeHandler).toHaveBeenCalledOnce();
       const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
       expect(calledArgs.file_id).toBe("AgAC123");
+    });
+
+    it("dispatches chat/info to handleGetChat", async () => {
+      const chatResult = { content: [{ type: "text", text: JSON.stringify({ approved: true, id: 123 }) }] };
+      const fakeHandler = vi.fn().mockResolvedValue(chatResult);
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: {} });
+      const result = await call({ type: "chat/info", token: VALID_TOKEN });
+      expect(fakeHandler).toHaveBeenCalledOnce();
+      expect(isError(result)).toBe(false);
     });
   });
 });
