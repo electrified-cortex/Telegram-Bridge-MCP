@@ -25,7 +25,7 @@ import { handlePinMessage } from "./pin_message.js";
 import { handleSetReaction } from "./set_reaction.js";
 import { handleAnswerCallbackQuery } from "./answer_callback_query.js";
 import { handleRouteMessage } from "./route_message.js";
-// Phase 2 imports — config/*
+// Phase 2 imports — profile/*, reminder/*, etc.
 import { handleSetTopic } from "./set_topic.js";
 import { handleSaveProfile } from "./save_profile.js";
 import { handleLoadProfile } from "./load_profile.js";
@@ -36,7 +36,7 @@ import { handleListReminders } from "./list_reminders.js";
 import { handleSetDequeueDefault } from "./set_dequeue_default.js";
 import { handleSetDefaultAnimation } from "./set_default_animation.js";
 import { handleToggleLogging } from "./toggle_logging.js";
-// Phase 2 imports — history/*
+// Phase 2 imports — message/history, message/get
 import { handleGetChatHistory } from "./get_chat_history.js";
 import { handleGetChat } from "./get_chat.js";
 import { handleGetMessage } from "./get_message.js";
@@ -46,7 +46,6 @@ import { handleListLogs } from "./list_logs.js";
 import { handleRollLog } from "./roll_log.js";
 import { handleDeleteLog } from "./delete_log.js";
 import { handleGetDebugLog } from "./get_debug_log.js";
-import { handleDumpSessionRecord } from "./dump_session_record.js";
 // Phase 2 imports — animation/*
 import { handleCancelAnimation } from "./cancel_animation.js";
 // Phase 2 imports — standalone
@@ -58,7 +57,6 @@ import { handleTranscribeVoice } from "./transcribe_voice.js";
 import { handleDownloadFile } from "./download_file.js";
 import { handleUpdateChecklist } from "./send_new_checklist.js";
 import { handleUpdateProgress } from "./update_progress.js";
-import { handleSendChatAction } from "./send_chat_action.js";
 import { handleSetCommands } from "./set_commands.js";
 
 /** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
@@ -94,36 +92,36 @@ export function setupActionRegistry(): void {
   registerAction("session/close", handleCloseSession as unknown as ActionHandler);
   registerAction("session/list", handleListSessions as unknown as ActionHandler);
   registerAction("session/rename", handleRenameSession as unknown as ActionHandler);
-  registerAction("config/voice", handleSetVoice as unknown as ActionHandler);
+  registerAction("profile/voice", handleSetVoice as unknown as ActionHandler);
   registerAction("message/edit", handleEditMessage as unknown as ActionHandler);
 
   // message/*
   registerAction("message/delete", handleDeleteMessage as unknown as ActionHandler);
   registerAction("message/pin", handlePinMessage as unknown as ActionHandler);
-  registerAction("message/react", handleSetReaction as unknown as ActionHandler);
-  registerAction("message/acknowledge", handleAnswerCallbackQuery as unknown as ActionHandler);
+  registerAction("react", handleSetReaction as unknown as ActionHandler);
+  registerAction("acknowledge", handleAnswerCallbackQuery as unknown as ActionHandler);
   registerAction("message/route", handleRouteMessage as unknown as ActionHandler, { governor: true });
 
-  // config/*
-  registerAction("config/topic", handleSetTopic as unknown as ActionHandler);
-  registerAction("config/profile/save", handleSaveProfile as unknown as ActionHandler);
-  registerAction("config/profile/load", handleLoadProfile as unknown as ActionHandler);
-  registerAction("config/profile/import", handleImportProfile as unknown as ActionHandler);
-  registerAction("config/reminder/set", handleSetReminder as unknown as ActionHandler);
-  registerAction("config/reminder/cancel", handleCancelReminder as unknown as ActionHandler);
-  registerAction("config/reminder/list", handleListReminders as unknown as ActionHandler);
-  registerAction("config/dequeue-default", handleSetDequeueDefault as unknown as ActionHandler);
-  registerAction("config/animation/default", handleSetDefaultAnimation as unknown as ActionHandler);
-  registerAction("config/logging/toggle", handleToggleLogging as unknown as ActionHandler);
+  // profile/*, reminder/*, logging/*, commands/*
+  registerAction("profile/topic", handleSetTopic as unknown as ActionHandler);
+  registerAction("profile/save", handleSaveProfile as unknown as ActionHandler);
+  registerAction("profile/load", handleLoadProfile as unknown as ActionHandler);
+  registerAction("profile/import", handleImportProfile as unknown as ActionHandler);
+  registerAction("reminder/set", handleSetReminder as unknown as ActionHandler);
+  registerAction("reminder/cancel", handleCancelReminder as unknown as ActionHandler);
+  registerAction("reminder/list", handleListReminders as unknown as ActionHandler);
+  registerAction("profile/dequeue-default", handleSetDequeueDefault as unknown as ActionHandler);
+  registerAction("animation/default", handleSetDefaultAnimation as unknown as ActionHandler);
+  registerAction("logging/toggle", handleToggleLogging as unknown as ActionHandler);
 
-  // history/*
-  registerAction("history/chat", ((args: Record<string, unknown>) => {
+  // message/history
+  registerAction("message/history", ((args: Record<string, unknown>) => {
     if (args.count !== undefined || args.before_id !== undefined) {
       return handleGetChatHistory(args as Parameters<typeof handleGetChatHistory>[0]);
     }
     return handleGetChat(args as Parameters<typeof handleGetChat>[0]);
   }) as unknown as ActionHandler);
-  registerAction("history/message", handleGetMessage as unknown as ActionHandler);
+  registerAction("message/get", handleGetMessage as unknown as ActionHandler);
 
   // log/* (governor-only)
   registerAction("log/get", handleGetLog as unknown as ActionHandler, { governor: true });
@@ -131,8 +129,6 @@ export function setupActionRegistry(): void {
   registerAction("log/roll", handleRollLog as unknown as ActionHandler, { governor: true });
   registerAction("log/delete", handleDeleteLog as unknown as ActionHandler, { governor: true });
   registerAction("log/debug", handleGetDebugLog as unknown as ActionHandler, { governor: true });
-  registerAction("log/dump", handleDumpSessionRecord as unknown as ActionHandler, { governor: true });
-
   // animation/*
   registerAction("animation/cancel", handleCancelAnimation as unknown as ActionHandler);
 
@@ -145,13 +141,7 @@ export function setupActionRegistry(): void {
   registerAction("download", handleDownloadFile as unknown as ActionHandler);
   registerAction("checklist/update", handleUpdateChecklist as unknown as ActionHandler);
   registerAction("progress/update", handleUpdateProgress as unknown as ActionHandler);
-  registerAction("message/chat-action", ((args: Record<string, unknown>) =>
-    handleSendChatAction({
-      action: (args.chat_action ?? "typing") as Parameters<typeof handleSendChatAction>[0]["action"],
-      token: args.token as number,
-    })
-  ) as unknown as ActionHandler);
-  registerAction("config/commands", ((args: Record<string, unknown>) =>
+  registerAction("commands/set", ((args: Record<string, unknown>) =>
     handleSetCommands({
       commands: (args.commands ?? []) as Parameters<typeof handleSetCommands>[0]["commands"],
       scope: args.scope as "chat" | "default" | undefined,
@@ -179,7 +169,7 @@ export function register(server: McpServer): void {
           .string()
           .optional()
           .describe(
-            "Action path to dispatch (e.g. 'session/list', 'config/voice'). " +
+            "Action path to dispatch (e.g. 'session/list', 'profile/voice'). " +
             "Omit to list all categories. Pass a category name to list sub-paths.",
           ),
         // Auth token — required for all paths except session/start
@@ -204,28 +194,28 @@ export function register(server: McpServer): void {
           .string()
           .optional()
           .describe("session/rename: New alphanumeric name for the session."),
-        // config/voice params
+        // profile/voice params
         voice: z
           .string()
           .optional()
-          .describe("config/voice: Voice name to set. Pass empty string to clear."),
+          .describe("profile/voice: Voice name to set. Pass empty string to clear."),
         speed: z
           .number()
           .min(0.25)
           .max(4.0)
           .optional()
-          .describe("config/voice: TTS speed multiplier (0.25–4.0)."),
+          .describe("profile/voice: TTS speed multiplier (0.25–4.0)."),
         // message/edit params
         message_id: z
           .number()
           .int()
           .min(1)
           .optional()
-          .describe("message/edit, message/delete, message/pin, message/react, history/message, checklist/update, progress/update: Target message ID."),
+          .describe("message/edit, message/delete, message/pin, react, message/get, checklist/update, progress/update: Target message ID."),
         text: z
           .string()
           .optional()
-          .describe("message/edit: New text content. config/reminder/set: Reminder message text. animation/cancel: Replacement text."),
+          .describe("message/edit: New text content. reminder/set: Reminder message text. animation/cancel: Replacement text."),
         keyboard: z
           .array(
             z.array(
@@ -255,47 +245,47 @@ export function register(server: McpServer): void {
           .boolean()
           .optional()
           .describe("message/pin: If true, unpin instead of pin."),
-        // message/react params
+        // react params
         emoji: z
           .string()
           .optional()
-          .describe("message/react: Emoji or semantic alias (e.g. 'thinking', 'done'). Omit to remove reaction."),
+          .describe("react: Emoji or semantic alias (e.g. 'thinking', 'done'). Omit to remove reaction."),
         is_big: z
           .boolean()
           .optional()
-          .describe("message/react: Use big animation (permanent reactions only)."),
+          .describe("react: Use big animation (permanent reactions only)."),
         temporary: z
           .boolean()
           .optional()
-          .describe("message/react: Auto-reverts reaction on next outbound action or timeout."),
+          .describe("react: Auto-reverts reaction on next outbound action or timeout."),
         restore_emoji: z
           .string()
           .optional()
-          .describe("message/react: Emoji/alias to revert to when temporary reaction expires."),
+          .describe("react: Emoji/alias to revert to when temporary reaction expires."),
         timeout_seconds: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("message/react: Deadline before auto-restore fires. show-typing: Duration (1–300s, default 20)."),
-        // message/acknowledge params
+          .describe("react: Deadline before auto-restore fires. show-typing: Duration (1–300s, default 20)."),
+        // acknowledge params
         callback_query_id: z
           .string()
           .optional()
-          .describe("message/acknowledge: ID from the callback_query update."),
+          .describe("acknowledge: ID from the callback_query update."),
         show_alert: z
           .boolean()
           .optional()
-          .describe("message/acknowledge: Show as dialog alert instead of toast."),
+          .describe("acknowledge: Show as dialog alert instead of toast."),
         url: z
           .string()
           .optional()
-          .describe("message/acknowledge: URL to open in the user's browser (for games)."),
+          .describe("acknowledge: URL to open in the user's browser (for games)."),
         cache_time: z
           .number()
           .int()
           .optional()
-          .describe("message/acknowledge: Seconds the result may be cached client-side."),
+          .describe("acknowledge: Seconds the result may be cached client-side."),
         // message/route params
         target_sid: z
           .number()
@@ -303,32 +293,32 @@ export function register(server: McpServer): void {
           .positive()
           .optional()
           .describe("message/route: Session ID to route the message to."),
-        // config/topic params
+        // profile/topic params
         topic: z
           .string()
           .max(32)
           .optional()
-          .describe("config/topic: Short label to prepend to all outbound messages. Pass empty string to clear."),
-        // config/profile/* params
+          .describe("profile/topic: Short label to prepend to all outbound messages. Pass empty string to clear."),
+        // profile/* params
         key: z
           .string()
           .optional()
-          .describe("config/profile/save, config/profile/load: Profile key (bare name e.g. 'Overseer')."),
-        // config/profile/import params
+          .describe("profile/save, profile/load: Profile key (bare name e.g. 'Overseer')."),
+        // profile/import params
         voice_speed: z
           .number()
           .min(0.25)
           .max(4.0)
           .optional()
-          .describe("config/profile/import: TTS playback speed multiplier (0.25–4.0)."),
+          .describe("profile/import: TTS playback speed multiplier (0.25–4.0)."),
         animation_default: z
           .array(z.string())
           .optional()
-          .describe("config/profile/import: Default animation frame sequence."),
+          .describe("profile/import: Default animation frame sequence."),
         animation_presets: z
           .record(z.string(), z.array(z.string()))
           .optional()
-          .describe("config/profile/import: Named animation presets."),
+          .describe("profile/import: Named animation presets."),
         reminders: z
           .array(
             z.object({
@@ -338,72 +328,72 @@ export function register(server: McpServer): void {
             }),
           )
           .optional()
-          .describe("config/profile/import: Reminders to register for this session."),
-        // config/reminder/set params
+          .describe("profile/import: Reminders to register for this session."),
+        // reminder/set params
         trigger: z
           .enum(["time", "startup"])
           .optional()
-          .describe("config/reminder/set: When to fire (default: 'time')."),
+          .describe("reminder/set: When to fire (default: 'time')."),
         delay_seconds: z
           .number()
           .int()
           .min(0)
           .max(86400)
           .optional()
-          .describe("config/reminder/set: Seconds to wait before reminder becomes active (default 0)."),
+          .describe("reminder/set: Seconds to wait before reminder becomes active (default 0)."),
         recurring: z
           .boolean()
           .optional()
-          .describe("config/reminder/set: Re-arm after firing (default false)."),
+          .describe("reminder/set: Re-arm after firing (default false)."),
         id: z
           .string()
           .optional()
-          .describe("config/reminder/set: Optional ID for dedup. config/reminder/cancel: Reminder ID to cancel."),
-        // config/dequeue-default params
+          .describe("reminder/set: Optional ID for dedup. reminder/cancel: Reminder ID to cancel."),
+        // profile/dequeue-default params
         timeout: z
           .number()
           .int()
           .min(0)
           .max(3600)
           .optional()
-          .describe("config/dequeue-default: Default dequeue timeout in seconds (0–3600)."),
-        // config/animation/default params
+          .describe("profile/dequeue-default: Default dequeue timeout in seconds (0–3600)."),
+        // animation/default params
         frames: z
           .array(z.string())
           .optional()
-          .describe("config/animation/default: Animation frames to set as default or register as preset."),
+          .describe("animation/default: Animation frames to set as default or register as preset."),
         preset: z
           .string()
           .optional()
-          .describe("config/animation/default: Named preset key for registration or recall."),
+          .describe("animation/default: Named preset key for registration or recall."),
         reset: z
           .boolean()
           .optional()
-          .describe("config/animation/default: Reset to built-in default animation."),
-        // config/logging/toggle params
+          .describe("animation/default: Reset to built-in default animation."),
+        // logging/toggle params
         enabled: z
           .boolean()
           .optional()
-          .describe("config/logging/toggle: true to enable logging, false to disable."),
-        // history/chat params
+          .describe("logging/toggle: true to enable logging, false to disable."),
+        // message/history params
         count: z
           .number()
           .int()
           .min(1)
           .max(50)
           .optional()
-          .describe("history/chat: Number of events to return (default 20, max 50)."),
+          .describe("message/history: Number of events to return (default 20, max 50)."),
         before_id: z
           .number()
           .int()
           .optional()
-          .describe("history/chat: Return events older than this event ID (page backwards)."),
-        // history/message params
+          .describe("message/history: Return events older than this event ID (page backwards)."),
+        // message/get params
         version: z
           .number()
           .int()
           .optional()
-          .describe("history/message: Version (-1 = current, 0 = original, 1+ = edit history)."),
+          .describe("message/get: Version (-1 = current, 0 = original, 1+ = edit history)."),
         // log/* params
         filename: z
           .string()
@@ -497,12 +487,7 @@ export function register(server: McpServer): void {
           .max(40)
           .optional()
           .describe("progress/update: Bar width in characters (default 10)."),
-        // message/chat-action params
-        chat_action: z
-          .enum(["typing", "upload_photo", "record_video", "upload_video", "record_voice", "upload_voice", "upload_document", "find_location", "record_video_note", "upload_video_note", "choose_sticker"])
-          .optional()
-          .describe('message/chat-action: Chat action indicator to broadcast. Defaults to "typing".'),
-        // config/commands params
+        // commands/set params
         commands: z
           .array(z.object({
             command: z.string().min(1).max(32).regex(/^[a-z0-9_]+$/, "Command must be lowercase letters, digits, or underscores — no slash prefix"),
@@ -510,11 +495,11 @@ export function register(server: McpServer): void {
           }))
           .optional()
           .default([])
-          .describe("config/commands: Slash commands to register. Pass [] to clear the menu."),
+          .describe("commands/set: Slash commands to register. Pass [] to clear the menu."),
         scope: z
           .enum(["chat", "default"])
           .optional()
-          .describe('config/commands: "chat" scopes commands to active chat (default). "default" sets globally.'),
+          .describe('commands/set: "chat" scopes commands to active chat (default). "default" sets globally.'),
       },
     },
     async (args) => {

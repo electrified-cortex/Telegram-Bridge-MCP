@@ -28,9 +28,9 @@ describe("action-registry", () => {
   it("lists distinct categories from registered paths", () => {
     registerAction("session/start", vi.fn());
     registerAction("session/list", vi.fn());
-    registerAction("config/voice", vi.fn());
+    registerAction("profile/voice", vi.fn());
     registerAction("message/edit", vi.fn());
-    expect(listCategories()).toEqual(["config", "message", "session"]);
+    expect(listCategories()).toEqual(["message", "profile", "session"]);
   });
 
   it("returns empty categories when nothing is registered", () => {

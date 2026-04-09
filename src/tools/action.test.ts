@@ -109,7 +109,7 @@ vi.mock("./pin_message.js", () => ({ handlePinMessage: mocks.handlePinMessage, r
 vi.mock("./set_reaction.js", () => ({ handleSetReaction: mocks.handleSetReaction, register: vi.fn() }));
 vi.mock("./answer_callback_query.js", () => ({ handleAnswerCallbackQuery: mocks.handleAnswerCallbackQuery, register: vi.fn() }));
 vi.mock("./route_message.js", () => ({ handleRouteMessage: mocks.handleRouteMessage, register: vi.fn() }));
-// Phase 2 vi.mocks — config/*
+// Phase 2 vi.mocks — profile/*, reminder/*, etc.
 vi.mock("./set_topic.js", () => ({ handleSetTopic: mocks.handleSetTopic, register: vi.fn() }));
 vi.mock("./save_profile.js", () => ({ handleSaveProfile: mocks.handleSaveProfile, register: vi.fn() }));
 vi.mock("./load_profile.js", () => ({ handleLoadProfile: mocks.handleLoadProfile, register: vi.fn() }));
@@ -120,7 +120,7 @@ vi.mock("./list_reminders.js", () => ({ handleListReminders: mocks.handleListRem
 vi.mock("./set_dequeue_default.js", () => ({ handleSetDequeueDefault: mocks.handleSetDequeueDefault, register: vi.fn() }));
 vi.mock("./set_default_animation.js", () => ({ handleSetDefaultAnimation: mocks.handleSetDefaultAnimation, register: vi.fn() }));
 vi.mock("./toggle_logging.js", () => ({ handleToggleLogging: mocks.handleToggleLogging, register: vi.fn() }));
-// Phase 2 vi.mocks — history/*
+// Phase 2 vi.mocks — message/history, message/get
 vi.mock("./get_chat_history.js", () => ({ handleGetChatHistory: mocks.handleGetChatHistory, register: vi.fn() }));
 vi.mock("./get_chat.js", () => ({ handleGetChat: mocks.handleGetChat, register: vi.fn() }));
 vi.mock("./get_message.js", () => ({ handleGetMessage: mocks.handleGetMessage, register: vi.fn() }));
@@ -219,7 +219,7 @@ describe("action tool", () => {
     it("forwards all args to the handler", async () => {
       const fakeHandler = vi.fn().mockReturnValue({ content: [{ type: "text", text: JSON.stringify({ ok: true }) }] });
       mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: {} });
-      await call({ type: "config/voice", token: VALID_TOKEN, voice: "alloy", speed: 1.2 });
+      await call({ type: "profile/voice", token: VALID_TOKEN, voice: "alloy", speed: 1.2 });
       const calledArgs = fakeHandler.mock.calls[0][0];
       expect(calledArgs.voice).toBe("alloy");
       expect(calledArgs.speed).toBe(1.2);
@@ -300,37 +300,37 @@ describe("action tool", () => {
       expect(registeredPaths).toContain("session/close");
       expect(registeredPaths).toContain("session/list");
       expect(registeredPaths).toContain("session/rename");
-      expect(registeredPaths).toContain("config/voice");
+      expect(registeredPaths).toContain("profile/voice");
       expect(registeredPaths).toContain("message/edit");
     });
 
-    it("calls registerAction for all Phase 2 message/* paths", () => {
+    it("calls registerAction for all Phase 2 message/* and standalone paths", () => {
       const registeredPaths = mocks.registerAction.mock.calls.map((c) => c[0] as string);
       expect(registeredPaths).toContain("message/delete");
       expect(registeredPaths).toContain("message/pin");
-      expect(registeredPaths).toContain("message/react");
-      expect(registeredPaths).toContain("message/acknowledge");
+      expect(registeredPaths).toContain("react");
+      expect(registeredPaths).toContain("acknowledge");
       expect(registeredPaths).toContain("message/route");
     });
 
-    it("calls registerAction for all Phase 2 config/* paths", () => {
+    it("calls registerAction for all Phase 2 profile/*, reminder/*, etc. paths", () => {
       const registeredPaths = mocks.registerAction.mock.calls.map((c) => c[0] as string);
-      expect(registeredPaths).toContain("config/topic");
-      expect(registeredPaths).toContain("config/profile/save");
-      expect(registeredPaths).toContain("config/profile/load");
-      expect(registeredPaths).toContain("config/profile/import");
-      expect(registeredPaths).toContain("config/reminder/set");
-      expect(registeredPaths).toContain("config/reminder/cancel");
-      expect(registeredPaths).toContain("config/reminder/list");
-      expect(registeredPaths).toContain("config/dequeue-default");
-      expect(registeredPaths).toContain("config/animation/default");
-      expect(registeredPaths).toContain("config/logging/toggle");
+      expect(registeredPaths).toContain("profile/topic");
+      expect(registeredPaths).toContain("profile/save");
+      expect(registeredPaths).toContain("profile/load");
+      expect(registeredPaths).toContain("profile/import");
+      expect(registeredPaths).toContain("reminder/set");
+      expect(registeredPaths).toContain("reminder/cancel");
+      expect(registeredPaths).toContain("reminder/list");
+      expect(registeredPaths).toContain("profile/dequeue-default");
+      expect(registeredPaths).toContain("animation/default");
+      expect(registeredPaths).toContain("logging/toggle");
     });
 
-    it("calls registerAction for all Phase 2 history/* paths", () => {
+    it("calls registerAction for all Phase 2 message/history and message/get paths", () => {
       const registeredPaths = mocks.registerAction.mock.calls.map((c) => c[0] as string);
-      expect(registeredPaths).toContain("history/chat");
-      expect(registeredPaths).toContain("history/message");
+      expect(registeredPaths).toContain("message/history");
+      expect(registeredPaths).toContain("message/get");
     });
 
     it("calls registerAction for all Phase 2 log/* paths", () => {
@@ -340,7 +340,6 @@ describe("action tool", () => {
       expect(registeredPaths).toContain("log/roll");
       expect(registeredPaths).toContain("log/delete");
       expect(registeredPaths).toContain("log/debug");
-      expect(registeredPaths).toContain("log/dump");
     });
 
     it("calls registerAction for all Phase 2 standalone paths", () => {
@@ -367,21 +366,20 @@ describe("action tool", () => {
       expect(governorPaths).toContain("log/roll");
       expect(governorPaths).toContain("log/delete");
       expect(governorPaths).toContain("log/debug");
-      expect(governorPaths).toContain("log/dump");
       expect(governorPaths).toContain("approve");
       expect(governorPaths).toContain("shutdown");
       expect(governorPaths).toContain("shutdown/warn");
     });
   });
 
-  // ── history/chat dual routing ─────────────────────────────────────────────
+  // ── message/history dual routing ───────────────────────────────────────
 
-  describe("history/chat dual routing", () => {
+  describe("message/history dual routing", () => {
     it("routes to handleGetChatHistory when count is present", async () => {
       const chatHistoryResult = { content: [{ type: "text", text: JSON.stringify({ events: [] }) }] };
       mocks.handleGetChatHistory.mockReturnValue(chatHistoryResult);
-      // Simulate the inline router registered for history/chat
-      const routerCall = mocks.registerAction.mock.calls.find((c) => c[0] === "history/chat");
+      // Simulate the inline router registered for message/history
+      const routerCall = mocks.registerAction.mock.calls.find((c) => c[0] === "message/history");
       expect(routerCall).toBeDefined();
       const router = routerCall![1] as (args: Record<string, unknown>) => unknown;
       const result = await router({ count: 10, token: VALID_TOKEN });
@@ -393,7 +391,7 @@ describe("action tool", () => {
     it("routes to handleGetChatHistory when before_id is present", async () => {
       const chatHistoryResult = { content: [{ type: "text", text: JSON.stringify({ events: [] }) }] };
       mocks.handleGetChatHistory.mockReturnValue(chatHistoryResult);
-      const routerCall = mocks.registerAction.mock.calls.find((c) => c[0] === "history/chat");
+      const routerCall = mocks.registerAction.mock.calls.find((c) => c[0] === "message/history");
       const router = routerCall![1] as (args: Record<string, unknown>) => unknown;
       await router({ before_id: 100, token: VALID_TOKEN });
       expect(mocks.handleGetChatHistory).toHaveBeenCalledOnce();
@@ -403,7 +401,7 @@ describe("action tool", () => {
     it("routes to handleGetChat when neither count nor before_id is present", async () => {
       const chatResult = { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
       mocks.handleGetChat.mockResolvedValue(chatResult);
-      const routerCall = mocks.registerAction.mock.calls.find((c) => c[0] === "history/chat");
+      const routerCall = mocks.registerAction.mock.calls.find((c) => c[0] === "message/history");
       const router = routerCall![1] as (args: Record<string, unknown>) => unknown;
       await router({ token: VALID_TOKEN });
       expect(mocks.handleGetChat).toHaveBeenCalledOnce();
