@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   splitMessage: vi.fn((t: string) => [t]),
   markdownToV2: vi.fn((t: string) => t),
   handleShowAnimation: vi.fn(),
+  handleSendNewProgress: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -75,6 +76,10 @@ vi.mock("../session-manager.js", () => ({
 
 vi.mock("./show_animation.js", () => ({
   handleShowAnimation: (args: unknown) => mocks.handleShowAnimation(args),
+}));
+
+vi.mock("./send_new_progress.js", () => ({
+  handleSendNewProgress: (args: unknown) => mocks.handleSendNewProgress(args),
 }));
 
 import { register } from "./send.js";
@@ -379,5 +384,24 @@ describe("send type routing", () => {
     expect(mocks.handleShowAnimation).toHaveBeenCalledOnce();
     const called = mocks.handleShowAnimation.mock.calls[0][0] as Record<string, unknown>;
     expect(called.timeout).toBe(5);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 10-430 regression: progress/checklist text alias for title caption
+  // ---------------------------------------------------------------------------
+  it("type: progress — text param used as title caption when title omitted", async () => {
+    mocks.handleSendNewProgress.mockResolvedValue({ content: [{ type: "text", text: '{"message_id":55}' }] });
+    await call({ type: "progress", text: "Running tests", percent: 42, token: TOKEN });
+    expect(mocks.handleSendNewProgress).toHaveBeenCalledOnce();
+    const called = mocks.handleSendNewProgress.mock.calls[0][0] as Record<string, unknown>;
+    expect(called.title).toBe("Running tests");
+    expect(called.percent).toBe(42);
+  });
+
+  it("type: progress — explicit title takes precedence over text", async () => {
+    mocks.handleSendNewProgress.mockResolvedValue({ content: [{ type: "text", text: '{"message_id":56}' }] });
+    await call({ type: "progress", title: "My title", text: "ignored", percent: 10, token: TOKEN });
+    const called = mocks.handleSendNewProgress.mock.calls[0][0] as Record<string, unknown>;
+    expect(called.title).toBe("My title");
   });
 });

@@ -115,7 +115,7 @@ export function register(server: McpServer) {
           .describe("Media type for file upload (default: auto-detect by extension)"),
         caption: z.string().optional().describe("File caption (for type: \"file\")"),
         // ── notification ───────────────────────────────────────────────────
-        title: z.string().optional().describe("Heading (for type: \"notification\", \"checklist\", \"progress\")"),
+        title: z.string().optional().describe("Heading (for type: \"notification\", \"checklist\", \"progress\"). For checklist/progress, `text` is accepted as an alias."),
         severity: z
           .enum(["info", "success", "warning", "error"])
           .default("info")
@@ -367,15 +367,15 @@ export function register(server: McpServer) {
           });
 
         case "checklist":
-          if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
+          if (!(args.title ?? args.text)) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
           if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
-          return handleSendNewChecklist({ title: args.title, steps: args.steps, token: args.token });
+          return handleSendNewChecklist({ title: (args.title ?? args.text)!, steps: args.steps, token: args.token });
 
         case "progress":
           if (args.percent === undefined) return toError({ code: "MISSING_PARAM" as const, message: 'type: "progress" requires a "percent" param (0\u2013100).', hint: "type: \"progress\" requires a percent (0\u2013100). Call help(topic: 'send')." });
           return handleSendNewProgress({
             percent: args.percent,
-            title: args.title,
+            title: args.title ?? args.text,
             subtext: args.subtext,
             width: args.width,
             token: args.token,
@@ -392,7 +392,7 @@ export function register(server: McpServer) {
             }, signal);
           }
           if (args.choose !== undefined || args.options !== undefined) {
-            const chooseButtons = (args.choose ?? args.options)!;
+            const chooseButtons = (args.choose ?? args.options) as NonNullable<typeof args.choose>;
             if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "question" with choose requires a "text" param (prompt shown above buttons).', hint: "Call help(topic: 'send') for question param requirements." });
             return handleChoose({
               text: args.text,
