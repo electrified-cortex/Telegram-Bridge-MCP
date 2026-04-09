@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   handleDumpSessionRecord: vi.fn(),
   handleCancelAnimation: vi.fn(),
   handleShowTyping: vi.fn(),
+  handleConfirm: vi.fn(),
   handleApproveAgent: vi.fn(),
   handleShutdown: vi.fn(),
   handleNotifyShutdownWarning: vi.fn(),
@@ -135,6 +136,7 @@ vi.mock("./dump_session_record.js", () => ({ handleDumpSessionRecord: mocks.hand
 vi.mock("./cancel_animation.js", () => ({ handleCancelAnimation: mocks.handleCancelAnimation, register: vi.fn() }));
 // Phase 2 vi.mocks — standalone
 vi.mock("./show_typing.js", () => ({ handleShowTyping: mocks.handleShowTyping, register: vi.fn() }));
+vi.mock("./confirm.js", () => ({ handleConfirm: (...args: unknown[]) => mocks.handleConfirm(...args), register: vi.fn() }));
 vi.mock("./approve_agent.js", () => ({ handleApproveAgent: mocks.handleApproveAgent, register: vi.fn() }));
 vi.mock("./shutdown.js", () => ({ handleShutdown: mocks.handleShutdown, register: vi.fn() }));
 vi.mock("./notify_shutdown_warning.js", () => ({ handleNotifyShutdownWarning: mocks.handleNotifyShutdownWarning, register: vi.fn() }));
@@ -355,6 +357,13 @@ describe("action tool", () => {
       expect(registeredPaths).toContain("progress/update");
     });
 
+    it("calls registerAction for all confirm/* preset paths", () => {
+      const registeredPaths = mocks.registerAction.mock.calls.map((c) => c[0] as string);
+      expect(registeredPaths).toContain("confirm/ok");
+      expect(registeredPaths).toContain("confirm/ok-cancel");
+      expect(registeredPaths).toContain("confirm/yn");
+    });
+
     it("registers governor-only paths with { governor: true } metadata", () => {
       const governorCalls = mocks.registerAction.mock.calls.filter(
         (c) => (c[2] as { governor?: boolean } | undefined)?.governor === true,
@@ -440,6 +449,18 @@ describe("action tool", () => {
       expect(fakeHandler).toHaveBeenCalledOnce();
       const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
       expect(calledArgs.file_id).toBe("AgAC123");
+    });
+
+    it("dispatches confirm/ok to handleConfirm with preset OK button", async () => {
+      const fakeResult = { content: [{ type: "text", text: JSON.stringify({ confirmed: true }) }] };
+      mocks.handleConfirm.mockResolvedValue(fakeResult);
+      const confirmOkCall = mocks.registerAction.mock.calls.find((c) => c[0] === "confirm/ok");
+      const handler = confirmOkCall![1] as (args: Record<string, unknown>) => unknown;
+      await handler({ text: "Are you ready?", token: VALID_TOKEN });
+      expect(mocks.handleConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({ yes_text: "OK", no_text: "" }),
+        undefined,
+      );
     });
   });
 });

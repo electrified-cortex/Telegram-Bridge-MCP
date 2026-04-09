@@ -42,7 +42,7 @@ const DESCRIPTION =
  * added in the future, this list should be updated to match.
  */
 const TOOL_INDEX: Record<string, string> = {
-  help: "Discovery tool — overview, communication guide, and per-tool docs. No auth required for most topics; topic: 'identity' requires a session token.",
+  help: "Discovery tool — overview, communication guide, and per-tool docs. Specialized topics: 'checklist' (step statuses), 'animation' (frame guide). No auth required for most topics; topic: 'identity' requires a session token.",
   session_start: "Authenticate and start a named agent session. Returns a token for all subsequent calls.",
   close_session: "End the current agent session and release its slot.",
   list_sessions: "List all active sessions with their SIDs and display names.",
@@ -53,8 +53,8 @@ const TOOL_INDEX: Record<string, string> = {
   get_chat_history: "Fetch recent chat history (messages before a given ID).",
   notify: "Send a formatted notification with severity styling (info/success/warning/error).",
   ask: "Send a message and wait for the user's reply in a single call.",
-  choose: "Send a multiple-choice prompt and return the user's selection. Accepts text + optional audio.",
-  send_choice: "Send an inline-keyboard choice message without blocking.",
+  choose: "Send a multiple-choice prompt and return the user's selection. Accepts text + optional audio. Buttons are removed after selection (expected behavior — use send_choice if you want non-blocking buttons).",
+  send_choice: "Send an inline-keyboard choice message without blocking. Note: buttons are removed once the user clicks (one-shot). Use update_checklist or a follow-up edit if you need persistent buttons.",
   confirm: "Send a yes/no confirmation prompt and return the user's answer. Accepts text + optional audio.",
   send: "Send a message as text, audio (TTS), or both. text → text message. audio → voice note. Both → voice note with text as caption.",
   send_file: "Upload and send a file to the Telegram chat.",
@@ -62,7 +62,7 @@ const TOOL_INDEX: Record<string, string> = {
   edit_message_text: "Edit only the text of a previously sent message.",
   append_text: "Append text to an existing message.",
   delete_message: "Delete a Telegram message by ID.",
-  show_animation: "Show a looping text-frame animation in chat.",
+  show_animation: "Show a looping text-frame animation in chat. Caution: solo emoji frames render as large stickers on mobile — append \\u200b (zero-width space) to prevent this, or use multi-char frames. See help(topic: 'animation') for full guide.",
   cancel_animation: "Stop the currently running animation.",
   set_default_animation: "Set the animation used for long-running tasks.",
   show_typing: "Send a 'typing…' chat action indicator.",
@@ -165,6 +165,70 @@ export function register(server: McpServer) {
               "# Agent Communication Guide\n\nUnavailable: docs/behavior.md not found in distribution.",
           });
         }
+      }
+
+      // topic: "checklist" → checklist step status values
+      if (topic === "checklist") {
+        return toResult({
+          content: [
+            "# Checklist Step Statuses",
+            "",
+            "Valid `status` values for `send(type: \"checklist\")` and `action(type: \"checklist/update\")` steps:",
+            "",
+            "| Status | Meaning |",
+            "| --- | --- |",
+            "| `pending` | Not yet started (default — shows ⬜) |",
+            "| `running` | In progress (shows 🔄) |",
+            "| `done` | Completed successfully (shows ✅) |",
+            "| `failed` | Completed with error (shows ❌) |",
+            "| `skipped` | Intentionally skipped (shows ⏭️) |",
+            "",
+            "**Common mistake:** using `in-progress` — this is not a valid status. Use `running` instead.",
+            "",
+            "**Example:**",
+            "```",
+            "action(type: \"checklist/update\", message_id: 123, steps: [",
+            "  { label: \"Fetch data\", status: \"done\" },",
+            "  { label: \"Process\", status: \"running\" },",
+            "  { label: \"Save\", status: \"pending\" }",
+            "])",
+            "```",
+          ].join("\n"),
+        });
+      }
+
+      // topic: "animation" → animation frames guide
+      if (topic === "animation") {
+        return toResult({
+          content: [
+            "# Animation Frames Guide",
+            "",
+            "## Starting an animation",
+            "Use `send(type: \"animation\", frames: [...], interval: 1000, timeout: 600)` or",
+            "a named preset via `send(type: \"animation\", preset: \"working\")`.",
+            "",
+            "## Single-emoji frames warning",
+            "Frames that contain **only a single emoji** render as large animated stickers on mobile.",
+            "This is a Telegram behavior — it cannot be fully suppressed from the server side.",
+            "",
+            "**Fix:** Append `\\u200b` (zero-width space) to single-emoji frames:",
+            "```",
+            "frames: [\"⏳\\u200b\", \"🔄\\u200b\"]   // prevents sticker rendering",
+            "```",
+            "Or use multi-character frames to avoid the issue entirely:",
+            "```",
+            "frames: [\"`⏳ working`\", \"`🔄 thinking`\"]",
+            "```",
+            "",
+            "## Built-in presets",
+            "| Preset | Description |",
+            "| --- | --- |",
+            "| `bounce` | Block-character bouncing bar (default) |",
+            "| `working` | `⚙ Working…` cycling dots |",
+            "| `thinking` | `🤔 Thinking…` cycling dots |",
+            "| `reviewing` | `🔍 Reviewing…` cycling dots |",
+          ].join("\n"),
+        });
       }
 
       // topic: "<tool_name>" → per-tool description

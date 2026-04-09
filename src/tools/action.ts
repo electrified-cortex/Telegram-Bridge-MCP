@@ -50,6 +50,7 @@ import { handleGetDebugLog } from "./get_debug_log.js";
 import { handleCancelAnimation } from "./cancel_animation.js";
 // Phase 2 imports — standalone
 import { handleShowTyping } from "./show_typing.js";
+import { handleConfirm } from "./confirm.js";
 import { handleApproveAgent } from "./approve_agent.js";
 import { handleShutdown } from "./shutdown.js";
 import { handleNotifyShutdownWarning } from "./notify_shutdown_warning.js";
@@ -134,6 +135,21 @@ export function setupActionRegistry(): void {
 
   // standalone
   registerAction("show-typing", handleShowTyping as unknown as ActionHandler);
+  // confirm/* presets (preset buttons, caller only needs to supply `text`)
+  const makeConfirmHandler = (yesText: string, noText: string) =>
+    ((args: Record<string, unknown>) => handleConfirm({
+      text: (args.text as string | undefined) ?? "",
+      yes_text: yesText,
+      no_text: noText,
+      yes_data: "confirm_yes",
+      no_data: "confirm_no",
+      timeout_seconds: (args.timeout_seconds as number | undefined) ?? 600,
+      ignore_pending: args.ignore_pending as boolean | undefined,
+      token: args.token as number,
+    }, undefined as unknown as AbortSignal)) as unknown as ActionHandler;
+  registerAction("confirm/ok", makeConfirmHandler("OK", ""));
+  registerAction("confirm/ok-cancel", makeConfirmHandler("OK", "Cancel"));
+  registerAction("confirm/yn", makeConfirmHandler("Yes", "No"));
   registerAction("approve", handleApproveAgent as unknown as ActionHandler, { governor: true });
   registerAction("shutdown", handleShutdown as unknown as ActionHandler, { governor: true });
   registerAction("shutdown/warn", handleNotifyShutdownWarning as unknown as ActionHandler, { governor: true });
@@ -215,7 +231,7 @@ export function register(server: McpServer): void {
         text: z
           .string()
           .optional()
-          .describe("message/edit: New text content. reminder/set: Reminder message text. animation/cancel: Replacement text."),
+          .describe("message/edit: New text content. reminder/set: Reminder message text. animation/cancel: Replacement text. confirm/*: Prompt shown to user."),
         keyboard: z
           .array(
             z.array(
@@ -267,7 +283,11 @@ export function register(server: McpServer): void {
           .int()
           .positive()
           .optional()
-          .describe("react: Deadline before auto-restore fires. show-typing: Duration (1–300s, default 20)."),
+          .describe("react: Deadline before auto-restore fires. show-typing: Duration (1–300s, default 20). confirm/*: Seconds to wait for user response before timing out (default 600)."),
+        ignore_pending: z
+          .boolean()
+          .optional()
+          .describe("confirm/*: Proceed even if there are unread pending updates (skips the pending check)."),
         // acknowledge params
         callback_query_id: z
           .string()
@@ -324,7 +344,7 @@ export function register(server: McpServer): void {
             z.object({
               text: z.string(),
               delay_seconds: z.number(),
-              recurring: z.boolean(),
+              recurring: z.boolean().default(false),
             }),
           )
           .optional()
