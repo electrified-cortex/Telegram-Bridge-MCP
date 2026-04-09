@@ -131,3 +131,23 @@ similar) covering:
 - [ ] Unit tests for Zod errors, handler errors, fuzzy matching, discovery mode
 - [ ] Zero regression on existing discovery mode behavior
 - [ ] Error messages pass the "Haiku test" — understandable without docs
+
+## Completion
+
+**Commit:** e13b612 (branch 10-422)
+**Tests:** 2129 passing (12 new in error-guidance.test.ts)
+
+### What changed
+
+- src/telegram.ts: Added 7 codes to TelegramErrorCode union; hint?: string field on TelegramError interface
+- src/tools/send.ts: 	ype schema changed from z.enum to z.string with manual guard so fuzzy matching is reachable; hint on all 12 	oError sites; indClosestMatch + levenshtein helpers; empty-array crash fix; substring lowercase fix
+- src/tools/action.ts: UNKNOWN_ACTION uses indClosestMatch against listCategories(); hint on NOT_GOVERNOR; same helpers with same fixes
+- src/tools/dequeue.ts: Zod .message() on 	imeout int/min/max constraints
+- src/tools/error-guidance.test.ts: New file — 12 tests covering all hint paths including UNKNOWN_TYPE fuzzy path
+- changelog/unreleased.md: Added error guidance hints entry
+
+### Deferred
+
+- v5 tool stub approach: decided not to register stubs (discovery mode is preferred path)
+- EMPTY_MESSAGE text-path hint: minor inconsistency, low priority
+- Zod cross-field .superRefine(): not implemented — individual field messages adequate for now
