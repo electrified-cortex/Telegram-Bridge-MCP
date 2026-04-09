@@ -29,6 +29,48 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
 process.stderr.write(`[info] [${pkg.name}] v${pkg.version} starting...\n`);
 
+// Parse --http [port] from argv (takes precedence over MCP_PORT env var)
+// Resolve and check port FIRST - fail fast before loading any config or Telegram state
+let mcpPort: number | undefined;
+try {
+  mcpPort = resolveHttpPort(process.argv, process.env);
+} catch (e) {
+  process.stderr.write(`[error] ${e instanceof Error ? e.message : String(e)}\n`);
+  process.exit(1);
+}
+
+if (mcpPort) {
+  const { createConnection } = await import("net");
+  const probeTimeoutMs = 1000;
+  await new Promise<void>((resolve, reject) => {
+    const probe = createConnection({ port: mcpPort, host: "127.0.0.1" });
+    let settled = false;
+    const finish = (handler: () => void) => {
+      if (settled) return;
+      settled = true;
+      probe.destroy();
+      handler();
+    };
+    probe.setTimeout(probeTimeoutMs);
+    probe.on("connect", () => {
+      finish(() => reject(new Error(`Port ${mcpPort} is already in use - another MCP instance may be running.`)));
+    });
+    probe.on("timeout", () => {
+      finish(() => reject(new Error(`Timed out probing port ${mcpPort} after ${probeTimeoutMs}ms.`)));
+    });
+    probe.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "ECONNREFUSED") {
+        finish(() => resolve()); // Port is free
+        return;
+      }
+      finish(() => reject(new Error(`Failed to probe port ${mcpPort}${err.code ? ` (${err.code})` : ""}: ${err.message}`)));
+    });
+  }).catch((err: Error) => {
+    process.stderr.write(`[fatal] ${err.message} Exiting.\n`);
+    process.exit(1);
+  });
+}
+
 // Initialize security config early so warnings surface at startup
 getSecurityConfig();
 
@@ -48,10 +90,10 @@ if (isDebugConfig()) process.stderr.write("[info] debug logging enabled\n");
 
 // Warn if TTS/STT remote hosts are using plain HTTP (credentials and audio exposed in transit)
 if (process.env.TTS_HOST && !process.env.TTS_HOST.startsWith("https://")) {
-  process.stderr.write("[warn] TTS_HOST is not using HTTPS — credentials and audio may be exposed in transit.\n");
+  process.stderr.write("[warn] TTS_HOST is not using HTTPS - credentials and audio may be exposed in transit.\n");
 }
 if (process.env.STT_HOST && !process.env.STT_HOST.startsWith("https://")) {
-  process.stderr.write("[warn] STT_HOST is not using HTTPS — credentials and audio may be exposed in transit.\n");
+  process.stderr.write("[warn] STT_HOST is not using HTTPS - credentials and audio may be exposed in transit.\n");
 }
 
 let _shuttingDown = false;
@@ -106,16 +148,7 @@ setOnLocalLog((event) => {
   logLocalEvent(loggableEvent);
 });
 
-// Parse --http [port] from argv (takes precedence over MCP_PORT env var)
-let mcpPort: number | undefined;
-try {
-  mcpPort = resolveHttpPort(process.argv, process.env);
-} catch (e) {
-  process.stderr.write(`[error] ${e instanceof Error ? e.message : String(e)}\n`);
-  process.exit(1);
-}
-
-if (mcpPort !== undefined) {
+if (mcpPort) {
   // ── Streamable HTTP mode (shared server, multiple clients) ──
   const app = createMcpExpressApp();
 
@@ -192,8 +225,20 @@ if (mcpPort !== undefined) {
     await transport.handleRequest(req, res);
   });
 
-  app.listen(mcpPort, "127.0.0.1", () => {
+  const server = app.listen({
+    port: mcpPort,
+    host: "127.0.0.1",
+    exclusive: true,
+  }, () => {
     process.stderr.write(`[info] MCP Streamable HTTP server listening on http://127.0.0.1:${mcpPort}/mcp\n`);
+  });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      process.stderr.write(`[fatal] Port ${mcpPort} is already in use - another MCP instance may be running. Exiting.\n`);
+      process.exit(1);
+    }
+    throw err;
   });
 } else {
   // ── stdio mode (original behavior) ──
