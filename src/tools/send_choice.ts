@@ -1,12 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  toResult, toError, validateText, resolveChat, validateCallbackData, LIMITS, getApi,
+  toResult, toError, validateText, resolveChat, validateCallbackData, LIMITS,
 } from "../telegram.js";
 import { registerCallbackHook } from "../message-store.js";
 import { requireAuth } from "../session-gate.js";
 import {
-  sendChoiceMessage, type KeyboardOption,
+  sendChoiceMessage, ackAndEditSelection, type KeyboardOption,
 } from "./button-helpers.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
@@ -108,18 +108,14 @@ export async function handleSendChoice({
     });
 
     // Register one-shot auto-lock: on first press, dismiss the spinner and
-    // remove the buttons. The callback_query event is still enqueued normally.
+    // collapse the message to show the selected option. The callback_query event
+    // is still enqueued normally.
     // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
     registerCallbackHook(messageId, (evt) => {
       const qid = evt.content.qid;
-      void (async () => {
-        if (qid) {
-          await getApi().answerCallbackQuery(qid).catch(() => { /* non-fatal */ });
-        }
-        await getApi()
-          .editMessageReplyMarkup(chatId, messageId, { reply_markup: { inline_keyboard: [] } })
-          .catch(() => { /* non-fatal */ });
-      })();
+      const matched = options.find((o) => o.value === evt.content.data);
+      const label = matched?.label ?? evt.content.data ?? "?";
+      void ackAndEditSelection(chatId, messageId, text, label, qid);
     }, _sid);
 
     return toResult({ message_id: messageId });

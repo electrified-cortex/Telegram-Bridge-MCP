@@ -238,14 +238,14 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
 
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
-    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledTimes(1);
+    expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
 
     // Second click — hook already consumed; no additional ack or keyboard removal
     recordInbound(cbUpdate(5, "a", "qid2"));
     await new Promise<void>((r) => { setTimeout(r, 20); });
 
     // Keyboard NOT removed a second time
-    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledTimes(1);
+    expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
     // answerCallbackQuery NOT called again (no hook to fire it)
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
 

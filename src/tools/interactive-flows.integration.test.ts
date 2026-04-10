@@ -303,7 +303,7 @@ describe("interactive flows — end-to-end integration", () => {
 
     // Hook fired — keyboard removed and callback answered
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
-    expect(mocks.editMessageReplyMarkup).toHaveBeenCalled();
+    expect(mocks.editMessageText).toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
