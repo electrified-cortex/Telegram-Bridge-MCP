@@ -1484,15 +1484,18 @@ async function renderSessionDetail(
   const lines = [
     `${target.color} *${target.name}*`,
     `SID: ${target.sid}`,
-    `Started: ${target.createdAt}`,
+    `Started: ${target.createdAt ? new Date(target.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "unknown"}`,
     isGov ? "_This is the current primary session._" : "",
   ].filter(Boolean);
 
+  const firstRow = isGov
+    ? [{ text: "🗑 Close session", callback_data: `session:close:${sid}` }]
+    : [
+        { text: "🗑 Close session", callback_data: `session:close:${sid}` },
+        { text: "⭐ Set as Primary", callback_data: `session:primary:${sid}` },
+      ];
   const keyboard: { text: string; callback_data: string }[][] = [
-    [
-      { text: "🗑 Close session", callback_data: `session:close:${sid}` },
-      { text: "⭐ Set as Primary", callback_data: `session:primary:${sid}` },
-    ],
+    firstRow,
     [{ text: "← Back", callback_data: "session:back" }],
   ];
 

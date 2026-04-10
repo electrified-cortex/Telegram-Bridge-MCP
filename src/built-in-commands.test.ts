@@ -1319,7 +1319,7 @@ describe("built-in-commands", () => {
       it("session:select:{sid} callback — edits to detail view with Close, Set as Primary, and Back buttons", async () => {
         const panelId = await createSessionPanel();
         mocks.editMessageText.mockResolvedValue(true);
-        await handleIfBuiltIn(callbackUpdate(panelId, "session:select:1"));
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:select:2")); // SID 2 is not the governor (governor=1)
         expect(mocks.editMessageText).toHaveBeenCalled();
         const call = mocks.editMessageText.mock.calls[0];
         const keyboard = call[3].reply_markup.inline_keyboard;
@@ -1329,6 +1329,24 @@ describe("built-in-commands", () => {
         expect(data.some((d: string) => d.startsWith("session:close:"))).toBe(true);
         expect(data.some((d: string) => d.startsWith("session:primary:"))).toBe(true);
         expect(data).toContain("session:back");
+      });
+
+      it("session:select:{sid} — governor session: hides Set as Primary button", async () => {
+        mocks.getGovernorSid.mockReturnValue(1); // SID 1 is the governor
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:select:1")); // select the governor itself
+        expect(mocks.editMessageText).toHaveBeenCalled();
+        const call = mocks.editMessageText.mock.calls[0];
+        const keyboard = call[3].reply_markup.inline_keyboard;
+        const data = keyboard.flat().map(
+          (b: { callback_data: string }) => b.callback_data,
+        );
+        // Close and Back should still be present
+        expect(data.some((d: string) => d.startsWith("session:close:"))).toBe(true);
+        expect(data).toContain("session:back");
+        // Set as Primary should NOT appear for the current governor
+        expect(data.some((d: string) => d.startsWith("session:primary:"))).toBe(false);
       });
 
       it("session:select:{sid} — session not found: falls back to session list", async () => {
