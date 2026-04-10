@@ -1244,7 +1244,7 @@ function buildLoggingPanel(): { text: string; keyboard: { text: string; callback
   const clearLabel = archived.length > 0 ? `🗑 Clear (${archived.length})` : "🗑 Clear";
   const keyboard = [
     [
-      { text: "💾 Save log", callback_data: "logging:dump" },
+      { text: "� Archive log", callback_data: "logging:dump" },
       { text: "⬇ Disable", callback_data: "logging:off" },
     ],
     [
