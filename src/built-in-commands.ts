@@ -1182,8 +1182,8 @@ async function handleLoggingCallback(
             parse_mode: "Markdown", _skipHeader: true,
             reply_markup: { inline_keyboard: [
               [
-                { text: "No — Cancel", callback_data: "logging:flush-cancel" },
-                { text: "Delete All", callback_data: "logging:flush-confirm" },
+                { text: "✖ No — Cancel", callback_data: "logging:flush-cancel" },
+                { text: "🗑 Delete All", callback_data: "logging:flush-confirm" },
               ],
             ]},
           } as Record<string, unknown>));
@@ -1234,7 +1234,7 @@ function buildLoggingPanel(): { text: string; keyboard: { text: string; callback
     // Logging OFF state
     const keyboard = [
       [
-        { text: "On", callback_data: "logging:on" },
+        { text: "✓ Enable", callback_data: "logging:on" },
         { text: "✖ Dismiss", callback_data: "logging:dismiss" },
       ],
     ];
@@ -1242,12 +1242,14 @@ function buildLoggingPanel(): { text: string; keyboard: { text: string; callback
   }
 
   // Logging ON state
-  const flushLabel = `Flush (${archived.length})`;
+  const clearLabel = archived.length > 0 ? `🗑 Clear (${archived.length})` : "🗑 Clear";
   const keyboard = [
     [
-      { text: "Dump", callback_data: "logging:dump" },
-      { text: "Off", callback_data: "logging:off" },
-      { text: flushLabel, callback_data: "logging:flush" },
+      { text: "💾 Save log", callback_data: "logging:dump" },
+      { text: "✗ Disable", callback_data: "logging:off" },
+    ],
+    [
+      { text: clearLabel, callback_data: "logging:flush" },
       { text: "✖ Dismiss", callback_data: "logging:dismiss" },
     ],
   ];
@@ -1275,8 +1277,9 @@ async function handleSessionCommand(): Promise<void> {
   const { text, keyboard } = buildSessionListPanel(sessions);
   try {
     const msg = await api.sendMessage(chatId, text, {
+      _skipHeader: true,
       reply_markup: { inline_keyboard: keyboard },
-    });
+    } as Record<string, unknown>);
     _activePanels.set(msg.message_id, "session");
     markInternalMessage(msg.message_id);
   } catch { /* ignore */ }
@@ -1285,7 +1288,7 @@ async function handleSessionCommand(): Promise<void> {
 function buildSessionListPanel(
   sessions: Array<{ sid: number; name: string; color: string }>,
 ): { text: string; keyboard: { text: string; callback_data: string }[][] } {
-  const text = "Active sessions — tap one to manage:";
+  const text = "🖥 Active sessions — tap one to manage:";
   const keyboard: { text: string; callback_data: string }[][] = [];
   for (const s of sessions) {
     const label = `${s.color} ${s.name} (SID ${s.sid})`;
@@ -1322,8 +1325,9 @@ async function handleSessionCallback(
     const { text, keyboard } = buildSessionListPanel(sessions);
     try {
       await runInSessionContext(0, () => api.editMessageText(chatId, panelMsgId, text, {
+        _skipHeader: true,
         reply_markup: { inline_keyboard: keyboard },
-      }));
+      } as Record<string, unknown>));
     } catch { /* ignore */ }
     return;
   }
