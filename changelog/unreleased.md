@@ -49,6 +49,7 @@
 - Non-blocking `send_choice` button press now collapses the message to show `▸ *[selected label]*` with buttons removed, matching blocking `choose` behavior. Previously buttons disappeared with no feedback.
 - `/session` detail panel: `Started` field now shows `HH:MM` local time instead of raw ISO string; "Set as Primary" button hidden when the selected session is already the primary (governor).
 - `/log` command now aliases `/logging`; removed from bot command list. `/logging` panel "Dump" renamed to "💾 Save log", "Flush (N)" renamed to "🗑 Clear (N)"; ON-state buttons split into 2×2 layout for mobile.
+- Service message visual consistency: `/logging` panel buttons all have emoji (`✓ Enable`, `✗ Disable`); flush confirm buttons get emoji; `/session` list panel gets `_skipHeader: true` and a `🖥` title emoji.
 - `renderProgress()` subtext no longer force-wrapped in `<i>...</i>`; renders as plain escaped text so senders control their own formatting.
 - `load_profile` / `action(type: "profile/load")`: `color_hint` field in profile now applied retroactively via `setSessionColor`; corrects mis-assigned session color after start. Only applies when the hinted color is not already held by another session. `profiles/Worker.json`, `Curator.json`, `Overseer.json` updated with `color_hint`.
 - `send(type: "animation", timeout: N)` — `timeout` param was silently dropped because the schema used `animation_timeout`; animation ran for the default 600 s instead of the specified value. Renamed schema param to `timeout`.
