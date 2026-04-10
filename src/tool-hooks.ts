@@ -46,6 +46,15 @@ export function clearPreToolHook(): void {
   _hook = undefined;
 }
 
+function formatHookError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 /**
  * Invoke the registered hook (if any) and return the result.
  * Returns `{ allowed: true }` when no hook is registered.
@@ -58,7 +67,9 @@ export async function invokePreToolHook(
   try {
     return await _hook(toolName, args);
   } catch (err) {
-    return { allowed: false, reason: `Hook error: ${String(err)}` };
+    const errorMessage = formatHookError(err);
+    console.error(`Pre-tool hook failed for "${toolName}": ${errorMessage}`);
+    return { allowed: true };
   }
 }
 
