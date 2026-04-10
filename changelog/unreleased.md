@@ -43,6 +43,7 @@
 ## Fixed
 
 - `send(type: "progress"/"checklist")` — `text` param now accepted as an alias for `title` (caption above bar/checklist); `title` takes precedence when both are provided. Previously `text` was silently ignored, rendering no caption.
+- `send_new_progress` / `update_progress` — progress bar state (title, subtext, width) now persisted in `src/progress-store.ts`; `update_progress` uses stored values as defaults when caller omits them; explicit overrides update the store; empty string clears stored field; 100% completion deletes the store entry. Previously, calling `update_progress` with only `percent` erased the title and subtext.
 - `renderProgress()` subtext no longer force-wrapped in `<i>...</i>`; renders as plain escaped text so senders control their own formatting.
 - `load_profile` / `action(type: "profile/load")`: `color_hint` field in profile now applied retroactively via `setSessionColor`; corrects mis-assigned session color after start. Only applies when the hinted color is not already held by another session. `profiles/Worker.json`, `Curator.json`, `Overseer.json` updated with `color_hint`.
 - `send(type: "animation", timeout: N)` — `timeout` param was silently dropped because the schema used `animation_timeout`; animation ran for the default 600 s instead of the specified value. Renamed schema param to `timeout`.
