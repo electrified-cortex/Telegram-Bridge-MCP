@@ -13,9 +13,9 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 1. `pnpm build` — clean
 2. `pnpm lint` — clean
 3. `pnpm test` — all passing
-4. Restart the MCP server (`shutdown` → call any tool to restart)
-5. `session_start` — fresh session (SID 1)
-6. `set_topic` with a test label (e.g. "🧪 Test")
+4. Restart the MCP server (`action("shutdown")` → call any tool to restart)
+5. `action("session_start")` — fresh session (SID 1)
+6. `action("set_topic", "🧪 Test")` with a test label
 
 ---
 
@@ -25,31 +25,31 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A1.1 | [Agent] `list_sessions` | Returns SID 1 "Primary", `active_sid: 1` |
-| A1.2 | [Agent] `get_me` | Returns bot username, MCP version, commit hash, build time |
-| A1.3 | [Agent] `set_topic("🧪 Test")` then `send_text` | Message appears with `**[🧪 Test]**` prefix |
-| A1.4 | [Agent] `set_topic("")` then `send_text` | Message appears without prefix |
+| A1.1 | [Agent] `action("list_sessions")` | Returns SID 1 "Primary", `active_sid: 1` |
+| A1.2 | [Agent] `action("get_me")` | Returns bot username, MCP version, commit hash, build time |
+| A1.3 | [Agent] `action("set_topic", "🧪 Test")` then `send("Hello")` | Message appears with `**[🧪 Test]**` prefix |
+| A1.4 | [Agent] `action("set_topic", "")` then `send("Hello")` | Message appears without prefix |
 
 ### A2. Messaging
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A2.1 | [Agent] `send_text("Hello")` | Message appears in Telegram |
-| A2.2 | [Agent] `send_message` with 2-button inline keyboard | Message + buttons appear |
-| A2.3 | [Op] Press a button | [Agent] receives callback via `dequeue` with `data`, `qid`, `target` |
-| A2.4 | [Agent] `answer_callback_query(qid)` | Toast notification shown to operator |
-| A2.5 | [Agent] `notify(title, text, severity: "info")` | Notification appears in chat |
-| A2.6 | [Agent] `send_text` → capture msg\_id → `edit_message_text(msg_id, new_text)` | Message content updated in-place |
-| A2.7 | [Agent] `send_text` → `append_text(msg_id, extra)` | Message now has original + appended text |
-| A2.8 | [Agent] `send_text` → `delete_message(msg_id)` | Message removed from chat |
-| A2.9 | [Agent] `send_text` → `pin_message(msg_id)` | Message pinned in chat |
+| A2.1 | [Agent] `send("Hello")` | Message appears in Telegram |
+| A2.2 | [Agent] `action("send_message", ...)` with a 2-button inline keyboard | Message + buttons appear |
+| A2.3 | [Op] Press a button | [Agent] receives callback via `action("dequeue")` with `data`, `qid`, `target` |
+| A2.4 | [Agent] `action("answer_callback_query", { qid })` | Toast notification shown to operator |
+| A2.5 | [Agent] `action("notify", { title, text, severity: "info" })` | Notification appears in chat |
+| A2.6 | [Agent] `send("Hello")` → capture `msg_id` → `action("edit_message_text", { msg_id, new_text })` | Message content updated in-place |
+| A2.7 | [Agent] `send("Hello")` → `action("append_text", { msg_id, extra })` | Message now has original + appended text |
+| A2.8 | [Agent] `send("Hello")` → `action("delete_message", { msg_id })` | Message removed from chat |
+| A2.9 | [Agent] `send("Hello")` → `action("pin_message", { msg_id })` | Message pinned in chat |
 
 ### A3. Interactive Tools
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A3.1 | [Agent] `confirm("Test?")` → [Op] presses Yes | Returns `{ confirmed: true }` |
-| A3.2 | [Agent] `confirm("Test?")` → [Op] presses No | Returns `{ confirmed: false }` |
+| A3.1 | [Agent] `action("confirm", "Test?")` → [Op] presses Yes | Returns `{ confirmed: true }` |
+| A3.2 | [Agent] `action("confirm", "Test?")` → [Op] presses No | Returns `{ confirmed: false }` |
 | A3.3 | [Agent] `choose(3 options)` → [Op] picks one | Returns `{ label, value }` matching selection |
 | A3.4 | [Agent] `ask("Type something")` → [Op] types response | Returns `{ text }` with operator's input |
 | A3.5 | [Agent] `send_choice(2 options)` → [Op] presses one | Callback received via `dequeue` |
