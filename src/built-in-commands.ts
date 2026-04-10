@@ -1234,7 +1234,7 @@ function buildLoggingPanel(): { text: string; keyboard: { text: string; callback
     // Logging OFF state
     const keyboard = [
       [
-        { text: "✓ Enable", callback_data: "logging:on" },
+        { text: "⬆ Enable", callback_data: "logging:on" },
         { text: "✖ Dismiss", callback_data: "logging:dismiss" },
       ],
     ];
@@ -1246,7 +1246,7 @@ function buildLoggingPanel(): { text: string; keyboard: { text: string; callback
   const keyboard = [
     [
       { text: "💾 Save log", callback_data: "logging:dump" },
-      { text: "✗ Disable", callback_data: "logging:off" },
+      { text: "⬇ Disable", callback_data: "logging:off" },
     ],
     [
       { text: clearLabel, callback_data: "logging:flush" },
