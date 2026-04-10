@@ -124,9 +124,10 @@ export function getAvailableColors(hint?: string): string[] {
     ...allColors.filter(c => usedColors.has(c)),
   ];
 
-  if (hint && (COLOR_PALETTE as readonly string[]).includes(hint) && !usedColors.has(hint)) {
-    // Promote unused hint to position 0 as top recommendation.
-    // In-use hints stay at their natural sorted position (end of list).
+  if (hint && (COLOR_PALETTE as readonly string[]).includes(hint)) {
+    // Always promote hint to position 0 — this is the agent's requested color
+    // and should be the most prominent button in the approval dialog.
+    // In-use hints are still promoted (sessions may share colors).
     return [hint, ...sorted.filter(c => c !== hint)];
   }
   return sorted;

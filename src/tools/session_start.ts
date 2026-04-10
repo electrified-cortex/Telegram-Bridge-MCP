@@ -12,7 +12,7 @@ import { refreshGovernorCommand } from "../built-in-commands.js";
 import { checkAndConsumeAutoApprove } from "../auto-approve.js";
 import { startPoller, isPollerRunning } from "../poller.js";
 import { fireStartupReminders, buildReminderEvent } from "../reminder-state.js";
-import { registerPendingApproval, clearPendingApproval, getPendingApproval } from "../agent-approval.js";
+import { registerPendingApproval, clearPendingApproval, getPendingApproval, isDelegationEnabled, setDelegationEnabled } from "../agent-approval.js";
 import type { ApprovalDecision } from "../agent-approval.js";
 
 const APPROVAL_TIMEOUT_MS = 120_000;
@@ -20,6 +20,42 @@ const APPROVAL_NO = "approve_no";
 const APPROVE_PREFIX = "approve_";
 const RECONNECT_YES = "reconnect_yes";
 const RECONNECT_NO = "reconnect_no";
+const TOGGLE_DELEGATION = "approve:toggle:delegation";
+
+/**
+ * Build the inline keyboard for the approval dialog.
+ * Always 3 rows: [colors row1], [colors row2], [delegation toggle, deny].
+ */
+function buildApprovalKeyboard(
+  availableColors: string[],
+  colorHint: string | undefined,
+  delegationEnabled: boolean,
+): { inline_keyboard: Record<string, unknown>[][] } {
+  const validHint =
+    colorHint && COLOR_PALETTE.includes(colorHint as (typeof COLOR_PALETTE)[number])
+      ? colorHint
+      : undefined;
+  const colorButtons = availableColors.map((c, i) => {
+    let isPrimary = false;
+    if (validHint) {
+      isPrimary = c === validHint;
+    } else if (delegationEnabled) {
+      isPrimary = i === 0;
+    }
+    return {
+      text: c,
+      callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
+      ...(isPrimary ? { style: "primary" } : {}),
+    } as Record<string, unknown>;
+  });
+  const row1 = colorButtons.slice(0, 3);
+  const row2 = colorButtons.slice(3);
+  const toggleButton: Record<string, unknown> = delegationEnabled
+    ? { text: "✅ Delegated", callback_data: TOGGLE_DELEGATION }
+    : { text: "☐ Delegate", callback_data: TOGGLE_DELEGATION };
+  const denyButton: Record<string, unknown> = { text: "⛔ Deny", callback_data: APPROVAL_NO, style: "danger" };
+  return { inline_keyboard: [row1, row2, [toggleButton, denyButton]] };
+}
 
 /**
  * Send an operator approval prompt for a new session. The prompt shows
@@ -36,27 +72,12 @@ async function requestApproval(
   const label = reconnect ? "Session reconnecting:" : "New session requesting access:";
   const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:`;
   const availableColors = getAvailableColors(colorHint);
-  const usedColors = new Set(listSessions().map((s) => s.color));
-  const validHint = colorHint && (COLOR_PALETTE as readonly string[]).includes(colorHint) ? colorHint : undefined;
-  const primaryColor = validHint && !usedColors.has(validHint)
-    ? validHint
-    : availableColors.find((c) => !usedColors.has(c));
   if (checkAndConsumeAutoApprove()) {
     return { approved: true, color: availableColors[0] ?? COLOR_PALETTE[0], forceColor: true };
   }
-  const colorButtons = availableColors.map((c) => ({
-    text: c,
-    callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
-    ...(c === primaryColor ? { style: "primary" } : {}),
-  }));
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
-    reply_markup: {
-      inline_keyboard: [
-        colorButtons,
-        [{ text: "⛔ Deny", callback_data: APPROVAL_NO, style: "danger" }],
-      ],
-    },
+    reply_markup: buildApprovalKeyboard(availableColors, colorHint, isDelegationEnabled()),
   } as Record<string, unknown>);
   const msgId: number = sent.message_id;
 
@@ -88,10 +109,22 @@ async function requestApproval(
       resolveOnce({ approved: false });
     }, APPROVAL_TIMEOUT_MS);
 
-    registerCallbackHook(msgId, (evt: TimelineEvent) => {
-      clearPendingApproval(name);
+    const handler = (evt: TimelineEvent) => {
       const data: string = evt.content.data ?? "";
       const qid = evt.content.qid;
+      if (data === TOGGLE_DELEGATION) {
+        // Re-register hook for next click (one-shot: must re-register after each fire)
+        registerCallbackHook(msgId, handler);
+        setDelegationEnabled(!isDelegationEnabled());
+        getApi()
+          .editMessageReplyMarkup(chatId, msgId, {
+            reply_markup: buildApprovalKeyboard(availableColors, colorHint, isDelegationEnabled()),
+          } as Record<string, unknown>)
+          .catch(() => {});
+        if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
+        return;
+      }
+      clearPendingApproval(name);
       if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
       if (data === APPROVAL_NO) {
         resolveOnce({ approved: false });
@@ -105,7 +138,8 @@ async function requestApproval(
       } else {
         resolveOnce({ approved: false });
       }
-    });
+    };
+    registerCallbackHook(msgId, handler);
   });
 
   // Delete the prompt on approval (it's private UI — a public broadcast is

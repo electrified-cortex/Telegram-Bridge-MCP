@@ -447,13 +447,13 @@ describe("getAvailableColors", () => {
     expect(colors).toHaveLength(6);
   });
 
-  it("previously-used hint stays at its natural sorted position, not forced first", () => {
+  it("in-use hint is still promoted to position 0 (sessions may share colors)", () => {
     createSession("A", "🟦"); // 🟦 in-use and most-recently-used
     const colors = getAvailableColors("🟦");
     expect(colors).toHaveLength(6);
-    // 🟦 is in-use → sorted to in-use group (last); hint does not force it to position 0
-    expect(colors[0]).not.toBe("🟦");
-    expect(colors[colors.length - 1]).toBe("🟦");
+    // 🟦 is in-use but hint still forces it to position 0 — the agent's
+    // requested color must always be the first button in the approval dialog.
+    expect(colors[0]).toBe("🟦");
   });
 
   it("hint that is not in palette is ignored", () => {

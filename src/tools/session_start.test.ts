@@ -4,6 +4,7 @@ import { createMockServer, parseResult, isError, type ToolHandler } from "./test
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   editMessageText: vi.fn().mockResolvedValue(undefined),
+  editMessageReplyMarkup: vi.fn().mockResolvedValue(undefined),
   deleteMessage: vi.fn().mockResolvedValue(undefined),
   answerCallbackQuery: vi.fn().mockResolvedValue(true),
   pinChatMessage: vi.fn().mockResolvedValue(undefined),
@@ -40,6 +41,7 @@ vi.mock("../telegram.js", async (importActual) => {
     getApi: () => ({
       sendMessage: mocks.sendMessage,
       editMessageText: mocks.editMessageText,
+      editMessageReplyMarkup: mocks.editMessageReplyMarkup,
       deleteMessage: mocks.deleteMessage,
       answerCallbackQuery: mocks.answerCallbackQuery,
       pinChatMessage: mocks.pinChatMessage,
@@ -104,6 +106,7 @@ import {
   resetReminderStateForTest,
 } from "../reminder-state.js";
 import { runInSessionContext } from "../session-context.js";
+import { setDelegationEnabled } from "../agent-approval.js";
 
 describe("session_start tool", () => {
   let call: ToolHandler;
@@ -111,7 +114,9 @@ describe("session_start tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetReminderStateForTest();
+    setDelegationEnabled(false);
     mocks.editMessageText.mockResolvedValue(undefined);
+    mocks.editMessageReplyMarkup.mockResolvedValue(undefined);
     mocks.answerCallbackQuery.mockResolvedValue(true);
     mocks.deliverReminderEvent.mockReturnValue(true);
     mocks.activeSessionCount.mockReturnValue(0);
@@ -934,10 +939,10 @@ describe("session_start tool", () => {
 
     const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
     const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
-    const denyRow = keyboard[1] as Array<Record<string, unknown>>;
+    // 2 rows of color buttons + 1 deny row = keyboard[2]
+    const denyRow = keyboard[2] as Array<Record<string, unknown>>;
     const denyButton = denyRow.find(b => b.callback_data === "approve_no");
     expect(denyButton).toBeDefined();
-    expect(denyButton!.style).toBe("danger");
   });
 
   it("tapping a color approves and passes operator-chosen color to createSession", async () => {
@@ -1085,7 +1090,7 @@ describe("session_start tool", () => {
     expect(mocks.getAvailableColors).toHaveBeenCalledWith("🟩");
   });
 
-  it("first fresh color gets primary button style when no hint provided", async () => {
+  it("first fresh color is the first button when no hint provided", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     // 🟦 is used; fresh colors start with 🟩
@@ -1103,15 +1108,15 @@ describe("session_start tool", () => {
 
     const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
     const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
-    const buttons = keyboard[0] as Array<Record<string, unknown>>;
-    const firstButton = buttons[0];
+    const row1 = keyboard[0] as Array<Record<string, unknown>>;
+    const firstButton = row1[0];
     expect(firstButton.text).toBe("🟩");
-    expect(firstButton.style).toBe("primary");
-    const usedButton = buttons.find(b => b.text === "🟦");
-    expect(usedButton?.style).not.toBe("primary");
+    // Buttons should be split across 2 rows
+    expect(keyboard[0]).toHaveLength(3);
+    expect(keyboard[1]).toHaveLength(3);
   });
 
-  it("hint gets primary style when hint is a fresh color", async () => {
+  it("hint is the first button when hint is a fresh color", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     // 🟦 is used; hint 🟥 is fresh
@@ -1129,12 +1134,12 @@ describe("session_start tool", () => {
 
     const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
     const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
-    const buttons = keyboard[0] as Array<Record<string, unknown>>;
-    const hintButton = buttons.find(b => b.text === "🟥");
-    expect(hintButton?.style).toBe("primary");
+    const row1 = keyboard[0] as Array<Record<string, unknown>>;
+    // Hint color must be the very first button
+    expect(row1[0].text).toBe("🟥");
   });
 
-  it("first fresh color gets primary style when hint is already used", async () => {
+  it("hint is still the first button even when hint color is already used", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     // 🟦 and 🟥 are used; hint is 🟥 (used); first fresh is 🟩
@@ -1155,14 +1160,13 @@ describe("session_start tool", () => {
 
     const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
     const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
-    const buttons = keyboard[0] as Array<Record<string, unknown>>;
-    const hintButton = buttons.find(b => b.text === "🟥");
-    expect(hintButton?.style).not.toBe("primary");
-    const firstFreshButton = buttons.find(b => b.text === "🟩");
-    expect(firstFreshButton?.style).toBe("primary");
+    const row1 = keyboard[0] as Array<Record<string, unknown>>;
+    // Even when hint (🟥) is already used, it gets position 0 — agent's
+    // requested color is always the most prominent button.
+    expect(row1[0].text).toBe("🟥");
   });
 
-  it("invalid colorHint (not in palette) is ignored — first fresh color gets primary style", async () => {
+  it("invalid colorHint (not in palette) is ignored — first fresh color is first button", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.listSessions
@@ -1180,13 +1184,16 @@ describe("session_start tool", () => {
 
     const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
     const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
-    const buttons = keyboard[0] as Array<Record<string, unknown>>;
+    const allButtons = [
+      ...(keyboard[0] as Array<Record<string, unknown>>),
+      ...(keyboard[1] as Array<Record<string, unknown>>),
+    ];
     // Invalid hint must not appear as a button
-    const invalidButton = buttons.find(b => b.text === "❌");
+    const invalidButton = allButtons.find(b => b.text === "❌");
     expect(invalidButton).toBeUndefined();
-    // First fresh palette color should be the primary button
-    const firstFreshButton = buttons.find(b => b.text === "🟩");
-    expect(firstFreshButton?.style).toBe("primary");
+    // First fresh palette color should be the first button
+    const row1 = keyboard[0] as Array<Record<string, unknown>>;
+    expect(row1[0].text).toBe("🟩");
   });
 
   it("reconnect variant color-picker still works", async () => {
@@ -1845,6 +1852,257 @@ describe("session_start tool", () => {
     // registerCallbackHook should NOT have been called (no approval dialog was shown)
     expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
     expect(result.action).toBe("reconnected");
+  });
+
+  // =========================================================================
+  // Delegation toggle & color button styles (spec: approval dialog)
+  // =========================================================================
+
+  it("deny button has danger style", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const row3 = keyboard[2] as Array<Record<string, unknown>>;
+    const denyButton = row3.find(b => b.callback_data === "approve_no");
+    expect(denyButton).toBeDefined();
+    expect(denyButton!.style).toBe("danger");
+  });
+
+  it("delegation toggle button is in row 3, left of deny — OFF state by default", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const row3 = keyboard[2] as Array<Record<string, unknown>>;
+    expect(row3).toHaveLength(2);
+    const toggleButton = row3[0];
+    expect(toggleButton.callback_data).toBe("approve:toggle:delegation");
+    expect(toggleButton.text).toBe("☐ Delegate");
+    expect(toggleButton.style).toBeUndefined();
+  });
+
+  it("delegation toggle button shows ON state when delegation is enabled", async () => {
+    setDelegationEnabled(true);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const row3 = keyboard[2] as Array<Record<string, unknown>>;
+    const toggleButton = row3[0];
+    expect(toggleButton.text).toBe("✅ Delegated");
+  });
+
+  it("hint color button gets primary style", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    // hint 🟩 is at position 0 (promoted by getAvailableColors)
+    mocks.getAvailableColors.mockReturnValue(["🟩", "🟦", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+
+    await call({ name: "Worker", color: "🟩" });
+
+    const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const allButtons = [
+      ...(keyboard[0] as Array<Record<string, unknown>>),
+      ...(keyboard[1] as Array<Record<string, unknown>>),
+    ];
+    const hintButton = allButtons.find(b => b.text === "🟩");
+    expect(hintButton).toBeDefined();
+    expect(hintButton!.style).toBe("primary");
+    // Only the hint button gets primary
+    const otherPrimary = allButtons.filter(b => b.text !== "🟩" && b.style === "primary");
+    expect(otherPrimary).toHaveLength(0);
+  });
+
+  it("no hint + delegation ON → first color button gets primary", async () => {
+    setDelegationEnabled(true);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const row1 = keyboard[0] as Array<Record<string, unknown>>;
+    expect(row1[0].style).toBe("primary");
+    // Others in row1 do not get primary
+    expect(row1[1].style).toBeUndefined();
+    expect(row1[2].style).toBeUndefined();
+  });
+
+  it("no hint + delegation OFF → no color button gets primary", async () => {
+    // delegation is OFF by default (setDelegationEnabled(false) in beforeEach)
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    const promptOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const keyboard = (promptOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const colorButtons = [
+      ...(keyboard[0] as Array<Record<string, unknown>>),
+      ...(keyboard[1] as Array<Record<string, unknown>>),
+    ];
+    const primaryButtons = colorButtons.filter(b => b.style === "primary");
+    expect(primaryButtons).toHaveLength(0);
+  });
+
+  it("delegation toggle does NOT resolve the approval promise", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    let hookFn: ((evt: unknown) => void) | undefined;
+    mocks.registerCallbackHook.mockImplementation((_id: number, fn: (evt: unknown) => void) => {
+      hookFn = fn;
+    });
+
+    const callPromise = call({ name: "Worker" });
+
+    // Wait for sendMessage to be called
+    await new Promise(r => setTimeout(r, 0));
+
+    // Fire a toggle callback
+    hookFn!({ content: { data: "approve:toggle:delegation", qid: "t1" } });
+    await new Promise(r => setTimeout(r, 0));
+
+    // Promise should NOT have resolved yet — editMessageReplyMarkup called, not deleteMessage
+    expect(mocks.editMessageReplyMarkup).toHaveBeenCalled();
+    expect(mocks.deleteMessage).not.toHaveBeenCalled();
+
+    // Now approve — the hook should have been re-registered
+    hookFn!({ content: { data: "approve_0", qid: "q1" } });
+    const result = parseResult(await callPromise);
+
+    expect(result.sid).toBe(2);
+  });
+
+  it("delegation toggle toggles state and re-renders keyboard", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    let hookFn: ((evt: unknown) => void) | undefined;
+    mocks.registerCallbackHook.mockImplementation((_id: number, fn: (evt: unknown) => void) => {
+      hookFn = fn;
+    });
+
+    const callPromise = call({ name: "Worker" });
+    await new Promise(r => setTimeout(r, 0));
+
+    // Toggle ON
+    hookFn!({ content: { data: "approve:toggle:delegation", qid: "t1" } });
+    await new Promise(r => setTimeout(r, 0));
+
+    // editMessageReplyMarkup should have been called with the updated keyboard
+    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledWith(
+      42,
+      50,
+      expect.objectContaining({ reply_markup: expect.any(Object) }),
+    );
+    const editedKeyboard = (mocks.editMessageReplyMarkup.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const row3 = ((editedKeyboard.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][])[2] as Array<Record<string, unknown>>;
+    // Toggle button should now show ON state
+    expect(row3[0].text).toBe("✅ Delegated");
+
+    // Approve to finish
+    hookFn!({ content: { data: "approve_0", qid: "q1" } });
+    await callPromise;
+  });
+
+  it("button count stays constant across toggle states", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+
+    let hookFn: ((evt: unknown) => void) | undefined;
+    mocks.registerCallbackHook.mockImplementation((_id: number, fn: (evt: unknown) => void) => {
+      hookFn = fn;
+    });
+
+    const callPromise = call({ name: "Worker" });
+    await new Promise(r => setTimeout(r, 0));
+
+    const countButtons = (keyboard: unknown[][]) =>
+      keyboard.reduce((acc, row) => acc + (row as unknown[]).length, 0);
+
+    // Count initial buttons
+    const initialOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const initialKeyboard = (initialOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const initialCount = countButtons(initialKeyboard);
+
+    // Toggle
+    hookFn!({ content: { data: "approve:toggle:delegation", qid: "t1" } });
+    await new Promise(r => setTimeout(r, 0));
+
+    const editedOpts = (mocks.editMessageReplyMarkup.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const editedKeyboard = (editedOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+    const editedCount = countButtons(editedKeyboard);
+
+    expect(editedCount).toBe(initialCount);
+
+    hookFn!({ content: { data: "approve_0", qid: "q1" } });
+    await callPromise;
   });
 });
 
