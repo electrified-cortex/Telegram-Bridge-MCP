@@ -37,7 +37,7 @@ warning when it is set to a non-default path.
 
 ## Pattern: Safe Git Scripts
 
-**PowerShell (claim.ps1 pattern):**
+**PowerShell:**
 ```powershell
 # SAFETY: Clear GIT_INDEX_FILE before ANY git operation.
 # See docs/git-index-safety.md
@@ -47,7 +47,7 @@ git add ...
 git commit ...
 ```
 
-**Bash (claim.sh pattern):**
+**Bash:**
 ```bash
 # SAFETY: Clear GIT_INDEX_FILE before ANY git operation.
 # See docs/git-index-safety.md
@@ -56,6 +56,11 @@ unset GIT_INDEX_FILE 2>/dev/null || true
 git add ...
 git commit ...
 ```
+
+> **Note:** Scripts that use `git mv` for atomic file operations (such as `tasks/claim.ps1`
+> and `tasks/claim.sh`) do not need to clear `GIT_INDEX_FILE` because `git mv` operates
+> atomically on the index without exposing intermediate staged state. This pattern applies
+> to scripts that use `git add` or `git rm --cached` directly.
 
 ## Verification Checklist
 

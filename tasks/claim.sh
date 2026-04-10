@@ -1,111 +1,111 @@
 #!/usr/bin/env bash
-# claim.sh — Claims a task from 2-queued/ by staging a baseline snapshot at
-# 4-completed/ and moving the working copy to 3-in-progress/.
+# claim.sh — Claims the next valid task from 2-queued/ via git mv.
 #
 # Usage:
-#   ./tasks/claim.sh <task-filename>           # claim
-#   ./tasks/claim.sh <task-filename> --dry-run  # preview without changes
+#   ./tasks/claim.sh [task-filename] [--dry-run]
 #
-# Workflow (atomic):
-#   1. mv (atomic rename) 2-queued/<file> -> 3-in-progress/<file>  (claim lock)
-#      Fails immediately if another Worker already claimed the task.
-#   2. cp  3-in-progress/<file> -> 4-completed/YYYY-MM-DD/<file>   (baseline copy)
-#   3. git rm --cached tasks/2-queued/<file> (remove old index entry)
-#      Falls back silently if file was untracked.
-#   4. git add tasks/4-completed/YYYY-MM-DD/<file>                 (stage baseline)
+# Scans tasks/2-queued/ in priority order (filename sort). For each candidate:
+#   1. Skips untracked files (not in git index)   — warns, notifies Overseer.
+#   2. Skips dirty files (uncommitted modifications) — warns, notifies Overseer.
+#   3. git mv  tasks/2-queued/<file>  ->  tasks/3-in-progress/<file>
+#      Atomic index + filesystem move. Skips if already claimed (race-safe).
+#   4. git commit  (targeted to claim paths only)
+#
+# Optional task-filename: try this file first; if invalid, scan continues.
 
-set -euo pipefail
+set -uo pipefail
 
 TASK_FILE="${1:-}"
 DRY_RUN=false
 
-if [[ "${2:-}" == "--dry-run" ]]; then
+if [[ "${2:-}" == "--dry-run" || "${1:-}" == "--dry-run" ]]; then
     DRY_RUN=true
+    # If first arg is --dry-run, clear TASK_FILE
+    if [[ "$TASK_FILE" == "--dry-run" ]]; then
+        TASK_FILE=""
+    fi
 fi
 
-if [[ -z "$TASK_FILE" ]]; then
-    echo "Usage: $0 <task-filename> [--dry-run]" >&2
-    exit 1
-fi
-
-# Reject path components
-if [[ "$TASK_FILE" == */* || "$TASK_FILE" == *..* ]]; then
+# Reject path components in optional preference arg
+if [[ -n "$TASK_FILE" && ("$TASK_FILE" == */* || "$TASK_FILE" == *..*) ]]; then
     echo "Error: TaskFile must be a plain filename, not a path: $TASK_FILE" >&2
     exit 1
 fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-QUEUED_PATH="$REPO_ROOT/tasks/2-queued/$TASK_FILE"
-DATE="$(date +%Y-%m-%d)"
-COMPLETED_DIR="$REPO_ROOT/tasks/4-completed/$DATE"
-COMPLETED_PATH="$COMPLETED_DIR/$TASK_FILE"
-IN_PROGRESS_PATH="$REPO_ROOT/tasks/3-in-progress/$TASK_FILE"
+QUEUE_DIR="tasks/2-queued"
 
-if [[ "$DRY_RUN" == true ]]; then
-    if [[ ! -f "$QUEUED_PATH" ]]; then
-        echo "Error: Task not found: $QUEUED_PATH" >&2
-        exit 1
-    fi
-    echo "[DRY RUN] Would: create directory tasks/4-completed/$DATE (if missing)"
-    echo "[DRY RUN] Would: mv tasks/2-queued/$TASK_FILE -> tasks/3-in-progress/$TASK_FILE  (atomic claim)"
-    echo "[DRY RUN] Would: cp tasks/3-in-progress/$TASK_FILE -> tasks/4-completed/$DATE/$TASK_FILE  (baseline)"
-    echo "[DRY RUN] Would: git rm --cached tasks/2-queued/$TASK_FILE  (remove old index entry; skipped if untracked)"
-    echo "[DRY RUN] Would: git add tasks/4-completed/$DATE/$TASK_FILE  (stage baseline)"
-    echo ""
-    echo "[DRY RUN] No changes were made."
-    exit 0
-fi
-
-# Create completed date directory if needed
-mkdir -p "$COMPLETED_DIR"
-
-# Step 1: Atomic claim — mv is a single rename(2) syscall on the same filesystem.
-# If another Worker already moved the file, mv fails and we exit cleanly.
-# Capture stderr to a temp file so we can emit a meaningful error.
-_CLAIM_ERR_TMP="$(mktemp /tmp/claim_err_XXXXXX)"
-if ! mv "$QUEUED_PATH" "$IN_PROGRESS_PATH" 2>"$_CLAIM_ERR_TMP"; then
-    if [[ ! -f "$QUEUED_PATH" ]]; then
-        echo "Error: Task already claimed by another Worker: $TASK_FILE" >&2
-    else
-        echo "Error: Could not claim task: $(cat "$_CLAIM_ERR_TMP")" >&2
-    fi
-    rm -f "$_CLAIM_ERR_TMP"
-    exit 1
-fi
-rm -f "$_CLAIM_ERR_TMP"
-
-# Rollback trap: if any subsequent step fails, restore the file to the queue.
-trap 'mv "$IN_PROGRESS_PATH" "$QUEUED_PATH" 2>/dev/null; echo "Error: Claim failed mid-flight — task restored to queue." >&2' ERR
-
-# Step 2: Baseline copy to completed/DATE/ for git index snapshot
-cp "$IN_PROGRESS_PATH" "$COMPLETED_PATH"
-
-# Step 3 & 4: Git staging
 cd "$REPO_ROOT"
 
-# SAFETY: Clear GIT_INDEX_FILE before ANY git operation.
-# If this var is set by a concurrent process (common in multi-agent environments),
-# ALL git commands below would operate on a foreign index — corrupting staging,
-# losing commits, or wiping another agent's work. This MUST come first.
-# See docs/git-index-safety.md for full context.
-unset GIT_INDEX_FILE 2>/dev/null || true
+# Build candidate list: preferred file first (if specified), then remaining sorted
+mapfile -t ALL_QUEUED < <(find "$QUEUE_DIR" -maxdepth 1 -name '*.md' -printf '%f\n' 2>/dev/null | sort)
 
-# Remove old queued entry from the git index (may not be tracked — that's fine)
-git rm --cached "tasks/2-queued/$TASK_FILE" 2>/dev/null || true
+if [[ -n "$TASK_FILE" ]]; then
+    # Preferred file first, then rest (excluding the preferred)
+    CANDIDATES=("$TASK_FILE")
+    for f in "${ALL_QUEUED[@]:-}"; do
+        [[ "$f" != "$TASK_FILE" ]] && CANDIDATES+=("$f")
+    done
+else
+    CANDIDATES=("${ALL_QUEUED[@]:-}")
+fi
 
-# Stage the baseline copy
-git add "tasks/4-completed/$DATE/$TASK_FILE"
+if [[ ${#CANDIDATES[@]} -eq 0 ]]; then
+    echo "Error: No tasks found in $QUEUE_DIR" >&2
+    exit 1
+fi
 
-# Step 5: Targeted commit — only include the specific claim paths.
-# Prevents staging contamination regardless of shared index state.
-git commit -m "pipeline: claim $TASK_FILE" -- "tasks/2-queued/$TASK_FILE" "tasks/4-completed/$DATE/$TASK_FILE"
+CLAIMED=""
 
-# All post-mv steps succeeded — clear the rollback trap
-trap - ERR
+for candidate in "${CANDIDATES[@]}"; do
+    candidate_path="$REPO_ROOT/$QUEUE_DIR/$candidate"
 
-echo "Claimed: $TASK_FILE"
-echo "  Baseline committed at: tasks/4-completed/$DATE/$TASK_FILE"
-echo "  Working copy at:       tasks/3-in-progress/$TASK_FILE"
+    [[ -f "$candidate_path" ]] || continue
+
+    # Gate 1: must be tracked in git index
+    if ! git ls-files --error-unmatch "$QUEUE_DIR/$candidate" 2>/dev/null; then
+        echo "SKIP: $candidate — untracked file in queue. Notify Overseer." >&2
+        continue
+    fi
+
+    # Gate 2: must be clean (no working-tree modifications)
+    if [[ -n "$(git diff --name-only -- "$QUEUE_DIR/$candidate" 2>/dev/null)" ]]; then
+        echo "SKIP: $candidate — dirty (uncommitted modifications) in queue. Notify Overseer." >&2
+        continue
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "[DRY RUN] Would: git mv $QUEUE_DIR/$candidate -> tasks/3-in-progress/$candidate"
+        echo "[DRY RUN] Would: git commit -m \"pipeline: claim $candidate\""
+        echo ""
+        echo "[DRY RUN] No changes were made."
+        exit 0
+    fi
+
+    # Attempt atomic claim — fails if another Worker already took it
+    if ! git mv "$QUEUE_DIR/$candidate" "tasks/3-in-progress/$candidate" 2>/dev/null; then
+        echo "SKIP: $candidate — claim race (file already taken)." >&2
+        continue
+    fi
+
+    # Commit — targeted to claim paths only; rollback on failure
+    if ! git commit -m "pipeline: claim $candidate" -- "$QUEUE_DIR/$candidate" "tasks/3-in-progress/$candidate"; then
+        git mv "tasks/3-in-progress/$candidate" "$QUEUE_DIR/$candidate" 2>/dev/null || true
+        echo "SKIP: $candidate — commit failed, rolled back." >&2
+        continue
+    fi
+
+    CLAIMED="$candidate"
+    break
+done
+
+if [[ -z "$CLAIMED" ]]; then
+    echo "Error: No claimable tasks found in $QUEUE_DIR" >&2
+    exit 1
+fi
+
+echo "Claimed: $CLAIMED"
+echo "  Working copy at: tasks/3-in-progress/$CLAIMED"
 echo ""
-echo "After task runner finishes, move file to tasks/4-completed/$DATE/"
-echo "Then 'git diff' shows what changed."
+echo "When done, git mv tasks/3-in-progress/$CLAIMED tasks/4-completed/<date>/$CLAIMED"
+echo "Then git commit and notify the Overseer."

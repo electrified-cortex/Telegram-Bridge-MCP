@@ -56,7 +56,7 @@
 - `action(type: "animation/default", preset: "working")` / `set_default_animation(preset: "working")` — preset param was accepted without error but fell through to read-only mode; session default was never updated. Now looks up the preset's frames and sets them as the default.
 - `action(type: "log/debug", category: "animation")` — `category` schema was `z.enum(...)`, rejecting valid category strings with an unhelpful error. Changed to `z.string()` with valid values listed in the description; unknown categories produce empty results.
 - `action(type: "message/edit")` without `parse_mode` — schema field was `optional()` with no default, sending messages as plain text instead of running Markdown auto-conversion. Changed to `.default("Markdown")` to match standalone `edit_message` behavior. `parse_mode` description updated to clarify that `"MarkdownV2"` is raw pass-through (manual escaping required).
-- `tasks/claim.ps1` — `GIT_INDEX_FILE` was cleared AFTER `git rm --cached` and `git add`; in a multi-agent environment with concurrent git processes, staging operations could use a foreign index. Moved `Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue` to before all git operations (unconditional, true unset).
+- `tasks/claim.ps1` / `tasks/claim.sh` — Replaced with canonical cortex.lan versions using `git mv` for atomic claim (no `GIT_INDEX_FILE` manipulation required; index atomicity provided by `git mv`); `TaskFile` parameter is now optional (scans queue by priority if omitted); rollback via reverse `git mv` on commit failure; added `tasks/claim.spec.md` design specification
 
 ## Removed
 
@@ -69,7 +69,7 @@
 
 - `logBlockedToolCall` sanitizes `toolName` and `reason` fields by replacing ASCII control characters (U+0000–U+001F, U+007F) with spaces before writing to stderr, preventing log-injection attacks
 - `buildDenyPatternHook` now escapes all regex metacharacters in glob patterns (including `?`, `-`, `#`, whitespace) before compiling, preventing pattern bypass via metacharacter injection
-- `tasks/claim.ps1` / `tasks/claim.sh` — `GIT_INDEX_FILE` now cleared as the FIRST operation before any git command; added `docs/git-index-safety.md` documenting the multi-agent contamination hazard
+- `tasks/claim.ps1` / `tasks/claim.sh` — `GIT_INDEX_FILE` no longer referenced; atomic `git mv` eliminates shared-index exposure during claim; `docs/git-index-safety.md` updated to clarify the pattern applies to scripts using `git add`/`git rm --cached` directly, not `git mv`-based scripts
 
 ### Documentation
 
