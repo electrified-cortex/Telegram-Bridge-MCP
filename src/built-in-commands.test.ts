@@ -164,6 +164,7 @@ import {
   cancelAutoApprove,
   getAutoApproveState,
 } from "./auto-approve.js";
+import { setDelegationEnabled } from "./agent-approval.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1073,7 +1074,7 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         1002,
-        expect.stringContaining("🟡 Next session request will be auto-approved"),
+        expect.stringContaining("Session Auto-Approve → Next Request"),
         expect.any(Object),
       );
       cancelAutoApprove();
@@ -1087,7 +1088,7 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         1003,
-        expect.stringContaining("🟢 Auto-approving all session requests for 10 minutes"),
+        expect.stringContaining("Session Auto-Approve → 10 Minutes (expires "),
         expect.any(Object),
       );
       cancelAutoApprove();
@@ -1102,7 +1103,7 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         1004,
-        expect.stringContaining("⚪ Dismissed — manual approval restored"),
+        expect.stringContaining("Session Auto-Approve → Dismissed"),
         expect.any(Object),
       );
       expect(getAutoApproveState().mode).toBe("none");
@@ -1167,6 +1168,40 @@ describe("built-in-commands", () => {
       await handleIfBuiltIn(callbackUpdate(2004, "approve:dismiss"));
       const opts = mocks.editMessageText.mock.calls[0][3] as Record<string, unknown>;
       expect(opts._skipHeader).toBe(true);
+    });
+
+    it("callback approve:delegate:on edits message in-place and collapses panel", async () => {
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 2010 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      mocks.editMessageText.mockResolvedValue(true);
+      const sendCallsBefore = mocks.sendMessage.mock.calls.length;
+      await handleIfBuiltIn(callbackUpdate(2010, "approve:delegate:on"));
+      // No new sendMessage call (no new message created)
+      expect(mocks.sendMessage.mock.calls.length).toBe(sendCallsBefore);
+      // editMessageText was called to collapse the panel
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123,
+        2010,
+        expect.stringContaining("Delegation Enabled"),
+        expect.objectContaining({ _skipHeader: true }),
+      );
+    });
+
+    it("callback approve:delegate:off edits message in-place and collapses panel", async () => {
+      setDelegationEnabled(true);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 2011 });
+      await handleIfBuiltIn(cmdUpdate("/approve"));
+      mocks.editMessageText.mockResolvedValue(true);
+      const sendCallsBefore = mocks.sendMessage.mock.calls.length;
+      await handleIfBuiltIn(callbackUpdate(2011, "approve:delegate:off"));
+      expect(mocks.sendMessage.mock.calls.length).toBe(sendCallsBefore);
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123,
+        2011,
+        expect.stringContaining("Delegation Disabled"),
+        expect.objectContaining({ _skipHeader: true }),
+      );
+      setDelegationEnabled(false);
     });
   });
 

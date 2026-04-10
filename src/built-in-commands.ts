@@ -1055,14 +1055,14 @@ async function handleApproveCommand(): Promise<void> {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "Next request", callback_data: "approve:one" },
-            { text: "10 minutes",   callback_data: "approve:timed" },
-            { text: "Dismiss",      callback_data: "approve:dismiss" },
+            { text: "🟡 Next request", callback_data: "approve:one" },
+            { text: "🟢 10 minutes",   callback_data: "approve:timed" },
+            { text: "✖ Dismiss",       callback_data: "approve:dismiss" },
           ],
           [
             isDelegationEnabled()
-              ? { text: "🤝 Delegate to Agent: ON",  callback_data: "approve:delegate:off" }
-              : { text: "🤝 Delegate to Agent: OFF", callback_data: "approve:delegate:on" },
+              ? { text: "🤝 Disable Delegation", callback_data: "approve:delegate:off" }
+              : { text: "🤝 Enable Delegation",  callback_data: "approve:delegate:on" },
           ],
         ],
       },
@@ -1088,26 +1088,35 @@ async function handleApproveCallback(
   if (data === "approve:one") {
     activateAutoApproveOne();
     await api.editMessageText(chatId, panelMsgId,
-      "*Session Auto-Approve*\n▸ 🟡 Next session request will be auto-approved",
+      "*Session Auto-Approve → Next Request*",
       { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   } else if (data === "approve:timed") {
     activateAutoApproveTimed(AUTO_APPROVE_DURATION_MS);
+    const expiresMs = Date.now() + AUTO_APPROVE_DURATION_MS;
+    const d = new Date(expiresMs);
+    const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     await api.editMessageText(chatId, panelMsgId,
-      "*Session Auto-Approve*\n▸ 🟢 Auto-approving all session requests for 10 minutes",
+      `*Session Auto-Approve → 10 Minutes (expires ${hhmm})*`,
       { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   } else if (data === "approve:delegate:on") {
     setDelegationEnabled(true);
-    await handleApproveCommand();
+    await api.editMessageText(chatId, panelMsgId,
+      "*Session Auto-Approve → Delegation Enabled*",
+      { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
+    ).catch(() => {/* non-fatal */});
   } else if (data === "approve:delegate:off") {
     setDelegationEnabled(false);
-    await handleApproveCommand();
+    await api.editMessageText(chatId, panelMsgId,
+      "*Session Auto-Approve → Delegation Disabled*",
+      { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
+    ).catch(() => {/* non-fatal */});
   } else {
     // dismiss — cancel any active auto-approve and close panel
     cancelAutoApprove();
     await api.editMessageText(chatId, panelMsgId,
-      "*Session Auto-Approve*\n▸ ⚪ Dismissed — manual approval restored",
+      "*Session Auto-Approve → Dismissed*",
       { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   }
