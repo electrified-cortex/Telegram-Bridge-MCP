@@ -23,7 +23,7 @@ The operator tested the session approval flow and found:
 ### Design Spec
 
 After clicking a button, the message should be edited to:
-```
+```text
 Session Auto-Approved: → [action taken]
 ```
 
