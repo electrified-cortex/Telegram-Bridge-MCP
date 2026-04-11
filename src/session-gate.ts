@@ -34,7 +34,7 @@ export function requireAuth(
   if (token === undefined) {
     return {
       code: "SID_REQUIRED",
-      message: "token is required. Pass the token returned by session_start. " +
+      message: "token is required. Pass the token returned by action(type: 'session/start', ...)." +
         "token = sid * 1_000_000 + pin. Example: token: 1000123456",
     };
   }
@@ -42,7 +42,7 @@ export function requireAuth(
   if (!validateSession(sid, pin)) {
     return {
       code: "AUTH_FAILED",
-      message: "Invalid token. Double-check you have the right token, or call session_start(reconnect: true) to re-request.",
+      message: "Invalid token. Double-check you have the right token, or call action(type: 'session/start', reconnect: true) to re-request.",
     };
   }
   _authHook?.(sid);

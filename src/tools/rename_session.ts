@@ -74,7 +74,7 @@ export async function handleRenameSession({ token, new_name }: { token: number; 
   if (!result) {
     return toError({
       code: "SESSION_NOT_FOUND",
-      message: `Session ${sid} not found. Call list_sessions to see active sessions.`,
+      message: `Session ${sid} not found. Call action(type: 'session/list') to see active sessions.`,
     });
   }
 

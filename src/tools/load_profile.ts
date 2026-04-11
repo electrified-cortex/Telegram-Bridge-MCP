@@ -24,7 +24,7 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   }
 
   if (profile === null) {
-    return toError({ code: "NOT_FOUND", message: `Profile not found: "${key}". Call save_profile(key: "${key}") to create it, or check the key spelling.` });
+    return toError({ code: "NOT_FOUND", message: `Profile not found: "${key}". Call action(type: 'profile/save', key: "${key}") to create it, or check the key spelling.` });
   }
 
   const applyResult = applyProfile(_sid, profile);

@@ -18,7 +18,7 @@ export function handleSaveProfile({ key, token }: { key: string; token: number }
   if (typeof _sid !== "number") return toError(_sid);
 
   if (key.includes("/") || key.includes("\\")) {
-    return toError({ code: "INVALID_KEY", message: "Path keys are not allowed in save_profile. Use a bare key (e.g. \"Overseer\")." });
+    return toError({ code: "INVALID_KEY", message: "Path keys are not allowed in action(type: 'profile/save', ...). Use a bare key (e.g. \"Overseer\")." });
   }
 
   const sections: string[] = [];

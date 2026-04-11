@@ -99,7 +99,7 @@ export function register(server: McpServer) {
       if (!sessionQueue) {
         return toResult({
           error: "session_closed",
-          message: `Session ${sid} has ended. Call session_start to open a new session if needed.`,
+          message: `Session ${sid} has ended. Call action(type: 'session/start', ...) to open a new session if needed.`,
         });
       }
 

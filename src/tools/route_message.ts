@@ -28,14 +28,14 @@ export function handleRouteMessage({ token, message_id, target_sid }: { token: n
   if (_sid !== getGovernorSid()) {
     return toError({
       code: "NOT_GOVERNOR",
-      message: "Only the governor session can route messages. Call list_sessions to identify the current governor SID.",
+      message: "Only the governor session can route messages. Call action(type: 'session/list') to identify the current governor SID.",
     });
   }
 
   if (!getSession(target_sid)) {
     return toError({
       code: "SESSION_NOT_FOUND",
-      message: `Session ${target_sid} does not exist. Call list_sessions to see active sessions.`,
+      message: `Session ${target_sid} does not exist. Call action(type: 'session/list') to see active sessions.`,
     });
   }
 
@@ -43,7 +43,7 @@ export function handleRouteMessage({ token, message_id, target_sid }: { token: n
   if (!delivered) {
     return toError({
       code: "ROUTE_FAILED",
-      message: "Could not route — message not found or target session queue unavailable. Verify message_id and target_sid with list_sessions.",
+      message: "Could not route — message not found or target session queue unavailable. Verify message_id and target_sid with action(type: 'session/list').",
     });
   }
 

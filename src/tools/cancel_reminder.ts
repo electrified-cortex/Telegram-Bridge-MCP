@@ -13,7 +13,7 @@ export function handleCancelReminder({ id, token }: { id: string; token: number 
   if (!cancelled) {
     return toError({
       code: "NOT_FOUND" as const,
-      message: `No reminder with id="${id}" found for this session. Call list_reminders to see active reminder IDs.`,
+      message: `No reminder with id="${id}" found for this session. Call action(type: 'reminder/list') to see active reminder IDs.`,
     });
   }
   return toResult({ cancelled: true, id });
@@ -25,7 +25,7 @@ export function register(server: McpServer) {
     {
       description: "Cancel a scheduled reminder by ID. Returns an error if the ID is not found.",
       inputSchema: {
-        id: z.string().describe("Reminder ID to cancel (from set_reminder or list_reminders)."),
+        id: z.string().describe("Reminder ID to cancel (from set_reminder or action(type: 'reminder/list'))."),
         token: TOKEN_SCHEMA,
       },
     },
