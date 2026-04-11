@@ -30,7 +30,7 @@ The operator's personal information (real name, Telegram username, chat descript
 | --- | --- | --- |
 | `get_chat` | Returns username, first/last name, description for DM chats | Consent gate: agent must request, user must approve via Telegram button before PII is returned |
 | `dump_session_record` | Dumps full conversation history including voice transcripts, file metadata, locations, and contacts | Description explicitly restricts use to user-requested history dumps; must not be called speculatively |
-| `get_message` | Allows lookup of any stored message by ID | Description restricts calls to message IDs already known to the agent session |
+| `action(type: "message/get")` | Allows lookup of any stored message by ID | Description restricts calls to message IDs already known to the agent session |
 | `update-sanitizer` (reaction events) | Raw Telegram reactions include reactor name and username | Name and username are stripped; only the numeric user ID is forwarded |
 
 **Agent guidance:** Tools in the `Agent Guide` (`behavior.md`) instruct agents not to call identity-exposing tools without explicit operator request.

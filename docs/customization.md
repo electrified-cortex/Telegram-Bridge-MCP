@@ -205,7 +205,7 @@ To send voice back in v6, use the unified `send` tool with audio output
 (for example, `send(audio: ...)`), or the corresponding `action()` path if
 your client exposes sends that way. The text is synthesized via TTS
 (Kokoro, OpenAI, or the bundled ONNX fallback) and delivered as a voice
-note. Use `set_voice` to set a per-session voice override, or send `/voice`
+note. Use `action(type: "profile/voice")` to set a per-session voice override, or send `/voice`
 in Telegram to pick the global default interactively.
 
 See `docs/setup.md` for Kokoro setup and available voices.
@@ -258,7 +258,7 @@ The assistant uses emoji reactions to acknowledge without noise:
 
 You can do the same to confirm instructions.
 
-### Use `send_new_checklist` for multi-step tasks
+### Use `send(type: "checklist")` for multi-step tasks
 
 For complex tasks (e.g., "add a new tool with tests and docs"), the assistant can send a **live checklist** that updates as each step completes:
 

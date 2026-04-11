@@ -8,7 +8,7 @@
 
 ## Concept
 
-Standard tools like `send_text` and `notify` fire-and-forget.
+Standard tools like `send(type: "text")` and `send(type: "notification")` fire-and-forget.
 Super tools instead maintain a **persistent, mutable presence** in the chat:
 
 1. **Create** — sends the message, pins it (silent), returns `message_id`
@@ -76,7 +76,7 @@ The server is stateless; all parameters must be passed on every `action(type: "p
 ## Design Principles
 
 - **Auto-pin on create** — super tools are important enough to stay visible; no separate
-  `pin_message` call required
+  `action(type: "message/pin")` call required
 - **Auto-unpin on complete** — unpins when done so the chat stays clean
 - **In-place editing** — one message evolves rather than a stream of status messages
 - **Two-call API** — each super tool is a two-call pair (`send(type: "...", ...)` to create, `action(type: ".../update", ...)` to edit in-place); `message_id` links them
@@ -91,14 +91,14 @@ The server is stateless; all parameters must be passed on every `action(type: "p
 Set a reaction that **auto-reverts** when the agent takes any outbound action.
 
 **Core concept:**  
-Current `set_reaction` is permanent — the agent must manually restore the previous emoji.
+Current `action(type: "react")` is permanent — the agent must manually restore the previous emoji.
 `set_temporary_reaction` automates the restore pattern: set 👀 to signal *"reading this"*,
 and it snaps back to whatever was there before (or a specified `restore_emoji`) the moment
 anything outbound happens (typing, send message, etc.).
 
 **Trigger for auto-removal:**
 
-- Any outbound event fires the cleanup: `show_typing`, `send_text`, `send_message`, `notify`, `send_file`, etc.
+- Any outbound event fires the cleanup: `action(type: "show-typing")`, `send(type: "text")`, `send`, `send(type: "notification")`, `send(type: "file")`, etc.
 - Optionally: a `timeout_seconds` deadline (e.g. `300` = 5 min) — reaction reverts on whichever comes first.
 
 **Proposed API (draft):**
