@@ -157,7 +157,7 @@ All outbound operations flow through a single `send` call. The `type` parameter 
 send({ token: 1234567, type: "text", text: "Hello from your AI agent!" })
 send({ token: 1234567, type: "notification", severity: "success", text: "Build passed." })
 send({ token: 1234567, type: "question", ask: "Proceed with deployment?" })
-send({ token: 1234567, type: "checklist", steps: ["Design", "Implement", "Review", "Deploy"] })
+send({ token: 1234567, type: "checklist", title: "Release plan", steps: ["Design", "Implement", "Review", "Deploy"] })
 send({ token: 1234567, type: "progress", percent: 0 })
 ```
 
