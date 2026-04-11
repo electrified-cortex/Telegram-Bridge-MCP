@@ -146,7 +146,7 @@ All outbound operations flow through a single `send` call. The `type` parameter 
 | `dm` | DM to another session (`target_sid` or `target` alias); `"direct"` accepted as alias |
 | `append` | Append text to an existing message |
 | `animation` | Start a cycling status animation |
-| `checklist` | Create a self-pinning live checklist |
+| `checklist` | Create a self-pinning live checklist; requires `title`, accepts `steps` array of `{label, status}` objects |
 | `progress` | Create an emoji progress bar (width configurable) |
 
 > Update in-place with `action(type: "checklist/update", message_id: ...)` and `action(type: "progress/update", message_id: ...)` respectively. See [`docs/super-tools.md`](docs/super-tools.md).
@@ -157,8 +157,8 @@ All outbound operations flow through a single `send` call. The `type` parameter 
 send({ token: 1234567, type: "text", text: "Hello from your AI agent!" })
 send({ token: 1234567, type: "notification", severity: "success", text: "Build passed." })
 send({ token: 1234567, type: "question", ask: "Proceed with deployment?" })
-send({ token: 1234567, type: "checklist", steps: ["Design", "Implement", "Review", "Deploy"] })
-send({ token: 1234567, type: "progress", percent: 0 })
+send({ token: 1234567, type: "checklist", title: "Pipeline", steps: [{ label: "Design", status: "pending" }, { label: "Implement", status: "pending" }, { label: "Review", status: "pending" }, { label: "Deploy", status: "pending" }] })
+send({ token: 1234567, type: "progress", title: "Processing files", percent: 40, subtext: "4 of 10 complete", width: 10 })
 ```
 
 ### `dequeue` — Receive Inbound Events
