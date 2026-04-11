@@ -276,9 +276,9 @@ export function register(server: McpServer) {
           content: [
             "Startup — Post-Session-Start",
             "",
-            "Token: token = sid * 1_000_000 + pin. Required for all calls. Save it now.",
+            "Token: token = sid * 1_000_000 + pin. Required for all session-bound calls. Save it now.",
             "Reconnect: session_start(name: '...', reconnect: true) if token is lost.",
-            "Missed messages: action(type: 'message/history') after reconnect.",
+            "Missed messages: action(type: 'message/history', count: 20) after reconnect.",
             "",
             "Profile: action(type: 'profile/load', key: '<name>') to restore voice/animation/reminders.",
             "",

@@ -92,6 +92,16 @@ describe("help tool", () => {
     expect(content).toContain("notification");
   });
 
+  it("help(topic: 'startup') returns token formula, reconnect hint, and message/history with count", async () => {
+    const result = await call({ topic: "startup" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("sid * 1_000_000");
+    expect(content).toContain("reconnect: true");
+    expect(content).toContain("message/history");
+    expect(content).toContain("count: 20");
+  });
+
   it("help(topic: 'unknown_tool') returns isError: true with UNKNOWN code", async () => {
     const result = await call({ topic: "unknown_tool" });
     expect(isError(result)).toBe(true);

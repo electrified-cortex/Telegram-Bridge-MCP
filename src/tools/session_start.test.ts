@@ -1636,7 +1636,7 @@ describe("session_start tool", () => {
   });
 
   // =========================================================================
-  // instructions field — persistence & recovery hints (task 056)
+  // hint field — persistence & recovery hints (task 056)
   // =========================================================================
 
   it("fresh session response includes hint field", async () => {

@@ -3,7 +3,7 @@
  * When the auth hook fires (registered in index.ts via setAuthHook),
  * it should delete the stored reauth dialog message if one exists.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { setAuthHook } from "./session-gate.js";
 
 const mocks = vi.hoisted(() => ({
@@ -38,6 +38,10 @@ beforeEach(() => {
   mocks.validateSession.mockReturnValue(true);
   mocks.resolveChat.mockReturnValue(100);
   mocks.getSessionReauthDialogMsgId.mockReturnValue(undefined);
+});
+
+afterEach(() => {
+  setAuthHook(() => {});
 });
 
 describe("auth hook — reauth dialog auto-dismiss", () => {

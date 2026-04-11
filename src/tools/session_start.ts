@@ -70,7 +70,8 @@ async function requestApproval(
   colorHint?: string,
 ): Promise<{ approved: boolean; color?: string; forceColor?: boolean }> {
   const label = reconnect ? "Session reconnecting:" : "New session requesting access:";
-  const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:`;
+  const reconnectHint = reconnect ? `\nThe agent may have a saved token — approve only if token recovery failed\\.` : "";
+  const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:${reconnectHint}`;
   const availableColors = getAvailableColors(colorHint);
   if (checkAndConsumeAutoApprove()) {
     return { approved: true, color: colorHint ?? availableColors[0], forceColor: true };
@@ -162,7 +163,7 @@ async function requestApproval(
  */
 async function requestReconnectApproval(chatId: number, name: string, sid: number): Promise<boolean> {
   if (checkAndConsumeAutoApprove()) return true;
-  const text = `🤖 *Session reconnecting:* ${markdownToV2(name)}\nAuthorize re\\-entry?`;
+  const text = `🤖 *Session reconnecting:* ${markdownToV2(name)}\nThe agent may have a saved token in memory\\. Authorize re\\-entry only if token recovery failed\\.`;
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
     reply_markup: {
@@ -262,7 +263,7 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
             if (!approved) {
               return toError({
                 code: "SESSION_DENIED",
-                message: `Session reconnect for "${existing.name}" was denied by the operator.`,
+                message: `Session reconnect for "${existing.name}" was denied by the operator. Check memory for a previously saved token — if found, use that token directly without calling session_start again.`,
               });
             }
             // Get full session object (listSessions omits PIN)
