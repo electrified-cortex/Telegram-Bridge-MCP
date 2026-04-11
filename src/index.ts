@@ -15,7 +15,7 @@ import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./buil
 import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startHealthCheck } from "./health-check.js";
 import { setAuthHook } from "./session-gate.js";
-import { touchSession } from "./session-manager.js";
+import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
 import { loadConfig, getSessionLogMode, isDebugConfig, getPreToolDenyPatterns, getSessionApproval } from "./config.js";
 import { setDelegationEnabled } from "./agent-approval.js";
@@ -224,7 +224,17 @@ void (async () => {
 })();
 
 startHealthCheck();
-setAuthHook(touchSession);
+setAuthHook((sid: number) => {
+  touchSession(sid);
+  const reauthMsgId = getSessionReauthDialogMsgId(sid);
+  if (reauthMsgId !== undefined) {
+    clearSessionReauthDialogMsgId(sid);
+    const chatId = resolveChat();
+    if (typeof chatId === "number") {
+      getApi().deleteMessage(chatId, reauthMsgId).catch(() => {});
+    }
+  }
+});
 process.stderr.write("[info] health check started\n");
 
 // Best-effort: unpin stale session announcement messages from a prior crashed run

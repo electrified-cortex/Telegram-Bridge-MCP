@@ -33,7 +33,7 @@ export async function handleCloseSession({ token, target_sid }: { token?: number
   if (getGovernorSid() !== callerSid) {
     return toError({
       code: "PERMISSION_DENIED",
-      message: "Only the governor can close another session.",
+      message: "Only the governor can close another session. Call list_sessions to identify the current governor SID.",
     });
   }
 
@@ -50,7 +50,7 @@ export async function handleCloseSession({ token, target_sid }: { token?: number
   if (!targetInfo) {
     return toError({
       code: "SESSION_NOT_FOUND",
-      message: `Session ${target_sid} not found.`,
+      message: `Session ${target_sid} not found. Call list_sessions to see active sessions and their SIDs.`,
     });
   }
 
@@ -70,7 +70,7 @@ export async function handleCloseSession({ token, target_sid }: { token?: number
   if (getGovernorSid() !== callerSid) {
     return toError({
       code: "GOVERNOR_CHANGED",
-      message: "Governor role changed during confirmation — close aborted.",
+      message: "Governor role changed during confirmation — close aborted. Check list_sessions and retry if still the governor.",
     });
   }
 

@@ -130,7 +130,7 @@ export async function handleChoose(
       }
       const plainText = stripForTts(audio);
       if (!plainText) {
-        return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
+        return toError({ code: "EMPTY_MESSAGE" as const, message: "Audio text is empty after stripping formatting for TTS. Provide non-empty spoken content in the audio field." });
       }
       const resolvedVoice = getSessionVoice() || getDefaultVoice() || undefined;
       const resolvedSpeed = getSessionSpeed() ?? undefined;

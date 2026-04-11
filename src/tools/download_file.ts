@@ -69,7 +69,7 @@ export async function handleDownloadFile({ file_id, file_name, mime_type, token 
     await showTyping(30);
     const botToken = process.env.BOT_TOKEN;
     if (!botToken) {
-      return toError({ code: "UNKNOWN" as const, message: "BOT_TOKEN not set — cannot download file." });
+      return toError({ code: "UNKNOWN" as const, message: "BOT_TOKEN environment variable is not set. Set BOT_TOKEN before starting the server to enable file downloads." });
     }
 
     // 1. Resolve file path from Telegram

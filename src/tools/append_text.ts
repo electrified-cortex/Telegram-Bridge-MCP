@@ -29,10 +29,10 @@ export async function handleAppendText({
   // Read current text from the store
   const current = getMessage(message_id, CURRENT);
   if (!current) {
-    return toError({ code: "MESSAGE_NOT_FOUND" as const, message: `No stored message found for ID ${message_id}.` });
+    return toError({ code: "MESSAGE_NOT_FOUND" as const, message: `No stored message found for ID ${message_id}. Only messages sent or received in the current session are stored.` });
   }
   if (current.content.type !== "text") {
-    return toError({ code: "MESSAGE_NOT_TEXT" as const, message: "append_text only supports text messages." });
+    return toError({ code: "MESSAGE_NOT_TEXT" as const, message: `Message ${message_id} is not a text message — append_text only supports text messages. Non-text messages cannot be edited via this bridge.` });
   }
   const currentText = current.content.text ?? "";
 

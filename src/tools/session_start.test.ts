@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   getSessionQueue: vi.fn().mockReturnValue({ pendingCount: () => 0 }),
   setSessionAnnouncementMessage: vi.fn(),
   getSessionAnnouncementMessage: vi.fn().mockReturnValue(undefined),
+  setSessionReauthDialogMsgId: vi.fn(),
+  clearSessionReauthDialogMsgId: vi.fn(),
   resolveChat: vi.fn(() => 42 as number),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
@@ -69,6 +71,8 @@ vi.mock("../session-manager.js", () => ({
   COLOR_PALETTE: ["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"],
   setSessionAnnouncementMessage: mocks.setSessionAnnouncementMessage,
   getSessionAnnouncementMessage: mocks.getSessionAnnouncementMessage,
+  setSessionReauthDialogMsgId: mocks.setSessionReauthDialogMsgId,
+  clearSessionReauthDialogMsgId: mocks.clearSessionReauthDialogMsgId,
 }));
 
 vi.mock("../routing-mode.js", () => ({
@@ -152,8 +156,7 @@ describe("session_start tool", () => {
       action: "fresh",
       pending: 0,
       discarded: 3,
-      profile_hint: "Call load_profile(key) to restore saved session configuration.",
-      instructions: expect.any(String),
+      hint: "Save this token. Read: help(topic: 'startup')",
     });
   });
 
@@ -169,8 +172,7 @@ describe("session_start tool", () => {
       sessions_active: 1,
       action: "fresh",
       pending: 0,
-      profile_hint: "Call load_profile(key) to restore saved session configuration.",
-      instructions: expect.any(String),
+      hint: "Save this token. Read: help(topic: 'startup')",
     });
   });
 
@@ -1637,29 +1639,27 @@ describe("session_start tool", () => {
   // instructions field — persistence & recovery hints (task 056)
   // =========================================================================
 
-  it("fresh session response includes instructions field", async () => {
+  it("fresh session response includes hint field", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     const result = parseResult(await call({}));
 
-    expect(typeof result.instructions).toBe("string");
-    expect(result.instructions).toBeTruthy();
+    expect(typeof result.hint).toBe("string");
+    expect(result.hint).toBeTruthy();
   });
 
-  it("fresh session instructions mention session memory and SID", async () => {
+  it("fresh session returns hint pointing to startup topic", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     const result = parseResult(await call({}));
 
-    const instructions = result.instructions as string;
-    expect(instructions).toContain("session memory");
-    expect(instructions).toContain("SID");
-    expect(instructions).toContain("help(topic: 'guide')");
-    expect(instructions).toContain("help(topic: 'compression')");
+    expect(result.hint).toContain("startup");
+    expect(result.profile_hint).toBeUndefined();
+    expect(result.instructions).toBeUndefined();
   });
 
   // =========================================================================
@@ -1782,7 +1782,7 @@ describe("session_start tool", () => {
     });
   });
 
-  it("reconnect response (name match + approved) includes instructions field", async () => {
+  it("reconnect response (name match + approved) includes hint field", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, pin: 123456, name: "Overseer", color: "🟦",
@@ -1796,11 +1796,11 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({ name: "Overseer", reconnect: true }));
 
-    expect(typeof result.instructions).toBe("string");
-    expect(result.instructions).toBeTruthy();
+    expect(typeof result.hint).toBe("string");
+    expect(result.hint).toBeTruthy();
   });
 
-  it("reconnect instructions mention SID and session memory", async () => {
+  it("reconnect returns hint pointing to startup topic", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, pin: 123456, name: "Overseer", color: "🟦",
@@ -1814,11 +1814,9 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({ name: "Overseer", reconnect: true }));
 
-    const instructions = result.instructions as string;
-    expect(instructions).toContain("SID");
-    expect(instructions).toContain("session memory");
-    expect(instructions).toContain("help(topic: 'guide')");
-    expect(instructions).toContain("help(topic: 'compression')");
+    expect(result.hint).toContain("startup");
+    expect(result.profile_hint).toBeUndefined();
+    expect(result.instructions).toBeUndefined();
   });
 
   // =========================================================================
@@ -2110,5 +2108,79 @@ describe("session_start tool", () => {
   });
 });
 
+// =============================================================================
+// Reauth dialog auto-dismiss (task 30-475)
+// =============================================================================
 
+describe("reauth dialog auto-dismiss", () => {
+  let call: ToolHandler;
 
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReminderStateForTest();
+    setDelegationEnabled(false);
+    mocks.editMessageText.mockResolvedValue(undefined);
+    mocks.editMessageReplyMarkup.mockResolvedValue(undefined);
+    mocks.answerCallbackQuery.mockResolvedValue(true);
+    mocks.deliverReminderEvent.mockReturnValue(true);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.isPollerRunning.mockReturnValue(false);
+    mocks.createSession.mockReturnValue({
+      sid: 1,
+      pin: 123456,
+      name: "Primary",
+      color: "🟦",
+      sessionsActive: 1,
+    });
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("session_start");
+  });
+
+  it("stores reauthDialogMsgId on the session when reconnect dialog is sent", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({
+      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
+      createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 700 });
+
+    // Don't resolve — just let it send the dialog
+    let hookFn: ((evt: unknown) => void) | undefined;
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      hookFn = fn;
+    });
+
+    const callPromise = call({ name: "Overseer", reconnect: true });
+
+    // Wait for sendMessage to be called
+    await new Promise(r => setTimeout(r, 0));
+
+    // setSessionReauthDialogMsgId must have been called with sid=1, msgId=700
+    expect(mocks.setSessionReauthDialogMsgId).toHaveBeenCalledWith(1, 700);
+
+    // Resolve the dialog so the promise completes
+    hookFn!({ content: { data: "reconnect_yes", qid: "rq-700" } });
+    await callPromise;
+  });
+
+  it("clears reauthDialogMsgId after operator approves the reconnect dialog", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({
+      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
+      createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 701 });
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq-701" } }); });
+    });
+
+    await call({ name: "Overseer", reconnect: true });
+
+    // clearSessionReauthDialogMsgId must have been called with sid=1 after approval
+    expect(mocks.clearSessionReauthDialogMsgId).toHaveBeenCalledWith(1);
+  });
+});

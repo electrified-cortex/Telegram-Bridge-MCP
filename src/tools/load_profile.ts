@@ -20,11 +20,11 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   try {
     profile = readProfile(key);
   } catch (err) {
-    return toError({ code: "READ_FAILED", message: (err as Error).message });
+    return toError({ code: "READ_FAILED", message: `Failed to read profile "${key}": ${(err as Error).message}. Check that the file exists and is valid JSON.` });
   }
 
   if (profile === null) {
-    return toError({ code: "NOT_FOUND", message: `Profile not found: ${key}` });
+    return toError({ code: "NOT_FOUND", message: `Profile not found: "${key}". Call save_profile(key: "${key}") to create it, or check the key spelling.` });
   }
 
   const applyResult = applyProfile(_sid, profile);

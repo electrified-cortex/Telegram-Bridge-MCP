@@ -20,8 +20,7 @@ const DESCRIPTION =
   "process events, errors). For conversational replies or long explanations, " +
   "use send instead. Default parse_mode is Markdown " +
   "— write standard Markdown in the text field and it is auto-converted, no " +
-  "escaping needed. " +
-  "Ensure session_start has been called.";
+  "escaping needed. Requires an active session token.";
 
 export async function handleNotify({
   title, text, message, severity = "info", parse_mode = "Markdown",

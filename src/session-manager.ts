@@ -16,6 +16,7 @@ export interface Session {
   lastPollAt: number | undefined;
   healthy: boolean;
   announcementMsgId?: number;
+  reauthDialogMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
 }
@@ -284,6 +285,23 @@ export function setSessionAnnouncementMessage(sid: number, msgId: number): void 
 /** Return the stored announcement message ID for a session, if any. */
 export function getSessionAnnouncementMessage(sid: number): number | undefined {
   return _sessions.get(sid)?.announcementMsgId;
+}
+
+/** Store the message ID of the pending reconnect approval dialog for auto-dismiss. */
+export function setSessionReauthDialogMsgId(sid: number, msgId: number): void {
+  const s = _sessions.get(sid);
+  if (s) s.reauthDialogMsgId = msgId;
+}
+
+/** Clear the stored reauth dialog message ID (after dismiss or dialog resolved). */
+export function clearSessionReauthDialogMsgId(sid: number): void {
+  const s = _sessions.get(sid);
+  if (s) s.reauthDialogMsgId = undefined;
+}
+
+/** Return the stored reauth dialog message ID for a session, if any. */
+export function getSessionReauthDialogMsgId(sid: number): number | undefined {
+  return _sessions.get(sid)?.reauthDialogMsgId;
 }
 
 /** Mark a session as idle (entering dequeue blocking wait) or active (returning from it). */

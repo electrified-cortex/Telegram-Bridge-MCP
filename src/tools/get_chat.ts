@@ -10,11 +10,11 @@ const DENY_DATA = "get_chat_no";
 const TIMEOUT_SECONDS = 60;
 
 const DESCRIPTION =
-  "Returns information about the configured chat: id, type, title, " +
-  "username, first/last name, and description. Requires user " +
-  "approval — a confirmation prompt is sent and the tool waits until " +
-  "the user presses Allow or Deny. Returns { approved: true, ...chatInfo } " +
-  "on approval, or { approved: false, timed_out: true|false } on denial/timeout.";
+  "Requests operator approval to read the configured chat metadata (id, type, title, " +
+  "username, first/last name, description). Sends an interactive Allow/Deny prompt and " +
+  "blocks until the operator responds or the request times out. " +
+  "Requires an active session token. " +
+  "Returns { approved: true, ...chatInfo } on approval, or { approved: false, timed_out: true|false } on denial/timeout.";
 
 export async function handleGetChat({ token }: { token: number }) {
   const _sid = requireAuth(token);

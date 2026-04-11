@@ -10,8 +10,7 @@ const DESCRIPTION =
   "Once set, all dequeue calls from this token use this as the default when timeout is not explicitly passed. " +
   "Scope: in-memory, session-lifetime only. Cleared when the session closes. " +
   "Priority: explicit timeout param > session default > server default (300s). " +
-  "Use this at agent startup to configure your preferred polling interval. " +
-  "Examples: persistent agent → 600, VS Code extension → 290, one-shot runner → no call needed.";
+  "Typical values: persistent agent → 600, VS Code extension → 290, one-shot runner → server default (300s) is fine.";
 
 export function handleSetDequeueDefault({ token, timeout }: { token: number; timeout: number }) {
   const _sid = requireAuth(token);

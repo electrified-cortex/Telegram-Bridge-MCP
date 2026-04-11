@@ -151,7 +151,7 @@ export async function handleSetReaction({ message_id, emoji, is_big, temporary, 
     if (isTemp) {
       const [primary] = candidates;
       if (!primary) {
-        return toError({ code: "REACTION_EMOJI_INVALID" as const, message: "emoji is required for temporary reactions." });
+        return toError({ code: "REACTION_EMOJI_INVALID" as const, message: "emoji is required for temporary reactions. Pass an emoji or semantic alias (e.g. 'thinking', 'done')." });
       }
       let restoreResolved: ReactionEmoji | undefined;
       if (restore_emoji) {

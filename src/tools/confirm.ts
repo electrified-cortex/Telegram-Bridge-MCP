@@ -25,8 +25,7 @@ const DESCRIPTION_CONFIRM =
   "chosen option. Returns { confirmed: true|false }, or { timed_out: true } " +
   "if the timeout expires without input. " +
   "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
-  "dequeue(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
-  "Ensure session_start has been called.";
+  "dequeue(timeout:0) first, or pass ignore_pending: true to proceed anyway. Requires an active session token.";
 
 const DESCRIPTION_CONFIRM_YN =
   "Yes/No confirmation variant. Same as confirm but defaults to 🟢 Yes / 🔴 No buttons with no color styling.";
@@ -126,7 +125,7 @@ export async function confirmHandler(
       }
       const plainText = stripForTts(audio);
       if (!plainText) {
-        return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
+        return toError({ code: "EMPTY_MESSAGE" as const, message: "Audio text is empty after stripping formatting for TTS. Provide non-empty spoken content in the audio field." });
       }
       const resolvedVoice = getSessionVoice() || getDefaultVoice() || undefined;
       const resolvedSpeed = getSessionSpeed() ?? undefined;

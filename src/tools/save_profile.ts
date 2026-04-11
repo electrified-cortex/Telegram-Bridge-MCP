@@ -72,7 +72,7 @@ export function handleSaveProfile({ key, token }: { key: string; token: number }
     path = resolveProfilePath(key);
     writeProfile(key, data);
   } catch (err) {
-    return toError({ code: "WRITE_FAILED", message: (err as Error).message });
+    return toError({ code: "WRITE_FAILED", message: `Failed to write profile "${key}": ${(err as Error).message}. Check that the profiles directory is writable.` });
   }
 
   return toResult({ saved: true, key, path, sections });

@@ -35,7 +35,7 @@ export function handleSetReminder({ text, trigger = "time", delay_seconds = 0, r
   } catch (err) {
     return toError({
       code: "LIMIT_EXCEEDED" as const,
-      message: (err as Error).message,
+      message: `${(err as Error).message}. Cancel an existing reminder with cancel_reminder before adding more.`,
     });
   }
 
@@ -50,7 +50,6 @@ export function handleSetReminder({ text, trigger = "time", delay_seconds = 0, r
   if (reminder.state === "deferred") {
     result.fires_in_seconds = reminder.delay_seconds;
   }
-  result.tip = "Use ultra compression for reminder text.";
   return toResult(result);
 }
 

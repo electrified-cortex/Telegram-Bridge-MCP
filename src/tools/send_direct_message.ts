@@ -28,7 +28,7 @@ export function handleSendDirectMessage({ token, target_sid, text }: { token: nu
   if (!target) {
     return toError({
       code: "SESSION_NOT_FOUND",
-      message: `Session ${target_sid} does not exist`,
+      message: `Session ${target_sid} does not exist. Call list_sessions to see active sessions.`,
     });
   }
 
@@ -36,7 +36,7 @@ export function handleSendDirectMessage({ token, target_sid, text }: { token: nu
   if (!delivered) {
     return toError({
       code: "DM_DELIVERY_FAILED",
-      message: `Session ${target_sid} queue not available`,
+      message: `Session ${target_sid} queue not available. The session may have just closed — call list_sessions to confirm.`,
     });
   }
 

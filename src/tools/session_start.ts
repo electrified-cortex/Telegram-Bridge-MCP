@@ -4,7 +4,7 @@ import { getApi, toResult, toError, resolveChat } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage } from "../session-manager.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "../session-manager.js";
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, getSessionQueue, deliverReminderEvent } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
@@ -160,7 +160,7 @@ async function requestApproval(
  * Show a simple Approve/Deny dialog for a session reconnect request.
  * Returns true if the operator approves, false on denial or timeout.
  */
-async function requestReconnectApproval(chatId: number, name: string): Promise<boolean> {
+async function requestReconnectApproval(chatId: number, name: string, sid: number): Promise<boolean> {
   if (checkAndConsumeAutoApprove()) return true;
   const text = `🤖 *Session reconnecting:* ${markdownToV2(name)}\nAuthorize re\\-entry?`;
   const sent = await getApi().sendMessage(chatId, text, {
@@ -175,6 +175,7 @@ async function requestReconnectApproval(chatId: number, name: string): Promise<b
     },
   } as Record<string, unknown>);
   const msgId: number = sent.message_id;
+  setSessionReauthDialogMsgId(sid, msgId);
 
   const approved = await new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {
@@ -192,6 +193,7 @@ async function requestReconnectApproval(chatId: number, name: string): Promise<b
   });
 
   if (approved) {
+    clearSessionReauthDialogMsgId(sid);  // clear first, prevent double-delete race
     await getApi().deleteMessage(chatId, msgId).catch(() => {});
   } else {
     await getApi()
@@ -202,6 +204,7 @@ async function requestReconnectApproval(chatId: number, name: string): Promise<b
         { parse_mode: "MarkdownV2", reply_markup: { inline_keyboard: [] } },
       )
       .catch(() => {});
+    clearSessionReauthDialogMsgId(sid);
   }
 
   return approved;
@@ -216,7 +219,7 @@ const DESCRIPTION =
   "approval the same token is returned. " +
   "Returns { token, sid, pin, sessions_active, action, pending } so " +
   "the agent knows its identity and how to proceed. " +
-  "Save your token — it encodes both sid and pin as a single integer (sid * 1_000_000 + pin). " +
+  "The token encodes both sid and pin as a single integer (sid * 1_000_000 + pin). " +
   "Call help() first to load the API guide, then call session_start to join.";
 
 export async function handleSessionStart({ name, reconnect, color }: { name: string; reconnect: boolean; color?: string }) {
@@ -233,7 +236,7 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
       if (!isFirstSession && !effectiveName) {
         return toError({
           code: "NAME_REQUIRED",
-          message: "A name is required when starting a second or later session.",
+          message: "A name is required when starting a second or later session. Pass name: \"<YourName>\" to session_start.",
         });
       }
 
@@ -241,7 +244,7 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
       if (effectiveName && !/^[a-zA-Z0-9 ]+$/.test(effectiveName)) {
         return toError({
           code: "INVALID_NAME",
-          message: "Session names must be alphanumeric (letters, digits, spaces only).",
+          message: `Session name "${effectiveName}" contains invalid characters. Use letters, digits, and spaces only.`,
         });
       }
 
@@ -254,7 +257,7 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
           if (reconnect) {
             // Reconnect flow: show simple Approve/Deny dialog (not color-picker)
             const approved = await runInSessionContext(0, () =>
-              requestReconnectApproval(chatId, existing.name),
+              requestReconnectApproval(chatId, existing.name, existing.sid),
             );
             if (!approved) {
               return toError({
@@ -268,7 +271,7 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
               return toError({
                 code: "SESSION_NOT_FOUND",
                 message:
-                  `Session "${existing.name}" (SID ${existing.sid}) disappeared unexpectedly.`,
+                  `Session "${existing.name}" (SID ${existing.sid}) closed before reconnect completed. Call session_start again with a fresh name to create a new session.`,
               });
             }
             // Reset health markers; preserve queued messages for the reconnecting session
@@ -344,13 +347,7 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
               sessions_active: reconSessActive,
               action: "reconnected",
               pending,
-              profile_hint: "Call load_profile(key) to restore saved session configuration.",
-              instructions: `Your session token is ${reconToken} (SID ${fullSession.sid}). ` +
-                "Save your token to session memory NOW. " +
-                "You reconnected after a gap. " +
-                "Call get_chat_history to check for messages you may have missed. " +
-                "Read the guide: help(topic: 'guide'). " +
-                "Compression rules: help(topic: 'compression') — save to memory.",
+              hint: "Save this token. Read: help(topic: 'startup')",
             });
           }
 
@@ -401,13 +398,7 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
           sessions_active: session.sessionsActive,
           action: reconnect ? "reconnected" : "fresh",
           pending: 0,
-          profile_hint: "Call load_profile(key) to restore saved session configuration.",
-          instructions: `IMPORTANT: Your session token is ${sessionToken} (SID ${session.sid}). ` +
-            "Save your token to session memory NOW. " +
-            "You will need it to reconnect after context compaction. " +
-            "On reconnect, call get_chat_history to recover any messages missed during the gap. " +
-            "Read the guide: help(topic: 'guide'). " +
-            "Save compression rules: help(topic: 'compression') — save to memory.",
+          hint: "Save this token. Read: help(topic: 'startup')",
         };
         if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {

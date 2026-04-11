@@ -28,9 +28,8 @@ When starting a new session with this MCP:
 
 1. Call `help(topic: "guide")` to load behavioral rules.
 2. Read the `telegram-bridge-mcp://communication-guide` resource — compact communication patterns, tool selection rules, and loop behavior.
-3. Call `action(type: "chat/info")` — verifies the Telegram connection. If it fails, stop and notify the user.
-4. Call `action(type: "session/start")` — sends an intro message and handles pending messages from a previous session (offers Resume / Start Fresh if any exist).
-5. Enter the `dequeue` loop — call with no arguments to block up to 300 s (the default).
+3. Call `action(type: "session/start")` — sends an intro message and handles pending messages from a previous session (offers Resume / Start Fresh if any exist).
+4. Enter the `dequeue` loop — call with no arguments to block up to 300 s (the default).
 
 **`help` tool:** Call `help()` for a tool overview, `help(topic: "guide")` for this guide, or `help(topic: "<tool>")` for per-tool documentation.
 

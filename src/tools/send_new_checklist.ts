@@ -58,8 +58,7 @@ const CREATE_DESCRIPTION =
   "For percentage-based progress tracking, use send_new_progress instead. " +
   "Call this once at the start of a multi-step agent task to send the " +
   "checklist and get its message_id. Use the returned message_id with " +
-  "update_checklist to edit it in-place as steps progress. " +
-  "Ensure session_start has been called.";
+  "update_checklist to edit it in-place as steps progress. Requires an active session token.";
 
 const UPDATE_DESCRIPTION =
   "Updates an existing live task checklist message in Telegram. Pass the " +

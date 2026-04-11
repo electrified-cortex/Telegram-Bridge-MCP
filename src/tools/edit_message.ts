@@ -11,8 +11,7 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
-  "Core edit primitive — modifies an existing message by ID. " +
-  "Prefer this over edit_message_text for all text edits (it also handles keyboards). " +
+  "Edit an existing message by ID — updates text, inline keyboard, or both. " +
   "Pass text to update message content, keyboard to update or remove buttons, or both together. " +
   "Pass keyboard: null to remove all buttons while leaving text unchanged. " +
   "Omit text to update only the keyboard (uses editMessageReplyMarkup internally). " +

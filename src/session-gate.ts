@@ -42,7 +42,7 @@ export function requireAuth(
   if (!validateSession(sid, pin)) {
     return {
       code: "AUTH_FAILED",
-      message: "Invalid token. Call session_start to get a fresh token.",
+      message: "Invalid token. Double-check you have the right token, or call session_start(reconnect: true) to re-request.",
     };
   }
   _authHook?.(sid);

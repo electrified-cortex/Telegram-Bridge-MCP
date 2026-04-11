@@ -274,7 +274,7 @@ export function register(server: McpServer) {
           const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;
           const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
           if (!finalText || finalText.trim().length === 0) {
-            return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text must not be empty." });
+            return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text must not be empty. Provide a non-empty string in the text field." });
           }
           const chunks = splitMessage(finalText);
           try {

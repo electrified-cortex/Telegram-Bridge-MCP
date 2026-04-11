@@ -658,7 +658,7 @@ export async function cancelAnimation(
 
 /**
  * Reset the animation inactivity timeout for a session. Called by tools that edit
- * existing messages (append_text, edit_message_text) — the animation
+ * existing messages (append_text, edit_message) — the animation
  * stays in place but the timeout is refreshed.
  */
 export function resetAnimationTimeout(sid: number): void {

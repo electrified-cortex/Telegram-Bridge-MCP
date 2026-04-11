@@ -28,7 +28,7 @@ export async function handlePinMessage({ message_id, disable_notification, unpin
       return toResult({ ok, unpinned: true });
     }
     if (message_id === undefined) {
-      return toError({ code: "MISSING_MESSAGE_ID" as const, message: "message_id is required when pinning" });
+      return toError({ code: "MISSING_MESSAGE_ID" as const, message: "message_id is required when pinning. Pass the message_id returned by send or a prior message query." });
     }
     const ok = await getApi().pinChatMessage(chatId, message_id, {
       disable_notification,

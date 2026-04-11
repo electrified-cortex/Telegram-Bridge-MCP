@@ -74,7 +74,6 @@ Tools are grouped by abstraction level.
 | `send_text` | Sends a text message. Supports Markdown (default, auto-converted), MarkdownV2, HTML. Messages over 4096 chars are automatically split. |
 | `send_text_as_voice` | Synthesizes text to speech and sends it as a voice note. Requires `TTS_HOST` or `OPENAI_API_KEY`. All Markdown is stripped before synthesis. |
 | `send_file` | Sends a file (photo, document, video, audio, or voice) by local path, HTTPS URL, or Telegram `file_id`. Type is auto-detected by extension. |
-| `edit_message_text` | Edits the text of a previously sent message. |
 | `append_text` | Delta-appends a chunk to an existing message in-place. O(1) token cost per call. |
 | `download_file` | Downloads a received file to local disk by `file_id`. Returns text content for text-based files under 100 KB. |
 | `transcribe_voice` | Re-transcribes a voice message by `file_id`. Use when transcription failed or the result needs to be fetched again. |
@@ -212,7 +211,6 @@ telegram-bridge-mcp/
 │       ├── send_text.ts
 │       ├── send_text_as_voice.ts
 │       ├── send_file.ts
-│       ├── edit_message_text.ts
 │       ├── append_text.ts
 │       ├── delete_message.ts
 │       ├── pin_message.ts

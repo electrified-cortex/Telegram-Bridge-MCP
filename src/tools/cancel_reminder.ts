@@ -13,7 +13,7 @@ export function handleCancelReminder({ id, token }: { id: string; token: number 
   if (!cancelled) {
     return toError({
       code: "NOT_FOUND" as const,
-      message: `No reminder with id="${id}" found for this session.`,
+      message: `No reminder with id="${id}" found for this session. Call list_reminders to see active reminder IDs.`,
     });
   }
   return toResult({ cancelled: true, id });
