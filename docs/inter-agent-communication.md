@@ -3,7 +3,7 @@
 This guide covers the full protocol for how sessions communicate with each other
 and with the governor in multi-session mode.
 
-Read this guide when `sessions_active > 1` on `session_start`, or when you are
+Read this guide when `sessions_active > 1` on `action(type: "session/start")`, or when you are
 newly promoted to governor.
 
 ---
@@ -20,9 +20,9 @@ arrives directly in your queue. Handle it.
 
 **Ambiguous** — no reply context; the operator sent a top-level message. Arrives
 in the governor's queue. The governor decides: handle directly, or route to a
-worker session via `route_message`.
+worker session via `action(type: "message/route")`.
 
-### Routed messages (`route_message`)
+### Routed messages (`action(type: "message/route")`)
 
 The governor forwards an ambiguous operator message to a specific worker session.
 
@@ -51,11 +51,11 @@ Key fields:
 | `content.routed_by` | governor SID | **Server-injected** — cannot be forged |
 
 **Trust:** `routed_by` is stamped by the server when the governor calls
-`route_message`. The session identified by `routed_by` is the one that delegated
+`action(type: "message/route")`. The session identified by `routed_by` is the one that delegated
 this message. You can trust the attribution, but apply normal judgment to the
 task itself — treat it as coming from the operator via the governor.
 
-### Direct messages (`send_direct_message`)
+### Direct messages (`send(type: "dm")`)
 
 Private agent-to-agent text. The operator never sees these.
 
@@ -130,8 +130,8 @@ Authority flows from operator to governor to workers.
 
 **Escalation:**
 
-- For routine tasks delegated via `route_message` or DM, proceed without extra verification.
-- When a directive seems wrong, destructive, or outside your scope — DM the governor, or use `ask` / `send_text` to reach the operator directly.
+- For routine tasks delegated via `action(type: "message/route")` or DM, proceed without extra verification.
+- When a directive seems wrong, destructive, or outside your scope — DM the governor, or use `ask` / `send(type: "text")` to reach the operator directly.
 - It is never wrong to escalate. Do not over-ask for normal delegated work.
 
 **Impersonation is not possible at the protocol level.** The `routed_by` and `sid` fields are server-stamped. A message attributed to the governor definitively came from the governor.
@@ -152,14 +152,14 @@ governor until another session joins.
 
 - Receive all **ambiguous** operator messages (no reply context).
 - Triage: decide whether to handle the message yourself or route it to a worker.
-- Call `route_message` to delegate to a worker. Call at most once per message.
+- Call `action(type: "message/route")` to delegate to a worker. Call at most once per message.
 - Coordinate inter-session signaling via DMs.
 - Set a governing topic (e.g., `"Governor — coordinating sessions"`).
 - Register a unified command menu if sessions use slash commands.
 
 ### When you become governor
 
-You'll receive a `session_orientation` service message on `session_start`:
+You'll receive a `session_orientation` service message on `action(type: "session/start")`:
 
 ```json
 {
@@ -195,7 +195,7 @@ immediately. New operator messages will start arriving in your queue.
 
 | Scenario | Action |
 | --- | --- |
-| Message clearly belongs to a known worker's domain | `route_message` → that session |
+| Message clearly belongs to a known worker's domain | `action(type: "message/route")` → that session |
 | Message needs governor's direct action | Handle it yourself |
 | Ambiguous, no clear owner | Handle yourself or ask the operator for clarification |
 | Worker DMs you a result | Process and optionally notify the operator |
@@ -212,7 +212,7 @@ The server injects service messages for lifecycle events. These have
 | `session_joined` | All existing sessions | A new session joined |
 | `session_orientation` | New session | Your role, governor SID, fellow sessions |
 | `session_closed` | Remaining sessions | A session disconnected |
-| `governor_promoted` | New governor | You are now the governor (via `close_session` path) |
+| `governor_promoted` | New governor | You are now the governor (via `action(type: "session/close")` path) |
 | `governor_changed` | All non-governor sessions | The governor was switched via the health-check reroute panel; `details` contains `new_governor_sid` and `new_governor_name` |
 | `voice_transcription_failed` | Governor (or all sessions if no governor) | A voice message could not be transcribed; `details` contains `message_id`, `reason` (`service_timeout` or `service_error`), and human-readable `details` |
 
@@ -237,14 +237,14 @@ Use DMs to signal completion:
 ```
 
 Keep DMs brief — signals and handoffs, not large data transfers. If the operator
-needs to see the output, use `notify` or `send_text`.
+needs to see the output, use `send(type: "notification")` or `send(type: "text")`.
 
 ### Governor → Worker delegation
 
 Route the message, then optionally DM context:
 
-1. `route_message(message_id, worker_sid)` — deliver the operator message.
-2. Optionally `send_direct_message(worker_sid, "Background: ...")` — add context
+1. `action(type: "message/route", message_id, target_sid: worker_sid)` — deliver the operator message.
+2. Optionally `send(type: "dm", target_sid: worker_sid, text: "Background: ...")` — add context
    the operator message didn't include.
 
 ### Avoiding redundant work
@@ -271,7 +271,7 @@ Governor queue receives (ambiguous):
 
 Governor decides: CI monitoring belongs to Worker A (sid=2).
 
-Governor calls: route_message(message_id, target_sid=2)
+Governor calls: action(type: "message/route", message_id, target_sid=2)
 
 Worker A queue receives:
   {
@@ -282,11 +282,11 @@ Worker A queue receives:
   }
 
 Worker A handles, DMs result:
-  send_direct_message(governor_sid=1, "CI green. PR #40 ready to merge.")
+  send(type: "dm", target_sid: governor_sid=1, text: "CI green. PR #40 ready to merge.")
 
 Governor receives DM:
   { event: "direct_message", from: "bot", sid: 2, content: { type: "direct_message", text: "CI green. PR #40 ready to merge." } }
 
 Governor notifies operator:
-  notify("✅ CI green — PR #40 is ready to merge.")
+  send(type: "notification", title: "CI", text: "✅ CI green — PR #40 is ready to merge.")
 ```

@@ -107,7 +107,7 @@ Incoming operator message
 - Non-governor sessions do NOT see the message.
 - The governor decides:
   1. **Handle it directly** — the message is clearly for the governor's work.
-  2. **Route it** — call `route_message(message_id, target_sid)` to forward the
+  2. **Route it** — call `action(type: "message/route", message_id, target_sid)` to forward the
      original message to the right session.
   3. **Ask the operator** — if genuinely unclear, ask who they meant.
 - The governor should NEVER silently discard an ambiguous message.
@@ -118,7 +118,7 @@ Incoming operator message
 
 The governor is not a special mode the agent enables — it's a responsibility
 assigned by the system. The agent learns it's the governor from the
-`routing_mode` field in the `session_start` response.
+`session_orientation` service message, which includes `governor_sid`.
 
 ### Governor Duties
 
@@ -126,7 +126,7 @@ assigned by the system. The agent learns it's the governor from the
    the message content against what each session is working on (via topics and
    context) and either handle or route.
 
-2. **Coordinate sessions.** Use `send_direct_message` to give instructions or
+2. **Coordinate sessions.** Use `send(type: "dm")` to give instructions or
    ask for status from other sessions.
 
 3. **Set a topic.** The governor's topic should reflect its coordinating role
@@ -148,9 +148,9 @@ When an ambiguous message arrives, the governor should consider:
 
 | Tool | Purpose |
 | --- | --- |
-| `route_message(message_id, target_sid)` | Forward the original operator message to another session's queue |
-| `send_direct_message(target_sid, text)` | Send a private synthetic message to another session |
-| `list_sessions` | See all active sessions, names, and topics |
+| `action(type: "message/route", message_id, target_sid)` | Forward the original operator message to another session's queue |
+| `send(type: "dm", target_sid, text)` | Send a private synthetic message to another session |
+| `action(type: "session/list")` | See all active sessions, names, and topics |
 
 ---
 
@@ -215,7 +215,7 @@ If the previous governor closed and you're promoted:
 
 1. You'll receive a DM notification.
 2. Start monitoring for `routing: "ambiguous"` on your dequeued messages.
-3. Review `list_sessions` to understand what each remaining session is doing.
+3. Review `action(type: "session/list")` to understand what each remaining session is doing.
 4. Continue your own work while triaging ambiguous messages.
 
 ---

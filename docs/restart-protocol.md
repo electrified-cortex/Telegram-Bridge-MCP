@@ -28,10 +28,10 @@ Each session (SID) is held in memory by the running server process. When that pr
 
 Before issuing the actual shutdown, the Overseer notifies all active worker sessions directly:
 
-1. Identify all active worker sessions (via `list_sessions` or known SIDs from session startup).
+1. Identify all active worker sessions (via `action(type: "session/list")` or known SIDs from session startup).
 2. Send each worker a DM via their session:
 
-   > "Heads up — we're shutting down shortly. Your session will be invalidated when the server restarts. **Do not start new work.** Finish your current tool call if safe, then end your agent turn and wait. After the server comes back up (~60 seconds), the operator will re-engage you and you'll need to start a new session via `session_start`."
+   > "Heads up — we're shutting down shortly. Your session will be invalidated when the server restarts. **Do not start new work.** Finish your current tool call if safe, then end your agent turn and wait. After the server comes back up (~60 seconds), the operator will re-engage you and you'll need to start a new session via `action(type: "session/start")`."
 
 3. Wait for each worker to acknowledge and confirm they have ended their turn (operator can visually confirm agents have stopped making tool calls).
 4. Confirm with the operator before proceeding to Phase 2.
@@ -105,12 +105,12 @@ The Overseer is **also subject to this protocol.** After calling the `shutdown` 
 
 When the operator re-engages you (new message or re-engagement prompt):
 
-1. Call `session_start` to register a new session. Your old SID is dead — do not reuse it.
-2. The new `session_start` response gives you a fresh `sid` and `pin`. Use these for all subsequent tool calls.
+1. Call `action(type: "session/start")` to register a new session. Your old SID is dead — do not reuse it.
+2. The new `action(type: "session/start")` response gives you a fresh `sid` and `pin`. Use these for all subsequent tool calls.
 3. Resume from the last known task state (check your task file or the terminal output left by the "going to sleep" command).
 4. Re-enter the `dequeue` loop as normal.
 
-> **Do not hardcode or remember old SIDs.** Always obtain a fresh SID from `session_start` after a restart.
+> **Do not hardcode or remember old SIDs.** Always obtain a fresh SID from `action(type: "session/start")` after a restart.
 >
 > **Overseer restarts first.** The Overseer must establish its new session before signalling workers to reconnect, so it is ready to coordinate again.
 
@@ -131,7 +131,7 @@ If the operator issues `/shutdown` without a Phase 1 warning:
 If a worker calls `dequeue` and receives repeated timeouts (or connection errors) after a restart:
 
 - Assume the server restarted without notification.
-- Wait 60 s, then call `session_start` to establish a fresh session.
+- Wait 60 s, then call `action(type: "session/start")` to establish a fresh session.
 - Notify the operator that a reconnect occurred.
 
 ---

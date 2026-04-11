@@ -34,7 +34,7 @@ When starting a new session with this MCP:
 
 **`help` tool:** Call `help()` for a tool overview, `help(topic: "guide")` for this guide, or `help(topic: "<tool>")` for per-tool documentation.
 
-**Transport:** The server supports both stdio and streaming HTTP transports. HTTP clients that reconnect after a drop should call `session_start` with their existing PIN to resume.
+**Transport:** The server supports both stdio and streaming HTTP transports. HTTP clients that reconnect after a drop should keep using their existing session token if they still have it. If the token was lost, use `action(type: "session/start", name: "…", reconnect: true)` to recover the same session token after operator re-authorization.
 
 **`dequeue` is the sole tool for receiving updates.** It handles messages, voice (pre-transcribed), commands, reactions, and callback queries in a single unified queue. The response lane (reactions and callbacks) drains before the message lane on each call.
 
@@ -237,7 +237,7 @@ React to user messages instead of sending separate acknowledgement text. Common 
 | Rule | Detail |
 | --- | --- |
 | **Temporary only** | Always call `action(type: "react", emoji: "👀", temporary: true)` — never permanent. Auto-clears when the bot sends any outbound message. |
-| **Optional, never required** | The server automatically manages voice message reactions (✍ while transcribing, 😴 if queued, 🫡 when dequeued). You do not need to call `set_reaction` for voice messages. |
+| **Optional, never required** | The server automatically manages voice message reactions (✍ while transcribing, 😴 if queued, 🫡 when dequeued). You do not need to call `action(type: "react")` for voice messages. |
 | **Use sparingly on text** | Use when genuinely focused on a long multi-part request. `action(type: "show-typing")` is the right signal when a reply is imminent. |
 | **Auto-restores on outbound** | When any outbound message fires, `👀` is replaced with the bot's previous reaction (or cleared). No manual cleanup. |
 | **No-op if already set** | Silently skipped if the message already carries the same emoji. |
