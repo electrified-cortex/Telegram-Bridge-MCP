@@ -42,14 +42,14 @@ export type ChoiceOption = { label: string; value: string; style?: "success" | "
 
 export async function handleSendChoice({
   text, options, columns = 2, parse_mode = "Markdown", disable_notification,
-  reply_to_message_id, ignore_parity, token,
+  reply_to, ignore_parity, token,
 }: {
   text: string;
   options: ChoiceOption[];
   columns?: number;
   parse_mode?: "Markdown" | "HTML" | "MarkdownV2";
   disable_notification?: boolean;
-  reply_to_message_id?: number;
+  reply_to?: number;
   ignore_parity?: boolean;
   token: number;
 }) {
@@ -97,6 +97,8 @@ export async function handleSendChoice({
     }
   }
 
+  const replyTo = reply_to;
+
   try {
     const messageId = await sendChoiceMessage(chatId, {
       text,
@@ -104,7 +106,7 @@ export async function handleSendChoice({
       columns,
       parseMode: parse_mode,
       disableNotification: disable_notification,
-      replyToMessageId: reply_to_message_id,
+      replyToMessageId: replyTo,
     });
 
     // Register one-shot auto-lock: on first press, dismiss the spinner and
@@ -151,7 +153,7 @@ export function register(server: McpServer) {
           .boolean()
           .optional()
           .describe("Send silently (no sound/notification)"),
-        reply_to_message_id: z
+        reply_to: z
           .number()
           .int()
           .min(1)

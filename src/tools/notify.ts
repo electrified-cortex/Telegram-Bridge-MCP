@@ -25,7 +25,7 @@ const DESCRIPTION =
 
 export async function handleNotify({
   title, text, message, severity = "info", parse_mode = "Markdown",
-  disable_notification, reply_to_message_id, token,
+  disable_notification, reply_to, token,
 }: {
   title: string;
   text?: string;
@@ -33,9 +33,10 @@ export async function handleNotify({
   severity?: "info" | "success" | "warning" | "error";
   parse_mode?: "Markdown" | "HTML" | "MarkdownV2";
   disable_notification?: boolean;
-  reply_to_message_id?: number;
+  reply_to?: number;
   token: number;
 }) {
+  const reply_to_message_id = reply_to;
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
@@ -94,7 +95,7 @@ export function register(server: McpServer) {
           .boolean()
           .optional()
           .describe("Send silently (no phone notification)"),
-        reply_to_message_id: z
+        reply_to: z
           .number()
           .int()
           .min(1)

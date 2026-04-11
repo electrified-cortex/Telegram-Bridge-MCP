@@ -38,7 +38,7 @@ export async function handleEditMessage({ message_id, text, keyboard, parse_mode
   message_id: number;
   text?: string;
   keyboard?: ButtonInput[][] | null;
-  parse_mode: string;
+  parse_mode: "Markdown" | "HTML" | "MarkdownV2";
   token: number;
 }) {
   const _sid = requireAuth(token);

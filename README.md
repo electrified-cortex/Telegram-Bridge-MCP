@@ -9,193 +9,331 @@
 
 ## No Claw? No Problem.
 
-**Anthropic restricted Claude Code's native instance API** — but this bridge doesn't care. It's a standard MCP server. Any IDE, any model, any agent framework that speaks MCP works out of the box.
+**Anthropic restricted Claude Code's native instance API** — but this bridge doesn't care. It's a standard [Model Context Protocol](https://modelcontextprotocol.io) server. Any IDE, any model, any agent framework that speaks MCP connects out of the box — no proprietary lock-in, no webhooks, no public URL required.
 
-## What is this?
+---
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server that connects AI assistants to Telegram. Send messages, ask questions, receive voice replies, run multiple agent sessions concurrently — all through a single bot.
+## What Is This?
 
-Works with any MCP client — VS Code, Copilot CLI, Claude Code, Cursor, Windsurf, and any MCP-compatible host. No proprietary lock-in.
+**Telegram Bridge MCP** connects AI assistants to Telegram bidirectionally. It lets any MCP-compatible client send messages, ask questions, receive voice replies, and run multiple concurrent agent sessions — all through a single bot you control.
+
+**Works with:** VS Code (GitHub Copilot Chat), Claude Code, Cursor, Windsurf, Copilot CLI, and any MCP-compatible host.
+
+---
 
 ## Highlights
 
-- **Two-way messaging** — text, Markdown, files, voice notes
-- **Interactive controls** — buttons, confirmations, checklists, progress bars
-- **Voice in, voice out** — automatic transcription (Whisper) and TTS (local or OpenAI)
-- **Multi-session** — multiple agents share one bot with per-session queues, identity auth, and message routing
-- **Reminders** — scheduled events that fire as synthetic messages after a delay
-- **Live animations** — cycling status messages while the agent works
-- **Slash commands** — dynamic bot menu; commands arrive as structured events
-- **No webhooks** — long-polling, no public URL needed
-
-## Supported Platforms
-
-The bridge is a standard MCP server — it works with any MCP-compatible host.
-
-### IDEs & Agent Hosts
-
-| Platform | Transport | Notes |
-| --- | --- | --- |
-| VS Code (GitHub Copilot Chat) | Streamable HTTP or stdio | Native MCP support |
-| Claude Code (CLI) | Streamable HTTP or stdio | |
-| Cursor | Streamable HTTP or stdio | |
-| Copilot CLI | stdio | |
-| Any MCP-compatible client | Streamable HTTP or stdio | If it speaks MCP, it works |
-
-### Transports
-
-| Transport | Entry point | Use case |
-| --- | --- | --- |
-| **Streamable HTTP** | `pnpm start -- --http` | Multiple clients share one server (recommended) |
-| **stdio** | `node dist/index.js` | Single client, no persistent server |
-| **Launcher bridge** | `node dist/launcher.js` | Auto-starts HTTP if needed, bridges stdio ↔ HTTP |
+| Feature | Description |
+| --- | --- |
+| **Two-way messaging** | Text, Markdown, files, voice notes |
+| **Interactive controls** | Inline buttons, confirmations, questions |
+| **Super tools** | Self-pinning checklists and emoji progress bars that update in-place |
+| **Voice** | Auto-transcription (bundled Whisper ONNX, no ffmpeg) + TTS (local Kokoro, OpenAI, or bundled ONNX) |
+| **Multi-session** | Multiple agents share one bot with isolated queues, token auth, and color identity |
+| **Animations** | Cycling status frames while your agent works |
+| **Reminders** | Scheduled synthetic events delivered via dequeue |
+| **Slash commands** | Dynamic bot menu; commands arrive as structured events |
+| **No webhooks** | Pure long-polling — no public URL, no reverse proxy |
 
 ---
 
 ## Quick Start
 
-Paste this into your AI assistant's chat:
-
-```text
-Set me up: https://github.com/electricessence/Telegram-Bridge-MCP
-```
+> **Tip:** If your AI has web access, paste this to get started (requires web access):
+>
+> ```text
+> Set me up: https://github.com/electricessence/Telegram-Bridge-MCP
+> ```
 
 <details>
-<summary><strong>Manual setup</strong></summary>
+<summary><strong>Manual setup (step by step)</strong></summary>
 
-1. **Clone & build** — `git clone https://github.com/electricessence/Telegram-Bridge-MCP.git && cd Telegram-Bridge-MCP && pnpm install && pnpm build`
-2. **Create a bot** — message @BotFather → `/newbot` → copy the token
-3. **Pair** — `pnpm pair` (writes `.env`)
-4. **Configure your editor** — see [`docs/setup.md`](docs/setup.md) for per-client snippets (VS Code, Claude Code, Cursor, Docker)
+### 1. Clone and build
+
+```bash
+git clone https://github.com/electricessence/Telegram-Bridge-MCP.git
+cd Telegram-Bridge-MCP
+pnpm install && pnpm build
+```
+
+### 2. Create a bot
+
+Message [@BotFather](https://t.me/BotFather) on Telegram:
+
+```text
+/newbot
+```
+
+Copy the token it gives you.
+
+### 3. Pair interactively
+
+```bash
+pnpm pair
+```
+
+The wizard prompts for your bot token and Telegram user ID, writes a `.env` file, and verifies connectivity.
+
+### 4. Configure your MCP host
+
+See [`docs/setup.md`](docs/setup.md) for per-client config snippets (VS Code, Claude Code, Cursor, Docker).
 
 </details>
 
 ---
 
-## Tools
+## Transports
 
-Telegram Bridge MCP v6 exposes **4 tools** with type-based routing.
+| Transport | Entry Point | Best For |
+| --- | --- | --- |
+| **Streamable HTTP** | `pnpm start -- --http` | Multiple clients sharing one server (recommended) |
+| **stdio** | `node dist/index.js` | Single client, no persistent server |
+| **Launcher bridge** | `node dist/launcher.js` | Auto-starts HTTP if needed, bridges stdio ↔ HTTP |
+
+<details>
+<summary><strong>Streamable HTTP MCP config example</strong></summary>
+
+**Claude Code / Cursor / other MCP hosts**
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
+**VS Code (.vscode/mcp.json)**
+
+```json
+{
+  "servers": {
+    "telegram": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3099/mcp"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>stdio MCP config example</strong></summary>
+
+**Claude Code / Cursor / other MCP hosts**
+
+```json
+{
+  "mcpServers": {
+    "telegram": {
+      "command": "node",
+      "args": ["/path/to/Telegram-Bridge-MCP/dist/index.js"],
+      "env": {
+        "BOT_TOKEN": "your-token",
+        "ALLOWED_USER_ID": "your-user-id"
+      }
+    }
+  }
+}
+```
+
+**VS Code (.vscode/mcp.json)**
+
+```json
+{
+  "servers": {
+    "telegram": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/path/to/Telegram-Bridge-MCP/dist/index.js"],
+      "env": {
+        "BOT_TOKEN": "your-token",
+        "ALLOWED_USER_ID": "your-user-id"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+---
+
+## Tools — The v6 API
+
+Version 6 consolidates the entire API into **4 tools** with type-based routing. Call `help(topic?)` at any time for interactive documentation discovery.
 
 ### `send` — Outbound Messaging
 
+All outbound operations flow through a single `send` call. The `type` parameter determines behavior.
+
 | Type | Description |
 | --- | --- |
-| `text` | Send formatted Markdown text (or TTS voice via `audio` param) |
-| `file` | Send a file (photo, document, video, audio, voice) |
-| `notification` | Notification with severity (info/success/warning/error) |
+| `text` | Formatted Markdown text; pass `audio: "..."` to speak via TTS |
+| `file` | Photo, document, video, audio, or voice note |
+| `notification` | Status notification with severity: `info` · `success` · `warning` · `error` |
 | `choice` | Message with inline buttons (non-blocking) |
-| `direct` | DM another session (requires `target_sid` or `target` alias) |
+| `question` | Blocking prompt — route with `ask`, `confirm`, or `choose` |
+| `dm` | DM to another session (`target_sid` or `target` alias); `"direct"` accepted as alias |
 | `append` | Append text to an existing message |
 | `animation` | Start a cycling status animation |
-| `checklist` | Create a pinned live checklist (see [`docs/super-tools.md`](docs/super-tools.md)) |
-| `progress` | Create an emoji progress bar (see [`docs/super-tools.md`](docs/super-tools.md)) |
-| `question` | Blocking question — route with `ask`, `confirm`, or `choose` param |
+| `checklist` | Create a self-pinning live checklist; requires `title`, accepts `steps` array of `{label, status}` objects |
+| `progress` | Create an emoji progress bar (width configurable) |
 
-### `dequeue` — Receive Events
+> Update in-place with `action(type: "checklist/update", message_id: ...)` and `action(type: "progress/update", message_id: ...)` respectively. See [`docs/super-tools.md`](docs/super-tools.md).
 
-Wait for the next inbound Telegram event (message, button press, voice note, etc.). Supports configurable timeout.
+```js
+// Examples — token required for all session-scoped calls; session/start and most help topics work without a token
+// token: 1234567 (required for all session-scoped calls)
+send({ token: 1234567, type: "text", text: "Hello from your AI agent!" })
+send({ token: 1234567, type: "notification", severity: "success", text: "Build passed." })
+send({ token: 1234567, type: "question", ask: "Proceed with deployment?" })
+send({ token: 1234567, type: "checklist", title: "Pipeline", steps: [{ label: "Design", status: "pending" }, { label: "Implement", status: "pending" }, { label: "Review", status: "pending" }, { label: "Deploy", status: "pending" }] })
+send({ token: 1234567, type: "progress", title: "Processing files", percent: 40, subtext: "4 of 10 complete", width: 10 })
+```
 
-### `help` — Documentation
+### `dequeue` — Receive Inbound Events
 
-Discover tool capabilities interactively. Call with optional `topic` for targeted docs.
+Long-poll for the next inbound event: messages, button presses, voice notes, slash commands, reminders.
+
+> **Note:** `token` is the integer returned by `action(type: "session/start")`.
+
+```js
+dequeue({ token: 1234567 })              // default timeout — idles until event
+dequeue({ token: 1234567, timeout: 0 }) // non-blocking drain (coordination gates)
+```
 
 ### `action` — Universal Dispatcher
 
-RESTful path routing via `type` parameter. Supports progressive discovery:
+RESTful path routing via `type`. Supports progressive discovery:
 
 - Omit `type` → list all categories
-- Pass a category (e.g. `session`) → list sub-paths
-- Pass a full path (e.g. `session/start`) → execute
+- Pass a category → list sub-paths
+- Pass a full path → execute
 
-**Session:** `session/start` · `session/close` · `session/list` · `session/rename`
+<details>
+<summary><strong>Full action reference</strong></summary>
 
-**Profile:** `profile/voice` · `profile/topic` · `profile/save` · `profile/load` · `profile/import` · `profile/dequeue-default`
+#### Session
+`session/start` · `session/close` · `session/list` · `session/rename` · `session/idle`
 
-**Reminder:** `reminder/set` · `reminder/cancel` · `reminder/list`
+#### Profile
+`profile/voice` · `profile/topic` · `profile/save` · `profile/load` · `profile/import` · `profile/dequeue-default`
 
-**Animation:** `animation/default` · `animation/cancel`
+#### Reminder
+`reminder/set` · `reminder/cancel` · `reminder/list`
 
-**Message:** `message/edit` · `message/delete` · `message/pin` · `message/route` (governor) · `message/history` · `message/get`
+#### Animation
+`animation/default` · `animation/cancel`
 
-**Chat:** `chat/info`
+#### Message
+`message/edit` · `message/delete` · `message/pin` · `message/route` · `message/history` · `message/get`
 
-**Log** (governor-only): `log/get` · `log/list` · `log/roll` · `log/delete` · `log/debug`
+#### Chat
+`chat/info`
 
-**Standalone:** `react` · `acknowledge` · `show-typing` · `commands/set` · `logging/toggle` · `transcribe` · `download` · `approve` (governor) · `shutdown` (governor) · `shutdown/warn` (governor)
+#### Super Tools
+`checklist/update` · `progress/update`
 
-**Super tools:** `checklist/update` · `progress/update`
+#### Confirm Presets
+`confirm/ok` · `confirm/ok-cancel` · `confirm/yn`
 
-**Confirm presets:** `confirm/ok` · `confirm/ok-cancel` · `confirm/yn`
+#### Standalone
+`react` · `acknowledge` · `show-typing` · `commands/set` · `logging/toggle` · `transcribe` · `download`
 
-See [`docs/migration-v5-to-v6.md`](docs/migration-v5-to-v6.md) for a complete mapping from v5 tool names.
+#### Governor-only
+`approve` · `shutdown` · `shutdown/warn` · `log/get` · `log/list` · `log/roll` · `log/delete` · `log/debug`
+
+</details>
+
+### `help` — Documentation Discovery
+
+```js
+help()                    // list all topics
+help({ topic: "send" })  // targeted reference for a specific tool or type
+```
 
 ---
 
 ## Multi-Session
 
-Multiple agents can share one bot simultaneously. Each session gets:
+Multiple agents can share one bot simultaneously without cross-talk.
 
-- **Identity** — single `token` integer returned by `action(type: "session/start")`, required on every tool call
-- **Isolated queue** — per-session message routing, no cross-talk
-- **Name tags** — outbound messages are prefixed with the session's color + name (e.g., `🟩 🤖 Worker 1`)
-- **Governor model** — first session is primary; others join with operator approval via color-picker keyboard
-- **Health monitoring** — unresponsive sessions trigger operator prompts to reroute or promote
-- **DMs** — inter-session messaging via `send(type: "direct")`
-- **Graceful teardown** — orphaned events rerouted, callback hooks replaced on close
+```text
+session/start → token (integer) → pass on every session-scoped call
+```
 
-See `docs/multi-session-protocol.md` for the full routing protocol.
+**Token format:** `token = sid * 1_000_000 + pin` — a single integer, returned by `action(type: "session/start")`.
+
+| Capability | Description |
+| --- | --- |
+| **Isolated queues** | Per-session routing; no messages bleed between agents |
+| **Color identity** | Outbound messages prefixed with color + name (e.g., `🟩 Worker 1`) |
+| **Governor model** | First session is primary; additional sessions require operator approval via color-picker keyboard |
+| **DMs** | Inter-session messaging via `send(type: "dm", target_sid: N, ...)` (alias: `"direct"`; `target_sid` alias: `target`) |
+| **Health monitoring** | Unresponsive sessions trigger operator prompts to reroute or promote |
+| **Graceful teardown** | Orphaned events rerouted; callback hooks replaced on close |
+
+See [`docs/multi-session-protocol.md`](docs/multi-session-protocol.md) for the full routing protocol.
 
 ---
 
 ## Voice
 
-### Transcription (inbound)
+### Transcription (Inbound)
 
-Voice messages are auto-transcribed before delivery. No external API, no ffmpeg.
+Voice messages are auto-transcribed before delivery. No external API, no ffmpeg required — the Whisper ONNX model is bundled.
 
 ```env
 WHISPER_MODEL=onnx-community/whisper-base   # default
 WHISPER_CACHE_DIR=/path/to/cache            # optional
 ```
 
-### Text-to-Speech (outbound)
+### Text-to-Speech (Outbound)
 
-`send(type: "text", audio: "...")` picks a TTS provider automatically:
+Triggered by `send(type: "text", audio: "...")`. Provider is selected automatically:
 
-| Env var | Provider |
+| Environment Variable | Provider |
 | --- | --- |
 | `TTS_HOST` | Any OpenAI-compatible `/v1/audio/speech` endpoint |
 | `OPENAI_API_KEY` | api.openai.com |
-| Neither | Free local ONNX model (zero config) |
+| Neither set | Bundled ONNX model (zero config) |
 
-**Kokoro** (recommended local TTS) — `docker run -d --name kokoro -p 8880:8880 ghcr.io/hexgrad/kokoro-onnx-server:latest`, then set `TTS_HOST=http://localhost:8880 TTS_FORMAT=ogg TTS_VOICE=af_heart`. 25+ voices — send `/voice` in Telegram to browse and sample.
+#### Kokoro (recommended local TTS)
 
-Per-session voice override: use `action(type: "profile/voice")` or `/voice` in Telegram.
+High-quality local TTS with 25+ voices. No API key, no cost.
+
+```bash
+docker run -d --name kokoro -p 8880:8880 ghcr.io/hexgrad/kokoro-onnx-server:latest
+```
+
+```env
+TTS_HOST=http://localhost:8880
+TTS_FORMAT=ogg
+TTS_VOICE=af_heart
+```
+
+Send `/voice` in Telegram to browse and sample voices live.
+
+Per-session voice override: `action(type: "profile/voice")` or `/voice` in Telegram.
 
 ---
 
-## Security
+## MCP Resources
 
-- **`ALLOWED_USER_ID`** — only this user's messages are processed; everything else is silently dropped
-- `chat_id` is never a tool parameter — resolved from `ALLOWED_USER_ID` internally
-- Multi-session auth via single `token` integer on every tool call
-- `rename_session` requires explicit operator approval via inline keyboard
-
-See `docs/security-model.md` for details.
-
----
-
-## Resources
-
-Five MCP resources available to any client:
+Five resources are available to any connected client — no tool call required:
 
 | URI | Contents |
 | --- | --- |
-| `telegram-bridge-mcp://agent-guide` | Behavioral guide |
+| `telegram-bridge-mcp://agent-guide` | Behavioral guide for AI agents |
 | `telegram-bridge-mcp://communication-guide` | Communication patterns and loop rules |
-| `telegram-bridge-mcp://quick-reference` | Hard rules + tool table (compact) |
+| `telegram-bridge-mcp://quick-reference` | Hard rules + compact tool table |
 | `telegram-bridge-mcp://setup-guide` | Setup walkthrough |
-| `telegram-bridge-mcp://formatting-guide` | Markdown/MarkdownV2/HTML reference |
+| `telegram-bridge-mcp://formatting-guide` | Markdown / MarkdownV2 / HTML reference |
 
 ---
 
@@ -205,7 +343,7 @@ Five MCP resources available to any client:
 ghcr.io/electricessence/telegram-bridge-mcp:latest
 ```
 
-> **Pairing first:** Create your `.env` file by running `pnpm pair` on a machine with Node.js, or manually create one from `.env.example`. Docker reads it via `--env-file`.
+> **Before running Docker:** Create your `.env` file first by running `pnpm pair` on a machine with Node.js, or copy `.env.example` and fill it in manually.
 
 **Streamable HTTP (recommended)** — run as a long-lived service:
 
@@ -218,10 +356,10 @@ docker run -d --name telegram-mcp \
   ghcr.io/electricessence/telegram-bridge-mcp:latest
 ```
 
-Then connect your MCP hosts to `http://127.0.0.1:3099/mcp` (same config as above).
+Connect MCP hosts to `http://127.0.0.1:3099/mcp`.
 
 <details>
-<summary><strong>stdio mode</strong> (per-host process)</summary>
+<summary><strong>stdio mode</strong> (per-host process, no persistent server)</summary>
 
 ```json
 {
@@ -237,34 +375,43 @@ Then connect your MCP hosts to `http://127.0.0.1:3099/mcp` (same config as above
 
 </details>
 
-The cache volume persists Whisper/TTS model weights across restarts.
-
-Images are signed with [Cosign](https://docs.sigstore.dev/cosign/overview/) (keyless, GitHub OIDC) and include SBOM + provenance attestations.
+The cache volume persists Whisper and TTS model weights across container restarts.
 
 ---
 
 ## Development
 
 ```bash
-pnpm build          # Compile TypeScript
-pnpm dev            # Watch mode
-pnpm test           # Run tests
-pnpm coverage       # Coverage report
-pnpm pair           # Re-run pairing wizard
+pnpm build      # Compile TypeScript
+pnpm dev        # Watch mode
+pnpm test       # Run tests
+pnpm coverage   # Coverage report
+pnpm pair       # Re-run pairing wizard
 ```
-
-See [docs/git-index-safety.md](docs/git-index-safety.md) for important safety notes
-on running git operations in multi-agent environments.
 
 ---
 
 ## Agent Setup
 
-To keep agents in the Telegram dequeue loop reliably, install the loop guard hook for your host.
-See [`docs/agent-setup.md`](docs/agent-setup.md) for VS Code (GitHub Copilot Chat) and Claude Code installation instructions.
+To keep agents reliably in the Telegram dequeue loop, install the loop-guard hook for your host. The hook prevents agents from dropping out of the loop on idle or forced stop.
+
+See [`docs/agent-setup.md`](docs/agent-setup.md) for installation instructions for VS Code (GitHub Copilot Chat) and Claude Code.
+
+---
+
+## Documentation
+
+| Doc | Contents |
+| --- | --- |
+| [`docs/setup.md`](docs/setup.md) | Full setup walkthrough with per-client config |
+| [`docs/multi-session-protocol.md`](docs/multi-session-protocol.md) | Multi-session routing and governor model |
+| [`docs/super-tools.md`](docs/super-tools.md) | Checklist and progress bar reference |
+| [`docs/agent-setup.md`](docs/agent-setup.md) | Loop-guard hooks for VS Code and Claude Code |
+| [`docs/migration-v5-to-v6.md`](docs/migration-v5-to-v6.md) | v5 → v6 tool name mapping |
+| [`docs/git-index-safety.md`](docs/git-index-safety.md) | Git index safety notes for multi-agent environments |
 
 ---
 
 ## License
 
-AGPL-3.0-only — see [LICENSE](LICENSE).
+[AGPL-3.0-only](LICENSE)

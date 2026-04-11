@@ -407,7 +407,7 @@ describe("choose tool", () => {
     expect(data.label).toBe("Option A");
   });
 
-  it("bypasses pending guard when reply_to_message_id is set", async () => {
+  it("bypasses pending guard when reply_to is set", async () => {
     mocks.pendingCount.mockReturnValue(2);
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(
@@ -416,7 +416,7 @@ describe("choose tool", () => {
     const result = await call({
       text: "Pick",
       options: OPTIONS,
-      reply_to_message_id: 55, token: 1123456});
+      reply_to: 55, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.timed_out).toBe(false);
