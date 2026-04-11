@@ -45,7 +45,7 @@ export interface ConfirmArgs {
   yes_style?: ButtonStyle;
   no_style?: ButtonStyle;
   timeout_seconds: number;
-  reply_to_message_id?: number;
+  reply_to?: number;
   ignore_pending?: boolean;
   ignore_parity?: boolean;
   audio?: string;
@@ -53,9 +53,10 @@ export interface ConfirmArgs {
 }
 
 export async function confirmHandler(
-  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id, ignore_pending, ignore_parity, audio, token }: ConfirmArgs,
+  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to, ignore_pending, ignore_parity, audio, token }: ConfirmArgs,
   signal: AbortSignal,
 ) {
+  const reply_to_message_id = reply_to;
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
@@ -279,7 +280,7 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
       .max(300)
       .default(60)
       .describe("Seconds to wait for a button press before returning timed_out: true"),
-    reply_to_message_id: z
+    reply_to: z
       .number()
       .int()
       .min(1)

@@ -186,8 +186,8 @@ describe("send_choice tool", () => {
     );
   });
 
-  it("passes reply_to_message_id via reply_parameters", async () => {
-    await call({ text: "Reply", options: TWO_OPTIONS, reply_to_message_id: 5, token: 1123456});
+  it("passes reply_to via reply_parameters", async () => {
+    await call({ text: "Reply", options: TWO_OPTIONS, reply_to: 5, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),

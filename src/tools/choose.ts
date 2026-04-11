@@ -37,7 +37,7 @@ export async function handleChoose(
     options,
     timeout_seconds = 300,
     columns = 2,
-    reply_to_message_id,
+    reply_to,
     ignore_pending,
     ignore_parity,
     audio,
@@ -47,7 +47,7 @@ export async function handleChoose(
     options: ChooseOption[];
     timeout_seconds?: number;
     columns?: number;
-    reply_to_message_id?: number;
+    reply_to?: number;
     ignore_pending?: boolean;
     ignore_parity?: boolean;
     audio?: string;
@@ -55,6 +55,7 @@ export async function handleChoose(
   },
   signal: AbortSignal,
 ) {
+  const reply_to_message_id = reply_to;
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
@@ -294,7 +295,7 @@ export function register(server: McpServer) {
         .max(4)
         .default(2)
         .describe("Buttons per row (default 2)"),
-      reply_to_message_id: z
+      reply_to: z
         .number()
         .int()
         .min(1)

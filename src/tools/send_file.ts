@@ -50,7 +50,7 @@ const DESCRIPTION =
 
 export async function handleSendFile({
   file, type = "auto", caption, parse_mode = "Markdown", duration, performer, title,
-  width, height, disable_notification, reply_to_message_id, token,
+  width, height, disable_notification, reply_to, token,
 }: {
   file: string;
   type?: "auto" | "photo" | "document" | "video" | "audio" | "voice";
@@ -62,7 +62,7 @@ export async function handleSendFile({
   width?: number;
   height?: number;
   disable_notification?: boolean;
-  reply_to_message_id?: number;
+  reply_to?: number;
   token: number;
 }) {
   const _sid = requireAuth(token);
@@ -92,8 +92,9 @@ export async function handleSendFile({
     if ("code" in voiceResult) return toError(voiceResult);
   }
 
-  const replyParams = reply_to_message_id
-    ? { message_id: reply_to_message_id }
+  const replyTo = reply_to;
+  const replyParams = replyTo
+    ? { message_id: replyTo }
     : undefined;
 
   try {
@@ -169,7 +170,7 @@ export async function handleSendFile({
           parse_mode: resolvedCaption.parse_mode,
           duration,
           disable_notification,
-          reply_to_message_id,
+          reply_to_message_id: replyTo,
         });
         return toResult({
           message_id: msg.message_id,
@@ -254,9 +255,10 @@ export function register(server: McpServer) {
           .boolean()
           .optional()
           .describe("Send silently"),
-        reply_to_message_id: z
+        reply_to: z
           .number()
           .int()
+          .min(1)
           .optional()
           .describe("Reply to this message ID"),
         token: TOKEN_SCHEMA,
