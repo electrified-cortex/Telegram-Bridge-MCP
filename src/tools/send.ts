@@ -380,9 +380,12 @@ export function register(server: McpServer) {
           });
 
         case "checklist":
-          if (!(args.title ?? args.text)) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
-          if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
-          return handleSendNewChecklist({ title: (args.title ?? args.text)!, steps: args.steps, token: args.token });
+          {
+            const checklistTitle = args.title ?? args.text;
+            if (!checklistTitle) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
+            if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
+            return handleSendNewChecklist({ title: checklistTitle, steps: args.steps, token: args.token });
+          }
 
         case "progress":
           if (args.percent === undefined) return toError({ code: "MISSING_PARAM" as const, message: 'type: "progress" requires a "percent" param (0\u2013100).', hint: "type: \"progress\" requires a percent (0\u2013100). Call help(topic: 'send')." });

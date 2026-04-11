@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // Ignored paths
-  { ignores: ["dist/**", "coverage/**", "temp/**"] },
+  { ignores: ["dist/**", "coverage/**", "temp/**", "src/tools/_retired/**"] },
 
   // Strict + type-checked: every recommended rule plus stricter alternatives.
   // Requires the TypeScript compiler (slower) but catches far more issues.

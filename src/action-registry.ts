@@ -6,7 +6,7 @@
  * to find and invoke the right handler.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-redundant-type-constituents
 export type ActionHandler = (args: Record<string, any>, extra: unknown) => Promise<unknown> | unknown;
 
 export interface ActionMeta {

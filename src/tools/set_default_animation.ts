@@ -69,7 +69,10 @@ export function handleSetDefaultAnimation({ frames, name, preset, reset, token }
 
   // Register named preset
   if (presetName) {
-    registerPreset(_sid, presetName, frames!);
+    if (!frames) {
+      return toError("frames are required when registering a named preset.");
+    }
+    registerPreset(_sid, presetName, frames);
     return toResult({
       action: "preset_registered",
       name: presetName,
@@ -79,7 +82,10 @@ export function handleSetDefaultAnimation({ frames, name, preset, reset, token }
   }
 
   // Set session default
-  setSessionDefault(_sid, frames!);
+  if (!frames) {
+    return toError("frames are required when setting the session default.");
+  }
+  setSessionDefault(_sid, frames);
   return toResult({
     action: "default_set",
     default_frames: frames,

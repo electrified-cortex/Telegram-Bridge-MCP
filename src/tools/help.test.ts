@@ -110,7 +110,7 @@ describe("help tool", () => {
       mocks.getMe.mockResolvedValue(bot);
       const result = await call({ topic: "identity", token: VALID_TOKEN });
       expect(isError(result)).toBe(false);
-      const parsed = parseResult<Record<string, unknown>>(result);
+      const parsed = parseResult(result);
       expect(parsed.mcp_version).toBe("0.0.0-test");
       expect(parsed.mcp_commit).toBe("t3stc0mm");
       expect(parsed.mcp_build_time).toBe("2025-01-01T00:00:00.000Z");

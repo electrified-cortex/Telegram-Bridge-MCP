@@ -548,7 +548,9 @@ describe("setDequeueIdle / getIdleSessions", () => {
   });
 
   it("no-ops silently when sid is not found", () => {
-    expect(() => setDequeueIdle(9999, true)).not.toThrow();
+    expect(() => {
+      setDequeueIdle(9999, true);
+    }).not.toThrow();
     expect(getIdleSessions()).toEqual([]);
   });
 

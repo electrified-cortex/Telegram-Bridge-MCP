@@ -1901,7 +1901,7 @@ describe("session_start tool", () => {
     const row3 = keyboard[2] as Array<Record<string, unknown>>;
     expect(row3).toHaveLength(2);
     const toggleButton = row3[0];
-    expect(toggleButton.callback_data).toBe("approve:toggle:delegation");
+    expect(toggleButton.callback_data).toBe("approve_toggle_delegation");
     expect(toggleButton.text).toBe("☐ Delegate");
     expect(toggleButton.style).toBeUndefined();
   });
@@ -2021,7 +2021,7 @@ describe("session_start tool", () => {
     await new Promise(r => setTimeout(r, 0));
 
     // Fire a toggle callback
-    hookFn!({ content: { data: "approve:toggle:delegation", qid: "t1" } });
+    hookFn!({ content: { data: "approve_toggle_delegation", qid: "t1" } });
     await new Promise(r => setTimeout(r, 0));
 
     // Promise should NOT have resolved yet — editMessageReplyMarkup called, not deleteMessage
@@ -2052,7 +2052,7 @@ describe("session_start tool", () => {
     await new Promise(r => setTimeout(r, 0));
 
     // Toggle ON
-    hookFn!({ content: { data: "approve:toggle:delegation", qid: "t1" } });
+    hookFn!({ content: { data: "approve_toggle_delegation", qid: "t1" } });
     await new Promise(r => setTimeout(r, 0));
 
     // editMessageReplyMarkup should have been called with the updated keyboard
@@ -2088,18 +2088,18 @@ describe("session_start tool", () => {
     await new Promise(r => setTimeout(r, 0));
 
     const countButtons = (keyboard: unknown[][]) =>
-      keyboard.reduce((acc, row) => acc + (row as unknown[]).length, 0);
+      keyboard.reduce((acc, row) => acc + row.length, 0);
 
     // Count initial buttons
-    const initialOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const initialOpts = (mocks.sendMessage.mock.calls[0] as unknown[])[2];
     const initialKeyboard = (initialOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
     const initialCount = countButtons(initialKeyboard);
 
     // Toggle
-    hookFn!({ content: { data: "approve:toggle:delegation", qid: "t1" } });
+    hookFn!({ content: { data: "approve_toggle_delegation", qid: "t1" } });
     await new Promise(r => setTimeout(r, 0));
 
-    const editedOpts = (mocks.editMessageReplyMarkup.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+    const editedOpts = (mocks.editMessageReplyMarkup.mock.calls[0] as unknown[])[2];
     const editedKeyboard = (editedOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
     const editedCount = countButtons(editedKeyboard);
 

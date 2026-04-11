@@ -84,7 +84,7 @@ describe("logEvent", () => {
     expect(events[1].event).toEqual({ type: "message", text: "world" });
   });
 
-  it("is a no-op when logging is disabled", async () => {
+  it("is a no-op when logging is disabled", () => {
     disableLogging();
     logEvent({ type: "message", text: "ignored" });
     enableLogging();

@@ -61,6 +61,8 @@ import { handleUpdateChecklist } from "./send_new_checklist.js";
 import { handleUpdateProgress } from "./update_progress.js";
 import { handleSetCommands } from "./set_commands.js";
 
+type ToolResult = ReturnType<typeof toResult>;
+
 /** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
 function findClosestMatch(input: string, candidates: readonly string[]): string | null {
   if (candidates.length === 0 || input.length === 0) return null;
@@ -563,8 +565,7 @@ export function register(server: McpServer): void {
 
         // Dispatch to handler — pass all args; handler extracts what it needs
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return (await Promise.resolve(entry.handler(args, undefined))) as any;
+          return (await Promise.resolve(entry.handler(args, undefined))) as ToolResult;
         } catch (err) {
           return toError(err);
         }

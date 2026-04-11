@@ -306,7 +306,7 @@ describe("send type routing", () => {
   it("no args → discovery mode returns available_types", async () => {
     const result = await call({ token: TOKEN });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result) as { available_types: string[] };
+    const data = parseResult<{ available_types: string[] }>(result);
     expect(Array.isArray(data.available_types)).toBe(true);
     expect(data.available_types).toContain("text");
     expect(data.available_types).toContain("file");

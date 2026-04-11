@@ -854,7 +854,7 @@ describe("dequeue tool", () => {
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(typeof data.hint).toBe("string");
       expect(data.hint as string).toContain("force: true");
-      expect(data.hint as string).toContain("set_dequeue_default");
+      expect(data.hint as string).toContain("profile/dequeue-default");
     });
 
     it("rejects explicit timeout above schema cap (timeout: 301) with a validation error", async () => {

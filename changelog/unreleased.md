@@ -39,6 +39,7 @@
 - `profile/import` `recurring` field on reminders now defaults to `false` (was required)
 - `help(topic: "checklist")` — documents valid step statuses: pending, running, done, failed, skipped
 - `help(topic: "animation")` — frame guide including single-emoji sticker workaround (`\u200b` fix)
+- ESLint now ignores `src/tools/_retired/**` so retired tools no longer block active code lint validation
 
 ## Fixed
 

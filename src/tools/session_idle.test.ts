@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError, type ToolHandler } from "./test-utils.js";
+import { parseResult, isError } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn((_token: number): number | string => 1),

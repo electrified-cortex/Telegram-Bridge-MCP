@@ -12,7 +12,7 @@ import { refreshGovernorCommand } from "../built-in-commands.js";
 import { checkAndConsumeAutoApprove } from "../auto-approve.js";
 import { startPoller, isPollerRunning } from "../poller.js";
 import { fireStartupReminders, buildReminderEvent } from "../reminder-state.js";
-import { registerPendingApproval, clearPendingApproval, getPendingApproval, isDelegationEnabled, setDelegationEnabled } from "../agent-approval.js";
+import { registerPendingApproval, clearPendingApproval, isDelegationEnabled, setDelegationEnabled } from "../agent-approval.js";
 import type { ApprovalDecision } from "../agent-approval.js";
 
 const APPROVAL_TIMEOUT_MS = 120_000;
@@ -73,7 +73,7 @@ async function requestApproval(
   const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:`;
   const availableColors = getAvailableColors(colorHint);
   if (checkAndConsumeAutoApprove()) {
-    return { approved: true, color: colorHint ?? availableColors[0] ?? COLOR_PALETTE[0], forceColor: true };
+    return { approved: true, color: colorHint ?? availableColors[0], forceColor: true };
   }
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
@@ -82,7 +82,10 @@ async function requestApproval(
   const msgId: number = sent.message_id;
 
   const decision = await new Promise<ApprovalDecision>((resolve) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timer = setTimeout(() => {
+      clearPendingApproval(name);
+      resolveOnce({ approved: false });
+    }, APPROVAL_TIMEOUT_MS);
     let resolved = false;
     const resolveOnce = (value: ApprovalDecision) => {
       if (resolved) return;
@@ -103,11 +106,6 @@ async function requestApproval(
         { target_name: name },
       );
     }
-
-    timer = setTimeout(() => {
-      clearPendingApproval(name);
-      resolveOnce({ approved: false });
-    }, APPROVAL_TIMEOUT_MS);
 
     const handler = (evt: TimelineEvent) => {
       const data: string = evt.content.data ?? "";

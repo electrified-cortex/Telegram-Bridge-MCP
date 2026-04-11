@@ -298,14 +298,17 @@ export function setDequeueIdle(sid: number, idle: boolean): void {
 export function getIdleSessions(): Array<SessionInfo & { idle_since_ms: number }> {
   const now = Date.now();
   return [..._sessions.values()]
-    .filter(s => s.dequeueIdleAt !== undefined)
-    .map(({ sid, name, color, createdAt, dequeueIdleAt }) => ({
-      sid,
-      name,
-      color,
-      createdAt,
-      idle_since_ms: now - dequeueIdleAt!,
-    }));
+    .map((s) => {
+      if (s.dequeueIdleAt === undefined) return undefined;
+      return {
+        sid: s.sid,
+        name: s.name,
+        color: s.color,
+        createdAt: s.createdAt,
+        idle_since_ms: now - s.dequeueIdleAt,
+      };
+    })
+    .filter((s): s is SessionInfo & { idle_since_ms: number } => s !== undefined);
 }
 
 /**

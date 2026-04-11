@@ -135,8 +135,8 @@ describe("hook throws or rejects", () => {
   });
 
   it("returns allowed:false when hook rejects asynchronously", async () => {
-    setPreToolHook(async () => {
-      throw new Error("async boom");
+    setPreToolHook(() => {
+      return Promise.reject(new Error("async boom"));
     });
     const result = await invokePreToolHook("any_tool", {});
     expect(result.allowed).toBe(false);

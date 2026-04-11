@@ -1526,7 +1526,7 @@ async function renderSessionDetail(
 // /log panel — session recording controls
 // ---------------------------------------------------------------------------
 
-async function handleLogCommand(): Promise<void> {
+async function _handleLogCommand(): Promise<void> {
   const chatId = resolveChat();
   if (typeof chatId !== "number") return;
   const api = getApi();
