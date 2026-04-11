@@ -16,6 +16,44 @@ const DESCRIPTION =
   "delay_seconds is optional for trigger: \"startup\" (ignored for startup trigger). " +
   `Maximum ${MAX_REMINDERS_PER_SESSION} reminders per session.`;
 
+export function handleSetReminder({ text, trigger = "time", delay_seconds = 0, recurring = false, id, token }: {
+  text: string;
+  trigger?: "time" | "startup";
+  delay_seconds?: number;
+  recurring?: boolean;
+  id?: string;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  const reminderId = id ?? reminderContentHash(text, recurring, trigger);
+
+  let reminder;
+  try {
+    reminder = addReminder({ id: reminderId, text, delay_seconds, recurring, trigger });
+  } catch (err) {
+    return toError({
+      code: "LIMIT_EXCEEDED" as const,
+      message: (err as Error).message,
+    });
+  }
+
+  const result: Record<string, unknown> = {
+    id: reminder.id,
+    text: reminder.text,
+    delay_seconds: reminder.delay_seconds,
+    recurring: reminder.recurring,
+    trigger: reminder.trigger,
+    state: reminder.state,
+  };
+  if (reminder.state === "deferred") {
+    result.fires_in_seconds = reminder.delay_seconds;
+  }
+  result.tip = "Use ultra compression for reminder text.";
+  return toResult(result);
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "set_reminder",
@@ -49,34 +87,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ text, trigger, delay_seconds = 0, recurring = false, id, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      const reminderId = id ?? reminderContentHash(text, recurring, trigger);
-
-      let reminder;
-      try {
-        reminder = addReminder({ id: reminderId, text, delay_seconds, recurring, trigger });
-      } catch (err) {
-        return toError({
-          code: "LIMIT_EXCEEDED" as const,
-          message: (err as Error).message,
-        });
-      }
-
-      const result: Record<string, unknown> = {
-        id: reminder.id,
-        text: reminder.text,
-        delay_seconds: reminder.delay_seconds,
-        recurring: reminder.recurring,
-        trigger: reminder.trigger,
-        state: reminder.state,
-      };
-      if (reminder.state === "deferred") {
-        result.fires_in_seconds = reminder.delay_seconds;
-      }
-      return toResult(result);
-    },
+    handleSetReminder,
   );
 }

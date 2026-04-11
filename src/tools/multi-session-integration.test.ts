@@ -92,8 +92,8 @@ import { resetDmPermissionsForTest } from "../dm-permissions.js";
 // Tool registrations
 // ---------------------------------------------------------------------------
 
-import { register as registerDequeue } from "./dequeue_update.js";
-import { register as registerSendText } from "./send_text.js";
+import { register as registerDequeue } from "./dequeue.js";
+import { register as registerSend } from "./send.js";
 import { register as registerCloseSession } from "./close_session.js";
 
 // ---------------------------------------------------------------------------
@@ -155,7 +155,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      const dequeue = server.getHandler("dequeue_update");
+      const dequeue = server.getHandler("dequeue");
 
       const r2 = await dequeue({ timeout: 0, token: sid2 * 1_000_000 + pin2 });
       expect(isError(r2)).toBe(false);
@@ -173,7 +173,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      const dequeue = server.getHandler("dequeue_update");
+      const dequeue = server.getHandler("dequeue");
 
       const r1 = await dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 });
       expect(isError(r1)).toBe(false);
@@ -186,37 +186,37 @@ describe("multi-session tool integration", () => {
   // Scenario 2: SID_REQUIRED enforcement across tools
   // -------------------------------------------------------------------------
   describe("scenario 2: SID_REQUIRED enforcement", () => {
-    it("dequeue_update without sid returns SID_REQUIRED when 2+ sessions active", async () => {
+    it("dequeue without sid returns SID_REQUIRED when 2+ sessions active", async () => {
       const { sid: sid1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
 
       const server = createMockServer();
       registerDequeue(server);
-      const result = await server.getHandler("dequeue_update")({ timeout: 0 });
+      const result = await server.getHandler("dequeue")({ timeout: 0 });
 
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("send_text without identity returns SID_REQUIRED when 2+ sessions active", async () => {
+    it("send without identity returns SID_REQUIRED when 2+ sessions active", async () => {
       const { sid: sid1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
 
       const server = createMockServer();
-      registerSendText(server);
-      const result = await server.getHandler("send_text")({ text: "hello" });
+      registerSend(server);
+      const result = await server.getHandler("send")({ text: "hello" });
 
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("send_text with wrong pin returns AUTH_FAILED when 2+ sessions active", async () => {
+    it("send with wrong pin returns AUTH_FAILED when 2+ sessions active", async () => {
       const { sid: sid1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
 
       const server = createMockServer();
-      registerSendText(server);
-      const result = await server.getHandler("send_text")({
+      registerSend(server);
+      const result = await server.getHandler("send")({
         text: "hello",
         token: sid1 * 1_000_000 + 99999,
       });
@@ -225,13 +225,13 @@ describe("multi-session tool integration", () => {
       expect(errorCode(result)).toBe("AUTH_FAILED");
     });
 
-    it("send_text with valid identity succeeds in multi-session mode", async () => {
+    it("send with valid identity succeeds in multi-session mode", async () => {
       const { sid, pin } = createSession(); createSessionQueue(sid);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
 
       const server = createMockServer();
-      registerSendText(server);
-      const result = await server.getHandler("send_text")({
+      registerSend(server);
+      const result = await server.getHandler("send")({
         text: "hello",
         token: sid * 1_000_000 + pin,
       });
@@ -240,10 +240,10 @@ describe("multi-session tool integration", () => {
       expect(parseResult(result)).toMatchObject({ message_id: 1 });
     });
 
-    it("send_text without identity returns SID_REQUIRED in all modes", async () => {
+    it("send without identity returns SID_REQUIRED in all modes", async () => {
       const server = createMockServer();
-      registerSendText(server);
-      const result = await server.getHandler("send_text")({ text: "hello" });
+      registerSend(server);
+      const result = await server.getHandler("send")({ text: "hello" });
 
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("SID_REQUIRED");
@@ -263,7 +263,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      await server.getHandler("dequeue_update")({ timeout: 0, token: sid * 1_000_000 + pin });
+      await server.getHandler("dequeue")({ timeout: 0, token: sid * 1_000_000 + pin });
 
       expect(mockAckVoice).toHaveBeenCalledOnce();
       expect(mockAckVoice).toHaveBeenCalledWith(voiceEvent.id);
@@ -277,7 +277,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      await server.getHandler("dequeue_update")({ timeout: 0, token: sid * 1_000_000 + pin });
+      await server.getHandler("dequeue")({ timeout: 0, token: sid * 1_000_000 + pin });
 
       expect(mockAckVoice).not.toHaveBeenCalled();
     });
@@ -296,9 +296,9 @@ describe("multi-session tool integration", () => {
       registerDequeue(server);
 
       // First dequeue gets one message (TwoLaneQueue dequeues one message per batch)
-      await server.getHandler("dequeue_update")({ timeout: 0, token: sid * 1_000_000 + pin });
+      await server.getHandler("dequeue")({ timeout: 0, token: sid * 1_000_000 + pin });
       // Second dequeue gets the next
-      await server.getHandler("dequeue_update")({ timeout: 0, token: sid * 1_000_000 + pin });
+      await server.getHandler("dequeue")({ timeout: 0, token: sid * 1_000_000 + pin });
 
       expect(mockAckVoice).toHaveBeenCalledTimes(2);
     });
@@ -394,7 +394,7 @@ describe("multi-session tool integration", () => {
       const server = createMockServer();
       registerDequeue(server);
       // Two sessions active — no sid arg should trigger SID_REQUIRED
-      const dequeue = server.getHandler("dequeue_update");
+      const dequeue = server.getHandler("dequeue");
       return dequeue({ timeout: 0 }).then((result) => {
         expect(isError(result)).toBe(true);
         expect(errorCode(result)).toBe("SID_REQUIRED");
@@ -413,7 +413,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      const dequeue = server.getHandler("dequeue_update");
+      const dequeue = server.getHandler("dequeue");
 
       const [r1, r2] = await Promise.all([
         dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 }),
@@ -431,7 +431,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      const dequeue = server.getHandler("dequeue_update");
+      const dequeue = server.getHandler("dequeue");
 
       const [r1, r2] = await Promise.all([
         dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 }),
@@ -458,7 +458,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      const dequeue = server.getHandler("dequeue_update");
+      const dequeue = server.getHandler("dequeue");
 
       const r1 = await dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 });
       const r2 = await dequeue({ timeout: 0, token: sid2 * 1_000_000 + pin2 });
@@ -484,7 +484,7 @@ describe("multi-session tool integration", () => {
 
       const server = createMockServer();
       registerDequeue(server);
-      const dequeue = server.getHandler("dequeue_update");
+      const dequeue = server.getHandler("dequeue");
 
       const r1a = await dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 });
       const r1b = await dequeue({ timeout: 0, token: sid1 * 1_000_000 + pin1 });

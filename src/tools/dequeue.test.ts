@@ -73,6 +73,7 @@ vi.mock("../session-manager.js", () => ({
   setDequeueDefault: (sid: number, timeout: number) => {
     mocks.setDequeueDefault(sid, timeout);
   },
+  setDequeueIdle: vi.fn(),
 }));
 
 vi.mock("../session-queue.js", () => ({
@@ -106,7 +107,7 @@ vi.mock("../reminder-state.js", () => ({
 
 
 
-import { register } from "./dequeue_update.js";
+import { register } from "./dequeue.js";
 
 function makeEvent(id: number, text: string, event = "message" as string): TimelineEvent {
   return {
@@ -141,7 +142,7 @@ function makeVoiceEvent(id: number): TimelineEvent {
   };
 }
 
-describe("dequeue_update tool", () => {
+describe("dequeue tool", () => {
   let call: (args: Record<string, unknown>, extra?: Record<string, unknown>) => Promise<unknown>;
 
   beforeEach(() => {
@@ -160,7 +161,7 @@ describe("dequeue_update tool", () => {
     }));
     const server = createMockServer();
     register(server);
-    call = server.getHandler("dequeue_update");
+    call = server.getHandler("dequeue");
   });
 
   it("returns batch of events when available", async () => {
@@ -551,7 +552,7 @@ describe("dequeue_update tool", () => {
     expect(mocks.setActiveSession).toHaveBeenCalledWith(4);
   });
 
-  it("does not call setActiveSession on SESSION_NOT_FOUND error path", async () => {
+  it("does not call setActiveSession on session_closed path", async () => {
     mocks.getSessionQueue.mockReturnValue(undefined);
     await call({ token: 99_001_234 });
     expect(mocks.setActiveSession).not.toHaveBeenCalled();
@@ -580,13 +581,22 @@ describe("dequeue_update tool", () => {
     expect(data.timed_out).toBe(true);
   });
 
-  it("returns error when explicit sid has no session queue", async () => {
+  it("returns session_closed (not an error) when explicit sid has no session queue", async () => {
     mocks.getSessionQueue.mockReturnValue(undefined);
     const result = await call({ token: 42_001_234 });
-    expect(isError(result)).toBe(true);
-    const content = (result as { content: { text: string }[] }).content[0];
-    expect(content.text).toContain("SESSION_NOT_FOUND");
-    expect(content.text).toContain("sid=42");
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.error).toBe("session_closed");
+    expect((data.message as string)).toContain("42");
+  });
+
+  it("returns session_closed when session queue does not exist", async () => {
+    mocks.getSessionQueue.mockReturnValue(undefined);
+    const result = await call({ token: 7_001_234 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.error).toBe("session_closed");
+    expect((data.message as string)).toContain("7");
   });
 
   // =========================================================================
@@ -724,7 +734,7 @@ describe("dequeue_update tool", () => {
   describe("touchSession heartbeat", () => {
     it("calls touchSession with the resolved sid when sid > 0 (explicit sid)", async () => {
       // Must provide a session queue for the explicit-sid path, otherwise
-      // dequeue_update returns SESSION_NOT_FOUND before calling touchSession.
+      // dequeue returns session_closed before calling touchSession.
       const mockSessionQueue = {
         dequeueBatch: vi.fn(() => [makeEvent(1, "hi")] as TimelineEvent[]),
         pendingCount: vi.fn(() => 0),
@@ -844,7 +854,7 @@ describe("dequeue_update tool", () => {
       expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(typeof data.hint).toBe("string");
       expect(data.hint as string).toContain("force: true");
-      expect(data.hint as string).toContain("set_dequeue_default");
+      expect(data.hint as string).toContain("profile/dequeue-default");
     });
 
     it("rejects explicit timeout above schema cap (timeout: 301) with a validation error", async () => {
@@ -953,7 +963,7 @@ describe("dequeue_update tool", () => {
       const fakeStart = realDateNow();
       let dateNowCallCount = 0;
       Date.now = () => {
-        // Calls in dequeue_update.ts (in order):
+        // Calls in dequeue.ts (in order):
         //   0: deadline = Date.now() + timeout * 1000   → fakeStart (normal)
         //   1: reminderIdleStart = Date.now()           → fakeStart (normal)
         //   2: while (Date.now() < deadline)            → fakeStart (enters loop)

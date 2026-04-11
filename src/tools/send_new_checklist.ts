@@ -67,6 +67,80 @@ const UPDATE_DESCRIPTION =
   "with the latest step statuses. Auto-unpins the message when all steps reach " +
   "a terminal status (done/failed/skipped).";
 
+export type ChecklistStep = z.infer<typeof STEP_SCHEMA>;
+
+export async function handleSendNewChecklist({
+  title, steps, token,
+}: {
+  title: string;
+  steps: ChecklistStep[];
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+  try {
+    const text = renderStatus(applyTopicToTitle(title), steps);
+    const textErr = validateText(text);
+    if (textErr) return toError(textErr);
+
+    // Sending new message — proxy handles animation promote + recording
+    const msg = await getApi().sendMessage(chatId, text, {
+      parse_mode: "HTML",
+      _rawText: title,
+    } as Record<string, unknown>);
+    await getApi().pinChatMessage(chatId, msg.message_id, { disable_notification: true }).catch(() => {});
+    return toResult({
+      message_id: msg.message_id,
+      hint: "Pass this message_id to update_checklist to edit this checklist in-place.",
+    });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
+export async function handleUpdateChecklist({ title, steps, message_id, token }: {
+  title: string;
+  steps: ChecklistStep[];
+  message_id: number;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+  try {
+    const text = renderStatus(applyTopicToTitle(title), steps);
+    const textErr = validateText(text);
+    if (textErr) return toError(textErr);
+
+    // Editing existing message — proxy handles cancelTyping + animation timeout reset
+    const result = await getApi().editMessageText(
+      chatId,
+      message_id,
+      text,
+      { parse_mode: "HTML" },
+    );
+    const edited = typeof result === "boolean" ? { message_id } : result;
+    const TERMINAL: ReadonlySet<StepStatus> = new Set(["done", "failed", "skipped"]);
+    const allTerminal = steps.every(s => TERMINAL.has(s.status));
+    if (allTerminal) {
+      getApi().unpinChatMessage(chatId, message_id).catch(() => {});
+      if (!_completedMessageIds.has(message_id)) {
+        _completedMessageIds.add(message_id);
+        getApi().sendMessage(chatId, "✅ Complete", {
+          reply_to_message_id: message_id,
+          _skipHeader: true,
+        } as Record<string, unknown>).catch(() => {});
+      }
+    }
+    return toResult({ message_id: edited.message_id, updated: true });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "send_new_checklist",
@@ -78,30 +152,7 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ title, steps, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-      try {
-        const text = renderStatus(applyTopicToTitle(title), steps);
-        const textErr = validateText(text);
-        if (textErr) return toError(textErr);
-
-        // Sending new message — proxy handles animation promote + recording
-        const msg = await getApi().sendMessage(chatId, text, {
-          parse_mode: "HTML",
-          _rawText: title,
-        } as Record<string, unknown>);
-        await getApi().pinChatMessage(chatId, msg.message_id, { disable_notification: true }).catch(() => {});
-        return toResult({
-          message_id: msg.message_id,
-          hint: "Pass this message_id to update_checklist to edit this checklist in-place.",
-        });
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    handleSendNewChecklist,
   );
 
   server.registerTool(
@@ -119,40 +170,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ title, steps, message_id, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-      try {
-        const text = renderStatus(applyTopicToTitle(title), steps);
-        const textErr = validateText(text);
-        if (textErr) return toError(textErr);
-
-        // Editing existing message — proxy handles cancelTyping + animation timeout reset
-        const result = await getApi().editMessageText(
-          chatId,
-          message_id,
-          text,
-          { parse_mode: "HTML" },
-        );
-        const edited = typeof result === "boolean" ? { message_id } : result;
-        const TERMINAL: ReadonlySet<StepStatus> = new Set(["done", "failed", "skipped"]);
-        const allTerminal = steps.every(s => TERMINAL.has(s.status));
-        if (allTerminal) {
-          getApi().unpinChatMessage(chatId, message_id).catch(() => {});
-          if (!_completedMessageIds.has(message_id)) {
-            _completedMessageIds.add(message_id);
-            getApi().sendMessage(chatId, "✅ Complete", {
-              reply_to_message_id: message_id,
-              _skipHeader: true,
-            } as Record<string, unknown>).catch(() => {});
-          }
-        }
-        return toResult({ message_id: edited.message_id, updated: true });
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    handleUpdateChecklist,
   );
 }

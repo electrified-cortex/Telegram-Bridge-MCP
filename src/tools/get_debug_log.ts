@@ -15,6 +15,26 @@ const DESCRIPTION =
   "Use this to inspect routing decisions, session lifecycle events, queue operations, " +
   "and DM deliveries during a live session.";
 
+export function handleGetDebugLog({ count, category, since, enable, token }: {
+  count?: number;
+  category?: string;
+  since?: number;
+  enable?: boolean;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  if (enable !== undefined) setDebugEnabled(enable);
+
+  const entries = getDebugLog(count ?? 50, category as DebugCategory | undefined, since);
+  return toResult({
+    enabled: isDebugEnabled(),
+    total: debugLogSize(),
+    returned: entries.length,
+    entries,
+  });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "get_debug_log",
@@ -32,18 +52,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    ({ count, category, since, enable, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      if (enable !== undefined) setDebugEnabled(enable);
-
-      const entries = getDebugLog(count ?? 50, category as DebugCategory | undefined, since);
-      return toResult({
-        enabled: isDebugEnabled(),
-        total: debugLogSize(),
-        returned: entries.length,
-        entries,
-      });
-    },
+    handleGetDebugLog,
   );
 }

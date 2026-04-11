@@ -14,5 +14,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/tools/test-utils.ts", "src/test-setup.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/tools/test-utils.ts", "src/test-setup.ts", "src/tools/_retired/**"]
 }

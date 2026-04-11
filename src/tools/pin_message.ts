@@ -10,6 +10,35 @@ const DESCRIPTION =
   "Omit message_id with unpin: true to unpin the most recently pinned " +
   "message.";
 
+export async function handlePinMessage({ message_id, disable_notification, unpin, token }: {
+  message_id?: number;
+  disable_notification?: boolean;
+  unpin?: boolean;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+  try {
+    if (unpin) {
+      const ok = message_id === undefined
+        ? await getApi().unpinChatMessage(chatId)
+        : await getApi().unpinChatMessage(chatId, message_id);
+      return toResult({ ok, unpinned: true });
+    }
+    if (message_id === undefined) {
+      return toError({ code: "MISSING_MESSAGE_ID" as const, message: "message_id is required when pinning" });
+    }
+    const ok = await getApi().pinChatMessage(chatId, message_id, {
+      disable_notification,
+    });
+    return toResult({ ok });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "pin_message",
@@ -33,28 +62,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ message_id, disable_notification, unpin, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-      try {
-        if (unpin) {
-          const ok = message_id === undefined
-            ? await getApi().unpinChatMessage(chatId)
-            : await getApi().unpinChatMessage(chatId, message_id);
-          return toResult({ ok, unpinned: true });
-        }
-        if (message_id === undefined) {
-          return toError({ code: "MISSING_MESSAGE_ID" as const, message: "message_id is required when pinning" });
-        }
-        const ok = await getApi().pinChatMessage(chatId, message_id, {
-          disable_notification,
-        });
-        return toResult({ ok });
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    handlePinMessage,
   );
 }

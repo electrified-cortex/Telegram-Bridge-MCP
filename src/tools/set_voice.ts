@@ -11,6 +11,23 @@ const DESCRIPTION =
   "Pass an empty string to clear the override and revert to the global default. " +
   "Use list_voices (if available) to discover the voices supported by your TTS provider.";
 
+export function handleSetVoice({ voice, speed, token }: { voice: string; speed?: number; token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const previous = getSessionVoice();
+  const previousSpeed = getSessionSpeed();
+  if (voice.trim() === "") {
+    clearSessionVoice();
+    clearSessionSpeed();
+    return toResult({ voice: null, speed: null, previous, previousSpeed, cleared: true });
+  }
+  setSessionVoice(voice);
+  if (speed !== undefined) {
+    setSessionSpeed(speed);
+  }
+  return toResult({ voice: getSessionVoice(), speed: getSessionSpeed(), previous, previousSpeed, set: true });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "set_voice",
@@ -30,21 +47,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ voice, speed, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const previous = getSessionVoice();
-      const previousSpeed = getSessionSpeed();
-      if (voice.trim() === "") {
-        clearSessionVoice();
-        clearSessionSpeed();
-        return toResult({ voice: null, speed: null, previous, previousSpeed, cleared: true });
-      }
-      setSessionVoice(voice);
-      if (speed !== undefined) {
-        setSessionSpeed(speed);
-      }
-      return toResult({ voice: getSessionVoice(), speed: getSessionSpeed(), previous, previousSpeed, set: true });
-    },
+    handleSetVoice,
   );
 }

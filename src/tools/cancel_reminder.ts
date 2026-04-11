@@ -5,6 +5,20 @@ import { cancelReminder } from "../reminder-state.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
+export function handleCancelReminder({ id, token }: { id: string; token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  const cancelled = cancelReminder(id);
+  if (!cancelled) {
+    return toError({
+      code: "NOT_FOUND" as const,
+      message: `No reminder with id="${id}" found for this session.`,
+    });
+  }
+  return toResult({ cancelled: true, id });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "cancel_reminder",
@@ -15,18 +29,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ id, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      const cancelled = cancelReminder(id);
-      if (!cancelled) {
-        return toError({
-          code: "NOT_FOUND" as const,
-          message: `No reminder with id="${id}" found for this session.`,
-        });
-      }
-      return toResult({ cancelled: true, id });
-    },
+    handleCancelReminder,
   );
 }

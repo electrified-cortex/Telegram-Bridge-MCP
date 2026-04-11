@@ -18,10 +18,61 @@ const DESCRIPTION =
   "styling (info/success/warning/error) automatically with emoji prefixes " +
   "and bold titles. Use for structured status messages (build results, " +
   "process events, errors). For conversational replies or long explanations, " +
-  "use send_text instead. Default parse_mode is Markdown " +
+  "use send instead. Default parse_mode is Markdown " +
   "— write standard Markdown in the text field and it is auto-converted, no " +
   "escaping needed. " +
   "Ensure session_start has been called.";
+
+export async function handleNotify({
+  title, text, message, severity = "info", parse_mode = "Markdown",
+  disable_notification, reply_to, token,
+}: {
+  title: string;
+  text?: string;
+  message?: string;
+  severity?: "info" | "success" | "warning" | "error";
+  parse_mode?: "Markdown" | "HTML" | "MarkdownV2";
+  disable_notification?: boolean;
+  reply_to?: number;
+  token: number;
+}) {
+  const reply_to_message_id = reply_to;
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+  try {
+    const prefix = SEVERITY_PREFIX[severity];
+    const useV2 = parse_mode === "Markdown" || parse_mode === "MarkdownV2";
+    const topicTitle = applyTopicToTitle(title);
+    const titleFormatted = useV2
+      ? `*${escapeV2(topicTitle)}*`
+      : `<b>${escapeHtml(topicTitle)}</b>`;
+    const lines = [`${prefix} ${titleFormatted}`];
+    const detail = (text ?? message)?.trim();
+    if (detail) {
+      const bodyText = parse_mode === "Markdown" ? markdownToV2(detail) : detail;
+      lines.push("", bodyText);
+    }
+    const msgText = lines.join("\n");
+    const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
+
+    const err = validateText(msgText);
+    if (err) return toError(err);
+
+    const rawText = `${title}${detail ? "\n" + detail : ""}`;
+
+    const msg = await getApi().sendMessage(chatId, msgText, {
+      parse_mode: finalMode,
+      disable_notification,
+      reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
+      _rawText: rawText,
+    } as Record<string, unknown>);
+    return toResult({ message_id: msg.message_id });
+  } catch (err) {
+    return toError(err);
+  }
+}
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -31,6 +82,7 @@ export function register(server: McpServer) {
       inputSchema: {
         title: z.string().describe("Short bold heading, e.g. \"Build Failed\""),
         text: z.string().optional().describe("Optional detail paragraph"),
+        message: z.string().optional().describe("Alias for text. If both text and message are provided, text takes precedence."),
         severity: z
           .enum(["info", "success", "warning", "error"])
           .default("info")
@@ -43,7 +95,7 @@ export function register(server: McpServer) {
           .boolean()
           .optional()
           .describe("Send silently (no phone notification)"),
-        reply_to_message_id: z
+        reply_to: z
           .number()
           .int()
           .min(1)
@@ -52,42 +104,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ title, text, severity, parse_mode, disable_notification, reply_to_message_id, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-      try {
-        const prefix = SEVERITY_PREFIX[severity];
-        const useV2 = parse_mode === "Markdown" || parse_mode === "MarkdownV2";
-        const topicTitle = applyTopicToTitle(title);
-        const titleFormatted = useV2
-          ? `*${escapeV2(topicTitle)}*`
-          : `<b>${escapeHtml(topicTitle)}</b>`;
-        const lines = [`${prefix} ${titleFormatted}`];
-        const detail = text?.trim();
-        if (detail) {
-          const bodyText = parse_mode === "Markdown" ? markdownToV2(detail) : detail;
-          lines.push("", bodyText);
-        }
-        const msgText = lines.join("\n");
-        const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
-
-        const err = validateText(msgText);
-        if (err) return toError(err);
-
-        const rawText = `${title}${detail ? "\n" + detail : ""}`;
-
-        const msg = await getApi().sendMessage(chatId, msgText, {
-          parse_mode: finalMode,
-          disable_notification,
-          reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
-          _rawText: rawText,
-        } as Record<string, unknown>);
-        return toResult({ message_id: msg.message_id });
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    handleNotify,
   );
 }

@@ -8,6 +8,19 @@ const DESCRIPTION =
   "Deletes a message. The bot can delete its own messages anytime, " +
   "or other users' messages within 48 hours if admin.";
 
+export async function handleDeleteMessage({ message_id, token }: { message_id: number; token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+  try {
+    const ok = await getApi().deleteMessage(chatId, message_id);
+    return toResult({ ok });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "delete_message",
@@ -18,17 +31,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ message_id, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-      try {
-        const ok = await getApi().deleteMessage(chatId, message_id);
-        return toResult({ ok });
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    handleDeleteMessage,
   );
 }

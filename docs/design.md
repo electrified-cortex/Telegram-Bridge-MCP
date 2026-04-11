@@ -23,7 +23,7 @@ AI Assistant (MCP Client)
 
 The server runs as an **MCP server** using either stdio (default, spawned by the MCP host) or Streamable HTTP (when `MCP_PORT` is set, allowing multiple clients to connect over HTTP). It holds a Telegram Bot token (via environment variable) and translates MCP tool calls into Telegram Bot API HTTP requests using **`grammy`** — chosen for its complete, always-up-to-date TypeScript-typed Bot API coverage including all keyboard/button types.
 
-A **background poller** (`poller.ts`) runs a continuous `getUpdates` long-poll loop as soon as the server starts. All incoming updates are fed into an always-on **message store** (`message-store.ts`). Tools consume updates via `dequeue_update` — they never call the Telegram API directly for polling.
+A **background poller** (`poller.ts`) runs a continuous `getUpdates` long-poll loop as soon as the server starts. All incoming updates are fed into an always-on **message store** (`message-store.ts`). Tools consume updates via `dequeue` — they never call the Telegram API directly for polling.
 
 ---
 
@@ -53,7 +53,7 @@ Tools are grouped by abstraction level.
 | `ask` | Sends a question and blocks until the user replies with free text or voice. |
 | `choose` | Sends a question with labeled inline keyboard buttons; blocks until a button is pressed or the user replies with text/voice. |
 | `confirm` | Sends a Yes/No inline keyboard and blocks until a button is pressed. Returns `{ confirmed: true \| false }`, or `{ timed_out: true }` if the timeout expires without input. |
-| `send_choice` | Sends buttons and returns immediately with a `message_id`. The first press auto-locks the keyboard; the callback event appears in `dequeue_update`. Non-blocking version of `choose`. |
+| `send_choice` | Sends buttons and returns immediately with a `message_id`. The first press auto-locks the keyboard; the callback event appears in `dequeue`. Non-blocking version of `choose`. |
 | `send_new_checklist` | Creates or edits a live task checklist message with per-step status indicators. |
 | `send_new_progress` | Creates a progress bar message rendered as `▓▓▓▓▓░░░░░ 50%`. Returns `{ message_id }`. |
 | `update_progress` | Edits an existing progress bar in-place by `message_id`. All params required each call. |
@@ -62,14 +62,14 @@ Tools are grouped by abstraction level.
 
 | Tool | Description |
 | --- | --- |
-| `dequeue_update` | **Universal update consumption.** Blocks up to `timeout` seconds (default 300 s) when the queue is empty. Returns `{ updates: [...] }` — a compact batch: response lane items (reactions, callbacks) first, then up to one message lane item. Voice messages arrive pre-transcribed. Returns `{ timed_out: true }` when a blocking wait expires, or `{ empty: true }` for instant polls (`timeout: 0`). `pending` is included when more updates are queued. |
+| `dequeue` | **Universal update consumption.** Blocks up to `timeout` seconds (default 300 s) when the queue is empty. Returns `{ updates: [...] }` — a compact batch: response lane items (reactions, callbacks) first, then up to one message lane item. Voice messages arrive pre-transcribed. Returns `{ timed_out: true }` when a blocking wait expires, or `{ empty: true }` for instant polls (`timeout: 0`). `pending` is included when more updates are queued. |
 | `get_message` | Random-access lookup of a stored message by ID with optional version history. Returns text, caption, file metadata, and edit history. Only call for message IDs already known to this agent session. |
 
 ### Messaging
 
 | Tool | Description |
 | --- | --- |
-| `send_message` | Core send primitive — sends a message with an optional inline keyboard and returns immediately with a `message_id`. For persistent keyboards; button presses arrive via `dequeue_update`. |
+| `send_message` | Core send primitive — sends a message with an optional inline keyboard and returns immediately with a `message_id`. For persistent keyboards; button presses arrive via `dequeue`. |
 | `edit_message` | Core edit primitive — modifies an existing message by ID. Pass `text`, `keyboard`, or both. Pass `keyboard: null` to remove buttons. |
 | `send_text` | Sends a text message. Supports Markdown (default, auto-converted), MarkdownV2, HTML. Messages over 4096 chars are automatically split. |
 | `send_text_as_voice` | Synthesizes text to speech and sends it as a voice note. Requires `TTS_HOST` or `OPENAI_API_KEY`. All Markdown is stripped before synthesis. |
@@ -204,7 +204,7 @@ telegram-bridge-mcp/
 │       ├── confirm.ts
 │       ├── send_choice.ts
 │       ├── send_new_checklist.ts│       ├── send_new_progress.ts
-│       ├── update_progress.ts│       ├── dequeue_update.ts
+│       ├── update_progress.ts│       ├── dequeue.ts
 │       ├── get_message.ts
 │       ├── answer_callback_query.ts
 │       ├── send_message.ts
@@ -255,9 +255,9 @@ telegram-bridge-mcp/
 
 **Polling over webhooks.** The server uses long-polling (up to 55 s timeout). No public URL, no TLS cert, no webhook registration required. Works out of the box behind NAT and in local development.
 
-**Background poller with message store.** A single background `getUpdates` loop runs continuously (started in `index.ts`) and feeds all updates into an always-on message store (`message-store.ts`). Tools consume from the store via `dequeue_update` — no tool-level long-polling against the Telegram API. This separates update ingestion from update consumption and enables voice pre-transcription, random-access message lookup, and reliable queuing.
+**Background poller with message store.** A single background `getUpdates` loop runs continuously (started in `index.ts`) and feeds all updates into an always-on message store (`message-store.ts`). Tools consume from the store via `dequeue` — no tool-level long-polling against the Telegram API. This separates update ingestion from update consumption and enables voice pre-transcription, random-access message lookup, and reliable queuing.
 
-**`dequeue_update` is the sole update-consumption tool.** It replaces the former `get_update`, `get_updates`, `wait_for_message`, and `wait_for_callback_query` tools. The response lane (reactions, callbacks) drains before the message lane on each call. `pending` tells the agent how many more updates are queued (omitted when 0).
+**`dequeue` is the sole update-consumption tool.** It replaces the former `get_update`, `get_updates`, `wait_for_message`, and `wait_for_callback_query` tools. The response lane (reactions, callbacks) drains before the message lane on each call. `pending` tells the agent how many more updates are queued (omitted when 0).
 
 **Structured errors over exceptions.** All Telegram API errors are classified into typed `TelegramErrorCode` values with actionable messages. The assistant can branch on `code` rather than parsing raw error strings.
 

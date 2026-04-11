@@ -14,6 +14,42 @@ const DESCRIPTION =
   "ambiguous messages and delegates them to the appropriate " +
   "session based on topic relevance.";
 
+export function handleRouteMessage({ token, message_id, target_sid }: { token: number; message_id: number; target_sid: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  if (getGovernorSid() === 0) {
+    return toError({
+      code: "NOT_GOVERNOR_MODE",
+      message: "route_message is only available when a governor session is active",
+    });
+  }
+
+  if (_sid !== getGovernorSid()) {
+    return toError({
+      code: "NOT_GOVERNOR",
+      message: "Only the governor session can route messages",
+    });
+  }
+
+  if (!getSession(target_sid)) {
+    return toError({
+      code: "SESSION_NOT_FOUND",
+      message: `Session ${target_sid} does not exist`,
+    });
+  }
+
+  const delivered = routeMessage(message_id, target_sid, _sid);
+  if (!delivered) {
+    return toError({
+      code: "ROUTE_FAILED",
+      message: "Could not route — message not found or target queue unavailable",
+    });
+  }
+
+  return toResult({ routed: true, target_sid });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "route_message",
@@ -34,40 +70,6 @@ export function register(server: McpServer) {
           .describe("Session ID to route the message to"),
       },
     },
-    ({ token, message_id, target_sid }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      if (getGovernorSid() === 0) {
-        return toError({
-          code: "NOT_GOVERNOR_MODE",
-          message: "route_message is only available when a governor session is active",
-        });
-      }
-
-      if (_sid !== getGovernorSid()) {
-        return toError({
-          code: "NOT_GOVERNOR",
-          message: "Only the governor session can route messages",
-        });
-      }
-
-      if (!getSession(target_sid)) {
-        return toError({
-          code: "SESSION_NOT_FOUND",
-          message: `Session ${target_sid} does not exist`,
-        });
-      }
-
-      const delivered = routeMessage(message_id, target_sid, _sid);
-      if (!delivered) {
-        return toError({
-          code: "ROUTE_FAILED",
-          message: "Could not route — message not found or target queue unavailable",
-        });
-      }
-
-      return toResult({ routed: true, target_sid });
-    },
+    handleRouteMessage,
   );
 }

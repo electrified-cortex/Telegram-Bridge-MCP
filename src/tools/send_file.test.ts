@@ -176,11 +176,11 @@ describe("send_file tool", () => {
     expect(parseResult(result).warning).toBeUndefined();
   });
 
-  // ---- reply_to_message_id ----
+  // ---- reply_to ----
 
-  it("passes reply_parameters for reply_to_message_id", async () => {
+  it("passes reply_parameters for reply_to", async () => {
     mocks.sendPhoto.mockResolvedValue({ message_id: 21 });
-    await call({ file: "/img/pic.jpg", reply_to_message_id: 3, token: 1123456});
+    await call({ file: "/img/pic.jpg", reply_to: 3, token: 1123456});
     expect(mocks.sendPhoto).toHaveBeenCalledWith(
       42,
       "/path/to/file",

@@ -132,14 +132,16 @@ describe("set_commands tool", () => {
     expect(mocks.setMyCommands).not.toHaveBeenCalled();
   });
 
-  it("includes /primary in merge when 2+ sessions active", async () => {
+  it("does not include /primary when 2+ sessions active (bundled into /session)", async () => {
     mocks.activeSessionCount.mockReturnValue(2);
     const result = await call({ commands: SAMPLE_COMMANDS, token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
     const calledWith = mocks.setMyCommands.mock.calls[0]?.[0] as Array<{ command: string }>;
-    expect(calledWith.map(c => c.command)).toContain("primary");
+    // /session now handles primary selection — /primary no longer added to menu
+    expect(calledWith.map(c => c.command)).not.toContain("primary");
+    expect(calledWith.map(c => c.command)).toContain("session");
   });
 
 describe("identity gate", () => {

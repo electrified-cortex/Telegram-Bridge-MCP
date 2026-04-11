@@ -32,6 +32,82 @@ const buttonSchema = z.object({
     .describe("Button background color: success (green), primary (blue), danger (red). Omit for default."),
 });
 
+type ButtonInput = z.infer<typeof buttonSchema>;
+
+export async function handleEditMessage({ message_id, text, keyboard, parse_mode, token }: {
+  message_id: number;
+  text?: string;
+  keyboard?: ButtonInput[][] | null;
+  parse_mode: "Markdown" | "HTML" | "MarkdownV2";
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+
+  if (keyboard != null) {
+    for (const row of keyboard) {
+      for (const btn of row) {
+        const dataErr = validateCallbackData(btn.value);
+        if (dataErr) return toError(dataErr);
+        if (btn.label.length > LIMITS.BUTTON_TEXT) {
+          return toError({
+            code: "BUTTON_LABEL_EXCEEDS_LIMIT" as const,
+            message: `Button label "${btn.label}" is ${btn.label.length} chars; Telegram hard limit is ${LIMITS.BUTTON_TEXT}.`,
+          });
+        }
+      }
+    }
+  }
+
+  // Build the reply_markup to pass (if keyboard param was supplied)
+  let reply_markup: InlineKeyboardMarkup | undefined;
+  if (keyboard !== undefined) {
+    reply_markup = {
+      inline_keyboard: keyboard === null
+        ? []
+        : keyboard.map((row) =>
+            row.map((btn) => ({
+              text: btn.label,
+              callback_data: btn.value,
+              ...(btn.style ? { style: btn.style as ButtonStyle } : {}),
+            })),
+          ),
+    };
+  }
+
+  try {
+    if (text !== undefined) {
+      // Update text (and optionally keyboard)
+      const { text: finalText, parse_mode: finalMode } = resolveParseMode(text, parse_mode);
+      const textErr = validateText(finalText);
+      if (textErr) return toError(textErr);
+      const result = await getApi().editMessageText(chatId, message_id, finalText, {
+        parse_mode: finalMode,
+        reply_markup,
+      });
+      const editedId = typeof result === "boolean" ? message_id : result.message_id;
+      recordOutgoingEdit(editedId, "text", text);
+      return toResult({ message_id: editedId });
+    } else if (reply_markup !== undefined) {
+      // Keyboard-only update
+      const result = await getApi().editMessageReplyMarkup(chatId, message_id, {
+        reply_markup,
+      });
+      const editedId = typeof result === "boolean" ? message_id : result.message_id;
+      return toResult({ message_id: editedId });
+    } else {
+      return toError({
+        code: "EMPTY_MESSAGE" as const,
+        message: "At least one of text or keyboard must be provided.",
+      });
+    }
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "edit_message",
@@ -58,72 +134,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ message_id, text, keyboard, parse_mode, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-
-      if (keyboard != null) {
-        for (const row of keyboard) {
-          for (const btn of row) {
-            const dataErr = validateCallbackData(btn.value);
-            if (dataErr) return toError(dataErr);
-            if (btn.label.length > LIMITS.BUTTON_TEXT) {
-              return toError({
-                code: "BUTTON_LABEL_EXCEEDS_LIMIT" as const,
-                message: `Button label "${btn.label}" is ${btn.label.length} chars; Telegram hard limit is ${LIMITS.BUTTON_TEXT}.`,
-              });
-            }
-          }
-        }
-      }
-
-      // Build the reply_markup to pass (if keyboard param was supplied)
-      let reply_markup: InlineKeyboardMarkup | undefined;
-      if (keyboard !== undefined) {
-        reply_markup = {
-          inline_keyboard: keyboard === null
-            ? []
-            : keyboard.map((row) =>
-                row.map((btn) => ({
-                  text: btn.label,
-                  callback_data: btn.value,
-                  ...(btn.style ? { style: btn.style as ButtonStyle } : {}),
-                })),
-              ),
-        };
-      }
-
-      try {
-        if (text !== undefined) {
-          // Update text (and optionally keyboard)
-          const { text: finalText, parse_mode: finalMode } = resolveParseMode(text, parse_mode);
-          const textErr = validateText(finalText);
-          if (textErr) return toError(textErr);
-          const result = await getApi().editMessageText(chatId, message_id, finalText, {
-            parse_mode: finalMode,
-            reply_markup,
-          });
-          const editedId = typeof result === "boolean" ? message_id : result.message_id;
-          recordOutgoingEdit(editedId, "text", text);
-          return toResult({ message_id: editedId });
-        } else if (reply_markup !== undefined) {
-          // Keyboard-only update
-          const result = await getApi().editMessageReplyMarkup(chatId, message_id, {
-            reply_markup,
-          });
-          const editedId = typeof result === "boolean" ? message_id : result.message_id;
-          return toResult({ message_id: editedId });
-        } else {
-          return toError({
-            code: "EMPTY_MESSAGE" as const,
-            message: "At least one of text or keyboard must be provided.",
-          });
-        }
-      } catch (err) {
-        return toError(err);
-      }
-    },
+    handleEditMessage,
   );
 }

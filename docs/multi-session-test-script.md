@@ -9,7 +9,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 - `pnpm build` clean, `pnpm lint` clean, `pnpm test` all passing
 - `mcp-config.json` has `"debug": true`
 - MCP server freshly restarted
-- **S1** — first MCP client, connected via `session_start` (auto-named "Primary")
+- **S1** — first MCP client, connected via `action(type: "session/start")` (auto-named "Primary")
 - **S2** — second MCP client ready to connect (separate VS Code chat, Claude Code, etc.)
 - **S3** — third MCP client (needed for Phase 5 only; can reuse S2 after close)
 - Telegram chat open on operator's device
@@ -27,12 +27,12 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 ### 1.1 First Session
 
-1. **[S1]** already connected via `session_start`
+1. **[S1]** already connected via `action(type: "session/start")`
 2. **[Verify]** `{ sid: 1, sessions_active: 1 }`
 
 ### 1.2 Second Session Joins
 
-1. **[S2]** `session_start` with `name: "Scout"`
+1. **[S2]** `action(type: "session/start", name: "Scout")`
 2. **[Verify]** Operator gets approval prompt in Telegram
 3. **[Op]** Approve S2
 4. **[Verify]** S2 receives `{ sid: 2, sessions_active: 2, fellow_sessions: [{sid: 1, name: "Primary"}] }`
@@ -46,12 +46,12 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 ### 1.4 List Sessions
 
-1. **[S1]** `list_sessions` → both sessions listed
-2. **[S2]** `list_sessions` → same list, `active_sid` matches caller
+1. **[S1]** `action(type: "session/list")` → both sessions listed
+2. **[S2]** `action(type: "session/list")` → same list, `active_sid` matches caller
 
 ### 1.5 Name Collision Guard
 
-1. **[S2 or another client]** Try `session_start` with `name: "Primary"`
+1. **[S2 or another client]** Try `action(type: "session/start", name: "Primary")`
 2. **[Verify]** Rejected — name already taken
 
 ---
@@ -63,28 +63,28 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 ### 2.1 Reply-To Intro — Session 2
 
-> The intro message sent by `session_start` is owned by the new session. Replying to
+> The intro message sent by `action(type: "session/start")` is owned by the new session. Replying to
 > it must route to that session, not the governor.
 
 1. **[Op]** Reply to S2's intro message (the "ℹ️ Session Start" message from Phase 1.2): "Welcome, Scout."
-2. **[S2]** `dequeue_update` → receives the reply
-3. **[Verify]** S1 does NOT receive it (call `dequeue_update(timeout: 0)` to confirm empty)
+2. **[S2]** `dequeue` → receives the reply
+3. **[Verify]** S1 does NOT receive it (call `dequeue(timeout: 0)` to confirm empty)
 4. **[Debug]** `get_debug_log` → find `targeted event=X → sid=2` (the reply was routed by reply-to ownership, not governor)
 5. **[Verify]** This proves that intro messages are correctly registered in the message owner map
 
 ### 2.2 Reply-To — Session 1
 
-1. **[S1]** `send_text("I'm session 1")`
+1. **[S1]** `send(type: "text", text: "I'm session 1")`
 2. **[Op]** Reply to S1's message: "Got it, S1."
-3. **[S1]** `dequeue_update` → receives the reply
-4. **[Verify]** S2 does NOT receive it (`dequeue_update(timeout: 0)` returns empty)
+3. **[S1]** `dequeue` → receives the reply
+4. **[Verify]** S2 does NOT receive it (`dequeue(timeout: 0)` returns empty)
 5. **[Debug]** `get_debug_log` → find `targeted event=X → sid=1`
 
 ### 2.3 Reply-To — Session 2
 
-1. **[S2]** `send_text("I'm session 2")`
+1. **[S2]** `send(type: "text", text: "I'm session 2")`
 2. **[Op]** Reply to S2's message: "Got it, S2."
-3. **[S2]** `dequeue_update` → receives the reply
+3. **[S2]** `dequeue` → receives the reply
 4. **[Verify]** S1 does NOT receive it
 5. **[Debug]** `get_debug_log` → find `targeted event=X → sid=2`
 
@@ -92,7 +92,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 1. **[S1]** `confirm("Ready to continue?")`
 2. **[Op]** Press the button
-3. **[S1]** receives the callback via `dequeue_update`
+3. **[S1]** receives the callback via `dequeue`
 4. **[Verify]** S2 does NOT receive it
 5. **[Debug]** `get_debug_log` → find `targeted event=X → sid=1` for the callback
 
@@ -101,12 +101,12 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 > This step exists to provide undeniable proof that routing works. Both sessions
 > poll simultaneously and we confirm negative results.
 
-1. **[S1]** `send_text("S1 says hello")`
-2. **[S2]** `send_text("S2 says hello")`
+1. **[S1]** `send(type: "text", text: "S1 says hello")`
+2. **[S2]** `send(type: "text", text: "S2 says hello")`
 3. **[Op]** Reply to S1's message: "For S1 only"
 4. **[Op]** Reply to S2's message: "For S2 only"
-5. **[S1]** `dequeue_update` → receives "For S1 only" but NOT "For S2 only"
-6. **[S2]** `dequeue_update` → receives "For S2 only" but NOT "For S1 only"
+5. **[S1]** `dequeue` → receives "For S1 only" but NOT "For S2 only"
+6. **[S2]** `dequeue` → receives "For S2 only" but NOT "For S1 only"
 7. **[Debug]** `get_debug_log` → two targeted entries, one for each session
 
 ---
@@ -124,15 +124,15 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 ### 3.2 Ambiguous Message
 
 1. **[Op]** Send a plain text message (not a reply): "Hello, who gets this?"
-2. **[S1]** `dequeue_update` → receives it
-3. **[Verify]** S2 `dequeue_update(timeout: 0)` returns empty — S2 did NOT receive it
+2. **[S1]** `dequeue` → receives it
+3. **[Verify]** S2 `dequeue(timeout: 0)` returns empty — S2 did NOT receive it
 4. **[Debug]** `get_debug_log` → find `governor event=X → sid=1`
 
 ### 3.3 Governor Delegation
 
 1. **[Op]** Send: "Route this to Scout"
 2. **[Verify]** S1 receives it
-3. **[S1]** `route_message(message_id, target_sid: 2)`
+3. **[S1]** `action(type: "message/route", message_id, target_sid: 2)`
 4. **[Verify]** S2 receives the message
 5. **[Verify]** S1 does NOT receive it a second time
 
@@ -144,7 +144,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 ### 3.5 Governor Death Recovery
 
-1. **[S1]** `close_session`
+1. **[S1]** `action(type: "session/close")`
 2. **[Debug]** `closed sid=1`, governor promoted to S2
 3. **[Op]** Send: "Who's in charge now?"
 4. **[Verify]** S2 receives it (S2 is now governor)
@@ -159,31 +159,31 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 ### 4.0 Setup
 
-1. Restart S1 if closed in Phase 3.5: **[S1]** `session_start`
+1. Restart S1 if closed in Phase 3.5: **[S1]** `action(type: "session/start")`
 2. Both S1 and S2 active
 
 ### 4.1 Send DM (Auto-Granted)
 
-1. **[S2]** `send_direct_message(target_sid: 1, text: "Hey S1, found something.")`
-2. **[Verify]** S1 receives a `direct_message` event via `dequeue_update`
+1. **[S2]** `send(type: "dm", target_sid: 1, text: "Hey S1, found something.")`
+2. **[Verify]** S1 receives a `direct_message` event via `dequeue`
 3. **[Verify]** Event has sender SID field
 4. **[Debug]** `delivered DM from sid=2 → sid=1`
 
 ### 4.2 Bidirectional
 
-1. **[S1]** `send_direct_message(target_sid: 2, text: "Thanks, S2.")`
+1. **[S1]** `send(type: "dm", target_sid: 2, text: "Thanks, S2.")`
 2. **[Verify]** S2 receives the DM
 
 ### 4.3 Revoke on Close
 
-1. **[S2]** `close_session`
+1. **[S2]** `action(type: "session/close")`
 2. **[Verify]** DM permissions involving S2 revoked
 3. **[Debug]** DM revocation log
 
 ### 4.4 Manual DM Request (New Session)
 
-1. **[S2]** `session_start(name: "Scout")` → operator approves → auto-DM-grant
-2. **[S2]** `send_direct_message(target_sid: 1, text: "I'm back")` → works immediately
+1. **[S2]** `action(type: "session/start", name: "Scout")` → operator approves → auto-DM-grant
+2. **[S2]** `send(type: "dm", target_sid: 1, text: "I'm back")` → works immediately
 
 ---
 
@@ -192,9 +192,9 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 ### 5.1 Scale Up
 
 1. **[S1]** active, **[S2]** active
-2. **[S3]** `session_start(name: "Builder")` → operator approves
+2. **[S3]** `action(type: "session/start", name: "Builder")` → operator approves
 3. **[Verify]** 3 sessions active, each sees fellow sessions
-4. **[Verify]** `list_sessions` from any session shows all 3
+4. **[Verify]** `action(type: "session/list")` from any session shows all 3
 
 ### 5.2 Ambiguous Routing with 3
 
@@ -211,7 +211,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 ### 5.4 Auth Rejection
 
-1. **[S3]** Tries `close_session` with S2's SID but S3's PIN
+1. **[S3]** Tries `action(type: "session/close")` with S2's SID but S3's PIN
 2. **[Verify]** Auth error — wrong credentials
 3. **[Debug]** `auth failed sid=2`
 
@@ -221,7 +221,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 ### 6.1 Cross-Session Outbound Forwarding
 
-1. **[S1]** `send_text("S1 speaking")`
+1. **[S1]** `send(type: "text", text: "S1 speaking")`
 2. **[Verify]** S2 receives an outbound event with `sid: 1`
 
 ### 6.2 Rapid Messages
@@ -231,7 +231,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 ### 6.3 Session Close Mid-Conversation
 
-1. **[S2]** `close_session` while messages are in its queue
+1. **[S2]** `action(type: "session/close")` while messages are in its queue
 2. **[Verify]** S2's queue removed, other sessions unaffected
 3. **[Verify]** Subsequent ambiguous messages go to remaining sessions only
 
@@ -259,7 +259,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 - [ ] Cross-verification: both sessions poll simultaneously, each gets only its own replies
 - [ ] Governor auto-designation on 2nd session join
 - [ ] Ambiguous messages → governor only
-- [ ] Governor delegation via `route_message`
+- [ ] Governor delegation via `action(type: "message/route")`
 - [ ] Governor death → promotion to next lowest SID
 - [ ] DM send, bidirectional, revoke on close
 - [ ] 3-session scaling + delegation

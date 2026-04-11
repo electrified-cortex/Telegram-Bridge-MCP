@@ -4,6 +4,31 @@ import { listReminders } from "../reminder-state.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
+export function handleListReminders({ token }: { token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  const now = Date.now();
+  const reminders = listReminders().map(r => {
+    const entry: Record<string, unknown> = {
+      id: r.id,
+      text: r.text,
+      trigger: r.trigger,
+      delay_seconds: r.delay_seconds,
+      recurring: r.recurring,
+      state: r.state,
+    };
+    if (r.state === "deferred") {
+      entry.fires_in_seconds = Math.max(
+        0,
+        Math.ceil((r.created_at + r.delay_seconds * 1000 - now) / 1000),
+      );
+    }
+    return entry;
+  });
+  return toResult({ reminders });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "list_reminders",
@@ -15,29 +40,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      const now = Date.now();
-      const reminders = listReminders().map(r => {
-        const entry: Record<string, unknown> = {
-          id: r.id,
-          text: r.text,
-          trigger: r.trigger,
-          delay_seconds: r.delay_seconds,
-          recurring: r.recurring,
-          state: r.state,
-        };
-        if (r.state === "deferred") {
-          entry.fires_in_seconds = Math.max(
-            0,
-            Math.ceil((r.created_at + r.delay_seconds * 1000 - now) / 1000),
-          );
-        }
-        return entry;
-      });
-      return toResult({ reminders });
-    },
+    handleListReminders,
   );
 }

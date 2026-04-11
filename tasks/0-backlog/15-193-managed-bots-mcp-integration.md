@@ -14,8 +14,7 @@ Depends: 10-192
 ## Epic Context
 
 Part of the **Bot API 9.6 epic**. This is the highest-value feature — programmatic
-bot provisioning enables fleet management from the bridge. See full analysis at
-`cortex.lan/docs/research/2026-04-03-bot-api-96-analysis.md`.
+bot provisioning enables fleet management from the bridge. See full analysis in the bridge repo research docs.
 
 Related tasks: 10-192 (prerequisite), 15-195 (architecture)
 

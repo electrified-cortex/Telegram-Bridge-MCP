@@ -62,6 +62,7 @@ describe("set_reminder tool", () => {
     const data = parseResult(result);
     expect(data.text).toBe("Check CI");
     expect(data.state).toBe("active");
+    expect(data.tip).toBe("Use ultra compression for reminder text.");
     expect(mocks.addReminder).toHaveBeenCalledWith(
       expect.objectContaining({ text: "Check CI", delay_seconds: 0, recurring: false }),
     );
@@ -98,6 +99,7 @@ describe("set_reminder tool", () => {
     const data = parseResult(result);
     expect(data.state).toBe("deferred");
     expect(data.fires_in_seconds).toBe(300);
+    expect(data.tip).toBe("Use ultra compression for reminder text.");
   });
 
   it("returns LIMIT_EXCEEDED when addReminder throws", async () => {

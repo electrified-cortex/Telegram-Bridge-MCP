@@ -29,7 +29,7 @@ A rough token count of all tool definitions in this MCP:
 | Category | Tools | Approx. tokens |
 | --- | --- | --- |
 | Messaging (send_text, notify, ask, choose, etc.) | 10 | ~2,000 |
-| Polling (dequeue_update) | 1 | ~300 |
+| Polling (dequeue) | 1 | ~300 |
 | Media (send_file) | 1 | ~400 |
 | Interaction (confirmation, buttons, reaction, etc.) | 7 | ~1,050 |
 | Status / utility (send_new_checklist, show_typing, etc.) | 6 | ~600 |
@@ -68,7 +68,7 @@ The tool result is injected back into the context. Results vary widely:
 | --- | --- | --- |
 | `send_text` | ~50 tokens | `{ ok: true, message_id: 123, ... }` |
 | `notify` | ~50 tokens | Same |
-| `dequeue_update` | ~100–400 tokens | Compact event format + pending count |
+| `dequeue` | ~100–400 tokens | Compact event format + pending count |
 | `send_file` | ~80 tokens | File ID + metadata |
 | `ask` / `choose` | ~100–300 tokens | Includes user's reply |
 
@@ -127,7 +127,7 @@ After 50 turns, the context is ~**52,000 tokens** even for simple short messages
 ### Mitigation patterns
 
 - **Summarize aggressively** between major task boundaries. A 50-turn context can often be summarized into ~500 tokens.
-- **Use `dequeue_update`** for all polling — it returns one update at a time in compact format with a `pending` count, keeping result payloads small.
+- **Use `dequeue`** for all polling — it returns one update at a time in compact format with a `pending` count, keeping result payloads small.
 - **Prefer `notify` over `send_text` for status updates** — same token cost but semantically clearer, reducing the chance the agent re-reads it as content requiring a response.
 - **Don't log intermediate tool results you won't use** — if you call `show_typing`, its `true` result doesn't need to be referenced again. It still sits in context though.
 
@@ -155,7 +155,7 @@ The MCP overhead is real but modest for sessions longer than a few turns. The br
 
 2. **Use `confirm` / `choose` instead of `ask`** when the answer space is known. Button responses are shorter than typed text, reducing the result payload.
 
-3. **Use `dequeue_update` instead of deprecated polling tools.** V3 consolidates all polling into one tool with compact output format. The `pending` count lets the agent decide whether to dequeue again without wasting tokens.
+3. **Use `dequeue` instead of deprecated polling tools.** V3 consolidates all polling into one tool with compact output format. The `pending` count lets the agent decide whether to dequeue again without wasting tokens.
 
 4. **Use `append_text` instead of full re-sends for progressive messages.** Each call sends only the new delta — O(N) total vs O(N²) for full-text re-sends. Use it when the UX benefit clearly justifies it (e.g. a long-running research task where the user would otherwise see nothing for minutes).
 

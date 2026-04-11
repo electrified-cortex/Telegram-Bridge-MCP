@@ -14,8 +14,7 @@ Depends: 10-192
 ## Epic Context
 
 Part of the **Bot API 9.6 epic**. Lower priority than Managed Bots but enables
-structured agent-to-human feedback collection. See full analysis at
-`cortex.lan/docs/research/2026-04-03-bot-api-96-analysis.md`.
+structured agent-to-human feedback collection. See full analysis in the bridge repo research docs.
 
 Related tasks: 10-192 (prerequisite)
 

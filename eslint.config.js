@@ -3,7 +3,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // Ignored paths
-  { ignores: ["dist/**", "coverage/**", "temp/**"] },
+  { ignores: ["dist/**", "coverage/**", "temp/**", "src/tools/_retired/**"] },
 
   // Strict + type-checked: every recommended rule plus stricter alternatives.
   // Requires the TypeScript compiler (slower) but catches far more issues.
@@ -51,6 +51,9 @@ export default tseslint.config(
       // Partial mock objects don't match full type shapes — guards
       // that are "unnecessary" per the type may be required at runtime.
       "@typescript-eslint/no-unnecessary-condition": "off",
+      // Mock method references are intentionally separated from their
+      // objects in assertions (e.g. expect(mock.method).toHaveBeenCalled).
+      "@typescript-eslint/unbound-method": "off",
     },
   },
 );

@@ -54,7 +54,7 @@ import { register as registerConfirm } from "./confirm.js";
 import { register as registerChoose } from "./choose.js";
 import { register as registerAsk } from "./ask.js";
 import { register as registerSendChoice } from "./send_choice.js";
-import { register as registerDequeueUpdate } from "./dequeue_update.js";
+import { register as registerDequeueUpdate } from "./dequeue.js";
 
 // ---------------------------------------------------------------------------
 // Telegram update factories
@@ -115,7 +115,7 @@ let handlers: {
   choose: ToolHandler;
   ask: ToolHandler;
   send_choice: ToolHandler;
-  dequeue_update: ToolHandler;
+  dequeue: ToolHandler;
 };
 
 describe("interactive flows — end-to-end integration", () => {
@@ -153,7 +153,7 @@ describe("interactive flows — end-to-end integration", () => {
       choose: server.getHandler("choose"),
       ask: server.getHandler("ask"),
       send_choice: server.getHandler("send_choice"),
-      dequeue_update: server.getHandler("dequeue_update"),
+      dequeue: server.getHandler("dequeue"),
     };
   });
 
@@ -207,7 +207,7 @@ describe("interactive flows — end-to-end integration", () => {
       { label: "Gamma", value: "c" },
     ];
     const toolPromise = runInSessionContext(sid, () =>
-      handlers.choose({ question: "Pick one:", options: opts, ignore_pending: true, token }),
+      handlers.choose({ text: "Pick one:", options: opts, ignore_pending: true, token }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 
@@ -267,10 +267,10 @@ describe("interactive flows — end-to-end integration", () => {
   });
 
   // -------------------------------------------------------------------------
-  // SC-5: send_choice callback → auto-locked → event in dequeue_update
+  // SC-5: send_choice callback → auto-locked → event in dequeue
   // -------------------------------------------------------------------------
 
-  it("SC-5: send_choice auto-locks on first press and callback appears in dequeue_update", async () => {
+  it("SC-5: send_choice auto-locks on first press and callback appears in dequeue", async () => {
     const sendResult = await runInSessionContext(sid, () =>
       handlers.send_choice({
         text: "Choose:",
@@ -284,10 +284,10 @@ describe("interactive flows — end-to-end integration", () => {
     // Simulate button press — hook fires (ack + remove keyboard), event queues
     recordInbound(cbUpdate(5, "yes"));
 
-    // dequeue_update should surface the callback event
-    const dqResult = await handlers.dequeue_update({ timeout: 0, token });
+    // dequeue should surface the callback event
+    const dqResult = await handlers.dequeue({ timeout: 0, token });
     // Allow the fire-and-forget hook chain (answerCallbackQuery → editMessageReplyMarkup)
-    // to complete — it needs one extra microtask tick after dequeue_update resolves.
+    // to complete — it needs one extra microtask tick after dequeue resolves.
     await Promise.resolve();
 
     expect(isError(dqResult)).toBe(false);
@@ -303,14 +303,14 @@ describe("interactive flows — end-to-end integration", () => {
 
     // Hook fired — keyboard removed and callback answered
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
-    expect(mocks.editMessageReplyMarkup).toHaveBeenCalled();
+    expect(mocks.editMessageText).toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
   // SC-6: confirm timeout then late click still fires hook
   // -------------------------------------------------------------------------
 
-  it("SC-6: late callback after confirm timeout still fires the hook and appears in dequeue_update", async () => {
+  it("SC-6: late callback after confirm timeout still fires the hook and appears in dequeue", async () => {
     const confirmResult = await runInSessionContext(sid, () =>
       handlers.confirm({ text: "Time-sensitive?", timeout_seconds: 1, ignore_pending: true, token }),
     );
@@ -321,9 +321,9 @@ describe("interactive flows — end-to-end integration", () => {
     const ackCallsBefore = mocks.answerCallbackQuery.mock.calls.length;
     recordInbound(cbUpdate(5, "confirm_yes", "qid_late"));
 
-    // dequeue_update surfaces the event; an extra yield lets the hook's
+    // dequeue surfaces the event; an extra yield lets the hook's
     // fire-and-forget chain (answerCallbackQuery → editMessageText) complete.
-    const dqResult = await handlers.dequeue_update({ timeout: 0, token });
+    const dqResult = await handlers.dequeue({ timeout: 0, token });
     await Promise.resolve();
 
     expect(mocks.answerCallbackQuery.mock.calls.length).toBeGreaterThan(ackCallsBefore);
@@ -343,7 +343,7 @@ describe("interactive flows — end-to-end integration", () => {
   it("SC-7: choose returns skipped+voice when user sends a transcribed voice message", async () => {
     const opts = [{ label: "A", value: "a" }, { label: "B", value: "b" }];
     const toolPromise = runInSessionContext(sid, () =>
-      handlers.choose({ question: "A or B?", options: opts, ignore_pending: true, token }),
+      handlers.choose({ text: "A or B?", options: opts, ignore_pending: true, token }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 

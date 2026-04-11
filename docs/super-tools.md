@@ -8,7 +8,7 @@
 
 ## Concept
 
-Standard tools like `send_text` and `notify` fire-and-forget.
+Standard tools like `send(type: "text")` and `send(type: "notification")` fire-and-forget.
 Super tools instead maintain a **persistent, mutable presence** in the chat:
 
 1. **Create** — sends the message, pins it (silent), returns `message_id`
@@ -19,7 +19,7 @@ Super tools instead maintain a **persistent, mutable presence** in the chat:
 
 ## Super Tools
 
-### `send_new_checklist`
+### Checklist — `send(type: "checklist", ...)`
 
 A live task checklist with per-step status indicators.
 Implemented as of v3 (renamed from `update_status`).
@@ -30,32 +30,32 @@ Implemented as of v3 (renamed from `update_status`).
 
 ```text
 # Create — auto-pins the message (silent)
-{ message_id } = send_new_checklist(title, steps)
+{ message_id } = send(type: "checklist", title, steps)
 
-# Update (in-place edit — requires message_id from send_new_checklist)
+# Update (in-place edit — requires message_id from send)
 # Auto-unpins when all steps reach terminal status (done/failed/skipped)
-update_checklist(message_id, title, steps)
+action(type: "checklist/update", message_id, title, steps)
 ```
 
 ---
 
-### `send_new_progress` + `update_progress`
+### Progress Bar — `send(type: "progress", ...)` + `action(type: "progress/update", ...)`
 
 A visual progress bar rendered with emoji blocks.
-Implemented as two tools: `send_new_progress` (create, auto-pins) and `update_progress` (edit in-place, auto-unpins at 100%).
+Implemented as two calls: `send(type: "progress", ...)` (create, auto-pins) and `action(type: "progress/update", ...)` (edit in-place, auto-unpins at 100%).
 
 **Example:**
 
 ```text
 # Create — auto-pins the message (silent)
-{ message_id } = send_new_progress(title, percent, subtext?)
+{ message_id } = send(type: "progress", title, percent, subtext?)
 
 # Built-in render (50%, default width 10):
 # ▓▓▓▓▓░░░░░  50%
 # Building dist/...
 
 # Update in-place — auto-unpins when percent reaches 100
-update_progress(message_id, title, 100, "Done in 4.2s")
+action(type: "progress/update", message_id, title, percent: 100, subtext: "Done in 4.2s")
 ```
 
 **Parameters:**
@@ -66,85 +66,52 @@ update_progress(message_id, title, 100, "Done in 4.2s")
 | `percent` | 0–100 | Current progress |
 | `subtext` | string (optional) | Italicized detail line below the bar |
 | `width` | number (optional) | Bar width in chars; default 10, max 40 |
-| `message_id` | number | Required for `update_progress`; pass the value returned by `send_new_progress` |
+| `message_id` | number | Required for `action(type: "progress/update", ...)`; pass the value returned by `send(type: "progress", ...)` |
 
 Multiple concurrent progress bars are supported — each is tracked by its own `message_id`.
-The server is stateless; all parameters must be passed on every `update_progress` call.
+The server is stateless; all parameters must be passed on every `action(type: "progress/update", ...)` call.
 
 ---
 
 ## Design Principles
 
 - **Auto-pin on create** — super tools are important enough to stay visible; no separate
-  `pin_message` call required
+  `action(type: "message/pin")` call required
 - **Auto-unpin on complete** — unpins when done so the chat stays clean
 - **In-place editing** — one message evolves rather than a stream of status messages
-- **Two-tool API** — each super tool is a two-tool pair (`send_new_*` to create, `update_*` to edit in-place); `message_id` links them
+- **Two-call API** — each super tool is a two-call pair (`send(type: "...", ...)` to create, `action(type: ".../update", ...)` to edit in-place); `message_id` links them
 - **Agent-transparent** — agent passes `message_id` around; the tool handles pin state internally
 
 ---
 
-## Planned: Reaction Tools
+## Temporary Reactions
 
-### `set_temporary_reaction` *(implemented, v3)*
+Use `action(type: "react", temporary: true, restore_emoji: "...", timeout_seconds: N)` for temporary reactions.
 
-Set a reaction that **auto-reverts** when the agent takes any outbound action.
+Set a reaction that **auto-reverts** either on the next outbound action or after a timeout, whichever comes first.
 
-**Core concept:**  
-Current `set_reaction` is permanent — the agent must manually restore the previous emoji.
-`set_temporary_reaction` automates the restore pattern: set 👀 to signal *"reading this"*,
-and it snaps back to whatever was there before (or a specified `restore_emoji`) the moment
-anything outbound happens (typing, send message, etc.).
-
-**Trigger for auto-removal:**
-
-- Any outbound event fires the cleanup: `show_typing`, `send_text`, `send_message`, `notify`, `send_file`, etc.
-- Optionally: a `timeout_seconds` deadline (e.g. `300` = 5 min) — reaction reverts on whichever comes first.
-
-**Proposed API (draft):**
+**Example:**
 
 ```text
-set_temporary_reaction(
-  message_id,
-  emoji,                    // e.g. "👀" — the temporary reaction to set
-  restore_emoji?,           // e.g. "🫡" — what to set once done; omit = remove
-  timeout_seconds?          // fallback deadline; default: none
-)
+# "I'm reading this" — reverts to 🫡 on first outbound action or after 300s
+action(type: "react", message_id: msg_id, emoji: "👀", temporary: true, restore_emoji: "🫡", timeout_seconds: 300)
+
+# Temporary ack with no follow-up — removed after 30s or on next outbound
+action(type: "react", message_id: msg_id, emoji: "👍", temporary: true, timeout_seconds: 30)
 ```
 
-**Examples:**
+**Parameters for temporary reactions:**
 
-```text
-# Classic "I'm reading this" pattern (currently done manually):
-set_temporary_reaction(message_id, "👀", restore_emoji: "🫡")
-# → sets 👀 immediately
-# → first outbound action replaces 👀 with 🫡 automatically
-
-# Temporary ack with no follow-up:
-set_temporary_reaction(message_id, "👍", timeout_seconds: 30)
-# → sets 👍 immediately
-# → removed after 30s or on next outbound action
-
-# Timed reading indicator:
-set_temporary_reaction(message_id, "👀", timeout_seconds: 300)
-# → reverts to no reaction after 5 min (or first outbound)
-```
-
-**Implementation sketch:**
-
-- Store `{ message_id, restore_emoji }` in session state (single active slot — only one temporary at a time)
-- Outbound proxy intercepts every outbound API call → fires restore + clears slot
-- Timeout handled by a `setTimeout` that fires the same restore logic
-
-**Why this matters:**  
-The agent currently does 👀 set → work → 🫡 set manually on every voice message. This
-is 2 explicit tool calls that could be replaced by 1 declarative call, and the agent
-never forgets the restore.
+| Parameter | Notes |
+| --- | --- |
+| `temporary: true` | Required to enable auto-revert behavior |
+| `restore_emoji` | Emoji to set after revert; omit to remove the reaction entirely |
+| `timeout_seconds` | Fallback deadline; reaction reverts on whichever comes first (outbound action or timeout) |
 
 ---
 
 ## See Also
 
 - [`docs/keyboard-interactions.md`](keyboard-interactions.md) — keyboard primitive taxonomy
-- [`docs/communication.md`](communication.md) — when to use `send_new_checklist`
-- [`src/tools/send_new_checklist.ts`](../src/tools/send_new_checklist.ts) — implementation (`send_new_checklist` + `update_checklist`)
+- [`docs/communication.md`](communication.md) — when to use `send(type: "checklist", ...)`
+- [`src/tools/send_new_checklist.ts`](../src/tools/send_new_checklist.ts) — implementation (`send(type: "checklist", ...)` + `action(type: "checklist/update", ...)`)

@@ -12,12 +12,50 @@ import { refreshGovernorCommand } from "../built-in-commands.js";
 import { checkAndConsumeAutoApprove } from "../auto-approve.js";
 import { startPoller, isPollerRunning } from "../poller.js";
 import { fireStartupReminders, buildReminderEvent } from "../reminder-state.js";
+import { registerPendingApproval, clearPendingApproval, isDelegationEnabled, setDelegationEnabled } from "../agent-approval.js";
+import type { ApprovalDecision } from "../agent-approval.js";
 
-const APPROVAL_TIMEOUT_MS = 60_000;
+const APPROVAL_TIMEOUT_MS = 120_000;
 const APPROVAL_NO = "approve_no";
 const APPROVE_PREFIX = "approve_";
 const RECONNECT_YES = "reconnect_yes";
 const RECONNECT_NO = "reconnect_no";
+const TOGGLE_DELEGATION = "approve_toggle_delegation";
+
+/**
+ * Build the inline keyboard for the approval dialog.
+ * Always 3 rows: [colors row1], [colors row2], [delegation toggle, deny].
+ */
+function buildApprovalKeyboard(
+  availableColors: string[],
+  colorHint: string | undefined,
+  delegationEnabled: boolean,
+): { inline_keyboard: Record<string, unknown>[][] } {
+  const validHint =
+    colorHint && COLOR_PALETTE.includes(colorHint as (typeof COLOR_PALETTE)[number])
+      ? colorHint
+      : undefined;
+  const colorButtons = availableColors.map((c, i) => {
+    let isPrimary = false;
+    if (validHint) {
+      isPrimary = c === validHint;
+    } else if (delegationEnabled) {
+      isPrimary = i === 0;
+    }
+    return {
+      text: c,
+      callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
+      ...(isPrimary ? { style: "primary" } : {}),
+    } as Record<string, unknown>;
+  });
+  const row1 = colorButtons.slice(0, 3);
+  const row2 = colorButtons.slice(3);
+  const toggleButton: Record<string, unknown> = delegationEnabled
+    ? { text: "✅ Delegated", callback_data: TOGGLE_DELEGATION }
+    : { text: "☐ Delegate", callback_data: TOGGLE_DELEGATION };
+  const denyButton: Record<string, unknown> = { text: "⛔ Deny", callback_data: APPROVAL_NO, style: "danger" };
+  return { inline_keyboard: [row1, row2, [toggleButton, denyButton]] };
+}
 
 /**
  * Send an operator approval prompt for a new session. The prompt shows
@@ -34,54 +72,72 @@ async function requestApproval(
   const label = reconnect ? "Session reconnecting:" : "New session requesting access:";
   const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:`;
   const availableColors = getAvailableColors(colorHint);
-  const usedColors = new Set(listSessions().map((s) => s.color));
-  const validHint = colorHint && (COLOR_PALETTE as readonly string[]).includes(colorHint) ? colorHint : undefined;
-  const primaryColor = validHint && !usedColors.has(validHint)
-    ? validHint
-    : availableColors.find((c) => !usedColors.has(c));
   if (checkAndConsumeAutoApprove()) {
-    return { approved: true, color: colorHint, forceColor: false };
+    return { approved: true, color: colorHint ?? availableColors[0], forceColor: true };
   }
-  const colorButtons = availableColors.map((c) => ({
-    text: c,
-    callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
-    ...(c === primaryColor ? { style: "primary" } : {}),
-  }));
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
-    reply_markup: {
-      inline_keyboard: [
-        colorButtons,
-        [{ text: "⛔ Deny", callback_data: APPROVAL_NO, style: "danger" }],
-      ],
-    },
+    reply_markup: buildApprovalKeyboard(availableColors, colorHint, isDelegationEnabled()),
   } as Record<string, unknown>);
   const msgId: number = sent.message_id;
 
-  const decision = await new Promise<{ approved: boolean; color?: string; forceColor?: boolean }>((resolve) => {
+  const decision = await new Promise<ApprovalDecision>((resolve) => {
     const timer = setTimeout(() => {
-      clearCallbackHook(msgId);
-      resolve({ approved: false });
+      clearPendingApproval(name);
+      resolveOnce({ approved: false });
     }, APPROVAL_TIMEOUT_MS);
-
-    registerCallbackHook(msgId, (evt: TimelineEvent) => {
+    let resolved = false;
+    const resolveOnce = (value: ApprovalDecision) => {
+      if (resolved) return;
+      resolved = true;
       clearTimeout(timer);
+      clearCallbackHook(msgId);
+      resolve(value);
+    };
+    registerPendingApproval(name, resolveOnce, colorHint);
+
+    // Notify governor of pending approval
+    const governorSid = getGovernorSid();
+    if (governorSid) {
+      deliverServiceMessage(
+        governorSid,
+        `Session "${name}" is requesting access. Call approve_agent(target_name: "${name}") to approve, or wait for operator decision via Telegram buttons.`,
+        "pending_approval",
+        { target_name: name },
+      );
+    }
+
+    const handler = (evt: TimelineEvent) => {
       const data: string = evt.content.data ?? "";
       const qid = evt.content.qid;
+      if (data === TOGGLE_DELEGATION) {
+        // Re-register hook for next click (one-shot: must re-register after each fire)
+        registerCallbackHook(msgId, handler);
+        setDelegationEnabled(!isDelegationEnabled());
+        getApi()
+          .editMessageReplyMarkup(chatId, msgId, {
+            reply_markup: buildApprovalKeyboard(availableColors, colorHint, isDelegationEnabled()),
+          } as Record<string, unknown>)
+          .catch(() => {});
+        if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
+        return;
+      }
+      clearPendingApproval(name);
       if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
       if (data === APPROVAL_NO) {
-        resolve({ approved: false });
+        resolveOnce({ approved: false });
       } else if (data.startsWith(APPROVE_PREFIX)) {
         const idx = parseInt(data.slice(APPROVE_PREFIX.length), 10);
         if (idx >= 0 && idx < COLOR_PALETTE.length) {
-          resolve({ approved: true, color: COLOR_PALETTE[idx], forceColor: true });
+          resolveOnce({ approved: true, color: COLOR_PALETTE[idx], forceColor: true });
         } else {
-          resolve({ approved: false });
+          resolveOnce({ approved: false });
         }
       } else {
-        resolve({ approved: false });
+        resolveOnce({ approved: false });
       }
-    });
+    };
+    registerCallbackHook(msgId, handler);
   });
 
   // Delete the prompt on approval (it's private UI — a public broadcast is
@@ -161,43 +217,9 @@ const DESCRIPTION =
   "Returns { token, sid, pin, sessions_active, action, pending } so " +
   "the agent knows its identity and how to proceed. " +
   "Save your token — it encodes both sid and pin as a single integer (sid * 1_000_000 + pin). " +
-  "Call after get_agent_guide and get_me during session setup.";
+  "Call help() first to load the API guide, then call session_start to join.";
 
-export function register(server: McpServer) {
-  server.registerTool(
-    "session_start",
-    {
-      description: DESCRIPTION,
-      inputSchema: {
-        name: z
-          .string()
-          .default("")
-          .describe(
-            "Human-friendly session name, used as topic prefix. " +
-            "Encouraged when multiple sessions are active.",
-          ),
-        reconnect: z
-          .boolean()
-          .default(false)
-          .describe(
-            "Set to true after losing your PIN (context loss, crash, etc.) to request " +
-            "operator re-authorization. If a session with the same name already exists, " +
-            "shows a simple Approve/Deny dialog; on approval returns the same SID and PIN. " +
-            "Also sends 'reconnected' instead of 'joined' messaging on a fresh session start.",
-          ),
-        color: z
-          .string()
-          .optional()
-          .describe(
-            "Preferred color square emoji for this session. " +
-            "Palette meanings: 🟦 Coordinator/overseer · 🟩 Builder/worker · 🟨 Reviewer/QA · " +
-            "🟧 Research/exploration · 🟥 Ops/deployment · 🟪 Specialist/one-off. " +
-            "The operator makes the final choice via the approval dialog color buttons. " +
-            "Your hint goes first in the button list as a suggestion.",
-          ),
-      },
-    },
-    async ({ name, reconnect, color }) => {
+export async function handleSessionStart({ name, reconnect, color }: { name: string; reconnect: boolean; color?: string }) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -294,10 +316,10 @@ export function register(server: McpServer) {
               const roleNote = isGovernorReconnect
                 ? `You are the governor (SID ${existing.sid}). ` +
                   `Ambiguous messages will be routed to you. ` +
-                  `Call get_agent_guide for trust and routing guidance.`
+                  `Call help(topic: 'guide') for trust and routing guidance.`
                 : `You are SID ${existing.sid}. ${governorLabel} is your first escalation ` +
                   `point. Ambiguous messages go to them. ` +
-                  `Call get_agent_guide for trust and routing guidance.`;
+                  `Call help(topic: 'guide') for trust and routing guidance.`;
               deliverServiceMessage(
                 existing.sid,
                 `Reconnect authorized. Session state preserved. ${roleNote}`,
@@ -326,7 +348,9 @@ export function register(server: McpServer) {
               instructions: `Your session token is ${reconToken} (SID ${fullSession.sid}). ` +
                 "Save your token to session memory NOW. " +
                 "You reconnected after a gap. " +
-                "Call get_chat_history to check for messages you may have missed.",
+                "Call get_chat_history to check for messages you may have missed. " +
+                "Read the guide: help(topic: 'guide'). " +
+                "Compression rules: help(topic: 'compression') — save to memory.",
             });
           }
 
@@ -334,7 +358,7 @@ export function register(server: McpServer) {
             code: "NAME_CONFLICT",
             message:
               `A session named "${existing.name}" already exists (SID ${existing.sid}). ` +
-              `If you still have your token, resume with dequeue_update(token: <token>). ` +
+              `If you still have your token, resume with dequeue(token: <token>). ` +
               `To start a new session, choose a different name. ` +
               `To reclaim this session, call session_start again with reconnect: true.`,
           });
@@ -357,8 +381,8 @@ export function register(server: McpServer) {
         chosenColor = decision.color;
       }
 
-      // forceColor = true when the operator explicitly tapped a color button;
-      // forceColor = false for the first session (no dialog) or auto-approve (hint only).
+      // forceColor = true when the operator explicitly tapped a color button, or on auto-approve (hint is definitive);
+      // forceColor = false for the first session (no dialog, no hint).
       const session = createSession(effectiveName, chosenColor, decision?.forceColor ?? !isFirstSession);
       createSessionQueue(session.sid);
       setActiveSession(session.sid);
@@ -381,15 +405,19 @@ export function register(server: McpServer) {
           instructions: `IMPORTANT: Your session token is ${sessionToken} (SID ${session.sid}). ` +
             "Save your token to session memory NOW. " +
             "You will need it to reconnect after context compaction. " +
-            "On reconnect, call get_chat_history to recover any messages missed during the gap.",
+            "On reconnect, call get_chat_history to recover any messages missed during the gap. " +
+            "Read the guide: help(topic: 'guide'). " +
+            "Save compression rules: help(topic: 'compression') — save to memory.",
         };
         if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {
+          // First session is the governor by default
+          setGovernorSid(session.sid);
           // Send visible announcement with name tag — same format as 2nd+ sessions.
           // buildHeader() intentionally skips single-session mode; compose inline.
           const _announcement = await Promise.resolve(
             runInSessionContext(session.sid, () =>
-              getApi().sendMessage(chatId, `${session.color} 🤖 \`${effectiveName}\`\nSession ${session.sid} — 🟢 Online`, { parse_mode: "Markdown" }),
+              getApi().sendMessage(chatId, `${session.color} 🤖 \`${markdownToV2(effectiveName)}\`\nSession ${session.sid} — 🟢 Online`, { parse_mode: "MarkdownV2" }),
             ),
           ).catch(() => undefined);
           const announcementMsgId = _announcement?.message_id;
@@ -463,8 +491,8 @@ export function register(server: McpServer) {
           // Notify the new session of its role
           const newIsGovernor = session.sid === governorSid;
           const roleNote = newIsGovernor
-            ? `You are the governor (SID ${session.sid}). Ambiguous messages will be routed to you. Call get_agent_guide for trust and routing guidance.`
-            : `You are SID ${session.sid}. ${governorLabel} is your first escalation point. Ambiguous messages go to them. Call get_agent_guide for trust and routing guidance.`;
+            ? `You are the governor (SID ${session.sid}). Ambiguous messages will be routed to you. Call help(topic: 'guide') for trust and routing guidance.`
+            : `You are SID ${session.sid}. ${governorLabel} is your first escalation point. Ambiguous messages go to them. Call help(topic: 'guide') for trust and routing guidance.`;
           deliverServiceMessage(
             session.sid,
             roleNote,
@@ -488,6 +516,42 @@ export function register(server: McpServer) {
         setActiveSession(0);
         return toError(err);
       }
+}
+
+export function register(server: McpServer) {
+  server.registerTool(
+    "session_start",
+    {
+      description: DESCRIPTION,
+      inputSchema: {
+        name: z
+          .string()
+          .default("")
+          .describe(
+            "Human-friendly session name, used as topic prefix. " +
+            "Encouraged when multiple sessions are active.",
+          ),
+        reconnect: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Set to true after losing your PIN (context loss, crash, etc.) to request " +
+            "operator re-authorization. If a session with the same name already exists, " +
+            "shows a simple Approve/Deny dialog; on approval returns the same SID and PIN. " +
+            "Also sends 'reconnected' instead of 'joined' messaging on a fresh session start.",
+          ),
+        color: z
+          .string()
+          .optional()
+          .describe(
+            "Preferred color square emoji for this session. " +
+            "Palette meanings: 🟦 Coordinator/overseer · 🟩 Builder/worker · 🟨 Reviewer/QA · " +
+            "🟧 Research/exploration · 🟥 Ops/deployment · 🟪 Specialist/one-off. " +
+            "The operator makes the final choice via the approval dialog color buttons. " +
+            "Your hint goes first in the button list as a suggestion.",
+          ),
+      },
     },
+    handleSessionStart,
   );
 }

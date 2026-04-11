@@ -1,21 +1,84 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getApi, toResult, toError, sendServiceMessage, resolveChat } from "../telegram.js";
-import { closeSession, getSession, getActiveSession, setActiveSession, listSessions, activeSessionCount, getSessionAnnouncementMessage } from "../session-manager.js";
-import { removeSessionQueue, drainQueue, deliverDirectMessage, deliverServiceMessage, routeToSession } from "../session-queue.js";
-import { revokeAllForSession } from "../dm-permissions.js";
-import { getGovernorSid, setGovernorSid } from "../routing-mode.js";
+import { z } from "zod";
+import { toResult, toError } from "../telegram.js";
+import { getSession } from "../session-manager.js";
+import { getGovernorSid } from "../routing-mode.js";
 import { requireAuth } from "../session-gate.js";
-import { replaceSessionCallbackHooks } from "../message-store.js";
-import { dlog } from "../debug-log.js";
-import { stopPoller } from "../poller.js";
-import { clearSessionReminders } from "../reminder-state.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
-import { refreshGovernorCommand } from "../built-in-commands.js";
+import { refreshGovernorCommand, requestOperatorApproval } from "../built-in-commands.js";
+import { closeSessionById } from "../session-teardown.js";
 
 const DESCRIPTION =
-  "Close the current session. Removes it from the active " +
-  "session list and cleans up resources. The session ID " +
-  "cannot be reclaimed after closure.";
+  "Close the current session, or (if target_sid is provided) close another " +
+  "session — governor only. Removes the session from the active session list " +
+  "and cleans up resources. The session ID cannot be reclaimed after closure. " +
+  "When target_sid is given, the operator is asked to confirm before the close " +
+  "takes effect.";
+
+export async function handleCloseSession({ token, target_sid }: { token?: number; target_sid?: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const callerSid = _sid;
+
+  // ── Self-close path (no target_sid) ───────────────────────────────────
+  if (target_sid === undefined) {
+    const result = closeSessionById(callerSid);
+    void refreshGovernorCommand();
+    return toResult(result);
+  }
+
+  // ── Governor-close path (target_sid provided) ─────────────────────────
+
+  // 1. Caller must be the current governor
+  if (getGovernorSid() !== callerSid) {
+    return toError({
+      code: "PERMISSION_DENIED",
+      message: "Only the governor can close another session.",
+    });
+  }
+
+  // 2. Governor cannot close itself via this path
+  if (target_sid === callerSid) {
+    return toError({
+      code: "INVALID_TARGET",
+      message: "Use close_session without target_sid to close your own session.",
+    });
+  }
+
+  // 3. Target session must exist
+  const targetInfo = getSession(target_sid);
+  if (!targetInfo) {
+    return toError({
+      code: "SESSION_NOT_FOUND",
+      message: `Session ${target_sid} not found.`,
+    });
+  }
+
+  const targetName = targetInfo.name || `Session ${target_sid}`;
+
+  // 4. Operator confirmation
+  const decision = await requestOperatorApproval(
+    `🔒 *Close Session Request*\n\nClose session *${targetName}* (SID ${target_sid})? This cannot be undone.`,
+    30_000,
+  );
+
+  if (decision !== "approved") {
+    return toResult({ closed: false, sid: target_sid, reason: "cancelled" });
+  }
+
+  // 5. Re-check governor role — could have changed during the approval wait
+  if (getGovernorSid() !== callerSid) {
+    return toError({
+      code: "GOVERNOR_CHANGED",
+      message: "Governor role changed during confirmation — close aborted.",
+    });
+  }
+
+  // 6. Execute close
+  const result = closeSessionById(target_sid);
+  void refreshGovernorCommand();
+  return toResult(result);
+}
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -24,146 +87,16 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: {
         token: TOKEN_SCHEMA,
+        target_sid: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            "SID of the session to close. Only the current governor may supply this. " +
+            "Omit to close your own session.",
+          ),
       },
     },
-    ({ token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const sid = _sid;
-
-      // Capture session name before closing (used in notifications)
-      const sessionInfo = getSession(sid);
-      const sessionName = sessionInfo?.name || `Session ${sid}`;
-      const announcementMsgId = getSessionAnnouncementMessage(sid);
-
-      const closed = closeSession(sid);
-      if (!closed) return toResult({ closed: false, sid });
-
-      // Drain orphaned queue items after close succeeds so we can reroute
-      const orphaned = drainQueue(sid);
-
-      removeSessionQueue(sid);
-      clearSessionReminders(sid);
-      revokeAllForSession(sid);
-      if (getActiveSession() === sid) setActiveSession(0);
-
-      const wasGovernor = sid === getGovernorSid();
-      const remaining = listSessions().sort((a, b) => a.sid - b.sid);
-
-      // Always notify the operator that this session disconnected
-      sendServiceMessage(`🤖 ${sessionName} has disconnected.`).catch(() => {});
-
-      // Unpin the session's announcement message, if one was pinned
-      if (announcementMsgId !== undefined) {
-        const chatId = resolveChat();
-        if (typeof chatId === "number") {
-          getApi().unpinChatMessage(chatId, announcementMsgId).catch(() => {});
-        }
-      }
-
-      if (remaining.length === 1) {
-        // 2 → 1: single-session mode restored — always reset routing
-        const last = remaining[0];
-        setGovernorSid(0);
-        // Unpin the remaining session's announcement (back to single-session, no need for pins)
-        const lastAnnouncement = getSessionAnnouncementMessage(last.sid);
-        if (lastAnnouncement !== undefined) {
-          const chatId = resolveChat();
-          if (typeof chatId === "number") {
-            getApi().unpinChatMessage(chatId, lastAnnouncement).catch(() => {});
-          }
-        }
-        sendServiceMessage(
-          wasGovernor
-            ? "⚠️ Governor session closed. Single-session mode restored."
-            : "ℹ️ Session closed. Single-session mode restored.",
-        ).catch(() => {});
-        deliverDirectMessage(0, last.sid, "📢 Single-session mode restored. Governor cleared.");
-      } else if (wasGovernor) {
-        if (remaining.length === 0) {
-          // Last session (was governor): reset routing
-          setGovernorSid(0);
-          sendServiceMessage(
-            "⚠️ Governor session closed. No sessions remain.",
-          ).catch(() => {});
-        } else {
-          // Governor closes with 2+ remaining: promote lowest-SID
-          const next = remaining[0];
-          setGovernorSid(next.sid);
-          const label = next.name || `Session ${next.sid}`;
-          sendServiceMessage(
-            `⚠️ Governor session closed. 🤖 ${label} promoted to governor.`,
-          ).catch(() => {});
-          // Notify the promoted governor
-          deliverServiceMessage(
-            next.sid,
-            `You are now the governor (${sessionName} closed). Ambiguous messages will be routed to you.`,
-            "governor_promoted",
-            { closed_sid: sid, closed_name: sessionName, new_governor_sid: next.sid },
-          );
-          // Notify other remaining sessions of the new governor
-          for (const s of remaining.slice(1)) {
-            deliverServiceMessage(
-              s.sid,
-              `Session '${sessionName}' (SID ${sid}) has ended. '${label}' (SID ${next.sid}) is now the governor.`,
-              "session_closed",
-              { closed_sid: sid, closed_name: sessionName, new_governor_sid: next.sid },
-            );
-          }
-        }
-      }
-
-      // Notify all remaining sessions of the closure (for non-governor cases, or always)
-      if (remaining.length > 0 && !(wasGovernor && remaining.length >= 2)) {
-        // For non-governor close, or 2→1, notify remaining sessions
-        for (const s of remaining) {
-          deliverServiceMessage(
-            s.sid,
-            `Session '${sessionName}' (SID ${sid}) has ended.`,
-            "session_closed",
-            { closed_sid: sid, closed_name: sessionName },
-          );
-        }
-      }
-      // Non-governor closes with 0 or 2+ remaining: no routing change needed
-
-      // Reroute orphaned queue items to remaining sessions
-      if (orphaned.length > 0 && remaining.length > 0) {
-        for (const event of orphaned) {
-          routeToSession(event);
-        }
-        dlogOrphans(sid, orphaned.length);
-      }
-
-      // Replace any pending callback hooks owned by this session with a "Session closed" ack.
-      // This ensures late button presses get a graceful response rather than the original action.
-      replaceSessionCallbackHooks(sid, (evt) => {
-        const qid = evt.content.qid;
-        if (qid) {
-          void getApi().answerCallbackQuery(qid, { text: "Session closed" })
-            .catch((err: unknown) => {
-              dlog("session", `callback ack failed for qid=${qid}: ${String(err)}`);
-            });
-        }
-        // Remove inline keyboard from the message
-        const chatId = resolveChat();
-        const target = evt.content.target;
-        if (typeof chatId === "number" && target) {
-          void getApi()
-            .editMessageReplyMarkup(chatId, target, { reply_markup: { inline_keyboard: [] } })
-            .catch((err: unknown) => {
-              dlog("session", `callback hook cleanup failed for msg ${target}: ${String(err)}`);
-            });
-        }
-      });
-
-      if (activeSessionCount() === 0) stopPoller();
-      void refreshGovernorCommand();
-      return toResult({ closed: true, sid });
-    },
+    handleCloseSession,
   );
-}
-
-function dlogOrphans(sid: number, count: number): void {
-  dlog("session", `[session-teardown] rerouted ${count} orphaned event(s) from sid=${sid}`);
 }

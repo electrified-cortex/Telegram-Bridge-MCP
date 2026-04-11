@@ -5,6 +5,7 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.test.ts"],
+    exclude: ["src/tools/_retired/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "html"],
@@ -21,7 +22,6 @@ export default defineConfig({
         "src/ogg-opus-encoder.ts",
         // Tool registration stubs with no logic
         "src/tools/shutdown.ts",
-        "src/tools/get_agent_guide.ts",
       ],
       thresholds: {
         lines: 80,

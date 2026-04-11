@@ -56,7 +56,7 @@ import { runInSessionContext } from "../session-context.js";
 import { register as registerConfirm } from "./confirm.js";
 import { register as registerChoose } from "./choose.js";
 import { register as registerSendChoice } from "./send_choice.js";
-import { register as registerDequeueUpdate } from "./dequeue_update.js";
+import { register as registerDequeueUpdate } from "./dequeue.js";
 
 // ---------------------------------------------------------------------------
 // Telegram update factories
@@ -86,7 +86,7 @@ let handlers: {
   confirm: ToolHandler;
   choose: ToolHandler;
   send_choice: ToolHandler;
-  dequeue_update: ToolHandler;
+  dequeue: ToolHandler;
 };
 
 describe("callback edge-cases — rapid clicks and expired queries", () => {
@@ -121,7 +121,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
       confirm: server.getHandler("confirm"),
       choose: server.getHandler("choose"),
       send_choice: server.getHandler("send_choice"),
-      dequeue_update: server.getHandler("dequeue_update"),
+      dequeue: server.getHandler("dequeue"),
     };
   });
 
@@ -165,7 +165,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
       { label: "Gamma", value: "c" },
     ];
     const toolPromise = runInSessionContext(sid, () =>
-      handlers.choose({ question: "Pick one:", options: opts, ignore_pending: true, token }),
+      handlers.choose({ text: "Pick one:", options: opts, ignore_pending: true, token }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 
@@ -221,7 +221,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
   // SC-4: send_choice — second click after hook consumed
   // -------------------------------------------------------------------------
 
-  it("SC-4: send_choice second click after hook consumed — keyboard only removed once, second callback queues for dequeue_update", async () => {
+  it("SC-4: send_choice second click after hook consumed — keyboard only removed once, second callback queues for dequeue", async () => {
     const sendResult = await runInSessionContext(sid, () =>
       handlers.send_choice({
         text: "Pick an option:",
@@ -238,20 +238,20 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
 
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
-    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledTimes(1);
+    expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
 
     // Second click — hook already consumed; no additional ack or keyboard removal
     recordInbound(cbUpdate(5, "a", "qid2"));
     await new Promise<void>((r) => { setTimeout(r, 20); });
 
     // Keyboard NOT removed a second time
-    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledTimes(1);
+    expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
     // answerCallbackQuery NOT called again (no hook to fire it)
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
 
-    // Second callback appears in dequeue_update as an unhandled event
+    // Second callback appears in dequeue as an unhandled event
     const dqResult = await runInSessionContext(sid, () =>
-      handlers.dequeue_update({ timeout: 0, token }),
+      handlers.dequeue({ timeout: 0, token }),
     );
     expect(isError(dqResult)).toBe(false);
     const dq = parseResult(dqResult);

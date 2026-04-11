@@ -11,6 +11,40 @@ const DESCRIPTION =
   "Omit filename to list available log files (includes current_log for the active session log), or use list_logs to discover them. " +
   "Provide filename to read a specific log.";
 
+export function handleGetLog({ filename, token }: { filename?: string; token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  // List mode
+  if (!filename) {
+    const files = listLogs();
+    const current = getCurrentLogFilename();
+    return {
+      content: [{
+        type: "text" as const,
+        text: JSON.stringify({
+          current_log: current,
+          log_files: files,
+          count: files.length,
+        }, null, 2),
+      }],
+    };
+  }
+
+  // Read mode
+  try {
+    const content = getLog(filename);
+    return {
+      content: [{
+        type: "text" as const,
+        text: content,
+      }],
+    };
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "get_log",
@@ -27,38 +61,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ filename, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      // List mode
-      if (!filename) {
-        const files = listLogs();
-        const current = getCurrentLogFilename();
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              current_log: current,
-              log_files: files,
-              count: files.length,
-            }, null, 2),
-          }],
-        };
-      }
-
-      // Read mode
-      try {
-        const content = getLog(filename);
-        return {
-          content: [{
-            type: "text" as const,
-            text: content,
-          }],
-        };
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    handleGetLog,
   );
 }

@@ -198,7 +198,7 @@ When a message arrives with no reply context (ambiguous), the server consults th
 
 #### 1. Load Balance
 
-The simplest mode. Ambiguous messages are distributed via **round-robin** among idle sessions (those currently blocked on `dequeue_update`). If no sessions are idle, round-robin continues among all sessions.
+The simplest mode. Ambiguous messages are distributed via **round-robin** among idle sessions (those currently blocked on `dequeue`). If no sessions are idle, round-robin continues among all sessions.
 
 - No claim/pass ceremony — instant routing.
 - Good for: homogeneous workers doing the same type of task.
@@ -210,7 +210,7 @@ Messages are offered to sessions one at a time, in priority order. Each session 
 
 **Routing:**
 
-1. Server selects the lowest-SID idle session (one blocked on `dequeue_update`). If no idle sessions exist, picks the lowest SID overall.
+1. Server selects the lowest-SID idle session (one blocked on `dequeue`). If no idle sessions exist, picks the lowest SID overall.
 2. The selected session receives the message in its dequeue stream with a `pass_by` ISO timestamp — the deadline to act:
    - **Idle sessions:** 15 seconds from delivery.
    - **Busy sessions:** 30 seconds from delivery.

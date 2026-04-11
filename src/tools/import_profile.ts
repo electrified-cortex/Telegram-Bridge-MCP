@@ -11,6 +11,31 @@ const DESCRIPTION =
   "(sparse merge). Use this to load profiles from external sources or to apply ad-hoc " +
   "configuration without saving a profile to disk first.";
 
+export function handleImportProfile({ voice, voice_speed, animation_default, animation_presets, reminders, token }: {
+  voice?: string;
+  voice_speed?: number;
+  animation_default?: string[];
+  animation_presets?: Record<string, string[]>;
+  reminders?: Array<{ text: string; delay_seconds: number; recurring: boolean }>;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  const profile = {
+    ...(voice !== undefined && { voice }),
+    ...(voice_speed !== undefined && { voice_speed }),
+    ...(animation_default !== undefined && { animation_default }),
+    ...(animation_presets !== undefined && { animation_presets }),
+    ...(reminders !== undefined && { reminders }),
+  };
+
+  const applyResult = applyProfile(_sid, profile);
+  if ("code" in applyResult) return toError(applyResult);
+
+  return toResult({ imported: true, applied: applyResult.applied });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "import_profile",
@@ -37,7 +62,7 @@ export function register(server: McpServer) {
             z.object({
               text: z.string(),
               delay_seconds: z.number(),
-              recurring: z.boolean(),
+              recurring: z.boolean().default(false),
             }),
           )
           .optional()
@@ -45,22 +70,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ voice, voice_speed, animation_default, animation_presets, reminders, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      const profile = {
-        ...(voice !== undefined && { voice }),
-        ...(voice_speed !== undefined && { voice_speed }),
-        ...(animation_default !== undefined && { animation_default }),
-        ...(animation_presets !== undefined && { animation_presets }),
-        ...(reminders !== undefined && { reminders }),
-      };
-
-      const applyResult = applyProfile(_sid, profile);
-      if ("code" in applyResult) return toError(applyResult);
-
-      return toResult({ imported: true, applied: applyResult.applied });
-    },
+    handleImportProfile,
   );
 }

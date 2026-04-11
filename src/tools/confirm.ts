@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, resolveChat, validateText, validateCallbackData } from "../telegram.js";
+import { getApi, toResult, toError, resolveChat, validateText, validateCallbackData, sendVoiceDirect } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
@@ -13,6 +13,10 @@ import {
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { validateButtonSymbolParity } from "../button-validation.js";
 import { runInSessionContext } from "../session-context.js";
+import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
+import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
+import { getDefaultVoice } from "../config.js";
+import { showTyping, cancelTyping } from "../typing-state.js";
 
 const DESCRIPTION_CONFIRM =
   "Sends an OK/Cancel confirmation message and waits until the user presses a " +
@@ -21,7 +25,7 @@ const DESCRIPTION_CONFIRM =
   "chosen option. Returns { confirmed: true|false }, or { timed_out: true } " +
   "if the timeout expires without input. " +
   "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
-  "dequeue_update(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
+  "dequeue(timeout:0) first, or pass ignore_pending: true to proceed anyway. " +
   "Ensure session_start has been called.";
 
 const DESCRIPTION_CONFIRM_YN =
@@ -32,7 +36,7 @@ const NO_TEXT_DESC = "Label for the negative button. Set to empty string to show
 const YES_STYLE_DESC = "Optional color for the Yes button: success (green), primary (blue), danger (red). Omit for app-default style.";
 const NO_STYLE_DESC = "Optional color for the No button: success (green), primary (blue), danger (red). Omit for app-default (gray/neutral).";
 
-interface ConfirmArgs {
+export interface ConfirmArgs {
   text: string;
   yes_text: string;
   no_text: string;
@@ -41,16 +45,18 @@ interface ConfirmArgs {
   yes_style?: ButtonStyle;
   no_style?: ButtonStyle;
   timeout_seconds: number;
-  reply_to_message_id?: number;
+  reply_to?: number;
   ignore_pending?: boolean;
   ignore_parity?: boolean;
+  audio?: string;
   token?: number;
 }
 
-async function confirmHandler(
-  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to_message_id, ignore_pending, ignore_parity, token }: ConfirmArgs,
+export async function confirmHandler(
+  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to, ignore_pending, ignore_parity, audio, token }: ConfirmArgs,
   signal: AbortSignal,
 ) {
+  const reply_to_message_id = reply_to;
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
@@ -73,7 +79,7 @@ async function confirmHandler(
       return toError({
         code: "PENDING_UPDATES" as const,
         message:
-          `${detail} Consider draining with dequeue_update(timeout:0) before ` +
+          `${detail} Consider draining with dequeue(timeout:0) before ` +
           `calling confirm, or pass ignore_pending: true to proceed anyway.`,
         pending,
         ...(breakdown ? { breakdown } : {}),
@@ -102,20 +108,66 @@ async function confirmHandler(
   }
 
   try {
-    const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {
-      parse_mode: "MarkdownV2",
-      reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
-      reply_markup: {
-        inline_keyboard: [[
-          { text: yes_text, callback_data: yes_data, ...(yes_style ? { style: yes_style } : {}) },
-          ...(no_text ? [{ text: no_text, callback_data: no_data, ...(no_style ? { style: no_style } : {}) }] : []),
-        ]],
-      },
-      _rawText: text,
-    } as Record<string, unknown>);
+    const replyMarkup = {
+      inline_keyboard: [[
+        { text: yes_text, callback_data: yes_data, ...(yes_style ? { style: yes_style } : {}) },
+        ...(no_text ? [{ text: no_text, callback_data: no_data, ...(no_style ? { style: no_style } : {}) }] : []),
+      ]],
+    };
+
+    let sentMessageId: number;
+
+    if (audio !== undefined) {
+      if (!isTtsEnabled()) {
+        return toError({
+          code: "TTS_NOT_CONFIGURED" as const,
+          message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice mode.",
+        });
+      }
+      const plainText = stripForTts(audio);
+      if (!plainText) {
+        return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text is empty after stripping formatting for TTS." });
+      }
+      const resolvedVoice = getSessionVoice() || getDefaultVoice() || undefined;
+      const resolvedSpeed = getSessionSpeed() ?? undefined;
+      const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
+      await showTyping(typingSeconds, "record_voice");
+      try {
+        const ogg = await synthesizeToOgg(plainText, resolvedVoice, resolvedSpeed);
+        // Apply topic prefix to caption (not to TTS input — don't read the prefix aloud).
+        // Reserve 60 chars for the session header that sendVoiceDirect prepends, to stay under the 1024 caption limit.
+        const MAX_CAPTION = 1024 - 60;
+        const rawCaption = applyTopicToText(text, "Markdown");
+        let caption = markdownToV2(rawCaption);
+        if (caption.length > MAX_CAPTION) {
+          caption = caption.slice(0, MAX_CAPTION);
+          if (caption.endsWith("\\")) caption = caption.slice(0, -1);
+        }
+        const msg = await sendVoiceDirect(chatId, ogg, {
+          caption,
+          parse_mode: "MarkdownV2",
+          reply_to_message_id,
+          reply_markup: replyMarkup,
+        });
+        sentMessageId = msg.message_id;
+      } finally {
+        cancelTyping();
+      }
+    } else {
+      const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {
+        parse_mode: "MarkdownV2",
+        reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
+        reply_markup: replyMarkup,
+        _rawText: text,
+      } as Record<string, unknown>);
+      sentMessageId = sent.message_id;
+    }
+
+    // Create a proxy so the rest of the function can reference sent.message_id uniformly
+    const sent = { message_id: sentMessageId };
 
     // Register callback hook — handles button clicks even after poll timeout.
-    // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue_update.
+    // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue.
     // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
     registerCallbackHook(sent.message_id, (evt) => {
       const confirmed = evt.content.data === yes_data;
@@ -123,7 +175,7 @@ async function confirmHandler(
       if (!confirmed && !no_text) return;
       clearMessageHook(sent.message_id);
       const chosenLabel = confirmed ? yes_text : no_text;
-      void ackAndEditSelection(chatId, sent.message_id, text, chosenLabel, evt.content.qid)
+        void ackAndEditSelection(chatId, sent.message_id, text, chosenLabel, evt.content.qid, !!audio)
         .catch((e: unknown) => process.stderr.write(`[warn] confirm hook failed: ${String(e)}\n`));
     }, _sid);
 
@@ -133,7 +185,7 @@ async function confirmHandler(
     const onVoiceDetected = () => {
       editState.done = true;
       clearCallbackHook(sent.message_id);
-      editWithSkipped(chatId, sent.message_id, text).catch(() => {/* non-fatal */});
+      editWithSkipped(chatId, sent.message_id, text, !!audio).catch(() => {/* non-fatal */});
     };
 
     const result = await pollButtonOrTextOrVoice(
@@ -149,7 +201,7 @@ async function confirmHandler(
       registerMessageHook(sent.message_id, () => {
         clearCallbackHook(sent.message_id);
         void runInSessionContext(_sid, () =>
-          editWithSkipped(chatId, sent.message_id, text),
+          editWithSkipped(chatId, sent.message_id, text, !!audio),
         ).catch(() => {/* non-fatal */});
       });
       return toResult({ timed_out: true, message_id: sent.message_id });
@@ -158,7 +210,7 @@ async function confirmHandler(
     // User typed or spoke instead of pressing a button — mark as skipped
     if (result.kind === "text" || result.kind === "voice") {
       clearCallbackHook(sent.message_id);
-      if (!editState.done) await editWithSkipped(chatId, sent.message_id, text);
+      if (!editState.done) await editWithSkipped(chatId, sent.message_id, text, !!audio);
       return toResult({
         skipped: true,
         text_response: result.text,
@@ -170,7 +222,7 @@ async function confirmHandler(
     // Slash command interrupted the confirmation — mark as skipped
     if (result.kind === "command") {
       clearCallbackHook(sent.message_id);
-      await editWithSkipped(chatId, sent.message_id, text);
+      await editWithSkipped(chatId, sent.message_id, text, !!audio);
       return toResult({
         skipped: true,
         command: result.command,
@@ -228,7 +280,7 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
       .max(300)
       .default(60)
       .describe("Seconds to wait for a button press before returning timed_out: true"),
-    reply_to_message_id: z
+    reply_to: z
       .number()
       .int()
       .min(1)
@@ -242,9 +294,15 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
       .boolean()
       .optional()
       .describe("Set true to bypass button label emoji-consistency check"),
+    audio: z
+      .string()
+      .optional()
+      .describe("Spoken audio content for TTS — when present, sends the question as a voice note with the inline keyboard attached. Uses session/global voice settings. Requires TTS to be configured."),
     token: TOKEN_SCHEMA,
   };
 }
+
+export { confirmHandler as handleConfirm };
 
 export function register(server: McpServer) {
   server.registerTool(

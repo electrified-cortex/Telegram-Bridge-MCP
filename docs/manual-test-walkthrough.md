@@ -13,9 +13,9 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 1. `pnpm build` — clean
 2. `pnpm lint` — clean
 3. `pnpm test` — all passing
-4. Restart the MCP server (`shutdown` → call any tool to restart)
-5. `session_start` — fresh session (SID 1)
-6. `set_topic` with a test label (e.g. "🧪 Test")
+4. Restart the MCP server (`shutdown()` → call any tool to restart)
+5. `action(type: "session/start")` — fresh session (SID 1)
+6. `action(type: "profile/topic", topic: "🧪 Test")` with a test label
 
 ---
 
@@ -25,67 +25,67 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A1.1 | [Agent] `list_sessions` | Returns SID 1 "Primary", `active_sid: 1` |
-| A1.2 | [Agent] `get_me` | Returns bot username, MCP version, commit hash, build time |
-| A1.3 | [Agent] `set_topic("🧪 Test")` then `send_text` | Message appears with `**[🧪 Test]**` prefix |
-| A1.4 | [Agent] `set_topic("")` then `send_text` | Message appears without prefix |
+| A1.1 | [Agent] `action(type: "session/list")` | Returns SID 1 "Primary", `active_sid: 1` |
+| A1.2 | [Agent] `help(topic: "identity", token: "<token>")` | Returns bot username, MCP version, commit hash, build time |
+| A1.3 | [Agent] `action(type: "profile/topic", topic: "🧪 Test")` then `send(text: "Hello")` | Message appears with `**[🧪 Test]**` prefix |
+| A1.4 | [Agent] `action(type: "profile/topic", topic: "")` then `send(text: "Hello")` | Message appears without prefix |
 
 ### A2. Messaging
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A2.1 | [Agent] `send_text("Hello")` | Message appears in Telegram |
-| A2.2 | [Agent] `send_message` with 2-button inline keyboard | Message + buttons appear |
-| A2.3 | [Op] Press a button | [Agent] receives callback via `dequeue_update` with `data`, `qid`, `target` |
-| A2.4 | [Agent] `answer_callback_query(qid)` | Toast notification shown to operator |
-| A2.5 | [Agent] `notify(title, text, severity: "info")` | Notification appears in chat |
-| A2.6 | [Agent] `send_text` → capture msg\_id → `edit_message_text(msg_id, new_text)` | Message content updated in-place |
-| A2.7 | [Agent] `send_text` → `append_text(msg_id, extra)` | Message now has original + appended text |
-| A2.8 | [Agent] `send_text` → `delete_message(msg_id)` | Message removed from chat |
-| A2.9 | [Agent] `send_text` → `pin_message(msg_id)` | Message pinned in chat |
+| A2.1 | [Agent] `send(text: "Hello")` | Message appears in Telegram |
+| A2.2 | [Agent] `send(type: "choice", text: "Pick one", options: [...])` with 2 options | Message + buttons appear |
+| A2.3 | [Op] Press a button | [Agent] receives callback via `dequeue` with `data`, `qid`, `target` |
+| A2.4 | [Agent] `action(type: "acknowledge", callback_query_id: "<qid from button press>")` | Toast notification shown to operator |
+| A2.5 | [Agent] `send(type: "notification", title: "Status", text: "...", severity: "info")` | Notification appears in chat |
+| A2.6 | [Agent] `send(text: "Hello")` → capture `msg_id` → `action(type: "message/edit", message_id: msg_id, text: new_text)` | Message content updated in-place |
+| A2.7 | [Agent] `send(text: "Hello")` → `send(type: "append", message_id: msg_id, text: extra)` | Message now has original + appended text |
+| A2.8 | [Agent] `send(text: "Hello")` → `action(type: "message/delete", message_id: msg_id)` | Message removed from chat |
+| A2.9 | [Agent] `send(text: "Hello")` → `action(type: "message/pin", message_id: msg_id)` | Message pinned in chat |
 
 ### A3. Interactive Tools
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A3.1 | [Agent] `confirm("Test?")` → [Op] presses Yes | Returns `{ confirmed: true }` |
-| A3.2 | [Agent] `confirm("Test?")` → [Op] presses No | Returns `{ confirmed: false }` |
-| A3.3 | [Agent] `choose(3 options)` → [Op] picks one | Returns `{ label, value }` matching selection |
-| A3.4 | [Agent] `ask("Type something")` → [Op] types response | Returns `{ text }` with operator's input |
-| A3.5 | [Agent] `send_choice(2 options)` → [Op] presses one | Callback received via `dequeue_update` |
+| A3.1 | [Agent] `send(type: "question", confirm: "Test?")` → [Op] presses Yes | Returns `{ confirmed: true }` |
+| A3.2 | [Agent] `send(type: "question", confirm: "Test?")` → [Op] presses No | Returns `{ confirmed: false }` |
+| A3.3 | [Agent] `send(type: "question", text: "Pick one", choose: [3 options])` → [Op] picks one | Returns `{ label, value }` matching selection |
+| A3.4 | [Agent] `send(type: "question", ask: "Type something")` → [Op] types response | Returns `{ text }` with operator's input |
+| A3.5 | [Agent] `send(type: "choice", text: "Pick one", options: [2 options])` → [Op] presses one | Callback received via `dequeue` |
 
 ### A4. Animations and Typing
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A4.1 | [Agent] `show_animation(preset: "thinking")` | Animated message appears, frames cycling |
-| A4.2 | Wait 3s → [Agent] `cancel_animation` | Animation stops, static text remains |
-| A4.3 | [Agent] `show_typing` | Typing indicator appears in chat |
-| A4.4 | [Agent] `set_default_animation(preset: "working")` → `show_animation()` (no preset) | Working animation plays using new default |
-| A4.5 | [Agent] `cancel_animation` | Stops cleanly |
+| A4.1 | [Agent] `send(type: "animation", preset: "thinking")` | Animated message appears, frames cycling |
+| A4.2 | Wait 3s → [Agent] `action(type: "animation/cancel")` | Animation stops, static text remains |
+| A4.3 | [Agent] `action(type: "show-typing")` | Typing indicator appears in chat |
+| A4.4 | [Agent] `action(type: "animation/default", preset: "working")` → `send(type: "animation")` (no preset) | Working animation plays using new default |
+| A4.5 | [Agent] `action(type: "animation/cancel")` | Stops cleanly |
 
 ### A5. Reactions
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A5.1 | [Op] Sends a message → [Agent] `set_reaction(msg_id, "👍")` | 👍 reaction appears on operator's message |
+| A5.1 | [Op] Sends a message → [Agent] `action(type: "react", message_id: msg_id, emoji: "👍")` | 👍 reaction appears on operator's message |
 
 ### A6. Checklist and Progress
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A6.1 | [Agent] `send_new_checklist(title, 3 pending steps)` | Checklist message with 3 unchecked items |
-| A6.2 | [Agent] `update_checklist(msg_id, step 1 done)` | First item shows checked |
-| A6.3 | [Agent] `update_checklist(msg_id, all done)` | All items checked |
-| A6.4 | [Agent] `send_new_progress(label, 0%)` | Progress bar at 0% |
-| A6.5 | [Agent] `update_progress(msg_id, 50%)` | Bar at 50% |
-| A6.6 | [Agent] `update_progress(msg_id, 100%)` | Bar at 100% |
+| A6.1 | [Agent] `send(type: "checklist", title, steps: [3 pending steps])` | Checklist message with 3 unchecked items |
+| A6.2 | [Agent] `action(type: "checklist/update", message_id: msg_id, steps: [step 1 done])` | First item shows checked |
+| A6.3 | [Agent] `action(type: "checklist/update", message_id: msg_id, steps: [all done])` | All items checked |
+| A6.4 | [Agent] `send(type: "progress", title: label, percent: 0)` | Progress bar at 0% |
+| A6.5 | [Agent] `action(type: "progress/update", message_id: msg_id, percent: 50)` | Bar at 50% |
+| A6.6 | [Agent] `action(type: "progress/update", message_id: msg_id, percent: 100)` | Bar at 100% |
 
 ### A7. Message Inspection
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A7.1 | [Agent] `send_text` → `get_message(msg_id)` | Returns content, timestamp, sid, versions |
+| A7.1 | [Agent] `send(type: "text", text: "Hello")` → `action(type: "message/get", message_id: msg_id)` | Returns content, timestamp, sid, versions |
 | A7.2 | [Agent] `get_chat` → [Op] presses Allow | Returns chat id, type, title, description |
 
 ### A8. Diagnostics
@@ -99,16 +99,16 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A9.1 | [Agent] `send_text` → [Op] replies to it → [Agent] `dequeue_update` | Reply received with `reply_to` field, `routing: "targeted"` |
-| A9.2 | [Agent] `confirm` → [Op] presses button | Callback has `routing: "targeted"`, `target` = prompt msg\_id |
+| A9.1 | [Agent] `send(type: "text")` → [Op] replies to it → [Agent] `dequeue` | Reply received with `reply_to` field, `routing: "targeted"` |
+| A9.2 | [Agent] `send(type: "question", confirm: "...")` → [Op] presses button | Callback has `routing: "targeted"`, `target` = prompt msg\_id |
 
 ### A10. Edge Cases
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A10.1 | [Op] Sends 5 messages rapidly → [Agent] `dequeue_update` loop | All 5 received in order, no drops, no duplicates |
-| A10.2 | [Op] Sends voice message → [Agent] `dequeue_update` | Voice event with `text` (transcription) and `file_id`; 🫡 reaction auto-set |
-| A10.3 | [Agent] `set_commands([{command: "test", description: "Test"}])` → [Op] sends `/test` | Command received as message event |
+| A10.1 | [Op] Sends 5 messages rapidly → [Agent] `dequeue` loop | All 5 received in order, no drops, no duplicates |
+| A10.2 | [Op] Sends voice message → [Agent] `dequeue` | Voice event with `text` (transcription) and `file_id`; 🫡 reaction auto-set |
+| A10.3 | [Agent] `action(type: "commands/set", commands: [{command: "test", description: "Test"}])` → [Op] sends `/test` | Command received as message event |
 
 ---
 
@@ -121,33 +121,33 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| B1.1 | [S1] already connected → [S2] `session_start(name: "Scout")` | S2 gets SID 2, `sessions_active: 2`, `fellow_sessions` lists S1 |
-| B1.2 | [S2] `list_sessions` | Both sessions listed with SIDs and names |
-| B1.3 | [S2] `close_session` → [S2] `session_start(name: "Scout")` | Fresh SID, clean rejoin |
+| B1.1 | [S1] already connected → [S2] `action(type: "session/start", name: "Scout")` | S2 gets SID 2, `sessions_active: 2`, `fellow_sessions` lists S1 |
+| B1.2 | [S2] `action(type: "session/list")` | Both sessions listed with SIDs and names |
+| B1.3 | [S2] `action(type: "session/close")` → [S2] `action(type: "session/start", name: "Scout")` | Fresh SID, clean rejoin |
 
 ### B2. Targeted Routing
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| B2.1 | [S1] `send_text("I'm S1")` → [Op] replies | Only S1 receives reply (`routing: "targeted"`) |
-| B2.2 | [S2] `send_text("I'm S2")` → [Op] replies | Only S2 receives reply |
-| B2.3 | [S1] `confirm` prompt → [Op] presses button | Only S1 receives callback |
+| B2.1 | [S1] `send(type: "text", text: "I'm S1")` → [Op] replies | Only S1 receives reply (`routing: "targeted"`) |
+| B2.2 | [S2] `send(type: "text", text: "I'm S2")` → [Op] replies | Only S2 receives reply |
+| B2.3 | [S1] `send(type: "question", confirm: "...")` prompt → [Op] presses button | Only S1 receives callback |
 
 ### B3. Governor Routing
 
 | Step | Action | Expected |
 | --- | --- | --- |
 | B3.1 | [Op] Sends plain message (not a reply) | Only governor (S1, lowest SID) receives it |
-| B3.2 | [S1] `route_message(msg_id, target_sid: 2)` | S2 receives the message |
-| B3.3 | [S1] `close_session` → [Op] sends plain message | S2 (now governor) receives it |
+| B3.2 | [S1] `action(type: "message/route", message_id: msg_id, target_sid: 2)` | S2 receives the message |
+| B3.3 | [S1] `action(type: "session/close")` → [Op] sends plain message | S2 (now governor) receives it |
 
 ### B4. DM Permissions
 
 | Step | Action | Expected |
 | --- | --- | --- |
 | B4.1 | DM auto-granted on session approval | S1↔S2 bidirectional after S2 approved |
-| B4.2 | [S2] `send_direct_message(target_sid: 1, text)` | S1 receives `direct_message` event |
-| B4.3 | [S2] `close_session` | DM permissions for S2 revoked |
+| B4.2 | [S2] `send(type: "dm", target_sid: 1, text: "Hello from S2")` | S1 receives `direct_message` event |
+| B4.3 | [S2] `action(type: "session/close")` | DM permissions for S2 revoked |
 
 ### B5. Health Check
 

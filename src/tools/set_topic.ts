@@ -13,6 +13,18 @@ const DESCRIPTION =
   "agent sent what. Scoped to this server process: works best with one " +
   "active chat per host instance. Pass an empty string to clear.";
 
+export function handleSetTopic({ topic, token }: { topic: string; token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const previous = getTopic();
+  if (topic.trim() === "") {
+    clearTopic();
+    return toResult({ topic: null, previous, cleared: true });
+  }
+  setTopic(topic);
+  return toResult({ topic: getTopic(), previous, set: true });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "set_topic",
@@ -26,16 +38,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    ({ topic, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const previous = getTopic();
-      if (topic.trim() === "") {
-        clearTopic();
-        return toResult({ topic: null, previous, cleared: true });
-      }
-      setTopic(topic);
-      return toResult({ topic: getTopic(), previous, set: true });
-    },
+    handleSetTopic,
   );
 }

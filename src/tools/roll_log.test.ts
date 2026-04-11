@@ -8,12 +8,14 @@ import { createMockServer, parseResult, isError, errorCode, type ToolHandler } f
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   rollLog: vi.fn((): string | null => null),
+  flushCurrentLog: vi.fn(() => Promise.resolve()),
   sendServiceMessage: vi.fn(() => Promise.resolve()),
   resolveChat: vi.fn(() => 1001),
 }));
 
 vi.mock("../local-log.js", () => ({
   rollLog: mocks.rollLog,
+  flushCurrentLog: mocks.flushCurrentLog,
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -110,6 +112,14 @@ describe("roll_log tool", () => {
   it("rollLog() is invoked on every authenticated call", async () => {
     await call({ token: 1123456 });
     expect(mocks.rollLog).toHaveBeenCalledOnce();
+  });
+
+  it("flushCurrentLog() is called before rollLog()", async () => {
+    const order: string[] = [];
+    mocks.flushCurrentLog.mockImplementation(() => { order.push("flush"); return Promise.resolve(); });
+    mocks.rollLog.mockImplementation(() => { order.push("roll"); return null; });
+    await call({ token: 1123456 });
+    expect(order).toEqual(["flush", "roll"]);
   });
 
   it("emits service notification with archived filename after successful roll", async () => {

@@ -6,6 +6,8 @@ coverage/
 node_modules
 temp/
 data/
+# Runtime log files
+*.log
 # Session state files — regenerated each session by the agent
 HANDOFF.md
 memory.md

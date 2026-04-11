@@ -23,6 +23,7 @@ interface McpConfig {
   defaultVoice?: string;
   voices?: VoiceEntry[];
   debug?: boolean;
+  sessionApproval?: "governor" | "manual" | "auto";
   preToolHook?: {
     denyPatterns?: string[];
   };
@@ -106,6 +107,15 @@ export function sessionLogLabel(): string {
   if (mode === null) return "disabled";
   if (mode === "manual") return "manual";
   return `every ${mode} messages`;
+}
+
+// ---------------------------------------------------------------------------
+// Session approval mode
+// ---------------------------------------------------------------------------
+
+/** Get the configured session approval mode (default: "manual"). */
+export function getSessionApproval(): "governor" | "manual" | "auto" {
+  return _config.sessionApproval ?? "manual";
 }
 
 // ---------------------------------------------------------------------------

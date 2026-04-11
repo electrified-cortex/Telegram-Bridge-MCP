@@ -14,9 +14,11 @@
  *  - listLogs(): list archived log files
  */
 
-import { mkdirSync, appendFileSync, readFileSync, unlinkSync, readdirSync, existsSync } from "fs";
+import { mkdirSync, readFileSync, unlinkSync, readdirSync, existsSync } from "fs";
+import { appendFile } from "fs/promises";
 import { resolve, dirname, basename } from "path";
 import { fileURLToPath } from "url";
+import Queue from "@tsdotnet/queue";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOGS_DIR = resolve(__dirname, "..", "data", "logs");
@@ -27,6 +29,10 @@ const LOGS_DIR = resolve(__dirname, "..", "data", "logs");
 
 let _enabled = true;
 let _currentFilename: string | null = null;
+const _buffer = new Queue<string>();
+let _flushTimer: ReturnType<typeof setTimeout> | null = null;
+let _flushPromise: Promise<void> = Promise.resolve();
+const FLUSH_DELAY_MS = 500;
 
 /** Validates that a filename matches the YYYY-MM-DDTHHMMSS.json pattern. */
 const TIMESTAMP_FILENAME_RE = /^\d{4}-\d{2}-\d{2}T\d{6}\.json$/;
@@ -90,21 +96,30 @@ export function getCurrentLogFilename(): string | null {
 }
 
 /**
- * Append an event to the current log file immediately (NDJSON format).
- * Uses appendFileSync — synchronous by design for crash safety (operator
- * directive: no in-memory buffer). Acceptable for low-frequency events;
- * refactor to async queue if logging becomes a throughput concern.
+ * Buffers an event in memory and schedules a flush after 500 ms.
  * No-op if logging is disabled.
  */
 export function logEvent(event: unknown): void {
   if (!_enabled) return;
-  const filePath = currentFilePath();
-  try {
-    ensureLogsDir();
-    appendFileSync(filePath, JSON.stringify({ ts: new Date().toISOString(), event }) + '\n', 'utf-8');
-  } catch {
-    // Best-effort — never throw from logging
+  currentFilePath(); // eagerly initialize _currentFilename so rollLog/getCurrentLogFilename work immediately
+  _buffer.enqueue(JSON.stringify({ ts: new Date().toISOString(), event }) + '\n');
+  if (_flushTimer === null) {
+    _flushTimer = setTimeout(() => { _flushPromise = _flush(); }, FLUSH_DELAY_MS);
   }
+}
+
+async function _flush(): Promise<void> {
+  _flushTimer = null;
+  if (_buffer.count === 0) return;
+  const lines: string[] = [];
+  while (_buffer.count > 0) {
+    const line = _buffer.dequeue();
+    if (line === undefined) break;
+    lines.push(line);
+  }
+  ensureLogsDir();
+  const filePath = currentFilePath();
+  await appendFile(filePath, lines.join(''), 'utf-8').catch(() => { /* best-effort */ });
 }
 
 /**
@@ -121,11 +136,16 @@ export function rollLog(): string | null {
 }
 
 /**
- * No-op: events are written to disk immediately in logEvent().
- * Retained for API compatibility.
+ * Cancel any pending timer, drain the buffer, and await the write.
+ * Call before shutdown or roll to ensure no buffered events are lost.
  */
-export function flushCurrentLog(): void {
-  // No-op: events are written to disk immediately in logEvent()
+export async function flushCurrentLog(): Promise<void> {
+  if (_flushTimer !== null) {
+    clearTimeout(_flushTimer);
+    _flushTimer = null;
+  }
+  await _flushPromise;   // wait for any timer-triggered flush in progress
+  await _flush();        // drain any remaining buffer
 }
 
 /**
@@ -165,7 +185,7 @@ export function listLogs(): string[] {
   if (!existsSync(LOGS_DIR)) return [];
   try {
     return readdirSync(LOGS_DIR)
-      .filter(f => f.endsWith(".json") && f !== _currentFilename)
+      .filter(f => TIMESTAMP_FILENAME_RE.test(f) && f !== _currentFilename)
       .sort();
   } catch {
     return [];
@@ -190,4 +210,11 @@ function sanitizeFilename(filename: string): string {
 export function resetLocalLogForTest(): void {
   _enabled = true;
   _currentFilename = null;
+  if (_flushTimer !== null) {
+    clearTimeout(_flushTimer);
+    _flushTimer = null;
+  }
+  _flushPromise = Promise.resolve();
+  // Drain the buffer without writing
+  while (_buffer.count > 0) _buffer.dequeue();
 }

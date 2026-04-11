@@ -11,6 +11,21 @@ const DESCRIPTION =
   "a permanent logged message. Returns { cancelled, message_id? }. " +
   "No-op if no animation is active.";
 
+export async function handleCancelAnimation({ text, parse_mode, token }: {
+  text?: string;
+  parse_mode?: "Markdown" | "HTML" | "MarkdownV2";
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  try {
+    const result = await cancelAnimation(_sid, text, parse_mode ?? "Markdown");
+    return toResult(result);
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "cancel_animation",
@@ -28,15 +43,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ text, parse_mode, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      try {
-        const result = await cancelAnimation(_sid, text, parse_mode);
-        return toResult(result);
-      } catch (err) {
-        return toError(err);
-      }
-    },
+    handleCancelAnimation,
   );
 }

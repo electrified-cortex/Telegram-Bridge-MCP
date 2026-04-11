@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageReplyMarkup: vi.fn(),
+  editMessageText: vi.fn(),
   registerCallbackHook: vi.fn(),
   applyTopicToText: vi.fn((t: string) => t),
   resolveChat: vi.fn((): number | TelegramError => 42),
@@ -23,6 +24,7 @@ vi.mock("../telegram.js", async (importActual) => {
       sendMessage: mocks.sendMessage,
       answerCallbackQuery: mocks.answerCallbackQuery,
       editMessageReplyMarkup: mocks.editMessageReplyMarkup,
+      editMessageText: mocks.editMessageText,
     }),
     resolveChat: mocks.resolveChat,
     validateText: mocks.validateText,
@@ -135,40 +137,57 @@ describe("send_choice tool", () => {
     expect(mocks.editMessageReplyMarkup).not.toHaveBeenCalled();
   });
 
-  it("hook invokes answerCallbackQuery and removes keyboard on button press", async () => {
+  it("hook invokes answerCallbackQuery and collapses message with selected label on button press", async () => {
     await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
-    const [hookedMessageId, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string } }) => void];
+    const [hookedMessageId, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string; data?: string } }) => void];
     expect(hookedMessageId).toBe(9);
 
     mocks.answerCallbackQuery.mockResolvedValue(undefined);
-    mocks.editMessageReplyMarkup.mockResolvedValue(undefined);
+    mocks.editMessageText.mockResolvedValue(undefined);
 
-    // Simulate a button press callback event
-    hookFn({ content: { qid: "ack123" } });
+    // Simulate a button press callback event — user picked "like"
+    hookFn({ content: { qid: "ack123", data: "like" } });
 
     // Flush async microtasks
     await new Promise<void>((r) => setTimeout(r, 0));
 
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("ack123");
-    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledWith(
-      42, 9, { reply_markup: { inline_keyboard: [] } },
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42, 9,
+      expect.stringContaining("Like it"),
+      expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
     );
   });
 
   it("hook skips answerCallbackQuery when qid is absent", async () => {
     await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
-    const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string } }) => void];
+    const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string; data?: string } }) => void];
 
-    mocks.editMessageReplyMarkup.mockResolvedValue(undefined);
-    hookFn({ content: {} });
+    mocks.editMessageText.mockResolvedValue(undefined);
+    hookFn({ content: { data: "dislike" } });
     await new Promise<void>((r) => setTimeout(r, 0));
 
     expect(mocks.answerCallbackQuery).not.toHaveBeenCalled();
-    expect(mocks.editMessageReplyMarkup).toHaveBeenCalled();
+    expect(mocks.editMessageText).toHaveBeenCalled();
   });
 
-  it("passes reply_to_message_id via reply_parameters", async () => {
-    await call({ text: "Reply", options: TWO_OPTIONS, reply_to_message_id: 5, token: 1123456});
+  it("hook uses raw data as label when data does not match any option", async () => {
+    await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
+    const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string; data?: string } }) => void];
+
+    mocks.editMessageText.mockResolvedValue(undefined);
+    hookFn({ content: { data: "ghost" } });
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42, 9,
+      expect.stringContaining("ghost"),
+      expect.any(Object),
+    );
+  });
+
+  it("passes reply_to via reply_parameters", async () => {
+    await call({ text: "Reply", options: TWO_OPTIONS, reply_to: 5, token: 1123456});
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),

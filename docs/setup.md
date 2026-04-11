@@ -93,7 +93,7 @@ The bot needs your numeric Telegram user ID for `ALLOWED_USER_ID`. For private 1
 
 ## Step 4 — Verify the Token Works
 
-Use the `get_me` MCP tool. It should return the bot's username and ID.
+Use `action(type: "chat/info")` to verify the bot connection. It should return chat info confirming the session is active.
 If you get a `401 Unauthorized` error, the token is wrong — regenerate it with `/revoke` in BotFather.
 
 ---
@@ -104,13 +104,23 @@ If you get a `401 Unauthorized` error, the token is wrong — regenerate it with
 
 Run **one** server instance and connect any number of editors or Claude Code sessions. Each client gets its own MCP session with an isolated queue — no `getUpdates` conflicts.
 
-**1. Start the server** (terminal, tmux, startup script, etc.):
+**1. Start the server** in its own terminal window:
 
 ```bash
-MCP_PORT=3099 pnpm start
+pnpm start -- --http
 ```
 
-All config comes from `.env` — no credentials in your editor settings.
+The `--http` flag enables Streamable HTTP mode on the port configured in `.env`
+(`MCP_PORT`, default 3099). All other config comes from `.env` — no credentials
+in your editor settings.
+
+> **Resilience tip:** Run the server in a **standalone terminal window** outside
+> your editor. If the editor crashes, the MCP server stays up and agent sessions
+> survive. On Windows, you can spawn an independent window from PowerShell:
+>
+> ```powershell
+> Start-Process pwsh -ArgumentList "-NoExit","-Command","cd 'path/to/telegram-bridge-mcp'; pnpm start -- --http"
+> ```
 
 **2. Point your MCP hosts at it:**
 
@@ -155,12 +165,11 @@ All config comes from `.env` — no credentials in your editor settings.
 }
 ```
 
-> **Do not add to global `~/.claude.json` `mcpServers`.** Global servers spawn in *every* session, generating noise and competing for the same bot.
+> **Scope tip:** A project-scoped config (`.mcp.json`, `.vscode/mcp.json`) keeps Telegram tools out of unrelated sessions. A global config works fine with Streamable HTTP or the launcher bridge — each session gets its own isolated queue. Avoid global configs with raw stdio (`dist/index.js`) though — multiple instances will fight over `getUpdates`.
 
-<details>
-<summary><strong>stdio mode</strong> (single-instance fallback)</summary>
+### stdio mode
 
-If you can't run a persistent server, stdio mode spawns a dedicated process per host. Only one host can connect at a time — multiple instances will fight over `getUpdates`.
+stdio mode spawns a dedicated process per host. Only one host can connect at a time — multiple instances will fight over `getUpdates`.
 
 **VS Code** (`.vscode/mcp.json`):
 
@@ -263,8 +272,6 @@ Instead of starting the server manually, use `dist/launcher.js` as a drop-in std
 }
 ```
 
-</details>
-
 ---
 
 ## Voice Configuration
@@ -280,7 +287,7 @@ WHISPER_CACHE_DIR=/path/to/cache            # optional — cache model files her
 
 ### Text-to-Speech (outbound)
 
-`send_text_as_voice` picks a TTS provider in priority order:
+`send(type: "text", audio: "...")` picks a TTS provider in priority order:
 
 | Priority | Env var | Provider |
 | --- | --- | --- |
@@ -306,7 +313,7 @@ Send `/voice` in your Telegram chat to browse and preview all available voices i
 
 ### Per-Session Voice Override
 
-Agents can set a per-session TTS voice with the `set_voice` MCP tool, overriding the global default without affecting other sessions. Pass an empty string to clear the override and revert to the global default.
+Agents can set a per-session TTS voice with `action(type: "profile/voice")`, overriding the global default without affecting other sessions. Pass an empty string to clear the override and revert to the global default.
 
 ---
 
@@ -356,16 +363,16 @@ Agents can set a per-session TTS voice with the `set_voice` MCP tool, overriding
 - Messages can only be edited within 48 hours of sending.
 - Only the bot's own messages can be edited.
 
-### `send_new_checklist` shows no change
+### `send(type: "checklist")` shows no change
 
 - Telegram silently ignores edits where the text is identical to the current content.
 - This is not an error — the message is already up to date.
 
-### `dequeue_update` returns `{ empty: true }` or `{ timed_out: true }` with no updates
+### `dequeue` returns `{ empty: true }` or `{ timed_out: true }` with no updates
 
 - `{ empty: true }` — expected when `timeout` is 0 (instant poll) and there are no pending updates.
 - `{ timed_out: true }` — expected when a blocking wait (default 300 s) expires with no updates. Call again immediately.
-- Use `dequeue_update()` with no arguments to block up to 300 s for the next update.
+- Use `dequeue()` with no arguments to block up to 300 s for the next update.
 
 ### Multiple instances competing / messages arriving in wrong session
 
@@ -403,9 +410,9 @@ Agents can set a per-session TTS voice with the `set_voice` MCP tool, overriding
 ## Quick Test Sequence (for agent validation)
 
 ```text
-1. get_me                         → confirm bot identity
-2. notify (chat_id, "MCP Online") → confirm message delivery
-3. choose (chat_id, "Test?", [{label:"OK", value:"ok"}]) → confirm interactivity
+1. action(type: "chat/info")                                 → confirm bot/session identity
+2. send(type: "notification", text: "MCP Online")            → confirm message delivery
+3. send(type: "question", choose: [{label:"OK",value:"ok"}], text: "Test?") → confirm interactivity
 ```
 
 If all three succeed, the integration is working correctly.

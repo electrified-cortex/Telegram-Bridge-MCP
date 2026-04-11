@@ -10,6 +10,18 @@ const DESCRIPTION =
   "Use this after an agent has captured the log content via get_log. " +
   "This is the acknowledgment ceremony after log retrieval.";
 
+export function handleDeleteLog({ filename, token }: { filename: string; token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  try {
+    deleteLog(filename);
+    return toResult({ deleted: true, filename });
+  } catch (err) {
+    return toError(err);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "delete_log",
@@ -22,16 +34,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ filename, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      try {
-        deleteLog(filename);
-        return toResult({ deleted: true, filename });
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    handleDeleteLog,
   );
 }

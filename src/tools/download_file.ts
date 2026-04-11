@@ -41,7 +41,7 @@ export function register(server: McpServer) {
       inputSchema: {
         file_id: z
         .string()
-        .describe("The Telegram file_id from a message event (e.g. document.file_id, voice.file_id) delivered by dequeue_update or get_message"),
+        .describe("The Telegram file_id from a message event (e.g. document.file_id, voice.file_id) delivered by dequeue or get_message"),
       file_name: z
         .string()
         .optional()
@@ -53,60 +53,67 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ file_id, file_name, mime_type, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      try {
-        await showTyping(30);
-        const botToken = process.env.BOT_TOKEN;
-        if (!botToken) {
-          return toError({ code: "UNKNOWN" as const, message: "BOT_TOKEN not set — cannot download file." });
-        }
-
-        // 1. Resolve file path from Telegram
-        const fileInfo = await getApi().getFile(file_id);
-        if (!fileInfo.file_path) {
-          return toError({ code: "UNKNOWN" as const, message: "Telegram returned no file_path for this file_id. The file may be too large (>20 MB) or expired." });
-        }
-
-        // 2. Download bytes
-        const url = `https://api.telegram.org/file/bot${botToken}/${fileInfo.file_path}`;
-        const res = await fetch(url);
-        if (!res.ok) {
-          return toError({ code: "UNKNOWN" as const, message: `Download failed: ${res.status} ${res.statusText}` });
-        }
-        const bytes = Buffer.from(await res.arrayBuffer());
-
-        // 3. Determine local file name (sanitized to prevent path traversal; timestamp prefix prevents collisions)
-        const rawName = file_name ?? fileInfo.file_path.split("/").pop() ?? "file";
-        const displayName = basename(rawName).replace(/^\.+/, "") || "file";
-        const resolvedName = `${Date.now()}_${displayName}`;
-
-        // 4. Save to temp directory with restricted permissions
-        const dir = join(tmpdir(), "telegram-bridge-mcp");
-        await mkdir(dir, { recursive: true });
-        const localPath = join(dir, resolvedName);
-        await writeFile(localPath, bytes, { mode: 0o600 });
-
-        // 5. Return text content for small text files
-        const fileSize = bytes.byteLength;
-        let text: string | undefined;
-        if (fileSize <= MAX_TEXT_BYTES && isTextFile(resolvedName, mime_type)) {
-          text = bytes.toString("utf-8");
-        }
-
-        cancelTyping();
-        return toResult({
-          local_path: localPath,
-          file_name: displayName,
-          mime_type: mime_type ?? null,
-          file_size: fileSize,
-          ...(text !== undefined ? { text } : {}),
-        });
-      } catch (err) {
-        cancelTyping();
-        return toError(err);
-      }
-    }
+    handleDownloadFile,
   );
+}
+
+export async function handleDownloadFile({ file_id, file_name, mime_type, token }: {
+  file_id: string;
+  file_name?: string;
+  mime_type?: string;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  try {
+    await showTyping(30);
+    const botToken = process.env.BOT_TOKEN;
+    if (!botToken) {
+      return toError({ code: "UNKNOWN" as const, message: "BOT_TOKEN not set — cannot download file." });
+    }
+
+    // 1. Resolve file path from Telegram
+    const fileInfo = await getApi().getFile(file_id);
+    if (!fileInfo.file_path) {
+      return toError({ code: "UNKNOWN" as const, message: "Telegram returned no file_path for this file_id. The file may be too large (>20 MB) or expired." });
+    }
+
+    // 2. Download bytes
+    const url = `https://api.telegram.org/file/bot${botToken}/${fileInfo.file_path}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      return toError({ code: "UNKNOWN" as const, message: `Download failed: ${res.status} ${res.statusText}` });
+    }
+    const bytes = Buffer.from(await res.arrayBuffer());
+
+    // 3. Determine local file name (sanitized to prevent path traversal; timestamp prefix prevents collisions)
+    const rawName = file_name ?? fileInfo.file_path.split("/").pop() ?? "file";
+    const displayName = basename(rawName).replace(/^\.+/, "") || "file";
+    const resolvedName = `${Date.now()}_${displayName}`;
+
+    // 4. Save to temp directory with restricted permissions
+    const dir = join(tmpdir(), "telegram-bridge-mcp");
+    await mkdir(dir, { recursive: true });
+    const localPath = join(dir, resolvedName);
+    await writeFile(localPath, bytes, { mode: 0o600 });
+
+    // 5. Return text content for small text files
+    const fileSize = bytes.byteLength;
+    let text: string | undefined;
+    if (fileSize <= MAX_TEXT_BYTES && isTextFile(resolvedName, mime_type)) {
+      text = bytes.toString("utf-8");
+    }
+
+    cancelTyping();
+    return toResult({
+      local_path: localPath,
+      file_name: displayName,
+      mime_type: mime_type ?? null,
+      file_size: fileSize,
+      ...(text !== undefined ? { text } : {}),
+    });
+  } catch (err) {
+    cancelTyping();
+    return toError(err);
+  }
 }

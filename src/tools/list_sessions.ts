@@ -9,6 +9,15 @@ const DESCRIPTION =
   "Requires a valid token. " +
   "Returns full session details (ID, name, color, createdAt) and the active SID.";
 
+export function handleListSessions({ token }: { token: number }) {
+  const sid = requireAuth(token);
+  if (typeof sid !== "number") return toError(sid);
+
+  const sessions = listSessions();
+  const active = getActiveSession();
+  return toResult({ sessions, active_sid: active });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "list_sessions",
@@ -20,15 +29,6 @@ export function register(server: McpServer) {
         ),
       },
     },
-    (args: { token: number }) => {
-      const { token } = args;
-
-      const sid = requireAuth(token);
-      if (typeof sid !== "number") return toError(sid);
-
-      const sessions = listSessions();
-      const active = getActiveSession();
-      return toResult({ sessions, active_sid: active });
-    },
+    handleListSessions,
   );
 }

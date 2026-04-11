@@ -29,6 +29,7 @@ vi.mock("../session-manager.js", () => ({
   getActiveSession: () => mocks.getActiveSession(),
   activeSessionCount: () => mocks.activeSessionCount(),
   touchSession: (sid: number) => { mocks.touchSession(sid); },
+  setDequeueIdle: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -45,7 +46,7 @@ vi.mock("../session-queue.js", () => ({
 }));
 
 import { register } from "./set_dequeue_default.js";
-import { register as registerDequeue } from "./dequeue_update.js";
+import { register as registerDequeue } from "./dequeue.js";
 
 interface DequeueResult {
   updates?: unknown[];
@@ -143,10 +144,10 @@ describe("set_dequeue_default tool", () => {
 });
 
 // =========================================================================
-// Integration: set_dequeue_default affects dequeue_update gate logic
+// Integration: set_dequeue_default affects dequeue gate logic
 // =========================================================================
 
-describe("integration: set_dequeue_default affects dequeue_update gate", () => {
+describe("integration: set_dequeue_default affects dequeue gate", () => {
   let callDequeue: (args: Record<string, unknown>, extra?: Record<string, unknown>) => Promise<unknown>;
   let callSetDefault: (args: Record<string, unknown>) => Promise<unknown>;
 
@@ -165,7 +166,7 @@ describe("integration: set_dequeue_default affects dequeue_update gate", () => {
     const server = createMockServer();
     registerDequeue(server);
     register(server);
-    callDequeue = server.getHandler("dequeue_update");
+    callDequeue = server.getHandler("dequeue");
     callSetDefault = server.getHandler("set_dequeue_default");
   });
 

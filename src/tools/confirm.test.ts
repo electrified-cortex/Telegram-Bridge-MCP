@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
+  editMessageCaption: vi.fn(),
   pollButtonOrTextOrVoice: vi.fn(),
   ackAndEditSelection: vi.fn(),
   editWithSkipped: vi.fn(),
@@ -21,6 +22,20 @@ const mocks = vi.hoisted(() => ({
     pendingCount: vi.fn(() => 0),
   },
   peekSessionCategories: vi.fn((_sid: number) => undefined as Record<string, number> | undefined),
+  // voice-path mocks
+  resolveChat: vi.fn((): number => 42),
+  validateText: vi.fn((): null => null),
+  validateCallbackData: vi.fn((): null => null),
+  sendVoiceDirect: vi.fn(),
+  isTtsEnabled: vi.fn((): boolean => true),
+  stripForTts: vi.fn((t: string) => t),
+  synthesizeToOgg: vi.fn(),
+  applyTopicToText: vi.fn((t: string) => t),
+  showTyping: vi.fn(),
+  cancelTyping: vi.fn(),
+  getSessionVoice: vi.fn((): string | null => null),
+  getSessionSpeed: vi.fn((): number | null => null),
+  validateButtonSymbolParity: vi.fn(() => ({ ok: true, withEmoji: [], withoutEmoji: [] })),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -31,8 +46,12 @@ vi.mock("../telegram.js", async (importActual) => {
       sendMessage: mocks.sendMessage,
       answerCallbackQuery: mocks.answerCallbackQuery,
       editMessageText: mocks.editMessageText,
+      editMessageCaption: mocks.editMessageCaption,
     }),
-    resolveChat: () => 42,
+    resolveChat: () => mocks.resolveChat(),
+    // Keep actual validateText and validateCallbackData so error-path tests work
+    // sendVoiceDirect is overridden for voice-path tests
+    sendVoiceDirect: (...args: unknown[]) => mocks.sendVoiceDirect(...args),
   };
 });
 
@@ -66,6 +85,34 @@ vi.mock("../session-queue.js", () => ({
   peekSessionCategories: (sid: number) => mocks.peekSessionCategories(sid),
 }));
 
+vi.mock("../tts.js", () => ({
+  isTtsEnabled: () => mocks.isTtsEnabled(),
+  stripForTts: (t: string) => mocks.stripForTts(t),
+  synthesizeToOgg: (...args: unknown[]) => mocks.synthesizeToOgg(...args),
+}));
+
+vi.mock("../topic-state.js", () => ({
+  applyTopicToText: (t: string, mode?: string) => mocks.applyTopicToText(t, mode),
+}));
+
+vi.mock("../button-validation.js", () => ({
+  validateButtonSymbolParity: (labels: string[]) => mocks.validateButtonSymbolParity(labels),
+}));
+
+vi.mock("../typing-state.js", () => ({
+  showTyping: (...args: unknown[]) => mocks.showTyping(...args),
+  cancelTyping: () => mocks.cancelTyping(),
+}));
+
+vi.mock("../voice-state.js", () => ({
+  getSessionVoice: () => mocks.getSessionVoice(),
+  getSessionSpeed: () => mocks.getSessionSpeed(),
+}));
+
+vi.mock("../config.js", () => ({
+  getDefaultVoice: () => undefined,
+}));
+
 import { register } from "./confirm.js";
 
 const SENT_MSG = { message_id: 5, chat: { id: 42 }, date: 0 };
@@ -82,6 +129,12 @@ describe("confirm tool", () => {
     mocks.validateSession.mockReturnValue(true);
     mocks.ackAndEditSelection.mockResolvedValue(undefined);
     mocks.editWithSkipped.mockResolvedValue(undefined);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.validateCallbackData.mockReturnValue(null);
+    mocks.validateButtonSymbolParity.mockReturnValue({ ok: true, withEmoji: [], withoutEmoji: [] });
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.sessionQueue.pendingCount.mockReturnValue(0);
     const server = createMockServer();
     register(server);
     call = server.getHandler("confirm");
@@ -126,7 +179,7 @@ describe("confirm tool", () => {
     // Wait for async void in hook
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
-      42, 5, "Proceed?", "OK", "cq1",
+      42, 5, "Proceed?", "OK", "cq1", false,
     );
   });
 
@@ -146,7 +199,7 @@ describe("confirm tool", () => {
     hookFn({ content: { data: "confirm_no", qid: "cq1" } });
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
-      42, 5, "Proceed?", "✖️ No", "cq1",
+      42, 5, "Proceed?", "✖️ No", "cq1", false,
     );
   });
 
@@ -190,7 +243,7 @@ describe("confirm tool", () => {
     expect(data.skipped).toBe(true);
     expect(data.text_response).toBe("just do it");
     expect(data.text_message_id).toBe(10);
-    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?");
+    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?", false);
     expect(mocks.clearCallbackHook).toHaveBeenCalledWith(5);
   });
 
@@ -211,10 +264,10 @@ describe("confirm tool", () => {
     expect(isError(result)).toBe(true);
   });
 
-  it("sends with a reply_to_message_id when provided", async () => {
+  it("sends with a reply_to when provided", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", reply_to_message_id: 3, token: 1123456});
+    await call({ text: "Proceed?", reply_to: 3, token: 1123456});
     const sendOpts = mocks.sendMessage.mock.calls[0][2];
     expect(sendOpts.reply_parameters).toEqual({ message_id: 3 });
   });
@@ -234,7 +287,7 @@ describe("confirm tool", () => {
     hookFn();
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.clearCallbackHook).toHaveBeenCalledWith(5);
-    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?");
+    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?", false);
   });
 
   it("callback hook clears message hook on late button press", async () => {
@@ -255,7 +308,7 @@ describe("confirm tool", () => {
     const data = parseResult(result);
     expect(data.skipped).toBe(true);
     expect(data.command).toBe("/start");
-    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?");
+    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?", false);
     expect(mocks.clearCallbackHook).toHaveBeenCalledWith(5);
   });
 
@@ -298,7 +351,7 @@ describe("confirm tool", () => {
     const data = parseResult(result);
     expect(data.skipped).toBe(true);
     // editWithSkipped called by onVoiceDetected
-    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?");
+    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?", false);
     // Should NOT be called a second time because editState.done = true
     expect(mocks.editWithSkipped).toHaveBeenCalledTimes(1);
   });
@@ -344,7 +397,7 @@ describe("confirm tool", () => {
     expect(data.confirmed).toBe(true);
   });
 
-  it("bypasses pending guard when reply_to_message_id is set", async () => {
+  it("bypasses pending guard when reply_to is set", async () => {
     mocks.pendingCount.mockReturnValue(3);
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(
@@ -352,7 +405,7 @@ describe("confirm tool", () => {
     );
     const result = await call({
       text: "Proceed?",
-      reply_to_message_id: 42, token: 1123456});
+      reply_to: 42, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.confirmed).toBe(true);
@@ -382,6 +435,133 @@ describe("identity gate", () => {
 
 });
 
+  // ---------------------------------------------------------------------------
+  // Voice path tests (task 20-346)
+  // ---------------------------------------------------------------------------
+
+  describe("voice: true", () => {
+    const SENT_VOICE_MSG = { message_id: 7 };
+    const BASE_VOICE_ARGS = {
+      text: "Proceed?",
+      yes_text: "OK",
+      no_text: "Cancel",
+      yes_data: "yes",
+      no_data: "no",
+      timeout_seconds: 10,
+      audio: "Proceed?",
+      token: 1_123_456,
+    };
+
+    beforeEach(() => {
+      mocks.isTtsEnabled.mockReturnValue(true);
+      mocks.stripForTts.mockImplementation((t: string) => t);
+      mocks.applyTopicToText.mockImplementation((t: string) => t);
+      mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+      mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
+      mocks.showTyping.mockResolvedValue(undefined);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue({ kind: "button", data: "yes", message_id: 7 });
+      mocks.registerCallbackHook.mockReturnValue(undefined);
+    });
+
+    it("calls applyTopicToText with caption text and Markdown mode in voice path", async () => {
+      await call(BASE_VOICE_ARGS);
+      expect(mocks.applyTopicToText).toHaveBeenCalledWith("Proceed?", "Markdown");
+    });
+
+    it("passes applyTopicToText result as caption to sendVoiceDirect", async () => {
+      mocks.applyTopicToText.mockReturnValue("**[topic]**\nProceed?");
+      await call(BASE_VOICE_ARGS);
+      const captionArg = (mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption: string }])[2].caption;
+      expect(captionArg).toBe("*\\[topic\\]*\nProceed?");
+    });
+
+    it("does NOT pass topic-prefixed text to stripForTts (TTS input stays plain)", async () => {
+      mocks.applyTopicToText.mockReturnValue("**[topic]**\nProceed?");
+      await call(BASE_VOICE_ARGS);
+      expect(mocks.stripForTts).toHaveBeenCalledWith("Proceed?");
+      expect(mocks.stripForTts).not.toHaveBeenCalledWith("**[topic]**\nProceed?");
+    });
+
+    it("truncates caption to MAX_CAPTION (964) when applyTopicToText result exceeds it", async () => {
+      const longText = "x".repeat(1000);
+      mocks.applyTopicToText.mockReturnValue(longText);
+      await call({ ...BASE_VOICE_ARGS, text: longText });
+      const captionArg = (mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption: string }])[2].caption;
+      expect(captionArg.length).toBe(964);
+    });
+
+    it("does not truncate caption that fits within MAX_CAPTION (964)", async () => {
+      const shortText = "Short confirmation question";
+      mocks.applyTopicToText.mockReturnValue(shortText);
+      await call({ ...BASE_VOICE_ARGS, text: shortText });
+      const captionArg = (mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption: string }])[2].caption;
+      expect(captionArg).toBe(shortText);
+      expect(captionArg.length).toBeLessThanOrEqual(964);
+    });
+
+    it("ensures caption + 60-char header budget stays within Telegram 1024-char limit", async () => {
+      const longText = "x".repeat(1000);
+      mocks.applyTopicToText.mockReturnValue(longText);
+      await call({ ...BASE_VOICE_ARGS, text: longText });
+      const captionArg = (mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption: string }])[2].caption;
+      expect(captionArg.length + 60).toBeLessThanOrEqual(1024);
+    });
+
+    it("returns TTS_NOT_CONFIGURED error when TTS is disabled", async () => {
+      mocks.isTtsEnabled.mockReturnValue(false);
+      const result = await call(BASE_VOICE_ARGS);
+      expect(isError(result)).toBe(true);
+    });
+
+    it("returns EMPTY_MESSAGE error when stripForTts produces empty string", async () => {
+      mocks.stripForTts.mockReturnValue("");
+      const result = await call(BASE_VOICE_ARGS);
+      expect(isError(result)).toBe(true);
+    });
+
+    it("calls ackAndEditSelection with isVoice=true when button pressed on voice message", async () => {
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue({ kind: "button", data: "yes", message_id: 7 });
+      await call(BASE_VOICE_ARGS);
+      // Simulate the callback hook firing
+      const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
+      hookFn({ content: { data: "yes", qid: "cq1" } });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
+        42, 7, "Proceed?", "OK", "cq1", true,
+      );
+      expect(mocks.editMessageText).not.toHaveBeenCalled();
+    });
+
+    it("calls editWithSkipped with isVoice=true when user types instead of pressing button (voice message)", async () => {
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue({ kind: "text", message_id: 10, text: "skip it" });
+      const result = await call(BASE_VOICE_ARGS);
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.skipped).toBe(true);
+      expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 7, "Proceed?", true);
+    });
+
+    it("calls editWithSkipped with isVoice=true via onVoiceDetected before poll resolves", async () => {
+      const voiceResult = { kind: "voice", message_id: 11, text: "do it" };
+      mocks.pollButtonOrTextOrVoice.mockImplementation((...args: unknown[]) => {
+        const onVoiceDetected = args[3] as () => void;
+        onVoiceDetected();
+        return Promise.resolve(voiceResult);
+      });
+      await call(BASE_VOICE_ARGS);
+      expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 7, "Proceed?", true);
+    });
+
+    it("calls editWithSkipped with isVoice=true when message hook fires after timeout on voice message", async () => {
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
+      await call(BASE_VOICE_ARGS);
+      const hookFn = mocks.registerMessageHook.mock.calls[0][1];
+      hookFn();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 7, "Proceed?", true);
+    });
+  });
+
 });
 
 describe("confirmYN tool", () => {
@@ -393,6 +573,10 @@ describe("confirmYN tool", () => {
     mocks.ackAndEditSelection.mockResolvedValue(undefined);
     mocks.editWithSkipped.mockResolvedValue(undefined);
     mocks.sessionQueue.pendingCount.mockReturnValue(0);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.validateCallbackData.mockReturnValue(null);
+    mocks.validateButtonSymbolParity.mockReturnValue({ ok: true, withEmoji: [], withoutEmoji: [] });
     const server = createMockServer();
     register(server);
     call = server.getHandler("confirmYN");
@@ -406,7 +590,7 @@ describe("confirmYN tool", () => {
     hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
-      42, 5, "Are you sure?", "🟢 Yes", "cq1",
+      42, 5, "Are you sure?", "🟢 Yes", "cq1", false,
     );
   });
 
@@ -418,7 +602,7 @@ describe("confirmYN tool", () => {
     hookFn({ content: { data: "confirm_no", qid: "cq1" } });
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
-      42, 5, "Are you sure?", "🔴 No", "cq1",
+      42, 5, "Are you sure?", "🔴 No", "cq1", false,
     );
   });
 

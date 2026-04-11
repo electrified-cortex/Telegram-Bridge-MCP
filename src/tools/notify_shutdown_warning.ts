@@ -17,6 +17,34 @@ const DESCRIPTION =
   "Does NOT shut down the server — call `shutdown` separately when ready. " +
   "Returns the count of sessions notified.";
 
+export function handleNotifyShutdownWarning({ token, reason, wait_seconds }: {
+  token: number;
+  reason?: string;
+  wait_seconds?: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  const others = listSessions().filter(s => s.sid !== _sid);
+  if (others.length === 0) {
+    return toResult({ notified: 0, message: "No other sessions active" });
+  }
+
+  const parts: string[] = [BASE_WARNING];
+  if (reason) parts.push(`Reason: ${reason}`);
+  if (typeof wait_seconds === "number") {
+    parts.push(`Estimated restart time: ~${wait_seconds}s`);
+  }
+  const text = parts.join("\n");
+
+  let notified = 0;
+  for (const s of others) {
+    if (deliverDirectMessage(_sid, s.sid, text)) notified++;
+  }
+
+  return toResult({ notified });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "notify_shutdown_warning",
@@ -38,28 +66,6 @@ export function register(server: McpServer) {
           .describe("Optional estimated wait time in seconds before restart"),
       },
     },
-    ({ token, reason, wait_seconds }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      const others = listSessions().filter(s => s.sid !== _sid);
-      if (others.length === 0) {
-        return toResult({ notified: 0, message: "No other sessions active" });
-      }
-
-      const parts: string[] = [BASE_WARNING];
-      if (reason) parts.push(`Reason: ${reason}`);
-      if (typeof wait_seconds === "number") {
-        parts.push(`Estimated restart time: ~${wait_seconds}s`);
-      }
-      const text = parts.join("\n");
-
-      let notified = 0;
-      for (const s of others) {
-        if (deliverDirectMessage(_sid, s.sid, text)) notified++;
-      }
-
-      return toResult({ notified });
-    },
+    handleNotifyShutdownWarning,
   );
 }

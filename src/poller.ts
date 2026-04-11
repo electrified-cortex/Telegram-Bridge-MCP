@@ -6,7 +6,7 @@
  * The three-phase reaction lifecycle (✍ → � → 🫡) is managed across the pipeline:
  *   ✍  = transcribing (set by poller)
  *   😴 = queued, waiting for agent (set by poller after transcription)
- *   🫡 = acknowledged by agent (set by dequeue_update on receipt)
+ *   🫡 = acknowledged by agent (set by dequeue on receipt)
  */
 
 import type { Update } from "grammy/types";
@@ -262,7 +262,7 @@ async function _transcribeAndRecord(u: Update): Promise<void> {
     // Phase 2: patch transcribed text and notify waiters
     // Capture waiter status before patching — if the specific session queue
     // that holds this voice message already has an agent blocked in
-    // dequeue_update, it will be notified immediately and set 🫡 itself.
+    // dequeue, it will be notified immediately and set 🫡 itself.
     // Using hasSessionWaiterForMessage (not hasAnySessionWaiter) ensures a
     // governor waiter on a *different* session does not suppress 😴 for a
     // message routed to a worker with no active waiter.

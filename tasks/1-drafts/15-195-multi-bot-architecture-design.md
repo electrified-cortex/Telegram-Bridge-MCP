@@ -15,7 +15,7 @@ Depends: 15-193
 
 Part of the **Bot API 9.6 epic**. This is the architectural design task that
 determines how the bridge evolves from single-bot to multi-bot operation.
-See full analysis at `cortex.lan/docs/research/2026-04-03-bot-api-96-analysis.md`.
+See full analysis in the bridge repo research docs.
 
 Related tasks: 10-192 (foundation), 15-193 (prerequisite — raw API tools)
 

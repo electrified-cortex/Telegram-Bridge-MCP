@@ -36,11 +36,11 @@ Port valuable governance patterns from `cortex.lan` workspace to this repo's age
 
 6. **Enhanced severity model** in code reviewer (Critical/Major/Minor/Info)
 
-## Source Files (cortex.lan)
+## Source Files (bridge repo)
 
-- `d:\Users\essence\Development\cortex.lan\cortex.lan\.github\copilot-instructions.md`
-- `d:\Users\essence\Development\cortex.lan\cortex.lan\.github\agents\adversarial-reviewer.agent.md`
-- `d:\Users\essence\Development\cortex.lan\cortex.lan\.github\agents\curator.agent.md` (identity sections)
+- `.github/copilot-instructions.md`
+- `.github/agents/adversarial-reviewer.agent.md`
+- `.github/agents/curator.agent.md` (identity sections)
 
 ## Acceptance Criteria
 

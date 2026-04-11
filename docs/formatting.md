@@ -86,18 +86,19 @@ Use for simple one-liner status messages.
 
 ---
 
-## notify tool
+## `send(type: "notification")` tool
 
-The `notify` tool accepts an optional `parse_mode` parameter.
+The `send(type: "notification", ...)` call accepts an optional `parse_mode` parameter.
 Default is `"Markdown"` — write standard Markdown in the text field and it
 is auto-converted.
 
 ```json
 {
+  "type": "notification",
   "title": "Build finished",
   "text": "Deployed **v1.2.3** to `production` — all tests passed.",
   "severity": "success"
 }
 ```
 
-Note: the `title` is always rendered bold by `notify` regardless of `parse_mode`.
+Note: the `title` is always rendered bold by `send(type: "notification")` regardless of `parse_mode`.

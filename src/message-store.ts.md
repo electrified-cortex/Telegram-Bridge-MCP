@@ -1,7 +1,7 @@
 # V3 — Message Store Architecture
 
 > Replaces opt-in session recording with an always-on message store.
-> Replaces four polling tools with one universal `dequeue_update`.
+> Replaces four polling tools with one universal `dequeue`.
 > Net result: fewer tools, less agent ceremony, lower token cost.
 
 ---
@@ -32,7 +32,7 @@ Telegram Bot API
 │  Outbound → timeline + index (no enqueue)        │
 └──────┬───────────────┬───────────────────────────┘
        │               │
-   dequeue_update   get_message
+   dequeue   get_message
    (sequential)     (random access)
        │
        ▼
@@ -40,7 +40,7 @@ Telegram Bot API
 ```
 
 - **Producer:** Background poller → `store.recordInbound(update)`
-- **Consumer:** Agent calls `dequeue_update` to consume sequentially
+- **Consumer:** Agent calls `dequeue` to consume sequentially
 - **Index:** `get_message(id, version?)` for random access
 - **Dump:** `dump_session_record()` returns the full timeline as JSON
 
@@ -142,7 +142,7 @@ Telegram delivers `edited_message` updates for user edits. These **silently
 overwrite** the `-1` entry in the store so `get_message` stays accurate, but:
 
 - No version history is created (no `0`, `1`, `2` slots)
-- Not enqueued for `dequeue_update`
+- Not enqueued for `dequeue`
 
 Once the agent has dequeued and acted on the original, the edit is irrelevant.
 If the user wants to correct course, they'll send a new message.
@@ -163,7 +163,7 @@ If the user wants to correct course, they'll send a new message.
 
 ### Bot-Sent Messages
 
-Messages sent by the bot are **indexed** (available via `get_message`) but **NOT enqueued** for `dequeue_update`. The agent already has the `message_id` from the send response — there's no reason to echo it back through the queue.
+Messages sent by the bot are **indexed** (available via `get_message`) but **NOT enqueued** for `dequeue`. The agent already has the `message_id` from the send response — there's no reason to echo it back through the queue.
 
 ### Ephemeral Messages (Not Logged)
 
@@ -196,7 +196,7 @@ The queue has two lanes:
 | **Response lane** | Reactions, callback queries — updates that reference an existing message | **High** (drained first) |
 | **Message lane** | New inbound messages, commands, media | Normal |
 
-`dequeue_update` always drains the response lane before the message lane. This ensures the agent processes context about messages it already knows about (reactions, button presses) before being handed new work.
+`dequeue` always drains the response lane before the message lane. This ensures the agent processes context about messages it already knows about (reactions, button presses) before being handed new work.
 
 Classification is simple:
 
@@ -233,7 +233,7 @@ Voice message arrives
 
 **Why preemptive?**
 
-- **Zero latency for the agent.** By the time `dequeue_update` returns, the voice is already text. The agent never blocks on transcription.
+- **Zero latency for the agent.** By the time `dequeue` returns, the voice is already text. The agent never blocks on transcription.
 - **Faster interaction.** The user sends a voice note, sees ✍ immediately, then � within seconds. The transcription happens in parallel with whatever the agent is currently doing.
 - **Simpler agent code.** Voice messages arrive as `{ type: "voice", text: "..." }` — same shape as text messages, just with a different type tag. No special handling needed.
 - **Audio discarded.** After transcription, the voice audio is not retained. No `file_id` on the content, no `_update` stored. The event is pure text. See [File Retention Policy](#file-retention-policy).
@@ -269,11 +269,11 @@ for (const update of batch) {
 
 ### Queue Lanes
 
-Two `Queue<QueueItem>` instances — `_responseLane` and `_messageLane`. `dequeue_update` calls `_responseLane.dequeue()` first; falls through to `_messageLane.dequeue()` only when the response lane is empty. Both are unbounded — the agent's consumption is the only drain.
+Two `Queue<QueueItem>` instances — `_responseLane` and `_messageLane`. `dequeue` calls `_responseLane.dequeue()` first; falls through to `_messageLane.dequeue()` only when the response lane is empty. Both are unbounded — the agent's consumption is the only drain.
 
 ### `pending` Count
 
-Every `dequeue_update` response includes a `pending` field — the number of updates still waiting in the queue after the current batch is consumed.
+Every `dequeue` response includes a `pending` field — the number of updates still waiting in the queue after the current batch is consumed.
 
 ```jsonc
 // With pending messages:
@@ -289,7 +289,7 @@ Every `dequeue_update` response includes a `pending` field — the number of upd
 
 ## Compact Dequeue Format
 
-`dequeue_update` returns events in their `TimelineEvent` format — but with `_update` stripped and `timestamp` omitted (the agent doesn't need raw Telegram data or timestamps to act). The result is compact:
+`dequeue` returns events in their `TimelineEvent` format — but with `_update` stripped and `timestamp` omitted (the agent doesn't need raw Telegram data or timestamps to act). The result is compact:
 
 ```jsonc
 // Text
@@ -329,7 +329,7 @@ The `pending` count in every dequeue response gives the agent full control over 
 2. **Check `pending`.** If `pending > 0`, dequeue the next update.
 3. **If the next update is a continuation** (reply to the same thread, follow-up message), handle it together with the current work.
 4. **If the next update is unrelated** (new topic, different request), **park it** — acknowledge receipt to the user (e.g. react 👀), finish the current task first, then come back to the parked message.
-5. **If `pending` is 0**, call `dequeue_update` with a timeout to block for the next message.
+5. **If `pending` is 0**, call `dequeue` with a timeout to block for the next message.
 
 This prevents the agent from context-switching on every message while still staying responsive. The response lane priority ensures reactions and button presses (which are quick to handle) never get stuck behind a long queue of new messages.
 
@@ -345,7 +345,7 @@ V2 has **40 tools**. V3 targets **29** — a 28% reduction.
 
 ### Philosophy
 
-1. **One tool per concept.** Five media tools → one `send_file`. Four polling tools → one `dequeue_update`.
+1. **One tool per concept.** Five media tools → one `send_file`. Four polling tools → one `dequeue`.
 2. **Parameters over tools.** `cancel_typing` → `show_typing` with `cancel: true`. `unpin_message` → `pin_message` with `unpin: true`.
 3. **Keep semantic tools that save tokens.** `notify` formats a severity-prefixed notification in one call. Without it, the agent would build `"ℹ️ **Title**\n\nbody"` every time — wasted tokens and formatting bugs. Keep it.
 4. **Compound tools stay.** `ask`, `choose`, `confirm` handle the full send→wait→cleanup cycle internally. The alternative is 3–5 tool calls. Keep them.
@@ -354,10 +354,10 @@ V2 has **40 tools**. V3 targets **29** — a 28% reduction.
 
 | Tool | Reason |
 | --- | --- |
-| `wait_for_message` | → `dequeue_update` |
-| `wait_for_callback_query` | → `dequeue_update` |
-| `get_update` | → `dequeue_update` |
-| `get_updates` | → `dequeue_update` |
+| `wait_for_message` | → `dequeue` |
+| `wait_for_callback_query` | → `dequeue` |
+| `get_update` | → `dequeue` |
+| `get_updates` | → `dequeue` |
 | `start_session_recording` | Always on — no opt-in |
 | `cancel_session_recording` | Always on — no cancel |
 | `get_session_updates` | → `dump_session_record` |
@@ -371,7 +371,7 @@ V2 has **40 tools**. V3 targets **29** — a 28% reduction.
 
 | Tool | Parameters | Description |
 | --- | --- | --- |
-| `dequeue_update` | `timeout?: number` | Consume the next update from the queue (response lane first, then message lane). Blocks up to `timeout` seconds if queue is empty. Returns compact format + `pending` count. |
+| `dequeue` | `timeout?: number` | Consume the next update from the queue (response lane first, then message lane). Blocks up to `timeout` seconds if queue is empty. Returns compact format + `pending` count. |
 | `get_message` | `message_id: number, version?: number` | Random-access lookup. Default version = latest; `0` = original; `1`+ = edit history. Full detail including media metadata and `file_id`. |
 | `show_animation` | `frames?, interval?, timeout?` | Start a server-managed cycling visual placeholder. See [Message Animation & Streaming](#message-animation--streaming). |
 | `cancel_animation` | `text?, parse_mode?` | Stop animation. Optionally replace placeholder with a real message. |
@@ -440,7 +440,7 @@ These consume from the queue internally — the agent never sees the raw callbac
 
 | # | Tool | Category | Notes |
 | --- | --- | --- | --- |
-| 1 | `dequeue_update` | **Polling** | Universal consumption — replaces 4 tools |
+| 1 | `dequeue` | **Polling** | Universal consumption — replaces 4 tools |
 | 2 | `get_message` | **Polling** | Random-access lookup by message_id + version |
 | 3 | `send_text` | **Send** | Text messages. Always logged. |
 | 4 | `send_text_as_voice` | **Send** | TTS → voice note |
@@ -544,7 +544,7 @@ show_animation({
 | `send_text`, `notify`, `send_file`, `send_text_as_voice` | `get_me`, `get_chat`, `get_agent_guide` |
 | `edit_message_text`, `append_text` | `set_commands`, `set_topic` |
 | `delete_message`, `forward_message` | `download_file`, `transcribe_voice` |
-| `set_reaction`, `pin_message` | `dequeue_update`, `get_message` |
+| `set_reaction`, `pin_message` | `dequeue`, `get_message` |
 | `ask`, `choose`, `confirm` (send internally) | `dump_session_record`, `shutdown` |
 | `send_new_checklist`, `show_typing`, `send_chat_action` | |
 
@@ -955,8 +955,8 @@ Agents register custom slash commands via `set_commands`. Users type them in Tel
 | --- | --- | --- | --- |
 | Built-in command (`/session`) | **No** | **No** | **No** |
 | Built-in command **output** (dump file sent by bot) | **Yes** | No (bot-sent) | Via `get_message` |
-| Agent command (`/cancel`) | **Yes** | **Yes** | **Yes** via `dequeue_update` |
-| Unknown command (`/foo`) | **Yes** | **Yes** | **Yes** via `dequeue_update` |
+| Agent command (`/cancel`) | **Yes** | **Yes** | **Yes** via `dequeue` |
+| Unknown command (`/foo`) | **Yes** | **Yes** | **Yes** via `dequeue` |
 
 **Key insight:** The built-in command itself is invisible, but its *output* (e.g. a dump file the bot sends) appears in the timeline as a normal bot-sent message. The agent can target that message for `download_file` if needed.
 
@@ -1022,7 +1022,7 @@ One optional question at startup: auto-dump frequency (or set via `AUTO_DUMP_THR
 ### Created
 
 - `src/message-store.ts` — Store implementation
-- `src/tools/dequeue_update.ts` — Universal consumption tool
+- `src/tools/dequeue.ts` — Universal consumption tool
 - `src/tools/get_message.ts` — Random-access lookup tool
 - `src/tools/send_text.ts` — Replaces `send_message.ts` (renamed, voice mode removed)
 - `src/tools/send_file.ts` — Consolidates 5 media tools into one

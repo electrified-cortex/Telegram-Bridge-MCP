@@ -12,7 +12,7 @@ The current server is built around a strict single-user / single-chat contract:
 
 - Every inbound update is from *one* trusted operator.
 - Every outbound message goes to *one* configured chat.
-- `dequeue_update` returns the *next* queued update from one trusted operator — no routing needed.
+- `dequeue` returns the *next* queued update from one trusted operator — no routing needed.
 
 Group chat breaks every one of those assumptions. Rather than bolt-on conditionals that weaken the 1-on-1 security story, this edition starts fresh with group-native assumptions.
 
@@ -73,9 +73,9 @@ A single group produces messages from multiple users at once. The agent needs to
 
 ---
 
-### 4. The `dequeue_update` Problem
+### 4. The `dequeue` Problem
 
-Currently `dequeue_update` returns the *next* update from the operator. In a group that contract is undefined.
+Currently `dequeue` returns the *next* update from the operator. In a group that contract is undefined.
 
 Group-native replacement must:
 
@@ -83,7 +83,7 @@ Group-native replacement must:
 2. Accept a `user_id` filter — optionally limit to the user who triggered the session.
 3. Include `from` in every returned update (who said it, their display name).
 
-A new `wait_for_reply` tool may be cleaner than extending `dequeue_update` with thread-scoping.
+A new `wait_for_reply` tool may be cleaner than extending `dequeue` with thread-scoping.
 
 ---
 
@@ -106,7 +106,7 @@ A **session context** struct — `{ chat_id, thread_root_message_id, user_id }` 
 In a group with multiple bots, one bot's reply can trigger another. Must filter out:
 
 - Messages where `from.is_bot === true`
-- Our own messages (match against `get_me()` result)
+- Our own messages (match against the bot identity result, e.g. `help(topic: "identity", token: …)`, using the bot's user id and/or username)
 
 ---
 

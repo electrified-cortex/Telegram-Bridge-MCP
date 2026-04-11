@@ -9,6 +9,25 @@ const DESCRIPTION =
   "Returns filenames sorted oldest-first. Log content never transits Telegram — " +
   "use get_log to read a specific file.";
 
+export function handleListLogs({ token }: { token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  const archived = listLogs();
+  const current = getCurrentLogFilename();
+  return {
+    content: [{
+      type: "text" as const,
+      text: JSON.stringify({
+        logging_enabled: isLoggingEnabled(),
+        current_log: current,
+        archived_logs: archived,
+        archived_count: archived.length,
+      }, null, 2),
+    }],
+  };
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "list_logs",
@@ -18,23 +37,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      const archived = listLogs();
-      const current = getCurrentLogFilename();
-      return {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            logging_enabled: isLoggingEnabled(),
-            current_log: current,
-            archived_logs: archived,
-            archived_count: archived.length,
-          }, null, 2),
-        }],
-      };
-    }
+    handleListLogs,
   );
 }

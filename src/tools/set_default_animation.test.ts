@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   setSessionDefault: vi.fn(),
   resetSessionDefault: vi.fn(),
   registerPreset: vi.fn(),
+  getPreset: vi.fn(),
   getDefaultFrames: vi.fn(),
   listPresets: vi.fn(),
   listBuiltinPresets: vi.fn(),
@@ -24,10 +25,11 @@ vi.mock("../animation-state.js", async (importActual) => {
     ...actual,
     setSessionDefault: mocks.setSessionDefault,
     resetSessionDefault: mocks.resetSessionDefault,
-    registerPreset: mocks.registerPreset,
-    getDefaultFrames: mocks.getDefaultFrames,
-    listPresets: mocks.listPresets,
-    listBuiltinPresets: mocks.listBuiltinPresets,
+    registerPreset: (...args: unknown[]) => mocks.registerPreset(...args),
+    getPreset: (...args: unknown[]) => mocks.getPreset(...args),
+    getDefaultFrames: (...args: unknown[]) => mocks.getDefaultFrames(...args),
+    listPresets: (...args: unknown[]) => mocks.listPresets(...args),
+    listBuiltinPresets: () => mocks.listBuiltinPresets(),
   };
 });
 
@@ -95,6 +97,27 @@ describe("set_default_animation tool", () => {
     expect(mocks.resetSessionDefault).toHaveBeenCalledOnce();
     expect(mocks.setSessionDefault).not.toHaveBeenCalled();
     expect(mocks.registerPreset).not.toHaveBeenCalled();
+  });
+
+  // 10-424 regression: set default by preset name
+  it("sets session default from existing preset name (preset param, no frames)", async () => {
+    const workingFrames = ["[   ]", "[=  ]", "[== ]", "[===]"];
+    mocks.getPreset.mockReturnValue(workingFrames);
+    mocks.listPresets.mockReturnValue(["working"]);
+    const result = await call({ preset: "working", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    expect(mocks.getPreset).toHaveBeenCalledWith(1, "working");
+    expect(mocks.setSessionDefault).toHaveBeenCalledWith(1, workingFrames);
+    const data = parseResult(result);
+    expect(data.action).toBe("default_set");
+    expect(data.preset).toBe("working");
+  });
+
+  it("returns error when preset name is unknown", async () => {
+    mocks.getPreset.mockReturnValue(undefined);
+    const result = await call({ preset: "nonexistent", token: 1123456 });
+    expect(isError(result)).toBe(true);
+    expect(mocks.setSessionDefault).not.toHaveBeenCalled();
   });
 
 describe("identity gate", () => {

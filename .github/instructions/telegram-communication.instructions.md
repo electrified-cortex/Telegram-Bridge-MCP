@@ -12,11 +12,11 @@ When Telegram MCP tools are available and the operator has initiated loop mode, 
 ## Session Flow
 
 ```text
-announce ready → dequeue_update (loop) → on message:
+announce ready → dequeue (loop) → on message:
   a) voice? → server already set 🫡 (ackVoiceMessage fires on dequeue) — no manual reaction needed
   b) show thinking animation
   c) plan clear? → switch to working animation
-  d) ready to reply → show_typing → send
+  d) ready to reply → action(type: "show-typing") → send
 → loop
 ```
 
@@ -25,12 +25,12 @@ announce ready → dequeue_update (loop) → on message:
 1. **Reply via Telegram** for every substantive response — not the agent panel.
 2. **`confirm`** for yes/no · **`choose`** for multi-option — always buttons.
 3. **👀 is optional and always temporary.** The server automatically manages voice reactions (✍ while transcribing, 😴 if queued, 🫡 when dequeued) — no agent action needed for voice. You may set 👀 voluntarily on any message (`temporary: true`, omit `restore_emoji`). Skip 👀 on text messages entirely. See `docs/behavior.md` § *👀 rules* for the full table.
-4. **`show_typing`** just before sending a reply — signals response is imminent, not a generic receipt.
+4. **`action(type: "show-typing")`** just before sending a reply — signals response is imminent, not a generic receipt.
 5. **Watch `pending`.** Non-zero means the operator sent more while you were working — check before acting.
-6. **Announce before major actions** (`send_text` or `notify`). Require `confirm` for destructive/irreversible ones.
-7. **`dequeue_update` again** after every task, timeout, or error — loop forever.
+6. **Announce before major actions** (`send` or `send(type: "notification")`). Require `confirm` for destructive/irreversible ones.
+7. **`dequeue` again** after every task, timeout, or error — loop forever.
 8. **Never assume silence means approval.**
-9. **Voice by default.** Use `send_text_as_voice` for conversational replies, explanations, and status updates. Reserve `send_text` for structured content that benefits from Markdown formatting (tables, code blocks, bulleted lists, task boards). When in doubt, use voice.
+9. **Voice by default.** Use `send(audio: ...)` for conversational replies, explanations, and status updates. Reserve `send(text: ...)` for structured content that benefits from Markdown formatting (tables, code blocks, bulleted lists, task boards). When in doubt, use voice.
 
 ## Tool Selection
 
@@ -40,15 +40,15 @@ announce ready → dequeue_update (loop) → on message:
 | Yes/No decision | `confirm` |
 | Fixed options | `choose` (blocking) · `send_choice` (non-blocking) |
 | Open-ended input | `ask` |
-| Short status (1–2 sentences) | `notify` |
-| Thinking / considering | `show_animation` (thinking preset) |
-| Executing / working | `show_animation` (working preset) |
-| Response is imminent | `show_typing` |
-| Cancel an animation | `cancel_animation` |
-| Conversational reply | `send_text_as_voice` — **default for most responses** |
-| Structured result / explanation | `send_text` (Markdown) — tables, code, lists |
-| Build / deploy / error event | `notify` with severity |
-| Multi-step task (3+) | `send_new_checklist` + `pin_message` |
+| Short status (1–2 sentences) | `send(type: "notification")` |
+| Thinking / considering | `send(type: "animation")` (thinking preset) |
+| Executing / working | `send(type: "animation")` (working preset) |
+| Response is imminent | `action(type: "show-typing")` |
+| Cancel an animation | `action(type: "animation/cancel")` |
+| Conversational reply | `send(audio: ...)` — **default for most responses** |
+| Structured result / explanation | `send(type: "text")` (Markdown) — tables, code, lists |
+| Build / deploy / error event | `send(type: "notification")` with severity |
+| Multi-step task (3+) | `send(type: "checklist")` |
 | Completed work / ready to proceed | `confirm` (single-button CTA) |
 
 ## Button Design
@@ -62,18 +62,18 @@ announce ready → dequeue_update (loop) → on message:
 
 When waiting for external events (CI, code review, deploy, etc.), **keep the channel alive**:
 
-1. **Use a persistent animation** — `show_animation` with `persistent: true` to signal you are watching.
-2. **Stay in the loop** — call `dequeue_update` (default 300 s) repeatedly; on timeout, check in and loop again.
+1. **Use a persistent animation** — `send(type: "animation")` with `persistent: true` to signal you are watching.
+2. **Stay in the loop** — call `dequeue` (default 300 s) repeatedly; on timeout, check in and loop again.
 3. **Check in proactively** — after each poll cycle, send a brief status update if nothing has changed (e.g., "still waiting on CI...").
 4. **Handle interrupts** — if the operator sends a message during the wait, process it immediately; do not defer until the external event arrives.
-5. **Cancel the animation** before sending any substantive reply — `cancel_animation` turns it into a permanent status message.
+5. **Cancel the animation** before sending any substantive reply — `action(type: "animation/cancel")` turns it into a permanent status message.
 6. **Never go silent** — an animation without a check-in loop looks like a hung process. Proactive updates build trust.
 
 ## Visible Presence
 
-Use `show_animation` as the default "I am thinking / working" signal.
-Use `send_new_progress` only when you intend to update the same progress message over time.
-Use `send_new_checklist` only for real multi-step tracked workflows.
+Use `send(type: "animation")` as the default "I am thinking / working" signal.
+Use `send(type: "progress")` only when you intend to update the same progress message over time.
+Use `send(type: "checklist")` only for real multi-step tracked workflows.
 Do not create progress or checklist artifacts for one-shot status signaling.
 
 ## Common Failure Modes
@@ -81,8 +81,8 @@ Do not create progress or checklist artifacts for one-shot status signaling.
 Avoid these patterns:
 
 - Replying in VS Code chat while loop mode is active
-- Restarting or recovering the session when a simple `dequeue_update` call would suffice
+- Restarting or recovering the session when a simple `dequeue` call would suffice
 - Trusting stale memory (stored SID/PIN, old test counts) over live tool state
-- Using progress/checklist tools for presence instead of `show_animation`
+- Using progress/checklist tools for presence instead of `send(type: "animation")`
 - Deleting or mass-editing user-visible messages without explicit approval
 

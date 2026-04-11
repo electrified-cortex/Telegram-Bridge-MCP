@@ -6,21 +6,53 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
-  "Start a server-managed cycling visual placeholder message. The animation " +
-  "auto-cancels after timeout seconds of inactivity. One frame = static placeholder. " +
-  "Multiple frames = cycling animation (min 1000ms interval, default 2000ms). " +
-  "Only one animation at a time — starting a new one cancels the previous. " +
-  "Cancel with cancel_animation, or let it auto-clean on timeout. " +
-  "A single emoji works well as a static placeholder (e.g. [\"🤔\"] or [\"⏳\"]). " +
-  "Avoid cycling multiple emoji-only frames — Telegram renders solo emoji as large animated stickers, so rapid edits look jarring. " +
-  "Pass a preset name to recall saved or built-in frames without re-specifying them. " +
-  "Built-in presets: bounce (default tracer), dots, working, thinking, loading. " +
-  "Two modes: temporary (default) = one-shot, disappears on next bot message or show_typing. " +
-  "Persistent = continuous, restarts after each bot message until explicitly cancelled. " +
-  "By default all regular spaces in frames are replaced with non-breaking spaces to prevent layout shift; " +
-  "set allow_breaking_spaces: true to opt out. " +
-  "Animations are silent by default (no notification). Set notify: true to trigger a notification on the initial placeholder. " +
-  "For a brief native typing indicator in the chat header (seconds, pre-reply), use show_typing instead.";
+  "Post a cycling placeholder message managed by the server. " +
+  "One frame = static; multiple frames = cycling animation (min 1000ms interval). " +
+  "Only one animation runs at a time — new one cancels the previous. " +
+  "Modes: temporary (default, disappears on next bot message) or persistent (restarts after each message). " +
+  "Built-in presets: bounce, dots, working, thinking, loading. " +
+  "Avoid cycling emoji-only frames — Telegram renders solo emoji as large animated stickers. " +
+  "Spaces become non-breaking by default (prevents layout shift); set allow_breaking_spaces: true to opt out. " +
+  "For a native typing indicator in the chat header, use show_typing instead. " +
+  "Call `help(topic: 'show_animation')` for details.";
+
+export async function handleShowAnimation({
+  preset, frames, interval = 1000, timeout = 600, persistent = false,
+  allow_breaking_spaces = false, notify = false, priority = 0, token,
+}: {
+  preset?: string;
+  frames?: string[];
+  interval?: number;
+  timeout?: number;
+  persistent?: boolean;
+  allow_breaking_spaces?: boolean;
+  notify?: boolean;
+  priority?: number;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+
+  // Resolve frames: preset > explicit frames > session default
+  let resolvedFrames: string[] | undefined;
+  if (preset) {
+    const presetFrames = getPreset(_sid, preset);
+    if (!presetFrames) return toError(`Unknown animation preset: "${preset}"`);
+    resolvedFrames = [...presetFrames];
+  } else if (frames) {
+    resolvedFrames = frames;
+  }
+  // undefined → startAnimation uses getDefaultFrames(sid) internally
+
+  try {
+    const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify, priority);
+    return toResult({ message_id, persistent });
+  } catch (err) {
+    return toError(err);
+  }
+}
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -70,29 +102,6 @@ export function register(server: McpServer) {
               token: TOKEN_SCHEMA,
 },
     },
-    async ({ preset, frames, interval, timeout, persistent, allow_breaking_spaces, notify, priority, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-
-      // Resolve frames: preset > explicit frames > session default
-      let resolvedFrames: string[] | undefined;
-      if (preset) {
-        const presetFrames = getPreset(_sid, preset);
-        if (!presetFrames) return toError(`Unknown animation preset: "${preset}"`);
-        resolvedFrames = [...presetFrames];
-      } else if (frames) {
-        resolvedFrames = frames;
-      }
-      // undefined → startAnimation uses getDefaultFrames(sid) internally
-
-      try {
-        const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify, priority);
-        return toResult({ message_id, persistent });
-      } catch (err) {
-        return toError(err);
-      }
-    },
+    handleShowAnimation,
   );
 }

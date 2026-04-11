@@ -12,6 +12,27 @@ const DESCRIPTION =
   "absent keys are untouched. Multiple loads stack. " +
   "Use load_profile after session_start to bootstrap voice, animations, and reminders.";
 
+export function handleLoadProfile({ key, token }: { key: string; token: number }) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+
+  let profile;
+  try {
+    profile = readProfile(key);
+  } catch (err) {
+    return toError({ code: "READ_FAILED", message: (err as Error).message });
+  }
+
+  if (profile === null) {
+    return toError({ code: "NOT_FOUND", message: `Profile not found: ${key}` });
+  }
+
+  const applyResult = applyProfile(_sid, profile);
+  if ("code" in applyResult) return toError(applyResult);
+
+  return toResult({ loaded: true, key, applied: applyResult.applied });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "load_profile",
@@ -29,25 +50,6 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA,
       },
     },
-    ({ key, token }) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-
-      let profile;
-      try {
-        profile = readProfile(key);
-      } catch (err) {
-        return toError({ code: "READ_FAILED", message: (err as Error).message });
-      }
-
-      if (profile === null) {
-        return toError({ code: "NOT_FOUND", message: `Profile not found: ${key}` });
-      }
-
-      const applyResult = applyProfile(_sid, profile);
-      if ("code" in applyResult) return toError(applyResult);
-
-      return toResult({ loaded: true, key, applied: applyResult.applied });
-    },
+    handleLoadProfile,
   );
 }

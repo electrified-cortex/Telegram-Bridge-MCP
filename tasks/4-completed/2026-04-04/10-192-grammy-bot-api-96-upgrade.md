@@ -14,8 +14,7 @@ Gate: Sentinel review required before execution
 ## Epic Context
 
 This is the foundation task for the **Bot API 9.6 epic**. All other 9.6 feature
-tasks depend on this. See the full analysis at
-`cortex.lan/docs/research/2026-04-03-bot-api-96-analysis.md`.
+tasks depend on this. See the full analysis in the bridge repo research docs.
 
 Related tasks: 15-193, 20-194, 15-195
 

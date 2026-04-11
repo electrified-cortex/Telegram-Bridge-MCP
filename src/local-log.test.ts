@@ -1,29 +1,33 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Mock the `fs` module so tests never touch the real filesystem.
+// Mock the `fs` and `fs/promises` modules so tests never touch the real filesystem.
 // ---------------------------------------------------------------------------
 
 const fsMocks = vi.hoisted(() => ({
   existsSync: vi.fn((): boolean => false),
   mkdirSync: vi.fn(),
-  appendFileSync: vi.fn(),
   readFileSync: vi.fn((): string => ""),
   unlinkSync: vi.fn(),
   readdirSync: vi.fn((): string[] => []),
+  appendFile: vi.fn(async (): Promise<void> => {}),
 }));
 
 vi.mock("fs", () => ({
   existsSync: fsMocks.existsSync,
   mkdirSync: fsMocks.mkdirSync,
-  appendFileSync: fsMocks.appendFileSync,
   readFileSync: fsMocks.readFileSync,
   unlinkSync: fsMocks.unlinkSync,
   readdirSync: fsMocks.readdirSync,
 }));
 
+vi.mock("fs/promises", () => ({
+  appendFile: (...args: unknown[]) => fsMocks.appendFile(...(args as [string, string, string])),
+}));
+
 import {
   logEvent,
+  flushCurrentLog,
   rollLog,
   getLog,
   deleteLog,
@@ -39,9 +43,10 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Parse NDJSON lines appended via appendFileSync calls. */
-function allAppendedEvents(): Array<{ ts: string; event: unknown }> {
-  const calls = fsMocks.appendFileSync.mock.calls;
+/** Parse NDJSON lines appended via appendFile calls. */
+async function allAppendedEvents(): Promise<Array<{ ts: string; event: unknown }>> {
+  await flushCurrentLog();
+  const calls = fsMocks.appendFile.mock.calls;
   if (calls.length === 0) return [];
   return calls.flatMap(([, content]: [string, string]) =>
     content.split('\n').filter(Boolean).map(line => JSON.parse(line))
@@ -59,7 +64,9 @@ beforeEach(() => {
   fsMocks.existsSync.mockReturnValue(true);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Drain any in-flight writes before reset to prevent queue bleed between tests.
+  await flushCurrentLog();
   resetLocalLogForTest();
 });
 
@@ -68,11 +75,10 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("logEvent", () => {
-  it("writes events to disk immediately", () => {
+  it("enqueues events for async write", async () => {
     logEvent({ type: "message", text: "hello" });
     logEvent({ type: "message", text: "world" });
-    // Both events are already on disk (no roll needed)
-    const events = allAppendedEvents();
+    const events = await allAppendedEvents();
     expect(events).toHaveLength(2);
     expect(events[0].event).toEqual({ type: "message", text: "hello" });
     expect(events[1].event).toEqual({ type: "message", text: "world" });
@@ -82,14 +88,38 @@ describe("logEvent", () => {
     disableLogging();
     logEvent({ type: "message", text: "ignored" });
     enableLogging();
-    expect(fsMocks.appendFileSync).not.toHaveBeenCalled();
+    expect(fsMocks.appendFile).not.toHaveBeenCalled();
     const filename = rollLog();
     expect(filename).toBeNull();
   });
 
-  it("does not throw when appendFileSync throws", () => {
-    fsMocks.appendFileSync.mockImplementation(() => { throw new Error("disk full"); });
-    expect(() => { logEvent({ type: "event" }); }).not.toThrow();
+  it("does not throw when appendFile rejects", async () => {
+    fsMocks.appendFile.mockRejectedValueOnce(new Error("disk full"));
+    logEvent({ type: "rejected" });
+    logEvent({ type: "batch-lost" });  // same batch — lost with the rejection
+    await expect(flushCurrentLog()).resolves.toBeUndefined();
+    // One batch write was attempted (even though it rejected)
+    expect(fsMocks.appendFile).toHaveBeenCalledTimes(1);
+    // Buffer is empty — a second flush produces no further writes
+    await flushCurrentLog();
+    expect(fsMocks.appendFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushes automatically when timer fires", async () => {
+    vi.useFakeTimers();
+    try {
+      logEvent({ type: "batched" });
+      // timer is pending — no write yet
+      expect(fsMocks.appendFile).not.toHaveBeenCalled();
+      // advance past FLUSH_DELAY_MS
+      await vi.runAllTimersAsync();
+      expect(fsMocks.appendFile).toHaveBeenCalledTimes(1);
+      const [, content] = fsMocks.appendFile.mock.calls[0] as [string, string, string];
+      expect(JSON.parse(content.trim()).event).toEqual({ type: "batched" });
+    } finally {
+      vi.useRealTimers();
+      await flushCurrentLog(); // ensure clean state
+    }
   });
 });
 
@@ -124,20 +154,21 @@ describe("rollLog", () => {
     expect(result).toBeNull();
   });
 
-  it("returns filename after events were written", () => {
+  it("returns filename after events were written", async () => {
     logEvent({ type: "test" });
     const filename = rollLog();
 
     expect(filename).not.toBeNull();
     expect(filename).toMatch(/^\d{4}-\d{2}-\d{2}T\d{6}\.json$/);
-    // appendFileSync was called by logEvent, not rollLog
-    expect(fsMocks.appendFileSync).toHaveBeenCalledOnce();
+    // appendFile is called by logEvent (async), not rollLog
+    await flushCurrentLog();
+    expect(fsMocks.appendFile).toHaveBeenCalledOnce();
   });
 
-  it("writes NDJSON events to disk", () => {
+  it("writes NDJSON events to disk", async () => {
     logEvent({ type: "msg", id: 1 });
     logEvent({ type: "msg", id: 2 });
-    const events = allAppendedEvents();
+    const events = await allAppendedEvents();
     expect(events).toHaveLength(2);
     expect(events.map(e => e.event)).toEqual([{ type: "msg", id: 1 }, { type: "msg", id: 2 }]);
     expect(typeof events[0].ts).toBe("string");
@@ -149,20 +180,20 @@ describe("rollLog", () => {
     expect(result).toBeNull();
   });
 
-  it("creates the logs directory if it does not exist", () => {
+  it("creates the logs directory if it does not exist", async () => {
     fsMocks.existsSync.mockReturnValue(false);
     logEvent({ type: "event" });
     rollLog();
-
+    await flushCurrentLog();
     expect(fsMocks.mkdirSync).toHaveBeenCalledOnce();
   });
 
-  it("returns the archived filename", () => {
+  it("returns the archived filename", async () => {
     logEvent({ type: "event" });
     const archived = rollLog();
-
+    await flushCurrentLog();
     expect(archived).not.toBeNull();
-    const writtenPath = (fsMocks.appendFileSync.mock.calls[0] as [string, string, string])[0];
+    const writtenPath = (fsMocks.appendFile.mock.calls[0] as [string, string, string])[0];
     expect(writtenPath).toContain(archived!);
   });
 

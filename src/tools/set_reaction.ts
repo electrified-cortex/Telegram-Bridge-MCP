@@ -104,14 +104,103 @@ function resolveEmoji(input: string): string[] | null {
 }
 
 const DESCRIPTION =
-  "Sets an emoji reaction on a message. Non-premium bots can set up to 1 " +
-  "reaction per message. Pass an empty string to remove all reactions. " +
-  "Supports semantic aliases like 'thinking', 'done', 'salute', or raw emoji. " +
-  "Set temporary=true to auto-revert the reaction on the next outbound " +
-  "action (or after timeout_seconds). Optionally specify restore_emoji to " +
-  "revert to a specific emoji instead of removing the reaction. " +
-  "Classic use: set 'reading' (👀) with temporary=true to signal " +
-  "'processing' and auto-clear once you reply.";
+  "Set an emoji reaction on a message (max 1 for non-premium bots). " +
+  "Accepts aliases (thinking, done, salute, reading, approve…) or raw emoji; omit/empty to remove. " +
+  "temporary=true auto-reverts on next outbound action or timeout_seconds. " +
+  "Call `help(topic: 'set_reaction')` for details.";
+
+export async function handleSetReaction({ message_id, emoji, is_big, temporary, restore_emoji, timeout_seconds, token }: {
+  message_id: number;
+  emoji?: string;
+  is_big?: boolean;
+  temporary?: boolean;
+  restore_emoji?: string;
+  timeout_seconds?: number;
+  token: number;
+}) {
+  const _sid = requireAuth(token);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+  try {
+    // Resolve alias or raw emoji → ordered candidate array
+    let candidates: string[] = [];
+    let originalFirst: string | undefined;
+    if (emoji) {
+      const resolved = resolveEmoji(emoji);
+      if (!resolved) {
+        return toError({
+          code: "REACTION_EMOJI_INVALID" as const,
+          message: `"${emoji}" is not an allowed reaction emoji.`,
+        });
+      }
+      originalFirst = resolved[0];
+      // Premium shortcut: skip known premium-only emojis for non-premium bots
+      if (_botIsPremium === false && resolved.length > 1) {
+        const free = resolved.filter(c => !PREMIUM_EMOJI.has(c));
+        candidates = free.length > 0 ? free : resolved;
+      } else {
+        candidates = resolved;
+      }
+    }
+
+    // Temporary reaction path — use first (preferred) candidate only, no fallback
+    const isTemp = temporary === true
+      || restore_emoji !== undefined
+      || timeout_seconds !== undefined;
+    if (isTemp) {
+      const [primary] = candidates;
+      if (!primary) {
+        return toError({ code: "REACTION_EMOJI_INVALID" as const, message: "emoji is required for temporary reactions." });
+      }
+      let restoreResolved: ReactionEmoji | undefined;
+      if (restore_emoji) {
+        const r = resolveEmoji(restore_emoji);
+        if (!r) {
+          return toError({ code: "REACTION_EMOJI_INVALID" as const, message: `restore_emoji "${restore_emoji}" is not an allowed reaction emoji.` });
+        }
+        restoreResolved = r[0] as ReactionEmoji;
+      }
+      const ok = await setTempReaction(message_id, primary as ReactionEmoji, restoreResolved, timeout_seconds);
+      if (!ok) return toError({ code: "UNKNOWN" as const, message: "Failed to set reaction — message may be too old or unavailable." });
+      recordBotReaction(message_id, primary);
+      return toResult({ ok: true, message_id, emoji: primary, temporary: true, restore_emoji: restoreResolved ?? null, timeout_seconds: timeout_seconds ?? null });
+    }
+
+    // Permanent reaction — clear if no emoji given
+    if (candidates.length === 0) {
+      await getApi().setMessageReaction(chatId, message_id, [], { is_big });
+      return toResult({ ok: true, message_id, emoji: null, temporary: false });
+    }
+
+    // Permanent reaction — try candidates in order, fall back on REACTION_INVALID
+    for (const [i, candidate] of candidates.entries()) {
+      try {
+        await getApi().setMessageReaction(chatId, message_id, [{ type: "emoji" as const, emoji: candidate as ReactionEmoji }], { is_big });
+        recordBotReaction(message_id, candidate);
+        if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = true;
+        const result: Record<string, unknown> = { ok: true, message_id, emoji: candidate, temporary: false };
+        if (candidate !== originalFirst) {
+          result.requested = originalFirst;
+          result.fallback_used = true;
+          result.reason = "The preferred emoji requires Telegram Premium. Used the closest free alternative.";
+        }
+        return toResult(result);
+      } catch (err) {
+        const isLast = i === candidates.length - 1;
+        if (isReactionInvalid(err) && !isLast) {
+          if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = false;
+          continue;
+        }
+        throw err;
+      }
+    }
+    // Unreachable — loop above always returns or throws
+    throw new Error("reaction fallback loop exhausted");
+  } catch (err) {
+    return toError(err);
+  }
+}
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -154,92 +243,9 @@ export function register(server: McpServer) {
             "next outbound action or this timeout. " +
             "Implies temporary=true.",
           ),
-              token: TOKEN_SCHEMA,
-},
+        token: TOKEN_SCHEMA,
+      },
     },
-    async ({ message_id, emoji, is_big, temporary, restore_emoji, timeout_seconds, token}) => {
-      const _sid = requireAuth(token);
-      if (typeof _sid !== "number") return toError(_sid);
-      const chatId = resolveChat();
-      if (typeof chatId !== "number") return toError(chatId);
-      try {
-        // Resolve alias or raw emoji → ordered candidate array
-        let candidates: string[] = [];
-        let originalFirst: string | undefined;
-        if (emoji) {
-          const resolved = resolveEmoji(emoji);
-          if (!resolved) {
-            return toError({
-              code: "REACTION_EMOJI_INVALID" as const,
-              message: `"${emoji}" is not an allowed reaction emoji.`,
-            });
-          }
-          originalFirst = resolved[0];
-          // Premium shortcut: skip known premium-only emojis for non-premium bots
-          if (_botIsPremium === false && resolved.length > 1) {
-            const free = resolved.filter(c => !PREMIUM_EMOJI.has(c));
-            candidates = free.length > 0 ? free : resolved;
-          } else {
-            candidates = resolved;
-          }
-        }
-
-        // Temporary reaction path — use first (preferred) candidate only, no fallback
-        const isTemp = temporary === true
-          || restore_emoji !== undefined
-          || timeout_seconds !== undefined;
-        if (isTemp) {
-          const [primary] = candidates;
-          if (!primary) {
-            return toError({ code: "REACTION_EMOJI_INVALID" as const, message: "emoji is required for temporary reactions." });
-          }
-          let restoreResolved: ReactionEmoji | undefined;
-          if (restore_emoji) {
-            const r = resolveEmoji(restore_emoji);
-            if (!r) {
-              return toError({ code: "REACTION_EMOJI_INVALID" as const, message: `restore_emoji "${restore_emoji}" is not an allowed reaction emoji.` });
-            }
-            restoreResolved = r[0] as ReactionEmoji;
-          }
-          const ok = await setTempReaction(message_id, primary as ReactionEmoji, restoreResolved, timeout_seconds);
-          if (!ok) return toError({ code: "UNKNOWN" as const, message: "Failed to set reaction — message may be too old or unavailable." });
-          recordBotReaction(message_id, primary);
-          return toResult({ ok: true, message_id, emoji: primary, temporary: true, restore_emoji: restoreResolved ?? null, timeout_seconds: timeout_seconds ?? null });
-        }
-
-        // Permanent reaction — clear if no emoji given
-        if (candidates.length === 0) {
-          await getApi().setMessageReaction(chatId, message_id, [], { is_big });
-          return toResult({ ok: true, message_id, emoji: null, temporary: false });
-        }
-
-        // Permanent reaction — try candidates in order, fall back on REACTION_INVALID
-        for (const [i, candidate] of candidates.entries()) {
-          try {
-            await getApi().setMessageReaction(chatId, message_id, [{ type: "emoji" as const, emoji: candidate as ReactionEmoji }], { is_big });
-            recordBotReaction(message_id, candidate);
-            if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = true;
-            const result: Record<string, unknown> = { ok: true, message_id, emoji: candidate, temporary: false };
-            if (candidate !== originalFirst) {
-              result.requested = originalFirst;
-              result.fallback_used = true;
-              result.reason = "The preferred emoji requires Telegram Premium. Used the closest free alternative.";
-            }
-            return toResult(result);
-          } catch (err) {
-            const isLast = i === candidates.length - 1;
-            if (isReactionInvalid(err) && !isLast) {
-              if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = false;
-              continue;
-            }
-            throw err;
-          }
-        }
-        // Unreachable — loop above always returns or throws
-        throw new Error("reaction fallback loop exhausted");
-      } catch (err) {
-        return toError(err);
-      }
-    }
+    handleSetReaction,
   );
 }

@@ -6,11 +6,13 @@ import { createMockServer, isError, errorCode } from "./test-utils.js";
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   rollLog: vi.fn((): string | null => null),
+  flushCurrentLog: vi.fn(() => Promise.resolve()),
   sendServiceMessage: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("../local-log.js", () => ({
   rollLog: mocks.rollLog,
+  flushCurrentLog: mocks.flushCurrentLog,
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -80,6 +82,14 @@ describe("dump_session_record tool (V4 — local log)", () => {
   it("does not error with valid token", async () => {
     const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
+  });
+
+  it("flushCurrentLog() is called before rollLog()", async () => {
+    const order: string[] = [];
+    mocks.flushCurrentLog.mockImplementation(() => { order.push("flush"); return Promise.resolve(); });
+    mocks.rollLog.mockImplementation(() => { order.push("roll"); return null; });
+    await call({ token: 1123456 });
+    expect(order).toEqual(["flush", "roll"]);
   });
 
   describe("identity gate", () => {

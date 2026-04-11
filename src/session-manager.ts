@@ -17,6 +17,7 @@ export interface Session {
   healthy: boolean;
   announcementMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
+  dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
 }
 
 /** Public view returned by `listSessions` — no PIN. */
@@ -104,27 +105,32 @@ function assignColor(requested?: string, force = false): string {
 // ── Public API ─────────────────────────────────────────────
 
 /**
- * Returns all palette colors ordered by the LRU queue: leftmost = least recently
- * used (freshest for next assignment), rightmost = most recently used.
+ * Returns all palette colors sorted so that **currently unused colors appear
+ * first** (LRU order within group) and **currently in-use colors appear last**
+ * (LRU order within group).
  *
- * If `hint` is a valid palette color that has **never** been assigned, it is
- * moved to the far left (position 0) as the top recommendation. If `hint` has
- * been used before, it stays at its natural LRU position.
+ * If `hint` is a valid palette color, it is always moved to index 0 (first
+ * position) regardless of whether it is currently in use by another session.
  *
  * All 6 colors are always returned regardless of current active-session usage.
  */
 export function getAvailableColors(hint?: string): string[] {
+  const usedColors = new Set([..._sessions.values()].map((s) => s.color));
   const allColors = [..._colorLRU]; // LRU order: [0]=least-recently-used … [5]=most-recently-used
 
+  // Sort: unused colors first (LRU order within group), in-use colors last
+  const sorted = [
+    ...allColors.filter(c => !usedColors.has(c)),
+    ...allColors.filter(c => usedColors.has(c)),
+  ];
+
   if (hint && (COLOR_PALETTE as readonly string[]).includes(hint)) {
-    if (!_everUsedColors.has(hint)) {
-      // Never-used hint: place at far left (top recommendation)
-      return [hint, ...allColors.filter(c => c !== hint)];
-    }
-    // Previously-used hint: leave at natural LRU position
-    return allColors;
+    // Always promote hint to position 0 — this is the agent's requested color
+    // and should be the most prominent button in the approval dialog.
+    // In-use hints are still promoted (sessions may share colors).
+    return [hint, ...sorted.filter(c => c !== hint)];
   }
-  return allColors;
+  return sorted;
 }
 
 export function createSession(name = "", colorHint?: string, forceColor = false): SessionCreateResult {
@@ -185,7 +191,7 @@ export function activeSessionCount(): number {
   return _sessions.size;
 }
 
-/** Record a heartbeat for a session — called by dequeue_update on every poll. */
+/** Record a heartbeat for a session — called by dequeue on every poll. */
 export function touchSession(sid: number): void {
   const s = _sessions.get(sid);
   if (!s) return;
@@ -278,6 +284,30 @@ export function setSessionAnnouncementMessage(sid: number, msgId: number): void 
 /** Return the stored announcement message ID for a session, if any. */
 export function getSessionAnnouncementMessage(sid: number): number | undefined {
   return _sessions.get(sid)?.announcementMsgId;
+}
+
+/** Mark a session as idle (entering dequeue blocking wait) or active (returning from it). */
+export function setDequeueIdle(sid: number, idle: boolean): void {
+  const s = _sessions.get(sid);
+  if (!s) return;
+  s.dequeueIdleAt = idle ? Date.now() : undefined;
+}
+
+/** Return sessions currently in a blocking dequeue wait, with idle duration in ms. */
+export function getIdleSessions(): Array<SessionInfo & { idle_since_ms: number }> {
+  const now = Date.now();
+  return [..._sessions.values()]
+    .map((s) => {
+      if (s.dequeueIdleAt === undefined) return undefined;
+      return {
+        sid: s.sid,
+        name: s.name,
+        color: s.color,
+        createdAt: s.createdAt,
+        idle_since_ms: now - s.dequeueIdleAt,
+      };
+    })
+    .filter((s): s is SessionInfo & { idle_since_ms: number } => s !== undefined);
 }
 
 /**

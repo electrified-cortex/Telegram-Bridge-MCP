@@ -91,11 +91,20 @@ export type TelegramErrorCode =
   | "AUTH_FAILED"
   | "NAME_CONFLICT"
   | "BLOCKED"
+  | "MISSING_CONTENT"
+  | "MISSING_PARAM"
+  | "MISSING_QUESTION_TYPE"
+  | "TTS_NOT_CONFIGURED"
+  | "UNKNOWN_ACTION"
+  | "UNKNOWN_TYPE"
+  | "NOT_GOVERNOR"
   | "UNKNOWN";
 
 export interface TelegramError {
   code: TelegramErrorCode;
   message: string;
+  /** Recovery hint for the caller — what to do next */
+  hint?: string;
   /** Seconds to wait before retrying (only for RATE_LIMITED) */
   retry_after?: number;
   /** The raw Telegram error description for debugging */

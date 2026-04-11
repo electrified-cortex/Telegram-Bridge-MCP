@@ -76,7 +76,7 @@ import { runInSessionContext, getCallerSid } from "./session-context.js";
 import { register as registerConfirm } from "./tools/confirm.js";
 import { register as registerChoose } from "./tools/choose.js";
 import { register as registerCloseSession } from "./tools/close_session.js";
-import { register as registerDequeueUpdate } from "./tools/dequeue_update.js";
+import { register as registerDequeueUpdate } from "./tools/dequeue.js";
 
 // ---------------------------------------------------------------------------
 // Telegram update factories
@@ -107,7 +107,7 @@ let handlers: {
   confirm: ToolHandler;
   choose: ToolHandler;
   close_session: ToolHandler;
-  dequeue_update: ToolHandler;
+  dequeue: ToolHandler;
 };
 
 describe("multi-session callback isolation", () => {
@@ -147,7 +147,7 @@ describe("multi-session callback isolation", () => {
       confirm: server.getHandler("confirm"),
       choose: server.getHandler("choose"),
       close_session: server.getHandler("close_session"),
-      dequeue_update: server.getHandler("dequeue_update"),
+      dequeue: server.getHandler("dequeue"),
     };
   });
 
@@ -200,7 +200,7 @@ describe("multi-session callback isolation", () => {
       handlers.confirm({ text: "Continue?", ignore_pending: true, token: token1 }),
     );
     const sid2Promise = runInSessionContext(sid2, () =>
-      handlers.choose({ question: "Pick a color:", options: opts, ignore_pending: true, token: token2 }),
+      handlers.choose({ text: "Pick a color:", options: opts, ignore_pending: true, token: token2 }),
     );
     await new Promise<void>((r) => { setTimeout(r, 20); });
 

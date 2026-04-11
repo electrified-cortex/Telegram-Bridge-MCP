@@ -1,68 +1,134 @@
 <#
 .SYNOPSIS
-    Claims a task from 2-queued/ by staging a baseline snapshot at 4-completed/
-    and moving the working copy to 3-in-progress/.
+    Claims the next valid task from 2-queued/ by moving it to 3-in-progress/ via git mv.
 
 .DESCRIPTION
-    1. git mv  task from 2-queued/ → 4-completed/YYYY-MM-DD/  (stages baseline)
-    2. Move-Item  from 4-completed/YYYY-MM-DD/ → 3-in-progress/  (working copy)
+    Scans tasks/2-queued/ in priority order (filename sort). For each candidate:
+      1. Skips untracked files (not in git index) — warns and notifies Overseer.
+      2. Skips dirty files (uncommitted working-tree modifications) — warns and notifies Overseer.
+      3. git mv  tasks/2-queued/<file>  →  tasks/3-in-progress/<file>
+         Atomic index + filesystem move. Skips if already claimed (race-safe).
+      4. git commit  (targeted to claim paths only)
 
-    When the task runner finishes and moves the file back to 4-completed/,
-    `git diff` shows only the additions (Findings, Completion sections).
+    git mv is atomic in the index — no intermediate staged state visible to
+    other agents. Eliminates shared index contamination.
+
+    On any failure after mv, the operation rolls back to 2-queued/.
 
 .PARAMETER TaskFile
-    Filename of the task to claim (e.g., "10-040-review-loop-prompt.md").
+    Optional. Preferred task filename (e.g., "10-040-review-loop-prompt.md").
+    If provided, this file is tried first. If invalid, scanning continues with
+    remaining queue files in priority order.
+
+.PARAMETER DryRun
+    When set, prints what would be done without making any changes.
+
+.EXAMPLE
+    .\tasks\claim.ps1
 
 .EXAMPLE
     .\tasks\claim.ps1 10-040-review-loop-prompt.md
+
+.EXAMPLE
+    .\tasks\claim.ps1 -DryRun
 #>
 param(
-    [Parameter(Mandatory)]
-    [string]$TaskFile
+    [string]$TaskFile = "",
+
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
 
-# Validate TaskFile is a plain filename (no directory components)
-if ($TaskFile -match '[/\\]' -or $TaskFile -match '\.\.') {
+# Validate TaskFile if provided (must be a plain filename)
+if ($TaskFile -and ($TaskFile -match '[/\\]' -or $TaskFile -match '\.\.')) {
     Write-Error "TaskFile must be a plain filename, not a path: $TaskFile"
-    return
+    exit 1
 }
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$queuedPath = Join-Path $repoRoot "tasks/2-queued/$TaskFile"
-$date = Get-Date -Format 'yyyy-MM-dd'
-$completedDir = Join-Path $repoRoot "tasks/4-completed/$date"
-$completedPath = Join-Path $completedDir $TaskFile
-$inProgressPath = Join-Path $repoRoot "tasks/3-in-progress/$TaskFile"
+$queueDir = "tasks/2-queued"
 
-if (-not (Test-Path $queuedPath)) {
-    Write-Error "Task not found: $queuedPath"
-    return
-}
-
-if (Test-Path $inProgressPath) {
-    Write-Error "Task already in progress: $inProgressPath"
-    return
-}
-
-# Create completed date directory if needed
-if (-not (Test-Path $completedDir)) {
-    New-Item -ItemType Directory -Path $completedDir -Force | Out-Null
-}
-
-# Step 1: git mv to completed (stages the baseline snapshot)
 Push-Location $repoRoot
-git mv "tasks/2-queued/$TaskFile" "tasks/4-completed/$date/$TaskFile"
-Pop-Location
-if ($LASTEXITCODE -ne 0) { Write-Error "git mv failed"; return }
+try {
+    # Build candidate list: preferred file first (if specified), then remaining queue sorted by name
+    $allQueued = Get-ChildItem -Path "$repoRoot/$queueDir/*.md" -ErrorAction SilentlyContinue |
+        Sort-Object Name | Select-Object -ExpandProperty Name
 
-# Step 2: Move working copy to in-progress
-Move-Item $completedPath $inProgressPath
+    if ($TaskFile) {
+        $candidates = @($TaskFile) + ($allQueued | Where-Object { $_ -ne $TaskFile })
+    } else {
+        $candidates = $allQueued
+    }
 
-Write-Host "Claimed: $TaskFile"
-Write-Host "  Baseline staged in git index at: tasks/4-completed/$date/$TaskFile"
-Write-Host "  Working copy at:    tasks/3-in-progress/$TaskFile"
+    if (-not $candidates) {
+        Write-Error "No tasks found in $queueDir"
+        exit 1
+    }
+
+    $claimed = $null
+
+    foreach ($candidate in $candidates) {
+        $candidatePath = "$repoRoot/$queueDir/$candidate"
+
+        if (-not (Test-Path $candidatePath)) {
+            continue
+        }
+
+        # Gate 1: must be tracked in git index
+        git ls-files --error-unmatch "$queueDir/$candidate" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "SKIP: $candidate — untracked file in queue. Notify Overseer."
+            continue
+        }
+
+        # Gate 2: must be clean (no working-tree modifications)
+        $dirty = git diff --name-only -- "$queueDir/$candidate" 2>$null
+        if ($dirty) {
+            Write-Warning "SKIP: $candidate — dirty (uncommitted modifications) in queue. Notify Overseer."
+            continue
+        }
+
+        if ($DryRun) {
+            Write-Host "[DRY RUN] Would: git mv $queueDir/$candidate -> tasks/3-in-progress/$candidate"
+            Write-Host "[DRY RUN] Would: git commit -m `"pipeline: claim $candidate`""
+            Write-Host ""
+            Write-Host "[DRY RUN] No changes were made."
+            return
+        }
+
+        # Attempt atomic claim
+        git mv "$queueDir/$candidate" "tasks/3-in-progress/$candidate" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            # Race: another Worker claimed it between our checks and mv
+            Write-Warning "SKIP: $candidate — claim race (file already taken)."
+            continue
+        }
+
+        # Commit — targeted to claim paths only
+        git commit -m "pipeline: claim $candidate" -- "$queueDir/$candidate" "tasks/3-in-progress/$candidate"
+        if ($LASTEXITCODE -ne 0) {
+            # Rollback: reverse the git mv
+            git mv "tasks/3-in-progress/$candidate" "$queueDir/$candidate" 2>$null
+            Write-Warning "SKIP: $candidate — commit failed, rolled back."
+            continue
+        }
+
+        $claimed = $candidate
+        break
+    }
+
+    if (-not $claimed) {
+        Write-Error "No claimable tasks found in $queueDir"
+        exit 1
+    }
+
+} finally {
+    Pop-Location
+}
+
+Write-Host "Claimed: $claimed"
+Write-Host "  Working copy at: tasks/3-in-progress/$claimed"
 Write-Host ""
-Write-Host "After task runner finishes, move file to tasks/4-completed/$date/"
-Write-Host "Then 'git diff' shows what changed."
+Write-Host "When done, git mv tasks/3-in-progress/$claimed tasks/4-completed/<date>/$claimed"
+Write-Host "Then git commit and notify the Overseer."
