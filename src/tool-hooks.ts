@@ -69,7 +69,7 @@ export async function invokePreToolHook(
   } catch (err) {
     const errorMessage = formatHookError(err);
     console.error(`Pre-tool hook failed for "${toolName}": ${errorMessage}`);
-    return { allowed: false, reason: `Hook error: ${errorMessage}` };
+    return { allowed: false, reason: "Hook error — see server logs for details." };
   }
 }
 

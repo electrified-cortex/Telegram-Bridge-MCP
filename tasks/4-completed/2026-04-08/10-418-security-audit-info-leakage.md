@@ -1,6 +1,6 @@
 ---
 Created: 2026-04-09
-Status: Queued
+Status: Completed
 Host: local
 Priority: 10-418
 Source: Operator directive — security audit before v6 merge
