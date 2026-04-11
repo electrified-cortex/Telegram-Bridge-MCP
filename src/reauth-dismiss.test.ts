@@ -8,11 +8,11 @@ import { setAuthHook } from "./session-gate.js";
 
 const mocks = vi.hoisted(() => ({
   touchSession: vi.fn(),
-  getSessionReauthDialogMsgId: vi.fn<[number], number | undefined>().mockReturnValue(undefined),
+  getSessionReauthDialogMsgId: vi.fn<(sid: number) => number | undefined>().mockReturnValue(undefined),
   clearSessionReauthDialogMsgId: vi.fn(),
   validateSession: vi.fn().mockReturnValue(true),
   deleteMessage: vi.fn().mockResolvedValue(undefined),
-  resolveChat: vi.fn<[], number | string>().mockReturnValue(100),
+  resolveChat: vi.fn<() => number | string>().mockReturnValue(100),
 }));
 
 vi.mock("./session-manager.js", () => ({
