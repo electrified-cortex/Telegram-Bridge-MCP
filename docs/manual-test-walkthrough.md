@@ -13,7 +13,7 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 1. `pnpm build` — clean
 2. `pnpm lint` — clean
 3. `pnpm test` — all passing
-4. Restart the MCP server (`action("shutdown")` → call any tool to restart)
+4. Restart the MCP server (`action(type: "shutdown")` → call any tool to restart)
 5. `action(type: "session/start")` — fresh session (SID 1)
 6. `action(type: "profile/topic", topic: "🧪 Test")` with a test label
 
@@ -35,9 +35,9 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 | Step | Action | Expected |
 | --- | --- | --- |
 | A2.1 | [Agent] `send("Hello")` | Message appears in Telegram |
-| A2.2 | [Agent] `send(type: "text", keyboard: [...])` with a 2-button inline keyboard | Message + buttons appear |
+| A2.2 | [Agent] `send(type: "choice", options: [...])` with 2 options | Message + buttons appear |
 | A2.3 | [Op] Press a button | [Agent] receives callback via `dequeue` with `data`, `qid`, `target` |
-| A2.4 | [Agent] `action(type: "acknowledge", qid)` | Toast notification shown to operator |
+| A2.4 | [Agent] `action(type: "acknowledge", callback_query_id: "<qid from button press>")` | Toast notification shown to operator |
 | A2.5 | [Agent] `send(type: "notification", title, text, severity: "info")` | Notification appears in chat |
 | A2.6 | [Agent] `send("Hello")` → capture `msg_id` → `action(type: "message/edit", message_id: msg_id, text: new_text)` | Message content updated in-place |
 | A2.7 | [Agent] `send("Hello")` → `send(type: "append", message_id: msg_id, text: extra)` | Message now has original + appended text |
@@ -48,11 +48,11 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 
 | Step | Action | Expected |
 | --- | --- | --- |
-| A3.1 | [Agent] `action("confirm", "Test?")` → [Op] presses Yes | Returns `{ confirmed: true }` |
-| A3.2 | [Agent] `action("confirm", "Test?")` → [Op] presses No | Returns `{ confirmed: false }` |
-| A3.3 | [Agent] `choose(3 options)` → [Op] picks one | Returns `{ label, value }` matching selection |
-| A3.4 | [Agent] `ask("Type something")` → [Op] types response | Returns `{ text }` with operator's input |
-| A3.5 | [Agent] `send_choice(2 options)` → [Op] presses one | Callback received via `dequeue` |
+| A3.1 | [Agent] `send(type: "question", confirm: "Test?")` → [Op] presses Yes | Returns `{ confirmed: true }` |
+| A3.2 | [Agent] `send(type: "question", confirm: "Test?")` → [Op] presses No | Returns `{ confirmed: false }` |
+| A3.3 | [Agent] `send(type: "question", text: "Pick one", choose: [3 options])` → [Op] picks one | Returns `{ label, value }` matching selection |
+| A3.4 | [Agent] `send(type: "question", ask: "Type something")` → [Op] types response | Returns `{ text }` with operator's input |
+| A3.5 | [Agent] `send(type: "choice", options: [2 options])` → [Op] presses one | Callback received via `dequeue` |
 
 ### A4. Animations and Typing
 
@@ -100,7 +100,7 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 | Step | Action | Expected |
 | --- | --- | --- |
 | A9.1 | [Agent] `send(type: "text")` → [Op] replies to it → [Agent] `dequeue` | Reply received with `reply_to` field, `routing: "targeted"` |
-| A9.2 | [Agent] `confirm` → [Op] presses button | Callback has `routing: "targeted"`, `target` = prompt msg\_id |
+| A9.2 | [Agent] `send(type: "question", confirm: "...")` → [Op] presses button | Callback has `routing: "targeted"`, `target` = prompt msg\_id |
 
 ### A10. Edge Cases
 
@@ -131,7 +131,7 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 | --- | --- | --- |
 | B2.1 | [S1] `send(type: "text", text: "I'm S1")` → [Op] replies | Only S1 receives reply (`routing: "targeted"`) |
 | B2.2 | [S2] `send(type: "text", text: "I'm S2")` → [Op] replies | Only S2 receives reply |
-| B2.3 | [S1] `confirm` prompt → [Op] presses button | Only S1 receives callback |
+| B2.3 | [S1] `send(type: "question", confirm: "...")` prompt → [Op] presses button | Only S1 receives callback |
 
 ### B3. Governor Routing
 

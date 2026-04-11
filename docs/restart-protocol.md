@@ -31,7 +31,7 @@ Before issuing the actual shutdown, the Overseer notifies all active worker sess
 1. Identify all active worker sessions (via `action(type: "session/list")` or known SIDs from session startup).
 2. Send each worker a DM via their session:
 
-   > "Heads up — we're shutting down shortly. Your session will be invalidated when the server restarts. **Do not start new work.** Finish your current tool call if safe, then end your agent turn and wait. After the server comes back up (~60 seconds), the operator will re-engage you and you'll need to start a new session via `action(type: \"session/start\")`."
+   > "Heads up — we're shutting down shortly. Your session will be invalidated when the server restarts. **Do not start new work.** Finish your current tool call if safe, then end your agent turn and wait. After the server comes back up (~60 seconds), the operator will re-engage you and you'll need to start a new session via `action(type: "session/start")`."
 
 3. Wait for each worker to acknowledge and confirm they have ended their turn (operator can visually confirm agents have stopped making tool calls).
 4. Confirm with the operator before proceeding to Phase 2.

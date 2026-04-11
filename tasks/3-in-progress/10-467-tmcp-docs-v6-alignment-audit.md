@@ -19,6 +19,7 @@ v6 consolidated ~40+ tools into 3 dispatchers. Docs may still reference old tool
 ## Scope
 
 Files to audit:
+
 - `docs/` — all documentation files
 - `LOOP-PROMPT.md` — agent loop reference
 - `.github/instructions/` — Copilot instruction files

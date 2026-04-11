@@ -40,7 +40,7 @@ User replies to a message sent by 🤖 Worker → routed to Worker's session que
 
 User sends a fresh message → routed to governor (SID 1). Governor dequeues with `routing: "ambiguous"`.
 
-**Governor protocol:** Handle it if it's for you. Use `action(type: "message/route", target_sid)` to forward if it belongs to another session.
+**Governor protocol:** Handle it if it's for you. Use `action(type: "message/route", message_id, target_sid)` to forward if it belongs to another session.
 
 **Any-agent protocol:** If you receive an ambiguous message and it's clearly not for you, route it. If unsure, handle it — better to respond than to bounce messages around.
 
@@ -57,7 +57,8 @@ User sends a fresh message → routed to governor (SID 1). Governor dequeues wit
 
 | Tool group | Auth required |
 | --- | --- |
-| `action(type: "session/start")`, `shutdown`, `help`, `action(type: "chat/info")`, `action(type: "session/list")` | None |
+| `action(type: "session/start")`, `shutdown`, `help`, `action(type: "chat/info")` | None |
+| `action(type: "session/list")` | `token: number` (multi-session active) |
 | All other tools (multi-session active) | `token: number` |
 | All other tools (single session) | None (backward compat) |
 

@@ -83,8 +83,8 @@ All fields are optional. A profile containing only `voice` is valid.
 ```text
 action(type: "session/start", name: "Worker")         → SID 2, PIN 123456
 action(type: "profile/voice", voice: "nova")
-action(type: "animation/default", name: "thinking", frames: [...])
-action(type: "animation/default", name: "working", frames: [...])
+action(type: "animation/default", preset: "thinking", frames: [...])
+action(type: "animation/default", preset: "working", frames: [...])
 action(type: "reminder/set", text: "...", delay_seconds: 15, recurring: true)
 action(type: "reminder/set", text: "...", delay_seconds: 15, recurring: true)
 action(type: "reminder/set", text: "...", delay_seconds: 10, recurring: true)
