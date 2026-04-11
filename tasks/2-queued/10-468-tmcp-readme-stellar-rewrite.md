@@ -14,7 +14,7 @@ Rewrite the Telegram-Bridge-MCP README.md to "stellar galactic level quality." I
 
 ## Context
 
-The README needs to showcase v6's three-tool API, explain the bridge concept clearly, highlight key features, and provide a smooth onboarding path. It should be refined, professional, and complete — not just functional.
+The README needs to showcase v6's four-tool API, explain the bridge concept clearly, highlight key features, and provide a smooth onboarding path. It should be refined, professional, and complete — not just functional.
 
 ## Requirements
 
@@ -22,7 +22,7 @@ The README needs to showcase v6's three-tool API, explain the bridge concept cle
 - Feature highlights (multi-session, approval flow, profiles, animations, super tools, etc.)
 - Quick start guide
 - Architecture overview (brief)
-- API overview showing the three-tool pattern (`send`, `action`, `dequeue` + `help`)
+- API overview showing the four-tool pattern (`send`, `action`, `dequeue` + `help`)
 - Links to detailed docs for deeper dives
 - Badges (build status, version, license)
 - Professional formatting — no walls of text, good use of headers/tables/code blocks

@@ -26,7 +26,7 @@ Reusable manual test plan for the Telegram Bridge MCP server. Run through these 
 | Step | Action | Expected |
 | --- | --- | --- |
 | A1.1 | [Agent] `action(type: "session/list")` | Returns SID 1 "Primary", `active_sid: 1` |
-| A1.2 | [Agent] `action(type: "chat/info")` | Returns bot username, MCP version, commit hash, build time |
+| A1.2 | [Agent] `help(topic: "identity", token: "<token>")` | Returns bot username, MCP version, commit hash, build time |
 | A1.3 | [Agent] `action(type: "profile/topic", topic: "🧪 Test")` then `send(text: "Hello")` | Message appears with `**[🧪 Test]**` prefix |
 | A1.4 | [Agent] `action(type: "profile/topic", topic: "")` then `send(text: "Hello")` | Message appears without prefix |
 

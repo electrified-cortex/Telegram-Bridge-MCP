@@ -34,7 +34,7 @@ When starting a new session with this MCP:
 
 **`help` tool:** Call `help()` for a tool overview, `help(topic: "guide")` for this guide, or `help(topic: "<tool>")` for per-tool documentation.
 
-**Transport:** The server supports both stdio and streaming HTTP transports. HTTP clients that reconnect after a drop should call `action(type: "session/start")` with their existing PIN to resume.
+**Transport:** The server supports both stdio and streaming HTTP transports. HTTP clients that reconnect after a drop should keep using their existing session token if they still have it. If the token was lost, use `action(type: "session/start", name: "…", reconnect: true)` to recover the same session token after operator re-authorization.
 
 **`dequeue` is the sole tool for receiving updates.** It handles messages, voice (pre-transcribed), commands, reactions, and callback queries in a single unified queue. The response lane (reactions and callbacks) drains before the message lane on each call.
 

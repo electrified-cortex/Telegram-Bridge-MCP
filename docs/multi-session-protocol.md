@@ -118,7 +118,7 @@ Incoming operator message
 
 The governor is not a special mode the agent enables — it's a responsibility
 assigned by the system. The agent learns it's the governor from the
-`routing_mode` field in the `action(type: "session/start")` response.
+`session_orientation` service message, which includes `governor_sid`.
 
 ### Governor Duties
 

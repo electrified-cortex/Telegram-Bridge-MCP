@@ -106,7 +106,7 @@ A **session context** struct — `{ chat_id, thread_root_message_id, user_id }` 
 In a group with multiple bots, one bot's reply can trigger another. Must filter out:
 
 - Messages where `from.is_bot === true`
-- Our own messages (match against `action(type: "chat/info")` result)
+- Our own messages (match against the bot identity result, e.g. `help(topic: "identity", token: …)`, using the bot's user id and/or username)
 
 ---
 

@@ -10,11 +10,11 @@ Source: Operator directive
 
 ## Objective
 
-Audit all documentation files in the Telegram-Bridge-MCP repo to ensure they accurately reflect the v6 three-tool API (`send`, `action`, `dequeue` + `help`). No reader should find outdated references to removed v5 tools or incorrect parameter names.
+Audit all documentation files in the Telegram-Bridge-MCP repo to ensure they accurately reflect the v6 four-tool API (`send`, `action`, `dequeue` + `help`). No reader should find outdated references to removed v5 tools or incorrect parameter names.
 
 ## Context
 
-v6 consolidated ~40+ tools into 3 dispatchers. Docs may still reference old tool names (`send_text`, `set_reaction`, `get_me`, `send_direct_message`, etc.), old parameter names (`voice` instead of `audio`), or old workflows. The changelog and setup guide have had partial fixes but a comprehensive pass is needed.
+v6 consolidated ~40+ tools into four tools: two dispatchers (`send` and `action`) plus `dequeue` and `help`. Docs may still reference old tool names (`send_text`, `set_reaction`, `get_me`, `send_direct_message`, etc.), old parameter names (`voice` instead of `audio`), or old workflows. The changelog and setup guide have had partial fixes but a comprehensive pass is needed.
 
 ## Scope
 
