@@ -17,14 +17,15 @@ const DESCRIPTION =
   "Call `help(topic: 'ask')` for details.";
 
 export async function handleAsk({
-  question, timeout_seconds = 60, reply_to_message_id, ignore_pending, token,
+  question, timeout_seconds = 60, reply_to, ignore_pending, token,
 }: {
   question: string;
   timeout_seconds?: number;
-  reply_to_message_id?: number;
+  reply_to?: number;
   ignore_pending?: boolean;
   token: number;
 }, signal: AbortSignal) {
+  const reply_to_message_id = reply_to;
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
@@ -147,7 +148,7 @@ export function register(server: McpServer) {
         .max(300)
         .default(60)
         .describe("Seconds to wait for a reply before returning timed_out: true"),
-      reply_to_message_id: z
+      reply_to: z
         .number()
         .int()
         .min(1)

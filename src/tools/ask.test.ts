@@ -225,14 +225,14 @@ describe("ask tool", () => {
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("bypasses pending guard when reply_to_message_id is set", async () => {
+  it("bypasses pending guard when reply_to is set", async () => {
     mocks.pendingCount.mockReturnValue(5);
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
     mocks._storeQueue.push(makeTextEvent(11, "yes"));
     const result = await call({
       question: "Continue?",
       timeout_seconds: 1,
-      reply_to_message_id: 99, token: 1_123_456});
+      reply_to: 99, token: 1_123_456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.timed_out).toBe(false);

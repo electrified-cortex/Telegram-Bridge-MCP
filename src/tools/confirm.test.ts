@@ -264,10 +264,10 @@ describe("confirm tool", () => {
     expect(isError(result)).toBe(true);
   });
 
-  it("sends with a reply_to_message_id when provided", async () => {
+  it("sends with a reply_to when provided", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
-    await call({ text: "Proceed?", reply_to_message_id: 3, token: 1123456});
+    await call({ text: "Proceed?", reply_to: 3, token: 1123456});
     const sendOpts = mocks.sendMessage.mock.calls[0][2];
     expect(sendOpts.reply_parameters).toEqual({ message_id: 3 });
   });
@@ -397,7 +397,7 @@ describe("confirm tool", () => {
     expect(data.confirmed).toBe(true);
   });
 
-  it("bypasses pending guard when reply_to_message_id is set", async () => {
+  it("bypasses pending guard when reply_to is set", async () => {
     mocks.pendingCount.mockReturnValue(3);
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(
@@ -405,7 +405,7 @@ describe("confirm tool", () => {
     );
     const result = await call({
       text: "Proceed?",
-      reply_to_message_id: 42, token: 1123456});
+      reply_to: 42, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.confirmed).toBe(true);

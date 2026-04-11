@@ -109,7 +109,7 @@ export function register(server: McpServer) {
           .default("Markdown")
           .describe("For text content only. Default Markdown (auto-converted)."),
         disable_notification: z.boolean().optional().describe("Send silently (no sound/notification)"),
-        reply_to_message_id: z.number().int().min(1).optional().describe("Reply to this message ID"),
+        reply_to: z.number().int().min(1).optional().describe("Reply to this message ID"),
         // ── file ───────────────────────────────────────────────────────────
         file: z.string().optional().describe("Local path, HTTPS URL, or file_id (for type: \"file\")"),
         file_type: z
@@ -201,7 +201,8 @@ export function register(server: McpServer) {
           if (!text && !audio) {
             return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Call help(topic: 'send') for usage. Both text and audio are optional individually but at least one is required." });
           }
-          const { parse_mode, disable_notification, reply_to_message_id } = args;
+          const { parse_mode, disable_notification } = args;
+          const reply_to_message_id = args.reply_to;
 
           // ── Voice mode ───────────────────────────────────────────────────
           if (audio) {
@@ -313,7 +314,7 @@ export function register(server: McpServer) {
             caption: args.caption,
             parse_mode: args.parse_mode,
             disable_notification: args.disable_notification,
-            reply_to_message_id: args.reply_to_message_id,
+            reply_to: args.reply_to,
             token: args.token,
           });
 
@@ -326,7 +327,7 @@ export function register(server: McpServer) {
             severity: args.severity,
             parse_mode: args.parse_mode,
             disable_notification: args.disable_notification,
-            reply_to_message_id: args.reply_to_message_id,
+            reply_to: args.reply_to,
             token: args.token,
           });
 
@@ -339,7 +340,7 @@ export function register(server: McpServer) {
             columns: args.columns,
             parse_mode: args.parse_mode,
             disable_notification: args.disable_notification,
-            reply_to_message_id: args.reply_to_message_id,
+            reply_to: args.reply_to,
             ignore_parity: args.ignore_parity,
             token: args.token,
           });
@@ -402,7 +403,7 @@ export function register(server: McpServer) {
             return handleAsk({
               question: args.ask,
               timeout_seconds: args.timeout_seconds,
-              reply_to_message_id: args.reply_to_message_id,
+              reply_to: args.reply_to,
               ignore_pending: args.ignore_pending,
               token: args.token,
             }, signal);
@@ -415,7 +416,7 @@ export function register(server: McpServer) {
               options: chooseButtons,
               timeout_seconds: args.timeout_seconds,
               columns: args.columns,
-              reply_to_message_id: args.reply_to_message_id,
+              reply_to: args.reply_to,
               ignore_pending: args.ignore_pending,
               ignore_parity: args.ignore_parity,
               audio: args.audio,
@@ -432,7 +433,7 @@ export function register(server: McpServer) {
               yes_style: args.yes_style,
               no_style: args.no_style,
               timeout_seconds: args.timeout_seconds,
-              reply_to_message_id: args.reply_to_message_id,
+              reply_to: args.reply_to,
               ignore_pending: args.ignore_pending,
               ignore_parity: args.ignore_parity,
               audio: args.audio,

@@ -50,3 +50,31 @@ Files to audit:
 - [ ] Branch pushed as separate PR (not merged locally)
 - [ ] Copilot review triggered and exhausted on the PR
 - [ ] No behavioral/code changes — documentation only
+
+## Completion
+
+**Completed by:** Worker 1 (SID 4)
+**Branch:** `docs/v6-alignment`
+**Commit:** `4ca2a0e` (Telegram MCP repo)
+**Worktree:** `Telegram MCP/.worktrees/docs-v6-alignment`
+
+### What changed
+
+18 documentation files audited and updated. LOOP-PROMPT.md and changelog/unreleased.md were already clean. Historical/archived docs intentionally left unchanged (migration guide, v4 checklist, coverage snapshots, etc.).
+
+**Files changed:**
+- `.github/instructions/telegram-communication.instructions.md`
+- `docs/agent-setup.md`, `docs/behavior.md`, `docs/communication.md`, `docs/customization.md`
+- `docs/formatting.md`, `docs/group-chat-roadmap.md`, `docs/inter-agent-communication.md`
+- `docs/manual-test-walkthrough.md`, `docs/multi-session-flow.md`, `docs/multi-session-prompts.md`
+- `docs/multi-session-protocol.md`, `docs/multi-session-test-script.md`, `docs/restart-protocol.md`
+- `docs/security-model.md`, `docs/session-profiles.md`, `docs/super-tools.md`, `docs/test-session-prompt.md`
+
+### Code review
+
+- Pass 1: Found 6 missed v5 references (`update_checklist` ×2, `update_progress` ×2, `send_text` ×2) — fixed
+- Pass 2: Zero v5 references remaining across all 18 files — approved
+
+### Push / PR
+
+Hook blocked Worker push. Overseer to push `docs/v6-alignment` to origin and create PR → `dev`. Copilot review and exhaustion pending Overseer action.

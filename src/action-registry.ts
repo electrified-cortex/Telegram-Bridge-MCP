@@ -6,8 +6,7 @@
  * to find and invoke the right handler.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-redundant-type-constituents
-export type ActionHandler = (args: Record<string, any>, extra: unknown) => Promise<unknown> | unknown;
+export type ActionHandler = (args: Record<string, unknown>, extra: unknown) => Promise<unknown> | unknown;
 
 export interface ActionMeta {
   /** When true, the action is restricted to the governor session. */
