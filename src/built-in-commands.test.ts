@@ -1128,6 +1128,19 @@ describe("built-in-commands", () => {
       expect(isInternalTimelineEvent(evt)).toBe(true);
     });
 
+    it("isInternalTimelineEvent returns true for approve_ callback data (session approval buttons)", () => {
+      for (const data of ["approve_no", "approve_0", "approve_5", "approve_toggle_delegation"]) {
+        const evt = {
+          id: 1,
+          event: "callback" as const,
+          from: "user",
+          timestamp: "",
+          content: { data },
+        };
+        expect(isInternalTimelineEvent(evt)).toBe(true);
+      }
+    });
+
     // name-tag suppression — panel messages must carry _skipHeader: true so
     // the outbound proxy does not prefix them with a worker's session header
     // when auto-approve is triggered while another session is active.

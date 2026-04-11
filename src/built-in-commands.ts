@@ -274,6 +274,7 @@ export function isInternalTimelineEvent(evt: Omit<TimelineEvent, "_update">): bo
       evt.content.data.startsWith("voice:") ||
       evt.content.data.startsWith("approval:") ||
       evt.content.data.startsWith("approve:") ||
+      evt.content.data.startsWith("approve_") ||
       evt.content.data.startsWith("governor:") ||
       evt.content.data.startsWith("session:") ||
       evt.content.data.startsWith("log:")

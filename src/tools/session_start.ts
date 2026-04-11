@@ -20,7 +20,7 @@ const APPROVAL_NO = "approve_no";
 const APPROVE_PREFIX = "approve_";
 const RECONNECT_YES = "reconnect_yes";
 const RECONNECT_NO = "reconnect_no";
-const TOGGLE_DELEGATION = "approve:toggle:delegation";
+const TOGGLE_DELEGATION = "approve_toggle_delegation";
 
 /**
  * Build the inline keyboard for the approval dialog.
