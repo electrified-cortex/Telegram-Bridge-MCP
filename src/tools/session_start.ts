@@ -350,7 +350,9 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
               instructions: `Your session token is ${reconToken} (SID ${fullSession.sid}). ` +
                 "Save your token to session memory NOW. " +
                 "You reconnected after a gap. " +
-                "Call get_chat_history to check for messages you may have missed.",
+                "Call get_chat_history to check for messages you may have missed. " +
+                "Read the guide: help(topic: 'guide'). " +
+                "Compression rules: help(topic: 'compression') — save to memory.",
             });
           }
 
@@ -405,7 +407,9 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
           instructions: `IMPORTANT: Your session token is ${sessionToken} (SID ${session.sid}). ` +
             "Save your token to session memory NOW. " +
             "You will need it to reconnect after context compaction. " +
-            "On reconnect, call get_chat_history to recover any messages missed during the gap.",
+            "On reconnect, call get_chat_history to recover any messages missed during the gap. " +
+            "Read the guide: help(topic: 'guide'). " +
+            "Save compression rules: help(topic: 'compression') — save to memory.",
         };
         if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {

@@ -1658,6 +1658,8 @@ describe("session_start tool", () => {
     const instructions = result.instructions as string;
     expect(instructions).toContain("session memory");
     expect(instructions).toContain("SID");
+    expect(instructions).toContain("help(topic: 'guide')");
+    expect(instructions).toContain("help(topic: 'compression')");
   });
 
   // =========================================================================
@@ -1815,6 +1817,8 @@ describe("session_start tool", () => {
     const instructions = result.instructions as string;
     expect(instructions).toContain("SID");
     expect(instructions).toContain("session memory");
+    expect(instructions).toContain("help(topic: 'guide')");
+    expect(instructions).toContain("help(topic: 'compression')");
   });
 
   // =========================================================================

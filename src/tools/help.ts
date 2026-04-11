@@ -33,6 +33,7 @@ const DESCRIPTION =
   "Returns discovery information about this MCP server. " +
   "Call with no arguments for an overview and full tool index. " +
   "Pass topic: 'guide' for the full agent communication guide. " +
+  "Pass topic: 'compression' for the compression cheat sheet (save to memory). " +
   "Pass topic: '<tool_name>' for detailed docs on a specific tool.";
 
 /**
@@ -42,7 +43,7 @@ const DESCRIPTION =
  * added in the future, this list should be updated to match.
  */
 const TOOL_INDEX: Record<string, string> = {
-  help: "Discovery tool — overview, communication guide, and per-tool docs. Specialized topics: 'checklist' (step statuses), 'animation' (frame guide). No auth required for most topics; topic: 'identity' requires a session token.",
+  help: "Discovery tool — overview, communication guide, and per-tool docs. Specialized topics: 'guide' (agent comms guide), 'compression' (compression cheat sheet — save to memory), 'checklist' (step statuses), 'animation' (frame guide). No auth required for most topics; topic: 'identity' requires a session token.",
   session_start: "Authenticate and start a named agent session. Returns a token for all subsequent calls.",
   close_session: "End the current agent session and release its slot.",
   list_sessions: "List all active sessions with their SIDs and display names.",
@@ -158,11 +159,11 @@ export function register(server: McpServer) {
             join(__dirname, "..", "..", "docs", "behavior.md"),
             "utf-8"
           );
-          return toResult({ content: `# Agent Communication Guide\n\n${content}` });
+          return toResult({ content: `# Agent Communication Guide\n\nRead compression rules: \`help(topic: 'compression')\` — save to memory.\n\n${content}` });
         } catch {
           return toResult({
             content:
-              "# Agent Communication Guide\n\nUnavailable: docs/behavior.md not found in distribution.",
+              "# Agent Communication Guide\n\nRead compression rules: `help(topic: 'compression')` — save to memory.\n\nUnavailable: docs/behavior.md not found in distribution.",
           });
         }
       }
@@ -227,6 +228,51 @@ export function register(server: McpServer) {
             "| `working` | `⚙ Working…` cycling dots |",
             "| `thinking` | `🤔 Thinking…` cycling dots |",
             "| `reviewing` | `🔍 Reviewing…` cycling dots |",
+          ].join("\n"),
+        });
+      }
+
+      // topic: "compression" → standalone compression cheat sheet
+      if (topic === "compression") {
+        return toResult({
+          content: [
+            "# Compression Cheat Sheet",
+            "",
+            "> Save to session memory. Persists across compactions.",
+            "",
+            "## Tiers",
+            "| Tier | Use when |",
+            "| --- | --- |",
+            "| None | Full English — audio msgs, spec files |",
+            "| Lite | Drop filler/hedging, keep articles — operator text |",
+            "| Full | Drop articles, fragments OK — general docs |",
+            "| Ultra | Telegraphic, abbreviate, arrows — agent DMs, agent files |",
+            "",
+            "## Surface Map",
+            "| Surface | Tier |",
+            "| --- | --- |",
+            "| Agent-to-agent DMs | Ultra |",
+            "| Agent files (CLAUDE.md, .agent.md) | Ultra |",
+            "| Skills (SKILL.md), instructions | Ultra |",
+            "| Reminder text | Ultra |",
+            "| Text to operator (Telegram) | Lite |",
+            "| Audio captions | Lite |",
+            "| Audio messages | None |",
+            "| Spec files, code blocks | None |",
+            "",
+            "## Ultra Rules",
+            "Drop: articles (a/an/the), filler (just/really/basically/actually), pleasantries, hedging.",
+            "Keep: technical terms exact, code/paths/URLs verbatim.",
+            "Pattern: `[thing] [action] [reason]. [next step].`",
+            "Abbreviate: DB auth config req res fn impl msg sess conn dir env repo.",
+            "Fragments OK. Arrows: X → Y.",
+            "",
+            "## Examples",
+            "✗ `Sure! I'd be happy to help with that.`",
+            "✓ `Issue: token expiry, auth middleware.`",
+            "",
+            "✗ `The implementation could potentially involve adding a check...`",
+            "✓ `Impl: null-check before fn call.`",
           ].join("\n"),
         });
       }
