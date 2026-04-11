@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Replace legacy tool name references (`session_start`, `list_sessions`, `save_profile`, `list_reminders`) in all user-facing error/recovery strings with v6 `action()` dispatcher paths
+- Replaced legacy tool name references (`session_start`, `list_sessions`, `save_profile`, `list_reminders`) in all user-facing error/recovery strings with v6 `action()` dispatcher paths
 
 - `src/tools/help.ts`: `startup` topic — token line now says "Required for all session-bound calls" (was "Required for all calls"); `message/history` example now includes `count: 20`
 - `src/tools/help.test.ts`: Added test coverage for `startup` topic
