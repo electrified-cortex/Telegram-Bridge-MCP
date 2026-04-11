@@ -84,7 +84,7 @@ Telegram Bridge MCP v6 exposes **4 tools** with type-based routing.
 | `file` | Send a file (photo, document, video, audio, voice) |
 | `notification` | Notification with severity (info/success/warning/error) |
 | `choice` | Message with inline buttons (non-blocking) |
-| `direct` | DM another session (requires `target_sid`) |
+| `direct` | DM another session (requires `target_sid` or `target` alias) |
 | `append` | Append text to an existing message |
 | `animation` | Start a cycling status animation |
 | `checklist` | Create a pinned live checklist (see [`docs/super-tools.md`](docs/super-tools.md)) |

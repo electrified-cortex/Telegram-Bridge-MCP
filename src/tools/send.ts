@@ -126,6 +126,7 @@ export function register(server: McpServer) {
         message: z.string().optional().describe("Alias for text in notification mode"),
         // ── direct ─────────────────────────────────────────────────────────
         target_sid: z.number().int().optional().describe("Target session ID (for type: \"dm\")"),
+        target: z.number().int().optional().describe("Alias for target_sid (for type: \"dm\"). Use either target or target_sid, not both."),
         // ── append ─────────────────────────────────────────────────────────
         message_id: z.number().int().optional().describe("Message ID to append to (for type: \"append\")"),
         separator: z.string().default("\n").describe("Separator for append mode"),
@@ -343,10 +344,16 @@ export function register(server: McpServer) {
             token: args.token,
           });
 
-        case "dm":
-          if (!args.target_sid) return toError({ code: "MISSING_PARAM" as const, message: 'type: "dm" requires a "target_sid" param.', hint: "Call help(topic: 'send') for the required params for this type." });
+        case "dm": {
+          const targetA = args.target_sid;
+          const targetB = args.target;
+          if (targetA !== undefined && targetB !== undefined && targetA !== targetB)
+            return toError({ code: "CONFLICT" as const, message: 'Both "target_sid" and "target" were provided with different values. Use one or the other.' });
+          const resolvedTarget = targetA ?? targetB;
+          if (!resolvedTarget) return toError({ code: "MISSING_PARAM" as const, message: 'type: "dm" requires a "target_sid" (or "target") param.', hint: "Call help(topic: 'send') for the required params for this type." });
           if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "dm" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
-          return handleSendDirectMessage({ token: args.token, target_sid: args.target_sid, text: args.text });
+          return handleSendDirectMessage({ token: args.token, target_sid: resolvedTarget, text: args.text });
+        }
 
         case "append":
           if (!args.message_id) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "message_id" param.', hint: "Call help(topic: 'send') for the required params for this type." });

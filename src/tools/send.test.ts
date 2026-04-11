@@ -371,6 +371,28 @@ describe("send type routing", () => {
     expect(mocks.handleSendDirectMessage).toHaveBeenCalledOnce();
   });
 
+  it('type: "dm" with target alias sends successfully', async () => {
+    mocks.handleSendDirectMessage.mockResolvedValue({ content: [{ type: "text", text: '{"ok":true}' }] });
+    const result = await call({ type: "dm", target: 99, text: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleSendDirectMessage).toHaveBeenCalledOnce();
+    const called = mocks.handleSendDirectMessage.mock.calls[0][0] as Record<string, unknown>;
+    expect(called.target_sid).toBe(99);
+  });
+
+  it('type: "dm" with matching target and target_sid succeeds', async () => {
+    mocks.handleSendDirectMessage.mockResolvedValue({ content: [{ type: "text", text: '{"ok":true}' }] });
+    const result = await call({ type: "dm", target_sid: 99, target: 99, text: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleSendDirectMessage).toHaveBeenCalledOnce();
+  });
+
+  it('type: "dm" with conflicting target and target_sid returns CONFLICT error', async () => {
+    const result = await call({ type: "dm", target_sid: 99, target: 77, text: "hello", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("CONFLICT");
+  });
+
   it("type: append without message_id returns MISSING_PARAM", async () => {
     const result = await call({ type: "append", text: "more", token: TOKEN });
     expect(isError(result)).toBe(true);
