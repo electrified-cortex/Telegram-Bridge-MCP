@@ -57,10 +57,10 @@ git add ...
 git commit ...
 ```
 
-> **Note:** Scripts that use `git mv` for atomic file operations (such as `tasks/claim.ps1`
-> and `tasks/claim.sh`) do not need to clear `GIT_INDEX_FILE` because `git mv` operates
-> atomically on the index without exposing intermediate staged state. This pattern applies
-> to scripts that use `git add` or `git rm --cached` directly.
+> **Note:** `git mv` IS affected by `GIT_INDEX_FILE` just like all other git commands.
+> Any git command in automation scripts is affected — always clear `GIT_INDEX_FILE` before
+> any git operation, including `git mv`, `git add`, `git rm --cached`, `git commit`, and
+> `git status`.
 
 ## Verification Checklist
 

@@ -12,9 +12,11 @@ const DESCRIPTION =
   "will detect the exit and can relaunch it automatically. Reconnecting to " +
   "the server after shutdown starts it back up. Call this after running " +
   "`pnpm build` to pick up code changes. " +
-  "If there are pending messages across any active session queue, a warning " +
-  "response is returned (not an error) — drain them first or pass " +
-  "`force: true` to shut down anyway.";
+  "If there are pending messages across any active session queue, a success " +
+  "result containing a `warning` field is returned (not a tool error) — " +
+  "callers must handle both the warning form (`shutting_down: false, warning: " +
+  "'PENDING_MESSAGES'`) and the shutdown form (`shutting_down: true`). " +
+  "Drain pending messages first or pass `force: true` to shut down anyway.";
 
 export function handleShutdown({ force }: { force?: boolean }) {
   // Sum pending across the global queue (unrouted messages) and all active
@@ -24,6 +26,9 @@ export function handleShutdown({ force }: { force?: boolean }) {
     .reduce((sum, s) => sum + (getSessionQueue(s.sid)?.pendingCount() ?? 0), 0);
   const pending = globalPending + sessionPending;
 
+  // NOTE: Returns a success result with `warning` field (not a tool error) when
+  // pending messages exist. Callers must check for `shutting_down: false` +
+  // `warning: "PENDING_MESSAGES"` — this is distinct from a tool-level error.
   if (pending > 0 && !force) {
     return toResult({
       shutting_down: false,

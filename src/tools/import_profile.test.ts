@@ -174,8 +174,8 @@ describe("import_profile tool", () => {
       ...r, state: "active", created_at: Date.now(), activated_at: Date.now(),
     }));
     const result = await call({
-      // recurring intentionally omitted — should default to false
-      reminders: [{ text: "One-shot", delay_seconds: 30, recurring: undefined as unknown as boolean }],
+      // recurring intentionally omitted — should default to false via Zod default
+      reminders: [{ text: "One-shot", delay_seconds: 30 }],
       token: 1123456,
     });
     expect(isError(result)).toBe(false);
