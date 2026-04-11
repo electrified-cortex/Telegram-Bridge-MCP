@@ -15,6 +15,8 @@ import {
   getUnhealthySessions,
   getAvailableColors,
   COLOR_PALETTE,
+  setDequeueIdle,
+  getIdleSessions,
 } from "./session-manager.js";
 
 interface SessionWithoutPin {
@@ -516,5 +518,47 @@ describe("getAvailableColors", () => {
     const maxUnusedIdx = Math.max(...unusedColors.map(c => colors.indexOf(c)));
     const minInUseIdx = Math.min(...inUseColors.map(c => colors.indexOf(c)));
     expect(maxUnusedIdx).toBeLessThan(minInUseIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setDequeueIdle / getIdleSessions
+// ---------------------------------------------------------------------------
+
+describe("setDequeueIdle / getIdleSessions", () => {
+  it("getIdleSessions returns empty when no sessions are idle", () => {
+    createSession("A");
+    expect(getIdleSessions()).toEqual([]);
+  });
+
+  it("marks a session idle and getIdleSessions returns it with idle_since_ms >= 0", () => {
+    const s = createSession("A");
+    setDequeueIdle(s.sid, true);
+    const idle = getIdleSessions();
+    expect(idle).toHaveLength(1);
+    expect(idle[0].sid).toBe(s.sid);
+    expect(idle[0].idle_since_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("clearing idle removes the session from getIdleSessions", () => {
+    const s = createSession("A");
+    setDequeueIdle(s.sid, true);
+    setDequeueIdle(s.sid, false);
+    expect(getIdleSessions()).toEqual([]);
+  });
+
+  it("no-ops silently when sid is not found", () => {
+    expect(() => setDequeueIdle(9999, true)).not.toThrow();
+    expect(getIdleSessions()).toEqual([]);
+  });
+
+  it("only idle sessions appear in getIdleSessions when multiple sessions exist", () => {
+    const a = createSession("A");
+    const b = createSession("B");
+    setDequeueIdle(a.sid, true);
+    const idle = getIdleSessions();
+    expect(idle).toHaveLength(1);
+    expect(idle[0].sid).toBe(a.sid);
+    void b;
   });
 });

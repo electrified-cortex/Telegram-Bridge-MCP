@@ -5,7 +5,7 @@ import { requireAuth } from "../session-gate.js";
 import {
   type TimelineEvent,
 } from "../message-store.js";
-import { setActiveSession, touchSession, getDequeueDefault } from "../session-manager.js";
+import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle } from "../session-manager.js";
 import { getSessionQueue, getMessageOwner } from "../session-queue.js";
 import { TOKEN_SCHEMA, consumeTokenStringHint } from "./identity-schema.js";
 import {
@@ -148,63 +148,73 @@ export function register(server: McpServer) {
         return toResult(emptyResult);
       }
 
-      // Block until something arrives or timeout expires
+      // Block until something arrives or timeout expires.
+      // Mark session as idle for fleet visibility (session/idle action).
       const deadline = Date.now() + effectiveTimeout * 1000;
       const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
       const reminderIdleStart = Date.now();
-      while (Date.now() < deadline) {
-        if (signal.aborted) break;
+      setDequeueIdle(sid, true);
+      try {
+        while (Date.now() < deadline) {
+          if (signal.aborted) break;
 
-        // Promote any deferred reminders whose delay has elapsed.
-        promoteDeferred(sid);
+          // Promote any deferred reminders whose delay has elapsed.
+          promoteDeferred(sid);
 
-        const now = Date.now();
-        const idleDuration = now - reminderIdleStart;
-        const activeReminders = getActiveReminders(sid);
+          const now = Date.now();
+          const idleDuration = now - reminderIdleStart;
+          const activeReminders = getActiveReminders(sid);
 
-        // Fire active reminders after 60 s of idle (no real messages).
-        if (idleDuration >= REMINDER_IDLE_THRESHOLD_MS && activeReminders.length > 0) {
-          const fired = popActiveReminders(sid);
-          resyncActiveSession();
-          const reminderResult: Record<string, unknown> = { updates: fired.map(buildReminderEvent), pending: pendingCountAny() };
-          if (tokenHint) reminderResult.hint = tokenHint;
-          return toResult(reminderResult);
+          // Fire active reminders after 60 s of idle (no real messages).
+          if (idleDuration >= REMINDER_IDLE_THRESHOLD_MS && activeReminders.length > 0) {
+            const fired = popActiveReminders(sid);
+            resyncActiveSession();
+            const reminderResult: Record<string, unknown> = { updates: fired.map(buildReminderEvent), pending: pendingCountAny() };
+            if (tokenHint) reminderResult.hint = tokenHint;
+            return toResult(reminderResult);
+          }
+
+          const remaining = deadline - now;
+          if (remaining <= 0) break;
+
+          // Wake up as soon as the earliest of: reminder idle threshold, next deferred promotion, or timeout.
+          const timeToFireMs = activeReminders.length > 0
+            ? Math.max(0, REMINDER_IDLE_THRESHOLD_MS - idleDuration)
+            : Infinity;
+          const deferredMs = getSoonestDeferredMs(sid);
+          const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
+
+          let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            waitForEnqueueAny(),
+            new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(Math.max(0, waitMs), MAX_SET_TIMEOUT_MS)); }),
+            abortPromise,
+          ]);
+          clearTimeout(timeoutHandle);
+
+          batch = dequeueBatchAny();
+          if (batch.length > 0) {
+            for (const evt of batch) ackVoice(evt);
+            const pending = pendingCountAny();
+            const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
+            if (pending > 0) result.pending = pending;
+            if (tokenHint) result.hint = tokenHint;
+            resyncActiveSession();
+            return toResult(result);
+          }
         }
 
-        const remaining = deadline - now;
-        if (remaining <= 0) break;
-
-        // Wake up as soon as the earliest of: reminder idle threshold, next deferred promotion, or timeout.
-        const timeToFireMs = activeReminders.length > 0
-          ? Math.max(0, REMINDER_IDLE_THRESHOLD_MS - idleDuration)
-          : Infinity;
-        const deferredMs = getSoonestDeferredMs(sid);
-        const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
-
-        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-        await Promise.race([
-          waitForEnqueueAny(),
-          new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(Math.max(0, waitMs), MAX_SET_TIMEOUT_MS)); }),
-          abortPromise,
-        ]);
-        clearTimeout(timeoutHandle);
-
-        batch = dequeueBatchAny();
-        if (batch.length > 0) {
-          for (const evt of batch) ackVoice(evt);
-          const pending = pendingCountAny();
-          const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
-          if (pending > 0) result.pending = pending;
-          if (tokenHint) result.hint = tokenHint;
-          resyncActiveSession();
-          return toResult(result);
-        }
+        resyncActiveSession();
+        const timedOutResult: Record<string, unknown> = { timed_out: true, pending: pendingCountAny() };
+        if (tokenHint) timedOutResult.hint = tokenHint;
+        return toResult(timedOutResult);
+      } finally {
+        // Note: if two concurrent dequeue calls share the same sid (unusual but
+        // possible), the second finally will clear the idle flag while the first
+        // is still waiting. This is acceptable — the session is not fully idle in
+        // that case. A refcount would be needed to handle it precisely.
+        setDequeueIdle(sid, false);
       }
-
-      resyncActiveSession();
-      const timedOutResult: Record<string, unknown> = { timed_out: true, pending: pendingCountAny() };
-      if (tokenHint) timedOutResult.hint = tokenHint;
-      return toResult(timedOutResult);
     },
   );
 }

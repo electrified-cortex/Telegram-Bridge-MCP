@@ -29,6 +29,7 @@ vi.mock("../session-manager.js", () => ({
   getActiveSession: () => mocks.getActiveSession(),
   activeSessionCount: () => mocks.activeSessionCount(),
   touchSession: (sid: number) => { mocks.touchSession(sid); },
+  setDequeueIdle: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {

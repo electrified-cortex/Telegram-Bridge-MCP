@@ -490,6 +490,7 @@ If you are the governor (`sid` matches `routing_mode.governor_sid` in `action(ty
 - Triage and route to specialist sessions via `action(type: "message/route")` or `send(type: "dm")`.
 - Coordinate multi-session workflows.
 - Set a topic reflecting your coordinating role.
+- Monitor worker availability via `action(type: "session/idle")` — returns sessions currently blocked in a `dequeue` wait, each with `idle_since_ms`. Use this to identify workers ready to accept a new task without interrupting active ones.
 
 Governor status transfers automatically when sessions close — the next lowest-SID session is promoted.
 

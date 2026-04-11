@@ -17,6 +17,7 @@ import { handleListSessions } from "./list_sessions.js";
 import { handleCloseSession } from "./close_session.js";
 import { handleSessionStart } from "./session_start.js";
 import { handleRenameSession } from "./rename_session.js";
+import { handleSessionIdle } from "./session_idle.js";
 import { handleEditMessage } from "./edit_message.js";
 
 // Phase 2 imports — message/*
@@ -92,6 +93,7 @@ export function setupActionRegistry(): void {
   registerAction("session/start", handleSessionStart as unknown as ActionHandler);
   registerAction("session/close", handleCloseSession as unknown as ActionHandler);
   registerAction("session/list", handleListSessions as unknown as ActionHandler);
+  registerAction("session/idle", handleSessionIdle as unknown as ActionHandler);
   registerAction("session/rename", handleRenameSession as unknown as ActionHandler);
   registerAction("profile/voice", handleSetVoice as unknown as ActionHandler);
   registerAction("message/edit", handleEditMessage as unknown as ActionHandler);

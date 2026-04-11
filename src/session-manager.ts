@@ -17,6 +17,7 @@ export interface Session {
   healthy: boolean;
   announcementMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
+  dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
 }
 
 /** Public view returned by `listSessions` — no PIN. */
@@ -284,6 +285,27 @@ export function setSessionAnnouncementMessage(sid: number, msgId: number): void 
 /** Return the stored announcement message ID for a session, if any. */
 export function getSessionAnnouncementMessage(sid: number): number | undefined {
   return _sessions.get(sid)?.announcementMsgId;
+}
+
+/** Mark a session as idle (entering dequeue blocking wait) or active (returning from it). */
+export function setDequeueIdle(sid: number, idle: boolean): void {
+  const s = _sessions.get(sid);
+  if (!s) return;
+  s.dequeueIdleAt = idle ? Date.now() : undefined;
+}
+
+/** Return sessions currently in a blocking dequeue wait, with idle duration in ms. */
+export function getIdleSessions(): Array<SessionInfo & { idle_since_ms: number }> {
+  const now = Date.now();
+  return [..._sessions.values()]
+    .filter(s => s.dequeueIdleAt !== undefined)
+    .map(({ sid, name, color, createdAt, dequeueIdleAt }) => ({
+      sid,
+      name,
+      color,
+      createdAt,
+      idle_since_ms: now - dequeueIdleAt!,
+    }));
 }
 
 /**

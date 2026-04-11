@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   // session-manager
   listSessions: vi.fn((): unknown[] => []),
   activeSessionCount: vi.fn((): number => 0),
+  getIdleSessions: vi.fn((): unknown[] => []),
   // routing-mode
   getGovernorSid: vi.fn((): number => 0),
   setGovernorSid: vi.fn(),
@@ -114,6 +115,7 @@ vi.mock("./message-store.js", () => ({
 vi.mock("./session-manager.js", () => ({
   listSessions: mocks.listSessions,
   activeSessionCount: mocks.activeSessionCount,
+  getIdleSessions: mocks.getIdleSessions,
 }));
 
 vi.mock("./routing-mode.js", () => ({
@@ -1430,6 +1432,20 @@ describe("built-in-commands", () => {
         // Detail view has Close and Primary buttons
         expect(data.some((d: string) => d.startsWith("session:close:"))).toBe(true);
         expect(data).toContain("session:back");
+      });
+
+      it("session:select:{sid} — shows idle status when session is in dequeue loop", async () => {
+        mocks.getIdleSessions.mockReturnValueOnce([
+          { sid: 2, name: "Worker", color: "🟩", createdAt: "", idle_since_ms: 42000 },
+        ]);
+        const panelId = await createSessionPanel();
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:select:2"));
+        expect(mocks.editMessageText).toHaveBeenCalled();
+        const call = mocks.editMessageText.mock.calls[0];
+        const text: string = call[2];
+        expect(text).toContain("🟢 Idle");
+        expect(text).toContain("42s");
       });
 
       it("session:primary:{sid} — calls setGovernorSid and edits to success message", async () => {

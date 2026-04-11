@@ -73,6 +73,7 @@ vi.mock("../session-manager.js", () => ({
   setDequeueDefault: (sid: number, timeout: number) => {
     mocks.setDequeueDefault(sid, timeout);
   },
+  setDequeueIdle: vi.fn(),
 }));
 
 vi.mock("../session-queue.js", () => ({

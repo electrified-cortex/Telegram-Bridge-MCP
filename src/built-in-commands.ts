@@ -42,7 +42,7 @@ export function getVersionString(): string {
 }
 import type { TimelineEvent } from "./message-store.js";
 import { timelineSize, setOnEvent } from "./message-store.js";
-import { listSessions } from "./session-manager.js";
+import { listSessions, getIdleSessions } from "./session-manager.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
 import { deliverServiceMessage } from "./session-queue.js";
 import { getCallerSid, runInSessionContext } from "./session-context.js";
@@ -1485,10 +1485,16 @@ async function renderSessionDetail(
 
   const govSid = getGovernorSid();
   const isGov = target.sid === govSid;
+  const idleSessions = getIdleSessions();
+  const idleInfo = idleSessions.find(s => s.sid === sid);
+  const statusLine = idleInfo
+    ? `Status: 🟢 Idle (${Math.round(idleInfo.idle_since_ms / 1000)}s)`
+    : "Status: 🔴 Active";
   const lines = [
     `${target.color} *${target.name}*`,
     `SID: ${target.sid}`,
     `Started: ${target.createdAt ? new Date(target.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "unknown"}`,
+    statusLine,
     isGov ? "_This is the current primary session._" : "",
   ].filter(Boolean);
 
