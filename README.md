@@ -140,7 +140,7 @@ All outbound operations flow through a single `send` call. The `type` parameter 
 | --- | --- |
 | `text` | Formatted Markdown text; pass `audio: "..."` to speak via TTS |
 | `file` | Photo, document, video, audio, or voice note |
-| `notification` | Status notification with severity: `info` · `success` · `warning` · `error` |
+| `notification` | Status notification; requires `title`, accepts severity `info` · `success` · `warning` · `error`, and may include body text via `text` or `message` |
 | `choice` | Message with inline buttons (non-blocking) |
 | `question` | Blocking prompt — route with `ask`, `confirm`, or `choose` |
 | `dm` | DM to another session (`target_sid` or `target` alias); `"direct"` accepted as alias |
