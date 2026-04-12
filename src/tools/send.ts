@@ -159,7 +159,7 @@ export function register(server: McpServer) {
         no_text: z.string().default("Cancel").describe("Negative button label (for confirm)"),
         yes_data: z.string().default("confirm_yes").describe("Affirmative callback data"),
         no_data: z.string().default("confirm_no").describe("Negative callback data"),
-        yes_style: BUTTON_STYLE_SCHEMA.optional().describe("Affirmative button color"),
+        yes_style: BUTTON_STYLE_SCHEMA.default("primary").describe("Affirmative button color"),
         no_style: BUTTON_STYLE_SCHEMA.optional().describe("Negative button color"),
         token: TOKEN_SCHEMA,
       },

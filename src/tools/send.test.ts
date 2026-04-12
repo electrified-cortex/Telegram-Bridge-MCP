@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   handleShowAnimation: vi.fn(),
   handleSendNewProgress: vi.fn(),
   handleSendDirectMessage: vi.fn(),
+  handleConfirm: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -85,6 +86,10 @@ vi.mock("./send_new_progress.js", () => ({
 
 vi.mock("./send_direct_message.js", () => ({
   handleSendDirectMessage: (args: unknown) => mocks.handleSendDirectMessage(args),
+}));
+
+vi.mock("./confirm.js", () => ({
+  handleConfirm: (args: unknown) => mocks.handleConfirm(args),
 }));
 
 import { register } from "./send.js";
@@ -419,6 +424,17 @@ describe("send type routing", () => {
     const result = await call({ type: "question", token: TOKEN });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MISSING_QUESTION_TYPE");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 10-463 regression: confirm yes_style defaults to "primary"
+  // ---------------------------------------------------------------------------
+  it('type: question/confirm — yes_style defaults to "primary" when not provided', async () => {
+    mocks.handleConfirm.mockResolvedValue({ content: [{ type: "text", text: '{"answer":"yes"}' }] });
+    await call({ type: "question", confirm: "Are you sure?", token: TOKEN });
+    expect(mocks.handleConfirm).toHaveBeenCalledOnce();
+    const called = mocks.handleConfirm.mock.calls[0][0] as Record<string, unknown>;
+    expect(called.yes_style).toBe("primary");
   });
 
   // ---------------------------------------------------------------------------
