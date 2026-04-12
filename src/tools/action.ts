@@ -15,7 +15,7 @@ import {
 import { handleSetVoice } from "./set_voice.js";
 import { handleListSessions } from "./list_sessions.js";
 import { handleCloseSession } from "./close_session.js";
-import { handleSessionStart } from "./session_start.js";
+import { handleSessionStart, handleSessionReconnect } from "./session_start.js";
 import { handleRenameSession } from "./rename_session.js";
 import { handleSessionIdle } from "./session_idle.js";
 import { handleEditMessage } from "./edit_message.js";
@@ -93,6 +93,7 @@ function levenshtein(a: string, b: string): number {
  */
 export function setupActionRegistry(): void {
   registerAction("session/start", handleSessionStart as unknown as ActionHandler);
+  registerAction("session/reconnect", handleSessionReconnect as unknown as ActionHandler);
   registerAction("session/close", handleCloseSession as unknown as ActionHandler);
   registerAction("session/list", handleListSessions as unknown as ActionHandler);
   registerAction("session/idle", handleSessionIdle as unknown as ActionHandler);
@@ -196,19 +197,15 @@ export function register(server: McpServer): void {
             "Action path to dispatch (e.g. 'session/list', 'profile/voice'). " +
             "Omit to list all categories. Pass a category name to list sub-paths.",
           ),
-        // Auth token — required for all paths except session/start
+        // Auth token — required for all paths except session/start and session/reconnect
         token: TOKEN_SCHEMA.optional().describe(
-          "Session token (sid * 1_000_000 + pin). Required for all paths except session/start.",
+          "Session token (sid * 1_000_000 + pin). Required for all paths except `session/start` and `session/reconnect`.",
         ),
-        // session/start params
+        // session/start and session/reconnect params
         name: z
           .string()
           .default("")
-          .describe("session/start: Human-friendly session name."),
-        reconnect: z
-          .boolean()
-          .default(false)
-          .describe("session/start: Set true to reconnect after context loss."),
+          .describe("session/start, session/reconnect: Human-friendly session name."),
         color: z
           .string()
           .optional()

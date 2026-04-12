@@ -97,7 +97,7 @@ describe("help tool", () => {
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);
     expect(content).toContain("sid * 1_000_000");
-    expect(content).toContain("reconnect: true");
+    expect(content).toContain("session/reconnect");
     expect(content).toContain("message/history");
     expect(content).toContain("count: 20");
   });

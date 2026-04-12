@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   handleListSessions: vi.fn(),
   handleCloseSession: vi.fn(),
   handleSessionStart: vi.fn(),
+  handleSessionReconnect: vi.fn(),
   handleRenameSession: vi.fn(),
   handleEditMessage: vi.fn(),
   handleDeleteMessage: vi.fn(),
@@ -124,7 +125,7 @@ vi.mock("../action-registry.js", () => ({
 vi.mock("./set_voice.js", () => ({ handleSetVoice: mocks.handleSetVoice, register: vi.fn() }));
 vi.mock("./list_sessions.js", () => ({ handleListSessions: mocks.handleListSessions, register: vi.fn() }));
 vi.mock("./close_session.js", () => ({ handleCloseSession: mocks.handleCloseSession, register: vi.fn() }));
-vi.mock("./session_start.js", () => ({ handleSessionStart: mocks.handleSessionStart, register: vi.fn() }));
+vi.mock("./session_start.js", () => ({ handleSessionStart: mocks.handleSessionStart, handleSessionReconnect: mocks.handleSessionReconnect, register: vi.fn() }));
 vi.mock("./rename_session.js", () => ({ handleRenameSession: mocks.handleRenameSession, register: vi.fn() }));
 vi.mock("./edit_message.js", () => ({ handleEditMessage: mocks.handleEditMessage, register: vi.fn() }));
 vi.mock("./delete_message.js", () => ({ handleDeleteMessage: mocks.handleDeleteMessage, register: vi.fn() }));
