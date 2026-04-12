@@ -16,10 +16,10 @@ Format: `"[What happened]. [What to do]."`
 
 | Bad | Good |
 | --- | --- |
-| `"Invalid token. Try again."` | `"Invalid token. Call action(type: 'session/start', reconnect: true) to request a fresh token, or double-check you copied the full token integer from action(type: 'session/start', ...)."` |
+| `"Invalid token. Try again."` | `"Invalid token. Call action(type: 'session/reconnect', name: '...') to request a fresh token, or double-check you copied the full token integer from action(type: 'session/start', ...)."` |
 | `"Profile not found."` | `"Profile not found: Overseer. Check the key spelling or call action(type: 'profile/save', key: 'Overseer') first."` |
 | `"Session not found."` | `"Session 7 not found. It may have closed. Call action(type: 'session/list') to see active sessions."` |
-| `"Name conflict."` | `"A session named \"Worker\" already exists (SID 3). To rejoin, call action(type: 'session/start', name: \"Worker\", reconnect: true). To start fresh, choose a different name."` |
+| `"Name conflict."` | `"A session named \"Worker\" already exists (SID 3). To rejoin, call action(type: 'session/reconnect', name: \"Worker\"). To start fresh, choose a different name."` |
 
 Rules:
 

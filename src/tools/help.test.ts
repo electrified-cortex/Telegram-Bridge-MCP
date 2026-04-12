@@ -96,8 +96,8 @@ describe("help tool", () => {
     const result = await call({ topic: "startup" });
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);
-    expect(content).not.toContain("sid * 1_000_000 + pin");
-    expect(content).toContain("reconnect: true");
+    expect(content).toContain("sid * 1_000_000");
+    expect(content).toContain("session/reconnect");
     expect(content).toContain("message/history");
     expect(content).toContain("count: 20");
     expect(content).toContain("quick_start");

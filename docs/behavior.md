@@ -33,7 +33,7 @@ When starting a new session with this MCP:
 
 **`help` tool:** Call `help()` for a tool overview, `help(topic: "guide")` for this guide, or `help(topic: "<tool>")` for per-tool documentation.
 
-**Transport:** The server supports both stdio and streaming HTTP transports. HTTP clients that reconnect after a drop should keep using their existing session token if they still have it. If the token was lost, use `action(type: "session/start", name: "…", reconnect: true)` to recover the same session token after operator re-authorization.
+**Transport:** The server supports both stdio and streaming HTTP transports. HTTP clients that reconnect after a drop should keep using their existing session token if they still have it. If the token was lost, use `action(type: "session/reconnect", name: "…")` to recover the same session token after operator re-authorization.
 
 **`dequeue` is the sole tool for receiving updates.** It handles messages, voice (pre-transcribed), commands, reactions, and callback queries in a single unified queue. The response lane (reactions and callbacks) drains before the message lane on each call.
 
@@ -433,7 +433,7 @@ When the server shuts down, every active session receives a `service_message` ev
 3. Governor watches `dequeue` for `session_closed` events; once all non-governor sessions have closed (or after a grace period), proceed
 4. Governor calls `action(type: "shutdown")` — returns `{ shutting_down: true }` immediately; actual shutdown runs asynchronously
 5. Governor calls `dequeue(timeout: 60)` one final time — receives a `shutdown` service event confirming exit; stops looping
-6. Governor waits for the MCP host to relaunch, then reconnects via `action(type: "session/start", reconnect: true)`
+6. Governor waits for the MCP host to relaunch, then reconnects via `action(type: "session/reconnect", ...)`
 
 ⚠️ **`action(type: "session/close")` must NOT be called by the governor before `action(type: "shutdown")`.** It disconnects the session but leaves the server running.
 
