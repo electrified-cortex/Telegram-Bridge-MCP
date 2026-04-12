@@ -4,12 +4,16 @@ import { toResult, toError } from "../telegram.js";
 import { requireAuth } from "../session-gate.js";
 import { listSessions } from "../session-manager.js";
 import { deliverDirectMessage } from "../session-queue.js";
-import { RESTART_GUIDANCE } from "../restart-guidance.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
+const SHUTDOWN_CLEANUP =
+  "Action required: (1) finish current task, (2) delete stored session token from memory, " +
+  "(3) call action(type: \"session/close\") to close cleanly, " +
+  "(4) do NOT retry — session is being terminated.";
+
 const BASE_WARNING =
-  "⛔ Shutdown warning: the server is restarting soon. " +
-  "Complete any in-progress work. " + RESTART_GUIDANCE;
+  "⛔ Shutdown warning: session termination imminent. " +
+  SHUTDOWN_CLEANUP;
 
 const DESCRIPTION =
   "Send a pre-shutdown advisory DM to all other active sessions. " +
@@ -33,7 +37,7 @@ export function handleNotifyShutdownWarning({ token, reason, wait_seconds }: {
   const parts: string[] = [BASE_WARNING];
   if (reason) parts.push(`Reason: ${reason}`);
   if (typeof wait_seconds === "number") {
-    parts.push(`Estimated restart time: ~${wait_seconds}s`);
+    parts.push(`Shutdown in: ~${wait_seconds}s`);
   }
   const text = parts.join("\n");
 
@@ -57,13 +61,13 @@ export function register(server: McpServer) {
           .trim()
           .min(1)
           .optional()
-          .describe("Optional reason for the restart (e.g. \"code update\", \"config change\")"),
+          .describe("Optional reason for the shutdown (e.g. \"code update\", \"config change\")"),
         wait_seconds: z
           .number()
           .int()
           .min(0)
           .optional()
-          .describe("Optional estimated wait time in seconds before restart"),
+          .describe("Optional estimated time in seconds before shutdown"),
       },
     },
     handleNotifyShutdownWarning,

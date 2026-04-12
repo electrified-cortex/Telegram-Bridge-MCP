@@ -40,7 +40,20 @@ describe("notify_shutdown_warning tool", () => {
     const result = parseResult(await call({ token: 1111111 }));
     expect(result.notified).toBe(1);
     expect(mocks.deliverDirectMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(1, 2, expect.stringContaining("restarting soon"));
+    expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(1, 2, expect.stringContaining("session termination imminent"));
+  });
+
+  it("includes session/close instruction and token deletion in message", async () => {
+    mocks.listSessions.mockReturnValue([
+      { sid: 1, name: "Governor", color: "🟦", createdAt: "" },
+      { sid: 2, name: "Worker", color: "🟩", createdAt: "" },
+    ]);
+    mocks.deliverDirectMessage.mockReturnValue(true);
+
+    await call({ token: 1111111 });
+    const [, , text] = mocks.deliverDirectMessage.mock.calls[0] as [number, number, string];
+    expect(text).toContain("session/close");
+    expect(text).toContain("delete stored session token");
   });
 
   it("excludes caller from recipients", async () => {

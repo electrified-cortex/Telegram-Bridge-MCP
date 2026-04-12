@@ -25,7 +25,23 @@ The `shutdown/warn` DM should include explicit instructions:
 
 ## Acceptance Criteria
 
-- [ ] shutdown/warn DM includes session cleanup instructions
-- [ ] Instructions mention deleting stored token
-- [ ] Instructions say to NOT retry after closure
-- [ ] Agent-facing text is concise (Ultra tier)
+- [x] shutdown/warn DM includes session cleanup instructions
+- [x] Instructions mention deleting stored token
+- [x] Instructions say to NOT retry after closure
+- [x] Agent-facing text is concise (Ultra tier)
+
+## Completion
+
+**Branch:** `10-464` | **Commit:** `a73738f`
+
+### What changed (3 files)
+
+- **`src/tools/notify_shutdown_warning.ts`** — Replaced `BASE_WARNING` (which embedded `RESTART_GUIDANCE` for server restart reconnect) with new `SHUTDOWN_CLEANUP` constant covering all 4 required actions. Fixed `wait_seconds` label from "Estimated restart time" to "Shutdown in". Fixed schema descriptions from "restart" to "shutdown" terminology.
+- **`src/tools/notify_shutdown_warning.test.ts`** — Updated existing assertion `"restarting soon"` → `"session termination imminent"`. Added new test asserting both `"session/close"` and `"delete stored session token"` appear in DM text.
+- **`src/action-registry.ts`** — Removed redundant `Promise<unknown> |` from `ActionHandler` return type (pre-existing lint fix).
+
+### Notes
+
+- `restart-guidance.ts` `RESTART_GUIDANCE` constant still used by `shutdown.ts` (hard-shutdown DM for server restart path). Not removed.
+- Code review: Minor finding (restart label contradiction) — fixed before commit.
+- 2202 tests pass.
