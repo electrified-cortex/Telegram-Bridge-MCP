@@ -1,0 +1,83 @@
+---
+id: 10-504
+title: "Array-based reaction API for atomic layered reactions"
+priority: 30
+status: draft
+created: 2026-04-12
+tags: [feature, reactions, ux, api]
+---
+
+# Array-Based Reaction API
+
+## Problem
+
+Currently, setting layered reactions (permanent base + temporary overlays)
+requires multiple successive `react` calls. This creates visible intermediate
+states — the user sees reactions appear one at a time instead of a smooth
+transition.
+
+## Current API
+
+```
+react(message_id, emoji: '👍')                        → call 1
+react(message_id, emoji: '👀', temporary: true)       → call 2
+```
+
+Agent must make N calls for N layers. Each call produces a visible state
+change. Flicker and intermediate states are unavoidable.
+
+## Proposed API
+
+Allow `react` to accept an array of reactions in a single call:
+
+```
+react(message_id, reactions: [
+  { emoji: '👍', priority: -1 },
+  { emoji: '👀', priority: 0, temporary: true }
+])
+```
+
+All reactions are applied atomically. The user sees the final state only
+(highest-priority reaction visible, lower priorities queued for restore).
+
+### Priority Convention
+
+- **Negative numbers (-1):** Permanent base layer. Sits below everything.
+  Never displaced unless explicitly targeted. Agents set this once.
+- **Zero (0, default):** Standard temporary reactions. No priority needed —
+  just set `temporary: true`. Same-priority temps replace each other.
+- **Positive (1+):** Higher-priority overlays if needed (rare).
+
+This minimizes agent cognitive load: "Set base at -1, everything else
+is temporary with no priority needed."
+
+## Use Cases
+
+### Full engagement pattern (one call)
+
+```
+react(message_id, reactions: [
+  { emoji: '👍', priority: -1 },                  // permanent base
+  { emoji: '👀', temporary: true }                 // "reviewing" (pri 0 default)
+])
+```
+
+### Later transition (one call)
+
+```
+react(message_id, reactions: [
+  { emoji: '🤔', temporary: true }                 // replaces 👀 at pri 0
+])
+```
+
+### On send — temps auto-clear, 👍 at -1 remains
+
+## Backward Compatibility
+
+Existing single-emoji `react` calls continue to work. Array form is
+additive — agents can adopt incrementally.
+
+## Discovery
+
+Dogfooding session 2026-04-12. Operator proposed after observing
+successive reaction calls producing visible flicker.

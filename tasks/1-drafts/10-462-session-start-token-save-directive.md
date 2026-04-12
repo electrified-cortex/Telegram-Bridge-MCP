@@ -24,16 +24,21 @@ reduces compaction recovery friction across all agent types.
 
 ## Proposed Message
 
-Include in the `session/start` response payload:
+The `session/start` response hint must use this **exact canon text**:
 
 ```text
-Ensure your token is saved to memory to recover from compaction.
+Save this token to session memory. Then call help("start").
 ```
+
+This is the first instruction any agent receives. It must be unambiguous and
+actionable. "Save this token to session memory" is the canonical phrasing —
+not "persist," not "ensure," not "store." Exact words.
 
 ## Acceptance Criteria
 
-- [ ] `action(type: "session/start")` response includes a token-save directive message
-- [ ] Message appears in both fresh start and reconnect flows
+- [ ] `session/start` response hint uses the exact canon text above
+- [ ] Hint directs to `help("start")` as the next step (not `help("startup")`)
+- [ ] Token-save directive is first sentence, help reference is second
 - [ ] Existing session/start behavior is unchanged (no regression)
 - [ ] Directive text references "token" (not "PIN" or "SID")
 
