@@ -59,7 +59,7 @@ const SEND_TYPES = ["text", "file", "notification", "choice", "dm", "append", "a
 type SendType = (typeof SEND_TYPES)[number];
 
 /** Backward-compat aliases — accepted but not advertised in discovery or error messages. */
-const SEND_ALIASES: readonly string[] = ["direct"];
+const SEND_ALIASES: readonly string[] = ["direct", "message"];
 
 const DESCRIPTION =
   "Send a message as text, audio (TTS), or both. " +
@@ -194,10 +194,11 @@ export function register(server: McpServer) {
       }
 
       // Normalize backward-compat aliases to canonical types
-      const resolvedType: SendType = type === "direct" ? "dm" : ((type as SendType | undefined) ?? "text");
+      const resolvedType: SendType = type === "direct" ? "dm" : type === "message" ? "text" : ((type as SendType | undefined) ?? "text");
 
       switch (resolvedType) {
         case "text": {
+          const _aliasHint = type === "message" ? { hint: 'type: "message" is a convenience alias. Canonical: send(type: "text", text: "...") or send(type: "text", audio: "...").' } : {};
           if (!text && !audio) {
             return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Call help(topic: 'send') for usage. Both text and audio are optional individually but at least one is required." });
           }
@@ -252,9 +253,9 @@ export function register(server: McpServer) {
                 message_ids.push(msg.message_id);
               }
               if (message_ids.length === 1) {
-                return toResult({ message_id: message_ids[0], audio: true, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
+                return toResult({ message_id: message_ids[0], audio: true, ..._aliasHint, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
               }
-              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
+              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true, ..._aliasHint, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes("user restricted receiving of voice note messages")) {
@@ -298,9 +299,9 @@ export function register(server: McpServer) {
             }
             const hasTable = containsMarkdownTable(text ?? "");
             if (message_ids.length === 1) {
-              return toResult(hasTable ? { message_id: message_ids[0], info: TABLE_WARNING } : { message_id: message_ids[0] });
+              return toResult(hasTable ? { message_id: message_ids[0], ..._aliasHint, info: TABLE_WARNING } : { message_id: message_ids[0], ..._aliasHint });
             }
-            return toResult(hasTable ? { message_ids, split_count: message_ids.length, split: true, info: TABLE_WARNING } : { message_ids, split_count: message_ids.length, split: true });
+            return toResult(hasTable ? { message_ids, split_count: message_ids.length, split: true, ..._aliasHint, info: TABLE_WARNING } : { message_ids, split_count: message_ids.length, split: true, ..._aliasHint });
           } catch (err) {
             return toError(err);
           }
