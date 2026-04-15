@@ -58,7 +58,7 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   parts.push("→ help('reminders') for reminder docs. reminders/list for details.");
 
   const summary = parts.join(" ");
-  return toResult({ summary });
+  return toResult({ loaded: true, key, summary });
 }
 
 export function register(server: McpServer) {
