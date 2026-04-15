@@ -199,21 +199,26 @@ describe("markPlannedBounce", () => {
     expect(parsed.plannedBounce).toBe(true);
   });
 
-  it("reads existing file before setting plannedBounce", () => {
-    const existing: PersistedSessionState = {
-      nextId: 5,
-      sessions: [{ sid: 3, pin: 300001, name: "Gov", color: "🟦", createdAt: "2026-01-01T00:00:00.000Z" }],
+  it("writes in-memory sessions (not stale disk state) with plannedBounce true", () => {
+    // Add an in-memory session — this is what should be written
+    createSession("Gov");
+    vi.clearAllMocks(); // ignore the auto-persist from createSession
+
+    // Disk has different/stale content — should be ignored
+    const stale: PersistedSessionState = {
+      nextId: 99,
+      sessions: [{ sid: 50, pin: 500001, name: "Stale", color: "🟥", createdAt: "2020-01-01T00:00:00.000Z" }],
       plannedBounce: false,
     };
     mocks.existsSync.mockReturnValue(true);
-    mocks.readFileSync.mockReturnValue(JSON.stringify(existing));
+    mocks.readFileSync.mockReturnValue(JSON.stringify(stale));
 
     markPlannedBounce();
 
     const [, content] = mocks.writeFileSync.mock.calls[0] as [string, string];
     const parsed = JSON.parse(content) as PersistedSessionState;
     expect(parsed.plannedBounce).toBe(true);
-    // Should preserve existing session data
+    // Should write in-memory session, not stale disk session
     expect(parsed.sessions).toHaveLength(1);
     expect(parsed.sessions[0].name).toBe("Gov");
   });

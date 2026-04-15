@@ -62,6 +62,10 @@ loadConfig();
     restorePollerOffset(snapshot.pollerOffset);
     clearSessionState();
     process.stderr.write(`[startup] restored ${snapshot.sessions.length} session(s) from snapshot\n`);
+    // Ensure queues exist for every session restored from the snapshot
+    for (const session of listSessions()) {
+      createSessionQueue(session.sid);
+    }
     // Expire the restored-session bypass after 5 minutes so stale snapshots
     // cannot permanently bypass operator approval.
     setTimeout(() => void expireRestoredSessions(), 5 * 60 * 1000);

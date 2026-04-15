@@ -541,38 +541,22 @@ export function restoreSessions(): boolean {
 }
 
 /**
- * Re-read the current state file and set `plannedBounce: true`, then write
- * back. Called during `elegantShutdown(planned: true)` so the next startup
- * knows it was a deliberate bounce and can skip reconnect approval.
+ * Write current in-memory sessions to `session-state.json` with
+ * `plannedBounce: true`. Called during `elegantShutdown(planned: true)` so
+ * the next startup knows it was a deliberate bounce and can skip reconnect
+ * approval. Always builds from `_sessions` (never re-reads disk) so any
+ * in-memory changes made since the last `persistSessions()` call are captured.
  * Best-effort — swallows all errors.
  */
 export function markPlannedBounce(): void {
   try {
-    let state: PersistedSessionState = {
+    const state: PersistedSessionState = {
       nextId: _nextId,
-      sessions: [..._sessions.values()].map(({ sid, pin, name, color, createdAt }) => ({
-        sid,
-        pin,
-        name,
-        color,
-        createdAt,
+      sessions: Array.from(_sessions.values()).map(s => ({
+        sid: s.sid, pin: s.pin, name: s.name, color: s.color, createdAt: s.createdAt,
       })),
-      plannedBounce: false,
+      plannedBounce: true,
     };
-    if (existsSync(SESSION_STATE_PATH)) {
-      try {
-        const raw = readFileSync(SESSION_STATE_PATH, "utf-8");
-        const parsed: unknown = JSON.parse(raw);
-        if (typeof parsed === "object" && parsed !== null) {
-          state = parsed as PersistedSessionState;
-        }
-      } catch {
-        // Use freshly built state
-      }
-    }
-    state.plannedBounce = true;
-    writeFileSync(SESSION_STATE_PATH, JSON.stringify(state, null, 2) + "\n", "utf-8");
-  } catch {
-    // Best-effort
-  }
+    writeFileSync(SESSION_STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
+  } catch { /* best-effort */ }
 }
