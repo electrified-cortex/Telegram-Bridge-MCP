@@ -8,6 +8,10 @@ Source: Worker 1 (code review of 10-368)
 
 # Add Missing Test Coverage for Cold-Start Regression Fixes (10-368)
 
+## ⚠️ Triage Note (2026-04-14)
+
+May be stale — cold-start flow has been significantly reworked since this was written. Investigate if these specific test gaps still exist before starting. Commit 7f2b2f2 may have been superseded.
+
 ## Objective
 
 Add unit tests for the four new behaviors introduced in commit `7f2b2f2`

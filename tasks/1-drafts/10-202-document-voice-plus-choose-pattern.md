@@ -9,6 +9,10 @@ Branch target: dev
 
 # 10-202: Document Voice + Choose Pattern in Agent Guide
 
+## ⚠️ Triage Note (2026-04-14)
+
+Likely stale — references v5 API (send_text_as_voice, choose). Core intent (document voice+decision pattern) may still apply in v6 with send(audio:) + send(type: "question", choose:). Needs rewrite if kept.
+
 ## Problem
 
 When an agent uses `send_text_as_voice` with a manual `reply_markup`, the inline

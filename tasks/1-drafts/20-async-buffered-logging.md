@@ -8,6 +8,10 @@ Source: Codex swarm review finding 5 + operator design feedback
 
 # Async Buffered Logging for Local Log System
 
+## ⚠️ Triage Note (2026-04-14)
+
+May already be implemented — verify before starting. If appendFileSync is already replaced, close as stale.
+
 ## Problem
 
 `local-log.ts` uses `appendFileSync()` for every log event — synchronous I/O
