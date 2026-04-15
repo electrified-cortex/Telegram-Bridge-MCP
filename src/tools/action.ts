@@ -139,7 +139,7 @@ export function setupActionRegistry(): void {
   registerAction("log/roll", handleRollLog as unknown as ActionHandler, { governor: true });
   registerAction("log/delete", handleDeleteLog as unknown as ActionHandler, { governor: true });
   registerAction("log/debug", handleGetDebugLog as unknown as ActionHandler, { governor: true });
-  registerAction("debug/dump", (async (args: Record<string, unknown>) => {
+  registerAction("debug/dump", ((_args: Record<string, unknown>) => {
     const filename = dumpTraceToDisk();
     return toResult({ filename, message: `Trace log written to data/traces/${filename}` });
   }) as unknown as ActionHandler, { governor: true });

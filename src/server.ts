@@ -116,7 +116,7 @@ export function createServer(): McpServer {
           try {
             const text = (callResult as { content?: Array<{ text?: string }> }).content?.[0]?.text;
             if (text) {
-              const parsed = JSON.parse(text);
+              const parsed: unknown = JSON.parse(text);
               isStructuredError = typeof parsed === "object" && parsed !== null &&
                 ("error" in parsed || "code" in parsed) && !("updates" in parsed) && !("timed_out" in parsed) && !("empty" in parsed);
             }

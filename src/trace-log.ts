@@ -193,7 +193,7 @@ export function getTraceLog(opts: TraceQueryOpts = {}): TraceEntry[] {
   // Non-governor callers are restricted to their own sid.
   const effectiveSid = isGovernor ? sid : callerSid;
 
-  let source = _buffer as TraceEntry[];
+  let source = _buffer;
 
   if (since_seq !== undefined) {
     source = source.filter(e => e.seq > since_seq);

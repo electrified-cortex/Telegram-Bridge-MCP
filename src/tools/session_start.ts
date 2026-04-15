@@ -409,7 +409,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
 
-  const trimmedName = (name ?? "").trim();
+  const trimmedName = name.trim();
   if (!trimmedName) {
     return toError({
       code: "NAME_REQUIRED",

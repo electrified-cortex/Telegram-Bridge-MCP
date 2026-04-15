@@ -155,7 +155,7 @@ describe("filtering", () => {
   it("filters by tool name", () => {
     const entries = getTraceLog({ tool: "dequeue", caller_sid: 99, governor_sid: 99 });
     expect(entries).toHaveLength(2);
-    entries.forEach(e => expect(e.tool).toBe("dequeue"));
+    entries.forEach(e => { expect(e.tool).toBe("dequeue"); });
   });
 
   it("filters by since_seq", () => {
