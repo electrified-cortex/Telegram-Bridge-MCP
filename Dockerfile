@@ -65,6 +65,7 @@ COPY --from=build /app/dist ./dist
 
 # Resource files read at runtime by the MCP server
 COPY docs/behavior.md docs/communication.md docs/formatting.md docs/setup.md ./docs/
+COPY docs/help/ ./docs/help/
 COPY LOOP-PROMPT.md ./
 COPY package.json ./
 

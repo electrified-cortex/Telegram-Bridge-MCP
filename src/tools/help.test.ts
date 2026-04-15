@@ -34,9 +34,16 @@ vi.mock("fs", async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
+    existsSync: (path: unknown) => {
+      const p = String(path);
+      if (p.includes("docs") && p.includes("help")) return true;
+      return (actual.existsSync as (...a: unknown[]) => unknown)(path);
+    },
     readFileSync: (path: unknown, _encoding?: unknown) => {
       const p = String(path);
-      if (p.includes("behavior.md")) return MOCK_GUIDE;
+      if (p.includes("docs") && p.includes("help") && p.includes("guide.md")) return MOCK_GUIDE;
+      if (p.includes("docs") && p.includes("help") && p.includes("dequeue.md")) return "Dequeue Loop — drain before acting. pending > 0 → call dequeue again.";
+      if (p.includes("docs") && p.includes("help") && p.includes("shutdown.md")) return "Graceful Shutdown — shutdown signal triggers clean exit.";
       // Fall through to actual for anything else
       return (actual.readFileSync as (...a: unknown[]) => unknown)(path, _encoding);
     },
@@ -118,6 +125,20 @@ describe("help tool", () => {
     const parsed = parseResult<{ message: string }>(result);
     expect(parsed.message).toContain("Unknown topic: 'unknown_tool'");
     expect(parsed.message).toContain("help()");
+  });
+
+  it("returns rich dequeue guide", async () => {
+    const result = await call({ topic: "dequeue" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("drain");
+  });
+
+  it("returns rich shutdown guide", async () => {
+    const result = await call({ topic: "shutdown" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("shutdown");
   });
 
   describe("topic: 'identity'", () => {

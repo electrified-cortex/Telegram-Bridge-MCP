@@ -1,5 +1,5 @@
 import { createRequire } from "module";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -28,6 +28,23 @@ try {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** Absolute path to docs/help/ directory (resolved relative to this module). */
+const HELP_DIR = join(__dirname, "..", "..", "docs", "help");
+
+/**
+ * Load a help topic from docs/help/<topic>.md.
+ * Returns the file content, or null if the file does not exist.
+ */
+function loadTopic(topic: string): string | null {
+  const filePath = join(HELP_DIR, `${topic}.md`);
+  try {
+    if (!existsSync(filePath)) return null;
+    return readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+}
 
 const DESCRIPTION =
   "Returns discovery information about this MCP server. " +
@@ -162,563 +179,32 @@ export function register(server: McpServer) {
         }
       }
 
-      // topic: "guide" → full agent communication guide
+      // topic: "guide" → full agent communication guide (loaded from docs/help/guide.md)
       if (topic === "guide") {
-        try {
-          const content = readFileSync(
-            join(__dirname, "..", "..", "docs", "behavior.md"),
-            "utf-8"
-          );
+        const content = loadTopic("guide");
+        if (content !== null) {
           return toResult({ content: `Agent Communication Guide\n\n${content}` });
-        } catch {
-          return toResult({
-            content:
-              "Agent Communication Guide\n\nUnavailable: docs/behavior.md not found in distribution.",
-          });
         }
-      }
-
-      // topic: "checklist" → checklist step status values
-      if (topic === "checklist") {
         return toResult({
-          content: [
-            "Checklist Step Statuses",
-            "",
-            "Valid status values for send(type: 'checklist') and action(type: 'checklist/update') steps:",
-            "",
-            "| Status | Meaning |",
-            "| --- | --- |",
-            "| pending | Not yet started (default — shows ⬜) |",
-            "| running | In progress (shows 🔄) |",
-            "| done | Completed successfully (shows ✅) |",
-            "| failed | Completed with error (shows ❌) |",
-            "| skipped | Intentionally skipped (shows ⏭️) |",
-            "",
-            "Common mistake: using 'in-progress' — not valid. Use 'running'.",
-            "",
-            "Example:",
-            "```",
-            "action(type: 'checklist/update', message_id: 123, steps: [",
-            "  { label: 'Fetch data', status: 'done' },",
-            "  { label: 'Process', status: 'running' },",
-            "  { label: 'Save', status: 'pending' }",
-            "])",
-            "```",
-          ].join("\n"),
+          content:
+            "Agent Communication Guide\n\nUnavailable: docs/help/guide.md not found in distribution.",
         });
       }
 
-      // topic: "animation" → animation frames guide
-      if (topic === "animation") {
-        return toResult({
-          content: [
-            "Animation Frames Guide",
-            "",
-            "Starting an animation:",
-            "send(type: 'animation', frames: [...], interval: 1000, timeout: 600)",
-            "Or a named preset: send(type: 'animation', preset: 'working')",
-            "",
-            "Single-emoji frames warning:",
-            "Frames with only a single emoji render as large stickers on mobile (Telegram behavior).",
-            "",
-            "Fix: append \\u200b (zero-width space) to single-emoji frames:",
-            "  frames: ['⏳\\u200b', '🔄\\u200b']",
-            "Or use multi-character frames:",
-            "  frames: ['`⏳ working`', '`🔄 thinking`']",
-            "",
-            "Built-in presets:",
-            "| Preset | Description |",
-            "| --- | --- |",
-            "| bounce | Block-character bouncing bar (default) |",
-            "| working | ⚙ Working… cycling dots |",
-            "| thinking | 🤔 Thinking… cycling dots |",
-            "| reviewing | 🔍 Reviewing… cycling dots |",
-          ].join("\n"),
-        });
-      }
+      // Topics with rich file-based content — skip TOOL_INDEX even if present
+      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide"]);
 
-      // topic: "compression" → standalone compression cheat sheet
-      if (topic === "compression") {
-        return toResult({
-          content: [
-            "Compression Cheat Sheet",
-            "",
-            "Tiers:",
-            "| Tier | Use when |",
-            "| --- | --- |",
-            "| None | Full English — audio msgs, spec files |",
-            "| Lite | Drop filler/hedging, keep articles — operator text |",
-            "| Full | Drop articles, fragments OK — general docs |",
-            "| Ultra | Telegraphic, abbreviate, arrows — agent DMs, agent files |",
-            "",
-            "Surface Map:",
-            "| Surface | Tier |",
-            "| --- | --- |",
-            "| Agent-to-agent DMs | Ultra |",
-            "| Agent files (CLAUDE.md, .agent.md) | Ultra |",
-            "| Skills (SKILL.md), instructions | Ultra |",
-            "| Reminder text | Ultra |",
-            "| Text to operator (Telegram) | Lite |",
-            "| Audio captions | Lite |",
-            "| Audio messages | None |",
-            "| Spec files, code blocks | None |",
-            "",
-            "Ultra Rules:",
-            "Drop: articles (a/an/the), filler (just/really/basically/actually), pleasantries, hedging.",
-            "Keep: technical terms exact, code/paths/URLs verbatim.",
-            "Pattern: [thing] [action] [reason]. [next step].",
-            "Abbreviate: DB auth config req res fn impl msg sess conn dir env repo.",
-            "Fragments OK. Arrows: X → Y.",
-            "",
-            "Examples:",
-            "Bad: 'Sure! I'd be happy to help with that.'",
-            "Good: 'Issue: token expiry, auth middleware.'",
-            "",
-            "Bad: 'The implementation could potentially involve adding a check...'",
-            "Good: 'Impl: null-check before fn call.'",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "startup" → post-session-start checklist
-      if (topic === "startup") {
-        return toResult({
-          content: [
-            "Startup — Post-Session-Start",
-            "",
-            "Token: token = sid * 1_000_000 + pin. Required for all session-bound calls. Save it now.",
-            "Reconnect: action(type: 'session/reconnect', name: '...') if token is lost.",
-            "Missed messages: action(type: 'message/history', count: 20) after reconnect.",
-            "",
-            "Profile (optional): action(type: 'profile/load', key: '<name>') — restores voice, animation presets, and reminders. Skip if no profile exists.",
-            "",
-            "Next step: help(topic: 'quick_start') → dequeue loop, send basics, DM pattern.",
-            "",
-            "Discover: help() → tool index · help(topic: 'guide') → full comms guide · help(topic: '<tool>') → per-tool docs.",
-            "Compression: help(topic: 'compression') → message brevity tiers.",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "quick_start" → minimum-operational guide
-      if (topic === "quick_start") {
-        return toResult({
-          content: [
-            "Quick Start — Minimum to Operate",
-            "",
-            "## 1. Dequeue loop",
-            "Your heartbeat. Call dequeue() to receive messages and events.",
-            "- Block mode: dequeue() — waits up to 300s for next message. Returns { timed_out: true } on timeout — call again.",
-            "- Drain mode: dequeue(timeout: 0) — instant poll. Returns { empty: true } if nothing queued.",
-            "Pattern: drain → block → handle → drain again.",
-            "When pending > 0: call dequeue(timeout: 0) until pending == 0, then block.",
-            "",
-            "## 2. Send a message",
-            "send(type: \"text\", token: <token>, text: \"Hello\") → text message",
-            "send(type: \"notification\", token: <token>, title: \"Done\", text: \"Task complete\", severity: \"success\") → formatted alert",
-            "send(type: \"dm\", token: <token>, target_sid: <sid>, text: \"...\") → private message to another session",
-            "",
-            "## 3. React to a message",
-            "Acknowledge receipt silently: action(type: \"react\", token: <token>, message_id: <id>, emoji: \"👍\")",
-            "Show typing: action(type: \"show-typing\", token: <token>) — auto-cleared when you send",
-            "",
-            "## 4. Discover more",
-            "help(topic: \"guide\") — full communication guide (behaviors, routing, multi-session)",
-            "help(topic: \"<tool_name>\") — docs for a specific tool",
-            "help(topic: \"checklist\") — step status values",
-            "help(topic: \"compression\") — message brevity tiers",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "compacted" → post-compaction recovery for any agent
-      if (topic === "compacted") {
-        return toResult({
-          content: [
-            "Post-Compaction Recovery",
-            "",
-            "You just lost conversational context. Follow these steps:",
-            "",
-            "1. Read your agent file (CLAUDE.md) — it has your identity and routing pointers.",
-            "2. Read startup-context.md in your agent folder — full operating procedures.",
-            "3. Read recovery-context.md in your agent folder — session state and invariants.",
-            "4. Test Telegram: dequeue(timeout: 0) — drain any pending messages.",
-            "5. Check session memory file for token and SID.",
-            "6. If token is lost: action(type: 'session/reconnect', name: '<your_name>').",
-            "7. Resume your dequeue loop or last task.",
-            "",
-            "Key: your agent file is the router. It tells you where everything else lives.",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "dequeue" → dequeue loop rules and flow
-      if (topic === "dequeue") {
-        return toResult({
-          content: [
-            "Dequeue Loop — Heartbeat of every Telegram-enabled agent.",
-            "",
-            "Every code path ends with dequeue. No exceptions. Loop runs until shutdown signal.",
-            "",
-            "## Flow",
-            "dequeue",
-            "  → messages?  → handle → dequeue",
-            "  → timeout    → scan for work → dequeue",
-            "  → reminder   → handle reminder → dequeue",
-            "  → error      → notify superior → dequeue",
-            "",
-            "## Rules",
-            "1. Drain before acting. pending > 0 → call dequeue again before starting work.",
-            "2. Stay responsive. Call dequeue between work chunks.",
-            "3. After subagent returns: review result, DM superior, dequeue — do NOT stop.",
-            "4. After error: notify superior, dequeue — do NOT stop.",
-            "5. Default timeout always. Exception: timeout: 0 when draining pending after reconnect.",
-            "6. Never assume silence = approval. Wait for explicit response.",
-            "",
-            "## Reactions",
-            "- Voice messages: auto-saluted (🫡) by bridge on dequeue. Do not re-salute.",
-            "- 👀 → 🫡 pattern encouraged: 👀 = reviewing, 🫡 = done.",
-            "- Non-voice salute is optional — not required.",
-            "",
-            "## Idle",
-            "No tasks ≠ done. Dequeue silently. On timeout, scan for work, dequeue again.",
-            "No animations when idle — silence is correct signal.",
-            "",
-            "## Messaging",
-            "- Voice by default: send(type: \"text\", audio: \"...\") for conversational replies.",
-            "- send(type: \"text\", ...) for structured content (tables, code, lists).",
-            "- send(type: \"question\", confirm: \"...\") for yes/no. choose: [...] for multi-option.",
-            "",
-            "Before exiting: DM superior \"Do you still need me?\" Only shutdown signal triggers",
-            "action(type: \"session/close\"). Full procedure: help(topic: 'shutdown').",
-            "",
-            "Full reference: skills/telegram-mcp-dequeue-loop/SKILL.md",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "shutdown" → graceful shutdown procedure
-      if (topic === "shutdown") {
-        return toResult({
-          content: [
-            "Graceful Shutdown — Clean exit for Telegram-enabled agents.",
-            "",
-            "Triggered by: operator stop command or action(type: \"shutdown/warn\") DM from governor.",
-            "",
-            "## Common Shutdown (All Agents)",
-            "1. Drain queue. dequeue(timeout: 0) loop until pending = 0 and response = empty.",
-            "   ALWAYS drain — unread messages lost when session ends.",
-            "2. Finish current step. Don't drop mid-operation.",
-            "3. DM superior with status:",
-            "   - Worker → Overseer: \"Worker $Id shutting down.\"",
-            "   - Overseer → Curator: \"Overseer shutting down — pipeline: [summary].\"",
-            "   - Specialist → Governor: \"[Name] shutting down.\"",
-            "4. Wipe session memory file. Overwrite with empty content.",
-            "   Prevents next launch from offering resume on dead session.",
-            "5. Write handoff (if applicable). Required: Overseer, Sentinel. Optional: Workers.",
-            "6. action(type: \"session/close\") — closes YOUR session only. No target_sid.",
-            "7. Stop. No more tool calls after session/close.",
-            "",
-            "## Governor Shutdown (Curator Only)",
-            "1. Drain queue. dequeue(timeout: 0) until empty.",
-            "2. Wipe session memory file.",
-            "3. DM each session: \"Shutting down — close your session.\"",
-            "4. Wait for session_closed events (brief timeout).",
-            "5. Write session log: logs/session/YYYYMM/DD/HHmmss/summary.md",
-            "6. Commit: git add session log + pending changes.",
-            "7. Acknowledge operator (brief voice message).",
-            "8. action(type: \"shutdown\") — triggers MCP bridge graceful shutdown.",
-            "",
-            "## Overseer: Worker Kill Procedure",
-            "After Worker calls close_session:",
-            "  Read .agents/agents/worker/<Worker-N>.pid → Stop-Process -Id $pid -Force",
-            "  Delete PID file. Confirm gone.",
-            "PID file absent → process already exited. No action needed.",
-            "",
-            "Safety: session/close closes YOUR session only. Never pass target_sid.",
-            "",
-            "Full reference: skills/telegram-mcp-graceful-shutdown/SKILL.md",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "forced-stop" → forced-stop detection and recovery
-      if (topic === "forced-stop") {
-        return toResult({
-          content: [
-            "Forced-Stop Recovery — Detection and recovery after context-limit termination.",
-            "",
-            "Distinct from compaction. Agent had zero tokens — no handoff, no session/close, no DM.",
-            "",
-            "## Scenario Comparison",
-            "| Scenario      | Signal                            | Recovery topic   |",
-            "| compaction    | Context truncated, session alive  | compacted        |",
-            "| graceful      | Operator says stop, handoff written | shutdown        |",
-            "| forced stop   | Context limit hit, hook passes through | forced-stop  |",
-            "",
-            "## Periodic Checkpoint (Dead Man's Switch)",
-            "Every 10 dequeue cycles, write checkpoint to session memory file:",
-            "",
-            "  ## Checkpoint",
-            "  Written: <ISO 8601 timestamp>",
-            "  Cycle: <loop cycle count>",
-            "  SID: <your SID>",
-            "  Status: <idle | in-progress: task-id>",
-            "",
-            "Write checkpoint BEFORE processing messages on 10th cycle.",
-            "Silent failure OK — never let checkpoint failure interrupt dequeue loop.",
-            "Write in addition to token block — never replace it.",
-            "",
-            "## Forced-Stop Detection on Startup",
-            "Read session memory file before testing session:",
-            "| Condition                                    | Interpretation        |",
-            "| Empty or missing                             | Fresh start           |",
-            "| Token present, no checkpoint                 | Clean start (<10 cycles) |",
-            "| Checkpoint + handoff non-blank               | Clean shutdown        |",
-            "| Checkpoint + handoff blank/missing           | Forced stop           |",
-            "| Checkpoint + no handoffs used (e.g. Worker)  | Compare timestamp → if gap >30 min, forced stop |",
-            "",
-            "## Announcing Forced-Stop Recovery",
-            "DM Curator immediately after reconnecting (before drain, before profile):",
-            "  \"⚠️ Forced-stop recovery: terminated uncleanly (context limit or hard stop).",
-            "   Last checkpoint: <timestamp>, Cycle: <N>, Status: <idle|task-id>.",
-            "   Resuming now.\"",
-            "",
-            "Use ⚠️ Forced-stop recovery prefix — distinct from compaction recovery phrasing.",
-            "",
-            "## Fleet Detection (Curator/Overseer)",
-            "Orphan signs: session in list, no recent DM, no session/close observed, stale checkpoint.",
-            "Action: DM SID → wait one timeout → no reply → DM Curator → on confirmation, respawn.",
-            "Do NOT close another agent's session. Bridge cleans up orphaned token on replacement start.",
-            "",
-            "Full reference: skills/telegram-mcp-forced-stop-recovery/SKILL.md",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "reminders" → reminder-driven delegation pattern
-      if (topic === "reminders") {
-        return toResult({
-          content: [
-            "Reminder-Driven Follow-Up — Primary async tracking tool for delegation and async ops.",
-            "",
-            "Every delegation or async dispatch should have a corresponding reminder.",
-            "",
-            "## Core Pattern",
-            "1. Create reminder FIRST (before dispatch).",
-            "2. Dispatch work (DM, task, subagent).",
-            "3. On reminder fire → check status.",
-            "   - Done → cancel reminder.",
-            "   - Not done → follow up with agent.",
-            "4. On agent confirmation → cancel reminder.",
-            "",
-            "## Why Reminder First",
-            "Guarantees follow-up exists even if:",
-            "- Dispatch fails silently.",
-            "- Context compaction drops delegation from memory.",
-            "- Session restarts before confirmation arrives.",
-            "",
-            "## API",
-            "action(type: \"reminder/set\", text: \"Verify Deputy completed [task]\", delay_seconds: 600)",
-            "action(type: \"reminder/set\", text: \"Check Worker [task]\", delay_seconds: 1800, recurring: true)",
-            "action(type: \"reminder/cancel\", id: \"<reminder_id>\")",
-            "action(type: \"reminder/list\")",
-            "",
-            "## Timing Reference",
-            "| Delegate              | Delay     | Rationale                     |",
-            "| Deputy                | 10 min    | Fast turnaround, local context |",
-            "| Worker (small task)   | 15–30 min | Claim + execute                |",
-            "| Worker (large task)   | 60 min    | Multi-file changes, builds     |",
-            "| Overseer              | 30 min    | Pipeline coordination          |",
-            "",
-            "Adjust based on complexity. Use recurring: true for long-running work.",
-            "",
-            "## Who Benefits Most",
-            "- Curator — primary beneficiary. Delegates constantly, must verify everything.",
-            "- Overseer — Worker management.",
-            "- Any agent waiting on builds, external processes, or operator input.",
-            "",
-            "Full reference: skills/reminder-driven-followup/SKILL.md",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "dump" → session dump filing procedure
-      if (topic === "dump") {
-        return toResult({
-          content: [
-            "Session Dump Handling — Filing Telegram session dump documents.",
-            "",
-            "Session dumps = conversation history as JSON. File promptly — no data lost between sessions.",
-            "",
-            "## Reaction Protocol",
-            "✍ (pencil) — set immediately when processing begins.",
-            "🫡 (salute) — set when fully filed (replaces ✍).",
-            "",
-            "## Inline (Reactive) Filing",
-            "When dump document event appears in dequeue:",
-            "1. React ✍ on dump message.",
-            "2. download_file the document.",
-            "3. Save to logs/telegram/YYYYMM/DD/HHmmss/dump.json",
-            "   Use dump's own timestamp (real seconds, not message ID).",
-            "4. Stage and commit: git add logs/telegram/<path>",
-            "   Commit message: docs: file telegram dump YYYY-MM-DD",
-            "5. React 🫡 on dump message.",
-            "",
-            "Pre-approved operation — non-destructive, no confirmation needed.",
-            "",
-            "## Periodic (Proactive) Filing",
-            "On recurring dump-check reminder:",
-            "1. List logs/telegram/ → find most recent filed dump.",
-            "2. get_chat_history → scan for document messages newer than last filed dump.",
-            "3. Download and file unfiled dumps (✍ → 🫡 on each).",
-            "4. Single commit for all new dumps:",
-            "   docs: file N telegram dumps from YYYY-MM-DD",
-            "",
-            "Catches dumps missed while agent was dead, compacted, or offline.",
-            "",
-            "## Path Convention",
-            "logs/telegram/YYYYMM/DD/HHmmss/dump.json",
-            "Use dump's creation timestamp, not current time.",
-            "",
-            "Full reference: skills/telegram-mcp-dump-handling/SKILL.md",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "orphaned" → closing an orphaned session
-      if (topic === "orphaned") {
-        return toResult({
-          content: [
-            "Close Orphaned Session — Clean up a registered session with no active agent.",
-            "",
-            "Use when: session appears in list but agent is unresponsive (terminal exit, forced kill,",
-            "operator-denied reconnect).",
-            "",
-            "## When to Use",
-            "- list_sessions shows a Worker session, Worker unresponsive to DMs.",
-            "- Operator asks to clean up a dangling session.",
-            "- Worker terminal exited and operator denied reconnect.",
-            "",
-            "## Procedure",
-            "1. Get orphaned session name and SID from action(type: \"session/list\") or memory.",
-            "2. Reconnect as that session:",
-            "     action(type: \"session/start\", name: \"<WorkerName>\", reconnect: true)",
-            "   Triggers operator approval dialog. Wait for approval.",
-            "3. session/start returns { token, sid, ... }.",
-            "4. Immediately close:",
-            "     action(type: \"session/close\", token: <token>)",
-            "5. Confirm to operator that session is closed.",
-            "",
-            "## Notes",
-            "- Only close sessions where no active agent is running.",
-            "  Closing an active agent's session mid-task corrupts their work.",
-            "- Operator must approve reconnect — intentional, prevents unauthorized closure.",
-            "- After close, SID is gone. Fresh Worker spawn gets new SID.",
-            "- reconnect: true bypasses token knowledge — old token not needed.",
-            "",
-            "Full reference: skills/telegram-mcp-close-orphaned-session/SKILL.md",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "stop-hook" → VS Code stop hook recovery
-      if (topic === "stop-hook") {
-        return toResult({
-          content: [
-            "Stop Hook Recovery — Action when VS Code Stop hook fires during active Telegram session.",
-            "",
-            "Stop hook fires → active Telegram loop detected → FIRST AND ONLY action: call dequeue.",
-            "",
-            "## Rules",
-            "- No text output.",
-            "- No explanation.",
-            "- No analysis.",
-            "- Just: dequeue (re-enters dequeue loop).",
-            "",
-            "## Why",
-            "Stop hook fires when VS Code terminates agent conversation. Session memory file signals",
-            "active Telegram session → should not terminate. Hook catches this, gives one more turn —",
-            "use it to re-enter loop.",
-            "",
-            "## \"No Tokens Left\" Edge Case",
-            "Sequence:",
-            "1. Stop hook fires (first time). stop_hook_active = false → hook blocks. Agent gets one more turn.",
-            "2. Agent near-zero tokens. Can't run full dequeue, write handoff, or DM fleet.",
-            "3. Stop hook fires again. stop_hook_active = true → hook passes through. Process terminates.",
-            "",
-            "Result: session/close never called, no handoff, session file still has token → orphaned.",
-            "",
-            "## Minimal Tokens Remaining — Priority Order",
-            "1. Write checkpoint to session memory immediately (don't wait for 10-cycle interval):",
-            "     ## Checkpoint",
-            "     Written: <ISO 8601>",
-            "     Cycle: <count>",
-            "     SID: <your SID>",
-            "     Status: <idle | in-progress: task-id>",
-            "     Note: forced-stop imminent — checkpoint written at hook boundary",
-            "2. Call dequeue — re-enters loop, may give more time.",
-            "3. If tokens remain after dequeue, DM Overseer:",
-            "     \"⚠️ Context near-exhaustion. Checkpoint written. May stop uncleanly.\"",
-            "",
-            "## Recovery Path",
-            "Next session: reads session memory → finds checkpoint → compares to handoff →",
-            "checkpoint newer than handoff (or handoff blank) → follow forced-stop topic →",
-            "announce unclean stop to Curator → proceed with normal startup.",
-            "",
-            "Full reference: skills/telegram-mcp-stop-hook-recovery/SKILL.md",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "index" → categorized skill index and navigation menu
-      if (topic === "index") {
-        return toResult({
-          content: [
-            "Telegram Bridge MCP — Skill Index",
-            "",
-            "Categorized routing menu. Call help(topic: '<name>') to navigate.",
-            "Call help() for tool index. Call help(topic: 'index') to return here.",
-            "",
-            "GETTING STARTED",
-            "  help(topic: 'startup')     — Post-session-start checklist (token, profile, loop entry)",
-            "  help(topic: 'quick_start') — Minimum to operate (dequeue + send + react basics)",
-            "  help(topic: 'guide')       — Full agent communication guide",
-            "",
-            "CORE OPERATIONS",
-            "  help(topic: 'dequeue')     — Dequeue loop: heartbeat, drain, block, react rules",
-            "  help(topic: 'reminders')   — Reminder-first delegation and async follow-up",
-            "  help(topic: 'animation')   — Animation frames and named presets",
-            "  help(topic: 'checklist')   — Checklist step status values",
-            "",
-            "RECOVERY",
-            "  help(topic: 'compacted')   — Post-compaction recovery (token lost, context reset)",
-            "  help(topic: 'forced-stop') — Forced stop detection, checkpoint pattern, restart",
-            "  help(topic: 'stop-hook')   — VS Code stop hook fires — immediate action",
-            "",
-            "SESSION LIFECYCLE",
-            "  help(topic: 'shutdown')    — Graceful shutdown (common + governor + Worker kill)",
-            "  help(topic: 'orphaned')    — Close orphaned session (no active agent, SID dangling)",
-            "  help(topic: 'dump')        — Session dump filing (inline + periodic)",
-            "",
-            "REFERENCE",
-            "  help(topic: 'compression') — Message brevity tiers (None/Lite/Full/Ultra)",
-            "  help(topic: 'identity')    — Bot info + MCP server version (requires token)",
-            "",
-            "PER-TOOL DOCS",
-            "  help(topic: '<tool_name>') — Detailed docs for any registered tool (see tool index)",
-            "",
-            "DEEP REFERENCE",
-            "  Each topic includes: Full reference: skills/<skill-name>/SKILL.md",
-            "  Agents can bootstrap entirely from help() — no external skill files required on startup.",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "<tool_name>" → per-tool description
-      const desc = TOOL_INDEX[topic];
+      // topic: "<tool_name>" → per-tool description (checked before file lookup)
+      // Skip for rich topics that have dedicated file-based content
+      const desc = !RICH_TOPICS.has(topic) ? TOOL_INDEX[topic] : undefined;
       if (desc) {
         return toResult({ content: `${topic}\n\n${desc}` });
+      }
+
+      // All other named topics → load from docs/help/<topic>.md
+      const fileContent = loadTopic(topic);
+      if (fileContent !== null) {
+        return toResult({ content: fileContent });
       }
 
       return toError({
