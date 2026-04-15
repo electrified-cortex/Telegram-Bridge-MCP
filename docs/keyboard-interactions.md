@@ -131,6 +131,44 @@ shared. The two tools diverge **after** the send:
 
 ---
 
+## Manual Keyboard Removal
+
+`answer_callback_query` alone only dismisses the Telegram spinner — it does **not** remove
+the inline keyboard from the message. A separate `editMessageReplyMarkup` call is required to
+clear the buttons.
+
+### Combined ack + removal (Approach B)
+
+When handling a manual keyboard flow (e.g. a media-player control loop via `dequeue` →
+`answer_callback_query`), pass `remove_keyboard: true` and `message_id: <id>` to collapse both
+operations into a single tool call:
+
+```
+answer_callback_query(
+  callback_query_id: qid,
+  remove_keyboard: true,
+  message_id: 42,
+  token: ...,
+)
+```
+
+This calls `answerCallbackQuery` first, then `editMessageReplyMarkup(chatId, 42, { inline_keyboard: [] })`.
+The ack always succeeds even if the edit fails (failures are logged to stderr as a warning).
+
+`message_id` is required when `remove_keyboard: true` — omitting it returns a
+`MISSING_MESSAGE_ID` error before any Telegram API call is made.
+
+### Multi-press flows (toggle / rotary)
+
+For toggle or rotary patterns where the keyboard should stay visible and update between
+presses, do **not** use `remove_keyboard`. Instead:
+
+1. Call `answer_callback_query` alone to dismiss the spinner.
+2. Call `edit_message` (or `action(type: "message/edit")`) with the updated keyboard to
+   reflect the new state.
+
+---
+
 ## See also
 
 - `docs/communication.md` — Telegram communication patterns and reaction lifecycle

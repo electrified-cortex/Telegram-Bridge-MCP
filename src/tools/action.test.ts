@@ -508,5 +508,32 @@ describe("action tool", () => {
         undefined,
       );
     });
+
+    it("action(type: 'acknowledge', remove_keyboard: true) passes args to handleAnswerCallbackQuery", async () => {
+      // Validates arg forwarding via the action registry wiring — handleAnswerCallbackQuery is mocked
+      const acknowledgeCall = mocks.registerAction.mock.calls.find((c) => c[0] === "acknowledge");
+      expect(acknowledgeCall).toBeDefined();
+      const handler = acknowledgeCall![1] as (args: Record<string, unknown>) => unknown;
+      mocks.handleAnswerCallbackQuery.mockResolvedValue({
+        content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
+      });
+      const result = await handler({
+        type: "acknowledge",
+        callback_query_id: "cbq_X",
+        message_id: 42,
+        remove_keyboard: true,
+        token: VALID_TOKEN,
+      });
+      expect(mocks.handleAnswerCallbackQuery).toHaveBeenCalledOnce();
+      const calledArgs = mocks.handleAnswerCallbackQuery.mock.calls[0][0] as Record<string, unknown>;
+      expect(calledArgs.callback_query_id).toBe("cbq_X");
+      expect(calledArgs.message_id).toBe(42);
+      expect(calledArgs.remove_keyboard).toBe(true);
+      expect(result).toEqual(expect.objectContaining({
+        content: expect.arrayContaining([
+          expect.objectContaining({ text: expect.stringContaining('"ok":true') }),
+        ]),
+      }));
+    });
   });
 });
