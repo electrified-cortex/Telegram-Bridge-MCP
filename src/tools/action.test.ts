@@ -351,7 +351,7 @@ describe("action tool", () => {
       expect(registeredPaths).toContain("log/delete");
       expect(registeredPaths).toContain("log/debug");
       expect(registeredPaths).toContain("log/trace");
-      expect(registeredPaths).toContain("log/dump");
+      expect(registeredPaths).not.toContain("log/dump");
     });
 
     it("calls registerAction for all Phase 2 standalone paths", () => {
@@ -386,7 +386,7 @@ describe("action tool", () => {
       expect(governorPaths).toContain("log/delete");
       expect(governorPaths).toContain("log/debug");
       expect(governorPaths).toContain("log/trace");
-      expect(governorPaths).toContain("log/dump");
+      expect(governorPaths).not.toContain("log/dump");
       expect(governorPaths).toContain("approve");
       expect(governorPaths).toContain("shutdown");
       expect(governorPaths).toContain("shutdown/warn");

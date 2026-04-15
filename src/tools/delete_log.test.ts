@@ -8,10 +8,15 @@ import { createMockServer, parseResult, isError, errorCode, type ToolHandler } f
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   deleteLog: vi.fn(),
+  clearTraceLog: vi.fn(),
 }));
 
 vi.mock("../local-log.js", () => ({
   deleteLog: mocks.deleteLog,
+}));
+
+vi.mock("../trace-log.js", () => ({
+  clearTraceLog: mocks.clearTraceLog,
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -108,5 +113,28 @@ describe("delete_log tool", () => {
     mocks.validateSession.mockReturnValue(false);
     await call({ token: 1099999, filename: "2025-04-05T143022.json" });
     expect(mocks.deleteLog).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // Trace buffer clear — filename: "trace"
+  // -------------------------------------------------------------------------
+
+  describe("trace buffer clear", () => {
+    it("calls clearTraceLog and returns deleted: true when filename is 'trace'", async () => {
+      const result = parseResult(await call({ token: 1123456, filename: "trace" }));
+      expect(result.deleted).toBe(true);
+      expect(result.filename).toBe("trace");
+      expect(mocks.clearTraceLog).toHaveBeenCalledOnce();
+    });
+
+    it("does not call deleteLog when filename is 'trace'", async () => {
+      await call({ token: 1123456, filename: "trace" });
+      expect(mocks.deleteLog).not.toHaveBeenCalled();
+    });
+
+    it("includes a note field explaining trace clear", async () => {
+      const result = parseResult(await call({ token: 1123456, filename: "trace" }));
+      expect(typeof result.note).toBe("string");
+    });
   });
 });
