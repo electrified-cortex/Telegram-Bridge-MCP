@@ -308,7 +308,7 @@ describe("multi-session tool integration", () => {
   // Scenario 4: Session close resets governor routing
   // -------------------------------------------------------------------------
   describe("scenario 4: session close resets governor routing", () => {
-    it("closing governor session clears governor when 1 session remains (2→1 teardown)", async () => {
+    it("closing governor session promotes remaining session to governor (2→1 teardown)", async () => {
       const { sid: sid1, pin: pin1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2 } = createSession(); createSessionQueue(sid2);
       setGovernorSid(sid1);
@@ -319,8 +319,8 @@ describe("multi-session tool integration", () => {
       registerCloseSession(server);
       await server.getHandler("close_session")({ token: sid1 * 1_000_000 + pin1 });
 
-      // 2→1 teardown: single-session mode restored, governor cleared
-      expect(getGovernorSid()).toBe(0);
+      // 2→1 teardown: remaining session (sid2) is promoted to governor
+      expect(getGovernorSid()).toBe(sid2);
     });
 
     it("closing governor session clears governor when no sessions remain", async () => {
@@ -334,7 +334,7 @@ describe("multi-session tool integration", () => {
       expect(getGovernorSid()).toBe(0);
     });
 
-    it("closing a non-governor session clears governor when 1 session remains (2→1 teardown)", async () => {
+    it("closing a non-governor session leaves governor intact when 1 session remains (2→1 teardown)", async () => {
       const { sid: sid1, pin: _pin1 } = createSession(); createSessionQueue(sid1);
       const { sid: sid2, pin: pin2 } = createSession(); createSessionQueue(sid2);
       setGovernorSid(sid1);
@@ -343,8 +343,23 @@ describe("multi-session tool integration", () => {
       registerCloseSession(server);
       await server.getHandler("close_session")({ token: sid2 * 1_000_000 + pin2 });
 
-      // 2→1 teardown: governor cleared regardless of which session closed
-      expect(getGovernorSid()).toBe(0);
+      // 2→1 teardown: non-governor closed, governor (sid1) must remain unchanged
+      expect(getGovernorSid()).toBe(sid1);
+    });
+
+    it("governor closing a non-governor does not clear its own governor role (bug 10-493)", async () => {
+      const { sid: sid1 } = createSession(); createSessionQueue(sid1);
+      const { sid: sid2 } = createSession(); createSessionQueue(sid2);
+      setGovernorSid(sid1);
+
+      expect(getGovernorSid()).toBe(sid1);
+
+      // Directly invoke teardown as the governor-close path does (after operator approval)
+      const { closeSessionById } = await import("../session-teardown.js");
+      closeSessionById(sid2);
+
+      // SID 2 closed, SID 1 remains — governor must still be sid1
+      expect(getGovernorSid()).toBe(sid1);
     });
 
     it("close_session with wrong pin returns AUTH_FAILED and leaves governor intact", async () => {

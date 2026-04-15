@@ -76,9 +76,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
   }
 
   if (remaining.length === 1) {
-    // 2 → 1: single-session mode restored — always reset routing
+    // 2 → 1: single-session mode restored
     const last = remaining[0];
-    setGovernorSid(0);
     // Unpin the remaining session's announcement (back to single-session, no need for pins)
     const lastAnnouncement = getSessionAnnouncementMessage(last.sid);
     if (lastAnnouncement !== undefined) {
@@ -87,12 +86,25 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
         getApi().unpinChatMessage(chatId, lastAnnouncement).catch(() => {});
       }
     }
-    sendServiceMessage(
-      wasGovernor
-        ? "⚠️ Governor session closed. Single-session mode restored."
-        : "ℹ️ Session closed. Single-session mode restored.",
-    ).catch(() => {});
-    deliverDirectMessage(0, last.sid, "📢 Single-session mode restored. Governor cleared.");
+    if (wasGovernor) {
+      // Closed session was the governor: promote the single remaining session
+      setGovernorSid(last.sid);
+      sendServiceMessage(
+        "⚠️ Governor session closed. Single-session mode restored.",
+      ).catch(() => {});
+      deliverServiceMessage(
+        last.sid,
+        `You are now the governor (${sessionName} closed). Single-session mode restored.`,
+        "governor_promoted",
+        { closed_sid: sid, closed_name: sessionName, new_governor_sid: last.sid },
+      );
+    } else {
+      // Closed session was not the governor: governor remains unchanged
+      sendServiceMessage(
+        "ℹ️ Session closed. Single-session mode restored.",
+      ).catch(() => {});
+      deliverDirectMessage(0, last.sid, "📢 Single-session mode restored.");
+    }
   } else if (wasGovernor) {
     if (remaining.length === 0) {
       // Last session (was governor): reset routing

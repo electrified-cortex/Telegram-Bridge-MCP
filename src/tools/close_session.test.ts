@@ -282,7 +282,7 @@ describe("close_session tool", () => {
   // 2 → 1 teardown: single-session mode restoration
   // =========================================================================
 
-  it("clears governor SID when dropping from 2 to 1 session (governor closes)", async () => {
+  it("promotes remaining session to governor when governor closes (2→1)", async () => {
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions.mockReturnValue([
       { sid: 2, name: "Worker", createdAt: "2026-03-17" },
@@ -290,13 +290,14 @@ describe("close_session tool", () => {
 
     await call({ token: 1123456 });
 
-    expect(mocks.setGovernorSid).toHaveBeenCalledWith(0);
+    // Remaining session (sid 2) becomes governor, not cleared to 0
+    expect(mocks.setGovernorSid).toHaveBeenCalledWith(2);
     expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
       expect.stringContaining("Single-session mode restored"),
     );
   });
 
-  it("clears governor SID when dropping from 2 to 1 session (non-governor closes)", async () => {
+  it("does not touch governor SID when non-governor closes (2→1)", async () => {
     mocks.getGovernorSid.mockReturnValue(1); // session 1 is governor, we're closing session 2
     mocks.listSessions.mockReturnValue([
       { sid: 1, name: "Primary", createdAt: "2026-03-17" },
@@ -304,7 +305,8 @@ describe("close_session tool", () => {
 
     await call({ token: 2123456 });
 
-    expect(mocks.setGovernorSid).toHaveBeenCalledWith(0);
+    // Governor (sid 1) must remain — setGovernorSid must NOT be called
+    expect(mocks.setGovernorSid).not.toHaveBeenCalled();
     expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
       expect.stringContaining("Single-session mode restored"),
     );
