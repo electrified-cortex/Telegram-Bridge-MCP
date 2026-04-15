@@ -60,3 +60,22 @@ equivalent) after the callback fires. Manual flows miss this step.
 ## Reversal Plan
 
 Revert commits. No schema or data migration needed.
+
+## Activity Log
+
+- **2026-04-15** — Pipeline started. Variant: Design + Implement.
+- **2026-04-15** — [Stage 2] Feature Designer dispatched. Design received (7 sections). Root cause confirmed: `answerCallbackQuery` does not remove keyboards; explicit `editMessageReplyMarkup` required. Selected Approach B (add `remove_keyboard` param to existing tool).
+- **2026-04-15** — [Stage 3] Design reviewed. Clean — all 7 sections present, criteria verifiable, no implementation code, 3 OQs all non-blocking with stated defaults.
+- **2026-04-15** — [Stage 4] Task Runner dispatched. 5 files changed (137 insertions). Build verifier: 2223/2223 tests pass, TypeScript clean.
+- **2026-04-15** — [Stage 5] Verification: diff non-empty, 2223 tests passed.
+- **2026-04-15** — [Stage 6] Code Reviewer iteration 1: 2 major, 2 minor. Fixed: stderr warning for resolveChat failure + test, action.test.ts integration test, describe nesting, action.ts description update.
+- **2026-04-15** — [Stage 6] Code Reviewer iteration 2: 1 major (misleading test name). Fixed: test renamed to accurately reflect mock-based arg-forwarding coverage.
+- **2026-04-15** — [Stage 6] Code Reviewer iteration 3: Clean — no Critical or Major. 2 info (pre-existing, not introduced by PR).
+- **2026-04-15** — [Stage 7] Complete. Branch: 10-191, commit: ca518df. Ready for Overseer review.
+
+## Completion
+
+Added `remove_keyboard?: boolean` and `message_id?: number` optional parameters to the `answer_callback_query` tool. When `remove_keyboard: true`, the tool calls `editMessageReplyMarkup` after the ack to clear the inline keyboard. Edit failures are non-fatal (logged to stderr, ack still succeeds). Missing `message_id` returns `MISSING_MESSAGE_ID` error before any API call. The `action(type: "acknowledge")` path forwards the new parameter correctly. Docs updated with Manual Keyboard Removal pattern and combined-call guidance.
+
+Subagent passes: Feature Designer ×1, Task Runner ×2, Code Reviewer ×3.
+Final review: 0 critical, 0 major, 0 minor (2 info — pre-existing, not regressed).
