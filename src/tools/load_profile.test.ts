@@ -69,13 +69,65 @@ describe("load_profile tool", () => {
     expect(mocks.setSessionSpeed).toHaveBeenCalledWith(1.2);
   });
 
-  it("successful load includes a hint pointing to dequeue", async () => {
+  it("successful load returns summary containing reminders/list", async () => {
     mocks.readProfile.mockReturnValue({ voice: "alloy" });
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult<{ hint: string }>(result);
-    expect(typeof data.hint).toBe("string");
-    expect(data.hint).toContain("dequeue");
+    const data = parseResult<{ summary: string }>(result);
+    expect(typeof data.summary).toBe("string");
+    expect(data.summary).toContain("reminders/list");
+  });
+
+  it("summary contains voice and speed info", async () => {
+    mocks.readProfile.mockReturnValue({ voice: "onyx", voice_speed: 1.1 });
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ summary: string }>(result);
+    expect(data.summary).toContain("onyx");
+    expect(data.summary).toContain("1.1×");
+  });
+
+  it("summary counts startup and recurring reminders separately", async () => {
+    mocks.readProfile.mockReturnValue({
+      reminders: [
+        { text: "Boot msg", trigger: "startup", recurring: false },
+        { text: "Hourly check", delay_seconds: 3600, recurring: true },
+        { text: "One-shot", delay_seconds: 60, recurring: false },
+      ],
+    });
+    mocks.addReminder.mockImplementation((r: { id: string; text: string; delay_seconds: number; recurring: boolean }) => ({
+      ...r, state: "active", created_at: Date.now(), activated_at: Date.now(),
+    }));
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ summary: string }>(result);
+    // 1 startup reminder, 1 recurring
+    expect(data.summary).toContain("1 startup reminder");
+    expect(data.summary).toContain("1 recurring");
+  });
+
+  it("summary omits hex reminder IDs", async () => {
+    mocks.readProfile.mockReturnValue({
+      reminders: [{ text: "Check CI", delay_seconds: 0, recurring: false }],
+    });
+    mocks.addReminder.mockImplementation((r: { id: string; text: string; delay_seconds: number; recurring: boolean }) => ({
+      ...r, state: "active", created_at: Date.now(), activated_at: Date.now(),
+    }));
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ summary: string; applied?: unknown }>(result);
+    // No 16-char hex string in summary
+    expect(data.summary).not.toMatch(/\b[0-9a-f]{16}\b/);
+    // applied is not present in response
+    expect(data.applied).toBeUndefined();
+  });
+
+  it("summary contains help link for reminders", async () => {
+    mocks.readProfile.mockReturnValue({ voice: "alloy" });
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ summary: string }>(result);
+    expect(data.summary).toContain("help('reminders')");
   });
 
   it("uses content hash as reminder ID (not random UUID)", async () => {
@@ -103,23 +155,25 @@ describe("load_profile tool", () => {
     };
     mocks.addReminder.mockReturnValue(stub);
 
-    // First load — empty list
+    // First load — empty list, 1 time-based non-recurring reminder
     mocks.listReminders.mockReturnValue([]);
     const r1 = await call({ key: "Test", token: 1123456 });
-    const d1 = parseResult<{ applied: { reminders: { added: string[]; updated: string[] } } }>(r1);
-    expect(d1.applied.reminders.added).toContain(existingId);
-    expect(d1.applied.reminders.updated).toHaveLength(0);
+    expect(isError(r1)).toBe(false);
+    const d1 = parseResult<{ summary: string; applied?: unknown }>(r1);
+    expect(typeof d1.summary).toBe("string");
+    expect(d1.summary).toContain("0 startup reminder");
+    expect(d1.applied).toBeUndefined();
 
-    // Second load — existing reminder already present
+    // Second load — existing reminder already present; summary still valid
     mocks.listReminders.mockReturnValue([stub]);
     const r2 = await call({ key: "Test", token: 1123456 });
-    const d2 = parseResult<{ applied: { reminders: { added: string[]; updated: string[]; review_recommended?: boolean } } }>(r2);
-    expect(d2.applied.reminders.added).toHaveLength(0);
-    expect(d2.applied.reminders.updated).toContain(existingId);
-    expect(d2.applied.reminders.review_recommended).toBe(true);
+    expect(isError(r2)).toBe(false);
+    const d2 = parseResult<{ summary: string; applied?: unknown }>(r2);
+    expect(typeof d2.summary).toBe("string");
+    expect(d2.applied).toBeUndefined();
   });
 
-  it("load_profile output distinguishes added vs updated reminders", async () => {
+  it("load_profile output summary reflects reminder counts (not raw IDs)", async () => {
     mocks.readProfile.mockReturnValue({
       reminders: [
         { text: "New reminder", delay_seconds: 0, recurring: false },
@@ -127,7 +181,6 @@ describe("load_profile tool", () => {
       ],
     });
     const existingId = contentHash("Existing reminder", true);
-    const newId = contentHash("New reminder", false);
     const existingStub = {
       id: existingId, text: "Existing reminder", delay_seconds: 60, recurring: true,
       state: "deferred" as const, created_at: Date.now(), activated_at: null,
@@ -138,12 +191,50 @@ describe("load_profile tool", () => {
     }));
 
     const result = await call({ key: "Test", token: 1123456 });
-    const data = parseResult<{
-      applied: { reminders: { added: string[]; updated: string[]; review_recommended?: boolean } };
-    }>(result);
-    expect(data.applied.reminders.added).toContain(newId);
-    expect(data.applied.reminders.updated).toContain(existingId);
-    expect(data.applied.reminders.review_recommended).toBe(true);
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ summary: string; applied?: unknown }>(result);
+    // summary is a string describing reminder counts
+    expect(typeof data.summary).toBe("string");
+    // 2 total reminders: 0 startup, 1 recurring
+    expect(data.summary).toContain("0 startup reminder");
+    expect(data.summary).toContain("1 recurring");
+    // no raw hex IDs
+    expect(data.summary).not.toMatch(/\b[0-9a-f]{16}\b/);
+    // applied not exposed
+    expect(data.applied).toBeUndefined();
+  });
+
+  it("empty profile produces summary with only hints", async () => {
+    mocks.readProfile.mockReturnValue({});
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ summary: string }>(result);
+    expect(typeof data.summary).toBe("string");
+    expect(data.summary).toContain("reminders/list");
+    expect(data.summary).toContain("help('reminders')");
+    // No voice section
+    expect(data.summary).not.toMatch(/voice:/);
+    // No preset count
+    expect(data.summary).not.toMatch(/animation preset/);
+    // No reminder count
+    expect(data.summary).not.toMatch(/startup reminder/);
+    expect(data.summary).not.toMatch(/recurring/);
+  });
+
+  it("reminder that is both startup and recurring counts only as startup (not both)", async () => {
+    mocks.readProfile.mockReturnValue({
+      reminders: [
+        { text: "Boot msg", trigger: "startup", recurring: true },
+      ],
+    });
+    mocks.addReminder.mockImplementation((r: { id: string; text: string; delay_seconds: number; recurring: boolean }) => ({
+      ...r, state: "active", created_at: Date.now(), activated_at: Date.now(),
+    }));
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ summary: string }>(result);
+    expect(data.summary).toContain("1 startup reminder");
+    expect(data.summary).toContain("0 recurring");
   });
 
   describe("identity gate", () => {
