@@ -33,3 +33,9 @@ Good: 'Issue: token expiry, auth middleware.'
 
 Bad: 'The implementation could potentially involve adding a check...'
 Good: 'Impl: null-check before fn call.'
+
+## Sub-topics
+
+→ help('compression/lite') — Lite tier: operator-facing output
+→ help('compression/full') — Full tier: balanced prose
+→ help('compression/ultra') — Ultra tier: agent-to-agent, dense contexts
