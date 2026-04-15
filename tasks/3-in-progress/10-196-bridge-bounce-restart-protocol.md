@@ -15,6 +15,11 @@ The operator has identified that the lack of a fast restart mechanism for the MC
 bridge is a major source of friction. A DI container approach was attempted to
 enable hot module reload but did not work.
 
+**Current status note:** This task predates the v6 tool-surface rewrite. Treat
+older tool references as design intent only and revalidate them against the
+current `action(...)` dispatcher before implementation. This story is partly a
+cleanup/fix artifact, not just a fresh feature spec.
+
 Operator quote: "Hot reload, like, you know, restarting and reloading the MCP
 bridge or bounce — something that allows it to restart, right? Because we tried...
 the DI container and it didn't work."
@@ -28,6 +33,7 @@ a fast-restart protocol that minimizes downtime for connected agents.
 ## Problem
 
 Currently, restarting the bridge means:
+
 1. All sessions disconnect
 2. All polled updates in flight are lost
 3. Agents must detect the disconnect and re-establish sessions
@@ -39,23 +45,27 @@ for routine upgrades.
 ## Options to Investigate
 
 ### Option A — Graceful Bounce Protocol
-1. Bridge announces imminent restart to all sessions (`notify_shutdown_warning`)
+
+1. Bridge announces imminent restart to all sessions (`action(type: "shutdown/warn")`)
 2. Sessions drain their queues
-3. Bridge shuts down, persists minimal state (active SIDs, PINs, names)
+3. Bridge shuts down, persists minimal state (active sessions, credentials, names)
 4. Bridge restarts with new code
-5. Sessions reconnect using `session_start(reconnect: true)`
+5. Sessions reconnect using `action(type: "session/reconnect")`
 6. State restored from persisted snapshot
 
 ### Option B — Process Supervisor with Socket Handoff
+
 Use a lightweight supervisor (e.g., PM2, systemd socket activation) that holds
 the listening socket while the Node process restarts. Incoming requests queue
 at the socket level.
 
 ### Option C — Worker Thread Isolation
+
 Isolate the core logic in a worker thread that can be terminated and re-spawned
 while the main thread holds connections.
 
 ### Option D — Fast Restart Optimization ✅ SELECTED
+
 Don't solve hot-reload — instead make cold restart fast enough that it doesn't
 matter. Optimize startup time, add state persistence, ensure reconnect is seamless.
 
@@ -70,8 +80,9 @@ Can revisit A-C if cold restart latency remains painful after D is implemented.
   notifies all sessions, unpins announcements, dumps session log, exits cleanly
 - **SIGTERM/SIGINT handlers** (`index.ts`): closes HTTP transports, runs shutdown
   sequence with 10s hard timeout, sends "Offline" notification
-- **`session_start(reconnect: true)`**: shows operator approval dialog, returns
-  same SID+PIN if approved, preserves queued messages
+- **`action(type: "session/reconnect")`**: shows operator approval dialog, returns
+  same token if approved, preserves queued messages
+- **`action(type: "session/list")` without a token**: returns active SIDs only
 - **Health check system**: 60s interval, marks sessions unhealthy after 15min,
   detects recovery, governor failover logic
 - **Config persistence** (`mcp-config.json`): voice settings, debug flags — but
@@ -84,20 +95,18 @@ Can revisit A-C if cold restart latency remains painful after D is implemented.
 - **Automatic process restart**: no PM2/systemd/supervisor integration
 - **Auto-reconnect without operator approval**: planned bounces still require
   operator to click "approve" for each reconnecting session
-- **Unauthenticated session probe**: agents can't check if their session exists
-  without a PIN (see 10-198)
 
 ## Operator Vision (voice, 21948)
 
 The operator described a bounce-reconnect cycle:
 
 1. Worker closes session, sleeps ~60 seconds
-2. Worker probes `list_sessions` (unauthenticated — just gets active SIDs)
-3. If their SID exists → try saved PIN → if works, resume
-4. If SID exists but PIN rejected → someone else took it → ask operator
+2. Worker probes `action(type: "session/list")` (unauthenticated — just gets active SIDs)
+3. If their SID exists → try saved token → if works, resume
+4. If SID exists but token rejected → someone else took it → ask operator
 5. If SID gone → bridge restarted → fresh start
 6. If continuously rejected → exit (loop breaker)
-7. If SID+PIN still there after waiting → bridge hasn't restarted yet, sleep more
+7. If the SID is still active after waiting → bridge hasn't restarted yet, sleep more
 
 Key insight: **timing signals intent.** If the session still exists after a
 minute, the bridge didn't restart — sleep and retry.
