@@ -217,13 +217,19 @@ export function register(server: McpServer) {
             const resolvedSpeed = getSessionSpeed() ?? undefined;
             let resolvedCaption: string | undefined;
             let captionParseMode: "MarkdownV2" | undefined;
-            let captionTruncated = false;
+            let captionOverflow = false;
+            let finalTextForSplit: string | undefined;
             if (text) {
               const MAX_CAPTION = 1024 - 60;
               const converted = markdownToV2(applyTopicToText(text, "Markdown"));
-              captionTruncated = converted.length > MAX_CAPTION;
-              resolvedCaption = captionTruncated ? converted.slice(0, MAX_CAPTION).replace(/\\$/, "") : converted;
-              captionParseMode = "MarkdownV2";
+              captionOverflow = converted.length > MAX_CAPTION;
+              if (captionOverflow) {
+                resolvedCaption = undefined;
+                finalTextForSplit = converted;
+              } else {
+                resolvedCaption = converted;
+                captionParseMode = "MarkdownV2";
+              }
             } else {
               const topic = getTopic();
               if (topic) {
@@ -251,10 +257,34 @@ export function register(server: McpServer) {
                 });
                 message_ids.push(msg.message_id);
               }
-              if (message_ids.length === 1) {
-                return toResult({ message_id: message_ids[0], audio: true, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
+              if (captionOverflow && finalTextForSplit) {
+                const textMsg = await callApi(() =>
+                  getApi().sendMessage(chatId, finalTextForSplit!, {
+                    parse_mode: "MarkdownV2",
+                    disable_notification,
+                  } as Record<string, unknown>),
+                );
+                if (message_ids.length === 1) {
+                  return toResult({
+                    message_id: message_ids[0],
+                    text_message_id: textMsg.message_id,
+                    split: true,
+                    audio: true,
+                    _hint: `Caption exceeded limit; audio sent as msg ${message_ids[0]}, text sent separately as msg ${textMsg.message_id}.`,
+                  });
+                }
+                return toResult({
+                  message_ids,
+                  text_message_id: textMsg.message_id,
+                  split: true,
+                  audio: true,
+                  _hint: `Caption exceeded limit; audio sent as msgs ${message_ids.join(", ")}, text sent separately as msg ${textMsg.message_id}.`,
+                });
               }
-              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
+              if (message_ids.length === 1) {
+                return toResult({ message_id: message_ids[0], audio: true });
+              }
+              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes("user restricted receiving of voice note messages")) {
