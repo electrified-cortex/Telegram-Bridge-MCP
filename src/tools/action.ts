@@ -450,10 +450,10 @@ export function register(server: McpServer): void {
           .optional()
           .describe("show-typing: If true, immediately stop the typing indicator."),
         // approve params
-        target_name: z
+        ticket: z
           .string()
           .optional()
-          .describe("approve: Name of the pending session to approve."),
+          .describe("approve: One-time approval ticket delivered to the governor via dequeue when the session requested approval."),
         // shutdown params
         force: z
           .boolean()

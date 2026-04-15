@@ -2106,7 +2106,7 @@ describe("session_start tool", () => {
 // =============================================================================
 
 describe("reauth dialog auto-dismiss", () => {
-  let call: ToolHandler;
+  let _call: ToolHandler;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -2128,7 +2128,7 @@ describe("reauth dialog auto-dismiss", () => {
     });
     const server = createMockServer();
     register(server);
-    call = server.getHandler("session_start");
+    _call = server.getHandler("session_start");
   });
 
   it("stores reauthDialogMsgId on the session when reconnect dialog is sent", async () => {
