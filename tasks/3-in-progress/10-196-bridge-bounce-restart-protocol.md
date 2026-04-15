@@ -123,3 +123,41 @@ minute, the bridge didn't restart — sleep and retry.
 ## Reversal Plan
 
 Remove new code paths. Fall back to current hard-restart behavior.
+
+## Completion
+
+**Date:** 2026-04-15
+**Branch:** `10-196`
+**Commits:** `e6dcdc6`, `d38c3a5`
+
+### What was done
+
+Implemented Option D (Fast Restart Optimization) with session snapshot persistence and planned bounce protocol.
+
+**New files:**
+- `src/bounce-state.ts` — in-memory planned-bounce flag with 10-minute expiry window
+- `src/bounce-state.test.ts` — tests including window expiry
+- `src/session-persistence.ts` — `persistSessions()` / `restoreSessions()` writes/reads `data/session-snapshot.json`
+- `src/session-manager.persist.test.ts` — integration tests for persist-on-mutation
+- `docs/restart-protocol.md` — operator-facing bounce protocol documentation
+
+**Modified files:**
+- `src/session-manager.ts` — `persistSessions()` wired into `createSession`/`closeSession`/`renameSession`; `markPlannedBounce()` builds from `_sessions` directly
+- `src/index.ts` — restore sessions from snapshot at startup; `createSessionQueue()` for all restored sessions
+- `src/restart-guidance.ts` — corrected reconnect guidance (dequeue probe first, not session/reconnect token)
+- `.gitignore` — ignore `data/session-snapshot.json`
+
+**How it works:**
+1. Planned shutdown: `markPlannedBounce()` sets flag + writes snapshot → bridge restarts
+2. On restart: `restoreSessions()` loads snapshot, returns `isPlannedBounce=true`
+3. Agent reconnect: `handleSessionReconnect` detects `isPlannedBounce()` → skips approval dialog, returns token directly
+4. Bounce window: 10 minutes — after expiry, reconnect requires normal approval
+
+### Acceptance Criteria
+
+- [x] Design document with chosen approach (Option D — fast restart with state persistence)
+- [x] Implementation of the bounce mechanism
+- [x] Bridge can restart with < 5 second visible downtime (snapshot restore is synchronous)
+- [x] Active sessions can reconnect after bounce (auto-approved within 10-min window)
+- [x] No lost updates during a planned bounce (Telegram retains messages; agents re-dequeue)
+- [x] Agent guide documents the bounce protocol (`docs/restart-protocol.md`)
