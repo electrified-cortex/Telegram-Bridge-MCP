@@ -236,11 +236,21 @@ export function register(server: McpServer) {
               const chunkErr = validateText(chunk);
               if (chunkErr) return toError(chunkErr);
             }
-            const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
+            // Initial typing budget: generous estimate; extended per-chunk below.
+            const typingSeconds = Math.max(5, Math.ceil(plainText.length / 20));
+            // RECORD_VOICE_EXTEND_SECS: how far ahead to push the deadline before
+            // each synthesis+upload so the indicator never drops mid-operation.
+            const RECORD_VOICE_EXTEND_SECS = 30;
             try {
               await showTyping(typingSeconds, "record_voice");
               const message_ids: number[] = [];
               for (let i = 0; i < voiceChunks.length; i++) {
+                // Extend the recording indicator deadline before each chunk so it
+                // stays visible throughout the full TTS synthesis + upload cycle,
+                // even for long messages where synthesis takes many seconds.
+                // showTyping() detects the already-running interval and only
+                // updates the deadline — no extra Telegram API call is made.
+                await showTyping(RECORD_VOICE_EXTEND_SECS, "record_voice");
                 const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice, resolvedSpeed);
                 const isFirst = i === 0;
                 const msg = await sendVoiceDirect(chatId, ogg, {
