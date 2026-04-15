@@ -19,6 +19,8 @@ export interface Session {
   reauthDialogMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
+  tutorialEnabled?: boolean;   // undefined = true (on by default)
+  tutorialSeenTools?: Set<string>;
 }
 
 /** Public view returned by `listSessions` — no PIN. */
@@ -344,4 +346,33 @@ export function renameSession(
   session.name = newName;
   dlog("session", `renamed sid=${sid} "${old_name}" → "${newName}"`);
   return { old_name, new_name: newName };
+}
+
+// ── Tutorial Mode ──────────────────────────────────────────
+
+/** Return true if tutorial mode is enabled for the session (default: true). */
+export function isTutorialEnabled(sid: number): boolean {
+  const session = _sessions.get(sid);
+  if (!session) return false;
+  return session.tutorialEnabled !== false;
+}
+
+/** Enable or disable tutorial mode for a session. */
+export function setTutorialEnabled(sid: number, enabled: boolean): void {
+  const session = _sessions.get(sid);
+  if (session) session.tutorialEnabled = enabled;
+}
+
+/**
+ * Mark a tool as seen for tutorial purposes.
+ * Returns true if this is the first time the tool has been seen (hint should be shown),
+ * false if the tool has already been seen (skip hint).
+ */
+export function markTutorialToolSeen(sid: number, toolKey: string): boolean {
+  const session = _sessions.get(sid);
+  if (!session) return false;
+  if (!session.tutorialSeenTools) session.tutorialSeenTools = new Set();
+  if (session.tutorialSeenTools.has(toolKey)) return false;
+  session.tutorialSeenTools.add(toolKey);
+  return true;
 }

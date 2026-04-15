@@ -7,6 +7,7 @@ import { getActiveSession } from "./session-manager.js";
 import { runInTokenHintContext } from "./tools/identity-schema.js";
 import { invokePreToolHook } from "./tool-hooks.js";
 import { toError } from "./telegram.js";
+import { getTutorialHint } from "./tutorial-hints.js";
 
 import { register as registerDequeueUpdate } from "./tools/dequeue.js";
 import { register as registerSend } from "./tools/send.js";
@@ -93,7 +94,28 @@ export function createServer(): McpServer {
             logBlockedToolCall(name, reason);
             return toError({ code: "BLOCKED", message: reason });
           }
-          return original(args, extra);
+          const response = await Promise.resolve(original(args, extra)) as {
+            content?: Array<{ type: string; text?: string }>;
+          } | undefined;
+          const hint = getTutorialHint(sid, name, args as Record<string, unknown>);
+          if (hint) {
+            try {
+              const firstContent = response?.content?.[0];
+              if (firstContent?.type === "text") {
+                const parsed = JSON.parse(firstContent.text!) as Record<string, unknown>;
+                if (parsed && typeof parsed === "object" && !parsed.error && !parsed.code && !parsed.tutorial) {
+                  parsed.tutorial = hint;
+                  return {
+                    ...response,
+                    content: [{ type: "text" as const, text: JSON.stringify(parsed, null, 2) }],
+                  };
+                }
+              }
+            } catch {
+              // Non-JSON response — skip
+            }
+          }
+          return response;
         };
 
         if (sid > 0) {

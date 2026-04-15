@@ -60,6 +60,7 @@ import { handleDownloadFile } from "./download_file.js";
 import { handleUpdateChecklist } from "./send_new_checklist.js";
 import { handleUpdateProgress } from "./update_progress.js";
 import { handleSetCommands } from "./set_commands.js";
+import { setTutorialEnabled } from "../session-manager.js";
 
 type ToolResult = ReturnType<typeof toResult>;
 
@@ -173,6 +174,20 @@ export function setupActionRegistry(): void {
       token: args.token as number,
     })
   ) as unknown as ActionHandler);
+
+  // tutorial/*
+  registerAction("tutorial/on", ((args: Record<string, unknown>) => {
+    const _sid = requireAuth(args.token as number);
+    if (typeof _sid !== "number") return toError(_sid);
+    setTutorialEnabled(_sid, true);
+    return toResult({ tutorial: true, message: "Tutorial mode enabled." });
+  }) as unknown as ActionHandler);
+  registerAction("tutorial/off", ((args: Record<string, unknown>) => {
+    const _sid = requireAuth(args.token as number);
+    if (typeof _sid !== "number") return toError(_sid);
+    setTutorialEnabled(_sid, false);
+    return toResult({ tutorial: false, message: "Tutorial mode disabled." });
+  }) as unknown as ActionHandler);
 }
 
 const DESCRIPTION =
