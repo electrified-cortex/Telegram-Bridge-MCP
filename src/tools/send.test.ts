@@ -285,6 +285,47 @@ describe("send tool", () => {
     expect(mocks.synthesizeToOgg).not.toHaveBeenCalled();
     expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
   });
+
+  // ---------------------------------------------------------------------------
+  // Gap 1: voice chunk partial failure — synthesizeToOgg fails mid-sequence
+  // ---------------------------------------------------------------------------
+  it("voice chunk partial failure: error returned when TTS fails on second chunk", async () => {
+    mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
+    // Both chunks pass pre-send validation
+    mocks.validateText.mockReturnValue(null);
+    // First chunk synthesizes OK, second throws mid-sequence
+    mocks.synthesizeToOgg
+      .mockResolvedValueOnce(Buffer.from("ogg-chunk1"))
+      .mockRejectedValueOnce(new Error("TTS upstream failure"));
+    // First sendVoiceDirect call succeeds
+    mocks.sendVoiceDirect.mockResolvedValueOnce({ message_id: 43 });
+
+    const result = await call({ audio: "hello world chunk test", token: TOKEN });
+
+    expect(isError(result)).toBe(true);
+    // First chunk was already sent; error propagates from the second
+    expect(mocks.synthesizeToOgg).toHaveBeenCalledTimes(2);
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledTimes(1);
+    // cancelTyping cleanup must still run (finally block)
+    expect(mocks.cancelTyping).toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gap 2: VOICE_RESTRICTED — sendVoiceDirect throws privacy restriction error
+  // ---------------------------------------------------------------------------
+  it("VOICE_RESTRICTED: returns correct error when Telegram blocks voice due to privacy settings", async () => {
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendVoiceDirect.mockRejectedValue(
+      new Error("user restricted receiving of voice note messages"),
+    );
+
+    const result = await call({ audio: "say something", token: TOKEN });
+
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("VOICE_RESTRICTED");
+    // cancelTyping cleanup must still run (finally block)
+    expect(mocks.cancelTyping).toHaveBeenCalled();
+  });
 });
 
 // =============================================================================

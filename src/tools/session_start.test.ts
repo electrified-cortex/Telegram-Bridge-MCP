@@ -34,6 +34,8 @@ const mocks = vi.hoisted(() => ({
   startPoller: vi.fn(),
   isPollerRunning: vi.fn().mockReturnValue(false),
   checkAndConsumeAutoApprove: vi.fn().mockReturnValue(false),
+  registerPendingApproval: vi.fn(),
+  clearPendingApproval: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -103,6 +105,15 @@ vi.mock("../poller.js", () => ({
 vi.mock("../auto-approve.js", () => ({
   checkAndConsumeAutoApprove: () => mocks.checkAndConsumeAutoApprove(),
 }));
+
+vi.mock("../agent-approval.js", async (importActual) => {
+  const actual = await importActual<Record<string, unknown>>();
+  return {
+    ...actual,
+    registerPendingApproval: (...args: unknown[]) => mocks.registerPendingApproval(...args),
+    clearPendingApproval: (...args: unknown[]) => mocks.clearPendingApproval(...args),
+  };
+});
 
 import { register, handleSessionReconnect } from "./session_start.js";
 import {
@@ -582,6 +593,45 @@ describe("session_start tool", () => {
     expect(isError(result)).toBe(true);
     expect(JSON.stringify(result)).toContain("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Gap 3: Approval timeout cleanup — pending registry and callback hook cleared
+  // =========================================================================
+
+  it("approval timeout: clears callback hook and pending approval on timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.pendingCount.mockReturnValue(0);
+      mocks.activeSessionCount.mockReturnValue(1);
+      mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+      mocks.sendMessage.mockResolvedValue({ message_id: 203 });
+      // Capture the registered message ID so we can verify clearCallbackHook is called with it
+      let capturedMsgId: number | undefined;
+      mocks.registerCallbackHook.mockImplementationOnce((msgId: number) => {
+        capturedMsgId = msgId;
+        // never invoke the callback — let the timeout fire
+      });
+
+      const callPromise = call({ name: "Scout" });
+      // Advance clock past the 120s approval timeout (APPROVAL_TIMEOUT_MS)
+      await vi.runAllTimersAsync();
+      const result = await callPromise;
+
+      // Session must be denied
+      expect(isError(result)).toBe(true);
+      expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+      // capturedMsgId must have been set — if not, registerCallbackHook was never called
+      expect(capturedMsgId).toBeDefined();
+      // The callback hook registered for the approval dialog must be cleared (cleanup)
+      expect(mocks.clearCallbackHook).toHaveBeenCalledWith(capturedMsgId);
+      // The pending approval registry must be cleared on timeout
+      expect(mocks.clearPendingApproval).toHaveBeenCalled();
+      // No session was created — approval never succeeded
+      expect(mocks.createSession).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("second session without a name → immediate error, no approval prompt", async () => {
