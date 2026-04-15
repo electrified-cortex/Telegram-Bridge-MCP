@@ -157,7 +157,7 @@ describe("session_start tool", () => {
       pending: 0,
       discarded: 3,
       fellow_sessions: [],
-      hint: "Save this token. Read: help(topic: 'startup')",
+      hint: "Save this token to session memory. Then call help(\"start\").",
     });
   });
 
@@ -175,7 +175,7 @@ describe("session_start tool", () => {
       pending: 0,
       discarded: 0,
       fellow_sessions: [],
-      hint: "Save this token. Read: help(topic: 'startup')",
+      hint: "Save this token to session memory. Then call help(\"start\").",
     });
   });
 
@@ -1642,14 +1642,14 @@ describe("session_start tool", () => {
     expect(result.hint).toBeTruthy();
   });
 
-  it("fresh session returns hint pointing to startup topic", async () => {
+  it("fresh session returns hint pointing to start topic", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     const result = parseResult(await call({}));
 
-    expect(result.hint).toContain("startup");
+    expect(result.hint).toContain("start");
     expect(result.profile_hint).toBeUndefined();
     expect(result.instructions).toBeUndefined();
   });
@@ -1790,10 +1790,10 @@ describe("session_start tool", () => {
 
     expect(typeof result.hint).toBe("string");
     expect(result.hint).toBeTruthy();
-    expect(result.hint).toContain("SAVE THIS TOKEN");
+    expect(result.hint).toContain("session memory");
   });
 
-  it("reconnect returns hint pointing to startup topic", async () => {
+  it("reconnect returns hint pointing to start topic", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, pin: 123456, name: "Overseer", color: "🟦",
@@ -1807,7 +1807,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
 
-    expect(result.hint).toContain("startup");
+    expect(result.hint).toContain("start");
     expect(result.profile_hint).toBeUndefined();
     expect(result.instructions).toBeUndefined();
   });
@@ -2276,7 +2276,7 @@ describe("handleSessionReconnect", () => {
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
-  it("hint includes 'SAVE THIS TOKEN' and 'startup' after approval", async () => {
+  it("hint includes token save instruction and 'start' after approval", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, pin: 111111, name: "Overseer", color: "🟦",
@@ -2289,9 +2289,8 @@ describe("handleSessionReconnect", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
 
-    expect(result.hint).toContain("SAVE THIS TOKEN");
-    expect(result.hint).toContain("startup");
-    expect(result.hint).toContain("Reconnect successful");
+    expect(result.hint).toContain("session memory");
+    expect(result.hint).toContain("start");
   });
 
   it("operator dialog text is just the name — no explanation text", async () => {

@@ -92,18 +92,25 @@ describe("help tool", () => {
     expect(content).toContain("notification");
   });
 
-  it("help(topic: 'startup') returns reconnect hint and message/history with count", async () => {
+  it("help(topic: 'start') returns profile load, dequeue loop, and send basics", async () => {
+    const result = await call({ topic: "start" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("profile/load");
+    expect(content).toContain("dequeue()");
+    expect(content).toContain("5 minutes");
+    expect(content).toContain("help('guide')");
+  });
+
+  it("help(topic: 'startup') is aliased to 'start'", async () => {
     const result = await call({ topic: "startup" });
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);
-    expect(content).toContain("sid * 1_000_000");
-    expect(content).toContain("session/reconnect");
-    expect(content).toContain("message/history");
-    expect(content).toContain("count: 20");
-    expect(content).toContain("quick_start");
+    expect(content).toContain("profile/load");
+    expect(content).toContain("dequeue()");
   });
 
-  it("help(topic: 'quick_start') returns dequeue and send content", async () => {
+  it("help(topic: 'quick_start') is aliased to 'start'", async () => {
     const result = await call({ topic: "quick_start" });
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);

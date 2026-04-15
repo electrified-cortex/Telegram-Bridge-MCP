@@ -298,7 +298,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           pending: 0,
           discarded,
           fellow_sessions: [] as unknown[],
-          hint: "Save this token. Read: help(topic: 'startup')",
+          hint: "Save this token to session memory. Then call help(\"start\").",
         };
         if (isFirstSession) {
           // First session is the governor by default
@@ -522,7 +522,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     sessions_active: reconSessActive,
     action: "reconnected",
     pending,
-    hint: "Reconnect successful. You lost your token — likely from context compaction. SAVE THIS TOKEN TO SESSION MEMORY NOW. Then call help(topic: 'startup') to resume normal operation.",
+    hint: "Save this token to session memory. Then call help(\"start\").",
   });
 }
 
