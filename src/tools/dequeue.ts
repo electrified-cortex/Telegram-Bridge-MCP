@@ -58,9 +58,9 @@ function compactBatch(events: TimelineEvent[], sid: number): Record<string, unkn
 const DESCRIPTION =
   "Consume queued updates. Non-content events drain first, then up to one content event (text, media, voice) is appended. " +
   "Returns: `{ updates, pending? }` with data; `{ timed_out: true }` on blocking-wait expiry (call again immediately); " +
-  "`{ empty: true }` for instant polls (timeout: 0); " +
+  "`{ empty: true }` for instant polls (max_wait: 0); " +
   "`{ error: \"session_closed\", message }` (isError: false) when the session queue is gone — stop looping. " +
-  "pending > 0 → call again. Omit timeout to use session default (action(type: 'profile/dequeue-default'), fallback 300 s); max explicit: 300 s. " +
+  "pending > 0 → call again. Omit max_wait to use session default (action(type: 'profile/dequeue-default'), fallback 300 s); max explicit: 300 s. " +
   "Call `help(topic: 'dequeue')` for details.";
 
 /**
@@ -80,21 +80,30 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
+        max_wait: z
+          .number()
+          .int({ message: "max_wait must be an integer number of seconds." })
+          .min(0, { message: "max_wait must be \u2265 0. Call help(topic: 'dequeue') for usage." })
+          .max(300, { message: "max_wait must be \u2264 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
+          .optional()
+          .describe("Seconds to block when queue is empty. Omit to use your session default (set via action(type: 'profile/dequeue-default')); server fallback is 300 s. Pass 0 for an instant non-blocking poll (drain loops only). Values above the session default require force: true or action(type: 'profile/dequeue-default'). Max 300 s — use action(type: 'profile/dequeue-default') to configure persistent agents. You almost never need to set this — the session default handles blocking. Only exception: max_wait: 0 for drain loops."),
         timeout: z
           .number()
-          .int({ message: "timeout must be an integer number of seconds." })
-          .min(0, { message: "timeout must be \u2265 0. Call help(topic: 'dequeue') for usage." })
-          .max(300, { message: "timeout must be \u2264 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
+          .int()
+          .min(0)
+          .max(300)
           .optional()
-          .describe("Seconds to block when queue is empty. Omit to use your session default (set via action(type: 'profile/dequeue-default')); server fallback is 300 s. Pass 0 for an instant non-blocking poll (drain loops only). Values above the session default require force: true or action(type: 'profile/dequeue-default'). Max 300 s — use action(type: 'profile/dequeue-default') to configure persistent agents."),
+          .describe("Deprecated alias for max_wait. Use max_wait instead."),
         force: z
           .boolean()
           .default(false)
-          .describe("Pass true to allow a one-time override when timeout exceeds your current session default. Only applies to values ≤ 300 s (the hard cap on timeout). To wait longer than 300 s by default, use action(type: 'profile/dequeue-default') instead."),
+          .describe("Pass true to allow a one-time override when max_wait exceeds your current session default. Only applies to values ≤ 300 s (the hard cap on max_wait). To wait longer than 300 s by default, use action(type: 'profile/dequeue-default') instead."),
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ timeout, force, token }, { signal }) => {
+    async ({ max_wait, timeout: timeoutAlias, force, token }, { signal }) => {
+      // Resolve max_wait from primary param or deprecated `timeout` alias.
+      const timeout = max_wait ?? timeoutAlias;
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const sid = _sid;
@@ -106,7 +115,7 @@ export function register(server: McpServer) {
       const isFirstDequeue = !_firstDequeueShownForSession.has(sid);
       if (isFirstDequeue) _firstDequeueShownForSession.add(sid);
       const firstDequeueHint = isFirstDequeue
-        ? "Drain mode: dequeue(timeout: 0) returns immediately. Block mode: dequeue() waits up to 300s. Call again after handling — the loop is your heartbeat."
+        ? "Drain mode: dequeue(max_wait: 0) returns immediately. Block mode: dequeue() waits up to 300s. Call again after handling — the loop is your heartbeat."
         : undefined;
 
       /** Combine token-string hint and first-dequeue hint into one hint string (or undefined). */
@@ -123,7 +132,7 @@ export function register(server: McpServer) {
         _timeoutHintShownForSession.add(sid);
         const response: Record<string, unknown> = {
           code: "TIMEOUT_EXCEEDS_DEFAULT",
-          message: `timeout ${timeout} exceeds your current default of ${sessionDefault}s.`,
+          message: `max_wait ${timeout} exceeds your current default of ${sessionDefault}s.`,
         };
         if (firstOccurrence) {
           response.hint = `Pass force: true for a one-time override, or call action(type: 'profile/dequeue-default', timeout: ${timeout}) to raise your default.`;

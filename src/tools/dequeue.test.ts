@@ -922,6 +922,52 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
+  // max_wait parameter — primary name and backward-compat alias
+  // =========================================================================
+
+  describe("max_wait parameter", () => {
+    it("accepts max_wait: 0 as the primary instant-poll parameter", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ max_wait: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBe(true);
+    });
+
+    it("accepts max_wait for blocking poll", async () => {
+      const evt = makeEvent(50, "via max_wait");
+      mocks.dequeueBatch.mockReturnValueOnce([]).mockReturnValueOnce([evt]);
+      mocks.waitForEnqueue.mockResolvedValue(undefined);
+      const result = await call({ max_wait: 1, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.updates).toHaveLength(1);
+      expect(data.updates[0].id).toBe(50);
+    });
+
+    it("backward-compat: timeout alias still works as instant poll", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBe(true);
+    });
+
+    it("max_wait takes precedence over timeout alias when both provided", async () => {
+      // max_wait: 0 → instant poll; timeout: 300 → long block. max_wait wins.
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ max_wait: 0, timeout: 300, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBe(true);
+    });
+
+    it("force gate uses max_wait value when set via max_wait", async () => {
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ max_wait: 200, token: 1_123_456 });
+      const data = parseResult(result);
+      expect(data.code).toBe("TIMEOUT_EXCEEDS_DEFAULT");
+      expect(data.message).toContain("200");
+    });
+  });
+
+  // =========================================================================
   // Timer overflow guard — MAX_SET_TIMEOUT_MS clamp
   // =========================================================================
 
