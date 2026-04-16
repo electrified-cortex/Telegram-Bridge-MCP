@@ -13,10 +13,10 @@ Compaction truncates conversation history but does NOT kill Telegram session. Se
 
 ## Critical Rule
 
-**Do NOT call `action(type: "session/start")` or `action(type: "config/profile/load")` unless session is dead.**
+**Do NOT call `action(type: "session/start")` or `action(type: "profile/load")` unless session is dead.**
 
-- `session/start reconnect: true` sends operator a reconnect prompt — unnecessary if session alive.
-- `config/profile/load` overwrites preserved session settings (voice, speed, animations, reminders).
+- `session/reconnect` sends operator a reconnect prompt — unnecessary if session alive.
+- `profile/load` overwrites preserved session settings (voice, speed, animations, reminders).
 
 ## Procedure
 
@@ -50,7 +50,7 @@ If forced stop detected: announce to Curator per `telegram-mcp-forced-stop-recov
 3. **Session dead:** ONLY THEN reconnect:
 
    ```text
-   action(type: "session/start", name: "<AgentName>", reconnect: true)
+   action(type: "session/reconnect", name: "<AgentName>")
    ```
 
    Save new token to session memory.
@@ -58,7 +58,7 @@ If forced stop detected: announce to Curator per `telegram-mcp-forced-stop-recov
 4. **If reconnecting, reload profile** (old session state gone):
 
    ```text
-   action(type: "config/profile/load", key: "<ProfileKey>")
+   action(type: "profile/load", key: "<ProfileKey>")
    ```
 
 5. **Check missed messages.**

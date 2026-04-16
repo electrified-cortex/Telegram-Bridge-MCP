@@ -1,6 +1,6 @@
 # [Unreleased]
 
-## v6.0.3 — Unreleased
+## v6.1.0 — Unreleased
 
 ### Added
 

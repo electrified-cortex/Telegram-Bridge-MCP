@@ -7,7 +7,7 @@ Valid status values for send(type: 'checklist') and action(type: 'checklist/upda
 | pending | Not yet started (default — shows ⬜) |
 | running | In progress (shows 🔄) |
 | done | Completed successfully (shows ✅) |
-| failed | Completed with error (shows ❌) |
+| failed | Completed with error (shows ⛔) |
 | skipped | Intentionally skipped (shows ⏭️) |
 
 Common mistake: using 'in-progress' — not valid. Use 'running'.
