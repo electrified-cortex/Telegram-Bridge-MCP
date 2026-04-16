@@ -17,6 +17,7 @@
 - `dequeue` wait loop: fixed a lost-wakeup race where an event enqueued between the empty-check and waiter registration could leave the agent blocked until another message arrived
 - `AUTH_FAILED` guidance now explicitly mentions closed/restarted sessions so mid-session token failures direct agents to `action(type: 'session/reconnect', ...)`
 - Graceful shutdown now has a hard-exit watchdog and duplicate-request guard so `/shutdown` cannot hang indefinitely on stalled network cleanup calls
+- Background Telegram poller now starts unconditionally at server startup so built-in commands (`/shutdown`, `/session`, etc.) work even when no agent session is active
 
 ## v6.0.2 — 2026-04-11
 

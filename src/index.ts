@@ -12,7 +12,7 @@ import { createServer } from "./server.js";
 import { getSecurityConfig, getApi, resolveChat, installOutboundProxy, sendServiceMessage, restorePollerOffset } from "./telegram.js";
 import { clearCommandsOnShutdown } from "./shutdown.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
-import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
+import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startHealthCheck } from "./health-check.js";
 import { setAuthHook } from "./session-gate.js";
 import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, restoreSessionsFromSnapshot, restoreSessions, listSessions } from "./session-manager.js";
@@ -259,6 +259,10 @@ void (async () => {
     });
   } catch { /* ignore */ }
 })();
+
+// Start the background poller unconditionally so built-in Telegram commands
+// (e.g. /shutdown, /session) work even when no agent session is active.
+startPoller();
 
 startHealthCheck();
 setAuthHook((sid: number) => {
