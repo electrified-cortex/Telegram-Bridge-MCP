@@ -157,7 +157,7 @@ describe("session_start tool", () => {
       pending: 0,
       discarded: 3,
       fellow_sessions: [],
-      hint: "Save this token. Read: help(topic: 'startup')",
+      instruction: "Do this now: save this token, then call help('start') for post-session setup.",
     });
   });
 
@@ -175,7 +175,7 @@ describe("session_start tool", () => {
       pending: 0,
       discarded: 0,
       fellow_sessions: [],
-      hint: "Save this token. Read: help(topic: 'startup')",
+      instruction: "Do this now: save this token, then call help('start') for post-session setup.",
     });
   });
 
@@ -1631,25 +1631,25 @@ describe("session_start tool", () => {
   // hint field — persistence & recovery hints (task 056)
   // =========================================================================
 
-  it("fresh session response includes hint field", async () => {
+  it("fresh session response includes instruction field", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     const result = parseResult(await call({}));
 
-    expect(typeof result.hint).toBe("string");
-    expect(result.hint).toBeTruthy();
+    expect(typeof result.instruction).toBe("string");
+    expect(result.instruction).toBeTruthy();
   });
 
-  it("fresh session returns hint pointing to startup topic", async () => {
+  it("fresh session returns instruction pointing to start topic", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     const result = parseResult(await call({}));
 
-    expect(result.hint).toContain("startup");
+    expect(result.instruction).toContain("start");
     expect(result.profile_hint).toBeUndefined();
     expect(result.instructions).toBeUndefined();
   });
@@ -1774,7 +1774,7 @@ describe("session_start tool", () => {
     });
   });
 
-  it("reconnect response (name match + approved) includes hint field", async () => {
+  it("reconnect response (name match + approved) includes instruction field", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, pin: 123456, name: "Overseer", color: "🟦",
@@ -1788,12 +1788,12 @@ describe("session_start tool", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
 
-    expect(typeof result.hint).toBe("string");
-    expect(result.hint).toBeTruthy();
-    expect(result.hint).toContain("SAVE THIS TOKEN");
+    expect(typeof result.instruction).toBe("string");
+    expect(result.instruction).toBeTruthy();
+    expect(result.instruction).toContain("save this token");
   });
 
-  it("reconnect returns hint pointing to startup topic", async () => {
+  it("reconnect returns instruction pointing to start topic", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, pin: 123456, name: "Overseer", color: "🟦",
@@ -1807,7 +1807,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
 
-    expect(result.hint).toContain("startup");
+    expect(result.instruction).toContain("start");
     expect(result.profile_hint).toBeUndefined();
     expect(result.instructions).toBeUndefined();
   });
@@ -2276,7 +2276,7 @@ describe("handleSessionReconnect", () => {
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
-  it("hint includes 'SAVE THIS TOKEN' and 'startup' after approval", async () => {
+  it("instruction includes token save directive and 'start' after approval", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, pin: 111111, name: "Overseer", color: "🟦",
@@ -2289,9 +2289,8 @@ describe("handleSessionReconnect", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
 
-    expect(result.hint).toContain("SAVE THIS TOKEN");
-    expect(result.hint).toContain("startup");
-    expect(result.hint).toContain("Reconnect successful");
+    expect(result.instruction).toContain("save this token");
+    expect(result.instruction).toContain("start");
   });
 
   it("operator dialog text is just the name — no explanation text", async () => {

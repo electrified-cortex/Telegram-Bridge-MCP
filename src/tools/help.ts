@@ -34,8 +34,7 @@ const DESCRIPTION =
   "Call with no arguments for an overview and full tool index. " +
   "Pass topic: 'index' for a categorized skill index and navigation menu. " +
   "Pass topic: 'guide' for the full agent communication guide. " +
-  "Pass topic: 'startup' for the post-session-start checklist. " +
-  "Pass topic: 'quick_start' for the minimum-operational guide (dequeue loop, send, DM). " +
+  "Pass topic: 'start' for the post-session-start checklist (profile load, dequeue loop, send basics). " +
   "Pass topic: 'compression' for the compression cheat sheet. " +
   "Pass topic: 'compacted' for post-compaction recovery steps. " +
   "Pass topic: 'dequeue' for dequeue loop rules and flow. " +
@@ -54,7 +53,7 @@ const DESCRIPTION =
  * added in the future, this list should be updated to match.
  */
 const TOOL_INDEX: Record<string, string> = {
-  help: "Discovery tool — overview, communication guide, and per-tool docs. Specialized topics: 'index' (categorized skill menu), 'startup' (post-session checklist), 'quick_start' (dequeue loop + send basics), 'guide' (agent comms guide), 'compression' (compression cheat sheet), 'checklist' (step statuses), 'animation' (frame guide), 'dequeue' (loop rules), 'shutdown' (graceful shutdown), 'forced-stop' (context-limit recovery), 'reminders' (delegation follow-up), 'dump' (session dump filing), 'orphaned' (close dangling session), 'stop-hook' (VS Code stop hook). No auth required for most topics; topic: 'identity' requires a session token.",
+  help: "Discovery tool — overview, communication guide, and per-tool docs. Specialized topics: 'index' (categorized skill menu), 'start' (post-session checklist: profile, dequeue loop, send basics), 'guide' (agent comms guide), 'compression' (compression cheat sheet), 'checklist' (step statuses), 'animation' (frame guide), 'dequeue' (loop rules), 'shutdown' (graceful shutdown), 'forced-stop' (context-limit recovery), 'reminders' (delegation follow-up), 'dump' (session dump filing), 'orphaned' (close dangling session), 'stop-hook' (VS Code stop hook). No auth required for most topics; topic: 'identity' requires a session token.",
   session_start: "Authenticate and start a named agent session. Returns a token for all subsequent calls.",
   close_session: "End the current agent session and release its slot.",
   list_sessions: "List all active sessions with their SIDs and display names.",
@@ -280,53 +279,34 @@ export function register(server: McpServer) {
         });
       }
 
-      // topic: "startup" → post-session-start checklist
-      if (topic === "startup") {
+      // topic: "start" (also aliased from "startup" and "quick_start") → post-session-start operational guide
+      if (topic === "start" || topic === "startup" || topic === "quick_start") {
         return toResult({
           content: [
-            "Startup — Post-Session-Start",
+            "Start — Post-Session Operational Guide",
             "",
-            "Token: token = sid * 1_000_000 + pin. Required for all session-bound calls. Save it now.",
-            "Reconnect: action(type: 'session/reconnect', name: '...') if token is lost.",
-            "Missed messages: action(type: 'message/history', count: 20) after reconnect.",
+            "## Profile",
+            "If you have a saved profile: action(type: 'profile/load', key: 'YourProfileKey', token)",
+            "Restores voice, animation presets, reminders. Skip if no profile exists.",
             "",
-            "Profile (optional): action(type: 'profile/load', key: '<name>') — restores voice, animation presets, and reminders. Skip if no profile exists.",
+            "## Dequeue Loop",
+            "Call dequeue() with no parameters. Default timeout is 5 minutes. This is intentional — blocking reduces token use.",
+            "Returns { timed_out: true } on timeout → call again. Returns { empty: true } on instant poll.",
+            "Pattern: drain → block → handle → drain again. When pending > 0: dequeue(timeout: 0) until pending == 0, then block.",
+            "Claude Code sessions (long-lived): action(type: 'profile/dequeue-default', timeout: N, token) to increase timeout.",
             "",
-            "Next step: help(topic: 'quick_start') → dequeue loop, send basics, DM pattern.",
+            "## Send Basics",
+            "send(type: 'text', token, text: 'Hello') → text message",
+            "send(type: 'notification', token, title: 'Done', text: 'Task complete', severity: 'success') → formatted alert",
             "",
-            "Discover: help() → tool index · help(topic: 'guide') → full comms guide · help(topic: '<tool>') → per-tool docs.",
-            "Compression: help(topic: 'compression') → message brevity tiers.",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "quick_start" → minimum-operational guide
-      if (topic === "quick_start") {
-        return toResult({
-          content: [
-            "Quick Start — Minimum to Operate",
+            "## DM Pattern",
+            "send(type: 'dm', token, target: 'SessionName', text: '...') → private message to another session",
+            "action(type: 'react', token, message_id: <id>, emoji: '👍') → silent receipt ack",
             "",
-            "## 1. Dequeue loop",
-            "Your heartbeat. Call dequeue() to receive messages and events.",
-            "- Block mode: dequeue() — waits up to 300s for next message. Returns { timed_out: true } on timeout — call again.",
-            "- Drain mode: dequeue(timeout: 0) — instant poll. Returns { empty: true } if nothing queued.",
-            "Pattern: drain → block → handle → drain again.",
-            "When pending > 0: call dequeue(timeout: 0) until pending == 0, then block.",
-            "",
-            "## 2. Send a message",
-            "send(type: \"text\", token: <token>, text: \"Hello\") → text message",
-            "send(type: \"notification\", token: <token>, title: \"Done\", text: \"Task complete\", severity: \"success\") → formatted alert",
-            "send(type: \"dm\", token: <token>, target_sid: <sid>, text: \"...\") → private message to another session",
-            "",
-            "## 3. React to a message",
-            "Acknowledge receipt silently: action(type: \"react\", token: <token>, message_id: <id>, emoji: \"👍\")",
-            "Show typing: action(type: \"show-typing\", token: <token>) — auto-cleared when you send",
-            "",
-            "## 4. Discover more",
-            "help(topic: \"guide\") — full communication guide (behaviors, routing, multi-session)",
-            "help(topic: \"<tool_name>\") — docs for a specific tool",
-            "help(topic: \"checklist\") — step status values",
-            "help(topic: \"compression\") — message brevity tiers",
+            "## Help",
+            "All tools: help(). Specific tool: help('tool_name'). Full guide: help('guide').",
+            "help('guide') → full comms guide (optional reference, not required reading)",
+            "help('dequeue') → dequeue loop rules · help('compression') → message brevity tiers",
           ].join("\n"),
         });
       }
@@ -681,8 +661,7 @@ export function register(server: McpServer) {
             "Call help() for tool index. Call help(topic: 'index') to return here.",
             "",
             "GETTING STARTED",
-            "  help(topic: 'startup')     — Post-session-start checklist (token, profile, loop entry)",
-            "  help(topic: 'quick_start') — Minimum to operate (dequeue + send + react basics)",
+            "  help(topic: 'start')       — Post-session-start guide (profile, dequeue loop, send basics)",
             "  help(topic: 'guide')       — Full agent communication guide",
             "",
             "CORE OPERATIONS",

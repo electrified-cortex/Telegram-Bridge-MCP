@@ -30,7 +30,7 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   const applyResult = applyProfile(_sid, profile);
   if ("code" in applyResult) return toError(applyResult);
 
-  return toResult({ loaded: true, key, applied: applyResult.applied, hint: "Profile loaded. Call dequeue() to enter the message loop." });
+  return toResult({ loaded: true, key, applied: applyResult.applied, instruction: "Do this now: call dequeue() to enter the message loop." });
 }
 
 export function register(server: McpServer) {
