@@ -30,7 +30,35 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   const applyResult = applyProfile(_sid, profile);
   if ("code" in applyResult) return toError(applyResult);
 
-  return toResult({ loaded: true, key, applied: applyResult.applied, instruction: "Do this now: call dequeue() to enter the message loop." });
+  // Build ultra-compressed summary
+  const parts: string[] = [];
+
+  // Voice + speed (only if voice was set in the profile)
+  if (profile.voice !== undefined) {
+    const speed = profile.voice_speed !== undefined ? ` ${profile.voice_speed}×` : "";
+    parts.push(`voice: ${profile.voice}${speed}.`);
+  }
+
+  // Animation preset count (only if any presets)
+  const presetCount = profile.animation_presets !== undefined
+    ? Object.keys(profile.animation_presets).length
+    : 0;
+  if (presetCount > 0) parts.push(`${presetCount} animation preset${presetCount === 1 ? "" : "s"}.`);
+
+  // Reminder counts by trigger type and recurring flag
+  const reminders = profile.reminders ?? [];
+  if (reminders.length > 0) {
+    const startupCount = reminders.filter(r => r.trigger === "startup").length;
+    const recurringCount = reminders.filter(r => r.trigger !== "startup" && r.recurring).length;
+    const s = startupCount === 1 ? "" : "s";
+    parts.push(`${startupCount} startup reminder${s}, ${recurringCount} recurring.`);
+  }
+
+  // Always end with reminder navigation hint
+  parts.push("→ help('reminders') for reminder docs. reminders/list for details.");
+
+  const summary = parts.join(" ");
+  return toResult({ loaded: true, key, summary, instruction: "Do this now: call dequeue() to enter the message loop." });
 }
 
 export function register(server: McpServer) {
