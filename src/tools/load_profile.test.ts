@@ -69,13 +69,13 @@ describe("load_profile tool", () => {
     expect(mocks.setSessionSpeed).toHaveBeenCalledWith(1.2);
   });
 
-  it("successful load returns summary containing reminders/list", async () => {
+  it("successful load without reminders omits reminders hint", async () => {
     mocks.readProfile.mockReturnValue({ voice: "alloy" });
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult<{ summary: string }>(result);
     expect(typeof data.summary).toBe("string");
-    expect(data.summary).toContain("reminders/list");
+    expect(data.summary).not.toContain("reminders/list");
   });
 
   it("summary contains voice and speed info", async () => {
@@ -122,12 +122,12 @@ describe("load_profile tool", () => {
     expect(data.applied).toBeUndefined();
   });
 
-  it("summary contains help link for reminders", async () => {
+  it("summary without reminders omits help link for reminders", async () => {
     mocks.readProfile.mockReturnValue({ voice: "alloy" });
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult<{ summary: string }>(result);
-    expect(data.summary).toContain("help('reminders')");
+    expect(data.summary).not.toContain("help('reminders')");
   });
 
   it("uses content hash as reminder ID (not random UUID)", async () => {
@@ -204,14 +204,14 @@ describe("load_profile tool", () => {
     expect(data.applied).toBeUndefined();
   });
 
-  it("empty profile produces summary with only hints", async () => {
+  it("empty profile produces empty summary", async () => {
     mocks.readProfile.mockReturnValue({});
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult<{ summary: string }>(result);
     expect(typeof data.summary).toBe("string");
-    expect(data.summary).toContain("reminders/list");
-    expect(data.summary).toContain("help('reminders')");
+    // No reminders → no reminder hint
+    expect(data.summary).not.toContain("reminders/list");
     // No voice section
     expect(data.summary).not.toMatch(/voice:/);
     // No preset count
