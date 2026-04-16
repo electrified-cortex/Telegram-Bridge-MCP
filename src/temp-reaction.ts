@@ -43,13 +43,16 @@ export async function setTempReaction(
   // outgoing slot so the chain resolves back to the original stable reaction, not
   // the intermediate temp emoji that recordBotReaction recorded.
   const outgoingSlot = _slots.get(sid);
-  const inheritedRestore = outgoingSlot?.messageId === messageId ? outgoingSlot.restoreEmoji : null;
+  const inheritingSlot = outgoingSlot?.messageId === messageId ? outgoingSlot : undefined;
 
   // Cancel any previous pending slot for this session (no restore — caller replaced it)
   _clearSlot(sid);
 
   // Capture previous reaction before we overwrite it
-  const previousEmoji = inheritedRestore ?? (getBotReaction(messageId) as ReactionEmoji | null);
+  // Use `undefined` as sentinel for "no slot"; `null` means "slot wants to clear"
+  const previousEmoji = inheritingSlot !== undefined
+    ? inheritingSlot.restoreEmoji
+    : (getBotReaction(messageId) as ReactionEmoji | null);
   const resolvedRestore: ReactionEmoji | null =
     restoreEmoji !== undefined ? restoreEmoji : previousEmoji;
 
