@@ -233,40 +233,47 @@ describe("send tool", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Case 9: combined mode — caption truncation
+  // Case 9: combined mode — caption overflow auto-split
   // ---------------------------------------------------------------------------
-  it("combined mode: truncates caption and returns info when text exceeds 964 chars", async () => {
+  it("combined mode: auto-splits into two messages when text exceeds 964 chars", async () => {
     const longText = "A".repeat(965); // 965 chars > MAX_CAPTION (964)
-    // applyTopicToText returns the text as-is (mock default)
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
     const result = await call({ text: longText, audio: "nova", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    // Voice note was sent
+    // Voice note was sent (no caption)
     expect(mocks.synthesizeToOgg).toHaveBeenCalledOnce();
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
-    // Result is success
+    // Text message was sent separately
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    // Result has split + both IDs + _hint
     expect(data.audio).toBe(true);
-    // Caption truncation info is present
-    expect(data.info).toBe("Caption was truncated to fit Telegram's 1024-character limit.");
+    expect(data.split).toBe(true);
+    expect(data.message_id).toBe(43);
+    expect(data.text_message_id).toBe(99);
+    expect(typeof data._hint).toBe("string");
+    // Voice note sent with no caption
+    const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
+    expect(voiceCallArgs[2].caption).toBeUndefined();
   });
 
   // ---------------------------------------------------------------------------
-  // Case 10: combined mode — trailing backslash strip after caption truncation
+  // Case 10: combined mode — no split when text is under limit
   // ---------------------------------------------------------------------------
-  it("combined mode: strips trailing backslash from truncated caption", async () => {
-    const MAX_CAPTION = 964; // 1024 - 60
-    // markdownToV2 returns a string where position MAX_CAPTION-1 (0-indexed) is a backslash,
-    // with one extra char to trigger truncation (length = MAX_CAPTION + 1 = 965)
-    const converted = "A".repeat(MAX_CAPTION - 1) + "\\B"; // "A"*963 + "\B", length=965
-    // After slice(0, MAX_CAPTION): "A"*963 + "\" — ends with backslash → must be stripped
-    mocks.markdownToV2.mockReturnValue(converted);
-    const result = await call({ text: "some text", audio: "shimmer", token: TOKEN });
+  it("combined mode: no split when text is under 964 chars (single hybrid message)", async () => {
+    const shortText = "A".repeat(963); // under MAX_CAPTION (964)
+    const result = await call({ text: shortText, audio: "nova", token: TOKEN });
     expect(isError(result)).toBe(false);
-    expect(mocks.sendVoiceDirect).toHaveBeenCalled();
+    const data = parseResult(result);
+    // Voice note sent with caption
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(data.audio).toBe(true);
+    expect(data.split).toBeUndefined();
+    expect(data._hint).toBeUndefined();
+    expect(data.text_message_id).toBeUndefined();
     const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
-    const caption = voiceCallArgs[2].caption ?? "";
-    expect(caption.endsWith("\\")).toBe(false);
-    expect(caption.endsWith("A")).toBe(true);
+    expect(voiceCallArgs[2].caption).toBeDefined();
   });
 
   // ---------------------------------------------------------------------------
@@ -465,5 +472,82 @@ describe("send type routing", () => {
     await call({ type: "progress", title: "My title", text: "ignored", percent: 10, token: TOKEN });
     const called = mocks.handleSendNewProgress.mock.calls[0][0] as Record<string, unknown>;
     expect(called.title).toBe("My title");
+  });
+});
+
+// =============================================================================
+// Hybrid auto-split on caption overflow
+// =============================================================================
+describe("hybrid auto-split on caption overflow", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.isTtsEnabled.mockReturnValue(true);
+    mocks.stripForTts.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendVoiceDirect.mockResolvedValue({ message_id: 43 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    mocks.showTyping.mockResolvedValue(undefined);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("sends two messages when text exceeds 1024-char limit with audio, response has split:true, both IDs, and _hint", async () => {
+    const longText = "X".repeat(970); // > MAX_CAPTION (964)
+    const result = await call({ text: longText, audio: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+
+    // Both sends happened
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+
+    // Response shape
+    expect(data.split).toBe(true);
+    expect(data.audio).toBe(true);
+    expect(data.message_id).toBe(43);
+    expect(data.text_message_id).toBe(99);
+    expect(typeof data._hint).toBe("string");
+    expect(data._hint).toContain("43");
+    expect(data._hint).toContain("99");
+
+    // Voice note sent with no caption (overflow → no caption)
+    const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
+    expect(voiceCallArgs[2].caption).toBeUndefined();
+
+    // Text message sent with MarkdownV2
+    const textCallArgs = mocks.sendMessage.mock.calls[0] as [unknown, unknown, { parse_mode?: string }];
+    expect(textCallArgs[2].parse_mode).toBe("MarkdownV2");
+  });
+
+  it("sends single hybrid message (no split) when text is under the 1024-char limit", async () => {
+    const shortText = "Y".repeat(500); // < MAX_CAPTION (964)
+    const result = await call({ text: shortText, audio: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+
+    // Only voice sent, no separate text message
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+
+    // Response shape — no split
+    expect(data.audio).toBe(true);
+    expect(data.split).toBeUndefined();
+    expect(data._hint).toBeUndefined();
+    expect(data.text_message_id).toBeUndefined();
+    expect(data.message_id).toBe(43);
+
+    // Caption present on the voice note
+    const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
+    expect(voiceCallArgs[2].caption).toBeDefined();
   });
 });
