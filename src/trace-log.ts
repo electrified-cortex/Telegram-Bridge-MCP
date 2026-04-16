@@ -12,13 +12,7 @@
  *   - Non-governor callers are restricted to their own sid.
  */
 
-import { mkdirSync, existsSync, writeFileSync } from "fs";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
 import { getGovernorSid } from "./routing-mode.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const TRACES_DIR = resolve(__dirname, "..", "data", "traces");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -220,21 +214,10 @@ export function traceLogSize(): number {
   return _buffer.length;
 }
 
-/**
- * Write the full buffer to disk as NDJSON.
- * Creates `data/traces/` if needed.
- * Returns the filename (not the full path).
- */
-export function dumpTraceToDisk(): string {
-  if (!existsSync(TRACES_DIR)) {
-    mkdirSync(TRACES_DIR, { recursive: true });
-  }
-  const ts = formatTimestamp(new Date());
-  const filename = `trace-${ts}.json`;
-  const fullPath = resolve(TRACES_DIR, filename);
-  const ndjson = _buffer.map(e => JSON.stringify(e)).join("\n");
-  writeFileSync(fullPath, ndjson, "utf-8");
-  return filename;
+/** Clear the trace buffer. Called via `action(type: 'log/delete', filename: 'trace')`. */
+export function clearTraceLog(): void {
+  _buffer.length = 0;
+  _nextSeq = 1;
 }
 
 /** Clear the buffer. For tests only. */
@@ -243,15 +226,3 @@ export function resetTraceLogForTest(): void {
   _nextSeq = 1;
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/** Format a Date to YYYYMMDDTHHMMSS (file-safe). */
-function formatTimestamp(d: Date): string {
-  const pad = (n: number, len = 2) => String(n).padStart(len, "0");
-  return (
-    `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
-    `T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
-  );
-}

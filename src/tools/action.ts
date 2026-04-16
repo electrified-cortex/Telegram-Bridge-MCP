@@ -47,7 +47,6 @@ import { handleListLogs } from "./list_logs.js";
 import { handleRollLog } from "./roll_log.js";
 import { handleDeleteLog } from "./delete_log.js";
 import { handleGetDebugLog, handleGetTraceLog } from "./get_debug_log.js";
-import { dumpTraceToDisk } from "../trace-log.js";
 // Phase 2 imports — animation/*
 import { handleCancelAnimation } from "./cancel_animation.js";
 // Phase 2 imports — standalone
@@ -143,10 +142,6 @@ export function setupActionRegistry(): void {
   registerAction("log/delete", handleDeleteLog as unknown as ActionHandler, { governor: true });
   registerAction("log/debug", handleGetDebugLog as unknown as ActionHandler, { governor: true });
   registerAction("log/trace", handleGetTraceLog as unknown as ActionHandler, { governor: true });
-  registerAction("log/dump", ((_args: Record<string, unknown>) => {
-    const filename = dumpTraceToDisk();
-    return toResult({ filename, message: `Trace log written to data/traces/${filename}` });
-  }) as unknown as ActionHandler, { governor: true });
   // animation/*
   registerAction("animation/cancel", handleCancelAnimation as unknown as ActionHandler);
 
@@ -479,7 +474,7 @@ export function register(server: McpServer): void {
           .int()
           .positive()
           .optional()
-          .describe("log/trace: Filter to a specific session ID (governor-only for other sessions). log/dump: (no params needed)."),
+          .describe("log/trace: Filter to a specific session ID (governor-only for other sessions)."),
         tool: z
           .string()
           .optional()

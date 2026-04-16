@@ -4,9 +4,8 @@ import {
   recordNonToolEvent,
   getTraceLog,
   traceLogSize,
-  dumpTraceToDisk,
+  clearTraceLog,
   resetTraceLogForTest,
-  type TraceEntry,
 } from "./trace-log.js";
 
 // ---------------------------------------------------------------------------
@@ -22,23 +21,6 @@ vi.mock("./routing-mode.js", () => ({
   getGovernorSid: mocks.getGovernorSid,
 }));
 
-// Mock fs module to avoid real disk writes.
-const fsMocks = vi.hoisted(() => ({
-  existsSync: vi.fn(() => true),
-  mkdirSync: vi.fn(),
-  writeFileSync: vi.fn(),
-}));
-
-vi.mock("fs", async (importActual) => {
-  const actual = await importActual<Record<string, unknown>>();
-  return {
-    ...actual,
-    existsSync: fsMocks.existsSync,
-    mkdirSync: fsMocks.mkdirSync,
-    writeFileSync: fsMocks.writeFileSync,
-  };
-});
-
 // ---------------------------------------------------------------------------
 // Test setup
 // ---------------------------------------------------------------------------
@@ -47,7 +29,6 @@ beforeEach(() => {
   resetTraceLogForTest();
   vi.clearAllMocks();
   mocks.getGovernorSid.mockReturnValue(0);
-  fsMocks.existsSync.mockReturnValue(true);
 });
 
 // ---------------------------------------------------------------------------
@@ -317,49 +298,30 @@ describe("recordToolCall", () => {
 });
 
 // ---------------------------------------------------------------------------
-// dumpTraceToDisk
+// clearTraceLog
 // ---------------------------------------------------------------------------
 
-describe("dumpTraceToDisk", () => {
-  it("returns a filename matching trace-YYYYMMDDTHHMMSS.json", () => {
-    const filename = dumpTraceToDisk();
-    expect(filename).toMatch(/^trace-\d{8}T\d{6}\.json$/);
-  });
-
-  it("calls writeFileSync with NDJSON content", () => {
-    recordToolCall("dequeue", { timeout: 10 }, 1, "Worker", "ok");
+describe("clearTraceLog", () => {
+  it("empties the buffer", () => {
+    recordToolCall("dequeue", {}, 1, "Worker", "ok");
     recordNonToolEvent("session_close", 1, "Worker");
-    dumpTraceToDisk();
-
-    expect(fsMocks.writeFileSync).toHaveBeenCalledOnce();
-    const [, content] = fsMocks.writeFileSync.mock.calls[0] as [string, string, string];
-    const lines = content.split("\n").filter(Boolean);
-    expect(lines).toHaveLength(2);
-    // Each line should be valid JSON
-    for (const line of lines) {
-      expect(() => JSON.parse(line)).not.toThrow();
-    }
-    const first = JSON.parse(lines[0]) as TraceEntry;
-    expect(first.tool).toBe("dequeue");
-    const second = JSON.parse(lines[1]) as TraceEntry;
-    expect(second.event_type).toBe("session_close");
+    expect(traceLogSize()).toBe(2);
+    clearTraceLog();
+    expect(traceLogSize()).toBe(0);
   });
 
-  it("creates the traces directory if it does not exist", () => {
-    fsMocks.existsSync.mockReturnValue(false);
-    dumpTraceToDisk();
-    expect(fsMocks.mkdirSync).toHaveBeenCalledWith(expect.stringContaining("traces"), { recursive: true });
+  it("resets sequence numbers so next entry starts at seq 1", () => {
+    recordToolCall("send", {}, 1, "Worker", "ok");
+    clearTraceLog();
+    recordToolCall("dequeue", {}, 1, "Worker", "ok");
+    mocks.getGovernorSid.mockReturnValue(1);
+    const entries = getTraceLog({ caller_sid: 1, governor_sid: 1 });
+    expect(entries[0].seq).toBe(1);
   });
 
-  it("does not call mkdirSync if directory already exists", () => {
-    fsMocks.existsSync.mockReturnValue(true);
-    dumpTraceToDisk();
-    expect(fsMocks.mkdirSync).not.toHaveBeenCalled();
-  });
-
-  it("writes an empty file (no newline) when buffer is empty", () => {
-    dumpTraceToDisk();
-    const [, content] = fsMocks.writeFileSync.mock.calls[0] as [string, string, string];
-    expect(content).toBe("");
+  it("no-op on already-empty buffer", () => {
+    expect(traceLogSize()).toBe(0);
+    clearTraceLog();
+    expect(traceLogSize()).toBe(0);
   });
 });
