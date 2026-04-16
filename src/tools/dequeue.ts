@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, ackVoiceMessage } from "../telegram.js";
+import { dlog } from "../debug-log.js";
 import { requireAuth } from "../session-gate.js";
 import {
   type TimelineEvent,
@@ -178,27 +179,17 @@ export function register(server: McpServer) {
         return sq.waitForEnqueue();
       }
 
-      function getWakeVersionAny(): number {
-        const queueWithVersion = sq as unknown as { getWakeVersion?: () => number };
-        return queueWithVersion.getWakeVersion?.() ?? 0;
+      function hasVersionedWaitAny(q: unknown): q is { getWakeVersion(): number; waitForEnqueueSince(v: number): Promise<void> } {
+        return typeof (q as Record<string, unknown>)["getWakeVersion"] === "function" &&
+               typeof (q as Record<string, unknown>)["waitForEnqueueSince"] === "function";
       }
 
-      function hasVersionedWaitAny(): boolean {
-        const queueWithVersion = sq as unknown as {
-          getWakeVersion?: () => number;
-          waitForEnqueueSince?: (v: number) => Promise<void>;
-        };
-        return (
-          typeof queueWithVersion.getWakeVersion === "function" &&
-          typeof queueWithVersion.waitForEnqueueSince === "function"
-        );
+      function getWakeVersionAny(q: unknown): number {
+        return (q as { getWakeVersion(): number }).getWakeVersion();
       }
 
-      function waitForEnqueueSinceAny(version: number): Promise<void> {
-        const queueWithVersion = sq as unknown as {
-          waitForEnqueueSince?: (v: number) => Promise<void>;
-        };
-        return queueWithVersion.waitForEnqueueSince?.(version) ?? waitForEnqueueAny();
+      function waitForEnqueueSinceAny(q: unknown, v: number): Promise<void> {
+        return (q as { waitForEnqueueSince(v: number): Promise<void> }).waitForEnqueueSince(v);
       }
 
       // Try immediate batch dequeue
@@ -220,6 +211,7 @@ export function register(server: McpServer) {
           if (rxHint0) result.tutorial = rxHint0;
         }
         resyncActiveSession();
+        dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
         return toResult(result);
       }
 
@@ -258,6 +250,7 @@ export function register(server: McpServer) {
             const reminderResult: Record<string, unknown> = { updates: fired.map(buildReminderEvent), pending: pendingCountAny() };
             const hint2 = buildHint(tokenHint, firstDequeueHint);
             if (hint2) reminderResult.hint = hint2;
+            dlog("queue", `dequeue returning sid=${sid} batch=${fired.length} payloadLen=${JSON.stringify(reminderResult).length}`);
             return toResult(reminderResult);
           }
 
@@ -270,8 +263,8 @@ export function register(server: McpServer) {
             : Infinity;
           const deferredMs = getSoonestDeferredMs(sid);
           const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
-          const useVersionedWait = hasVersionedWaitAny();
-          const wakeVersion = useVersionedWait ? getWakeVersionAny() : 0;
+          const useVersionedWait = hasVersionedWaitAny(sq);
+          const wakeVersion = useVersionedWait ? getWakeVersionAny(sq) : 0;
 
           if (useVersionedWait) {
             // Re-check after capturing wakeVersion to avoid a lost wakeup if an
@@ -294,17 +287,20 @@ export function register(server: McpServer) {
                 if (rxHint3a) result.tutorial = rxHint3a;
               }
               resyncActiveSession();
+              dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
               return toResult(result);
             }
           }
 
           let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+          dlog("queue", `dequeue wait sid=${sid} wakeVersion=${wakeVersion} waitMs=${waitMs}`);
           await Promise.race([
-            useVersionedWait ? waitForEnqueueSinceAny(wakeVersion) : waitForEnqueueAny(),
+            useVersionedWait ? waitForEnqueueSinceAny(sq, wakeVersion) : waitForEnqueueAny(),
             new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(Math.max(0, waitMs), MAX_SET_TIMEOUT_MS)); }),
             abortPromise,
           ]);
           clearTimeout(timeoutHandle);
+          dlog("queue", `dequeue woke sid=${sid} aborted=${signal.aborted}`);
 
           batch = dequeueBatchAny();
           if (batch.length > 0) {
@@ -324,6 +320,7 @@ export function register(server: McpServer) {
               if (rxHint3) result.tutorial = rxHint3;
             }
             resyncActiveSession();
+            dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
             return toResult(result);
           }
         }

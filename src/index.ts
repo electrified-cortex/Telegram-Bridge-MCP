@@ -178,7 +178,19 @@ if (mcpPort !== undefined) {
       return;
     }
 
-    await transport.handleRequest(req, res, req.body);
+    // SSE keepalive: prevent idle transport death during long-running tool calls
+    // (e.g. dequeue blocking on voice transcription for 5-60 s).
+    const keepaliveTimer = setInterval(() => {
+      if (res.headersSent && !res.writableEnded && !res.destroyed) {
+        res.write(":keepalive\n\n");
+      }
+    }, 30_000);
+    res.on("close", () => { clearInterval(keepaliveTimer); });
+    try {
+      await transport.handleRequest(req, res, req.body);
+    } finally {
+      clearInterval(keepaliveTimer);
+    }
   });
 
   app.get("/mcp", async (req: Request, res: Response) => {
