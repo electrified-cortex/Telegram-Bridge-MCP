@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   handleSendNewProgress: vi.fn(),
   handleSendDirectMessage: vi.fn(),
   handleConfirm: vi.fn(),
+  handleAppendText: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -90,6 +91,10 @@ vi.mock("./send_direct_message.js", () => ({
 
 vi.mock("./confirm.js", () => ({
   handleConfirm: (args: unknown) => mocks.handleConfirm(args),
+}));
+
+vi.mock("./append_text.js", () => ({
+  handleAppendText: (args: unknown) => mocks.handleAppendText(args),
 }));
 
 import { register } from "./send.js";
@@ -512,6 +517,24 @@ describe("send type routing", () => {
     const result = await call({ type: "append", text: "more", token: TOKEN });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: append without text returns MISSING_PARAM", async () => {
+    const result = await call({ type: "append", message_id: 10, token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: append routes to handleAppendText with correct params", async () => {
+    mocks.handleAppendText.mockResolvedValue({ content: [{ type: "text", text: '{"message_id":10,"length":14}' }] });
+    const result = await call({ type: "append", message_id: 10, text: "hello", separator: " | ", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleAppendText).toHaveBeenCalledOnce();
+    const called = mocks.handleAppendText.mock.calls[0][0] as Record<string, unknown>;
+    expect(called.message_id).toBe(10);
+    expect(called.text).toBe("hello");
+    expect(called.separator).toBe(" | ");
+    expect(called.parse_mode).toBe("Markdown");
   });
 
   it("type: checklist without title returns MISSING_PARAM", async () => {
