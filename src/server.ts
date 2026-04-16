@@ -8,6 +8,16 @@ import { runInTokenHintContext } from "./tools/identity-schema.js";
 import { invokePreToolHook } from "./tool-hooks.js";
 import { toError } from "./telegram.js";
 import { recordToolCall } from "./trace-log.js";
+import {
+  initSession,
+  setNudgeInjector,
+  recordDequeue as btRecordDequeue,
+  recordTyping as btRecordTyping,
+  recordAnimation as btRecordAnimation,
+  recordReaction as btRecordReaction,
+  recordSend as btRecordSend,
+} from "./behavior-tracker.js";
+import { deliverServiceMessage } from "./session-queue.js";
 
 import { register as registerDequeueUpdate } from "./tools/dequeue.js";
 import { register as registerSend } from "./tools/send.js";
@@ -43,6 +53,12 @@ export function createServer(): McpServer {
   const server = new McpServer({
     name: "telegram-bridge-mcp",
     version: PKG_VERSION,
+  });
+
+  // ── Behavior tracker wiring ────────────────────────────────────────────
+  // Wire the nudge injector to deliver service messages into session queues.
+  setNudgeInjector((sid, text, eventType) => {
+    deliverServiceMessage(sid, text, eventType);
   });
 
   // ── Session context middleware ──────────────────────────────────────────
@@ -122,13 +138,50 @@ export function createServer(): McpServer {
             }
           } catch { /* ignore parse errors */ }
 
-          recordToolCall(
-            name,
-            args,
-            sid,
-            sessionName,
-            (isError || isStructuredError) ? "error" : "ok",
-          );
+          const outcome = (isError || isStructuredError) ? "error" : "ok";
+          recordToolCall(name, args, sid, sessionName, outcome);
+
+          // ── Behavior tracking ──────────────────────────────────────────
+          // Record tool calls for per-session behavioral nudges.
+          // Only track successful calls on authenticated sessions.
+          if (outcome === "ok" && sid > 0) {
+            // Ensure the session is initialized in the tracker (idempotent).
+            initSession(sid);
+
+            if (name === "show_typing") {
+              // Only count non-cancel typing calls as activity indicators.
+              const isCancel = args.cancel === true;
+              if (!isCancel) btRecordTyping(sid);
+            } else if (name === "show_animation" || (name === "send" && args.type === "animation")) {
+              // Animation sends count as activity but not toward typing-rate sendCount —
+              // they are not text/file deliveries and don't need a preceding show_typing.
+              btRecordAnimation(sid);
+            } else if (name === "set_reaction") {
+              btRecordReaction(sid);
+            } else if (name === "send") {
+              // Count any outbound send (text, file, notification, etc.)
+              btRecordSend(sid);
+            } else if (name === "dequeue") {
+              // Detect whether the batch contained user content events.
+              // A successful dequeue with `updates` array counts if any
+              // event has from: "user".
+              try {
+                const text = (callResult as { content?: Array<{ text?: string }> }).content?.[0]?.text;
+                if (text) {
+                  const parsed = JSON.parse(text) as Record<string, unknown>;
+                  const updates = parsed.updates;
+                  if (Array.isArray(updates)) {
+                    const hasUserContent = updates.some(
+                      (u: unknown) =>
+                        typeof u === "object" && u !== null &&
+                        (u as Record<string, unknown>).from === "user",
+                    );
+                    btRecordDequeue(sid, hasUserContent);
+                  }
+                }
+              } catch { /* ignore parse errors */ }
+            }
+          }
 
           return callResult;
         };
