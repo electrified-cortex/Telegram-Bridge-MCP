@@ -4,6 +4,8 @@ import { listSessions, getSessionAnnouncementMessage, markPlannedBounce } from "
 import { deliverServiceMessage, notifySessionWaiters } from "./session-queue.js";
 import { RESTART_GUIDANCE } from "./restart-guidance.js";
 import { saveSessionState } from "./session-persistence.js";
+import { getSessionLogMode } from "./config.js";
+import { flushCurrentLog, isLoggingEnabled, rollLog } from "./local-log.js";
 
 /**
  * Clears all registered slash-command menus on shutdown.
@@ -39,14 +41,13 @@ export function setShutdownDumpHook(hook: () => Promise<void>): void {
  * Graceful shutdown: flush all session queues, notify agents, then exit.
  *
  * 1. Stop the poller (no new updates)
- * 2. Wait for the poll loop to finish (in-flight transcriptions)
- * 3. Drain last-mile pending updates
+ * 2. [active sessions only] Wait for poll loop exit and drain pending updates
  * 4. [planned only] Save session state snapshot for fast restart
  * 5. Deliver a shutdown/bounce service message to every active session
  * 6. Wake up all blocked dequeue calls so agents receive it
- * 7. Brief delay so MCP responses transmit through stdio
+ * 7. [active sessions only] Brief delay so MCP responses transmit through stdio
  * 8. Send operator notification
- * 9. Dump session log (if enabled)
+ * 9. Flush and roll local logs
  * 10. Clear command menus
  * 11. process.exit(0)
  *
@@ -60,13 +61,19 @@ export async function elegantShutdown(planned = false): Promise<never> {
 
   stopPoller();
 
-  // Finish in-flight transcriptions and drain last-mile updates
-  // Timeout: 10s so a hung transcription doesn't stall shutdown indefinitely.
-  await Promise.race([
-    waitForPollerExit(),
-    new Promise<void>((r) => setTimeout(r, 10_000)),
-  ]);
-  await drainPendingUpdates();
+  // Snapshot sessions once so this shutdown run uses a consistent view.
+  const sessions = listSessions();
+  const hasActiveSessions = sessions.length > 0;
+
+  if (hasActiveSessions) {
+    // Finish in-flight transcriptions and drain last-mile updates.
+    // Timeout: 10s so a hung transcription doesn't stall shutdown indefinitely.
+    await Promise.race([
+      waitForPollerExit(),
+      new Promise<void>((r) => setTimeout(r, 10_000)),
+    ]);
+    await drainPendingUpdates();
+  }
 
   // For planned restarts: persist session state before notifying agents
   if (planned) {
@@ -79,7 +86,6 @@ export async function elegantShutdown(planned = false): Promise<never> {
   }
 
   // Notify all active sessions via their DM queues
-  const sessions = listSessions();
   const shutdownMsg = planned
     ? "⚡ Server bouncing for fast restart. Session state saved. " +
       RESTART_GUIDANCE
@@ -106,15 +112,33 @@ export async function elegantShutdown(planned = false): Promise<never> {
     );
   }
 
-  // Give MCP stdio a moment to transmit responses
-  await new Promise<void>((r) => setTimeout(r, 2000));
+  if (hasActiveSessions) {
+    // Give MCP stdio a moment to transmit responses.
+    await new Promise<void>((r) => setTimeout(r, 2000));
+  }
 
   // Operator-facing notification
   await sendServiceMessage("⛔️ Shutting down…").catch(() => {});
 
-  // Session log dump (best-effort)
+  // Flush buffered local-log writes before any roll/dump logic.
+  if (isLoggingEnabled()) {
+    try { await flushCurrentLog(); } catch { /* best effort */ }
+  }
+
+  // Session log dump hook (best-effort)
   if (_dumpHook) {
     try { await _dumpHook(); } catch { /* best effort */ }
+  }
+
+  // If session-log mode is disabled, still roll the local log file so shutdown
+  // always archives the active log even without timeline dump mode enabled.
+  if (getSessionLogMode() === null && isLoggingEnabled()) {
+    try {
+      const filename = rollLog();
+      if (filename) {
+        await sendServiceMessage(`📋 Log file created: \`${filename}\``).catch(() => {});
+      }
+    } catch { /* best effort */ }
   }
 
   // Clear command menus and exit

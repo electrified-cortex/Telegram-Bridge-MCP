@@ -142,12 +142,18 @@ export function createServer(): McpServer {
               const text = firstContent?.text;
               if (firstContent?.type === "text" && text) {
                 const parsed: unknown = JSON.parse(text);
-                if (parsed && typeof parsed === "object" && !parsed.error && !parsed.code && !parsed.tutorial) {
-                  parsed.tutorial = hint;
-                  return {
-                    ...response,
-                    content: [{ type: "text" as const, text: JSON.stringify(parsed, null, 2) }],
-                  };
+                if (parsed && typeof parsed === "object") {
+                  const parsedObj = parsed as Record<string, unknown>;
+                  const hasError = "error" in parsedObj;
+                  const hasCode = "code" in parsedObj;
+                  const hasTutorial = "tutorial" in parsedObj;
+                  if (!hasError && !hasCode && !hasTutorial) {
+                    parsedObj["tutorial"] = hint;
+                    return {
+                      ...response,
+                      content: [{ type: "text" as const, text: JSON.stringify(parsedObj, null, 2) }],
+                    };
+                  }
                 }
               }
             } catch {

@@ -207,6 +207,15 @@ setShutdownDumpHook(() => {
  */
 const _startupEpoch = Math.floor(Date.now() / 1000);
 
+/**
+ * Clock-skew grace for stale-command filtering.
+ *
+ * Telegram message timestamps can be a few seconds behind local process time,
+ * especially right after startup. Without a grace window, valid fresh
+ * commands may be misclassified as stale.
+ */
+const STALE_COMMAND_GRACE_SECONDS = 30;
+
 export function isBuiltInPanelQuery(update: Update): boolean {
   const msgId = update.callback_query?.message?.message_id;
   if (msgId === undefined) return false;
@@ -294,12 +303,13 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
     const entities = update.message.entities ?? [];
     const cmd = entities.find(e => e.type === "bot_command" && e.offset === 0);
     if (cmd) {
-      // Ignore commands sent before this process started (prevents e.g. a
-      // queued /shutdown from killing a freshly-restarted server).
-      if ((update.message.date) < _startupEpoch) {
+      // Ignore commands that are clearly older than process startup (with a
+      // small grace window to tolerate clock skew).
+      const staleCutoff = _startupEpoch - STALE_COMMAND_GRACE_SECONDS;
+      if (update.message.date < staleCutoff) {
         process.stderr.write(
           `[built-in] ignoring stale /${update.message.text.slice(1, cmd.length).split("@")[0]} `
-          + `(msg date ${update.message.date}, startup ${_startupEpoch})\n`,
+          + `(msg date ${update.message.date}, startup ${_startupEpoch}, grace ${STALE_COMMAND_GRACE_SECONDS}s)\n`,
         );
         return true; // consumed — don't forward to agent either
       }
@@ -655,7 +665,9 @@ async function handleVersionCommand(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function handleShutdownCommand(): void {
-  void elegantShutdown();
+  // Fire on the next tick so the poller can finish handling this update.
+  // This avoids waiting on the poll loop from inside the poll loop itself.
+  setImmediate(() => { void elegantShutdown(); });
 }
 
 // ---------------------------------------------------------------------------

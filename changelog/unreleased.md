@@ -10,6 +10,10 @@
 
 - `session/close`: rejects with `LAST_SESSION` error code (and actionable hint) when called on the last active session without `force: true`; prevents accidental orphaning of the bridge process
 - Fixed governor SID being cleared when governor closes a non-governor session in a 2-session setup (10-493). Governor role is now correctly preserved when a non-governor session closes.
+- `/shutdown` built-in command: with zero active sessions, shutdown now skips poller wait/drain and the extra stdio delay so it exits immediately instead of waiting through timeout windows
+- Shutdown log handling: local log buffers are flushed before exit, and when session-log mode is disabled the active local log is rolled on shutdown if one exists
+- `/shutdown` built-in command handling now schedules shutdown on the next tick so poller-driven command handling cannot self-block the graceful shutdown wait path
+- Built-in command stale filtering now includes a 30-second clock-skew grace window so fresh slash commands are not incorrectly ignored as stale
 
 ## v6.0.2 — 2026-04-11
 
