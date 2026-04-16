@@ -81,3 +81,21 @@ additive — agents can adopt incrementally.
 
 Dogfooding session 2026-04-12. Operator proposed after observing
 successive reaction calls producing visible flicker.
+
+## Completion
+
+**Date:** 2026-04-15
+**Branch:** `10-504`
+**Commit:** `a1f3eb7`
+
+Added `reactions` array parameter to `react` tool in `src/tools/set_reaction.ts`. Array path is handled by `handleSetReactionArray` which validates all emoji up-front, applies permanent base via `recordBotReaction` (no extra Telegram API call), and sets the temp overlay via `setTempReaction`. Also includes the 10-503 same-priority temp restore fix (`temp-reaction.ts`).
+
+Critical fixes applied during review: `recordBotReaction` moved after `setTempReaction` success check; `topItem` changed to `tempItems[0]`; empty array routed to error handler.
+
+2231 tests pass.
+
+- [x] Array form accepted by `react` tool
+- [x] All reactions applied atomically
+- [x] Backward compatible — existing single-emoji calls unchanged
+- [x] Error on multiple temp items, empty array, invalid emoji
+- [x] Tests cover the array path

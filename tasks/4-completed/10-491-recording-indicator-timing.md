@@ -30,3 +30,23 @@ The recording indicator should persist until the voice message is actually deliv
 - [ ] Recording indicator visible until voice message arrives
 - [ ] No awkward gap between indicator disappearing and message appearing
 - [ ] Works for both short and long voice messages (TTS can vary)
+
+## Completion
+
+**Date:** 2026-04-15
+**Branch:** `10-491`
+**Commit:** `4276a35`
+
+### What was done
+
+Extended the recording voice indicator to stay active throughout the entire TTS+upload process.
+
+**Root cause:** `sendChatAction("record_voice")` expires after ~5 seconds. The initial `typingSeconds` estimate (text length / 20) could expire before all chunks finished synthesizing and uploading, leaving a visible gap.
+
+**Fix:** In `src/tools/send.ts`, added a `RECORD_VOICE_EXTEND_SECS = 30` constant and call `showTyping(RECORD_VOICE_EXTEND_SECS, "record_voice")` before each chunk's synthesis. The existing `typing-state.ts` loop detects the already-running interval and only extends the deadline — no extra Telegram API calls are made. The `finally { cancelTyping() }` block stops the interval immediately after the last voice message is delivered.
+
+### Acceptance Criteria
+
+- [x] Recording indicator visible until voice message arrives
+- [x] No awkward gap between indicator disappearing and message appearing
+- [x] Works for both short and long voice messages

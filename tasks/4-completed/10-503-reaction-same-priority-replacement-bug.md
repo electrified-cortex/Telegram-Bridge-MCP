@@ -43,3 +43,24 @@ operator's "Practice on this" message. Eyes persisted through thinking.
 
 Investigate `react` tool handler — check priority-level replacement logic
 for temporary reactions at the same priority.
+
+## Completion
+
+- **Branch:** `10-503`
+- **Commit:** `cbd687d`
+- **Worktree:** `Telegram MCP/.worktrees/10-503`
+- **Completed:** 2026-04-15
+
+### Root Cause
+
+In `src/temp-reaction.ts`, `setTempReaction` calls `_clearSlot(sid)` before reading `getBotReaction(messageId)`. By that point, `recordBotReaction` (called in `handleSetReaction` after each `setTempReaction`) had already recorded the intermediate temp emoji (👀) as the bot reaction. So the new slot's `restoreEmoji` was set to 👀 instead of 👍 (the original permanent).
+
+### Fix
+
+Capture `_slots.get(sid)` before `_clearSlot`. When replacing a temp on the same `messageId`, use the outgoing slot's `restoreEmoji` as `previousEmoji` — preserving the correct restore chain back to the original stable reaction.
+
+**Files changed (2):**
+- `src/temp-reaction.ts` — 5-line fix + comment
+- `src/temp-reaction.test.ts` — 2 new regression tests
+
+Build passes, 2221 tests pass (109 files).

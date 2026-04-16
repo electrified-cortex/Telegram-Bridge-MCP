@@ -52,6 +52,33 @@ A `docs/guide.spec.md` file defining:
 - [ ] Spec lists content categories that do NOT belong in the guide
 - [ ] Spec includes content compression rules (instructions vs explanations)
 
+## Completion
+
+**Date:** 2026-04-15
+**Status:** Deliverable already existed — `docs/guide.spec.md` created 2026-04-12, committed to `dev`.
+
+### What exists
+
+`docs/guide.spec.md` (17KB, 430 lines) with all 7 required sections:
+1. Purpose — guide as communication etiquette/operating rules reference
+2. Audience — agents only; ultra compression; explanations stay in spec
+3. Size constraint — target ≤8KB/~2K tokens; current ~32KB; rationale: context cost before work begins
+4. Scope boundaries — table mapping content types to correct home (guide / help topics / startup / skill)
+5. Structure — 7 ordered sections with specimen compressed content
+6. Extraction rules — deterministic table (single-tool → `help('<tool>')`, startup → `help('start')`, etc.)
+7. Compression rules — instructions only; no prose explanations in agent-facing content
+
+Plus 4 additional sections: help root menu redesign, tutorial mode integration, migration strategy, implementation dependencies.
+
+### Acceptance Criteria
+
+- [x] `docs/guide.spec.md` exists with all sections
+- [x] Spec defines clear scope boundaries (guide vs help topic vs skill)
+- [x] Spec includes target size constraint with rationale
+- [x] Spec lists content categories that belong in the guide
+- [x] Spec lists content categories that do NOT belong
+- [x] Spec includes content compression rules
+
 ## Notes
 
 - This spec shapes 10-496 (guide content audit). Write spec first.

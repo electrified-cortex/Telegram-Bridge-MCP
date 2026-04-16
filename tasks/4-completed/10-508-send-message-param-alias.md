@@ -31,10 +31,18 @@ Note: For plain text/audio sends, `type` may not even be required — agents can
 
 ## Acceptance Criteria
 
-- [ ] `send(message: "hello")` delivers a text message successfully
-- [ ] Response includes a `hint` field noting `message` is an alias for `text`
-- [ ] `send(text: "hello", message: "world")` uses `text` value, ignores `message`
-- [ ] `send(message: "hello", audio: "spoken text")` works (voice with caption)
-- [ ] Existing `send(text: "...")` behavior unchanged
-- [ ] Build passes (`pnpm build` or `npm run build`)
-- [ ] If ambiguous during implementation, reject and report back
+- [x] `send(message: "hello")` delivers a text message successfully
+- [x] Response includes a `hint` field noting `message` is an alias for `text`
+- [x] `send(text: "hello", message: "world")` uses `text` value, ignores `message`
+- [x] `send(message: "hello", audio: "spoken text")` works (voice with caption)
+- [x] Existing `send(text: "...")` behavior unchanged
+- [x] Build passes (`pnpm build` or `npm run build`)
+
+## Completion
+
+- **Branch:** `10-508`
+- **Commit:** `7eb4d0f`
+- **Worktree:** `Telegram MCP/.worktrees/10-508`
+- **Completed:** 2026-04-15
+
+Resolved alias at handler entry (`text = args.text ?? args.message`). Hint injected into all return paths when alias was used. Schema description updated. 4 new tests. Build passes, 2223 tests pass (109 files).

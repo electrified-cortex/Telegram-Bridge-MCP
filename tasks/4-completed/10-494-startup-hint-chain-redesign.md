@@ -80,3 +80,29 @@ Either remove it entirely or make it an alias for `start`.
 - [ ] Agent can go from session/start to operational in 2 calls (start + profile/load)
 - [ ] Existing tests updated for renamed topic
 - [ ] help() overview updated to reference 'start' not 'startup'
+
+## Completion
+
+**Date:** 2026-04-15
+**Branch:** `10-494`
+**Commit:** `b810a6b`
+
+### What was done
+
+- `session_start.ts`: Updated hint text on both fresh and reconnect paths to exact canon: `"Save this token to session memory. Then call help(\"start\")."`
+- `help.ts`: Replaced separate `startup` and `quick_start` handlers with a single handler matching all three names (`start`, `startup`, `quick_start`). Rewrote content in ultra-compressed agent format covering profile load, dequeue default (5 min), dequeue-default override, DM pattern, send basics, guide as optional reference, and mini help-on-help. Removed `startup`/`quick_start` from index/overview, replaced with single `start` entry.
+- `help.test.ts` + `session_start.test.ts`: Updated all topic-name and hint-text assertions to match new content.
+
+All 121 tests pass. Typecheck clean.
+
+### Acceptance Criteria
+
+- [x] `session/start` response uses exact canon hint text
+- [x] `help('start')` exists and returns actionable startup content
+- [x] `help('startup')` redirects to `start` (alias)
+- [x] `help('quick_start')` redirects to `start` (alias)
+- [x] `start` topic mentions profile loading and guide as reference
+- [x] `start` topic includes dequeue loop basics
+- [x] Agent can go from session/start to operational in 2 calls
+- [x] Existing tests updated for renamed topic
+- [x] help() overview updated to reference 'start' not 'startup'

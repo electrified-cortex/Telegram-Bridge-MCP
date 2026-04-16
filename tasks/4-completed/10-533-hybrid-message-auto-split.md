@@ -37,9 +37,18 @@ separate message. Let the agent know it was split."
 
 ## Acceptance Criteria
 
-- [ ] Hybrid messages exceeding 1024 chars auto-split into audio + text
-- [ ] Audio message sent first, text follows
-- [ ] Response includes both message IDs and `split: true`
-- [ ] `_hint` explains the split and why
-- [ ] Messages under 1024 chars continue working as single hybrid messages
-- [ ] Build passes
+- [x] Hybrid messages exceeding 1024 chars auto-split into audio + text
+- [x] Audio message sent first, text follows
+- [x] Response includes both message IDs and `split: true`
+- [x] `_hint` explains the split and why
+- [x] Messages under 1024 chars continue working as single hybrid messages
+- [x] Build passes
+
+## Completion
+
+- **Branch:** `10-533`
+- **Commit:** `e8362dc`
+- **Worktree:** `Telegram MCP/.worktrees/10-533`
+- **Completed:** 2026-04-15
+
+Replaced caption truncation with auto-split: voice sent without caption, text sent as follow-up `sendMessage`. Response: `{ message_id, text_message_id, split: true, audio: true, _hint }`. Under-limit path unchanged. Build passes, 2221 tests pass (109 files).

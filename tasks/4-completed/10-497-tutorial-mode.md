@@ -87,3 +87,27 @@ a response or action unless the context makes it explicit."
 
 - This is a medium-lift feature. The hint map is the real design work.
 - Consider: should `help()` mention tutorial mode? Probably yes.
+
+## Completion
+
+- **Branch:** `10-497`
+- **Commit:** `9cdf9d6`
+- **Worktree:** `Telegram MCP/.worktrees/10-497`
+- **Completed:** 2026-04-15
+
+### Summary
+
+Implemented tutorial mode: first call to each MCP tool in a session appends a one-time educational `tutorial` field to the response. Subsequent calls omit it. State is per-session in-memory (resets on session close).
+
+**Files changed (9):**
+- `src/session-manager.ts` — `tutorialEnabled`, `tutorialSeenTools` on Session; `isTutorialEnabled`, `setTutorialEnabled`, `markTutorialToolSeen` exports
+- `src/tutorial-hints.ts` (new) — hint map + `getTutorialHint`, `getTutorialReactionHint`
+- `src/tutorial-hints.test.ts` (new) — 16 tests
+- `src/server.ts` — hint injection in `registerTool` wrapper
+- `src/tools/action.ts` — `tutorial/on` / `tutorial/off` actions
+- `src/profile-store.ts` — `tutorial?: boolean` in `ProfileData`
+- `src/tools/apply-profile.ts` — applies tutorial preference from profile
+- `src/tools/dequeue.ts` — reaction hint injection at both return sites
+- `src/tools/dequeue.test.ts` — extended session-manager mock
+
+**All acceptance criteria met.** Build passes, 2235 tests pass (110 test files).
