@@ -163,7 +163,7 @@ describe("session_start tool", () => {
     expect(result).toEqual({
       token: 1123456,
       sid: 1,
-      instruction: "Call dequeue now. Messages are waiting.",
+      instruction: "Do this now: save this token, then call help('start') for post-session setup.",
     });
   });
 
@@ -175,7 +175,7 @@ describe("session_start tool", () => {
     expect(result).toEqual({
       token: 1123456,
       sid: 1,
-      instruction: "Call dequeue now. Messages are waiting.",
+      instruction: "Do this now: save this token, then call help('start') for post-session setup.",
     });
   });
 
@@ -225,7 +225,7 @@ describe("session_start tool", () => {
 
     expect(result.sid).toBe(3);
     expect(result.token).toBeDefined();
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
   });
 
   it("calls setActiveSession with the new session SID", async () => {
@@ -275,7 +275,7 @@ describe("session_start tool", () => {
 
     expect(result.sid).toBe(4);
     expect(result.token).toBeDefined();
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
     // fellow_sessions removed from lean response
     expect(result.fellow_sessions).toBeUndefined();
   });
@@ -307,7 +307,7 @@ describe("session_start tool", () => {
 
     expect(result.sid).toBe(6);
     expect(result.token).toBeDefined();
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
     // fellow_sessions and discarded removed from lean response
     expect(result.fellow_sessions).toBeUndefined();
     expect(result.discarded).toBeUndefined();
@@ -1472,7 +1472,7 @@ describe("session_start tool", () => {
     // Returns the existing SID and token
     expect(result.sid).toBe(1);
     expect(result.token).toBe(1123456);
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
   });
 
   it("reconnect: true + approved → preserves queued messages and resets health state", async () => {
@@ -1696,7 +1696,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({}));
 
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
     expect(result.profile_hint).toBeUndefined();
     expect(result.instructions).toBeUndefined();
   });
@@ -1836,7 +1836,7 @@ describe("session_start tool", () => {
     const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
 
     expect(typeof result.instruction).toBe("string");
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
   });
 
   it("reconnect returns instruction to call dequeue", async () => {
@@ -1853,7 +1853,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
 
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
     expect(result.profile_hint).toBeUndefined();
     expect(result.instructions).toBeUndefined();
   });
@@ -2288,7 +2288,7 @@ describe("handleSessionReconnect", () => {
     expect(row.some(b => String(b.callback_data).startsWith("approve_"))).toBe(false);
     expect(mocks.createSession).not.toHaveBeenCalled();
     expect(result.sid).toBe(1);
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
   });
 
   it("approval flow: returns existing SID+token with lean instruction", async () => {
@@ -2306,7 +2306,7 @@ describe("handleSessionReconnect", () => {
 
     expect(result.sid).toBe(2);
     expect(result.token).toBe(2654321);
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
   });
 
   it("denial flow: returns SESSION_DENIED, no session created", async () => {
@@ -2336,7 +2336,7 @@ describe("handleSessionReconnect", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
 
-    expect(result.instruction).toBe("Call dequeue now. Messages are waiting.");
+    expect(result.instruction).toBe("Do this now: save this token, then call help('start') for post-session setup.");
   });
 
   it("operator dialog text is just the name — no explanation text", async () => {

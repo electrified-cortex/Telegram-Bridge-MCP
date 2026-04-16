@@ -99,7 +99,7 @@ describe("help tool", () => {
     expect(content).toContain("notification");
   });
 
-  it("help(topic: 'start') returns profile load, dequeue loop, and send basics", async () => {
+  it("help(topic: 'start') returns profile load, dequeue loop, send basics, and quick reference", async () => {
     const result = await call({ topic: "start" });
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);
@@ -107,6 +107,9 @@ describe("help tool", () => {
     expect(content).toContain("dequeue()");
     expect(content).toContain("5 minutes");
     expect(content).toContain("help('guide')");
+    expect(content).toContain("Quick reference");
+    expect(content).toContain("help('send')");
+    expect(content).toContain("help('action')");
   });
 
   it("help(topic: 'startup') is aliased to 'start'", async () => {

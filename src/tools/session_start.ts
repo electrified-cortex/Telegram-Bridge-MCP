@@ -215,7 +215,7 @@ const DESCRIPTION =
   "Call once at the start of every session. Creates a fresh session " +
   "with a unique ID and PIN. Fresh sessions auto-drain pending messages. " +
   "If you lost your token (context loss, crash), use action(type: 'session/reconnect', ...) instead. " +
-  "Returns { token, sid, instruction } where instruction is \"Call dequeue now. Messages are waiting.\" " +
+  "Returns { token, sid, instruction } where instruction is imperative and must be acted on immediately. " +
   "Call help() first to load the API guide, then call action(type: 'session/start', ...) to join.";
 
 export async function handleSessionStart({ name, color }: { name: string; color?: string }) {
@@ -290,7 +290,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
         const res: Record<string, unknown> = {
           token: sessionToken,
           sid: session.sid,
-          instruction: "Call dequeue now. Messages are waiting.",
+          instruction: "Do this now: save this token, then call help('start') for post-session setup.",
         };
         if (isFirstSession) {
           // First session is the governor by default
@@ -508,7 +508,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   return toResult({
     token: reconToken,
     sid: fullSession.sid,
-    instruction: "Call dequeue now. Messages are waiting.",
+    instruction: "Do this now: save this token, then call help('start') for post-session setup.",
   });
 }
 

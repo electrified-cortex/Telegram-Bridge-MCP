@@ -22,3 +22,9 @@ action(type: 'react', token, message_id: <id>, emoji: '👍') → silent receipt
 All tools: help(). Specific tool: help('tool_name'). Full guide: help('guide').
 help('guide') → full comms guide (optional reference, not required reading)
 help('dequeue') → dequeue loop rules · help('compression') → message brevity tiers
+
+## Quick reference
+- Buttons/keyboards: help('send')
+- Animations, checklists, progress bars: help('action')
+- Multi-session routing and DMs: help('guide')
+- Full operational guide: help('guide')

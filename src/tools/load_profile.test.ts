@@ -69,12 +69,12 @@ describe("load_profile tool", () => {
     expect(mocks.setSessionSpeed).toHaveBeenCalledWith(1.2);
   });
 
-  it("successful load does not include instruction field (lean response)", async () => {
+  it("successful load includes instruction field directing agent to dequeue", async () => {
     mocks.readProfile.mockReturnValue({ voice: "alloy" });
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.instruction).toBeUndefined();
+    expect(data.instruction).toBe("Do this now: call dequeue() to enter the message loop.");
   });
 
   it("successful load returns summary containing reminders/list", async () => {

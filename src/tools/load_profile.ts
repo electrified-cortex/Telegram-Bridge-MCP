@@ -10,7 +10,8 @@ const DESCRIPTION =
   "Restore a previously saved session profile. Sparse-merges into the current " +
   "session — keys present in the profile overwrite the session's current values; " +
   "absent keys are untouched. Multiple loads stack. " +
-  "Use load_profile after action(type: 'session/start') to bootstrap voice, animations, and reminders.";
+  "Use load_profile after action(type: 'session/start') to bootstrap voice, animations, and reminders. " +
+  "Returns { loaded, key, summary, instruction } where instruction is imperative and must be acted on immediately.";
 
 export function handleLoadProfile({ key, token }: { key: string; token: number }) {
   const _sid = requireAuth(token);
@@ -58,7 +59,7 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   parts.push("→ help('reminders') for reminder docs. reminders/list for details.");
 
   const summary = parts.join(" ");
-  return toResult({ loaded: true, key, summary });
+  return toResult({ loaded: true, key, summary, instruction: "Do this now: call dequeue() to enter the message loop." });
 }
 
 export function register(server: McpServer) {
