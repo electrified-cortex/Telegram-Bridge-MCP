@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   setTempReaction: vi.fn(),
   resetPremiumCacheForTest: vi.fn(),
   recordBotReaction: vi.fn(),
+  hasBaseReaction: vi.fn(() => false),
+  markBaseReaction: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -24,6 +26,8 @@ vi.mock("../temp-reaction.js", () => ({
 vi.mock("../message-store.js", () => ({
   recordBotReaction: mocks.recordBotReaction,
   getBotReaction: vi.fn(() => null),
+  hasBaseReaction: mocks.hasBaseReaction,
+  markBaseReaction: mocks.markBaseReaction,
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -32,7 +36,7 @@ vi.mock("../session-manager.js", () => ({
   validateSession: mocks.validateSession,
 }));
 
-import { register, resetPremiumCacheForTest } from "./set_reaction.js";
+import { register, resetPremiumCacheForTest, handleSetReactionPreset } from "./set_reaction.js";
 
 describe("set_reaction tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
@@ -46,6 +50,8 @@ describe("set_reaction tool", () => {
     call = server.getHandler("set_reaction");
     mocks.setMessageReaction.mockResolvedValue(true);
     mocks.setTempReaction.mockResolvedValue(true);
+    // Suppress base 👌 reaction in these pre-existing tests
+    mocks.hasBaseReaction.mockReturnValue(true);
   });
 
   // ── Permanent reaction ────────────────────────────────────────────────────
@@ -283,6 +289,8 @@ describe("set_reaction tool — array reactions form", () => {
     call = server.getHandler("set_reaction");
     mocks.setMessageReaction.mockResolvedValue(true);
     mocks.setTempReaction.mockResolvedValue(true);
+    // Suppress base 👌 reaction in these pre-existing tests
+    mocks.hasBaseReaction.mockReturnValue(true);
   });
 
   it("2-layer: permanent base + temp overlay — one setTempReaction call, correct restoreEmoji", async () => {
@@ -449,5 +457,165 @@ describe("set_reaction tool — array reactions form", () => {
     expect(errorCode(result)).toBe("REACTION_ARRAY_EMPTY");
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
     expect(mocks.setTempReaction).not.toHaveBeenCalled();
+  });
+});
+
+// ── Default temporality ────────────────────────────────────────────────────
+
+describe("set_reaction — per-emoji default temporality", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    resetPremiumCacheForTest();
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("set_reaction");
+    mocks.setMessageReaction.mockResolvedValue(true);
+    mocks.setTempReaction.mockResolvedValue(true);
+    mocks.hasBaseReaction.mockReturnValue(false);
+  });
+
+  it("🤔 is temporary by default (no explicit temporary param)", async () => {
+    const result = await call({ message_id: 10, emoji: "🤔", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.temporary).toBe(true);
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(10, "🤔", undefined, undefined);
+    // setMessageReaction may be called for the 👌 base reaction (background) — not for 🤔 itself
+    const mainReactionCalls = mocks.setMessageReaction.mock.calls.filter(
+      (c: unknown[][]) => (c[2] as { emoji?: string }[])[0]?.emoji !== "👌",
+    );
+    expect(mainReactionCalls).toHaveLength(0);
+  });
+
+  it("👀 is temporary by default", async () => {
+    const result = await call({ message_id: 10, emoji: "👀", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.temporary).toBe(true);
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(10, "👀", undefined, undefined);
+  });
+
+  it("⏳ is temporary by default", async () => {
+    const result = await call({ message_id: 10, emoji: "⏳", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.temporary).toBe(true);
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(10, "⏳", undefined, undefined);
+  });
+
+  it("👍 is permanent by default (not in TEMPORARY_BY_DEFAULT)", async () => {
+    mocks.hasBaseReaction.mockReturnValue(true); // suppress 👌 to isolate assertion
+    const result = await call({ message_id: 10, emoji: "👍", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.temporary).toBe(false);
+    expect(mocks.setMessageReaction).toHaveBeenCalledTimes(1);
+    expect(mocks.setTempReaction).not.toHaveBeenCalled();
+  });
+
+  it("explicit temporary: false overrides default for 🤔", async () => {
+    mocks.hasBaseReaction.mockReturnValue(true); // suppress 👌 to isolate assertion
+    const result = await call({ message_id: 10, emoji: "🤔", temporary: false, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.temporary).toBe(false);
+    expect(mocks.setMessageReaction).toHaveBeenCalledTimes(1);
+    expect(mocks.setTempReaction).not.toHaveBeenCalled();
+  });
+
+  it("explicit temporary: true overrides default for 👍", async () => {
+    const result = await call({ message_id: 10, emoji: "👍", temporary: true, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.temporary).toBe(true);
+    expect(mocks.setTempReaction).toHaveBeenCalled();
+    // setMessageReaction only called (if at all) for the 👌 base reaction, not for 👍
+    const mainCalls = mocks.setMessageReaction.mock.calls.filter(
+      (c: unknown[][]) => (c[2] as { emoji?: string }[])[0]?.emoji !== "👌",
+    );
+    expect(mainCalls).toHaveLength(0);
+  });
+});
+
+// ── Base 👌 reaction (idempotent) ─────────────────────────────────────────
+
+describe("set_reaction — implicit 👌 base reaction", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    resetPremiumCacheForTest();
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("set_reaction");
+    mocks.setMessageReaction.mockResolvedValue(true);
+    mocks.setTempReaction.mockResolvedValue(true);
+    mocks.hasBaseReaction.mockReturnValue(false);
+  });
+
+  it("markBaseReaction is called after a permanent reaction", async () => {
+    await call({ message_id: 50, emoji: "👍", token: 1123456 });
+    // Give the background void promise a tick to run
+    await new Promise(r => setTimeout(r, 0));
+    expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 50);
+  });
+
+  it("markBaseReaction is called after a temporary reaction", async () => {
+    await call({ message_id: 51, emoji: "👀", token: 1123456 });
+    await new Promise(r => setTimeout(r, 0));
+    expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 51);
+  });
+
+  it("👌 is not inserted when hasBaseReaction returns true (idempotent)", async () => {
+    mocks.hasBaseReaction.mockReturnValue(true);
+    await call({ message_id: 52, emoji: "👍", token: 1123456 });
+    await new Promise(r => setTimeout(r, 0));
+    expect(mocks.markBaseReaction).not.toHaveBeenCalled();
+    // setMessageReaction only called once (for the actual reaction, not for 👌)
+    expect(mocks.setMessageReaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Reaction presets ───────────────────────────────────────────────────────
+
+describe("handleSetReactionPreset — built-in presets", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.setMessageReaction.mockResolvedValue(true);
+    mocks.setTempReaction.mockResolvedValue(true);
+    mocks.hasBaseReaction.mockReturnValue(false);
+  });
+
+  it("preset 'acknowledge' fires 3 reactions: 👍 permanent, 🤔 temp, 👀 temp 5s", async () => {
+    const result = await handleSetReactionPreset(1, 42, 100, "acknowledge");
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.preset).toBe("acknowledge");
+    expect(data.applied).toEqual(["👍", "🤔", "👀"]);
+    // 👍 via setMessageReaction (permanent)
+    expect(mocks.setMessageReaction).toHaveBeenCalledWith(
+      42, 100, [{ type: "emoji", emoji: "👍" }], {},
+    );
+    // 🤔 and 👀 via setTempReaction
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(100, "🤔", undefined, undefined);
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(100, "👀", undefined, 5);
+  });
+
+  it("preset 'acknowledge' — 👀 fires with timeout_seconds=5", async () => {
+    await handleSetReactionPreset(1, 42, 200, "acknowledge");
+    const eyeballCall = mocks.setTempReaction.mock.calls.find(c => c[1] === "👀");
+    expect(eyeballCall).toBeDefined();
+    expect(eyeballCall![3]).toBe(5);
+  });
+
+  it("unknown preset returns an error", async () => {
+    const result = await handleSetReactionPreset(1, 42, 300, "nonexistent");
+    expect(isError(result)).toBe(true);
   });
 });

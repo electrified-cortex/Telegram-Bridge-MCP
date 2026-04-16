@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { toResult, toError } from "../telegram.js";
+import { toResult, toError, resolveChat } from "../telegram.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { requireAuth } from "../session-gate.js";
 import { getGovernorSid } from "../routing-mode.js";
@@ -23,7 +23,7 @@ import { handleEditMessage } from "./edit_message.js";
 // Phase 2 imports — message/*
 import { handleDeleteMessage } from "./delete_message.js";
 import { handlePinMessage } from "./pin_message.js";
-import { handleSetReaction } from "./set_reaction.js";
+import { handleSetReaction, handleSetReactionPreset } from "./set_reaction.js";
 import { handleAnswerCallbackQuery } from "./answer_callback_query.js";
 import { handleRouteMessage } from "./route_message.js";
 // Phase 2 imports — profile/*, reminder/*, etc.
@@ -105,7 +105,17 @@ export function setupActionRegistry(): void {
   // message/*
   registerAction("message/delete", handleDeleteMessage as unknown as ActionHandler);
   registerAction("message/pin", handlePinMessage as unknown as ActionHandler);
-  registerAction("react", handleSetReaction as unknown as ActionHandler);
+  registerAction("react", (async (args: Record<string, unknown>) => {
+    // Preset path: dispatch before single-emoji / array handling
+    if (args.preset && typeof args.preset === "string" && !args.emoji && !args.reactions) {
+      const _sid = requireAuth(args.token as number);
+      if (typeof _sid !== "number") return toError(_sid);
+      const chatId = resolveChat();
+      if (typeof chatId !== "number") return toError(chatId);
+      return handleSetReactionPreset(_sid, chatId, args.message_id as number, args.preset);
+    }
+    return handleSetReaction(args as Parameters<typeof handleSetReaction>[0]);
+  }) as unknown as ActionHandler);
   registerAction("acknowledge", handleAnswerCallbackQuery as unknown as ActionHandler);
   registerAction("message/route", handleRouteMessage as unknown as ActionHandler, { governor: true });
 
@@ -415,7 +425,7 @@ export function register(server: McpServer): void {
         preset: z
           .string()
           .optional()
-          .describe("animation/default: Named preset key for registration or recall."),
+          .describe("react: Named reaction preset (e.g. \"acknowledge\"). animation/default: Named preset key for registration or recall."),
         reset: z
           .boolean()
           .optional()

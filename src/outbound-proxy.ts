@@ -15,7 +15,7 @@ import type { Api } from "grammy";
 import { typingGeneration, cancelTypingIfSameGeneration } from "./typing-state.js";
 import { clearPendingTemp } from "./temp-message.js";
 import { recordOutgoing } from "./message-store.js";
-import { fireTempReactionRestore } from "./temp-reaction.js";
+import { clearAllTempReactions } from "./temp-reaction.js";
 import { getCallerSid } from "./session-context.js";
 import { activeSessionCount, getSession } from "./session-manager.js";
 import { escapeHtml, escapeV2 } from "./markdown.js";
@@ -158,7 +158,7 @@ export async function notifyBeforeFileSend(): Promise<void> {
   const sid = getCallerSid();
   _fileSendTypingGenBySid.set(sid, typingGeneration());
   clearPendingTemp();
-  await fireTempReactionRestore();
+  await clearAllTempReactions(sid);
   const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
   if (interceptor) await interceptor.beforeFileSend();
 }
@@ -229,7 +229,7 @@ export function createOutboundProxy(realApi: Api): Api {
 
           const gen = typingGeneration();
           clearPendingTemp();
-          await fireTempReactionRestore();
+          await clearAllTempReactions(getCallerSid());
 
           // Extract optional raw text for recording (tools can attach _rawText)
           const rawText = opts?._rawText as string | undefined;
@@ -295,10 +295,10 @@ export function createOutboundProxy(realApi: Api): Api {
 
           const gen = typingGeneration();
           clearPendingTemp();
-          await fireTempReactionRestore();
+          const fileSid = getCallerSid();
+          await clearAllTempReactions(fileSid);
 
           // Suspend animation (delete placeholder)
-          const fileSid = getCallerSid();
           const fileInterceptor = fileSid > 0 ? _interceptors.get(fileSid) : undefined;
           const hadInterceptor = fileInterceptor != null;
           if (fileInterceptor) await fileInterceptor.beforeFileSend();
@@ -345,7 +345,7 @@ export function createOutboundProxy(realApi: Api): Api {
         return async function proxiedEditMessageText(...args: unknown[]) {
           if (isBypassing()) return fn(...args);
           const gen = typingGeneration();
-          await fireTempReactionRestore();
+          await clearAllTempReactions(getCallerSid());
 
           // Inject session header into edit text if multi-session active
           // args: (chatId, messageId, text, opts?)
@@ -393,4 +393,4 @@ export function resetOutboundProxyForTest(): void {
 }
 
 /** Re-export for tests that need to assert temp-reaction interplay. */
-export { fireTempReactionRestore } from "./temp-reaction.js";
+export { fireTempReactionRestore, clearAllTempReactions } from "./temp-reaction.js";

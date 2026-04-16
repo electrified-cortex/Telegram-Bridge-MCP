@@ -4,9 +4,8 @@
  * Pattern: set 👀 to signal "reading", auto-restore to 🫡 (or remove)
  * the moment the agent sends anything outbound.
  *
- * Only one temporary reaction can be active per session at a time. Setting
- * a new one while one is pending replaces the previous one (no restore fired
- * for the replaced slot — caller is responsible for overlapping calls).
+ * Multiple temporary reactions can be active per session simultaneously.
+ * Setting a new one appends to the list; `clearAllTempReactions` drains all.
  */
 
 import { getBotReaction } from "./message-store.js";
@@ -20,13 +19,15 @@ interface TempReactionSlot {
   timeoutHandle: ReturnType<typeof setTimeout> | null;
 }
 
-const _slots = new Map<number, TempReactionSlot>();
+// Map<sid, TempReactionSlot[]> — multiple slots per session
+const _slots = new Map<number, TempReactionSlot[]>();
 
 /**
- * Set a temporary reaction for the calling session. Fires `restoreEmoji` on
- * restore; if omitted, restores the previous recorded reaction (or removes it
- * if none was recorded). Restore is triggered by the first outbound event or
- * after `timeoutSeconds`.
+ * Set a temporary reaction for the calling session. Appends to the active
+ * slot list — multiple temp reactions per session are supported.
+ * Fires `restoreEmoji` on restore; if omitted, restores the previous recorded
+ * reaction (or removes it if none was recorded). Restore is triggered by the
+ * first outbound event or after `timeoutSeconds`.
  */
 export async function setTempReaction(
   messageId: number,
@@ -39,17 +40,24 @@ export async function setTempReaction(
 
   const sid = getCallerSid();
 
-  // When replacing a temp on the same message, inherit the restore target from the
-  // outgoing slot so the chain resolves back to the original stable reaction, not
-  // the intermediate temp emoji that recordBotReaction recorded.
-  const outgoingSlot = _slots.get(sid);
-  const inheritingSlot = outgoingSlot?.messageId === messageId ? outgoingSlot : undefined;
+  // Look for an existing slot on the same message so we can inherit restoreEmoji
+  const existingSlots = _slots.get(sid) ?? [];
+  const sameMessageSlotIdx = existingSlots.findIndex(s => s.messageId === messageId);
+  const inheritingSlot = sameMessageSlotIdx >= 0 ? existingSlots[sameMessageSlotIdx] : undefined;
 
-  // Cancel any previous pending slot for this session (no restore — caller replaced it)
-  _clearSlot(sid);
+  // When replacing a temp on the same message, cancel its timeout and remove the
+  // old slot — we inherit the restore target to preserve the chain.
+  if (inheritingSlot) {
+    if (inheritingSlot.timeoutHandle !== null) clearTimeout(inheritingSlot.timeoutHandle);
+    existingSlots.splice(sameMessageSlotIdx, 1);
+    if (existingSlots.length === 0) {
+      _slots.delete(sid);
+    } else {
+      _slots.set(sid, existingSlots);
+    }
+  }
 
   // Capture previous reaction before we overwrite it
-  // Use `undefined` as sentinel for "no slot"; `null` means "slot wants to clear"
   const previousEmoji = inheritingSlot !== undefined
     ? inheritingSlot.restoreEmoji
     : (getBotReaction(messageId) as ReactionEmoji | null);
@@ -62,25 +70,47 @@ export async function setTempReaction(
   const capturedSid = sid;
   const handle =
     timeoutSeconds != null
-      ? setTimeout(() => { void fireTempReactionRestore(capturedSid); }, timeoutSeconds * 1000)
+      ? setTimeout(() => { void _fireRestoreForSlot(capturedSid, messageId); }, timeoutSeconds * 1000)
       : null;
 
-  _slots.set(sid, {
+  const newSlot: TempReactionSlot = {
     chatId: resolved,
     messageId,
     restoreEmoji: resolvedRestore,
     timeoutHandle: handle,
-  });
+  };
+
+  const slots = _slots.get(sid) ?? [];
+  slots.push(newSlot);
+  _slots.set(sid, slots);
 
   return true;
 }
 
 /**
+ * Internal: restore a single slot identified by (sid, messageId), then remove it.
+ * Used by timeout callbacks where AsyncLocalStorage context is lost.
+ */
+async function _fireRestoreForSlot(sid: number, messageId: number): Promise<void> {
+  const slots = _slots.get(sid);
+  if (!slots) return;
+  const idx = slots.findIndex(s => s.messageId === messageId);
+  if (idx < 0) return;
+  const [slot] = slots.splice(idx, 1);
+  if (slots.length === 0) _slots.delete(sid);
+
+  const { chatId, restoreEmoji } = slot;
+  if (restoreEmoji) {
+    void trySetMessageReaction(chatId, messageId, restoreEmoji);
+  } else {
+    await getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
+  }
+}
+
+/**
  * Called by the outbound proxy before every send.
- * Restores the reaction to its pre-temp state, then clears the slot.
- * - If restoreEmoji is set, reverts to it.
- * - If null (no previous reaction recorded), clears the reaction entirely.
- * Safe to call unconditionally — no-ops when no slot is active for this session.
+ * Restores ALL pending temporary reactions for this session, then clears all slots.
+ * Safe to call unconditionally — no-ops when no slots are active.
  *
  * @param sid - Optional SID override. Pass the captured SID when calling from a
  *   setTimeout callback where AsyncLocalStorage context is lost. Falls back to
@@ -88,33 +118,39 @@ export async function setTempReaction(
  */
 export async function fireTempReactionRestore(sid?: number): Promise<void> {
   const resolvedSid = sid ?? getCallerSid();
-  const slot = _slots.get(resolvedSid);
-  if (!slot) return;
-  const { chatId, messageId, restoreEmoji } = slot;
-  _clearSlot(resolvedSid);
-
-  if (restoreEmoji) {
-    void trySetMessageReaction(chatId, messageId, restoreEmoji);
-  } else {
-    // No previous reaction — clear back to nothing
-    await getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
-  }
+  await clearAllTempReactions(resolvedSid);
 }
 
-function _clearSlot(sid: number): void {
-  const slot = _slots.get(sid);
-  if (!slot) return;
-  if (slot.timeoutHandle !== null) clearTimeout(slot.timeoutHandle);
+/**
+ * Clear ALL temporary reactions for the given session, firing restore for each.
+ * Idempotent — safe to call when no slots are active.
+ */
+export async function clearAllTempReactions(sid: number): Promise<void> {
+  const slots = _slots.get(sid);
+  if (!slots || slots.length === 0) return;
   _slots.delete(sid);
+
+  await Promise.all(slots.map(slot => {
+    if (slot.timeoutHandle !== null) clearTimeout(slot.timeoutHandle);
+    const { chatId, messageId, restoreEmoji } = slot;
+    if (restoreEmoji) {
+      return trySetMessageReaction(chatId, messageId, restoreEmoji).catch(() => undefined);
+    } else {
+      return getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
+    }
+  }));
 }
 
-/** Returns true if a temporary reaction is currently pending for the calling session. */
+/** Returns true if any temporary reaction is currently pending for the calling session. */
 export function hasTempReaction(): boolean {
-  return _slots.has(getCallerSid());
+  const slots = _slots.get(getCallerSid());
+  return slots != null && slots.length > 0;
 }
 
 /** Test helper — resets all session state without firing any reaction. */
 export function resetTempReactionForTest(): void {
-  _slots.forEach(s => { if (s.timeoutHandle !== null) clearTimeout(s.timeoutHandle); });
+  _slots.forEach(slotList => {
+    slotList.forEach(s => { if (s.timeoutHandle !== null) clearTimeout(s.timeoutHandle); });
+  });
   _slots.clear();
 }
