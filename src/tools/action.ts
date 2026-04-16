@@ -253,7 +253,7 @@ export function register(server: McpServer): void {
           .int()
           .min(1)
           .optional()
-          .describe("message/edit, message/delete, message/pin, react, message/get, checklist/update, progress/update: Target message ID."),
+          .describe("message/edit, message/delete, message/pin, react, message/get, checklist/update, progress/update, acknowledge: Target message ID."),
         text: z
           .string()
           .optional()
@@ -337,6 +337,10 @@ export function register(server: McpServer): void {
           .int()
           .optional()
           .describe("acknowledge: Seconds the result may be cached client-side."),
+        remove_keyboard: z
+          .boolean()
+          .optional()
+          .describe("acknowledge: Clear the inline keyboard on message_id after answering. Returns MISSING_MESSAGE_ID error if message_id is absent."),
         // message/route params
         target_sid: z
           .number()
