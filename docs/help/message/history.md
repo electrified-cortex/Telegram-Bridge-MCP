@@ -10,7 +10,7 @@ before_id: return events older than this event ID (optional; for pagination)
 
 ## Examples
 Recent 20 events:
-action(type: "message/history", token: 3165424)
+action(type: "message/history", token: 3165424, count: 20)
 → { events: [...], has_more: false }
 
 Last 50 events:
@@ -23,5 +23,7 @@ action(type: "message/history", token: 3165424, before_id: 1234, count: 20)
 ## Notes
 - Timeline is in-memory; does not fetch from Telegram API
 - Evicted events not recoverable
+
+> **Note:** Omitting both `count` and `before_id` does **not** return history — it silently triggers an interactive operator-approval flow (`handleGetChat`) instead. Always pass `count` to get history events.
 
 Related: message/get, message/route
