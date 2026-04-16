@@ -104,7 +104,7 @@ describe("help tool", () => {
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);
     expect(content).toContain("profile/load");
-    expect(content).toContain("dequeue()");
+    expect(content).toContain("dequeue(token)");
     expect(content).toContain("5 minutes");
     expect(content).toContain("help('guide')");
     expect(content).toContain("Quick reference");
@@ -117,7 +117,7 @@ describe("help tool", () => {
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);
     expect(content).toContain("profile/load");
-    expect(content).toContain("dequeue()");
+    expect(content).toContain("dequeue(token)");
   });
 
   it("help(topic: 'quick_start') is aliased to 'start'", async () => {

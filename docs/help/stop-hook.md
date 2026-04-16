@@ -22,13 +22,19 @@ Sequence:
 Result: session/close never called, no handoff, session file still has token → orphaned.
 
 ## Minimal Tokens Remaining — Priority Order
-1. Write checkpoint to session memory immediately (don't wait for 10-cycle interval):
-     ## Checkpoint
-     Written: <ISO 8601>
-     Cycle: <count>
-     SID: <your SID>
-     Status: <idle | in-progress: task-id>
-     Note: forced-stop imminent — checkpoint written at hook boundary
+
+1. Write checkpoint to session memory immediately
+   (don't wait for 10-cycle interval):
+
+   ```text
+   ## Checkpoint
+   Written: <ISO 8601>
+   Cycle: <count>
+   SID: <your SID>
+   Status: <idle | in-progress: task-id>
+   Note: forced-stop imminent
+   ```
+
 2. Call dequeue — re-enters loop, may give more time.
 3. If tokens remain after dequeue, DM Overseer:
      "⚠️ Context near-exhaustion. Checkpoint written. May stop uncleanly."

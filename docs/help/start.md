@@ -6,7 +6,9 @@ If you have a saved profile: action(type: 'profile/load', key: 'YourProfileKey',
 Restores voice, animation presets, reminders. Skip if no profile exists.
 
 ## Dequeue Loop
-Call dequeue() with no parameters. Default timeout is 5 minutes. This is intentional — blocking reduces token use.
+Call dequeue(token) to enter the loop. Default timeout
+is 5 minutes. This is intentional — blocking reduces
+token use.
 Returns { timed_out: true } on timeout → call again. Returns { empty: true } on instant poll.
 Pattern: drain → block → handle → drain again. When pending > 0: dequeue(timeout: 0) until pending == 0, then block.
 Claude Code sessions (long-lived): action(type: 'profile/dequeue-default', timeout: N, token) to increase timeout.
@@ -16,7 +18,8 @@ send(type: 'text', token, text: 'Hello') → text message
 send(type: 'notification', token, title: 'Done', text: 'Task complete', severity: 'success') → formatted alert
 
 ## DM Pattern
-send(type: 'dm', token, target: 'SessionName', text: '...') → private message to another session
+send(type: 'dm', token, target: 2, text: '...') → private
+message to another session (target is numeric SID)
 action(type: 'react', token, message_id: <id>, emoji: '👍') → silent receipt ack
 
 ## Help
