@@ -800,6 +800,125 @@ describe("session_start tool", () => {
   });
 
   // =========================================================================
+  // Onboarding service messages (task 10-572)
+  // =========================================================================
+
+  it("first session: injects onboarding_token_save after session_orientation", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.getGovernorSid.mockReturnValue(1);
+
+    await call({});
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const tokenSave = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "onboarding_token_save");
+    expect(tokenSave).toBeDefined();
+    expect(String(tokenSave![1])).toContain("Save your token");
+  });
+
+  it("first session: injects onboarding_role with governor text", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.getGovernorSid.mockReturnValue(1);
+
+    await call({});
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const role = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "onboarding_role");
+    expect(role).toBeDefined();
+    expect(String(role![1])).toContain("governor");
+    expect(String(role![1])).not.toContain("You are a participant session");
+  });
+
+  it("first session: injects onboarding_protocol after session_orientation", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.getGovernorSid.mockReturnValue(1);
+
+    await call({});
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const protocol = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "onboarding_protocol");
+    expect(protocol).toBeDefined();
+    expect(String(protocol![1])).toContain("Signal activity");
+  });
+
+  it("second session (participant): onboarding_role uses participant text", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
+    // Governor is SID 1; new session SID 2 is a participant
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+
+    await call({ name: "Worker" });
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const role = calls.find((c: unknown[]) => c[0] === 2 && c[2] === "onboarding_role");
+    expect(role).toBeDefined();
+    expect(String(role![1])).toContain("participant session");
+    expect(String(role![1])).not.toContain("You are the governor");
+  });
+
+  it("second session (participant): all 3 onboarding messages injected", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+
+    await call({ name: "Worker" });
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const toNew = (type: string) => calls.find((c: unknown[]) => c[0] === 2 && c[2] === type);
+    expect(toNew("onboarding_token_save")).toBeDefined();
+    expect(toNew("onboarding_role")).toBeDefined();
+    expect(toNew("onboarding_protocol")).toBeDefined();
+  });
+
+  it("reconnect: onboarding messages are NOT injected on session/reconnect", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({
+      sid: 1, pin: 111111, name: "Overseer", color: "🟦",
+      createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
+    });
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 404 });
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq-ob" } }); });
+    });
+
+    await handleSessionReconnect({ name: "Overseer" });
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const onboardingCalls = calls.filter((c: unknown[]) =>
+      c[2] === "onboarding_token_save" || c[2] === "onboarding_role" || c[2] === "onboarding_protocol",
+    );
+    expect(onboardingCalls).toHaveLength(0);
+  });
+
+  // =========================================================================
   // First session announcement (task 018)
   // =========================================================================
 
