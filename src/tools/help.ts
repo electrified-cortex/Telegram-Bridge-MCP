@@ -201,8 +201,15 @@ export function register(server: McpServer) {
         return toResult({ content: `${topic}\n\n${desc}` });
       }
 
+      // Alias resolution: startup/quick_start → start
+      const TOPIC_ALIASES: Record<string, string> = {
+        startup: "start",
+        quick_start: "start",
+      };
+      const resolvedTopic = TOPIC_ALIASES[topic] ?? topic;
+
       // All other named topics → load from docs/help/<topic>.md
-      const fileContent = loadTopic(topic);
+      const fileContent = loadTopic(resolvedTopic);
       if (fileContent !== null) {
         return toResult({ content: fileContent });
       }
