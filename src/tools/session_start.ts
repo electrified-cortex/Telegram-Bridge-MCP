@@ -84,10 +84,6 @@ async function requestApproval(
   const msgId: number = sent.message_id;
 
   const decision = await new Promise<ApprovalDecision>((resolve) => {
-    const timer = setTimeout(() => {
-      clearPendingApproval(name);
-      resolveOnce({ approved: false });
-    }, APPROVAL_TIMEOUT_MS);
     let resolved = false;
     const resolveOnce = (value: ApprovalDecision) => {
       if (resolved) return;
@@ -96,16 +92,20 @@ async function requestApproval(
       clearCallbackHook(msgId);
       resolve(value);
     };
-    registerPendingApproval(name, resolveOnce, colorHint);
+    const ticket = registerPendingApproval(name, resolveOnce, colorHint);
+    const timer = setTimeout(() => {
+      clearPendingApproval(ticket);
+      resolveOnce({ approved: false });
+    }, APPROVAL_TIMEOUT_MS);
 
     // Notify governor of pending approval
     const governorSid = getGovernorSid();
     if (governorSid) {
       deliverServiceMessage(
         governorSid,
-        `Session "${name}" is requesting access. Call approve_agent(target_name: "${name}") to approve, or wait for operator decision via Telegram buttons.`,
+        `Session "${name}" is requesting access. Ticket: ${ticket}\nHint: action(type: 'approve', token: <your_token>, ticket: ${ticket})`,
         "pending_approval",
-        { target_name: name },
+        { name, ticket },
       );
     }
 
@@ -124,7 +124,7 @@ async function requestApproval(
         if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
         return;
       }
-      clearPendingApproval(name);
+      clearPendingApproval(ticket);
       if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
       if (data === APPROVAL_NO) {
         resolveOnce({ approved: false });

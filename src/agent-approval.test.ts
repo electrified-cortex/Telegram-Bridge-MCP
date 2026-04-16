@@ -127,69 +127,76 @@ describe("agent-approval module", () => {
   });
 
   describe("pending approval registry", () => {
-    it("getPendingApproval returns undefined for unknown name", () => {
-      expect(getPendingApproval("nobody")).toBeUndefined();
+    it("getPendingApproval returns undefined for unknown ticket", () => {
+      expect(getPendingApproval("notavalidticket")).toBeUndefined();
     });
 
-    it("registerPendingApproval stores a pending entry retrievable by name", () => {
+    it("registerPendingApproval stores a pending entry retrievable by returned ticket", () => {
       const resolve = vi.fn();
-      registerPendingApproval("Worker 1", resolve);
+      const ticket = registerPendingApproval("Worker 1", resolve);
 
-      const pending = getPendingApproval("Worker 1");
+      expect(typeof ticket).toBe("string");
+      expect(ticket.length).toBeGreaterThan(0);
+
+      const pending = getPendingApproval(ticket);
       expect(pending).toBeDefined();
       expect(pending!.name).toBe("Worker 1");
+      expect(pending!.ticket).toBe(ticket);
       expect(pending!.resolve).toBe(resolve);
 
-      clearPendingApproval("Worker 1");
+      clearPendingApproval(ticket);
     });
 
     it("registeredAt is set to approximately now", () => {
       const before = Date.now();
-      registerPendingApproval("Timer Test", vi.fn());
+      const ticket = registerPendingApproval("Timer Test", vi.fn());
       const after = Date.now();
 
-      const pending = getPendingApproval("Timer Test");
+      const pending = getPendingApproval(ticket);
       expect(pending!.registeredAt).toBeGreaterThanOrEqual(before);
       expect(pending!.registeredAt).toBeLessThanOrEqual(after);
 
-      clearPendingApproval("Timer Test");
+      clearPendingApproval(ticket);
     });
 
     it("clearPendingApproval removes the entry", () => {
-      registerPendingApproval("Worker 2", vi.fn());
-      clearPendingApproval("Worker 2");
-      expect(getPendingApproval("Worker 2")).toBeUndefined();
+      const ticket = registerPendingApproval("Worker 2", vi.fn());
+      clearPendingApproval(ticket);
+      expect(getPendingApproval(ticket)).toBeUndefined();
     });
 
-    it("clearPendingApproval is a no-op for unknown names", () => {
+    it("clearPendingApproval is a no-op for unknown tickets", () => {
       expect(() => { clearPendingApproval("ghost"); }).not.toThrow();
     });
 
-    it("registrations are keyed by name — different names are independent", () => {
+    it("registrations are keyed by ticket — different registrations are independent", () => {
       const r1 = vi.fn();
       const r2 = vi.fn();
-      registerPendingApproval("Alpha", r1);
-      registerPendingApproval("Beta", r2);
+      const t1 = registerPendingApproval("Alpha", r1);
+      const t2 = registerPendingApproval("Beta", r2);
 
-      expect(getPendingApproval("Alpha")!.resolve).toBe(r1);
-      expect(getPendingApproval("Beta")!.resolve).toBe(r2);
+      expect(getPendingApproval(t1)!.resolve).toBe(r1);
+      expect(getPendingApproval(t2)!.resolve).toBe(r2);
 
-      clearPendingApproval("Alpha");
-      expect(getPendingApproval("Alpha")).toBeUndefined();
-      expect(getPendingApproval("Beta")).toBeDefined();
+      clearPendingApproval(t1);
+      expect(getPendingApproval(t1)).toBeUndefined();
+      expect(getPendingApproval(t2)).toBeDefined();
 
-      clearPendingApproval("Beta");
+      clearPendingApproval(t2);
     });
 
-    it("re-registering the same name overwrites the previous entry", () => {
+    it("each registration for the same name produces a unique ticket", () => {
       const r1 = vi.fn();
       const r2 = vi.fn();
-      registerPendingApproval("Dup", r1);
-      registerPendingApproval("Dup", r2);
+      const t1 = registerPendingApproval("Dup", r1);
+      const t2 = registerPendingApproval("Dup", r2);
 
-      expect(getPendingApproval("Dup")!.resolve).toBe(r2);
+      expect(t1).not.toBe(t2);
+      expect(getPendingApproval(t1)!.resolve).toBe(r1);
+      expect(getPendingApproval(t2)!.resolve).toBe(r2);
 
-      clearPendingApproval("Dup");
+      clearPendingApproval(t1);
+      clearPendingApproval(t2);
     });
   });
 });

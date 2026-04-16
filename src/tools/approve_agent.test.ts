@@ -42,6 +42,7 @@ describe("approve_agent tool", () => {
   let call: ToolHandler;
   // Valid token: sid=1, pin=123456 → token=1_123_456
   const VALID_TOKEN = 1_123_456;
+  const VALID_TICKET = "abcdef1234567890abcdef1234567890";
   const mockResolve = vi.fn();
 
   beforeEach(() => {
@@ -69,14 +70,14 @@ describe("approve_agent tool", () => {
 
   describe("authentication", () => {
     it("returns SID_REQUIRED when no token provided", async () => {
-      const result = await call({ target_name: "Worker" });
+      const result = await call({ ticket: VALID_TICKET });
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
     it("returns AUTH_FAILED when token is invalid", async () => {
       mocks.validateSession.mockReturnValue(false);
-      const result = await call({ token: 1_999_999, target_name: "Worker" });
+      const result = await call({ token: 1_999_999, ticket: VALID_TICKET });
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("AUTH_FAILED");
     });
@@ -89,7 +90,7 @@ describe("approve_agent tool", () => {
   describe("delegation disabled", () => {
     it("returns BLOCKED error containing DELEGATION_DISABLED when delegation is off", async () => {
       mocks.isDelegationEnabled.mockReturnValue(false);
-      const result = await call({ token: VALID_TOKEN, target_name: "Worker" });
+      const result = await call({ token: VALID_TOKEN, ticket: VALID_TICKET });
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("BLOCKED");
       const parsed = parseResult(result);
@@ -103,13 +104,13 @@ describe("approve_agent tool", () => {
   describe("governor check", () => {
     it("allows approval when governor SID is 0 (no governor set)", async () => {
       mocks.getGovernorSid.mockReturnValue(0);
-      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" }));
+      const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" }));
       expect(result.approved).toBe(true);
     });
 
     it("returns UNAUTHORIZED_SENDER when caller is not the governor", async () => {
       mocks.getGovernorSid.mockReturnValue(99); // caller SID is 1, governor is 99
-      const result = await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" });
+      const result = await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" });
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("UNAUTHORIZED_SENDER");
       const parsed = parseResult(result);
@@ -118,7 +119,7 @@ describe("approve_agent tool", () => {
 
     it("allows approval when caller IS the governor", async () => {
       mocks.getGovernorSid.mockReturnValue(1); // caller SID is 1 == governor
-      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" }));
+      const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" }));
       expect(result.approved).toBe(true);
     });
   });
@@ -127,13 +128,13 @@ describe("approve_agent tool", () => {
   // -------------------------------------------------------------------------
 
   describe("not pending", () => {
-    it("returns NOT_PENDING error for unknown target_name", async () => {
+    it("returns NOT_PENDING error for unknown ticket", async () => {
       mocks.getPendingApproval.mockReturnValue(undefined);
-      const result = await call({ token: VALID_TOKEN, target_name: "Ghost" });
+      const result = await call({ token: VALID_TOKEN, ticket: "ghostticket00000000000000000000" });
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("NOT_PENDING");
       const parsed = parseResult(result);
-      expect(String(parsed.message)).toContain("Ghost");
+      expect(String(parsed.message)).toContain("ghostticket00000000000000000000");
     });
   });
 
@@ -143,7 +144,7 @@ describe("approve_agent tool", () => {
 
   describe("invalid color", () => {
     it("returns INVALID_COLOR error for unrecognised color string", async () => {
-      const result = await call({ token: VALID_TOKEN, target_name: "Worker", color: "🔴" });
+      const result = await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🔴" });
       expect(isError(result)).toBe(true);
       expect(errorCode(result)).toBe("INVALID_COLOR");
       const parsed = parseResult(result);
@@ -161,13 +162,13 @@ describe("approve_agent tool", () => {
       mocks.clearPendingApproval.mockImplementation(() => { callOrder.push("clear"); });
       mockResolve.mockImplementation(() => { callOrder.push("resolve"); });
 
-      await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" });
+      await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" });
 
       expect(callOrder).toEqual(["clear", "resolve"]);
     });
 
     it("resolves pending approval with approved: true and the specified color", async () => {
-      await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" });
+      await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" });
       expect(mockResolve).toHaveBeenCalledWith({
         approved: true,
         color: "🟩",
@@ -175,20 +176,20 @@ describe("approve_agent tool", () => {
       });
     });
 
-    it("calls clearPendingApproval with target_name", async () => {
-      await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" });
-      expect(mocks.clearPendingApproval).toHaveBeenCalledWith("Worker");
+    it("calls clearPendingApproval with the ticket", async () => {
+      await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" });
+      expect(mocks.clearPendingApproval).toHaveBeenCalledWith(VALID_TICKET);
     });
 
-    it("returns approved: true with the assigned color in the result", async () => {
-      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" }));
+    it("returns approved: true with the assigned color and name from the pending entry", async () => {
+      const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" }));
       expect(result.approved).toBe(true);
       expect(result.color).toBe("🟩");
-      expect(result.target_name).toBe("Worker");
+      expect(result.name).toBe("Worker");
     });
 
     it("writes an audit log line to stderr", async () => {
-      await call({ token: VALID_TOKEN, target_name: "Worker", color: "🟩" });
+      await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" });
       expect(mocks.stderrWrite).toHaveBeenCalledOnce();
       const logLine = String(mocks.stderrWrite.mock.calls[0][0]);
       expect(logLine).toContain("[agent-approval]");
@@ -204,7 +205,7 @@ describe("approve_agent tool", () => {
   describe("color fallback", () => {
     it("uses the first available color when color is omitted", async () => {
       mocks.getAvailableColors.mockReturnValue(["🟧", "🟥"]);
-      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
+      const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET }));
       expect(result.color).toBe("🟧");
       expect(mockResolve).toHaveBeenCalledWith({
         approved: true,
@@ -215,7 +216,7 @@ describe("approve_agent tool", () => {
 
     it("falls back to first palette color when getAvailableColors returns empty", async () => {
       mocks.getAvailableColors.mockReturnValue([]);
-      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
+      const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET }));
       expect(result.color).toBe("🟦");
     });
 
@@ -226,7 +227,7 @@ describe("approve_agent tool", () => {
         registeredAt: Date.now(),
         colorHint: "🟩",
       });
-      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
+      const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET }));
       expect(result.color).toBe("🟩");
       expect(mocks.getAvailableColors).not.toHaveBeenCalled();
       expect(mockResolve).toHaveBeenCalledWith({ approved: true, color: "🟩", forceColor: true });
@@ -241,7 +242,7 @@ describe("approve_agent tool", () => {
       });
       // Simulate 🟩 in-use — should NOT affect the resolved color
       mocks.getAvailableColors.mockReturnValue(["🟦", "🟧", "🟩"]);
-      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
+      const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET }));
       expect(result.color).toBe("🟩");
       expect(mocks.getAvailableColors).not.toHaveBeenCalled();
     });
@@ -255,7 +256,7 @@ describe("approve_agent tool", () => {
         // no colorHint property
       });
       mocks.getAvailableColors.mockReturnValue(["🟦", "🟧"]);
-      const result = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker" }));
+      const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET }));
       expect(mocks.getAvailableColors).toHaveBeenCalledWith();
       expect(result.color).toBe("🟦");
     });
@@ -268,7 +269,7 @@ describe("approve_agent tool", () => {
         registeredAt: Date.now(),
         colorHint: "🟨",
       });
-      const result1 = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker 1" }));
+      const result1 = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET }));
       expect(result1.color).toBe("🟨");
 
       // Second approval: Worker 2 also with colorHint yellow
@@ -279,7 +280,7 @@ describe("approve_agent tool", () => {
         registeredAt: Date.now(),
         colorHint: "🟨",
       });
-      const result2 = parseResult(await call({ token: VALID_TOKEN, target_name: "Worker 2" }));
+      const result2 = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET }));
       expect(result2.color).toBe("🟨");
     });
   });
