@@ -58,7 +58,7 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   parts.push("→ help('reminders') for reminder docs. reminders/list for details.");
 
   const summary = parts.join(" ");
-  return toResult({ loaded: true, key, summary, instruction: "Do this now: call dequeue() to enter the message loop." });
+  return toResult({ loaded: true, key, summary });
 }
 
 export function register(server: McpServer) {

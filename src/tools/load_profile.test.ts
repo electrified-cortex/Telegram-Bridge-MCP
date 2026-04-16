@@ -69,15 +69,6 @@ describe("load_profile tool", () => {
     expect(mocks.setSessionSpeed).toHaveBeenCalledWith(1.2);
   });
 
-  it("successful load includes an instruction pointing to dequeue", async () => {
-    mocks.readProfile.mockReturnValue({ voice: "alloy" });
-    const result = await call({ key: "Test", token: 1123456 });
-    expect(isError(result)).toBe(false);
-    const data = parseResult<{ instruction: string }>(result);
-    expect(typeof data.instruction).toBe("string");
-    expect(data.instruction).toContain("dequeue");
-  });
-
   it("successful load returns summary containing reminders/list", async () => {
     mocks.readProfile.mockReturnValue({ voice: "alloy" });
     const result = await call({ key: "Test", token: 1123456 });

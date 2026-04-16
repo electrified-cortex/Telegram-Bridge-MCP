@@ -7,7 +7,6 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession } from "../session-manager.js";
-import { getTutorialReactionHint } from "../tutorial-hints.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner } from "../session-queue.js";
 import { TOKEN_SCHEMA, consumeTokenStringHint } from "./identity-schema.js";
@@ -201,15 +200,6 @@ export function register(server: McpServer) {
         if (pending > 0) result.pending = pending;
         const hint0 = buildHint(tokenHint, firstDequeueHint);
         if (hint0) result.hint = hint0;
-        const hasUserReaction0 = batch.some(
-          (e) => e.event === "reaction" && e.from === "user" &&
-          Array.isArray((e.content as { added?: unknown[] }).added) &&
-          ((e.content as { added?: unknown[] }).added?.length ?? 0) > 0
-        );
-        if (hasUserReaction0) {
-          const rxHint0 = getTutorialReactionHint(sid);
-          if (rxHint0) result.tutorial = rxHint0;
-        }
         resyncActiveSession();
         dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
         return toResult(result);
@@ -277,15 +267,6 @@ export function register(server: McpServer) {
               if (pending > 0) result.pending = pending;
               const hint3a = buildHint(tokenHint, firstDequeueHint);
               if (hint3a) result.hint = hint3a;
-              const hasUserReaction3a = batch.some(
-                (e) => e.event === "reaction" && e.from === "user" &&
-                Array.isArray((e.content as { added?: unknown[] }).added) &&
-                ((e.content as { added?: unknown[] }).added?.length ?? 0) > 0
-              );
-              if (hasUserReaction3a) {
-                const rxHint3a = getTutorialReactionHint(sid);
-                if (rxHint3a) result.tutorial = rxHint3a;
-              }
               resyncActiveSession();
               dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
               return toResult(result);
@@ -310,15 +291,6 @@ export function register(server: McpServer) {
             if (pending > 0) result.pending = pending;
             const hint3 = buildHint(tokenHint, firstDequeueHint);
             if (hint3) result.hint = hint3;
-            const hasUserReaction3 = batch.some(
-              (e) => e.event === "reaction" && e.from === "user" &&
-              Array.isArray((e.content as { added?: unknown[] }).added) &&
-              ((e.content as { added?: unknown[] }).added?.length ?? 0) > 0
-            );
-            if (hasUserReaction3) {
-              const rxHint3 = getTutorialReactionHint(sid);
-              if (rxHint3) result.tutorial = rxHint3;
-            }
             resyncActiveSession();
             dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
             return toResult(result);

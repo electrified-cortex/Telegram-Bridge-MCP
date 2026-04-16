@@ -298,7 +298,6 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           pending: 0,
           discarded,
           fellow_sessions: [] as unknown[],
-          instruction: "Do this now: save this token, then call help('start') for post-session setup.",
         };
         if (isFirstSession) {
           // First session is the governor by default
@@ -522,7 +521,6 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     sessions_active: reconSessActive,
     action: "reconnected",
     pending,
-    instruction: "Do this now: save this token, then call help('start') for post-session setup.",
   });
 }
 

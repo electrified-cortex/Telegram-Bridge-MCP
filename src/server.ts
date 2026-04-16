@@ -7,7 +7,6 @@ import { getActiveSession, getSession } from "./session-manager.js";
 import { runInTokenHintContext } from "./tools/identity-schema.js";
 import { invokePreToolHook } from "./tool-hooks.js";
 import { toError } from "./telegram.js";
-import { getTutorialHint } from "./tutorial-hints.js";
 import { recordToolCall } from "./trace-log.js";
 
 import { register as registerDequeueUpdate } from "./tools/dequeue.js";
@@ -131,35 +130,6 @@ export function createServer(): McpServer {
             (isError || isStructuredError) ? "error" : "ok",
           );
 
-          // Inject tutorial hint on first use of each tool
-          const response = callResult as {
-            content?: Array<{ type: string; text?: string }>;
-          } | undefined;
-          const hint = getTutorialHint(sid, name, args);
-          if (hint) {
-            try {
-              const firstContent = response?.content?.[0];
-              const text = firstContent?.text;
-              if (firstContent?.type === "text" && text) {
-                const parsed: unknown = JSON.parse(text);
-                if (parsed && typeof parsed === "object") {
-                  const parsedObj = parsed as Record<string, unknown>;
-                  const hasError = "error" in parsedObj;
-                  const hasCode = "code" in parsedObj;
-                  const hasTutorial = "tutorial" in parsedObj;
-                  if (!hasError && !hasCode && !hasTutorial) {
-                    parsedObj["tutorial"] = hint;
-                    return {
-                      ...response,
-                      content: [{ type: "text" as const, text: JSON.stringify(parsedObj, null, 2) }],
-                    };
-                  }
-                }
-              }
-            } catch {
-              // Non-JSON response — skip
-            }
-          }
           return callResult;
         };
 

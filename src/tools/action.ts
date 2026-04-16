@@ -181,13 +181,13 @@ export function setupActionRegistry(): void {
     const _sid = requireAuth(args.token as number);
     if (typeof _sid !== "number") return toError(_sid);
     setTutorialEnabled(_sid, true);
-    return toResult({ tutorial: true, message: "Tutorial mode enabled." });
+    return toResult({ message: "Tutorial mode enabled." });
   }) as unknown as ActionHandler);
   registerAction("tutorial/off", ((args: Record<string, unknown>) => {
     const _sid = requireAuth(args.token as number);
     if (typeof _sid !== "number") return toError(_sid);
     setTutorialEnabled(_sid, false);
-    return toResult({ tutorial: false, message: "Tutorial mode disabled." });
+    return toResult({ message: "Tutorial mode disabled." });
   }) as unknown as ActionHandler);
 }
 

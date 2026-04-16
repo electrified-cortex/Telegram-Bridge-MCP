@@ -169,7 +169,6 @@ describe("session_start tool", () => {
       pending: 0,
       discarded: 3,
       fellow_sessions: [],
-      instruction: "Do this now: save this token, then call help('start') for post-session setup.",
     });
   });
 
@@ -187,7 +186,6 @@ describe("session_start tool", () => {
       pending: 0,
       discarded: 0,
       fellow_sessions: [],
-      instruction: "Do this now: save this token, then call help('start') for post-session setup.",
     });
   });
 
@@ -1682,28 +1680,6 @@ describe("session_start tool", () => {
   // hint field — persistence & recovery hints (task 056)
   // =========================================================================
 
-  it("fresh session response includes instruction field", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
-
-    const result = parseResult(await call({}));
-
-    expect(typeof result.instruction).toBe("string");
-    expect(result.instruction).toBeTruthy();
-  });
-
-  it("fresh session returns instruction pointing to start topic", async () => {
-    mocks.pendingCount.mockReturnValue(0);
-    mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
-
-    const result = parseResult(await call({}));
-
-    expect(result.instruction).toContain("start");
-    expect(result.profile_hint).toBeUndefined();
-    expect(result.instructions).toBeUndefined();
-  });
 
   // =========================================================================
   // Startup reminder integration (task 260)
@@ -1823,44 +1799,6 @@ describe("session_start tool", () => {
         expect.objectContaining({ event: "reminder" }),
       );
     });
-  });
-
-  it("reconnect response (name match + approved) includes instruction field", async () => {
-    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
-    mocks.getSession.mockReturnValue({
-      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
-      createdAt: "2026-03-17", lastPollAt: 12345, healthy: false,
-    });
-    mocks.activeSessionCount.mockReturnValue(1);
-    mocks.sendMessage.mockResolvedValueOnce({ message_id: 500 });
-    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq10" } }); });
-    });
-
-    const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
-
-    expect(typeof result.instruction).toBe("string");
-    expect(result.instruction).toBeTruthy();
-    expect(result.instruction).toContain("save this token");
-  });
-
-  it("reconnect returns instruction pointing to start topic", async () => {
-    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
-    mocks.getSession.mockReturnValue({
-      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
-      createdAt: "2026-03-17", lastPollAt: 12345, healthy: false,
-    });
-    mocks.activeSessionCount.mockReturnValue(1);
-    mocks.sendMessage.mockResolvedValueOnce({ message_id: 501 });
-    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq11" } }); });
-    });
-
-    const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
-
-    expect(result.instruction).toContain("start");
-    expect(result.profile_hint).toBeUndefined();
-    expect(result.instructions).toBeUndefined();
   });
 
   // =========================================================================
@@ -2325,23 +2263,6 @@ describe("handleSessionReconnect", () => {
     expect(isError(result)).toBe(true);
     expect(JSON.stringify(result)).toContain("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
-  });
-
-  it("instruction includes token save directive and 'start' after approval", async () => {
-    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
-    mocks.getSession.mockReturnValue({
-      sid: 1, pin: 111111, name: "Overseer", color: "🟦",
-      createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
-    });
-    mocks.sendMessage.mockResolvedValueOnce({ message_id: 803 });
-    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
-      void Promise.resolve().then(() => { fn({ content: { data: "reconnect_yes", qid: "rq-803" } }); });
-    });
-
-    const result = parseResult(await handleSessionReconnect({ name: "Overseer" }));
-
-    expect(result.instruction).toContain("save this token");
-    expect(result.instruction).toContain("start");
   });
 
   it("operator dialog text is just the name — no explanation text", async () => {
