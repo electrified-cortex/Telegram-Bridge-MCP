@@ -7,7 +7,7 @@ import { DIGITS_ONLY } from "../utils/patterns.js";
  */
 export const TOKEN_PARAM_DESCRIPTION =
   "Session token from action(type: 'session/start') (sid * 1_000_000 + pin). " +
-  "Always required — pass your token on every tool call.";
+  "Required for all paths except session/start, session/reconnect, and unauthenticated `session/list` probe — pass your token on every other tool call.";
 
 // ---------------------------------------------------------------------------
 // Token string-coercion hint
