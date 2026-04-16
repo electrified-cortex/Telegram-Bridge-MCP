@@ -178,6 +178,29 @@ export function register(server: McpServer) {
         return sq.waitForEnqueue();
       }
 
+      function getWakeVersionAny(): number {
+        const queueWithVersion = sq as unknown as { getWakeVersion?: () => number };
+        return queueWithVersion.getWakeVersion?.() ?? 0;
+      }
+
+      function hasVersionedWaitAny(): boolean {
+        const queueWithVersion = sq as unknown as {
+          getWakeVersion?: () => number;
+          waitForEnqueueSince?: (v: number) => Promise<void>;
+        };
+        return (
+          typeof queueWithVersion.getWakeVersion === "function" &&
+          typeof queueWithVersion.waitForEnqueueSince === "function"
+        );
+      }
+
+      function waitForEnqueueSinceAny(version: number): Promise<void> {
+        const queueWithVersion = sq as unknown as {
+          waitForEnqueueSince?: (v: number) => Promise<void>;
+        };
+        return queueWithVersion.waitForEnqueueSince?.(version) ?? waitForEnqueueAny();
+      }
+
       // Try immediate batch dequeue
       let batch = dequeueBatchAny();
       if (batch.length > 0) {
@@ -247,10 +270,37 @@ export function register(server: McpServer) {
             : Infinity;
           const deferredMs = getSoonestDeferredMs(sid);
           const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
+          const useVersionedWait = hasVersionedWaitAny();
+          const wakeVersion = useVersionedWait ? getWakeVersionAny() : 0;
+
+          if (useVersionedWait) {
+            // Re-check after capturing wakeVersion to avoid a lost wakeup if an
+            // event arrives between an "empty" check and waiter registration.
+            batch = dequeueBatchAny();
+            if (batch.length > 0) {
+              for (const evt of batch) ackVoice(evt);
+              const pending = pendingCountAny();
+              const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
+              if (pending > 0) result.pending = pending;
+              const hint3a = buildHint(tokenHint, firstDequeueHint);
+              if (hint3a) result.hint = hint3a;
+              const hasUserReaction3a = batch.some(
+                (e) => e.event === "reaction" && e.from === "user" &&
+                Array.isArray((e.content as { added?: unknown[] }).added) &&
+                ((e.content as { added?: unknown[] }).added?.length ?? 0) > 0
+              );
+              if (hasUserReaction3a) {
+                const rxHint3a = getTutorialReactionHint(sid);
+                if (rxHint3a) result.tutorial = rxHint3a;
+              }
+              resyncActiveSession();
+              return toResult(result);
+            }
+          }
 
           let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
-            waitForEnqueueAny(),
+            useVersionedWait ? waitForEnqueueSinceAny(wakeVersion) : waitForEnqueueAny(),
             new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(Math.max(0, waitMs), MAX_SET_TIMEOUT_MS)); }),
             abortPromise,
           ]);

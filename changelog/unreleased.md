@@ -14,6 +14,8 @@
 - Shutdown log handling: local log buffers are flushed before exit, and when session-log mode is disabled the active local log is rolled on shutdown if one exists
 - `/shutdown` built-in command handling now schedules shutdown on the next tick so poller-driven command handling cannot self-block the graceful shutdown wait path
 - Built-in command stale filtering now includes a 30-second clock-skew grace window so fresh slash commands are not incorrectly ignored as stale
+- `dequeue` wait loop: fixed a lost-wakeup race where an event enqueued between the empty-check and waiter registration could leave the agent blocked until another message arrived
+- `AUTH_FAILED` guidance now explicitly mentions closed/restarted sessions so mid-session token failures direct agents to `action(type: 'session/reconnect', ...)`
 
 ## v6.0.2 — 2026-04-11
 

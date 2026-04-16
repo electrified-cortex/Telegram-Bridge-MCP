@@ -253,6 +253,19 @@ describe("session-queue", () => {
       await p2;
       // If we got here, both resolved
     });
+
+    it("waitForEnqueueSince resolves when enqueue happens after version snapshot", async () => {
+      createSessionQueue(1);
+      const q1 = getSessionQueue(1);
+      const version = q1?.getWakeVersion() ?? 0;
+
+      routeToSession(makeEvent({ id: 999 }));
+
+      await q1?.waitForEnqueueSince(version);
+      const batch = q1?.dequeueBatch() ?? [];
+      expect(batch).toHaveLength(1);
+      expect(batch[0]?.id).toBe(999);
+    });
   });
 
   // -------------------------------------------------------------------------
