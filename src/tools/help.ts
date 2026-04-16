@@ -62,6 +62,8 @@ const DESCRIPTION =
   "Pass topic: 'dump' for session dump filing procedure. " +
   "Pass topic: 'orphaned' for closing an orphaned session. " +
   "Pass topic: 'stop-hook' for VS Code stop hook recovery. " +
+  "Pass topic: 'send' for full send tool reference including append mode. " +
+  "Pass topic: 'append_text' for append_text tool reference (params, edge cases, examples). " +
   "Pass topic: '<tool_name>' for detailed docs on a specific tool.";
 
 /**
@@ -192,7 +194,7 @@ export function register(server: McpServer) {
       }
 
       // Topics with rich file-based content — skip TOOL_INDEX even if present
-      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide"]);
+      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text"]);
 
       // topic: "<tool_name>" → per-tool description (checked before file lookup)
       // Skip for rich topics that have dedicated file-based content
