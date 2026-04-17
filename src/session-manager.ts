@@ -356,6 +356,20 @@ export function renameSession(
   return { old_name, new_name: newName };
 }
 
+/**
+ * Update a session's color. Returns the assigned color on success or `null`
+ * if the session does not exist or the color is not a valid palette entry.
+ */
+export function setSessionColor(sid: number, color: string): string | null {
+  if (!(COLOR_PALETTE as readonly string[]).includes(color)) return null;
+  const session = _sessions.get(sid);
+  if (!session) return null;
+  session.color = color;
+  recordColorUse(color);
+  dlog("session", `color sid=${sid} → ${color}`);
+  return color;
+}
+
 // ── Tutorial Mode ──────────────────────────────────────────
 
 /** Return true if tutorial mode is enabled for the session (default: true). */
