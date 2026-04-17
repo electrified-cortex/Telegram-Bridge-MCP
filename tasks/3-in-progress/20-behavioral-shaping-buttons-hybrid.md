@@ -11,6 +11,7 @@ Agents are underusing buttons and hybrid messages. The onboarding service messag
 ## Requirements
 
 ### Button Guidance in Onboarding
+
 - Service messages should teach agents about button presets: OK, OK-Cancel, Y/N
 - Emphasize simplicity: most of the time, simple OK or OK-Cancel is the best experience
 - Buttons need to stand out in the agent communication guide — not buried
@@ -19,14 +20,15 @@ Agents are underusing buttons and hybrid messages. The onboarding service messag
 
 Behavioral nudges should be smart, not spammy. Use a per-session checklist model:
 
-**Question-mark / button nudge:**
+#### Question-mark / button nudge
+
 - First question with `?` and no buttons → fire a lightweight hint (not blocking)
 - Once the agent uses buttons in any form → check off "knows buttons" → never nudge about buttons again in this session
 - If agent calls `help('send')` or similar button help → also checks off → no more nudges
 - If agent sends 10+ questions without ever using buttons → escalate to a stronger nudge (red flag)
 - Open-ended or curiosity questions don't require buttons — the nudge is "consider," not "must"
 
-**General checklist pattern:**
+#### General checklist pattern
 - Each behavioral skill (buttons, reactions, typing, animations) has a session-scoped boolean
 - Once demonstrated or help-consulted, the boolean flips and nudges stop
 - Conditions can un-check if needed (e.g., extended idle resets some)

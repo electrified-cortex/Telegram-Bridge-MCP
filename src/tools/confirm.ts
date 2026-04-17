@@ -204,6 +204,7 @@ export async function confirmHandler(
       clearCallbackHook(sent.message_id);
       registerCallbackHook(sent.message_id, (evt) => {
         const qid = evt.content.qid;
+        clearMessageHook(sent.message_id);
         if (qid) {
           void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
         }

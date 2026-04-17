@@ -330,6 +330,18 @@ describe("choose tool", () => {
     expect(mocks.clearMessageHook).toHaveBeenCalledWith(7);
   });
 
+  it("ack-only callback hook (timeout path) clears message hook on late button press", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(null); // timeout
+    await call({ text: "Pick", options: OPTIONS, token: 1123456});
+    // The ack-only hook is the LAST registerCallbackHook call (after clearCallbackHook + re-register)
+    const ackHookFn = mocks.registerCallbackHook.mock.calls[mocks.registerCallbackHook.mock.calls.length - 1][1];
+    mocks.clearMessageHook.mockClear();
+    // qid is null — only the clearMessageHook side-effect matters here
+    ackHookFn({ content: { qid: null } });
+    expect(mocks.clearMessageHook).toHaveBeenCalledWith(7);
+  });
+
   it("returns skipped with command when a slash command interrupts", async () => {
     const commandResult = { kind: "command", message_id: 8, command: "/help", args: "fast" };
     mocks.sendMessage.mockResolvedValue(SENT_MSG);

@@ -205,6 +205,7 @@ export async function handleChoose(
       clearCallbackHook(messageId);
       registerCallbackHook(messageId, (evt) => {
         const qid = evt.content.qid;
+        clearMessageHook(messageId);
         if (qid) {
           void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
         }
