@@ -27,8 +27,8 @@ The thinking → working → `action(type: "show-typing")` pipeline gives the op
 ## Hard Rules
 
 1. **`confirm`** — all yes/no questions. Always buttons.
+   Quick presets: `action(type: "confirm/ok")` · `action(type: "confirm/ok-cancel")` · `action(type: "confirm/yn")` — use before writing custom `send(type: "question", choose: [...])`.
 2. **`choose`** — all multi-option questions. Always buttons.
-   Quick presets: `action(type: "confirm/ok")` · `action(type: "confirm/ok-cancel")` · `action(type: "confirm/yn")` — use before writing custom `choose()`.
 3. **`dequeue`** — sole tool for receiving updates. Returns `{ updates: [...] }`: non-content events first, optionally ending with a content message.
 4. **Commit/push** — get explicit operator approval first. Send a `send(type: "notification")` summary before committing.
 5. **`action(type: "show-typing")`** — call when composing a reply. This is the "response is imminent" signal, not a generic receipt.

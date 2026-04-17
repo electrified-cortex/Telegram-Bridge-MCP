@@ -96,10 +96,10 @@ Reply threading: pass `reply_to: <message_id>`.
 Use for urgent updates where operator may be away from phone.
 Pattern: voice = full detail, caption = TL;DR.
 In `type: "text"` mode, buttons can't be added to that same msg — send a
-`confirm`/yes-no prompt immediately after if response is needed.
+`send(type: "question", confirm: "...")`/yes-no prompt immediately after if response is needed.
 If you need audio + caption + inline buttons in one message, use interactive
 modes such as `send(type: "question", choose: [...], audio: "...")`,
-`send(type: "choice", options: [...], audio: "...")`, or `confirm`.
+`send(type: "choice", options: [...], audio: "...")`, or `send(type: "question", confirm: "...")`.
 
 **notification** — Formatted block with severity emoji header. Required: `title`.
 Optional: `text`, `severity` (info/success/warning/error). Silent by default.
@@ -126,4 +126,4 @@ Optional: `title`, `subtext`, `width` (default 10).
 of: `ask` (string, free-text reply), `choose` (options array, button select),
 `confirm` (string, yes/no). Default `timeout_seconds: 60`.
 
-Related: append_text, edit_message, notify, send_file, send_new_checklist, send_new_progress, ask, choose, confirm
+Related: append_text, edit_message, notify, send_file, send_new_checklist, send_new_progress
