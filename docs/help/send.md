@@ -24,7 +24,7 @@ Use `send(type: "append", message_id: <id>, text: "chunk")` to append text to an
 existing message. The server reads the current stored text, concatenates the new
 chunk after a separator, and edits the message in-place.
 
-Internally routes to `append_text`. O(1) token cost per call — only the new chunk
+O(1) token cost per call — only the new chunk
 is passed; the bridge builds the full accumulated string.
 
 **Pattern:**
@@ -126,4 +126,4 @@ Optional: `title`, `subtext`, `width` (default 10).
 of: `ask` (string, free-text reply), `choose` (options array, button select),
 `confirm` (string, yes/no). Default `timeout_seconds: 60`.
 
-Related: append_text, edit_message, notify, send_file, send_new_checklist, send_new_progress
+Related: send(type: "append"), action(type: "message/edit"), send(type: "notification"), send(type: "file"), send(type: "checklist"), send(type: "progress")

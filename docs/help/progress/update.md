@@ -1,11 +1,11 @@
 progress/update — Update progress bar message in-place.
 
 Edits existing progress bar with new percentage. Auto-unpins and sends "✅ Complete" when percent reaches 100.
-Use send_new_progress (standalone tool) to create initial bar and get message_id.
+Use send(type: "progress") (standalone tool) to create initial bar and get message_id.
 
 ## Params
 token: session token (required)
-message_id: ID of progress bar message (required; from send_new_progress)
+message_id: ID of progress bar message (required; from send(type: "progress"))
 percent: progress percentage (required; 0–100)
 title: bold heading (optional; omit or "" for bar-only layout)
 subtext: italicized detail line below bar (optional; "" to clear)
@@ -28,7 +28,7 @@ action(type: "progress/update", token: 3165424, message_id: 42, percent: 100)
 → { message_id: 42, updated: true }  (+ "✅ Complete" reply sent)
 
 ## Pattern
-1. send_new_progress(title: "...", percent: 0, token: ...) → { message_id: 42 }
+1. send(type: "progress")(title: "...", percent: 0, token: ...) → { message_id: 42 }
 2. action(type: "progress/update", ..., message_id: 42, percent: N)
 3. Repeat until percent = 100
 

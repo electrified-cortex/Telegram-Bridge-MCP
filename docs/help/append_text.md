@@ -1,11 +1,10 @@
-append_text — Append text to an existing message in-place.
+send(type: "append") — Append text to an existing message in-place.
 
 Reads the current text from the in-memory message store, concatenates the new
 chunk after a separator, and calls `editMessageText` with the full accumulated
 string. O(1) token cost per call — the agent sends only the new chunk.
 
-Prefer `send(type: "append", ...)` when calling through the `send` router.
-Use `append_text` directly for maximum clarity in tooling that supports it.
+Use `send(type: "append", ...)` via the `send` router.
 
 ## Params
 
@@ -33,7 +32,7 @@ MESSAGE_NOT_FOUND — message_id is not in the current session store.
   are not available.
 
 MESSAGE_NOT_TEXT — the target message contains non-text content (voice, photo, etc).
-  append_text only supports text messages. Use edit_message for keyboard edits.
+  send(type: "append") only supports text messages. Use action(type: "message/edit") for keyboard edits.
 
 MESSAGE_TOO_LONG — the accumulated text would exceed Telegram's 4096-character
   limit. Monitor the returned `length` and stop appending before reaching the cap.
@@ -72,9 +71,9 @@ Create and progressively update a message:
 { message_id } = send(type: "text", token: <token>, text: "Running checks…")
 
 // 2. Append results as they complete (default newline separator)
-append_text(token: <token>, message_id, text: "✅ Lint passed")
-append_text(token: <token>, message_id, text: "✅ Tests passed")
-append_text(token: <token>, message_id, text: "✅ Build complete")
+send(type: "append", token: <token>, message_id: <message_id>, text: "✅ Lint passed")
+send(type: "append", token: <token>, message_id: <message_id>, text: "✅ Tests passed")
+send(type: "append", token: <token>, message_id: <message_id>, text: "✅ Build complete")
 
 // Final message text visible in Telegram:
 // Running checks…
@@ -85,12 +84,12 @@ append_text(token: <token>, message_id, text: "✅ Build complete")
 
 Inline append (no newline):
 ```
-append_text(token: <token>, message_id, text: " (3 warnings)", separator: "")
+send(type: "append", token: <token>, message_id: <message_id>, text: " (3 warnings)", separator: "")
 ```
 
 Custom separator:
 ```
-append_text(token: <token>, message_id, text: "item", separator: "\n• ")
+send(type: "append", token: <token>, message_id: <message_id>, text: "item", separator: "\n• ")
 ```
 
-Related: send (type: "append"), edit_message, send_new_checklist, send_new_progress
+Related: send(type: "append"), action(type: "message/edit"), send(type: "checklist"), send(type: "progress")

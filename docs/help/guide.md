@@ -163,7 +163,7 @@ Call `action(type: "profile/topic")` once at session start to brand every outbou
 **Behavior:**
 
 - Applies to: `send(type: "text")`, `send(type: "notification")`, `send(type: "question")`, `send(type: "checklist")`
-- Does **not** apply to: `send_file`
+- Does **not** apply to: `send(type: "file")`
 - The tag always appears — no per-message override
 - Pass an empty string to clear: `action(type: "profile/topic", topic: "")`
 - Process-scoped: resets if the server restarts
@@ -292,7 +292,7 @@ Voice messages are automatically transcribed before they arrive in `dequeue`. Wh
 | `send(type: "text", audio: "...")` | Speak a text response via TTS. Works with bundled ONNX model; set `TTS_HOST` (Kokoro) or `OPENAI_API_KEY` for higher quality. Write as natural spoken language — Markdown is stripped before synthesis. |
 | `send(type: "file", file_type: "voice")` | Send an existing audio file (OGG/Opus path, HTTPS URL, or Telegram `file_id`). Use when you already have audio to deliver. |
 
-Never call `send_file(type: "voice")` to speak text — it only delivers pre-existing audio.
+Never call `send(type: "file", file_type: "voice")` to speak text — it only delivers pre-existing audio.
 
 **Hybrid:** passing both `text` and `audio` together (`send(type: "text", text: "...", audio: "...")`) produces a voice note with a text caption in one message — useful when the operator may be away from their phone.
 

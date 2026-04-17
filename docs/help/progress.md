@@ -5,7 +5,7 @@ Routes:
 
 action(type: "progress") — lists sub-paths in live API.
 
-Create initial bar with standalone tool: send_new_progress(title, percent, token)
+Create initial bar: send(type: "progress", title: "...", percent: 0, token: <token>) → { message_id }
 Then update in-place with progress/update using returned message_id.
 
 ## When to use
