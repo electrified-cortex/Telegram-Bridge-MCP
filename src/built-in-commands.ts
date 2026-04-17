@@ -578,34 +578,12 @@ async function handleGovernorCallback(
     // Broadcast to Telegram chat: visible operator-facing announcement
     sendServiceMessage(`🔀 ${newLabel} is now the primary session.`).catch(() => {});
 
-    // Notify new governor
-    deliverServiceMessage(
-      newSid,
-      SERVICE_MESSAGES.GOVERNOR_NOW_YOU.text,
-      SERVICE_MESSAGES.GOVERNOR_NOW_YOU.eventType,
-      { old_governor_sid: oldSid, new_governor_sid: newSid },
-    );
-
-    // Notify old governor if different
-    if (oldSid > 0 && oldSid !== newSid) {
-      const oldGovernor = sessions.find(s => s.sid === oldSid);
-      if (oldGovernor) {
-        deliverServiceMessage(
-          oldSid,
-          SERVICE_MESSAGES.GOVERNOR_NO_LONGER_YOU.text(newLabel),
-          SERVICE_MESSAGES.GOVERNOR_NO_LONGER_YOU.eventType,
-          { old_governor_sid: oldSid, new_governor_sid: newSid },
-        );
-      }
-    }
-
-    // Notify all other sessions
+    // Notify all sessions of the governor change
     for (const s of sessions) {
-      if (s.sid === newSid || s.sid === oldSid) continue;
       deliverServiceMessage(
         s.sid,
-        SERVICE_MESSAGES.GOVERNOR_CHANGED_MSG.text(newLabel),
-        SERVICE_MESSAGES.GOVERNOR_CHANGED_MSG.eventType,
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.text(newSid, newGovernor.name),
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.eventType,
         { old_governor_sid: oldSid, new_governor_sid: newSid },
       );
     }
@@ -1431,31 +1409,12 @@ async function handleSessionCallback(
 
     sendServiceMessage(`🔀 ${newLabel} is now the primary session.`).catch(() => {});
 
-    deliverServiceMessage(
-      sid,
-      SERVICE_MESSAGES.GOVERNOR_NOW_YOU.text,
-      SERVICE_MESSAGES.GOVERNOR_NOW_YOU.eventType,
-      { old_governor_sid: oldSid, new_governor_sid: sid },
-    );
-
-    if (oldSid > 0 && oldSid !== sid) {
-      const oldGovernor = sessions.find(s => s.sid === oldSid);
-      if (oldGovernor) {
-        deliverServiceMessage(
-          oldSid,
-          SERVICE_MESSAGES.GOVERNOR_NO_LONGER_YOU.text(newLabel),
-          SERVICE_MESSAGES.GOVERNOR_NO_LONGER_YOU.eventType,
-          { old_governor_sid: oldSid, new_governor_sid: sid },
-        );
-      }
-    }
-
+    // Notify all sessions of the governor change
     for (const s of sessions) {
-      if (s.sid === sid || s.sid === oldSid) continue;
       deliverServiceMessage(
         s.sid,
-        SERVICE_MESSAGES.GOVERNOR_CHANGED_MSG.text(newLabel),
-        SERVICE_MESSAGES.GOVERNOR_CHANGED_MSG.eventType,
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.text(sid, target.name),
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.eventType,
         { old_governor_sid: oldSid, new_governor_sid: sid },
       );
     }

@@ -134,8 +134,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
       for (const s of remaining.slice(1)) {
         deliverServiceMessage(
           s.sid,
-          SERVICE_MESSAGES.SESSION_CLOSED_WITH_NEW_GOVERNOR.text(sessionName, sid, label, next.sid),
-          SERVICE_MESSAGES.SESSION_CLOSED_WITH_NEW_GOVERNOR.eventType,
+          SERVICE_MESSAGES.SESSION_CLOSED_NEW_GOVERNOR.text(sessionName, next.sid, label),
+          SERVICE_MESSAGES.SESSION_CLOSED_NEW_GOVERNOR.eventType,
           { closed_sid: sid, closed_name: sessionName, new_governor_sid: next.sid },
         );
       }

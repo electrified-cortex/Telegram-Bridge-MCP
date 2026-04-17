@@ -243,7 +243,7 @@ export function recordDequeue(sid: number, hasUserMessage: boolean, now: number 
     inject(
       sid,
       state,
-      SERVICE_MESSAGES.NUDGE_SLOW_GAP.text(state.lastGapSeconds),
+      SERVICE_MESSAGES.NUDGE_SLOW_GAP.text,
       SERVICE_MESSAGES.NUDGE_SLOW_GAP.eventType,
     );
   }

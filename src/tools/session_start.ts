@@ -371,16 +371,15 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           const governorSession = allSessions.find(s => s.sid === governorSid);
           const governorLabel = governorSession ? `'${governorSession.name}' (SID ${governorSid})` : `SID ${governorSid}`;
 
-          const joinVerb = "has joined";
           for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
             const isGovernor = fellow.sid === governorSid;
-            const governorNote = isGovernor
-              ? "You are the governor — ambiguous messages will be routed to you."
-              : `Ambiguous messages go to ${governorLabel}.`;
+            const text = isGovernor
+              ? SERVICE_MESSAGES.SESSION_JOINED.text(effectiveName, session.sid)
+              : `${effectiveName} (SID ${session.sid}) joined. Ambiguous messages go to ${governorLabel}.`;
             deliverServiceMessage(
               fellow.sid,
-              `Session '${effectiveName}' (SID ${session.sid}) ${joinVerb}. ${governorNote}`,
-              "session_joined",
+              text,
+              SERVICE_MESSAGES.SESSION_JOINED.eventType,
               { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
             );
           }
@@ -490,14 +489,13 @@ export async function handleSessionReconnect({ name }: { name: string }) {
       : `SID ${governorSid}`;
     for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
       const isGovernorFellow = fellow.sid === governorSid;
-      const governorNote = isGovernorFellow
-        ? "You are the governor — ambiguous messages will be routed to you."
-        : `Ambiguous messages go to ${governorLabel}.`;
+      const text = isGovernorFellow
+        ? SERVICE_MESSAGES.SESSION_JOINED.text(existing.name, existing.sid) + " (reconnected)"
+        : `${existing.name} (SID ${existing.sid}) reconnected. Ambiguous messages go to ${governorLabel}.`;
       deliverServiceMessage(
         fellow.sid,
-        `Session '${existing.name}' (SID ${existing.sid}) has reconnected. ` +
-          governorNote,
-        "session_joined",
+        text,
+        SERVICE_MESSAGES.SESSION_JOINED.eventType,
         {
           sid: existing.sid,
           name: existing.name,
