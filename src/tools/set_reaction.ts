@@ -227,6 +227,9 @@ async function handleSetReactionArray(
   if (baseItem && restoreEmoji) {
     recordBotReaction(message_id, restoreEmoji);
   }
+  // Temp reaction is now active — register 👌 base locally but do NOT make an API
+  // call (it would overwrite the visible temp). The temp-reaction restore path will
+  // apply 👌 when the last temp expires.
   _insertBaseReaction(chatId, message_id);
 
   return toResult({
@@ -239,22 +242,17 @@ async function handleSetReactionArray(
 }
 
 /**
- * Insert the implicit 👌 base reaction at priority -100, once per message.
- * Idempotent — no-ops if already done for this (chatId, messageId) pair.
- * Fires and forgets; errors are suppressed so they never break the caller.
+ * Register the implicit 👌 base reaction for this (chatId, messageId) pair.
+ * Idempotent — no-ops if already registered.
+ *
+ * Base is virtual — never fires its own API call.
+ * Surfaces only when the last temporary expires (restore path in temp-reaction.ts).
  */
 function _insertBaseReaction(chatId: number, messageId: number): void {
   if (hasBaseReaction(chatId, messageId)) return;
   markBaseReaction(chatId, messageId);
-  // Schedule as a background task so we don't add latency to the main reaction
-  void (async () => {
-    try {
-      await getApi().setMessageReaction(chatId, messageId, [{ type: "emoji" as const, emoji: "👌" as ReactionEmoji }], {});
-      recordBotReaction(messageId, "👌");
-    } catch {
-      // Suppress — base reaction is best-effort
-    }
-  })();
+  // Base is virtual — never fires its own API call.
+  // Surfaces only when the last temporary expires (restore path in temp-reaction.ts).
 }
 
 /**
@@ -280,12 +278,14 @@ export async function handleSetReactionPreset(
   // Sort by priority ascending
   const sorted = [...entries].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 
+  let hasTempEntry = false;
   for (const entry of sorted) {
     const candidates = resolveEmoji(entry.emoji);
     if (!candidates) continue;
     const emoji = candidates[0] as ReactionEmoji;
 
     if (entry.temporary) {
+      hasTempEntry = true;
       await setTempReaction(messageId, emoji, undefined, entry.timeout_seconds);
       recordBotReaction(messageId, emoji);
     } else {
@@ -299,6 +299,8 @@ export async function handleSetReactionPreset(
     results.push(emoji);
   }
 
+  // Base is virtual — never fires its own API call.
+  // The temp-reaction restore path will apply 👌 when the last temp expires.
   _insertBaseReaction(chatId, messageId);
 
   return toResult({ ok: true, message_id: messageId, preset: presetName, applied: results });
@@ -371,6 +373,9 @@ export async function handleSetReaction(args: {
       const ok = await setTempReaction(message_id, primary as ReactionEmoji, restoreResolved, timeout_seconds);
       if (!ok) return toError({ code: "UNKNOWN" as const, message: "Failed to set reaction — message may be too old or unavailable." });
       recordBotReaction(message_id, primary);
+      // Temp reaction is now active — register 👌 base locally but do NOT make an API
+      // call (it would overwrite the visible temp). The temp-reaction restore path will
+      // apply 👌 when the last temp expires.
       _insertBaseReaction(chatId, message_id);
       return toResult({ ok: true, message_id, emoji: primary, temporary: true, restore_emoji: restoreResolved ?? null, timeout_seconds: timeout_seconds ?? null });
     }

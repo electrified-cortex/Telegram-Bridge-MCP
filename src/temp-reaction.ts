@@ -8,7 +8,7 @@
  * Setting a new one appends to the list; `clearAllTempReactions` drains all.
  */
 
-import { getBotReaction } from "./message-store.js";
+import { getBotReaction, hasBaseReaction } from "./message-store.js";
 import { resolveChat, trySetMessageReaction, getApi, type ReactionEmoji } from "./telegram.js";
 import { getCallerSid } from "./session-context.js";
 
@@ -90,6 +90,11 @@ export async function setTempReaction(
 /**
  * Internal: restore a single slot identified by (sid, messageId), then remove it.
  * Used by timeout callbacks where AsyncLocalStorage context is lost.
+ *
+ * When `restoreEmoji` is null (no explicit restore target was set) but a base 👌
+ * reaction has been registered for this message, restores 👌 instead of clearing
+ * to []. This is the mechanism that prevents the base reaction from overwriting an
+ * active temp reaction via a racing async call.
  */
 async function _fireRestoreForSlot(sid: number, messageId: number): Promise<void> {
   const slots = _slots.get(sid);
@@ -100,8 +105,10 @@ async function _fireRestoreForSlot(sid: number, messageId: number): Promise<void
   if (slots.length === 0) _slots.delete(sid);
 
   const { chatId, restoreEmoji } = slot;
-  if (restoreEmoji) {
-    void trySetMessageReaction(chatId, messageId, restoreEmoji);
+  const effectiveRestore: ReactionEmoji | null =
+    restoreEmoji ?? (hasBaseReaction(chatId, messageId) ? "👌" as ReactionEmoji : null);
+  if (effectiveRestore) {
+    void trySetMessageReaction(chatId, messageId, effectiveRestore);
   } else {
     await getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
   }
@@ -124,6 +131,9 @@ export async function fireTempReactionRestore(sid?: number): Promise<void> {
 /**
  * Clear ALL temporary reactions for the given session, firing restore for each.
  * Idempotent — safe to call when no slots are active.
+ *
+ * When a slot has no explicit `restoreEmoji` but the message has a registered
+ * base 👌 reaction, restores 👌 instead of clearing to [].
  */
 export async function clearAllTempReactions(sid: number): Promise<void> {
   const slots = _slots.get(sid);
@@ -133,8 +143,10 @@ export async function clearAllTempReactions(sid: number): Promise<void> {
   await Promise.all(slots.map(slot => {
     if (slot.timeoutHandle !== null) clearTimeout(slot.timeoutHandle);
     const { chatId, messageId, restoreEmoji } = slot;
-    if (restoreEmoji) {
-      return trySetMessageReaction(chatId, messageId, restoreEmoji).catch(() => undefined);
+    const effectiveRestore: ReactionEmoji | null =
+      restoreEmoji ?? (hasBaseReaction(chatId, messageId) ? "👌" as ReactionEmoji : null);
+    if (effectiveRestore) {
+      return trySetMessageReaction(chatId, messageId, effectiveRestore).catch(() => undefined);
     } else {
       return getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
     }

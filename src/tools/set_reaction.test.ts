@@ -483,11 +483,8 @@ describe("set_reaction — per-emoji default temporality", () => {
     const data = parseResult(result);
     expect(data.temporary).toBe(true);
     expect(mocks.setTempReaction).toHaveBeenCalledWith(10, "🤔", undefined, undefined);
-    // setMessageReaction may be called for the 👌 base reaction (background) — not for 🤔 itself
-    const mainReactionCalls = mocks.setMessageReaction.mock.calls.filter(
-      (c: unknown[][]) => (c[2] as { emoji?: string }[])[0]?.emoji !== "👌",
-    );
-    expect(mainReactionCalls).toHaveLength(0);
+    // setMessageReaction must not be called — 🤔 goes via setTempReaction and base is virtual
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
   });
 
   it("👀 is temporary by default", async () => {
@@ -532,11 +529,8 @@ describe("set_reaction — per-emoji default temporality", () => {
     const data = parseResult(result);
     expect(data.temporary).toBe(true);
     expect(mocks.setTempReaction).toHaveBeenCalled();
-    // setMessageReaction only called (if at all) for the 👌 base reaction, not for 👍
-    const mainCalls = mocks.setMessageReaction.mock.calls.filter(
-      (c: unknown[][]) => (c[2] as { emoji?: string }[])[0]?.emoji !== "👌",
-    );
-    expect(mainCalls).toHaveLength(0);
+    // setMessageReaction must not be called — 👍 goes via setTempReaction and base is virtual
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
   });
 });
 
@@ -577,6 +571,64 @@ describe("set_reaction — implicit 👌 base reaction", () => {
     expect(mocks.markBaseReaction).not.toHaveBeenCalled();
     // setMessageReaction only called once (for the actual reaction, not for 👌)
     expect(mocks.setMessageReaction).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Base-reaction overwrite bug fix (Option C) ────────────────────────────
+
+  it("temp reaction: 👌 base does NOT fire via setMessageReaction during temp period", async () => {
+    // Set a temp reaction — 👌 base should be registered but NOT sent via API
+    await call({ message_id: 60, emoji: "🤔", token: 1123456 });
+    // Flush microtasks/macrotasks
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 60);
+    // setMessageReaction must NOT have been called at all — 🤔 goes via setTempReaction
+    // and 👌 must not fire while temp is active
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+  });
+
+  it("permanent reaction: markBaseReaction is called; 👌 does NOT fire via API (base is virtual)", async () => {
+    // Permanent 👍 — base 👌 is registered locally but never fires its own API call
+    await call({ message_id: 61, emoji: "👍", token: 1123456 });
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 61);
+    // Only one API call: the 👍 permanent reaction itself
+    // The 👌 base is virtual — surfaces only when the last temp expires
+    expect(mocks.setMessageReaction).toHaveBeenCalledTimes(1);
+    expect(mocks.setMessageReaction).toHaveBeenCalledWith(
+      42, 61, [{ type: "emoji", emoji: "👍" }], { is_big: undefined },
+    );
+  });
+
+  it("array mixed-path (base + temp): 👌 does NOT fire via setMessageReaction during temp", async () => {
+    // 2-layer: permanent 👌 base + temp 👀 overlay
+    await call({
+      message_id: 62,
+      reactions: [
+        { emoji: "👌", priority: -1 },
+        { emoji: "👀", priority: 0 },
+      ],
+      token: 1123456,
+    });
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 62);
+    // setMessageReaction must NOT be called — both the base (👌) and temp (👀)
+    // must be deferred; temp goes via setTempReaction, base deferred to restore
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+  });
+
+  it("base reaction: no API call made immediately when temp reaction is set", async () => {
+    mocks.hasBaseReaction.mockReturnValue(false);
+    await call({ message_id: 55, emoji: "🤔", token: 1123456 });
+    // Flush any microtasks/background promises
+    await new Promise(r => setTimeout(r, 10));
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(55, "🤔", undefined, undefined);
+    // setMessageReaction must NOT be called — base is virtual, no API call
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+    // markBaseReaction IS called (base tracked locally)
+    expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 55);
   });
 });
 
