@@ -247,10 +247,13 @@ export function register(server: McpServer) {
             // RECORD_VOICE_EXTEND_SECS: how far ahead to push the deadline before
             // each synthesis+upload so the indicator never drops mid-operation.
             const RECORD_VOICE_EXTEND_SECS = 30;
-            const gen = typingGeneration();
+            // gen is updated after each showTyping() so cancelTypingIfSameGeneration
+            // always targets the most recent generation, not a stale pre-start value.
+            let gen = typingGeneration();
             let voiceSent = false;
             try {
               await showTyping(typingSeconds, "record_voice");
+              gen = typingGeneration();
               const message_ids: number[] = [];
               for (let i = 0; i < voiceChunks.length; i++) {
                 // Extend the recording indicator deadline before each chunk so it
@@ -259,6 +262,7 @@ export function register(server: McpServer) {
                 // showTyping() detects the already-running interval and only
                 // updates the deadline — no extra Telegram API call is made.
                 await showTyping(RECORD_VOICE_EXTEND_SECS, "record_voice");
+                gen = typingGeneration();
                 const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice, resolvedSpeed);
                 const isFirst = i === 0;
                 const msg = await sendVoiceDirect(chatId, ogg, {

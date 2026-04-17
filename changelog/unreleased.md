@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Recording indicator no longer drops prematurely between TTS synthesis/upload and message render: `gen` is now updated after each `showTyping()` call so `cancelTypingIfSameGeneration` targets the correct generation; voice file sends via `send_file` now include a 3 s post-send delay and explicit `cancelTypingIfSameGeneration` in a `finally` block (task 10-recording-indicator-gap)
 - `session/close`: rejects with `LAST_SESSION` error code (and actionable hint) when called on the last active session without `force: true`; prevents accidental orphaning of the bridge process
 - Fixed governor SID being cleared when governor closes a non-governor session in a 2-session setup (10-493). Governor role is now correctly preserved when a non-governor session closes.
 - `/shutdown` built-in command: with zero active sessions, shutdown now skips poller wait/drain and the extra stdio delay so it exits immediately instead of waiting through timeout windows

@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   sendVoiceDirect: vi.fn(),
   resolveMediaSource: vi.fn(),
   showTyping: vi.fn(),
+  typingGeneration: vi.fn(() => 1),
+  cancelTypingIfSameGeneration: vi.fn(() => true),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -32,6 +34,8 @@ vi.mock("../telegram.js", async (importActual) => {
 
 vi.mock("../typing-state.js", () => ({
   showTyping: mocks.showTyping,
+  typingGeneration: mocks.typingGeneration,
+  cancelTypingIfSameGeneration: mocks.cancelTypingIfSameGeneration,
 }));
 
 vi.mock("../session-manager.js", () => ({
