@@ -11,6 +11,7 @@ Agents are underusing buttons and hybrid messages. The onboarding service messag
 ## Requirements
 
 ### Button Guidance in Onboarding
+
 - Service messages should teach agents about button presets: OK, OK-Cancel, Y/N
 - Emphasize simplicity: most of the time, simple OK or OK-Cancel is the best experience
 - Buttons need to stand out in the agent communication guide — not buried
@@ -33,11 +34,13 @@ Behavioral nudges should be smart, not spammy. Use a per-session checklist model
 - This is behavior tracking integrated into the profile system
 
 ### Hybrid Message Promotion
+
 - Agents should know that audio + caption + buttons can all go in one message
 - Service messages should promote hybrid messages when appropriate
 - Reduce message count by combining related content
 
 ### Platform Ownership Principle
+
 - All Telegram communication behavior (reactions, typing, buttons, hybrid messages) should be taught by TMCP via service messages and help docs
 - Agent files (CLAUDE.md, startup-context.md) should NOT embed Telegram UX patterns
 - If Telegram behavior is found in agent files, that's a yellow flag = TMCP has a behavioral shaping gap

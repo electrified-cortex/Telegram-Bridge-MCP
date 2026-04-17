@@ -22,7 +22,7 @@ Agent responses appear as complete blocks after a silence period. The operator w
 
 ## Architecture
 
-```
+```text
 Claude Code (includePartialMessages) → text_delta events → TMCP bridge → append_text to Telegram message
 ```
 

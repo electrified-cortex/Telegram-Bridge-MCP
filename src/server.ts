@@ -164,7 +164,13 @@ export function createServer(): McpServer {
               // Check for button-type sends before counting as plain text send.
               const hasChoose = args.choose !== undefined;
               const hasConfirm = args.confirm !== undefined;
-              if (hasChoose || hasConfirm) {
+              const hasOptions = args.options !== undefined;
+              const isChoiceSend = args.type === "choice";
+              const isQuestionWithOptions =
+                args.type === "question" && hasOptions;
+              const usesButtons =
+                hasChoose || hasConfirm || isChoiceSend || isQuestionWithOptions;
+              if (usesButtons) {
                 btRecordButtonUse(sid);
               } else if (typeof args.text === "string") {
                 btRecordOutboundText(sid, args.text);

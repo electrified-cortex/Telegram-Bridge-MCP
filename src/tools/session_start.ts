@@ -25,7 +25,7 @@ const ONBOARDING_BUTTONS_TEXT =
   "  action(type: \"confirm/ok-cancel\") — OK + Cancel (destructive gate)\n" +
   "  action(type: \"confirm/yn\")        — 🟢 Yes / 🔴 No (binary decision)\n" +
   "  send(type: \"question\", choose: [...]) — custom labeled options\n" +
-  "Only use open dequeue/ask for truly free-text input.\n" +
+  "Only use send(type: \"question\", ask: \"...\") for truly free-text input.\n" +
   "Hybrid: send(type: \"text\", text: \"...\", audio: \"...\") — voice note + caption in one message. Use for important updates where the operator may be away from their phone.";
 const APPROVE_PREFIX = "approve_";
 const RECONNECT_YES = "reconnect_yes";

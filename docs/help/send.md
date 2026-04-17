@@ -95,7 +95,11 @@ Reply threading: pass `reply_to: <message_id>`.
 **Hybrid:** `send(type: "text", text: "...", audio: "...")` → voice note + text caption in one msg.
 Use for urgent updates where operator may be away from phone.
 Pattern: voice = full detail, caption = TL;DR.
-Buttons can't be added to the same msg — send a confirm/yn immediately after if response needed.
+In `type: "text"` mode, buttons can't be added to that same msg — send a
+`confirm`/yes-no prompt immediately after if response is needed.
+If you need audio + caption + inline buttons in one message, use interactive
+modes such as `send(type: "question", choose: [...], audio: "...")`,
+`send(type: "choice", options: [...], audio: "...")`, or `confirm`.
 
 **notification** — Formatted block with severity emoji header. Required: `title`.
 Optional: `text`, `severity` (info/success/warning/error). Silent by default.

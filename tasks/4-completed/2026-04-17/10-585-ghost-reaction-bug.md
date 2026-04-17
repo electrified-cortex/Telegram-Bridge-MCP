@@ -7,6 +7,7 @@
 ## Problem
 
 Message 36250 (voice message from operator) received a sleeping reaction (😴) despite:
+
 1. The agent (Curator, SID 1) never dequeuing the message
 2. The agent never calling `react` on that message ID
 3. No explicit action taken by any session on that message
@@ -40,6 +41,7 @@ The reaction appeared to be applied server-side without agent request.
 ## Recommended Fix
 
 **Implicit base reaction on any `react` call:** When any session calls `react` on a message (directly or via preset), the server should automatically set a permanent 👌 at priority -100 if no base reaction exists yet for that message+session. This ensures:
+
 - Once reacted, always reacted — no bare messages after temporaries clear
 - Agents don't need to remember to follow up with a permanent reaction
 - Platform-level guarantee vs relying on agent behavior
