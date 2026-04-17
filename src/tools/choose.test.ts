@@ -34,6 +34,8 @@ const mocks = vi.hoisted(() => ({
   applyTopicToText: vi.fn((t: string) => t),
   showTyping: vi.fn(),
   cancelTyping: vi.fn(),
+  typingGeneration: vi.fn(() => 0),
+  cancelTypingIfSameGeneration: vi.fn(),
   getSessionVoice: vi.fn((): string | null => null),
   getSessionSpeed: vi.fn((): number | null => null),
   buildKeyboardRows: vi.fn(() => [[{ text: "A", callback_data: "a" }, { text: "B", callback_data: "b" }]]),
@@ -109,6 +111,8 @@ vi.mock("../button-validation.js", () => ({
 vi.mock("../typing-state.js", () => ({
   showTyping: (...args: unknown[]) => mocks.showTyping(...args),
   cancelTyping: () => mocks.cancelTyping(),
+  typingGeneration: () => mocks.typingGeneration(),
+  cancelTypingIfSameGeneration: (...args: unknown[]) => mocks.cancelTypingIfSameGeneration(...args),
 }));
 
 vi.mock("../voice-state.js", () => ({

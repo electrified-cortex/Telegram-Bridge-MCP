@@ -16,7 +16,7 @@ import { runInSessionContext } from "../session-context.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
-import { showTyping, cancelTyping } from "../typing-state.js";
+import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
 
 const DESCRIPTION_CONFIRM =
   "Sends an OK/Cancel confirmation message and waits until the user presses a " +
@@ -131,6 +131,8 @@ export async function confirmHandler(
       const resolvedSpeed = getSessionSpeed() ?? undefined;
       const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
       await showTyping(typingSeconds, "record_voice");
+      const gen = typingGeneration();
+      let voiceSent = false;
       try {
         const ogg = await synthesizeToOgg(plainText, resolvedVoice, resolvedSpeed);
         // Apply topic prefix to caption (not to TTS input — don't read the prefix aloud).
@@ -149,8 +151,13 @@ export async function confirmHandler(
           reply_markup: replyMarkup,
         });
         sentMessageId = msg.message_id;
+        voiceSent = true;
       } finally {
-        cancelTyping();
+        if (voiceSent) {
+          // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
+          await new Promise<void>(resolve => setTimeout(resolve, 3000));
+        }
+        cancelTypingIfSameGeneration(gen);
       }
     } else {
       const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {

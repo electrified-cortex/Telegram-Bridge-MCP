@@ -5,7 +5,7 @@ import {
   callApi, resolveMediaSource, sendVoiceDirect,
 } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { showTyping } from "../typing-state.js";
+import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
 import { extname } from "path";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -165,19 +165,27 @@ export async function handleSendFile({
 
       case "voice": {
         await showTyping(30, "upload_voice");
-        const msg = await sendVoiceDirect(chatId, file, {
-          caption: resolvedCaption.text,
-          parse_mode: resolvedCaption.parse_mode,
-          duration,
-          disable_notification,
-          reply_to_message_id: replyTo,
-        });
-        return toResult({
-          message_id: msg.message_id,
-          type: "voice",
-          file_id: msg.voice?.file_id,
-          warning: CDN_WARNING,
-        });
+        const gen = typingGeneration();
+        try {
+          const msg = await sendVoiceDirect(chatId, file, {
+            caption: resolvedCaption.text,
+            parse_mode: resolvedCaption.parse_mode,
+            duration,
+            disable_notification,
+            reply_to_message_id: replyTo,
+          });
+          // Voice messages take 2-5s to render after API confirmation; keep
+          // the upload indicator alive until the message appears in chat.
+          await new Promise<void>(resolve => setTimeout(resolve, 3000));
+          return toResult({
+            message_id: msg.message_id,
+            type: "voice",
+            file_id: msg.voice?.file_id,
+            warning: CDN_WARNING,
+          });
+        } finally {
+          cancelTypingIfSameGeneration(gen);
+        }
       }
 
       case "document":
