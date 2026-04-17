@@ -245,14 +245,15 @@ async function handleSetReactionArray(
  * Register the implicit 👌 base reaction for this (chatId, messageId) pair.
  * Idempotent — no-ops if already registered.
  *
- * Base is virtual — never fires its own API call.
- * Surfaces only when the last temporary expires (restore path in temp-reaction.ts).
+ * When applyNow is true the 👌 API call is made immediately (all-permanent preset path).
+ * Otherwise base is virtual — surfaces only when the last temporary expires.
  */
-function _insertBaseReaction(chatId: number, messageId: number): void {
+function _insertBaseReaction(chatId: number, messageId: number, applyNow = false): void {
   if (hasBaseReaction(chatId, messageId)) return;
   markBaseReaction(chatId, messageId);
-  // Base is virtual — never fires its own API call.
-  // Surfaces only when the last temporary expires (restore path in temp-reaction.ts).
+  if (applyNow) {
+    void getApi().setMessageReaction(chatId, messageId, [{ type: "emoji" as const, emoji: "👌" }], {});
+  }
 }
 
 /**
@@ -287,7 +288,9 @@ export async function handleSetReactionPreset(
     if (entry.temporary) {
       hasTempEntry = true;
       await setTempReaction(messageId, emoji, undefined, entry.timeout_seconds);
-      recordBotReaction(messageId, emoji);
+      // Do NOT recordBotReaction for temp entries — the stable "bot reaction"
+      // should reflect the permanent base, not transient temps. Recording a temp
+      // emoji here would mislead chained-preset restore (Fix 4).
     } else {
       try {
         await getApi().setMessageReaction(chatId, messageId, [{ type: "emoji" as const, emoji }], {});
@@ -299,9 +302,9 @@ export async function handleSetReactionPreset(
     results.push(emoji);
   }
 
-  // Base is virtual — never fires its own API call.
-  // The temp-reaction restore path will apply 👌 when the last temp expires.
-  _insertBaseReaction(chatId, messageId);
+  // When all preset entries are permanent (no temp), fire 👌 immediately.
+  // Otherwise base is virtual — the temp-reaction restore path applies 👌 when the last temp expires.
+  _insertBaseReaction(chatId, messageId, !hasTempEntry);
 
   return toResult({ ok: true, message_id: messageId, preset: presetName, applied: results });
 }
@@ -392,7 +395,7 @@ export async function handleSetReaction(args: {
         await getApi().setMessageReaction(chatId, message_id, [{ type: "emoji" as const, emoji: candidate as ReactionEmoji }], { is_big });
         recordBotReaction(message_id, candidate);
         if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = true;
-        _insertBaseReaction(chatId, message_id);
+        _insertBaseReaction(chatId, message_id, true);
         const result: Record<string, unknown> = { ok: true, message_id, emoji: candidate, temporary: false };
         if (candidate !== originalFirst) {
           result.requested = originalFirst;

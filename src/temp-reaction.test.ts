@@ -5,11 +5,13 @@ const mocks = vi.hoisted(() => ({
   trySetMessageReaction: vi.fn(),
   getBotReaction: vi.fn<(messageId: number) => string | null>().mockReturnValue(null),
   hasBaseReaction: vi.fn<(chatId: number, messageId: number) => boolean>().mockReturnValue(false),
+  clearBaseReaction: vi.fn(),
 }));
 
 vi.mock("./message-store.js", () => ({
   getBotReaction: mocks.getBotReaction,
   hasBaseReaction: mocks.hasBaseReaction,
+  clearBaseReaction: mocks.clearBaseReaction,
 }));
 
 vi.mock("./telegram.js", async (importActual) => {

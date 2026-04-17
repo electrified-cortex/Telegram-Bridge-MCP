@@ -8,7 +8,7 @@
  * Setting a new one appends to the list; `clearAllTempReactions` drains all.
  */
 
-import { getBotReaction, hasBaseReaction } from "./message-store.js";
+import { getBotReaction, hasBaseReaction, clearBaseReaction } from "./message-store.js";
 import { resolveChat, trySetMessageReaction, getApi, type ReactionEmoji } from "./telegram.js";
 import { getCallerSid } from "./session-context.js";
 
@@ -105,10 +105,14 @@ async function _fireRestoreForSlot(sid: number, messageId: number): Promise<void
   if (slots.length === 0) _slots.delete(sid);
 
   const { chatId, restoreEmoji } = slot;
+  const baseActive = hasBaseReaction(chatId, messageId);
   const effectiveRestore: ReactionEmoji | null =
-    restoreEmoji ?? (hasBaseReaction(chatId, messageId) ? "👌" as ReactionEmoji : null);
+    restoreEmoji ?? (baseActive ? "👌" as ReactionEmoji : null);
   if (effectiveRestore) {
-    void trySetMessageReaction(chatId, messageId, effectiveRestore);
+    // Consume the base registration (one-shot) before firing, so a concurrent
+    // clearAllTempReactions on remaining slots does not fire a duplicate 👌 (Fix 3).
+    if (baseActive && !restoreEmoji) clearBaseReaction(chatId, messageId);
+    void trySetMessageReaction(chatId, messageId, effectiveRestore).catch(() => undefined);
   } else {
     await getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
   }
@@ -143,9 +147,14 @@ export async function clearAllTempReactions(sid: number): Promise<void> {
   await Promise.all(slots.map(slot => {
     if (slot.timeoutHandle !== null) clearTimeout(slot.timeoutHandle);
     const { chatId, messageId, restoreEmoji } = slot;
+    const baseActive = hasBaseReaction(chatId, messageId);
     const effectiveRestore: ReactionEmoji | null =
-      restoreEmoji ?? (hasBaseReaction(chatId, messageId) ? "👌" as ReactionEmoji : null);
+      restoreEmoji ?? (baseActive ? "👌" as ReactionEmoji : null);
     if (effectiveRestore) {
+      // Consume the base registration (one-shot) so _fireRestoreForSlot (timeout
+      // path) for any remaining slot on the same message does not fire a duplicate
+      // 👌 API call (Fix 3).
+      if (baseActive && !restoreEmoji) clearBaseReaction(chatId, messageId);
       return trySetMessageReaction(chatId, messageId, effectiveRestore).catch(() => undefined);
     } else {
       return getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
