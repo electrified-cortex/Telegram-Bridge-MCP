@@ -17,7 +17,7 @@ import { validateButtonSymbolParity } from "../button-validation.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
-import { showTyping, cancelTyping } from "../typing-state.js";
+import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
 import { applyTopicToText } from "../topic-state.js";
 import { markdownToV2 } from "../markdown.js";
 
@@ -136,6 +136,8 @@ export async function handleChoose(
       const resolvedSpeed = getSessionSpeed() ?? undefined;
       const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
       await showTyping(typingSeconds, "record_voice");
+      const gen = typingGeneration();
+      let voiceSent = false;
       try {
         const ogg = await synthesizeToOgg(plainText, resolvedVoice, resolvedSpeed);
         // Apply topic prefix to caption (not to TTS input — don't read the prefix aloud).
@@ -155,8 +157,13 @@ export async function handleChoose(
           reply_markup: { inline_keyboard: rows },
         });
         messageId = msg.message_id;
+        voiceSent = true;
       } finally {
-        cancelTyping();
+        if (voiceSent) {
+          // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
+          await new Promise<void>(resolve => setTimeout(resolve, 3000));
+        }
+        cancelTypingIfSameGeneration(gen);
       }
     } else {
       messageId = await sendChoiceMessage(chatId, {

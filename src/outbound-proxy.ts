@@ -150,13 +150,10 @@ function isBypassing(): boolean {
 // Helpers for sendVoiceDirect (not a Grammy method, needs manual hooks)
 // ---------------------------------------------------------------------------
 
-const _fileSendTypingGenBySid = new Map<number, number>();
-
 /** Call before a custom (non-Grammy) file send. */
 export async function notifyBeforeFileSend(): Promise<void> {
   if (isBypassing()) return;
   const sid = getCallerSid();
-  _fileSendTypingGenBySid.set(sid, typingGeneration());
   clearPendingTemp();
   await clearAllTempReactions(sid);
   const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
@@ -172,7 +169,6 @@ export async function notifyAfterFileSend(
 ): Promise<void> {
   if (isBypassing()) return;
   const sid = getCallerSid();
-  cancelTypingIfSameGeneration(_fileSendTypingGenBySid.get(sid) ?? 0);
   recordOutgoing(messageId, contentType, text, caption);
   fireSendNotifier(sid);
   const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
@@ -388,7 +384,6 @@ export function createOutboundProxy(realApi: Api): Api {
 
 export function resetOutboundProxyForTest(): void {
   _interceptors.clear();
-  _fileSendTypingGenBySid.clear();
   _sendNotifiers.clear();
 }
 

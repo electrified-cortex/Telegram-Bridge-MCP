@@ -4,7 +4,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText, getTopic } from "../topic-state.js";
-import { showTyping, cancelTyping } from "../typing-state.js";
+import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
@@ -247,6 +247,8 @@ export function register(server: McpServer) {
             // RECORD_VOICE_EXTEND_SECS: how far ahead to push the deadline before
             // each synthesis+upload so the indicator never drops mid-operation.
             const RECORD_VOICE_EXTEND_SECS = 30;
+            const gen = typingGeneration();
+            let voiceSent = false;
             try {
               await showTyping(typingSeconds, "record_voice");
               const message_ids: number[] = [];
@@ -267,6 +269,7 @@ export function register(server: McpServer) {
                 });
                 message_ids.push(msg.message_id);
               }
+              voiceSent = true;
               if (captionOverflow && finalTextForSplit) {
                 const splitText = finalTextForSplit;
                 const textMsg = await callApi(() =>
@@ -306,7 +309,11 @@ export function register(server: McpServer) {
               }
               return toError(err);
             } finally {
-              cancelTyping();
+              if (voiceSent) {
+                // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
+                await new Promise<void>(resolve => setTimeout(resolve, 3000));
+              }
+              cancelTypingIfSameGeneration(gen);
             }
           }
 

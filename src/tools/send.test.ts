@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   getTopic: vi.fn((): string | null => null),
   showTyping: vi.fn(),
   cancelTyping: vi.fn(),
+  typingGeneration: vi.fn(() => 0),
+  cancelTypingIfSameGeneration: vi.fn(),
   getSessionVoice: vi.fn((): string | null => null),
   getSessionSpeed: vi.fn((): number | null => null),
   splitMessage: vi.fn((t: string) => [t]),
@@ -60,6 +62,8 @@ vi.mock("../tts.js", () => ({
 vi.mock("../typing-state.js", () => ({
   showTyping: (...args: unknown[]) => mocks.showTyping(...args),
   cancelTyping: () => mocks.cancelTyping(),
+  typingGeneration: () => mocks.typingGeneration(),
+  cancelTypingIfSameGeneration: (...args: unknown[]) => mocks.cancelTypingIfSameGeneration(...args),
 }));
 
 vi.mock("../voice-state.js", () => ({
@@ -318,8 +322,8 @@ describe("send tool", () => {
     // First chunk was already sent; error propagates from the second
     expect(mocks.synthesizeToOgg).toHaveBeenCalledTimes(2);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledTimes(1);
-    // cancelTyping cleanup must still run (finally block)
-    expect(mocks.cancelTyping).toHaveBeenCalled();
+    // cancelTypingIfSameGeneration cleanup must still run (finally block)
+    expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
@@ -335,8 +339,8 @@ describe("send tool", () => {
 
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("VOICE_RESTRICTED");
-    // cancelTyping cleanup must still run (finally block)
-    expect(mocks.cancelTyping).toHaveBeenCalled();
+    // cancelTypingIfSameGeneration cleanup must still run (finally block)
+    expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalled();
   });
 });
 
