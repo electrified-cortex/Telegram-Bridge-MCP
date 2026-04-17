@@ -6,7 +6,7 @@
  * to find and invoke the right handler.
  */
 
-export type ActionHandler = (args: Record<string, unknown>, extra: unknown) => unknown | Promise<unknown>;
+export type ActionHandler = (args: Record<string, unknown>, extra: unknown) => Promise<unknown>;
 
 export interface ActionMeta {
   /** When true, the action is restricted to the governor session. */
