@@ -7,7 +7,7 @@ import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMess
 import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
 import { requireAuth } from "../session-gate.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
   type ButtonStyle,
 } from "./button-helpers.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -193,15 +193,27 @@ export async function confirmHandler(
     );
 
     if (!result) {
-      // Timeout — register a message hook so the next user message
-      // cleans up the stale buttons (callback hook handles late clicks).
-      // Run editWithSkipped in the tool's session context so the session
-      // header remains consistent with the original message.
+      // Timeout or abort — immediately remove the buttons and show "Timed out".
+      // Run in the tool's session context so the session header is consistent.
+      void runInSessionContext(_sid, () =>
+        editWithTimedOut(chatId, sent.message_id, text, !!audio),
+      ).catch(() => {/* non-fatal */});
+      // Replace the callback hook with an ack-only version: if a late button
+      // press arrives, we still acknowledge it (removes the Telegram spinner)
+      // but skip the re-edit since the message was already cleaned up above.
+      clearCallbackHook(sent.message_id);
+      registerCallbackHook(sent.message_id, (evt) => {
+        const qid = evt.content.qid;
+        clearMessageHook(sent.message_id);
+        if (qid) {
+          void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
+        }
+      }, _sid);
+      // Also register a message hook: if a late click still comes in before
+      // the callback hook processes it, the next message will clear up anything
+      // that remains (buttons already gone, but hook cleans the callback hook).
       registerMessageHook(sent.message_id, () => {
         clearCallbackHook(sent.message_id);
-        void runInSessionContext(_sid, () =>
-          editWithSkipped(chatId, sent.message_id, text, !!audio),
-        ).catch(() => {/* non-fatal */});
       });
       return toResult({ timed_out: true, message_id: sent.message_id });
     }

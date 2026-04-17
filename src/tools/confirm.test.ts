@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   pollButtonOrTextOrVoice: vi.fn(),
   ackAndEditSelection: vi.fn(),
   editWithSkipped: vi.fn(),
+  editWithTimedOut: vi.fn(),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
   registerMessageHook: vi.fn(),
@@ -71,6 +72,7 @@ vi.mock("./button-helpers.js", async (importActual) => {
     pollButtonOrTextOrVoice: mocks.pollButtonOrTextOrVoice,
     ackAndEditSelection: mocks.ackAndEditSelection,
     editWithSkipped: mocks.editWithSkipped,
+    editWithTimedOut: mocks.editWithTimedOut,
   };
 });
 
@@ -129,6 +131,7 @@ describe("confirm tool", () => {
     mocks.validateSession.mockReturnValue(true);
     mocks.ackAndEditSelection.mockResolvedValue(undefined);
     mocks.editWithSkipped.mockResolvedValue(undefined);
+    mocks.editWithTimedOut.mockResolvedValue(undefined);
     mocks.resolveChat.mockReturnValue(42);
     mocks.validateText.mockReturnValue(null);
     mocks.validateCallbackData.mockReturnValue(null);
@@ -183,11 +186,13 @@ describe("confirm tool", () => {
     );
   });
 
-  it("keeps buttons live on timeout (no editWithTimedOut)", async () => {
+  it("calls editWithTimedOut immediately on timeout to remove buttons", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
     await call({ text: "Proceed?", token: 1123456});
-    // Hook stays registered — no edit, no button removal
+    // Wait for the void+catch chain to settle
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 5, "Proceed?", false);
     expect(mocks.ackAndEditSelection).not.toHaveBeenCalled();
   });
 
@@ -230,8 +235,11 @@ describe("confirm tool", () => {
     const result = await call({ text: "Proceed?", token: 1123456});
     const data = parseResult(result);
     expect(data.timed_out).toBe(true);
-    // Hook stays registered for late clicks — no ack, no edit
+    // Buttons are removed immediately — no ackAndEditSelection
     expect(mocks.ackAndEditSelection).not.toHaveBeenCalled();
+    // editWithTimedOut fires immediately (void — awaited in background)
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 5, "Proceed?", false);
   });
 
   it("returns skipped when user sends text instead of pressing a button", async () => {
@@ -279,7 +287,7 @@ describe("confirm tool", () => {
     expect(mocks.registerMessageHook).toHaveBeenCalledWith(5, expect.any(Function));
   });
 
-  it("message hook clears callback hook and edits with skipped", async () => {
+  it("message hook clears callback hook (buttons already removed by editWithTimedOut)", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
     await call({ text: "Proceed?", token: 1123456});
@@ -287,7 +295,8 @@ describe("confirm tool", () => {
     hookFn();
     await new Promise((r) => setTimeout(r, 0));
     expect(mocks.clearCallbackHook).toHaveBeenCalledWith(5);
-    expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 5, "Proceed?", false);
+    // editWithSkipped is NOT called — buttons were already removed by editWithTimedOut
+    expect(mocks.editWithSkipped).not.toHaveBeenCalled();
   });
 
   it("callback hook clears message hook on late button press", async () => {
@@ -296,6 +305,18 @@ describe("confirm tool", () => {
     await call({ text: "Proceed?", token: 1123456});
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
+    expect(mocks.clearMessageHook).toHaveBeenCalledWith(5);
+  });
+
+  it("ack-only callback hook (timeout path) clears message hook on late button press", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(null); // timeout
+    await call({ text: "Proceed?", token: 1123456});
+    // The ack-only hook is the LAST registerCallbackHook call (after clearCallbackHook + re-register)
+    const ackHookFn = mocks.registerCallbackHook.mock.calls[mocks.registerCallbackHook.mock.calls.length - 1][1];
+    mocks.clearMessageHook.mockClear();
+    // qid is null — only the clearMessageHook side-effect matters here
+    ackHookFn({ content: { qid: null } });
     expect(mocks.clearMessageHook).toHaveBeenCalledWith(5);
   });
 
@@ -459,6 +480,7 @@ describe("identity gate", () => {
       mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
       mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
       mocks.showTyping.mockResolvedValue(undefined);
+      mocks.editWithTimedOut.mockResolvedValue(undefined);
       mocks.pollButtonOrTextOrVoice.mockResolvedValue({ kind: "button", data: "yes", message_id: 7 });
       mocks.registerCallbackHook.mockReturnValue(undefined);
     });
@@ -552,13 +574,12 @@ describe("identity gate", () => {
       expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 7, "Proceed?", true);
     });
 
-    it("calls editWithSkipped with isVoice=true when message hook fires after timeout on voice message", async () => {
+    it("calls editWithTimedOut with isVoice=true immediately on timeout for voice message", async () => {
       mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
       await call(BASE_VOICE_ARGS);
-      const hookFn = mocks.registerMessageHook.mock.calls[0][1];
-      hookFn();
       await new Promise((r) => setTimeout(r, 0));
-      expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 7, "Proceed?", true);
+      expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 7, "Proceed?", true);
+      expect(mocks.editWithSkipped).not.toHaveBeenCalled();
     });
   });
 

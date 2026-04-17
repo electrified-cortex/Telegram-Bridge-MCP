@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  resolveChat,
+  getApi, resolveChat,
   toResult, toError, validateText, validateCallbackData, LIMITS, sendVoiceDirect,
 } from "../telegram.js";
 import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
@@ -9,7 +9,7 @@ import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
 import { getCallerSid, runInSessionContext } from "../session-context.js";
 import { requireAuth } from "../session-gate.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
   sendChoiceMessage, buildKeyboardRows, type KeyboardOption,
 } from "./button-helpers.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -194,15 +194,27 @@ export async function handleChoose(
     );
 
     if (!match) {
-      // Timeout — register a message hook so the next user message
-      // cleans up the stale buttons (callback hook handles late clicks).
-      // Run editWithSkipped in the tool's session context so the session
-      // header remains consistent with the original message.
+      // Timeout or abort — immediately remove the buttons and show "Timed out".
+      // Run in the tool's session context so the session header is consistent.
+      void runInSessionContext(_sid, () =>
+        editWithTimedOut(chatId, messageId, text, !!audio),
+      ).catch(() => {/* non-fatal */});
+      // Replace the callback hook with an ack-only version: if a late button
+      // press arrives, we still acknowledge it (removes the Telegram spinner)
+      // but skip the re-edit since the message was already cleaned up above.
+      clearCallbackHook(messageId);
+      registerCallbackHook(messageId, (evt) => {
+        const qid = evt.content.qid;
+        clearMessageHook(messageId);
+        if (qid) {
+          void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
+        }
+      }, _sid);
+      // Also register a message hook: if a late click still comes in before
+      // the callback hook processes it, the next message will clear up anything
+      // that remains (buttons already gone, but hook cleans the callback hook).
       registerMessageHook(messageId, () => {
         clearCallbackHook(messageId);
-        void runInSessionContext(_sid, () =>
-          editWithSkipped(chatId, messageId, text, !!audio),
-        ).catch(() => {/* non-fatal */});
       });
       return toResult({
         timed_out: true,

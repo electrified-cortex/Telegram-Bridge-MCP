@@ -235,7 +235,7 @@ export function register(server: McpServer): void {
         color: z
           .string()
           .optional()
-          .describe("session/start: Preferred color square emoji hint."),
+          .describe("session/start: Preferred color square emoji hint. session/rename: Color to apply (must be a valid palette emoji)."),
         // session/rename params
         new_name: z
           .string()
@@ -346,13 +346,13 @@ export function register(server: McpServer): void {
           .boolean()
           .optional()
           .describe("acknowledge: Clear the inline keyboard on message_id after answering. Returns MISSING_MESSAGE_ID error if message_id is absent."),
-        // message/route params
+        // message/route and session/rename params
         target_sid: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("message/route: Session ID to route the message to."),
+          .describe("message/route: Session ID to route the message to. session/rename: SID of session to rename (governor only)."),
         // profile/topic params
         topic: z
           .string()

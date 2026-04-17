@@ -20,27 +20,26 @@ Agents are underusing buttons and hybrid messages. The onboarding service messag
 
 Behavioral nudges should be smart, not spammy. Use a per-session checklist model:
 
-**Question-mark / button nudge:**
+#### Question-mark / button nudge
+
 - First question with `?` and no buttons → fire a lightweight hint (not blocking)
 - Once the agent uses buttons in any form → check off "knows buttons" → never nudge about buttons again in this session
 - If agent calls `help('send')` or similar button help → also checks off → no more nudges
 - If agent sends 10+ questions without ever using buttons → escalate to a stronger nudge (red flag)
 - Open-ended or curiosity questions don't require buttons — the nudge is "consider," not "must"
 
-**General checklist pattern:**
+#### General checklist pattern
 - Each behavioral skill (buttons, reactions, typing, animations) has a session-scoped boolean
 - Once demonstrated or help-consulted, the boolean flips and nudges stop
 - Conditions can un-check if needed (e.g., extended idle resets some)
 - This is behavior tracking integrated into the profile system
 
 ### Hybrid Message Promotion
-
 - Agents should know that audio + caption + buttons can all go in one message
 - Service messages should promote hybrid messages when appropriate
 - Reduce message count by combining related content
 
 ### Platform Ownership Principle
-
 - All Telegram communication behavior (reactions, typing, buttons, hybrid messages) should be taught by TMCP via service messages and help docs
 - Agent files (CLAUDE.md, startup-context.md) should NOT embed Telegram UX patterns
 - If Telegram behavior is found in agent files, that's a yellow flag = TMCP has a behavioral shaping gap

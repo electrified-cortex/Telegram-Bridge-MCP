@@ -4,18 +4,26 @@ import { createMockServer, parseResult, isError, type ToolHandler } from "./test
 const mocks = vi.hoisted(() => ({
   listSessions: vi.fn().mockReturnValue([]),
   renameSession: vi.fn(),
+  setSessionColor: vi.fn(),
   validateSession: vi.fn().mockReturnValue(true),
   requestOperatorApproval: vi.fn().mockResolvedValue("approved"),
+  getGovernorSid: vi.fn().mockReturnValue(0),
 }));
 
 vi.mock("../session-manager.js", () => ({
   listSessions: mocks.listSessions,
   renameSession: mocks.renameSession,
+  setSessionColor: mocks.setSessionColor,
   validateSession: mocks.validateSession,
+  COLOR_PALETTE: ["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"],
 }));
 
 vi.mock("../built-in-commands.js", () => ({
   requestOperatorApproval: mocks.requestOperatorApproval,
+}));
+
+vi.mock("../routing-mode.js", () => ({
+  getGovernorSid: () => mocks.getGovernorSid(),
 }));
 
 import { register } from "./rename_session.js";
@@ -28,7 +36,9 @@ describe("rename_session tool", () => {
     mocks.listSessions.mockReturnValue([]);
     mocks.validateSession.mockReturnValue(true);
     mocks.renameSession.mockReturnValue({ old_name: "Primary", new_name: "Scout" });
+    mocks.setSessionColor.mockReturnValue("🟦");
     mocks.requestOperatorApproval.mockResolvedValue("approved");
+    mocks.getGovernorSid.mockReturnValue(0); // not governor by default
     const server = createMockServer();
     register(server);
     call = server.getHandler("rename_session");
@@ -256,5 +266,76 @@ describe("rename_session tool", () => {
     expect(isError(result)).toBe(true);
     expect(JSON.stringify(result)).toContain("NAME_CONFLICT");
     expect(mocks.requestOperatorApproval).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Color param
+  // =========================================================================
+
+  it("applies color change when color is provided", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary" }]);
+    mocks.renameSession.mockReturnValue({ old_name: "Primary", new_name: "Scout" });
+    mocks.setSessionColor.mockReturnValue("🟦");
+
+    const result = parseResult(await call({ token: 1111111, new_name: "Scout", color: "🟦" }));
+
+    expect(mocks.setSessionColor).toHaveBeenCalledWith(1, "🟦");
+    expect(result.color).toBe("🟦");
+  });
+
+  it("does not include color in result when color is not provided", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary" }]);
+    mocks.renameSession.mockReturnValue({ old_name: "Primary", new_name: "Scout" });
+
+    const result = parseResult(await call({ token: 1111111, new_name: "Scout" }));
+
+    expect(mocks.setSessionColor).not.toHaveBeenCalled();
+    expect(result.color).toBeUndefined();
+  });
+
+  it("rejects invalid color → INVALID_COLOR", async () => {
+    const result = await call({ token: 1111111, new_name: "Scout", color: "🔴" });
+
+    expect(isError(result)).toBe(true);
+    expect(JSON.stringify(result)).toContain("INVALID_COLOR");
+    expect(mocks.renameSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid color before validation/approval (early exit)", async () => {
+    const result = await call({ token: 1111111, new_name: "Scout", color: "notacolor" });
+
+    expect(isError(result)).toBe(true);
+    expect(JSON.stringify(result)).toContain("INVALID_COLOR");
+    expect(mocks.requestOperatorApproval).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Governor targeting (target_sid)
+  // =========================================================================
+
+  it("governor can rename another session via target_sid", async () => {
+    mocks.getGovernorSid.mockReturnValue(1); // caller sid=1 is governor
+    mocks.listSessions.mockReturnValue([
+      { sid: 1, name: "Governor" },
+      { sid: 2, name: "Worker" },
+    ]);
+    mocks.renameSession.mockReturnValue({ old_name: "Worker", new_name: "Scout" });
+
+    const result = parseResult(await call({ token: 1111111, new_name: "Scout", target_sid: 2 }));
+
+    expect(mocks.renameSession).toHaveBeenCalledWith(2, "Scout");
+    expect(result.sid).toBe(2);
+    expect(result.new_name).toBe("Scout");
+  });
+
+  it("returns PERMISSION_DENIED when non-governor uses target_sid", async () => {
+    mocks.getGovernorSid.mockReturnValue(5); // caller sid=1 is not governor
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary" }]);
+
+    const result = await call({ token: 1111111, new_name: "Scout", target_sid: 2 });
+
+    expect(isError(result)).toBe(true);
+    expect(JSON.stringify(result)).toContain("PERMISSION_DENIED");
+    expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 });

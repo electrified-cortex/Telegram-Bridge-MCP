@@ -49,9 +49,23 @@ The reaction appeared to be applied server-side without agent request.
 
 ## Acceptance Criteria
 
-- [ ] Root cause identified for ghost reaction on msg 36250
-- [ ] Fix deployed — no reactions without explicit agent request
-- [ ] Implicit 👌 base (-100) auto-applied on first `react` call per message
-- [ ] Base reaction persistence verified with test (temporaries clear → 👌 remains)
-- [ ] No regression in explicit reaction removal (agent can still clear if desired)
-- [ ] Preset array reactions display in correct priority order (highest priority visible first)
+- [x] Root cause identified for ghost reaction on msg 36250
+- [x] Fix deployed — no reactions without explicit agent request
+- [x] Implicit 👌 base (-100) auto-applied on first `react` call per message
+- [x] Base reaction persistence verified with test (temporaries clear → 👌 remains)
+- [x] No regression in explicit reaction removal (agent can still clear if desired)
+- [x] Preset array reactions display in correct priority order (highest priority visible first)
+
+## Completion
+
+Branch: `10-585`
+Worktree: `D:\Users\essence\Development\cortex.lan\Telegram MCP\.worktrees\10-585`
+Commit: `3956da5`
+
+Root cause for ghost 😴: poller's `hasSessionWaiterForMessage` guard didn't cover the brief window when the agent was processing a prior event (reminder) between dequeue calls. Fixed with 1500ms delay + `hasPendingWaiters()` re-check.
+
+👌 base persistence: removed background `setMessageReaction("👌")` race. Now wired as `restoreEmoji` in the temp reaction path, marked only after success.
+
+Preset restore chain: `previousLayerEmoji` threaded through `handleSetReactionPreset` loop so each layer restores to the prior one (👀 → 🤔 → clear).
+
+5 files changed, 2 code review iterations, 2353/2353 tests pass.

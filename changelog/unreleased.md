@@ -11,7 +11,8 @@
 - `docs/help/send.md`: Hybrid section documenting audio + caption + buttons composition pattern
 - `docs/help/guide.md`: Button presets table covering OK, OK-Cancel, Y-N, and custom choose patterns
 - `docs/communication.md`: Quick-presets callout added under Hard Rule 2
-
+- `session/rename` action: added optional `color` parameter — applies a session color change atomically with the rename in the same operator-approval flow
+- `session/rename` action: added optional `target_sid` parameter (governor only) — allows the governor to rename another session; returns `PERMISSION_DENIED` for non-governor callers; validates the target session exists before prompting the operator
 - `session/close` action: added `force?: boolean` parameter — when `true`, allows closing the last active session without triggering the last-session guard
 
 ### Fixed
