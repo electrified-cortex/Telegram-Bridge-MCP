@@ -58,3 +58,29 @@ Claude Code (includePartialMessages) → text_delta events → TMCP bridge → c
 - Extended thinking mode and structured output are incompatible with `includePartialMessages`
 - 5-minute stream abort timeout in Claude Code (auto-falls back to non-streaming)
 - Rate limit: ~30 edits/sec global, ~1/sec practical for single chat
+
+## Activity Log
+
+- **2026-04-17** — Pipeline started. Variant: Design + Implement.
+- **2026-04-17** — [Stage 2] Feature Designer dispatched. Design received (7 sections). Key finding: TMCP has no subprocess integration; `includePartialMessages` is external-agent responsibility. Coalescing queue belongs at agent layer, not TMCP.
+- **2026-04-17** — [Stage 3] Design reviewed. Clean — all seven sections present, acceptance criteria verifiable, no implementation code, all 4 OQs non-blocking.
+- **2026-04-17** — [Stage 4] Task Runner dispatched. 13 files changed (4 new: `stream_init.ts`, `stream_finalize.ts`, + test files). Commit: b7a280b.
+- **2026-04-17** — [Stage 5] Verification: diff non-empty (564 insertions), 2379 tests passed.
+- **2026-04-17** — [Stage 6] Code Reviewer iteration 1: 0 critical, 3 major (send.test.ts missing stream dispatch test; _rawText not asserted; parse_mode branch uncovered), 4 minor, 3 info. Fixes dispatched.
+- **2026-04-17** — [Stage 6] Code Reviewer iteration 2: prior majors resolved; 1 new major (send.ts stream dispatch dropped parse_mode). Fix dispatched.
+- **2026-04-17** — [Stage 6] Code Reviewer iteration 3: clean — 0 critical, 0 major. Minor/Info only (cosmetic schema description).
+- **2026-04-17** — [Stage 7] Complete. Branch: 10-586, commit: b7a280b. Ready for Overseer review.
+
+## Completion
+
+Phase 1 TMCP-side streaming infrastructure implemented:
+
+- **Double name-tag bug fixed** — `outbound-proxy.ts` now records pre-header raw agent text in message-store; the proxy remains the single header-injection layer. Subsequent appends no longer accumulate duplicate session headers.
+- **`parse_mode: "none"` added** — `resolveParseMode` and `append_text` accept `"none"` mode, returning unescaped text with `parse_mode: undefined`. Enables safe plain-text delta appends mid-stream.
+- **`send(type: "stream")` added** — New `stream_init.ts` sends a placeholder message and returns `message_id` for the agent to target with subsequent append calls. Forwards `placeholder` and `parse_mode`.
+- **`stream_finalize` tool added** — Replaces accumulated draft with the final formatted text (replace semantics, not append). Records raw agent text in store.
+- **Coalescing queue** is the external agent's responsibility (not TMCP); TMCP's `debounceSend` provides the 1 req/sec hard floor.
+
+Subagent passes: Feature Designer ×1, Task Runner ×3, Code Reviewer ×3.
+Final review: 0 critical, 0 major, 4 minor (cosmetic/edge-case), 3 info.
+Minor findings noted: multi-chunk send records formatted text (pre-existing), `parse_mode:"none"` unreachable via `send(type:"append")` schema (undocumented gap), `objectContaining({parse_mode:undefined})` assertion slightly weak.

@@ -22,5 +22,11 @@ Second Copilot exhaustion run on PR #136. 4 new comments, all real issues — mo
 
 ## Acceptance Criteria
 
-- [ ] All 4 issues fixed
-- [ ] Build clean
+- [x] All 4 issues fixed
+- [x] Build clean (doc-only change)
+
+## Completion
+
+- **Branch:** `10-581-copilot-round2-fixes`
+- **Commit:** `bdc2ff6` — fix(docs): add blank lines after headings in start.md (MD022)
+- **Notes:** Fixes 1–3 (instruction field in load_profile.ts description, conditional reminder hint, instruction field in load.md) were already applied on the dev branch. Only Fix 4 (MD022 heading blank lines in start.md) required changes.

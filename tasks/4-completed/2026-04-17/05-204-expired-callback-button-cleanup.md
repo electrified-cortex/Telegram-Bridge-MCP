@@ -25,3 +25,10 @@ This applies primarily to buttons attached to voice message acknowledgments and 
 - [ ] On timeout: message text is appended or edited to indicate "> options timed out"
 - [ ] Existing approval dialog cleanup (session_start) is not regressed
 - [ ] Tests cover the timeout cleanup path for at least `confirm` and `choose`
+
+## Completion
+
+- **Branch:** `05-204-expired-callback-button-cleanup` (worktree: `Telegram MCP/.worktrees/05-204-expired-callback-button-cleanup`)
+- **Commit:** `1f19ba9` — fix(confirm,choose): immediately remove expired buttons on timeout
+- **Files:** `src/tools/confirm.ts`, `src/tools/choose.ts`, `src/tools/confirm.test.ts`, `src/tools/choose.test.ts`
+- **Notes:** On timeout/abort, immediately calls `editWithTimedOut()` to remove buttons and show timed-out indicator. Replaces full callback hook with ack-only version so late button presses get spinner dismissed without re-editing. Tests: 2347/2347 pass.

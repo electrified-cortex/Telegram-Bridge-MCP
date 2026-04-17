@@ -41,3 +41,9 @@ Replace sync writes with a debounced in-memory queue:
 - [ ] New test: multiple rapid log events produce single batched write
 - [ ] New test: shutdown flushes remaining buffer
 - [ ] Build, lint, test green
+
+## Completion
+
+- **Status:** Verified stale — already implemented
+- **Verified:** `local-log.ts` uses `appendFile` (async, from `fs/promises`) with a debounced `Queue<string>` buffer, 500ms flush timer, and `flushCurrentLog()` drain-on-shutdown. No `appendFileSync` present.
+- **No changes needed.** Task can be closed.
