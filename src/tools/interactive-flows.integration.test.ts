@@ -108,7 +108,7 @@ function voiceUpdate() {
 const SENT_MSG = { message_id: 5, chat: { id: 42 }, date: 0 };
 
 let sid: number;
-let pin: number;
+let suffix: number;
 let token: number;
 let handlers: {
   confirm: ToolHandler;
@@ -138,8 +138,8 @@ describe("interactive flows — end-to-end integration", () => {
     setActiveSession(session.sid);
     createSessionQueue(session.sid);
     sid = session.sid;
-    pin = session.pin;
-    token = sid * 1_000_000 + pin;
+    suffix = session.suffix;
+    token = sid * 1_000_000 + suffix;
 
     const server = createMockServer();
     registerConfirm(server);

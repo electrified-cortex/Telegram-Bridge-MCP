@@ -152,7 +152,7 @@ vi.mock("./update_progress.js", () => ({ handleUpdateProgress: mocks.handleUpdat
 
 import { register } from "./action.js";
 
-const VALID_TOKEN = 1_123_456; // sid=1, pin=123456
+const VALID_TOKEN = 1_123_456; // sid=1, suffix=123456
 
 describe("action tool", () => {
   let call: ToolHandler;

@@ -83,7 +83,7 @@ export function createServer(): McpServer {
     const original = cb as unknown as CallableCb;
     const wrappedCb = (
       (args: Record<string, unknown>, extra: unknown) => {
-        // Decode sid from token (sid * 1_000_000 + pin) for session context.
+        // Decode sid from token (sid * 1_000_000 + suffix) for session context.
         // Falls back to active session for tools that don't require auth.
         // Each call is also wrapped in a token-hint context so the TOKEN_SCHEMA
         // preprocess and the handler share per-request hint state, preventing
