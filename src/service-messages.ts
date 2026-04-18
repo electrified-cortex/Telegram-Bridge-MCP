@@ -143,7 +143,7 @@ export const SERVICE_MESSAGES = Object.freeze({
 
   NUDGE_TYPING_RATE: {
     eventType: "behavior_nudge_typing_rate" as const,
-    text: "Use show_typing after receiving messages to signal you're working.",
+    text: "Use action(type: \"show-typing\") after receiving messages to signal you're working.",
   },
 
   NUDGE_QUESTION_HINT: {
