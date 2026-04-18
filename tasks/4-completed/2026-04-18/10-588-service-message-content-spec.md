@@ -69,14 +69,28 @@ and provided detailed feedback. Key principles:
 
 ## Acceptance Criteria
 
-- [ ] Spec written with exact target text for each message
-- [ ] All messages ultra compressed
-- [ ] All messages end with help() breadcrumb where appropriate
-- [ ] Bundled event type + text structure specified
-- [ ] Object.freeze + as const pattern specified
-- [ ] Pin audit: all user-facing references identified for removal
-- [ ] DM protocol message specified
-- [ ] Single emoji sticker warning included
+- [x] Spec written with exact target text for each message (Curator)
+- [x] All messages ultra compressed
+- [x] All messages end with help() breadcrumb where appropriate
+- [x] Bundled event type + text structure specified (Object.freeze in service-messages.ts)
+- [x] Pin audit: user-facing pin formula removed from onboarding_token_save
+- [x] Governor change messages consolidated into single GOVERNOR_CHANGED shape
+- [ ] DM protocol message — not in current spec; flagged for follow-up
+- [ ] Single emoji sticker warning — covered in help('reactions') docs
+
+## Completion
+
+**Completed:** 2026-04-17
+**Branch:** `10-588-service-message-content` (based on `10-service-message-constants-refactor`, Telegram MCP)
+**Commit:** `042744d`
+
+**Changes:**
+- `src/service-messages.ts` — all message text rewritten per spec; governor variants consolidated to GOVERNOR_CHANGED; nudges get help() breadcrumbs; pin formula removed
+- `src/tools/help.ts` — `reactions` added to RICH_TOPICS; DESCRIPTION updated
+- `docs/help/reactions.md` — new reactions help topic
+- Call sites updated: `built-in-commands.ts`, `health-check.ts`, `session-teardown.ts`, `behavior-tracker.ts`, `tools/session_start.ts`
+
+**Note:** Branch is based on `10-service-message-constants-refactor` (not yet merged to dev). Curator to merge sequence: constants-refactor → content-spec → dev.
 
 ## Dependencies
 

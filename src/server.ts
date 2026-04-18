@@ -91,7 +91,7 @@ export function createServer(): McpServer {
         // This runs before auth so the hook and handler never see hallucinated keys.
         const { clean: cleanArgs, warning: unknownParamWarning } = checkUnknownParams(name, knownParams, args);
 
-        // Decode sid from token (sid * 1_000_000 + pin) for session context.
+        // Decode sid from token (sid * 1_000_000 + suffix) for session context.
         // Falls back to active session for tools that don't require auth.
         // Each call is also wrapped in a token-hint context so the TOKEN_SCHEMA
         // preprocess and the handler share per-request hint state, preventing

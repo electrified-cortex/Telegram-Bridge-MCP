@@ -99,7 +99,7 @@ describe("dump_session_record tool (V4 — local log)", () => {
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    it("returns AUTH_FAILED when identity has wrong suffix", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({ token: 1099999 });
       expect(isError(result)).toBe(true);

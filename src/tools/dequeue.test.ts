@@ -36,7 +36,7 @@ const mocks = vi.hoisted(() => ({
   getSessionQueue: vi.fn((_sid: number): SessionQueue | undefined => undefined),
   getMessageOwner: vi.fn((_msgId: number): number => 0),
   touchSession: vi.fn((_sid: number) => {}),
-  validateSession: vi.fn((_sid: number, _pin: number) => true),
+  validateSession: vi.fn((_sid: number, _suffix: number) => true),
   getDequeueDefault: vi.fn((_sid: number): number => 300),
   setDequeueDefault: vi.fn((_sid: number, _timeout: number) => {}),
 }));
@@ -66,8 +66,8 @@ vi.mock("../session-manager.js", () => ({
   touchSession: (sid: number) => {
     mocks.touchSession(sid);
   },
-  validateSession: (sid: number, pin: number) => {
-    return mocks.validateSession(sid, pin);
+  validateSession: (sid: number, suffix: number) => {
+    return mocks.validateSession(sid, suffix);
   },
   getDequeueDefault: (sid: number) => mocks.getDequeueDefault(sid),
   setDequeueDefault: (sid: number, timeout: number) => {
@@ -609,7 +609,7 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // Auth gate — identity [sid, pin] always required
+  // Auth gate — identity [sid, suffix] always required
   // =========================================================================
 
   describe("auth gate", () => {
@@ -620,7 +620,7 @@ describe("dequeue tool", () => {
       expect(text).toContain("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when pin does not match", async () => {
+    it("returns AUTH_FAILED when suffix does not match", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({ token: 3_009_999, timeout: 0 });
       expect(isError(result)).toBe(true);
@@ -628,7 +628,7 @@ describe("dequeue tool", () => {
       expect(text).toContain("AUTH_FAILED");
     });
 
-    it("passes [sid, pin] to validateSession when identity provided", async () => {
+    it("passes [sid, suffix] to validateSession when identity provided", async () => {
       const evt = makeEvent(1, "auth test");
       const mockSessionQueue = {
         dequeueBatch: vi.fn(() => [evt] as TimelineEvent[]),
@@ -763,7 +763,7 @@ describe("dequeue tool", () => {
     });
 
     it("does not call touchSession when sid is 0", async () => {
-      // identity [0, pin]: sid=0 → touchSession guard (sid > 0) prevents call
+      // identity [0, suffix]: sid=0 → touchSession guard (sid > 0) prevents call
       const mockQueue0 = {
         dequeueBatch: vi.fn(() => [] as TimelineEvent[]),
         pendingCount: vi.fn(() => 0),

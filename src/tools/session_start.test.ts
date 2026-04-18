@@ -87,15 +87,19 @@ vi.mock("../built-in-commands.js", async (importActual) => {
   return { ...actual, refreshGovernorCommand: vi.fn() };
 });
 
-vi.mock("../session-queue.js", () => ({
-  createSessionQueue: vi.fn(),
-  removeSessionQueue: vi.fn(),
-  deliverServiceMessage: mocks.deliverServiceMessage,
-  deliverReminderEvent: (...args: unknown[]) => mocks.deliverReminderEvent(...args),
-  trackMessageOwner: mocks.trackMessageOwner,
-  drainQueue: mocks.drainQueue,
-  getSessionQueue: (...args: unknown[]) => mocks.getSessionQueue(...args),
-}));
+vi.mock("../session-queue.js", async (importActual) => {
+  const actual = await importActual<Record<string, unknown>>();
+  return {
+    ...actual,
+    createSessionQueue: vi.fn(),
+    removeSessionQueue: vi.fn(),
+    deliverServiceMessage: mocks.deliverServiceMessage,
+    deliverReminderEvent: (...args: unknown[]) => mocks.deliverReminderEvent(...args),
+    trackMessageOwner: mocks.trackMessageOwner,
+    drainQueue: mocks.drainQueue,
+    getSessionQueue: (...args: unknown[]) => mocks.getSessionQueue(...args),
+  };
+});
 
 vi.mock("../poller.js", () => ({
   startPoller: (...args: unknown[]) => mocks.startPoller(...args),
@@ -140,7 +144,7 @@ describe("session_start tool", () => {
     mocks.isPollerRunning.mockReturnValue(false);
     mocks.createSession.mockReturnValue({
       sid: 1,
-      pin: 123456,
+      suffix: 123456,
       name: "Primary",
       color: "🟦",
       sessionsActive: 1,
@@ -163,7 +167,7 @@ describe("session_start tool", () => {
     expect(result).toEqual({
       token: 1123456,
       sid: 1,
-      pin: 123456,
+      suffix: 123456,
       sessions_active: 1,
       action: "fresh",
       pending: 0,
@@ -180,7 +184,7 @@ describe("session_start tool", () => {
     expect(result).toEqual({
       token: 1123456,
       sid: 1,
-      pin: 123456,
+      suffix: 123456,
       sessions_active: 1,
       action: "fresh",
       pending: 0,
@@ -209,7 +213,7 @@ describe("session_start tool", () => {
 
   it("passes 'Primary' when name is omitted for first session", async () => {
     mocks.pendingCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 123456, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", sessionsActive: 1 });
 
     await call({});
 
@@ -221,7 +225,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.createSession.mockReturnValue({
       sid: 3,
-      pin: 719304,
+      suffix: 719304,
       name: "scout",
       sessionsActive: 3,
     });
@@ -242,7 +246,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.createSession.mockReturnValue({
       sid: 5,
-      pin: 999999,
+      suffix: 999999,
       name: "Active Test",
       sessionsActive: 2,
     });
@@ -264,7 +268,7 @@ describe("session_start tool", () => {
   it("includes fellow_sessions in fast-path result when sessionsActive > 1", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 4, pin: 444444, name: "scout", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 4, suffix: 444444, name: "scout", sessionsActive: 2 });
     // Collision check (pre-creation)
     mocks.listSessions.mockReturnValueOnce([
       { sid: 3, name: "leader" },
@@ -293,7 +297,7 @@ describe("session_start tool", () => {
   it("includes fellow_sessions when auto-draining with multiple sessions", async () => {
     mocks.pendingCount.mockReturnValue(2);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 6, pin: 666666, name: "gamma", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 6, suffix: 666666, name: "gamma", sessionsActive: 2 });
     // Collision check (pre-creation)
     mocks.listSessions.mockReturnValueOnce([
       { sid: 5, name: "delta" },
@@ -324,7 +328,7 @@ describe("session_start tool", () => {
 
   it("returns fellow_sessions: [] when only one session is active", async () => {
     mocks.pendingCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "solo", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 100001, name: "solo", sessionsActive: 1 });
 
     const result = parseResult(await call({ name: "solo" }));
 
@@ -334,7 +338,7 @@ describe("session_start tool", () => {
   it("rolls back session on unexpected error during session setup", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 5, pin: 500005, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 5, suffix: 500005, name: "Worker", sessionsActive: 2 });
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary" }])
       .mockReturnValue([{ sid: 1, name: "Primary" }, { sid: 5, name: "Worker" }]);
@@ -384,7 +388,7 @@ describe("session_start tool", () => {
   it("allows session_start when name differs from existing sessions", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Scout", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Scout", sessionsActive: 2 });
 
     const result = parseResult(await call({ name: "Scout" }));
 
@@ -396,7 +400,7 @@ describe("session_start tool", () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Primary", sessionsActive: 1 });
 
     const result = parseResult(await call({}));
 
@@ -411,7 +415,7 @@ describe("session_start tool", () => {
   it("auto-activates governor mode when second session joins", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
     // Collision check (pre-creation — "Worker" not yet in the list)
     mocks.listSessions.mockReturnValueOnce([
       { sid: 1, name: "Primary", createdAt: "2026-03-17" },
@@ -434,7 +438,7 @@ describe("session_start tool", () => {
 
   it("sets governor SID when first session starts", async () => {
     mocks.pendingCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 100001, name: "", sessionsActive: 1 });
 
     await call({});
 
@@ -444,7 +448,7 @@ describe("session_start tool", () => {
   it("selects lowest SID as governor when gap exists", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 5, pin: 500005, name: "Late", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 5, suffix: 500005, name: "Late", sessionsActive: 2 });
     // Collision check ("Late" not yet in list)
     mocks.listSessions.mockReturnValueOnce([
       { sid: 3, name: "Early", createdAt: "2026-03-17" },
@@ -468,7 +472,7 @@ describe("session_start tool", () => {
   it("does not auto-activate governor when third or later session joins", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 3, pin: 300003, name: "Third", sessionsActive: 3 });
+    mocks.createSession.mockReturnValue({ sid: 3, suffix: 300003, name: "Third", sessionsActive: 3 });
     // Collision check
     mocks.listSessions.mockReturnValueOnce([
       { sid: 1, name: "Primary", createdAt: "2026-03-17" },
@@ -495,7 +499,7 @@ describe("session_start tool", () => {
     // session/start always creates fresh sessions; reconnect logic moved to session/reconnect
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 3, pin: 300003, name: "Overseer", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 3, suffix: 300003, name: "Overseer", sessionsActive: 2 });
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 2, name: "Worker", createdAt: "2026-03-17" }])
       .mockReturnValue([
@@ -520,7 +524,7 @@ describe("session_start tool", () => {
   it("first session is auto-approved without operator interaction", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     const result = parseResult(await call({ name: "Primary" }));
 
@@ -532,7 +536,7 @@ describe("session_start tool", () => {
   it("first session defaults name to 'Primary' when none provided", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     await call({});
 
@@ -542,7 +546,7 @@ describe("session_start tool", () => {
   it("second session requires operator approval and succeeds on approve", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Scout", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Scout", sessionsActive: 2 });
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 200 })  // approval prompt;
@@ -684,7 +688,7 @@ describe("session_start tool", () => {
 
   it("accepts alphanumeric name with spaces", async () => {
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout Alpha", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 100001, name: "Scout Alpha", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
 
     const result = await call({ name: "Scout Alpha" });
@@ -695,7 +699,7 @@ describe("session_start tool", () => {
 
   it("trims whitespace before validation — leading/trailing spaces are allowed", async () => {
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 100001, name: "Scout", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
 
     const result = await call({ name: "  Scout  " });
@@ -706,7 +710,7 @@ describe("session_start tool", () => {
 
   it("whitespace-only name on first session → uses 'Primary' default", async () => {
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Primary", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 100001, name: "Primary", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
 
     const result = await call({ name: "   " });
@@ -717,7 +721,7 @@ describe("session_start tool", () => {
 
   it("alphanumeric name with digits is accepted", async () => {
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 100001, name: "Scout2", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 100001, name: "Scout2", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
 
     const result = await call({ name: "Scout2" });
@@ -733,7 +737,7 @@ describe("session_start tool", () => {
   it("injects session_joined service message to existing session when 2nd session joins", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]) // collision
@@ -761,7 +765,7 @@ describe("session_start tool", () => {
   it("injects session_orientation service message to new session on join", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
@@ -788,7 +792,7 @@ describe("session_start tool", () => {
   it("first session receives session_orientation service message", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     await call({});
 
@@ -805,21 +809,22 @@ describe("session_start tool", () => {
   it("first session: injects onboarding_token_save after session_orientation", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.getGovernorSid.mockReturnValue(1);
 
     await call({});
 
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const tokenSave = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "onboarding_token_save");
+    // spec-form: deliverServiceMessage(sid, { eventType, text }) — c[1] is the spec object
+    const tokenSave = calls.find((c: unknown[]) => c[0] === 1 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_token_save");
     expect(tokenSave).toBeDefined();
-    expect(String(tokenSave![1])).toContain("Save your token");
+    expect(String((tokenSave![1] as Record<string, unknown>).text)).toContain("Save your token");
   });
 
   it("first session: injects onboarding_role with governor text", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.getGovernorSid.mockReturnValue(1);
 
     await call({});
@@ -834,21 +839,22 @@ describe("session_start tool", () => {
   it("first session: injects onboarding_protocol after session_orientation", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.getGovernorSid.mockReturnValue(1);
 
     await call({});
 
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const protocol = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "onboarding_protocol");
+    // spec-form: deliverServiceMessage(sid, { eventType, text }) — c[1] is the spec object
+    const protocol = calls.find((c: unknown[]) => c[0] === 1 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_protocol");
     expect(protocol).toBeDefined();
-    expect(String(protocol![1])).toContain("Signal activity");
+    expect(String((protocol![1] as Record<string, unknown>).text)).toContain("Signal activity");
   });
 
   it("second session (participant): onboarding_role is NOT injected — session_orientation covers role", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
     // Governor is SID 1; new session SID 2 is a participant
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions
@@ -873,7 +879,7 @@ describe("session_start tool", () => {
   it("second session (participant): token_save and protocol messages are injected (no onboarding_role)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
@@ -889,16 +895,19 @@ describe("session_start tool", () => {
     await call({ name: "Worker" });
 
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const toNew = (type: string) => calls.find((c: unknown[]) => c[0] === 2 && c[2] === type);
-    expect(toNew("onboarding_token_save")).toBeDefined();
-    expect(toNew("onboarding_role")).toBeUndefined();
-    expect(toNew("onboarding_protocol")).toBeDefined();
+    // spec-form: deliverServiceMessage(sid, { eventType, text }) — c[1] is the spec object
+    const findByType = (sid: number, type: string) => calls.find((c: unknown[]) =>
+      c[0] === sid && (c[2] === type || (typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === type)),
+    );
+    expect(findByType(2, "onboarding_token_save")).toBeDefined();
+    expect(findByType(2, "onboarding_role")).toBeUndefined();
+    expect(findByType(2, "onboarding_protocol")).toBeDefined();
   });
 
   it("reconnect: onboarding messages are NOT injected on session/reconnect", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 111111, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 111111, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
     });
     mocks.activeSessionCount.mockReturnValue(1);
@@ -923,7 +932,7 @@ describe("session_start tool", () => {
   it("first session sends online announcement to chat", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 42 });
 
     await call({});
@@ -943,7 +952,7 @@ describe("session_start tool", () => {
   it("first session announcement is tracked with trackMessageOwner", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 55 });
 
     await call({});
@@ -954,7 +963,7 @@ describe("session_start tool", () => {
   it("first session session_orientation includes announcement_message_id", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 77 });
 
     await call({});
@@ -972,7 +981,7 @@ describe("session_start tool", () => {
   it("session/start always returns action='fresh'", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
 
     const result = parseResult(await call({}));
@@ -983,7 +992,7 @@ describe("session_start tool", () => {
   it("session/start approval prompt says 'New session requesting access'", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Worker", sessionsActive: 2 });
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
       .mockReturnValue([
@@ -1009,7 +1018,7 @@ describe("session_start tool", () => {
   it("session/start service message to fellow says 'has joined'", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Worker", sessionsActive: 2 });
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
@@ -1038,7 +1047,7 @@ describe("session_start tool", () => {
   it("session/start second session result action is always 'fresh'", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Worker", sessionsActive: 2 });
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
       .mockReturnValue([
@@ -1059,7 +1068,7 @@ describe("session_start tool", () => {
   it("reconnect: false (default) keeps fresh/joined behavior unchanged", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.listSessions.mockReturnValue([]);
 
     const result = parseResult(await call({}));
@@ -1081,7 +1090,7 @@ describe("session_start tool", () => {
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1105,7 +1114,7 @@ describe("session_start tool", () => {
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1127,7 +1136,7 @@ describe("session_start tool", () => {
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1145,7 +1154,7 @@ describe("session_start tool", () => {
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1175,7 +1184,7 @@ describe("session_start tool", () => {
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
       .mockResolvedValueOnce({ message_id: 51 });  // broadcast announcement
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1195,7 +1204,7 @@ describe("session_start tool", () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.getGovernorSid.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
       .mockReturnValue([
@@ -1255,7 +1264,7 @@ describe("session_start tool", () => {
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker", color: "🟩" });
 
@@ -1274,7 +1283,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1300,7 +1309,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_4", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟥", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟥", sessionsActive: 2 });
 
     await call({ name: "Worker", color: "🟥" });
 
@@ -1326,7 +1335,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 3, pin: 300003, name: "Worker2", color: "🟩", sessionsActive: 3 });
+    mocks.createSession.mockReturnValue({ sid: 3, suffix: 300003, name: "Worker2", color: "🟩", sessionsActive: 3 });
 
     await call({ name: "Worker2", color: "🟥" });
 
@@ -1350,7 +1359,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker", color: "❌" }); // invalid hint — not in COLOR_PALETTE
 
@@ -1383,7 +1392,7 @@ describe("session_start tool", () => {
     });
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1409,7 +1418,7 @@ describe("session_start tool", () => {
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
       .mockResolvedValueOnce({ message_id: 77 });  // announcement
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1431,7 +1440,7 @@ describe("session_start tool", () => {
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })
       .mockResolvedValueOnce({ message_id: 88 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1453,7 +1462,7 @@ describe("session_start tool", () => {
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 50 })   // approval prompt
       .mockRejectedValueOnce(new Error("send failed")); // announcement fails
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1464,7 +1473,7 @@ describe("session_start tool", () => {
   it("does not pin when first session announcement fails to send", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce(undefined);
 
     await call({});
@@ -1475,7 +1484,7 @@ describe("session_start tool", () => {
   it("first session announcement is NOT pinned (deferred until second session joins)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 55 });
 
     await call({});
@@ -1486,7 +1495,7 @@ describe("session_start tool", () => {
   it("second session retroactively pins first session announcement when sessionsActive === 2", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Worker", color: "🟩", sessionsActive: 2 });
     mocks.listSessions
       .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-20" }])
       .mockReturnValue([
@@ -1513,7 +1522,7 @@ describe("session_start tool", () => {
   it("third+ session does not trigger retroactive pinning", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
-    mocks.createSession.mockReturnValue({ sid: 3, pin: 333333, name: "Third", sessionsActive: 3 });
+    mocks.createSession.mockReturnValue({ sid: 3, suffix: 333333, name: "Third", sessionsActive: 3 });
     mocks.listSessions
       .mockReturnValueOnce([
         { sid: 1, name: "Primary", createdAt: "2026-03-20" },
@@ -1543,7 +1552,7 @@ describe("session_start tool", () => {
   it("first session announcement tracked via setSessionAnnouncementMessage", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 88 });
 
     await call({});
@@ -1573,7 +1582,7 @@ describe("session_start tool", () => {
   it("reconnect: true + name match → shows simple Approve/Deny dialog, not color picker", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 123456, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 12345, healthy: false,
     });
     mocks.activeSessionCount.mockReturnValue(1);
@@ -1603,7 +1612,7 @@ describe("session_start tool", () => {
   it("reconnect: true + approved → preserves queued messages and resets health state", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     const fakeSession = {
-      sid: 1, pin: 999999, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 999999, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 99999, healthy: false,
     };
     mocks.getSession.mockReturnValue(fakeSession);
@@ -1626,7 +1635,7 @@ describe("session_start tool", () => {
   it("reconnect: true + approved → returns response with token, sid, and pending count", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 999999, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 999999, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 99999, healthy: false,
     });
     mocks.activeSessionCount.mockReturnValue(1);
@@ -1646,7 +1655,7 @@ describe("session_start tool", () => {
   it("reconnect: true + approved → pending=0 when queue is missing", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 999999, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 999999, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 99999, healthy: false,
     });
     mocks.activeSessionCount.mockReturnValue(1);
@@ -1697,7 +1706,7 @@ describe("session_start tool", () => {
   it("reconnect: true + single session approved → sends session_orientation with reconnect text", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 111111, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 111111, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
     });
     mocks.activeSessionCount.mockReturnValue(1);
@@ -1721,7 +1730,7 @@ describe("session_start tool", () => {
       { sid: 2, name: "Worker", createdAt: "2026-03-17" },
     ]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 111111, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 111111, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
     });
     mocks.getGovernorSid.mockReturnValue(2);
@@ -1781,7 +1790,7 @@ describe("session_start tool", () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.isPollerRunning.mockReturnValue(false);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     await call({});
 
@@ -1792,7 +1801,7 @@ describe("session_start tool", () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.isPollerRunning.mockReturnValue(true);
-    mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
     await call({});
 
@@ -1816,7 +1825,7 @@ describe("session_start tool", () => {
     it("startup reminders are delivered to the session queue after a fresh session_start", async () => {
       mocks.pendingCount.mockReturnValue(0);
       mocks.activeSessionCount.mockReturnValue(0);
-      mocks.createSession.mockReturnValue({ sid: 1, pin: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+      mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
 
       // Pre-load a startup reminder for SID 1
       runInSessionContext(1, () => {
@@ -1835,7 +1844,7 @@ describe("session_start tool", () => {
     it("startup reminders fire after session_start with reconnect: true", async () => {
       mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
       mocks.getSession.mockReturnValue({
-        sid: 1, pin: 111111, name: "Overseer", color: "🟦",
+        sid: 1, suffix: 111111, name: "Overseer", color: "🟦",
         createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
       });
       mocks.activeSessionCount.mockReturnValue(1);
@@ -1860,7 +1869,7 @@ describe("session_start tool", () => {
     it("one-shot startup reminder is not present after firing (not re-delivered on second session_start)", async () => {
       mocks.pendingCount.mockReturnValue(0);
       mocks.activeSessionCount.mockReturnValue(0);
-      mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Alpha", color: "🟩", sessionsActive: 1 });
+      mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Alpha", color: "🟩", sessionsActive: 1 });
 
       runInSessionContext(2, () => {
         addReminder({ id: "s-oneshot", text: "One shot", delay_seconds: 0, recurring: false, trigger: "startup" });
@@ -1874,7 +1883,7 @@ describe("session_start tool", () => {
 
       // Reset mocks and run second session_start — one-shot should NOT fire again
       vi.clearAllMocks();
-      mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Alpha", color: "🟩", sessionsActive: 1 });
+      mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Alpha", color: "🟩", sessionsActive: 1 });
       mocks.pendingCount.mockReturnValue(0);
       mocks.activeSessionCount.mockReturnValue(0);
       mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
@@ -1890,7 +1899,7 @@ describe("session_start tool", () => {
     it("recurring startup reminder fires again on a second session_start", async () => {
       mocks.pendingCount.mockReturnValue(0);
       mocks.activeSessionCount.mockReturnValue(0);
-      mocks.createSession.mockReturnValue({ sid: 3, pin: 333333, name: "Beta", color: "🟨", sessionsActive: 1 });
+      mocks.createSession.mockReturnValue({ sid: 3, suffix: 333333, name: "Beta", color: "🟨", sessionsActive: 1 });
 
       runInSessionContext(3, () => {
         addReminder({ id: "s-recurring", text: "Every start", delay_seconds: 0, recurring: true, trigger: "startup" });
@@ -1906,7 +1915,7 @@ describe("session_start tool", () => {
 
       // Reset mocks for second call
       vi.clearAllMocks();
-      mocks.createSession.mockReturnValue({ sid: 3, pin: 333333, name: "Beta", color: "🟨", sessionsActive: 1 });
+      mocks.createSession.mockReturnValue({ sid: 3, suffix: 333333, name: "Beta", color: "🟨", sessionsActive: 1 });
       mocks.pendingCount.mockReturnValue(0);
       mocks.activeSessionCount.mockReturnValue(0);
       mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
@@ -1932,7 +1941,7 @@ describe("session_start tool", () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 222222, name: "Scout", sessionsActive: 2, color: "🟩" });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "Scout", sessionsActive: 2, color: "🟩" });
     mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
 
     const result = parseResult(await call({ name: "Scout" }));
@@ -1950,7 +1959,7 @@ describe("session_start tool", () => {
     mocks.listSessions.mockReturnValue([
       { sid: 3, name: "Overseer", color: "🟦", createdAt: "2026-03-17" },
     ]);
-    mocks.getSession.mockReturnValue({ sid: 3, pin: 301000, name: "Overseer", color: "🟦", healthy: true });
+    mocks.getSession.mockReturnValue({ sid: 3, suffix: 301000, name: "Overseer", color: "🟦", healthy: true });
     mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
     mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
 
@@ -1975,7 +1984,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -1996,7 +2005,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -2020,7 +2029,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -2041,7 +2050,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
 
     await call({ name: "Worker", color: "🟩" });
 
@@ -2069,7 +2078,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -2092,7 +2101,7 @@ describe("session_start tool", () => {
       void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     await call({ name: "Worker" });
 
@@ -2112,7 +2121,7 @@ describe("session_start tool", () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
     mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     let hookFn: ((evt: unknown) => void) | undefined;
     mocks.registerCallbackHook.mockImplementation((_id: number, fn: (evt: unknown) => void) => {
@@ -2145,7 +2154,7 @@ describe("session_start tool", () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
     mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     let hookFn: ((evt: unknown) => void) | undefined;
     mocks.registerCallbackHook.mockImplementation((_id: number, fn: (evt: unknown) => void) => {
@@ -2181,7 +2190,7 @@ describe("session_start tool", () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
     mocks.getAvailableColors.mockReturnValue(["🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]);
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
-    mocks.createSession.mockReturnValue({ sid: 2, pin: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟦", sessionsActive: 2 });
 
     let hookFn: ((evt: unknown) => void) | undefined;
     mocks.registerCallbackHook.mockImplementation((_id: number, fn: (evt: unknown) => void) => {
@@ -2234,7 +2243,7 @@ describe("reauth dialog auto-dismiss", () => {
     mocks.isPollerRunning.mockReturnValue(false);
     mocks.createSession.mockReturnValue({
       sid: 1,
-      pin: 123456,
+      suffix: 123456,
       name: "Primary",
       color: "🟦",
       sessionsActive: 1,
@@ -2248,7 +2257,7 @@ describe("reauth dialog auto-dismiss", () => {
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 123456, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 700 });
@@ -2276,7 +2285,7 @@ describe("reauth dialog auto-dismiss", () => {
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 123456, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 701 });
@@ -2336,7 +2345,7 @@ describe("handleSessionReconnect", () => {
   it("shows simple Approve/Deny dialog (reconnect_yes/reconnect_no), not color picker", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 123456, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 123456, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 12345, healthy: false,
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 800 });
@@ -2360,7 +2369,7 @@ describe("handleSessionReconnect", () => {
   it("approval flow: returns existing SID+token with action=reconnected", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 2, name: "Worker", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 2, pin: 654321, name: "Worker", color: "🟩",
+      sid: 2, suffix: 654321, name: "Worker", color: "🟩",
       createdAt: "2026-03-17", lastPollAt: 100, healthy: true,
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 801 });
@@ -2392,7 +2401,7 @@ describe("handleSessionReconnect", () => {
   it("operator dialog text is just the name — no explanation text", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
-      sid: 1, pin: 111111, name: "Overseer", color: "🟦",
+      sid: 1, suffix: 111111, name: "Overseer", color: "🟦",
       createdAt: "2026-03-17", lastPollAt: 100, healthy: false,
     });
     mocks.sendMessage.mockResolvedValueOnce({ message_id: 804 });
@@ -2413,7 +2422,7 @@ describe("handleSessionReconnect", () => {
 
   it("auto-approve skips dialog and returns reconnected", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 3, name: "Overseer", color: "🟦", createdAt: "2026-03-17" }]);
-    mocks.getSession.mockReturnValue({ sid: 3, pin: 301000, name: "Overseer", color: "🟦", healthy: true });
+    mocks.getSession.mockReturnValue({ sid: 3, suffix: 301000, name: "Overseer", color: "🟦", healthy: true });
     mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
     mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
 

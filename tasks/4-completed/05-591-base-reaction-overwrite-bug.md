@@ -41,6 +41,27 @@ registered. The base never hits the API on its own.
 Option C is cleanest — no race condition, no extra API calls, base is
 just a local state flag that the cleanup code uses as the restore target.
 
+## Mental Model
+
+There is ONE active in-flight reaction at the Telegram API level at any
+time. Below it is a LOCAL priority queue of virtual reactions. Only the
+top one is real (sent to API). Everything below is virtual until it
+surfaces.
+
+When the top reaction expires or is removed:
+1. Check the priority queue for the next item
+2. If found → send it to API (it becomes the new active in-flight)
+3. If queue empty → clear the reaction via API
+
+The base at -100 is always the bottom of the queue. It never fires its
+own API call — it only becomes real when everything above it clears.
+
+This must work for ALL permutations:
+- Single temporary → expires → base surfaces
+- Multiple temporaries in sequence → each visible for its duration → base surfaces last
+- Permanent reaction set → replaces everything (base still queued below)
+- Processing preset (👀 5s → 🤔 temp) → 👀 visible → 🤔 visible → base surfaces
+
 ## Acceptance Criteria
 
 - [ ] Temporary reaction stays visible for its full timeout duration
@@ -59,3 +80,14 @@ just a local state flag that the cleanup code uses as the restore target.
 ## Delegation
 
 Worker task. P0 priority — file immediately.
+
+## Completion
+
+Implemented Option C. Branch: `05-591-base-reaction-overwrite-bug`. Commit: `c70c9f0`.
+
+- `_insertBaseReaction` now calls only `markBaseReaction` — no API call.
+- `temp-reaction.ts` restore paths (`_fireRestoreForSlot`, `clearAllTempReactions`) check `hasBaseReaction(chatId, messageId)` when `restoreEmoji` is null; surface 👌 instead of clearing to `[]`.
+- Import of `hasBaseReaction` added to `temp-reaction.ts`.
+- New tests in `temp-reaction.test.ts`: base surfaces on timeout, base surfaces on outbound restore.
+- New test in `set_reaction.test.ts`: no API call for 👌 during temp period.
+- TypeScript build: PASS. Tests blocked by missing `node_modules` in worktree (pnpm install not permitted by hook — needs Overseer to run tests).
