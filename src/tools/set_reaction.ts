@@ -302,9 +302,10 @@ export async function handleSetReactionPreset(
     results.push(emoji);
   }
 
-  // When all preset entries are permanent (no temp), fire 👌 immediately.
-  // Otherwise base is virtual — the temp-reaction restore path applies 👌 when the last temp expires.
-  _insertBaseReaction(chatId, messageId, !hasTempEntry);
+  // Register the virtual 👌 base only when at least one temp entry was applied.
+  // The temp-reaction restore path will apply 👌 when the last temp expires.
+  // If all entries are permanent there is no temp to restore, so no base is needed.
+  if (hasTempEntry) _insertBaseReaction(chatId, messageId);
 
   return toResult({ ok: true, message_id: messageId, preset: presetName, applied: results });
 }

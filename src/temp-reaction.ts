@@ -8,7 +8,7 @@
  * Setting a new one appends to the list; `clearAllTempReactions` drains all.
  */
 
-import { getBotReaction, hasBaseReaction, clearBaseReaction } from "./message-store.js";
+import { getBotReaction, hasBaseReaction, clearBaseReaction, recordBotReaction } from "./message-store.js";
 import { resolveChat, trySetMessageReaction, getApi, type ReactionEmoji } from "./telegram.js";
 import { getCallerSid } from "./session-context.js";
 
@@ -112,9 +112,12 @@ async function _fireRestoreForSlot(sid: number, messageId: number): Promise<void
     // Consume the base registration (one-shot) before firing, so a concurrent
     // clearAllTempReactions on remaining slots does not fire a duplicate 👌 (Fix 3).
     if (baseActive && !restoreEmoji) clearBaseReaction(chatId, messageId);
-    void trySetMessageReaction(chatId, messageId, effectiveRestore).catch(() => undefined);
+    void trySetMessageReaction(chatId, messageId, effectiveRestore)
+      .then(ok => { if (ok) recordBotReaction(messageId, effectiveRestore); })
+      .catch(() => undefined);
   } else {
     await getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
+    recordBotReaction(messageId, "");
   }
 }
 
@@ -155,9 +158,13 @@ export async function clearAllTempReactions(sid: number): Promise<void> {
       // path) for any remaining slot on the same message does not fire a duplicate
       // 👌 API call (Fix 3).
       if (baseActive && !restoreEmoji) clearBaseReaction(chatId, messageId);
-      return trySetMessageReaction(chatId, messageId, effectiveRestore).catch(() => undefined);
+      return trySetMessageReaction(chatId, messageId, effectiveRestore)
+        .then(ok => { if (ok) recordBotReaction(messageId, effectiveRestore); })
+        .catch(() => undefined);
     } else {
-      return getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
+      return getApi().setMessageReaction(chatId, messageId, [])
+        .then(() => { recordBotReaction(messageId, ""); })
+        .catch(() => undefined);
     }
   }));
 }
