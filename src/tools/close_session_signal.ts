@@ -59,6 +59,14 @@ export async function handleCloseSessionSignal({
     await new Promise<void>((r) => setTimeout(r, 500));
   }
 
+  // Re-validate governor status after the wait — it may have changed during the polling window
+  if (getGovernorSid() !== callerSid) {
+    return toError({
+      code: "PERMISSION_DENIED",
+      message: "Governor status changed during wait — close aborted.",
+    });
+  }
+
   const result = closeSessionById(target_sid);
   void refreshGovernorCommand();
   return toResult({ signaled: true, closed: result.closed, sid: target_sid, reason: "force_closed_after_timeout" });
