@@ -121,6 +121,44 @@ describe("logEvent", () => {
       await flushCurrentLog(); // ensure clean state
     }
   });
+
+  it("concurrent flushCurrentLog calls serialize — no entries lost or interleaved", async () => {
+    // Track the order in which appendFile is called so we can verify sequencing.
+    const writeOrder: string[] = [];
+    fsMocks.appendFile.mockImplementation((_path: string, content: string) => {
+      // Record each line written (content may contain multiple NDJSON lines)
+      content.split('\n').filter(Boolean).forEach(line => writeOrder.push(line));
+    });
+
+    // Log several events without awaiting any flush
+    logEvent({ seq: 1 });
+    logEvent({ seq: 2 });
+    logEvent({ seq: 3 });
+
+    // Kick off multiple concurrent flushCurrentLog calls without awaiting
+    const f1 = flushCurrentLog();
+    const f2 = flushCurrentLog();
+    const f3 = flushCurrentLog();
+
+    // Add more events while flushes are in-flight
+    logEvent({ seq: 4 });
+    logEvent({ seq: 5 });
+
+    // Await all pending flushes plus one final drain
+    await Promise.all([f1, f2, f3]);
+    await flushCurrentLog();
+
+    // All five events must appear in the written output
+    const written = writeOrder.flatMap(line => [JSON.parse(line)]);
+    const seqs = written.map((e: { ts: string; event: { seq: number } }) => e.event.seq);
+    expect(seqs).toHaveLength(5);
+    expect(seqs).toEqual([1, 2, 3, 4, 5]);
+
+    // appendFile must never have been called concurrently — each call must have
+    // completed before the next started.  We verify this by checking that the
+    // recorded lines are strictly ordered and there was no duplication.
+    expect(new Set(seqs).size).toBe(5);
+  });
 });
 
 // ---------------------------------------------------------------------------
