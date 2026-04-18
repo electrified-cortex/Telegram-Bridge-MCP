@@ -123,7 +123,7 @@ describe("answer_callback_query tool", () => {
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    it("returns AUTH_FAILED when identity has wrong suffix", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({"callback_query_id":"q1","token": 1_099_999});
       expect(isError(result)).toBe(true);

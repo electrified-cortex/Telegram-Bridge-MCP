@@ -8,7 +8,7 @@ import type { TimelineEvent } from "../message-store.js";
 const sessionDefaults = new Map<number, number>();
 
 const mocks = vi.hoisted(() => ({
-  validateSession: vi.fn((_sid: number, _pin: number) => true),
+  validateSession: vi.fn((_sid: number, _suffix: number) => true),
   dequeueBatch: vi.fn((): TimelineEvent[] => []),
   pendingCount: vi.fn((): number => 0),
   waitForEnqueue: vi.fn((): Promise<void> => Promise.resolve()),
@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../session-manager.js", () => ({
-  validateSession: (sid: number, pin: number) => mocks.validateSession(sid, pin),
+  validateSession: (sid: number, suffix: number) => mocks.validateSession(sid, suffix),
   getDequeueDefault: (sid: number) => sessionDefaults.get(sid) ?? 300,
   setDequeueDefault: (sid: number, timeout: number) => { sessionDefaults.set(sid, timeout); },
   setActiveSession: (sid: number) => { mocks.setActiveSession(sid); },
@@ -124,7 +124,7 @@ describe("set_dequeue_default tool", () => {
     expect(text).toContain("SID_REQUIRED");
   });
 
-  it("returns AUTH_FAILED when pin does not match", async () => {
+  it("returns AUTH_FAILED when suffix does not match", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
     const result = await call({ token: 1_999_999, timeout: 300 });
     expect(isError(result)).toBe(true);

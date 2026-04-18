@@ -310,25 +310,71 @@ export function deliverDirectMessage(
 }
 
 /**
+ * A bundled service-message descriptor — `eventType` + `text` in one object.
+ * Use `SERVICE_MESSAGES` constants to get pre-built descriptors; pass one
+ * directly as the second argument to `deliverServiceMessage`.
+ */
+export interface ServiceMessageSpec {
+  eventType: string;
+  text: string;
+}
+
+/**
+ * Pre-built service-message descriptors for common session lifecycle events.
+ * Pass one directly to `deliverServiceMessage` instead of separate text/eventType args.
+ */
+export const SERVICE_MESSAGES = {
+  ONBOARDING_TOKEN_SAVE: {
+    eventType: "onboarding_token_save",
+    text: "Save your token. Write it to your session memory file now so you can reconnect after compaction or restart. You already have it from session/start.",
+  },
+  ONBOARDING_PROTOCOL: {
+    eventType: "onboarding_protocol",
+    text: "Signal activity. Never go silent between receiving a message and responding. React immediately on receipt: 🫡 = salute/received (permanent), 👀 = reading/processing (5s temp), 🤔 = thinking/working (temp, clears on send), 👍 = on it (permanent). Use show-typing before every text send. Use animations for long operations. The operator judges responsiveness by what they see, not what you do internally.",
+  },
+} as const satisfies Record<string, ServiceMessageSpec>;
+
+/**
  * Inject a server-generated service message into a session queue.
  * Returned events have `from: "system"` and `event: "service_message"`.
  * Returns false if the target queue does not exist.
+ *
+ * Accepts either:
+ *   - `deliverServiceMessage(sid, text, eventType, details?)` — individual args
+ *   - `deliverServiceMessage(sid, spec, details?)` — bundled `ServiceMessageSpec` object
+ *     e.g. `deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE)`
  */
 export function deliverServiceMessage(
   targetSid: number,
-  text: string,
-  eventType: string,
+  textOrSpec: string | ServiceMessageSpec,
+  eventTypeOrDetails?: string | Record<string, unknown>,
   details?: Record<string, unknown>,
 ): boolean {
   const q = _queues.get(targetSid);
   if (!q) return false;
+
+  let text: string;
+  let eventType: string;
+  let resolvedDetails: Record<string, unknown> | undefined;
+
+  if (typeof textOrSpec === "object") {
+    // Bundled spec form: deliverServiceMessage(sid, spec, details?)
+    text = textOrSpec.text;
+    eventType = textOrSpec.eventType;
+    resolvedDetails = eventTypeOrDetails as Record<string, unknown> | undefined;
+  } else {
+    // Individual args form: deliverServiceMessage(sid, text, eventType, details?)
+    text = textOrSpec;
+    eventType = eventTypeOrDetails as string;
+    resolvedDetails = details;
+  }
 
   const event: TimelineEvent = {
     id: _nextServiceId--,
     timestamp: new Date().toISOString(),
     event: "service_message",
     from: "system",
-    content: { type: "service", text, event_type: eventType, ...(details && { details }) },
+    content: { type: "service", text, event_type: eventType, ...(resolvedDetails && { details: resolvedDetails }) },
     sid: 0,
   };
 

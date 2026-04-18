@@ -46,3 +46,24 @@ should say and why.
 ## Delegation
 
 Worker task. Mechanical refactoring — no content changes.
+
+## Completion
+
+**Branch:** `10-service-message-constants-refactor` (off `dev`)
+**Commit:** `5917036` — `refactor: extract service message strings into constants file`
+
+### What was done
+
+- Created `src/service-messages.ts` with two exports:
+  - `SERVICE_EVENT_TYPES` — 17 event type string constants
+  - `SERVICE_MESSAGES` — static and dynamic (arrow function) message constants
+- Updated 6 files to replace all inline `deliverServiceMessage` strings with constant references:
+  `session_start.ts`, `built-in-commands.ts`, `session-teardown.ts`, `health-check.ts`, `shutdown.ts`, `behavior-tracker.ts`
+- No message content changed; all 2367 tests pass; lint clean
+
+### Review findings addressed
+
+- Removed local `ONBOARDING_BUTTONS_TEXT` re-alias in `session_start.ts` (now uses `SERVICE_MESSAGES.*` directly)
+- Renamed `SERVICE_MESSAGES.GOVERNOR_CHANGED` → `GOVERNOR_CHANGED_MSG` to avoid name collision with `SERVICE_EVENT_TYPES.GOVERNOR_CHANGED`
+
+**Awaiting Overseer push + PR creation.**

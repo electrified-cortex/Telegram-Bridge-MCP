@@ -88,7 +88,7 @@ describe("list_reminders tool", () => {
       expect(parseResult(result).code).toBe("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED on invalid PIN", async () => {
+    it("returns AUTH_FAILED on invalid token", async () => {
       mocks.validateSession.mockReturnValue(false);
       const result = await call({ token: 1000000 });
       expect(isError(result)).toBe(true);

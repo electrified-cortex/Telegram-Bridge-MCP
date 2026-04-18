@@ -29,7 +29,7 @@ vi.mock("../session-gate.js", () => ({
 
 import { register } from "./list_sessions.js";
 
-// A valid encoded token for sid=1, pin=123456: 1 * 1_000_000 + 123456 = 1_123_456
+// A valid encoded token for sid=1, suffix=123456: 1 * 1_000_000 + 123456 = 1_123_456
 const VALID_TOKEN = 1_123_456;
 
 describe("list_sessions tool", () => {

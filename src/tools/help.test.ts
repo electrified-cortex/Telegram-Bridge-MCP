@@ -152,7 +152,7 @@ describe("help tool", () => {
   });
 
   describe("topic: 'identity'", () => {
-    const VALID_TOKEN = 1123456; // sid=1, pin=123456
+    const VALID_TOKEN = 1123456; // sid=1, suffix=123456
 
     it("returns bot info + mcp metadata when token is valid", async () => {
       const bot = { id: 1, is_bot: true, first_name: "Bot", username: "test_bot" };
