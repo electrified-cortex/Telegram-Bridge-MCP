@@ -118,6 +118,7 @@ The following help topics must exist for breadcrumbs to resolve:
 ### help('reactions') Content Requirements
 
 Must cover:
+
 - Reactions are acknowledgments, not action triggers
 - Voice messages auto-saluted on dequeue — single-slot replacement
 - Processing preset is ideal for audio messages

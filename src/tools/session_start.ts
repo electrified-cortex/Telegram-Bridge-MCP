@@ -5,7 +5,7 @@ import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
 import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "../session-manager.js";
-import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, deliverReminderEvent, getSessionQueue } from "../session-queue.js";
+import { createSessionQueue, removeSessionQueue, deliverServiceMessage, SERVICE_MESSAGES, trackMessageOwner, deliverReminderEvent, getSessionQueue } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
 import { runInSessionContext } from "../session-context.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
@@ -223,9 +223,9 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 
 const DESCRIPTION =
   "Call once at the start of every session. Creates a fresh session " +
-  "with a unique ID and PIN. Fresh sessions auto-drain pending messages. " +
+  "with a unique ID and token. Fresh sessions auto-drain pending messages. " +
   "If you lost your token (context loss, crash), use action(type: 'session/reconnect', ...) instead. " +
-  "Returns { token, sid, pin, sessions_active, action, pending } so " +
+  "Returns { token, sid, suffix, sessions_active, action, pending } so " +
   "you have the token and context without extra steps. " +
   "Call help() first to load the API guide, then call action(type: 'session/start', ...) to join.";
 
@@ -298,11 +298,11 @@ export async function handleSessionStart({ name, color }: { name: string; color?
         let discarded = 0;
         while (dequeue() !== undefined) discarded++;
 
-        const sessionToken = session.sid * 1_000_000 + session.pin;
+        const sessionToken = session.sid * 1_000_000 + session.suffix;
         const res: Record<string, unknown> = {
           token: sessionToken,
           sid: session.sid,
-          pin: session.pin,
+          suffix: session.suffix,
           sessions_active: session.sessionsActive,
           action: "fresh",
           pending: 0,
@@ -331,14 +331,14 @@ export async function handleSessionStart({ name, color }: { name: string; color?
             "session_orientation",
             { sid: session.sid, name: effectiveName, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
           );
-          deliverServiceMessage(session.sid, "Save your token. Write it to your session memory file now so you can reconnect after compaction or restart. Token = sid * 1_000_000 + pin. You already have it from session/start.", "onboarding_token_save");
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE);
           // First session is always governor — no ternary needed.
           deliverServiceMessage(
             session.sid,
             "You are the governor (primary session). The operator is aware of your presence. Announce yourself in chat if you wish — or stay silent until messaged. Use help('send') for communication options. Route ambiguous messages here; participant sessions DM you, not the operator.",
             "onboarding_role",
           );
-          deliverServiceMessage(session.sid, "Signal activity. Never go silent between receiving a message and responding. React immediately on receipt: 🫡 = salute/received (permanent), 👀 = reading/processing (5s temp), 🤔 = thinking/working (temp, clears on send), 👍 = on it (permanent). Use show-typing before every text send. Use animations for long operations. The operator judges responsiveness by what they see, not what you do internally.", "onboarding_protocol");
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_PROTOCOL);
           deliverServiceMessage(session.sid, ONBOARDING_BUTTONS_TEXT, "onboarding_buttons");
         } else if (session.sessionsActive > 1) {
           const allSessions = listSessions();
@@ -404,10 +404,10 @@ export async function handleSessionStart({ name, color }: { name: string; color?
             "session_orientation",
             { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
           );
-          deliverServiceMessage(session.sid, "Save your token. Write it to your session memory file now so you can reconnect after compaction or restart. Token = sid * 1_000_000 + pin. You already have it from session/start.", "onboarding_token_save");
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE);
           // session_orientation already carries role info (governor vs participant) for multi-session.
           // Skip onboarding_role here to avoid duplication.
-          deliverServiceMessage(session.sid, "Signal activity. Never go silent between receiving a message and responding. React immediately on receipt: 🫡 = salute/received (permanent), 👀 = reading/processing (5s temp), 🤔 = thinking/working (temp, clears on send), 👍 = on it (permanent). Use show-typing before every text send. Use animations for long operations. The operator judges responsiveness by what they see, not what you do internally.", "onboarding_protocol");
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_PROTOCOL);
           deliverServiceMessage(session.sid, ONBOARDING_BUTTONS_TEXT, "onboarding_buttons");
         }
         void refreshGovernorCommand();
@@ -451,7 +451,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     });
   }
 
-  // Get full session object (listSessions omits PIN)
+  // Get full session object (listSessions omits token suffix)
   const fullSession = getSession(existing.sid);
   if (!fullSession) {
     return toError({
@@ -538,7 +538,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     deliverReminderEvent(existing.sid, buildReminderEvent(r));
   }
 
-  const reconToken = fullSession.sid * 1_000_000 + fullSession.pin;
+  const reconToken = fullSession.sid * 1_000_000 + fullSession.suffix;
   return toResult({
     token: reconToken,
     sid: fullSession.sid,

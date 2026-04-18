@@ -86,7 +86,7 @@ function cbUpdate(targetMsgId: number, data: string, qid = "qid1") {
 // ---------------------------------------------------------------------------
 
 let sid: number;
-let pin: number;
+let suffix: number;
 let token: number;
 let handlers: {
   ask: ToolHandler;
@@ -111,8 +111,8 @@ describe("signal abort — interactive tools", () => {
 
     const session = createSession("Aborter");
     sid = session.sid;
-    pin = session.pin;
-    token = sid * 1_000_000 + pin;
+    suffix = session.suffix;
+    token = sid * 1_000_000 + suffix;
     setActiveSession(sid);
     createSessionQueue(sid);
 

@@ -18,10 +18,18 @@ Operator observed a Worker complete a checklist that had some items with a stop-
 
 ## Acceptance Criteria
 
-- [ ] Checklist completion logic inspects item statuses before choosing the badge
-- [ ] All items passed → ✅ Complete
-- [ ] Any items failed/rejected → 🔴 Failed (with count)
-- [ ] Any items skipped (but none failed) → 🟡 Incomplete (with count)
-- [ ] Badge text includes summary (e.g., "✅ Complete 7/7" or "🟡 Incomplete 5/7 — 2 skipped")
-- [ ] Never use ❌ (red X) — operator dislikes it
-- [ ] Tests cover all three completion states
+- [x] Checklist completion logic inspects item statuses before choosing the badge
+- [x] All items passed → ✅ Complete N/N
+- [x] Any items failed/rejected → 🔴 Failed (with counts)
+- [x] Any items skipped (but none failed) → 🟡 Incomplete (with counts)
+- [x] Badge text includes summary
+- [x] Never use ❌
+- [x] Tests cover all three completion states (plus failed+skipped mix)
+
+## Completion
+
+**Completed:** 2026-04-18
+**Branch:** `20-471-checklist-badge` (Telegram MCP)
+**Commit:** `832d1a0`
+
+**Changes:** `src/tools/send_new_checklist.ts` — added `completionBadge()` function; replaced hardcoded `"✅ Complete"` with computed badge. Tests added for all states.

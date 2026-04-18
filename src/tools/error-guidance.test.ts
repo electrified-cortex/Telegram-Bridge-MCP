@@ -184,7 +184,7 @@ vi.mock("./confirm.js", () => ({ handleConfirm: vi.fn() }));
 import { register as registerSend } from "./send.js";
 import { register as registerAction } from "./action.js";
 
-const TOKEN = 1_123_456; // sid=1, pin=123456
+const TOKEN = 1_123_456; // sid=1, suffix=123456
 const VALID_TOKEN = 1_123_456;
 
 // ─────────────────────────────────────────────────────────────────────────────

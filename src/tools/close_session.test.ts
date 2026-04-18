@@ -533,7 +533,7 @@ describe("close_session tool", () => {
   // Self-close regression (Task 150)
   // Root cause: "close_session currently disabled" was reported by an AI agent
   // (client-side reasoning), NOT by the server. The server never disables this
-  // tool — it is always registered with enabled: true and accepts any SID+PIN,
+  // tool — it is always registered with enabled: true and accepts any SID+token,
   // including a session closing itself with its own credentials.
   // =========================================================================
 

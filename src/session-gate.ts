@@ -16,7 +16,7 @@ export function setAuthHook(fn: (sid: number) => void): void {
  * Resolves and authenticates the session for a tool call.
  *
  * Pass the `token` integer from the tool args. Always required.
- * token = sid * 1_000_000 + pin  (from session_start)
+ * token = sid * 1_000_000 + suffix  (from session_start)
  *
  * - Omitted → `SID_REQUIRED` error.
  * - Provided but invalid → `AUTH_FAILED` error.
@@ -35,11 +35,11 @@ export function requireAuth(
     return {
       code: "SID_REQUIRED",
       message: "token is required. Pass the token returned by action(type: 'session/start', ...). " +
-        "token = sid * 1_000_000 + pin. Example: token: 1000123456",
+        "token = sid * 1_000_000 + suffix. Example: token: 1000123456",
     };
   }
-  const { sid, pin } = decodeToken(token);
-  if (!validateSession(sid, pin)) {
+  const { sid, suffix } = decodeToken(token);
+  if (!validateSession(sid, suffix)) {
     return {
       code: "AUTH_FAILED",
       message: "Invalid token. Double-check you have the right token. If this happened mid-session, your session may have closed or restarted — call action(type: 'session/reconnect', name: '<your name>') to re-request.",
