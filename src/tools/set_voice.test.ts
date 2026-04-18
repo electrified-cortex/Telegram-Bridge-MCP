@@ -86,7 +86,7 @@ describe("set_voice tool", () => {
       expect(data.code).toBe("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    it("returns AUTH_FAILED when identity has wrong suffix", async () => {
       mocks.validateSession.mockReturnValue(false);
       const result = await call({ voice: "alloy", token: 1999999 });
       expect(isError(result)).toBe(true);

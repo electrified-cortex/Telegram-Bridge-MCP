@@ -60,7 +60,7 @@ describe("delete_log tool", () => {
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when token has wrong PIN", async () => {
+    it("returns AUTH_FAILED when token has wrong suffix", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({ token: 1099999, filename: "2025-04-05T143022.json" });
       expect(isError(result)).toBe(true);

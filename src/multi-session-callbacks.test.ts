@@ -98,10 +98,10 @@ function cbUpdate(targetMsgId: number, data: string, qid = "qid1") {
 // ---------------------------------------------------------------------------
 
 let sid1: number;
-let pin1: number;
+let suffix1: number;
 let token1: number;
 let sid2: number;
-let pin2: number;
+let suffix2: number;
 let token2: number;
 let handlers: {
   confirm: ToolHandler;
@@ -128,11 +128,11 @@ describe("multi-session callback isolation", () => {
     const session1 = createSession("Alpha");
     const session2 = createSession("Beta");
     sid1 = session1.sid;
-    pin1 = session1.pin;
-    token1 = sid1 * 1_000_000 + pin1;
+    suffix1 = session1.suffix;
+    token1 = sid1 * 1_000_000 + suffix1;
     sid2 = session2.sid;
-    pin2 = session2.pin;
-    token2 = sid2 * 1_000_000 + pin2;
+    suffix2 = session2.suffix;
+    token2 = sid2 * 1_000_000 + suffix2;
     setActiveSession(sid1);
     createSessionQueue(sid1);
     createSessionQueue(sid2);

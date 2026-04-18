@@ -19,8 +19,8 @@ import {
   getIdleSessions,
 } from "./session-manager.js";
 
-interface SessionWithoutPin {
-  pin?: unknown;
+interface SessionWithoutSuffix {
+  suffix?: unknown;
 }
 
 beforeEach(() => {
@@ -37,19 +37,19 @@ describe("createSession", () => {
     expect(c.sid).toBe(3);
   });
 
-  it("generates a 6-digit numeric PIN", () => {
+  it("generates a 6-digit numeric token suffix", () => {
     const s = createSession();
-    expect(s.pin).toBeGreaterThanOrEqual(100_000);
-    expect(s.pin).toBeLessThanOrEqual(999_999);
+    expect(s.suffix).toBeGreaterThanOrEqual(100_000);
+    expect(s.suffix).toBeLessThanOrEqual(999_999);
   });
 
-  it("generates unique PINs across sessions", () => {
-    const pins = new Set<number>();
+  it("generates unique token suffixes across sessions", () => {
+    const suffixes = new Set<number>();
     for (let i = 0; i < 20; i++) {
-      pins.add(createSession().pin);
+      suffixes.add(createSession().suffix);
     }
-    // With 900k possible PINs, 20 should all be unique
-    expect(pins.size).toBe(20);
+    // With 900k possible suffixes, 20 should all be unique
+    expect(suffixes.size).toBe(20);
   });
 
   it("stores an optional session name", () => {
@@ -69,13 +69,13 @@ describe("createSession", () => {
     expect(b.sessionsActive).toBe(2);
   });
 
-  it("never assigns the same PIN to two concurrent sessions", () => {
-    // Create many sessions and verify no two share a PIN
-    const pins = new Set<number>();
+  it("never assigns the same token suffix to two concurrent sessions", () => {
+    // Create many sessions and verify no two share a suffix
+    const suffixes = new Set<number>();
     for (let i = 0; i < 20; i++) {
       const s = createSession();
-      expect(pins.has(s.pin)).toBe(false);
-      pins.add(s.pin);
+      expect(suffixes.has(s.suffix)).toBe(false);
+      suffixes.add(s.suffix);
     }
   });
 });
@@ -140,7 +140,7 @@ describe("getSession", () => {
     const got = getSession(created.sid);
     expect(got).toBeDefined();
     expect(got!.sid).toBe(created.sid);
-    expect(got!.pin).toBe(created.pin);
+    expect(got!.suffix).toBe(created.suffix);
     expect(got!.name).toBe("worker");
   });
 
@@ -156,14 +156,14 @@ describe("getSession", () => {
 });
 
 describe("validateSession", () => {
-  it("returns true for valid sid + pin", () => {
+  it("returns true for valid sid + suffix", () => {
     const s = createSession();
-    expect(validateSession(s.sid, s.pin)).toBe(true);
+    expect(validateSession(s.sid, s.suffix)).toBe(true);
   });
 
-  it("returns false for wrong PIN", () => {
+  it("returns false for wrong suffix", () => {
     const s = createSession();
-    expect(validateSession(s.sid, s.pin + 1)).toBe(false);
+    expect(validateSession(s.sid, s.suffix + 1)).toBe(false);
   });
 
   it("returns false for nonexistent session", () => {
@@ -173,7 +173,7 @@ describe("validateSession", () => {
   it("returns false for closed session", () => {
     const s = createSession();
     closeSession(s.sid);
-    expect(validateSession(s.sid, s.pin)).toBe(false);
+    expect(validateSession(s.sid, s.suffix)).toBe(false);
   });
 });
 
@@ -234,11 +234,11 @@ describe("listSessions", () => {
     expect(list[0].name).toBe("beta");
   });
 
-  it("does not expose PINs", () => {
+  it("does not expose token suffix", () => {
     createSession();
     const list = listSessions();
-    const first = list[0] as unknown as SessionWithoutPin;
-    expect(first.pin).toBeUndefined();
+    const first = list[0] as unknown as SessionWithoutSuffix;
+    expect(first.suffix).toBeUndefined();
   });
 });
 
@@ -359,14 +359,14 @@ describe("health tracking", () => {
       vi.useRealTimers();
     });
 
-    it("does not expose PINs", () => {
+    it("does not expose token suffix", () => {
       vi.useFakeTimers();
       const s = createSession("alpha");
       touchSession(s.sid);
       vi.advanceTimersByTime(400_000);
       const result = getUnhealthySessions(360_000);
-      const first = result[0] as unknown as SessionWithoutPin;
-      expect(first.pin).toBeUndefined();
+      const first = result[0] as unknown as SessionWithoutSuffix;
+      expect(first.suffix).toBeUndefined();
       vi.useRealTimers();
     });
 

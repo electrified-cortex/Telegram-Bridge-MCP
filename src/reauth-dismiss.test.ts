@@ -19,7 +19,7 @@ vi.mock("./session-manager.js", () => ({
   touchSession: (sid: number) => mocks.touchSession(sid),
   getSessionReauthDialogMsgId: (sid: number) => mocks.getSessionReauthDialogMsgId(sid),
   clearSessionReauthDialogMsgId: (sid: number) => mocks.clearSessionReauthDialogMsgId(sid),
-  validateSession: (sid: number, pin: number) => mocks.validateSession(sid, pin),
+  validateSession: (sid: number, suffix: number) => mocks.validateSession(sid, suffix),
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
@@ -65,8 +65,8 @@ describe("auth hook — reauth dialog auto-dismiss", () => {
     // Simulate a successful auth by calling requireAuth with a valid token
     const { requireAuth } = await import("./session-gate.js");
     const sid = 3;
-    const pin = 456789;
-    const token = sid * 1_000_000 + pin;
+    const suffix = 456789;
+    const token = sid * 1_000_000 + suffix;
     mocks.validateSession.mockReturnValue(true);
 
     const result = requireAuth(token);
@@ -95,8 +95,8 @@ describe("auth hook — reauth dialog auto-dismiss", () => {
 
     const { requireAuth } = await import("./session-gate.js");
     const sid = 2;
-    const pin = 111111;
-    const token = sid * 1_000_000 + pin;
+    const suffix = 111111;
+    const token = sid * 1_000_000 + suffix;
     mocks.validateSession.mockReturnValue(true);
 
     const result = requireAuth(token);
@@ -124,8 +124,8 @@ describe("auth hook — reauth dialog auto-dismiss", () => {
 
     const { requireAuth } = await import("./session-gate.js");
     const sid = 4;
-    const pin = 222222;
-    const token = sid * 1_000_000 + pin;
+    const suffix = 222222;
+    const token = sid * 1_000_000 + suffix;
     mocks.validateSession.mockReturnValue(true);
 
     const result = requireAuth(token);

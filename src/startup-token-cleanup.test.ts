@@ -18,7 +18,7 @@ vi.mock("./telegram.js", () => ({
 
 // ── Import after mocks ─────────────────────────────────────
 
-import { cleanupStalePins } from "./startup-pin-cleanup.js";
+import { cleanupStalePins } from "./startup-token-cleanup.js";
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -78,13 +78,13 @@ describe("cleanupStalePins", () => {
     expect(mocks.unpinChatMessage).toHaveBeenNthCalledWith(2, 42, 100);
   });
 
-  it("does NOT unpin a pin sent by a non-bot (operator pin)", async () => {
+  it("does NOT unpin a message sent by a non-bot (operator pinned message)", async () => {
     mocks.getChat.mockResolvedValue({ id: 42, pinned_message: makeOperatorPin(50, "Important team note") });
     await cleanupStalePins();
     expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
 
-  it("stops at the first non-bot pin even if stale pins were cleaned before it", async () => {
+  it("stops at the first non-bot pinned message even if stale announcements were cleaned before it", async () => {
     mocks.getChat
       .mockResolvedValueOnce({ id: 42, pinned_message: makeBotPin(300, "Session 3 — 🟢 Online") })
       .mockResolvedValueOnce({ id: 42, pinned_message: makeOperatorPin(50, "Project kick-off notes") });
