@@ -25,7 +25,20 @@ reference to the in-flight flush.
 
 ## Acceptance Criteria
 
-- [ ] `_flush()` serializes correctly — no concurrent writes to the same file
-- [ ] `_flushPromise` chains rather than overwrites
-- [ ] Existing tests pass
-- [ ] New test verifying concurrent flush calls don't interleave
+- [x] `_flush()` serializes correctly — no concurrent writes to the same file
+- [x] `_flushPromise` chains rather than overwrites
+- [x] Existing tests pass
+- [x] New test verifying concurrent flush calls don't interleave
+
+## Completion
+
+**Branch:** `30-473-locallog-flush-race` (off `dev`)
+**Commit:** `c448a5b` — `fix(local-log): serialize concurrent flushes via promise chaining`
+
+### What was done
+
+- `src/local-log.ts`: extracted `_actualFlush()` from `_flush()`; all flush paths chain via `_flushPromise = _flushPromise.then(_actualFlush)` instead of overwriting; `_flushTimer = null` moved to timer callback
+- `src/local-log.test.ts`: new concurrent test — 3 concurrent `flushCurrentLog()` calls + 2 more events mid-flight; verifies all 5 entries appear in order with no duplicates
+- All 2368 tests pass, lint clean
+
+**Awaiting Overseer push + PR creation.**

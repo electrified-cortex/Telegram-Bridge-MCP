@@ -42,3 +42,17 @@ Shared middleware that checks all incoming tool parameters against the tool's sc
 ## Origin
 
 Operator directive during session 2026-04-11. Originally item 12 on task 10-485 but operator designated as backlog (v6.1/6.2), not v6.0.3 scope.
+
+## Completion
+
+**Branch:** `20-490-unknown-param-warning` (off `dev`)
+**Commit:** `f49d58d` — `feat(middleware): unknown parameter warning on all tool calls`
+
+### What was done
+
+- `src/unknown-param-warning.ts`: new module with `checkUnknownParams()` (strips unknown keys, builds warning string) and `injectWarningIntoResult()` (merges warning into MCP response envelope)
+- `src/server.ts`: wired into `registerTool` wrapper — known params extracted once at registration, checked on every call; `cleanArgs` forwarded to all downstream handlers
+- `src/unknown-param-warning.test.ts`: 18 new tests covering single/multiple unknown params, grammar, sorted accepted list, existing warning prepend, malformed payloads
+- All 2385 tests pass, lint clean
+
+**Awaiting Overseer push + PR creation.**
