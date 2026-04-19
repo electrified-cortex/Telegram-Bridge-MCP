@@ -22,6 +22,8 @@
  * Cap: max 5 nudges per session total. After cap, tracker stops injecting.
  */
 
+import { SERVICE_MESSAGES } from "./service-messages.js";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -178,10 +180,14 @@ function canNudge(state: SessionBehaviorState): boolean {
 }
 
 /** Inject a nudge and increment the session's nudge counter. */
-function inject(sid: number, state: SessionBehaviorState, text: string, eventType: string): void {
+function inject(
+  sid: number,
+  state: SessionBehaviorState,
+  entry: { text: string; eventType: string },
+): void {
   if (!canNudge(state)) return;
   state.nudgeCount++;
-  _nudgeInjector(sid, text, eventType);
+  _nudgeInjector(sid, entry.text, entry.eventType);
 }
 
 // ---------------------------------------------------------------------------
@@ -206,12 +212,7 @@ export function recordDequeue(sid: number, hasUserMessage: boolean, now: number 
     state.firstUserMessageSeen = true;
     if (!state.firstMessageNudgeFired && canNudge(state)) {
       state.firstMessageNudgeFired = true;
-      inject(
-        sid,
-        state,
-        "This is your first message from the operator. React to acknowledge (message_id is in the update). 👀 = processing, 👍 = on it.",
-        "behavior_nudge_first_message",
-      );
+      inject(sid, state, SERVICE_MESSAGES.NUDGE_FIRST_MESSAGE);
     }
   }
 
@@ -238,12 +239,7 @@ export function recordDequeue(sid: number, hasUserMessage: boolean, now: number 
   // --- Gap nudge ---
   if (!state.gapNudgeFired && state.slowGapCount >= CONSECUTIVE_SLOW_FOR_NUDGE && canNudge(state)) {
     state.gapNudgeFired = true;
-    inject(
-      sid,
-      state,
-      `The operator waited ${state.lastGapSeconds}s with no feedback. Signal activity sooner.`,
-      "behavior_nudge_slow_gap",
-    );
+    inject(sid, state, SERVICE_MESSAGES.NUDGE_SLOW_GAP);
   }
 }
 
@@ -308,12 +304,7 @@ export function recordSend(sid: number, now: number = Date.now()): void {
     const rate = state.typingBeforeSendCount / state.sendCount;
     if (rate < TYPING_RATE_THRESHOLD && canNudge(state)) {
       state.typingNudgeFired = true;
-      inject(
-        sid,
-        state,
-        "Use show_typing after receiving messages to signal you're working.",
-        "behavior_nudge_typing_rate",
-      );
+      inject(sid, state, SERVICE_MESSAGES.NUDGE_TYPING_RATE);
     }
   }
 }
@@ -365,22 +356,12 @@ export function recordOutboundText(sid: number, text: string): void {
 
   if (!state.questionHintFired && state.questionWithoutButtonCount === 1 && canNudge(state)) {
     state.questionHintFired = true;
-    inject(
-      sid,
-      state,
-      "Tip: for yes/no or finite-choice questions, use action(type: \"confirm/yn\") or choose() — the operator can tap rather than type.",
-      "behavior_nudge_question_hint",
-    );
+    inject(sid, state, SERVICE_MESSAGES.NUDGE_QUESTION_HINT);
   }
 
   if (!state.questionEscalationFired && state.questionWithoutButtonCount >= 10 && canNudge(state)) {
     state.questionEscalationFired = true;
-    inject(
-      sid,
-      state,
-      "You've sent 10+ questions without buttons. Use action(type: \"confirm/ok-cancel\"), action(type: \"confirm/yn\"), or choose() for any predictable-answer question.",
-      "behavior_nudge_question_escalation",
-    );
+    inject(sid, state, SERVICE_MESSAGES.NUDGE_QUESTION_ESCALATION);
   }
 }
 

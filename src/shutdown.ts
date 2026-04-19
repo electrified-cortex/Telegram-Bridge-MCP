@@ -2,6 +2,7 @@ import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
 import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { listSessions, getSessionAnnouncementMessage } from "./session-manager.js";
 import { deliverServiceMessage, notifySessionWaiters } from "./session-queue.js";
+import { SERVICE_MESSAGES } from "./service-messages.js";
 import { closeSessionById } from "./session-teardown.js";
 import { getSessionLogMode } from "./config.js";
 import { flushCurrentLog, isLoggingEnabled, rollLog } from "./local-log.js";
@@ -89,13 +90,8 @@ export async function elegantShutdown(): Promise<never> {
   }
 
   // Notify all active sessions via their DM queues
-  const shutdownMsg = "⛔ Server shutting down. Your session will be invalidated on restart.";
   for (const s of sessions) {
-    deliverServiceMessage(
-      s.sid,
-      shutdownMsg,
-      "shutdown",
-    );
+    deliverServiceMessage(s.sid, SERVICE_MESSAGES.SHUTDOWN);
   }
   // Wake up any agents blocked in dequeue
   notifySessionWaiters();

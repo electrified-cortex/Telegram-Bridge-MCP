@@ -311,8 +311,9 @@ export function deliverDirectMessage(
 
 /**
  * A bundled service-message descriptor — `eventType` + `text` in one object.
- * Use `SERVICE_MESSAGES` constants to get pre-built descriptors; pass one
- * directly as the second argument to `deliverServiceMessage`.
+ * Pass a static `SERVICE_MESSAGES.*` entry (from `service-messages.ts`) directly
+ * as the second argument to `deliverServiceMessage` to avoid duplicating
+ * `.text` / `.eventType` at every call site.
  */
 export interface ServiceMessageSpec {
   eventType: string;
@@ -320,33 +321,31 @@ export interface ServiceMessageSpec {
 }
 
 /**
- * Pre-built service-message descriptors for common session lifecycle events.
- * Pass one directly to `deliverServiceMessage` instead of separate text/eventType args.
- */
-export const SERVICE_MESSAGES = {
-  ONBOARDING_TOKEN_SAVE: {
-    eventType: "onboarding_token_save",
-    text: "Save your token. Write it to your session memory file now so you can reconnect after compaction or restart. You already have it from session/start.",
-  },
-  ONBOARDING_PROTOCOL: {
-    eventType: "onboarding_protocol",
-    text: "Signal activity. Never go silent between receiving a message and responding. React immediately on receipt: 🫡 = salute/received (permanent), 👀 = reading/processing (5s temp), 🤔 = thinking/working (temp, clears on send), 👍 = on it (permanent). Use show-typing before every text send. Use animations for long operations. The operator judges responsiveness by what they see, not what you do internally.",
-  },
-} as const satisfies Record<string, ServiceMessageSpec>;
-
-/**
  * Inject a server-generated service message into a session queue.
  * Returned events have `from: "system"` and `event: "service_message"`.
  * Returns false if the target queue does not exist.
  *
- * Accepts either:
- *   - `deliverServiceMessage(sid, text, eventType, details?)` — individual args
- *   - `deliverServiceMessage(sid, spec, details?)` — bundled `ServiceMessageSpec` object
- *     e.g. `deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE)`
+ * Two forms:
+ *   - `deliverServiceMessage(sid, entry, details?)` — bundled entry form;
+ *     pass a `SERVICE_MESSAGES.*` entry (or any `ServiceMessageSpec`) directly.
+ *   - `deliverServiceMessage(sid, text, eventType, details?)` — raw-string form;
+ *     used when the entry's `text` is a function (dynamic) and the caller
+ *     already invoked it, or for inline one-off messages.
  */
 export function deliverServiceMessage(
   targetSid: number,
-  textOrSpec: string | ServiceMessageSpec,
+  entry: ServiceMessageSpec,
+  details?: Record<string, unknown>,
+): boolean;
+export function deliverServiceMessage(
+  targetSid: number,
+  text: string,
+  eventType: string,
+  details?: Record<string, unknown>,
+): boolean;
+export function deliverServiceMessage(
+  targetSid: number,
+  textOrEntry: string | ServiceMessageSpec,
   eventTypeOrDetails?: string | Record<string, unknown>,
   details?: Record<string, unknown>,
 ): boolean {
@@ -357,14 +356,14 @@ export function deliverServiceMessage(
   let eventType: string;
   let resolvedDetails: Record<string, unknown> | undefined;
 
-  if (typeof textOrSpec === "object") {
-    // Bundled spec form: deliverServiceMessage(sid, spec, details?)
-    text = textOrSpec.text;
-    eventType = textOrSpec.eventType;
+  if (typeof textOrEntry === "object") {
+    // Bundled entry form: deliverServiceMessage(sid, entry, details?)
+    text = textOrEntry.text;
+    eventType = textOrEntry.eventType;
     resolvedDetails = eventTypeOrDetails as Record<string, unknown> | undefined;
   } else {
-    // Individual args form: deliverServiceMessage(sid, text, eventType, details?)
-    text = textOrSpec;
+    // Raw-string form: deliverServiceMessage(sid, text, eventType, details?)
+    text = textOrEntry;
     eventType = eventTypeOrDetails as string;
     resolvedDetails = details;
   }

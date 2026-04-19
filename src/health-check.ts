@@ -21,6 +21,7 @@ import {
 } from "./session-manager.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
 import { deliverDirectMessage, deliverServiceMessage } from "./session-queue.js";
+import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getApi, getRawApi, resolveChat, sendServiceMessage } from "./telegram.js";
 import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
@@ -139,8 +140,8 @@ async function sendGovernorPrompt(
       if (s.sid === targetSid) continue; // already notified via DM above
       deliverServiceMessage(
         s.sid,
-        `Governor switched: '${targetName}' (SID ${targetSid}) is now the primary session.`,
-        "governor_changed",
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.text(targetSid, targetName),
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.eventType,
         { new_governor_sid: targetSid, new_governor_name: targetName },
       );
     }

@@ -21,6 +21,10 @@
 
 - `shutdown` MCP tool: now bypasses the pending-message guard and exits immediately when no sessions are active (pending items cannot be processed without a session to route to); the guard still applies when one or more sessions exist
 
+### Changed
+
+- Service message content rewrite: all `SERVICE_MESSAGES` constant values rewritten to ultra-compressed spec — minimum words, help() breadcrumbs, no pin/formula references; consolidated 6 governor-change variants to single `GOVERNOR_CHANGED`; added `SESSION_JOINED` and `ONBOARDING_ROLE_PARTICIPANT` messages
+
 ### Fixed
 
 - `set_reaction` with a `reactions` array: permanent base layer no longer makes its own redundant API call when a temporary overlay is active — the base is registered virtually and applied only when the last temporary reaction expires (`_fireRestoreForSlot` / `clearAllTempReactions`). `getBotReaction(messageId)` is now updated after each restore or clear so the bot reaction index remains accurate.

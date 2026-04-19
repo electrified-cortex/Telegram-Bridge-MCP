@@ -5,8 +5,9 @@ import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
 import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "../session-manager.js";
-import { createSessionQueue, removeSessionQueue, deliverServiceMessage, SERVICE_MESSAGES, trackMessageOwner, deliverReminderEvent, getSessionQueue } from "../session-queue.js";
+import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, deliverReminderEvent, getSessionQueue } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
+import { SERVICE_MESSAGES } from "../service-messages.js";
 import { runInSessionContext } from "../session-context.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
 import { checkAndConsumeAutoApprove } from "../auto-approve.js";
@@ -18,15 +19,6 @@ import type { ApprovalDecision } from "../agent-approval.js";
 const APPROVAL_TIMEOUT_MS = 120_000;
 const APPROVAL_NO = "approve_no";
 
-const ONBOARDING_BUTTONS_TEXT =
-  "Buttons first. Humans on Telegram prefer tapping over typing.\n" +
-  "For yes/no and finite-choice questions, use button presets:\n" +
-  "  action(type: \"confirm/ok\")        — single OK (acknowledgment/CTA)\n" +
-  "  action(type: \"confirm/ok-cancel\") — OK + Cancel (destructive gate)\n" +
-  "  action(type: \"confirm/yn\")        — 🟢 Yes / 🔴 No (binary decision)\n" +
-  "  send(type: \"question\", choose: [...]) — custom labeled options\n" +
-  "Only use send(type: \"question\", ask: \"...\") for truly free-text input.\n" +
-  "Hybrid: send(type: \"text\", text: \"...\", audio: \"...\") — voice note + caption in one message. Use for important updates where the operator may be away from their phone.";
 const APPROVE_PREFIX = "approve_";
 const RECONNECT_YES = "reconnect_yes";
 const RECONNECT_NO = "reconnect_no";
@@ -333,13 +325,9 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           );
           deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE);
           // First session is always governor — no ternary needed.
-          deliverServiceMessage(
-            session.sid,
-            "You are the governor (primary session). The operator is aware of your presence. Announce yourself in chat if you wish — or stay silent until messaged. Use help('send') for communication options. Route ambiguous messages here; participant sessions DM you, not the operator.",
-            "onboarding_role",
-          );
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_ROLE_GOVERNOR);
           deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_PROTOCOL);
-          deliverServiceMessage(session.sid, ONBOARDING_BUTTONS_TEXT, "onboarding_buttons");
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_BUTTONS_TEXT);
         } else if (session.sessionsActive > 1) {
           const allSessions = listSessions();
           res.fellow_sessions = allSessions.filter(s => s.sid !== session.sid);
@@ -379,16 +367,15 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           const governorSession = allSessions.find(s => s.sid === governorSid);
           const governorLabel = governorSession ? `'${governorSession.name}' (SID ${governorSid})` : `SID ${governorSid}`;
 
-          const joinVerb = "has joined";
           for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
             const isGovernor = fellow.sid === governorSid;
-            const governorNote = isGovernor
-              ? "You are the governor — ambiguous messages will be routed to you."
-              : `Ambiguous messages go to ${governorLabel}.`;
+            const text = isGovernor
+              ? SERVICE_MESSAGES.SESSION_JOINED.text(effectiveName, session.sid)
+              : `${effectiveName} (SID ${session.sid}) joined. Ambiguous messages go to ${governorLabel}.`;
             deliverServiceMessage(
               fellow.sid,
-              `Session '${effectiveName}' (SID ${session.sid}) ${joinVerb}. ${governorNote}`,
-              "session_joined",
+              text,
+              SERVICE_MESSAGES.SESSION_JOINED.eventType,
               { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
             );
           }
@@ -408,7 +395,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           // session_orientation already carries role info (governor vs participant) for multi-session.
           // Skip onboarding_role here to avoid duplication.
           deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_PROTOCOL);
-          deliverServiceMessage(session.sid, ONBOARDING_BUTTONS_TEXT, "onboarding_buttons");
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_BUTTONS_TEXT);
         }
         void refreshGovernorCommand();
 
@@ -498,14 +485,13 @@ export async function handleSessionReconnect({ name }: { name: string }) {
       : `SID ${governorSid}`;
     for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
       const isGovernorFellow = fellow.sid === governorSid;
-      const governorNote = isGovernorFellow
-        ? "You are the governor — ambiguous messages will be routed to you."
-        : `Ambiguous messages go to ${governorLabel}.`;
+      const text = isGovernorFellow
+        ? SERVICE_MESSAGES.SESSION_JOINED.text(existing.name, existing.sid) + " (reconnected)"
+        : `${existing.name} (SID ${existing.sid}) reconnected. Ambiguous messages go to ${governorLabel}.`;
       deliverServiceMessage(
         fellow.sid,
-        `Session '${existing.name}' (SID ${existing.sid}) has reconnected. ` +
-          governorNote,
-        "session_joined",
+        text,
+        SERVICE_MESSAGES.SESSION_JOINED.eventType,
         {
           sid: existing.sid,
           name: existing.name,

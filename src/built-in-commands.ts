@@ -45,6 +45,7 @@ import { timelineSize, setOnEvent } from "./message-store.js";
 import { listSessions, getIdleSessions } from "./session-manager.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
 import { deliverServiceMessage } from "./session-queue.js";
+import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getCallerSid, runInSessionContext } from "./session-context.js";
 import { closeSessionById } from "./session-teardown.js";
 
@@ -577,34 +578,12 @@ async function handleGovernorCallback(
     // Broadcast to Telegram chat: visible operator-facing announcement
     sendServiceMessage(`🔀 ${newLabel} is now the primary session.`).catch(() => {});
 
-    // Notify new governor
-    deliverServiceMessage(
-      newSid,
-      `You are now the governor. Ambiguous messages will be routed to you.`,
-      "governor_changed",
-      { old_governor_sid: oldSid, new_governor_sid: newSid },
-    );
-
-    // Notify old governor if different
-    if (oldSid > 0 && oldSid !== newSid) {
-      const oldGovernor = sessions.find(s => s.sid === oldSid);
-      if (oldGovernor) {
-        deliverServiceMessage(
-          oldSid,
-          `You are no longer the governor. ${newLabel} is now the governor.`,
-          "governor_changed",
-          { old_governor_sid: oldSid, new_governor_sid: newSid },
-        );
-      }
-    }
-
-    // Notify all other sessions
+    // Notify all sessions of the governor change
     for (const s of sessions) {
-      if (s.sid === newSid || s.sid === oldSid) continue;
       deliverServiceMessage(
         s.sid,
-        `Governor changed: ${newLabel} is now the governor.`,
-        "governor_changed",
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.text(newSid, newGovernor.name),
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.eventType,
         { old_governor_sid: oldSid, new_governor_sid: newSid },
       );
     }
@@ -1430,31 +1409,12 @@ async function handleSessionCallback(
 
     sendServiceMessage(`🔀 ${newLabel} is now the primary session.`).catch(() => {});
 
-    deliverServiceMessage(
-      sid,
-      `You are now the governor. Ambiguous messages will be routed to you.`,
-      "governor_changed",
-      { old_governor_sid: oldSid, new_governor_sid: sid },
-    );
-
-    if (oldSid > 0 && oldSid !== sid) {
-      const oldGovernor = sessions.find(s => s.sid === oldSid);
-      if (oldGovernor) {
-        deliverServiceMessage(
-          oldSid,
-          `You are no longer the governor. ${newLabel} is now the governor.`,
-          "governor_changed",
-          { old_governor_sid: oldSid, new_governor_sid: sid },
-        );
-      }
-    }
-
+    // Notify all sessions of the governor change
     for (const s of sessions) {
-      if (s.sid === sid || s.sid === oldSid) continue;
       deliverServiceMessage(
         s.sid,
-        `Governor changed: ${newLabel} is now the governor.`,
-        "governor_changed",
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.text(sid, target.name),
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.eventType,
         { old_governor_sid: oldSid, new_governor_sid: sid },
       );
     }
