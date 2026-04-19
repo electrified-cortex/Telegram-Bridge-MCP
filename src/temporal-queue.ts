@@ -44,6 +44,7 @@ export class TemporalQueue<T> {
   private readonly _consumedIds = new Set<number>();
   private readonly _pendingIds = new Set<number>();
   private _waiters: Array<() => void> = [];
+  private _wakeVersion = 0;
   private readonly _maxSize: number;
   private readonly _isHeavyweight: (item: T) => boolean;
   private readonly _isReady: (item: T) => boolean;
@@ -72,6 +73,7 @@ export class TemporalQueue<T> {
     this._queue.enqueue(item);
     const id = this._getId(item);
     if (id > 0) this._pendingIds.add(id);
+    this._wakeVersion++;
     this._notifyWaiters();
   }
 
@@ -202,7 +204,30 @@ export class TemporalQueue<T> {
 
   /** Promise that resolves when a new item is enqueued (or notifyWaiters is called). */
   waitForEnqueue(): Promise<void> {
+    return this.waitForEnqueueSince(this._wakeVersion);
+  }
+
+  /** Monotonic wake version used for race-free wait registration. */
+  getWakeVersion(): number {
+    return this._wakeVersion;
+  }
+
+  /**
+   * Promise that resolves when the queue wake-version changes from `version`.
+   *
+   * Use this with a version captured before checking queue state to avoid the
+   * classic lost-wakeup race:
+   * 1) check queue empty
+   * 2) event enqueued
+   * 3) waiter registered too late and blocks forever
+   */
+  waitForEnqueueSince(version: number): Promise<void> {
+    if (this._wakeVersion !== version) return Promise.resolve();
     return new Promise((resolve) => {
+      if (this._wakeVersion !== version) {
+        resolve();
+        return;
+      }
       this._waiters.push(resolve);
     });
   }
@@ -216,6 +241,7 @@ export class TemporalQueue<T> {
    * (e.g. patchVoiceText filling in transcription) to unblock dequeueBatch.
    */
   notifyWaiters(): void {
+    this._wakeVersion++;
     this._notifyWaiters();
   }
 

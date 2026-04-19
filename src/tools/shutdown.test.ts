@@ -48,6 +48,7 @@ describe("shutdown tool", () => {
   });
 
   it("returns warning (not error) when global queue has items and force is not set", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1 }]);
     mocks.pendingCount.mockReturnValue(3);
     const result = await call({});
     expect(isError(result)).toBe(false);
@@ -81,7 +82,7 @@ describe("shutdown tool", () => {
     mocks.pendingCount.mockReturnValue(5);
     const result = parseResult(await call({ force: true }));
     expect(result.shutting_down).toBe(true);
-    expect(result.pending_flushed).toBe(5);
+    expect(result.pending_at_shutdown).toBe(5);
     await new Promise<void>((r) => setImmediate(r));
     expect(mocks.elegantShutdown).toHaveBeenCalledTimes(1);
   });
@@ -92,15 +93,15 @@ describe("shutdown tool", () => {
     mocks.getSessionQueue.mockReturnValueOnce({ pendingCount: () => 3 });
     const result = parseResult(await call({ force: true }));
     expect(result.shutting_down).toBe(true);
-    expect(result.pending_flushed).toBe(5); // 2 global + 3 session
+    expect(result.pending_at_shutdown).toBe(5); // 2 global + 3 session
     await new Promise<void>((r) => setImmediate(r));
     expect(mocks.elegantShutdown).toHaveBeenCalledTimes(1);
   });
 
-  it("includes pending_flushed: 0 in result when queue is empty", async () => {
+  it("includes pending_at_shutdown: 0 in result when queue is empty", async () => {
     mocks.pendingCount.mockReturnValue(0);
     const result = parseResult(await call({}));
-    expect(result.pending_flushed).toBe(0);
+    expect(result.pending_at_shutdown).toBe(0);
     await new Promise<void>((r) => setImmediate(r));
   });
 

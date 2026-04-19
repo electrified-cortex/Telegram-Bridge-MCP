@@ -91,6 +91,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
       if (updatedReminders.length > 0) reminderSummary.review_recommended = true;
       applied.reminders = reminderSummary;
     }
+
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isReminderLimit = message.includes("Max reminders per session");

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   handleListSessions: vi.fn(),
   handleCloseSession: vi.fn(),
   handleSessionStart: vi.fn(),
+  handleSessionReconnect: vi.fn(),
   handleRenameSession: vi.fn(),
   handleEditMessage: vi.fn(),
   // Phase 2 handler stubs
@@ -45,6 +46,7 @@ const mocks = vi.hoisted(() => ({
   handleRollLog: vi.fn(),
   handleDeleteLog: vi.fn(),
   handleGetDebugLog: vi.fn(),
+  handleGetTraceLog: vi.fn(),
   handleDumpSessionRecord: vi.fn(),
   handleCancelAnimation: vi.fn(),
   handleShowTyping: vi.fn(),
@@ -52,10 +54,13 @@ const mocks = vi.hoisted(() => ({
   handleApproveAgent: vi.fn(),
   handleShutdown: vi.fn(),
   handleNotifyShutdownWarning: vi.fn(),
+  handleSessionRestore: vi.fn(),
+  handleSessionBounce: vi.fn(),
   handleTranscribeVoice: vi.fn(),
   handleDownloadFile: vi.fn(),
   handleUpdateChecklist: vi.fn(),
   handleUpdateProgress: vi.fn(),
+  handleCloseSessionSignal: vi.fn(),
 }));
 
 vi.mock("../action-registry.js", () => ({
@@ -91,6 +96,7 @@ vi.mock("./close_session.js", () => ({
 
 vi.mock("./session_start.js", () => ({
   handleSessionStart: mocks.handleSessionStart,
+  handleSessionReconnect: mocks.handleSessionReconnect,
   register: vi.fn(),
 }));
 
@@ -130,7 +136,7 @@ vi.mock("./get_log.js", () => ({ handleGetLog: mocks.handleGetLog, register: vi.
 vi.mock("./list_logs.js", () => ({ handleListLogs: mocks.handleListLogs, register: vi.fn() }));
 vi.mock("./roll_log.js", () => ({ handleRollLog: mocks.handleRollLog, register: vi.fn() }));
 vi.mock("./delete_log.js", () => ({ handleDeleteLog: mocks.handleDeleteLog, register: vi.fn() }));
-vi.mock("./get_debug_log.js", () => ({ handleGetDebugLog: mocks.handleGetDebugLog, register: vi.fn() }));
+vi.mock("./get_debug_log.js", () => ({ handleGetDebugLog: mocks.handleGetDebugLog, handleGetTraceLog: mocks.handleGetTraceLog, register: vi.fn() }));
 vi.mock("./dump_session_record.js", () => ({ handleDumpSessionRecord: mocks.handleDumpSessionRecord, register: vi.fn() }));
 // Phase 2 vi.mocks — animation/*
 vi.mock("./cancel_animation.js", () => ({ handleCancelAnimation: mocks.handleCancelAnimation, register: vi.fn() }));
@@ -144,10 +150,11 @@ vi.mock("./transcribe_voice.js", () => ({ handleTranscribeVoice: mocks.handleTra
 vi.mock("./download_file.js", () => ({ handleDownloadFile: mocks.handleDownloadFile, register: vi.fn() }));
 vi.mock("./send_new_checklist.js", () => ({ handleUpdateChecklist: mocks.handleUpdateChecklist, register: vi.fn() }));
 vi.mock("./update_progress.js", () => ({ handleUpdateProgress: mocks.handleUpdateProgress, register: vi.fn() }));
+vi.mock("./close_session_signal.js", () => ({ handleCloseSessionSignal: mocks.handleCloseSessionSignal, register: vi.fn() }));
 
 import { register } from "./action.js";
 
-const VALID_TOKEN = 1_123_456; // sid=1, pin=123456
+const VALID_TOKEN = 1_123_456; // sid=1, suffix=123456
 
 describe("action tool", () => {
   let call: ToolHandler;
@@ -300,6 +307,7 @@ describe("action tool", () => {
       );
       expect(registeredPaths).toContain("session/start");
       expect(registeredPaths).toContain("session/close");
+      expect(registeredPaths).toContain("session/close/signal");
       expect(registeredPaths).toContain("session/list");
       expect(registeredPaths).toContain("session/rename");
       expect(registeredPaths).toContain("profile/voice");
@@ -347,6 +355,8 @@ describe("action tool", () => {
       expect(registeredPaths).toContain("log/roll");
       expect(registeredPaths).toContain("log/delete");
       expect(registeredPaths).toContain("log/debug");
+      expect(registeredPaths).toContain("log/trace");
+      expect(registeredPaths).not.toContain("log/dump");
     });
 
     it("calls registerAction for all Phase 2 standalone paths", () => {
@@ -380,9 +390,12 @@ describe("action tool", () => {
       expect(governorPaths).toContain("log/roll");
       expect(governorPaths).toContain("log/delete");
       expect(governorPaths).toContain("log/debug");
+      expect(governorPaths).toContain("log/trace");
+      expect(governorPaths).not.toContain("log/dump");
       expect(governorPaths).toContain("approve");
       expect(governorPaths).toContain("shutdown");
       expect(governorPaths).toContain("shutdown/warn");
+      expect(governorPaths).toContain("session/close/signal");
     });
   });
 
@@ -456,6 +469,20 @@ describe("action tool", () => {
       expect(calledArgs.file_id).toBe("AgAC123");
     });
 
+    it("dispatches log/trace to handleGetTraceLog", async () => {
+      const fakeResult = { content: [{ type: "text", text: JSON.stringify({ source: "trace", returned: 0, entries: [] }) }] };
+      const fakeHandler = vi.fn().mockReturnValue(fakeResult);
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: { governor: true } });
+      mocks.requireAuth.mockReturnValue(1);
+      mocks.getGovernorSid.mockReturnValue(1);
+      const result = await call({ type: "log/trace", token: VALID_TOKEN, session_id: 2, count: 10 });
+      expect(fakeHandler).toHaveBeenCalledOnce();
+      const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
+      expect(calledArgs.session_id).toBe(2);
+      expect(calledArgs.count).toBe(10);
+      expect(isError(result)).toBe(false);
+    });
+
     // 10-425 regression: log/debug category param accepts any string (no enum rejection)
     it("log/debug: routes category string param to handler (no schema rejection)", async () => {
       const fakeHandler = vi.fn().mockResolvedValue({ content: [{ type: "text", text: JSON.stringify({ entries: [] }) }] });
@@ -505,6 +532,56 @@ describe("action tool", () => {
         expect.objectContaining({ yes_text: "OK", no_text: "" }),
         undefined,
       );
+    });
+
+    it("dispatches session/close/signal to handleCloseSessionSignal (governor-only)", async () => {
+      const fakeHandler = vi.fn().mockResolvedValue({ content: [{ type: "text", text: JSON.stringify({ signaled: true, closed: true, sid: 2, reason: "self_closed" }) }] });
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: { governor: true } });
+      mocks.requireAuth.mockReturnValue(1);
+      mocks.getGovernorSid.mockReturnValue(1);
+      const result = await call({ type: "session/close/signal", token: VALID_TOKEN, target_sid: 2 });
+      expect(fakeHandler).toHaveBeenCalledOnce();
+      const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
+      expect(calledArgs.target_sid).toBe(2);
+      expect(isError(result)).toBe(false);
+    });
+
+    it("rejects session/close/signal when caller is not governor", async () => {
+      const fakeHandler = vi.fn();
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: { governor: true } });
+      mocks.requireAuth.mockReturnValue(2); // SID 2 is not governor
+      mocks.getGovernorSid.mockReturnValue(1); // SID 1 is governor
+      const result = await call({ type: "session/close/signal", token: 2_123_456, target_sid: 3 });
+      expect(isError(result)).toBe(true);
+      expect(errorCode(result)).toBe("NOT_GOVERNOR");
+      expect(fakeHandler).not.toHaveBeenCalled();
+    });
+
+    it("action(type: 'acknowledge', remove_keyboard: true) passes args to handleAnswerCallbackQuery", async () => {
+      // Validates arg forwarding via the action registry wiring — handleAnswerCallbackQuery is mocked
+      const acknowledgeCall = mocks.registerAction.mock.calls.find((c) => c[0] === "acknowledge");
+      expect(acknowledgeCall).toBeDefined();
+      const handler = acknowledgeCall![1] as (args: Record<string, unknown>) => unknown;
+      mocks.handleAnswerCallbackQuery.mockResolvedValue({
+        content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
+      });
+      const result = await handler({
+        type: "acknowledge",
+        callback_query_id: "cbq_X",
+        message_id: 42,
+        remove_keyboard: true,
+        token: VALID_TOKEN,
+      });
+      expect(mocks.handleAnswerCallbackQuery).toHaveBeenCalledOnce();
+      const calledArgs = mocks.handleAnswerCallbackQuery.mock.calls[0][0] as Record<string, unknown>;
+      expect(calledArgs.callback_query_id).toBe("cbq_X");
+      expect(calledArgs.message_id).toBe(42);
+      expect(calledArgs.remove_keyboard).toBe(true);
+      expect(result).toEqual(expect.objectContaining({
+        content: expect.arrayContaining([
+          expect.objectContaining({ text: expect.stringContaining('"ok":true') }),
+        ]),
+      }));
     });
   });
 });

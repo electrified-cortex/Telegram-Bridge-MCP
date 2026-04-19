@@ -14,6 +14,7 @@
  *     resolves (approval, denial, or timeout).
  */
 
+import { randomBytes } from "node:crypto";
 import type { RegisteredTool, McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { register as registerApproveAgent } from "./tools/approve_agent.js";
 
@@ -25,6 +26,7 @@ export type ApprovalDecision = { approved: boolean; color?: string; forceColor?:
 
 export interface PendingApproval {
   name: string;
+  ticket: string;
   resolve: (d: ApprovalDecision) => void;
   registeredAt: number;
   colorHint?: string;
@@ -38,7 +40,7 @@ let _enabled = false;
 let _tool: RegisteredTool | undefined;
 let _server: McpServer | undefined;
 
-/** Pending approvals keyed by session name (case-sensitive, as provided). */
+/** Pending approvals keyed by one-time ticket (hex string). */
 const _pending = new Map<string, PendingApproval>();
 
 // ---------------------------------------------------------------------------
@@ -64,23 +66,26 @@ export function setDelegationEnabled(enabled: boolean): void {
 /**
  * Register a pending approval so an agent can resolve it via `approve_agent`.
  * `resolve` is the resolver from the `session_start` Promise constructor.
+ * Returns the one-time ticket that must be passed to `approve_agent`.
  */
 export function registerPendingApproval(
   name: string,
   resolve: (d: ApprovalDecision) => void,
   colorHint?: string,
-): void {
-  _pending.set(name, { name, resolve, registeredAt: Date.now(), colorHint });
+): string {
+  const ticket = randomBytes(16).toString("hex");
+  _pending.set(ticket, { name, ticket, resolve, registeredAt: Date.now(), colorHint });
+  return ticket;
 }
 
 /** Remove a pending approval entry (called after the promise resolves). */
-export function clearPendingApproval(name: string): void {
-  _pending.delete(name);
+export function clearPendingApproval(ticket: string): void {
+  _pending.delete(ticket);
 }
 
-/** Look up a pending approval by session name. Returns undefined if not found. */
-export function getPendingApproval(name: string): PendingApproval | undefined {
-  return _pending.get(name);
+/** Look up a pending approval by ticket. Returns undefined if not found. */
+export function getPendingApproval(ticket: string): PendingApproval | undefined {
+  return _pending.get(ticket);
 }
 
 /**

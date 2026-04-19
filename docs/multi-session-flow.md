@@ -61,7 +61,7 @@ User sends a fresh message → routed to governor (SID 1). Governor dequeues wit
 | `action(type: "session/list")`, `action(type: "chat/info")` | `token: number` |
 | All other tools | `token: number` |
 
-On the wire: `{ "token": 1809146, ... }` — one field, one number (encoding: `sid * 1_000_000 + pin`).
+On the wire: `{ "token": 1809146, ... }` — one field, one number.
 
 ## Task Dependency Chain
 

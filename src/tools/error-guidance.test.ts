@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   handleListSessions: vi.fn(),
   handleCloseSession: vi.fn(),
   handleSessionStart: vi.fn(),
+  handleSessionReconnect: vi.fn(),
   handleRenameSession: vi.fn(),
   handleEditMessage: vi.fn(),
   handleDeleteMessage: vi.fn(),
@@ -66,12 +67,15 @@ const mocks = vi.hoisted(() => ({
   handleRollLog: vi.fn(),
   handleDeleteLog: vi.fn(),
   handleGetDebugLog: vi.fn(),
+  handleGetTraceLog: vi.fn(),
   handleDumpSessionRecord: vi.fn(),
   handleCancelAnimation: vi.fn(),
   handleShowTyping: vi.fn(),
   handleApproveAgent: vi.fn(),
   handleShutdown: vi.fn(),
   handleNotifyShutdownWarning: vi.fn(),
+  handleSessionRestore: vi.fn(),
+  handleSessionBounce: vi.fn(),
   handleTranscribeVoice: vi.fn(),
   handleDownloadFile: vi.fn(),
   handleUpdateChecklist: vi.fn(),
@@ -124,7 +128,7 @@ vi.mock("../action-registry.js", () => ({
 vi.mock("./set_voice.js", () => ({ handleSetVoice: mocks.handleSetVoice, register: vi.fn() }));
 vi.mock("./list_sessions.js", () => ({ handleListSessions: mocks.handleListSessions, register: vi.fn() }));
 vi.mock("./close_session.js", () => ({ handleCloseSession: mocks.handleCloseSession, register: vi.fn() }));
-vi.mock("./session_start.js", () => ({ handleSessionStart: mocks.handleSessionStart, register: vi.fn() }));
+vi.mock("./session_start.js", () => ({ handleSessionStart: mocks.handleSessionStart, handleSessionReconnect: mocks.handleSessionReconnect, register: vi.fn() }));
 vi.mock("./rename_session.js", () => ({ handleRenameSession: mocks.handleRenameSession, register: vi.fn() }));
 vi.mock("./edit_message.js", () => ({ handleEditMessage: mocks.handleEditMessage, register: vi.fn() }));
 vi.mock("./delete_message.js", () => ({ handleDeleteMessage: mocks.handleDeleteMessage, register: vi.fn() }));
@@ -149,7 +153,7 @@ vi.mock("./get_log.js", () => ({ handleGetLog: mocks.handleGetLog, register: vi.
 vi.mock("./list_logs.js", () => ({ handleListLogs: mocks.handleListLogs, register: vi.fn() }));
 vi.mock("./roll_log.js", () => ({ handleRollLog: mocks.handleRollLog, register: vi.fn() }));
 vi.mock("./delete_log.js", () => ({ handleDeleteLog: mocks.handleDeleteLog, register: vi.fn() }));
-vi.mock("./get_debug_log.js", () => ({ handleGetDebugLog: mocks.handleGetDebugLog, register: vi.fn() }));
+vi.mock("./get_debug_log.js", () => ({ handleGetDebugLog: mocks.handleGetDebugLog, handleGetTraceLog: mocks.handleGetTraceLog, register: vi.fn() }));
 vi.mock("./dump_session_record.js", () => ({ handleDumpSessionRecord: mocks.handleDumpSessionRecord, register: vi.fn() }));
 vi.mock("./cancel_animation.js", () => ({ handleCancelAnimation: mocks.handleCancelAnimation, register: vi.fn() }));
 vi.mock("./show_typing.js", () => ({ handleShowTyping: mocks.handleShowTyping, register: vi.fn() }));
@@ -180,7 +184,7 @@ vi.mock("./confirm.js", () => ({ handleConfirm: vi.fn() }));
 import { register as registerSend } from "./send.js";
 import { register as registerAction } from "./action.js";
 
-const TOKEN = 1_123_456; // sid=1, pin=123456
+const TOKEN = 1_123_456; // sid=1, suffix=123456
 const VALID_TOKEN = 1_123_456;
 
 // ─────────────────────────────────────────────────────────────────────────────

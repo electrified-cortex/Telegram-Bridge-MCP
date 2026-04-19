@@ -5,7 +5,7 @@ import {
   callApi, resolveMediaSource, sendVoiceDirect,
 } from "../telegram.js";
 import { resolveParseMode } from "../markdown.js";
-import { showTyping } from "../typing-state.js";
+import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
 import { extname } from "path";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -165,19 +165,28 @@ export async function handleSendFile({
 
       case "voice": {
         await showTyping(30, "upload_voice");
-        const msg = await sendVoiceDirect(chatId, file, {
-          caption: resolvedCaption.text,
-          parse_mode: resolvedCaption.parse_mode,
-          duration,
-          disable_notification,
-          reply_to_message_id: replyTo,
-        });
-        return toResult({
-          message_id: msg.message_id,
-          type: "voice",
-          file_id: msg.voice?.file_id,
-          warning: CDN_WARNING,
-        });
+        const gen = typingGeneration();
+        try {
+          const msg = await sendVoiceDirect(chatId, file, {
+            caption: resolvedCaption.text,
+            parse_mode: resolvedCaption.parse_mode,
+            duration,
+            disable_notification,
+            reply_to_message_id: replyTo,
+          });
+          // Schedule typing cancel after a brief delay so the upload indicator
+          // remains visible while the voice renders in chat — non-blocking.
+          setTimeout(() => cancelTypingIfSameGeneration(gen), 1000);
+          return toResult({
+            message_id: msg.message_id,
+            type: "voice",
+            file_id: msg.voice?.file_id,
+            warning: CDN_WARNING,
+          });
+        } catch (e) {
+          cancelTypingIfSameGeneration(gen);
+          throw e;
+        }
       }
 
       case "document":

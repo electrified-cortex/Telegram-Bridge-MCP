@@ -5,8 +5,9 @@ import { markdownToV2 } from "../markdown.js";
 import type { TimelineEvent } from "../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../message-store.js";
 import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "../session-manager.js";
-import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, getSessionQueue, deliverReminderEvent } from "../session-queue.js";
+import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, deliverReminderEvent, getSessionQueue } from "../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../routing-mode.js";
+import { SERVICE_MESSAGES } from "../service-messages.js";
 import { runInSessionContext } from "../session-context.js";
 import { refreshGovernorCommand } from "../built-in-commands.js";
 import { checkAndConsumeAutoApprove } from "../auto-approve.js";
@@ -17,6 +18,7 @@ import type { ApprovalDecision } from "../agent-approval.js";
 
 const APPROVAL_TIMEOUT_MS = 120_000;
 const APPROVAL_NO = "approve_no";
+
 const APPROVE_PREFIX = "approve_";
 const RECONNECT_YES = "reconnect_yes";
 const RECONNECT_NO = "reconnect_no";
@@ -83,10 +85,6 @@ async function requestApproval(
   const msgId: number = sent.message_id;
 
   const decision = await new Promise<ApprovalDecision>((resolve) => {
-    const timer = setTimeout(() => {
-      clearPendingApproval(name);
-      resolveOnce({ approved: false });
-    }, APPROVAL_TIMEOUT_MS);
     let resolved = false;
     const resolveOnce = (value: ApprovalDecision) => {
       if (resolved) return;
@@ -95,16 +93,20 @@ async function requestApproval(
       clearCallbackHook(msgId);
       resolve(value);
     };
-    registerPendingApproval(name, resolveOnce, colorHint);
+    const ticket = registerPendingApproval(name, resolveOnce, colorHint);
+    const timer = setTimeout(() => {
+      clearPendingApproval(ticket);
+      resolveOnce({ approved: false });
+    }, APPROVAL_TIMEOUT_MS);
 
     // Notify governor of pending approval
     const governorSid = getGovernorSid();
     if (governorSid) {
       deliverServiceMessage(
         governorSid,
-        `Session "${name}" is requesting access. Call approve_agent(target_name: "${name}") to approve, or wait for operator decision via Telegram buttons.`,
+        `Session "${name}" is requesting access. Ticket: ${ticket}\nHint: action(type: 'approve', token: <your_token>, ticket: ${ticket})`,
         "pending_approval",
-        { target_name: name },
+        { name, ticket },
       );
     }
 
@@ -123,7 +125,7 @@ async function requestApproval(
         if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
         return;
       }
-      clearPendingApproval(name);
+      clearPendingApproval(ticket);
       if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
       if (data === APPROVAL_NO) {
         resolveOnce({ approved: false });
@@ -163,7 +165,7 @@ async function requestApproval(
  */
 async function requestReconnectApproval(chatId: number, name: string, sid: number): Promise<boolean> {
   if (checkAndConsumeAutoApprove()) return true;
-  const text = `🤖 *Session reconnecting:* ${markdownToV2(name)}\nThe agent may have a saved token in memory\\. Authorize re\\-entry only if token recovery failed\\.`;
+  const text = `🤖 *Session reconnecting:* ${markdownToV2(name)}`;
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
     reply_markup: {
@@ -212,18 +214,14 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 }
 
 const DESCRIPTION =
-  "Call once at the start of every session. Creates a session " +
-  "with a unique ID and PIN. Fresh sessions auto-drain pending messages; " +
-  "reconnects preserve queued messages and return the actual pending count. " +
-  "If you lost your token (context loss, crash), call with reconnect: true " +
-  "and the same name to trigger an operator re-authorization dialog; on " +
-  "approval the same token is returned. " +
-  "Returns { token, sid, pin, sessions_active, action, pending } so " +
-  "the agent knows its identity and how to proceed. " +
-  "The token encodes both sid and pin as a single integer (sid * 1_000_000 + pin). " +
+  "Call once at the start of every session. Creates a fresh session " +
+  "with a unique ID and token. Fresh sessions auto-drain pending messages. " +
+  "If you lost your token (context loss, crash), use action(type: 'session/reconnect', ...) instead. " +
+  "Returns { token, sid, suffix, sessions_active, action, pending } so " +
+  "you have the token and context without extra steps. " +
   "Call help() first to load the API guide, then call action(type: 'session/start', ...) to join.";
 
-export async function handleSessionStart({ name, reconnect, color }: { name: string; reconnect: boolean; color?: string }) {
+export async function handleSessionStart({ name, color }: { name: string; color?: string }) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -255,110 +253,11 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
           s => s.name.toLowerCase() === effectiveName.toLowerCase(),
         );
         if (existing) {
-          if (reconnect) {
-            // Reconnect flow: show simple Approve/Deny dialog (not color-picker)
-            const approved = await runInSessionContext(0, () =>
-              requestReconnectApproval(chatId, existing.name, existing.sid),
-            );
-            if (!approved) {
-              return toError({
-                code: "SESSION_DENIED",
-                message: `Session reconnect for "${existing.name}" was denied by the operator. Check memory for a previously saved token — if found, use that token directly without calling action(type: 'session/start', ...) again.`,
-              });
-            }
-            // Get full session object (listSessions omits PIN)
-            const fullSession = getSession(existing.sid);
-            if (!fullSession) {
-              return toError({
-                code: "SESSION_NOT_FOUND",
-                message:
-                  `Session "${existing.name}" (SID ${existing.sid}) closed before reconnect completed. Call action(type: 'session/start', ...) again with a fresh name to create a new session.`,
-              });
-            }
-            // Reset health markers; preserve queued messages for the reconnecting session
-            fullSession.lastPollAt = undefined;
-            fullSession.healthy = true;
-            const pending = getSessionQueue(existing.sid)?.pendingCount() ?? 0;
-            setActiveSession(existing.sid);
-
-            // Deliver service messages
-            const allSessions = listSessions();
-            const reconSessActive = activeSessionCount();
-            if (allSessions.length === 1) {
-              deliverServiceMessage(
-                existing.sid,
-                `Reconnect authorized. You are SID ${existing.sid}. ` +
-                  `You are the only active session.`,
-                "session_orientation",
-                { sid: existing.sid, name: existing.name },
-              );
-            } else {
-              const governorSid = getGovernorSid();
-              const governorSession = allSessions.find(s => s.sid === governorSid);
-              const governorLabel = governorSession
-                ? `'${governorSession.name}' (SID ${governorSid})`
-                : `SID ${governorSid}`;
-              for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
-                const isGovernorFellow = fellow.sid === governorSid;
-                const governorNote = isGovernorFellow
-                  ? "You are the governor — ambiguous messages will be routed to you."
-                  : `Ambiguous messages go to ${governorLabel}.`;
-                deliverServiceMessage(
-                  fellow.sid,
-                  `Session '${existing.name}' (SID ${existing.sid}) has reconnected. ` +
-                    governorNote,
-                  "session_joined",
-                  {
-                    sid: existing.sid,
-                    name: existing.name,
-                    governor_sid: governorSid,
-                    reconnect: true,
-                  },
-                );
-              }
-              const isGovernorReconnect = existing.sid === governorSid;
-              const roleNote = isGovernorReconnect
-                ? `You are the governor (SID ${existing.sid}). ` +
-                  `Ambiguous messages will be routed to you. ` +
-                  `Call help(topic: 'guide') for trust and routing guidance.`
-                : `You are SID ${existing.sid}. ${governorLabel} is your first escalation ` +
-                  `point. Ambiguous messages go to them. ` +
-                  `Call help(topic: 'guide') for trust and routing guidance.`;
-              deliverServiceMessage(
-                existing.sid,
-                `Reconnect authorized. Session state preserved. ${roleNote}`,
-                "session_orientation",
-                { sid: existing.sid, name: existing.name, governor_sid: governorSid },
-              );
-            }
-
-            void refreshGovernorCommand();
-
-            // Fire startup reminders for the reconnecting session
-            const reconStartupFired = runInSessionContext(existing.sid, () => fireStartupReminders(existing.sid));
-            for (const r of reconStartupFired) {
-              deliverReminderEvent(existing.sid, buildReminderEvent(r));
-            }
-
-            const reconToken = fullSession.sid * 1_000_000 + fullSession.pin;
-            return toResult({
-              token: reconToken,
-              sid: fullSession.sid,
-              pin: fullSession.pin,
-              sessions_active: reconSessActive,
-              action: "reconnected",
-              pending,
-              hint: "Save this token. Read: help(topic: 'startup')",
-            });
-          }
-
           return toError({
             code: "NAME_CONFLICT",
             message:
-              `A session named "${existing.name}" already exists (SID ${existing.sid}). ` +
-              `If you still have your token, resume with dequeue(token: <token>). ` +
-              `To start a new session, choose a different name. ` +
-              `To reclaim this session, call action(type: 'session/start', name: '...', reconnect: true) again.`,
+              `Session '${existing.name}' already exists (SID ${existing.sid}). ` +
+              `You are already online. Find your token in session memory and call dequeue(token: <token>). That's it. If token recovery fails, call action(type: 'session/reconnect', name: '<name>') as a last resort.`,
           });
         }
       }
@@ -368,7 +267,7 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
       let decision: { approved: boolean; color?: string; forceColor?: boolean } | undefined;
       if (!isFirstSession) {
         decision = await runInSessionContext(0, () =>
-          requestApproval(chatId, effectiveName, reconnect, color),
+          requestApproval(chatId, effectiveName, false, color),
         );
         if (!decision.approved) {
           return toError({
@@ -391,17 +290,17 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
         let discarded = 0;
         while (dequeue() !== undefined) discarded++;
 
-        const sessionToken = session.sid * 1_000_000 + session.pin;
+        const sessionToken = session.sid * 1_000_000 + session.suffix;
         const res: Record<string, unknown> = {
           token: sessionToken,
           sid: session.sid,
-          pin: session.pin,
+          suffix: session.suffix,
           sessions_active: session.sessionsActive,
-          action: reconnect ? "reconnected" : "fresh",
+          action: "fresh",
           pending: 0,
-          hint: "Save this token. Read: help(topic: 'startup')",
+          discarded,
+          fellow_sessions: [] as unknown[],
         };
-        if (discarded > 0) res.discarded = discarded;
         if (isFirstSession) {
           // First session is the governor by default
           setGovernorSid(session.sid);
@@ -424,15 +323,17 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
             "session_orientation",
             { sid: session.sid, name: effectiveName, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
           );
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE);
+          // First session is always governor — no ternary needed.
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_ROLE_GOVERNOR);
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_PROTOCOL);
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_BUTTONS_TEXT);
         } else if (session.sessionsActive > 1) {
           const allSessions = listSessions();
           res.fellow_sessions = allSessions.filter(s => s.sid !== session.sid);
           if (session.sessionsActive === 2) {
-            // Reconnecting sessions take the governor seat (resuming a prior role).
             // Fresh joiners use lowest-SID heuristic (original session is the anchor).
-            const governorSid = reconnect
-              ? session.sid
-              : Math.min(...allSessions.map(s => s.sid));
+            const governorSid = Math.min(...allSessions.map(s => s.sid));
             setGovernorSid(governorSid);
           }
 
@@ -466,17 +367,16 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
           const governorSession = allSessions.find(s => s.sid === governorSid);
           const governorLabel = governorSession ? `'${governorSession.name}' (SID ${governorSid})` : `SID ${governorSid}`;
 
-          const joinVerb = reconnect ? "has reconnected" : "has joined";
           for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
             const isGovernor = fellow.sid === governorSid;
-            const governorNote = isGovernor
-              ? "You are the governor — ambiguous messages will be routed to you."
-              : `Ambiguous messages go to ${governorLabel}.`;
+            const text = isGovernor
+              ? SERVICE_MESSAGES.SESSION_JOINED.text(effectiveName, session.sid)
+              : `${effectiveName} (SID ${session.sid}) joined. Ambiguous messages go to ${governorLabel}.`;
             deliverServiceMessage(
               fellow.sid,
-              `Session '${effectiveName}' (SID ${session.sid}) ${joinVerb}. ${governorNote}`,
-              "session_joined",
-              { sid: session.sid, name: effectiveName, governor_sid: governorSid, reconnect, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
+              text,
+              SERVICE_MESSAGES.SESSION_JOINED.eventType,
+              { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
             );
           }
 
@@ -491,6 +391,11 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
             "session_orientation",
             { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
           );
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE);
+          // session_orientation already carries role info (governor vs participant) for multi-session.
+          // Skip onboarding_role here to avoid duplication.
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_PROTOCOL);
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_BUTTONS_TEXT);
         }
         void refreshGovernorCommand();
 
@@ -510,6 +415,126 @@ export async function handleSessionStart({ name, reconnect, color }: { name: str
       }
 }
 
+export async function handleSessionReconnect({ name }: { name: string }) {
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    return toError({
+      code: "NAME_REQUIRED",
+      message: "A session name is required for reconnect. Pass the name of the session you wish to reclaim.",
+    });
+  }
+
+  const existing = listSessions().find(
+    s => s.name.toLowerCase() === trimmedName.toLowerCase(),
+  );
+
+  if (!existing) {
+    return toError({
+      code: "SESSION_NOT_FOUND",
+      message: `No active session named "${trimmedName}" found. If your session closed, start a new one with action(type: 'session/start', ...).`,
+    });
+  }
+
+  // Get full session object (listSessions omits token suffix)
+  const fullSession = getSession(existing.sid);
+  if (!fullSession) {
+    return toError({
+      code: "SESSION_NOT_FOUND",
+      message:
+        `Session "${existing.name}" (SID ${existing.sid}) closed before reconnect completed. ` +
+        `Call action(type: 'session/start', ...) with a fresh name to create a new session.`,
+    });
+  }
+
+  // Reconnect flow: show the simple Approve/Deny dialog.
+  const approved = await runInSessionContext(0, () =>
+    requestReconnectApproval(chatId, existing.name, existing.sid),
+  );
+  if (!approved) {
+    return toError({
+      code: "SESSION_DENIED",
+      message: `Session reconnect for "${existing.name}" was denied by the operator. Check memory for a previously saved token — if found, use that token directly without calling action(type: 'session/reconnect', ...) again.`,
+      hint: "Wipe your stored session token before exiting. If your loop guard re-prompts, do NOT call session/start -- wipe the token, then exit.",
+    });
+  }
+
+  // Reset health markers; preserve queued messages for the reconnecting session
+  fullSession.lastPollAt = undefined;
+  fullSession.healthy = true;
+  const pending = getSessionQueue(existing.sid)?.pendingCount() ?? 0;
+  setActiveSession(existing.sid);
+
+  // Deliver service messages
+  const allSessions = listSessions();
+  const reconSessActive = activeSessionCount();
+  if (allSessions.length === 1) {
+    deliverServiceMessage(
+      existing.sid,
+      `Reconnect authorized. You are SID ${existing.sid}. ` +
+        `You are the only active session.`,
+      "session_orientation",
+      { sid: existing.sid, name: existing.name },
+    );
+  } else {
+    const governorSid = getGovernorSid();
+    const governorSession = allSessions.find(s => s.sid === governorSid);
+    const governorLabel = governorSession
+      ? `'${governorSession.name}' (SID ${governorSid})`
+      : `SID ${governorSid}`;
+    for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
+      const isGovernorFellow = fellow.sid === governorSid;
+      const text = isGovernorFellow
+        ? `${existing.name} (SID ${existing.sid}) reconnected. You are the governor — route ambiguous messages.`
+        : `${existing.name} (SID ${existing.sid}) reconnected. Ambiguous messages go to ${governorLabel}.`;
+      deliverServiceMessage(
+        fellow.sid,
+        text,
+        SERVICE_MESSAGES.SESSION_JOINED.eventType,
+        {
+          sid: existing.sid,
+          name: existing.name,
+          governor_sid: governorSid,
+          reconnect: true,
+        },
+      );
+    }
+    const isGovernorReconnect = existing.sid === governorSid;
+    const roleNote = isGovernorReconnect
+      ? `You are the governor (SID ${existing.sid}). ` +
+        `Ambiguous messages will be routed to you. ` +
+        `Call help(topic: 'guide') for trust and routing guidance.`
+      : `You are SID ${existing.sid}. ${governorLabel} is your first escalation ` +
+        `point. Ambiguous messages go to them. ` +
+        `Call help(topic: 'guide') for trust and routing guidance.`;
+    deliverServiceMessage(
+      existing.sid,
+      `Reconnect authorized. Session state preserved. ${roleNote}`,
+      "session_orientation",
+      { sid: existing.sid, name: existing.name, governor_sid: governorSid },
+    );
+  }
+
+  void refreshGovernorCommand();
+
+  // Fire startup reminders for the reconnecting session
+  const reconStartupFired = runInSessionContext(existing.sid, () => fireStartupReminders(existing.sid));
+  for (const r of reconStartupFired) {
+    deliverReminderEvent(existing.sid, buildReminderEvent(r));
+  }
+
+  const reconToken = fullSession.sid * 1_000_000 + fullSession.suffix;
+  return toResult({
+    token: reconToken,
+    sid: fullSession.sid,
+    sessions_active: reconSessActive,
+    action: "reconnected",
+    pending,
+  });
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "session_start",
@@ -522,15 +547,6 @@ export function register(server: McpServer) {
           .describe(
             "Human-friendly session name, used as topic prefix. " +
             "Encouraged when multiple sessions are active.",
-          ),
-        reconnect: z
-          .boolean()
-          .default(false)
-          .describe(
-            "Set to true after losing your PIN (context loss, crash, etc.) to request " +
-            "operator re-authorization. If a session with the same name already exists, " +
-            "shows a simple Approve/Deny dialog; on approval returns the same SID and PIN. " +
-            "Also sends 'reconnected' instead of 'joined' messaging on a fresh session start.",
           ),
         color: z
           .string()

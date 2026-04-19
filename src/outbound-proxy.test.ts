@@ -387,11 +387,11 @@ describe("outbound-proxy", () => {
       await notifyBeforeFileSend();
       expect(mocks.clearPendingTemp).toHaveBeenCalledOnce();
       expect(interceptor.beforeFileSend).toHaveBeenCalledOnce();
-      // cancelTyping deferred to notifyAfterFileSend
+      // bare cancelTyping() is called in callers' finally blocks, not cancelTypingIfSameGeneration
       expect(mocks.cancelTypingIfSameGeneration).not.toHaveBeenCalled();
 
       await notifyAfterFileSend(50, "voice", "hello", undefined);
-      expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalledOnce();
+      expect(mocks.cancelTypingIfSameGeneration).not.toHaveBeenCalled();
       expect(mocks.recordOutgoing).toHaveBeenCalledWith(
         50, "voice", "hello", undefined,
       );

@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError } from "../telegram.js";
-import { getSession } from "../session-manager.js";
+import { getSession, activeSessionCount } from "../session-manager.js";
 import { getGovernorSid } from "../routing-mode.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -15,16 +15,30 @@ const DESCRIPTION =
   "When target_sid is given, the operator is asked to confirm before the close " +
   "takes effect.";
 
-export async function handleCloseSession({ token, target_sid }: { token?: number; target_sid?: number }) {
+export async function handleCloseSession({ token, target_sid, force }: { token?: number; target_sid?: number; force?: boolean }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const callerSid = _sid;
 
   // ── Self-close path (no target_sid) ───────────────────────────────────
   if (target_sid === undefined) {
+    // Guard: reject if this is the last session and force is not set
+    if (!force && activeSessionCount() === 1) {
+      return toError({
+        code: "LAST_SESSION",
+        message:
+          "You are the last session. Did you mean to shut down the bridge? " +
+          "Use `action(type: 'shutdown')` to stop the service. " +
+          "If you really want to close just your session, call `action(type: 'session/close', force: true)`.",
+      });
+    }
+
     const result = closeSessionById(callerSid);
     void refreshGovernorCommand();
-    return toResult(result);
+    const CLOSE_HINT =
+      "Wipe your stored session token before exiting. " +
+      "If your loop guard re-prompts, do NOT call session/start -- wipe the token, then exit.";
+    return toResult({ ...result, reason: result.closed ? "closed" : "not_found", hint: CLOSE_HINT });
   }
 
   // ── Governor-close path (target_sid provided) ─────────────────────────
@@ -77,7 +91,7 @@ export async function handleCloseSession({ token, target_sid }: { token?: number
   // 6. Execute close
   const result = closeSessionById(target_sid);
   void refreshGovernorCommand();
-  return toResult(result);
+  return toResult({ ...result, reason: "closed" });
 }
 
 export function register(server: McpServer) {
@@ -94,6 +108,14 @@ export function register(server: McpServer) {
           .describe(
             "SID of the session to close. Only the current governor may supply this. " +
             "Omit to close your own session.",
+          ),
+        force: z
+          .boolean()
+          .optional()
+          .describe(
+            "Set to true to force-close the last remaining session. " +
+            "Required when only one session is active and you want to close it directly " +
+            "rather than using action(type: 'shutdown').",
           ),
       },
     },

@@ -17,7 +17,7 @@ const DESCRIPTION =
   "Call `help(topic: 'ask')` for details.";
 
 export async function handleAsk({
-  question, timeout_seconds = 60, reply_to, ignore_pending, token,
+  question, timeout_seconds, reply_to, ignore_pending, token,
 }: {
   question: string;
   timeout_seconds?: number;
@@ -70,7 +70,8 @@ export async function handleAsk({
     const sq = pollSid > 0
       ? getSessionQueue(pollSid)
       : undefined;
-    const deadline = Date.now() + timeout_seconds * 1000;
+    const effectiveTimeout = timeout_seconds ?? 86_400;
+    const deadline = Date.now() + effectiveTimeout * 1000;
     const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
 
     while (Date.now() < deadline) {
@@ -145,9 +146,9 @@ export function register(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(300)
-        .default(60)
-        .describe("Seconds to wait for a reply before returning timed_out: true"),
+        .max(86400)
+        .optional()
+        .describe("Seconds to wait for a reply before returning timed_out: true. Omit to use the server maximum (24 h)."),
       reply_to: z
         .number()
         .int()

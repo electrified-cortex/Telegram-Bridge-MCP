@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  resolveChat,
+  getApi, resolveChat,
   toResult, toError, validateText, validateCallbackData, LIMITS, sendVoiceDirect,
 } from "../telegram.js";
 import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../message-store.js";
@@ -9,7 +9,7 @@ import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
 import { getCallerSid, runInSessionContext } from "../session-context.js";
 import { requireAuth } from "../session-gate.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
   sendChoiceMessage, buildKeyboardRows, type KeyboardOption,
 } from "./button-helpers.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -17,7 +17,7 @@ import { validateButtonSymbolParity } from "../button-validation.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
-import { showTyping, cancelTyping } from "../typing-state.js";
+import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
 import { applyTopicToText } from "../topic-state.js";
 import { markdownToV2 } from "../markdown.js";
 
@@ -35,7 +35,7 @@ export async function handleChoose(
   {
     text,
     options,
-    timeout_seconds = 300,
+    timeout_seconds,
     columns = 2,
     reply_to,
     ignore_pending,
@@ -136,6 +136,8 @@ export async function handleChoose(
       const resolvedSpeed = getSessionSpeed() ?? undefined;
       const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
       await showTyping(typingSeconds, "record_voice");
+      const gen = typingGeneration();
+      let voiceSent = false;
       try {
         const ogg = await synthesizeToOgg(plainText, resolvedVoice, resolvedSpeed);
         // Apply topic prefix to caption (not to TTS input — don't read the prefix aloud).
@@ -155,8 +157,13 @@ export async function handleChoose(
           reply_markup: { inline_keyboard: rows },
         });
         messageId = msg.message_id;
+        voiceSent = true;
       } finally {
-        cancelTyping();
+        if (voiceSent) {
+          // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
+          await new Promise<void>(resolve => setTimeout(resolve, 3000));
+        }
+        cancelTypingIfSameGeneration(gen);
       }
     } else {
       messageId = await sendChoiceMessage(chatId, {
@@ -194,15 +201,27 @@ export async function handleChoose(
     );
 
     if (!match) {
-      // Timeout — register a message hook so the next user message
-      // cleans up the stale buttons (callback hook handles late clicks).
-      // Run editWithSkipped in the tool's session context so the session
-      // header remains consistent with the original message.
+      // Timeout or abort — immediately remove the buttons and show "Timed out".
+      // Run in the tool's session context so the session header is consistent.
+      void runInSessionContext(_sid, () =>
+        editWithTimedOut(chatId, messageId, text, !!audio),
+      ).catch(() => {/* non-fatal */});
+      // Replace the callback hook with an ack-only version: if a late button
+      // press arrives, we still acknowledge it (removes the Telegram spinner)
+      // but skip the re-edit since the message was already cleaned up above.
+      clearCallbackHook(messageId);
+      registerCallbackHook(messageId, (evt) => {
+        const qid = evt.content.qid;
+        clearMessageHook(messageId);
+        if (qid) {
+          void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
+        }
+      }, _sid);
+      // Also register a message hook: if a late click still comes in before
+      // the callback hook processes it, the next message will clear up anything
+      // that remains (buttons already gone, but hook cleans the callback hook).
       registerMessageHook(messageId, () => {
         clearCallbackHook(messageId);
-        void runInSessionContext(_sid, () =>
-          editWithSkipped(chatId, messageId, text, !!audio),
-        ).catch(() => {/* non-fatal */});
       });
       return toResult({
         timed_out: true,
@@ -285,9 +304,9 @@ export function register(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(300)
-        .default(300)
-        .describe("Seconds to wait before returning timed_out: true and removing buttons (default 300 — buttons stay live for 5 minutes). A text or voice message from the user will immediately return skipped regardless of timeout."),
+        .max(86400)
+        .optional()
+        .describe("Seconds to wait before returning timed_out: true and removing buttons. Omit to use the server maximum (24 h). A text or voice message immediately returns skipped regardless of timeout."),
       columns: z
         .number()
         .int()

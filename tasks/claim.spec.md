@@ -13,7 +13,7 @@ task, even when multiple Workers scan concurrently.
 
 ### Gate 1: Must be tracked (committed or staged)
 
-```
+```git
 git ls-files --error-unmatch <file>
 ```
 
@@ -27,7 +27,7 @@ to the Overseer or Curator so the gap can be resolved (usually: commit the file)
 
 ### Gate 2: Must be clean (no uncommitted modifications)
 
-```
+```git
 git diff --name-only -- <file>
 ```
 
@@ -82,14 +82,15 @@ pipeline, which breaks the audit trail and risks claiming incomplete specs.
 ## Script Parameters
 
 | Parameter | PS1 | Bash | Description |
-|-----------|-----|------|-------------|
+| --------- | --- | ---- | ----------- |
 | TaskFile | `-TaskFile "name.md"` | `$1` | Preferred file to claim first (plain filename, no path) |
 | DryRun | `-DryRun` | `--dry-run` | Print what would happen, make no changes |
 
 ## Output Contract
 
 Both scripts output to stdout on success:
-```
+
+```txt
 Claimed: <filename>
 ```
 
@@ -101,7 +102,8 @@ warnings to the Overseer/Curator for resolution.
 ## Rollback Behavior
 
 If `git commit` fails after `git mv` succeeds, the scripts reverse the mv:
-```
+
+```git
 git mv tasks/3-in-progress/<file> tasks/2-queued/<file>
 ```
 

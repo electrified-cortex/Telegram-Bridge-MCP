@@ -56,6 +56,9 @@ vi.mock("./telegram.js", async (importActual) => {
       answerCallbackQuery: mocks.answerCallbackQuery,
     }),
     getRawApi: () => ({
+      sendMessage: mocks.sendMessage,
+      editMessageText: mocks.editMessageText,
+      answerCallbackQuery: mocks.answerCallbackQuery,
       deleteMessage: mocks.deleteMessage,
     }),
   };
@@ -192,7 +195,7 @@ describe("health-check", () => {
       mocks.getGovernorSid.mockReturnValue(1);
       mocks.listSessions.mockReturnValue([gov, next]);
       await _runHealthCheckNow();
-      expect(mocks.registerCallbackHook).toHaveBeenCalledWith(999, expect.any(Function), 1);
+      expect(mocks.registerCallbackHook).toHaveBeenCalledWith(999, expect.any(Function), undefined);
     });
   });
 
@@ -324,13 +327,13 @@ describe("health-check", () => {
       // worker3 (sid 3) should receive governor_changed; worker2 (sid 2) should not
       expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
         3,
-        expect.stringContaining("Governor switched"),
+        expect.stringContaining("Governor is now SID 2"),
         "governor_changed",
         { new_governor_sid: 2, new_governor_name: "Worker2" },
       );
     });
 
-    it("does not deliver governor_changed to the new governor itself", async () => {
+    it("delivers governor_changed to all sessions including the new governor", async () => {
       const gov = makeSession(1, "Primary");
       const worker2 = makeSession(2, "Worker2");
       mocks.getUnhealthySessions.mockReturnValue([gov]);
@@ -339,10 +342,10 @@ describe("health-check", () => {
       mocks.getSession.mockReturnValue(worker2);
       await _runHealthCheckNow();
       pressButton("hc_reroute_now:2");
-      // deliverServiceMessage should NOT have been called with sid 2 (the new governor)
+      // deliverServiceMessage SHOULD be called with sid 2 (the new governor) — matching /primary behavior
       const calls = mocks.deliverServiceMessage.mock.calls as unknown as [number, ...unknown[]][];
       const calledForTarget = calls.some(([sid]) => sid === 2);
-      expect(calledForTarget).toBe(false);
+      expect(calledForTarget).toBe(true);
     });
 
     it("delivers governor_changed on make-primary path too", async () => {
@@ -357,7 +360,7 @@ describe("health-check", () => {
       pressButton("hc_make_primary:2");
       expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
         3,
-        expect.stringContaining("Governor switched"),
+        expect.stringContaining("Governor is now SID 2"),
         "governor_changed",
         { new_governor_sid: 2, new_governor_name: "Worker2" },
       );

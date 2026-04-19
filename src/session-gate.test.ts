@@ -3,11 +3,11 @@ import { requireAuth } from "./session-gate.js";
 import type { TelegramError } from "./telegram.js";
 
 const sessionMocks = vi.hoisted(() => ({
-  validateSession: vi.fn((_sid: number, _pin: number) => false),
+  validateSession: vi.fn((_sid: number, _suffix: number) => false),
 }));
 
 vi.mock("./session-manager.js", () => ({
-  validateSession: (sid: number, pin: number) => sessionMocks.validateSession(sid, pin),
+  validateSession: (sid: number, suffix: number) => sessionMocks.validateSession(sid, suffix),
 }));
 
 beforeEach(() => {
@@ -42,7 +42,7 @@ describe("requireAuth", () => {
       expect(result).toMatchObject({ code: "AUTH_FAILED" });
     });
 
-    it("calls validateSession with correct sid and pin decoded from token", () => {
+    it("calls validateSession with correct sid and suffix decoded from token", () => {
       sessionMocks.validateSession.mockReturnValue(false);
       const token = 5 * 1_000_000 + 80914;
       requireAuth(token);
@@ -82,7 +82,7 @@ describe("requireAuth", () => {
       expect(msg).not.toContain("PIN mismatch");
     });
 
-    it("returns AUTH_FAILED with same generic message when session exists but pin is wrong", () => {
+    it("returns AUTH_FAILED with same generic message when session exists but suffix is wrong", () => {
       sessionMocks.validateSession.mockReturnValue(false);
       const token = 1 * 1_000_000 + 99999;
       const result = requireAuth(token);

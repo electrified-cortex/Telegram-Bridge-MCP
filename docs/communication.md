@@ -27,6 +27,7 @@ The thinking → working → `action(type: "show-typing")` pipeline gives the op
 ## Hard Rules
 
 1. **`confirm`** — all yes/no questions. Always buttons.
+   Quick presets: `action(type: "confirm/ok")` · `action(type: "confirm/ok-cancel")` · `action(type: "confirm/yn")` — use before writing custom `send(type: "question", choose: [...])`.
 2. **`choose`** — all multi-option questions. Always buttons.
 3. **`dequeue`** — sole tool for receiving updates. Returns `{ updates: [...] }`: non-content events first, optionally ending with a content message.
 4. **Commit/push** — get explicit operator approval first. Send a `send(type: "notification")` summary before committing.
@@ -173,9 +174,9 @@ The ✓/✗ characters read as a natural part of text and work well inside butto
 3. Commit.
 4. Edit the notification message to add a `↑ Push` button.
 5. `dequeue` — wait for operator tap (callback query).
-6. `answer_callback_query` to dismiss spinner.
+6. `answer_callback_query(remove_keyboard: true, message_id: <step 4 message_id>)` — dismisses spinner and removes the Push button in one call.
 7. Send `send(type: "notification")` "Pushing…" (save message_id).
-8. Remove the button from step 4.
+8. _(Button already removed in step 6.)_
 9. Push.
 10. Edit "Pushing…" in-place → "✅ Pushed `sha` → `main`".
 

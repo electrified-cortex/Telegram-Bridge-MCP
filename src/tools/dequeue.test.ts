@@ -36,7 +36,7 @@ const mocks = vi.hoisted(() => ({
   getSessionQueue: vi.fn((_sid: number): SessionQueue | undefined => undefined),
   getMessageOwner: vi.fn((_msgId: number): number => 0),
   touchSession: vi.fn((_sid: number) => {}),
-  validateSession: vi.fn((_sid: number, _pin: number) => true),
+  validateSession: vi.fn((_sid: number, _suffix: number) => true),
   getDequeueDefault: vi.fn((_sid: number): number => 300),
   setDequeueDefault: vi.fn((_sid: number, _timeout: number) => {}),
 }));
@@ -66,19 +66,27 @@ vi.mock("../session-manager.js", () => ({
   touchSession: (sid: number) => {
     mocks.touchSession(sid);
   },
-  validateSession: (sid: number, pin: number) => {
-    return mocks.validateSession(sid, pin);
+  validateSession: (sid: number, suffix: number) => {
+    return mocks.validateSession(sid, suffix);
   },
   getDequeueDefault: (sid: number) => mocks.getDequeueDefault(sid),
   setDequeueDefault: (sid: number, timeout: number) => {
     mocks.setDequeueDefault(sid, timeout);
   },
   setDequeueIdle: vi.fn(),
+  isTutorialEnabled: vi.fn(() => false),
+  markTutorialToolSeen: vi.fn(() => false),
+  getSession: vi.fn(() => ({ name: "TestSession" })),
 }));
 
 vi.mock("../session-queue.js", () => ({
   getSessionQueue: (sid: number) => mocks.getSessionQueue(sid),
   getMessageOwner: (msgId: number) => mocks.getMessageOwner(msgId),
+}));
+
+vi.mock("../trace-log.js", () => ({
+  recordNonToolEvent: vi.fn(),
+  recordToolCall: vi.fn(),
 }));
 
 const reminderMocks = vi.hoisted(() => ({
@@ -107,7 +115,7 @@ vi.mock("../reminder-state.js", () => ({
 
 
 
-import { register } from "./dequeue.js";
+import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest } from "./dequeue.js";
 
 function makeEvent(id: number, text: string, event = "message" as string): TimelineEvent {
   return {
@@ -147,6 +155,7 @@ describe("dequeue tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetTimeoutHintForTest();
     mocks.validateSession.mockReturnValue(true);
     reminderMocks.getActiveReminders.mockReturnValue([]);
     reminderMocks.popActiveReminders.mockReturnValue([]);
@@ -600,7 +609,7 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // Auth gate — identity [sid, pin] always required
+  // Auth gate — identity [sid, suffix] always required
   // =========================================================================
 
   describe("auth gate", () => {
@@ -611,7 +620,7 @@ describe("dequeue tool", () => {
       expect(text).toContain("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when pin does not match", async () => {
+    it("returns AUTH_FAILED when suffix does not match", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({ token: 3_009_999, timeout: 0 });
       expect(isError(result)).toBe(true);
@@ -619,7 +628,7 @@ describe("dequeue tool", () => {
       expect(text).toContain("AUTH_FAILED");
     });
 
-    it("passes [sid, pin] to validateSession when identity provided", async () => {
+    it("passes [sid, suffix] to validateSession when identity provided", async () => {
       const evt = makeEvent(1, "auth test");
       const mockSessionQueue = {
         dequeueBatch: vi.fn(() => [evt] as TimelineEvent[]),
@@ -754,7 +763,7 @@ describe("dequeue tool", () => {
     });
 
     it("does not call touchSession when sid is 0", async () => {
-      // identity [0, pin]: sid=0 → touchSession guard (sid > 0) prevents call
+      // identity [0, suffix]: sid=0 → touchSession guard (sid > 0) prevents call
       const mockQueue0 = {
         dequeueBatch: vi.fn(() => [] as TimelineEvent[]),
         pendingCount: vi.fn(() => 0),
@@ -796,7 +805,7 @@ describe("dequeue tool", () => {
       const result = await call({ timeout: 200, token: 1_123_456 });
       expect(isError(result)).toBe(false);
       const data = parseResult(result);
-      expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
+      expect(data.code).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(data.message).toContain("200");
       expect(data.message).toContain("60");
     });
@@ -805,7 +814,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(60);
       const result = await call({ timeout: 200, force: false, token: 1_123_456 });
       const data = parseResult(result);
-      expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
+      expect(data.code).toBe("TIMEOUT_EXCEEDS_DEFAULT");
     });
 
     it("allows timeout > session default when force is true", async () => {
@@ -851,10 +860,20 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(60);
       const result = await call({ timeout: 200, token: 1_123_456 });
       const data = parseResult(result);
-      expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
+      expect(data.code).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(typeof data.hint).toBe("string");
       expect(data.hint as string).toContain("force: true");
       expect(data.hint as string).toContain("profile/dequeue-default");
+    });
+
+    it("hint is omitted on subsequent TIMEOUT_EXCEEDS_DEFAULT responses for the same session", async () => {
+      mocks.getDequeueDefault.mockReturnValue(60);
+      // First call — hint should be present
+      const first = await call({ timeout: 200, token: 1_123_456 });
+      expect(parseResult(first).hint).toBeDefined();
+      // Second call — hint should be omitted
+      const second = await call({ timeout: 200, token: 1_123_456 });
+      expect(parseResult(second).hint).toBeUndefined();
     });
 
     it("rejects explicit timeout above schema cap (timeout: 301) with a validation error", async () => {
@@ -900,13 +919,59 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(60);
       const result = await call({ timeout: 300, token: 1_123_456 });
       const data = parseResult(result);
-      expect(data.error).toBe("TIMEOUT_EXCEEDS_DEFAULT");
+      expect(data.code).toBe("TIMEOUT_EXCEEDS_DEFAULT");
       expect(data.message).toContain("300");
       expect(data.message).toContain("60");
       // Reset to a value >= 300 so the reminder fire path test is not affected.
       // vi.clearAllMocks() clears call history but NOT mockReturnValue state,
       // so a low sessionDefault here would cause the gate to fire in the next test.
       mocks.getDequeueDefault.mockReturnValue(300);
+    });
+  });
+
+  // =========================================================================
+  // max_wait parameter — primary name and backward-compat alias
+  // =========================================================================
+
+  describe("max_wait parameter", () => {
+    it("accepts max_wait: 0 as the primary instant-poll parameter", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ max_wait: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBe(true);
+    });
+
+    it("accepts max_wait for blocking poll", async () => {
+      const evt = makeEvent(50, "via max_wait");
+      mocks.dequeueBatch.mockReturnValueOnce([]).mockReturnValueOnce([evt]);
+      mocks.waitForEnqueue.mockResolvedValue(undefined);
+      const result = await call({ max_wait: 1, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.updates).toHaveLength(1);
+      expect(data.updates[0].id).toBe(50);
+    });
+
+    it("backward-compat: timeout alias still works as instant poll", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBe(true);
+    });
+
+    it("max_wait takes precedence over timeout alias when both provided", async () => {
+      // max_wait: 0 → instant poll; timeout: 300 → long block. max_wait wins.
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ max_wait: 0, timeout: 300, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBe(true);
+    });
+
+    it("force gate uses max_wait value when set via max_wait", async () => {
+      mocks.getDequeueDefault.mockReturnValue(60);
+      const result = await call({ max_wait: 200, token: 1_123_456 });
+      const data = parseResult(result);
+      expect(data.code).toBe("TIMEOUT_EXCEEDS_DEFAULT");
+      expect(data.message).toContain("200");
     });
   });
 
@@ -950,11 +1015,46 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
+  // First-dequeue hint — removed (lean responses)
+  // =========================================================================
+
+  describe("first-dequeue hint (removed)", () => {
+    beforeEach(() => {
+      _resetFirstDequeueHintForTest();
+    });
+
+    it("does not include hint on first dequeue call (empty result)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult(result);
+      expect(data.empty).toBe(true);
+      expect(data.hint).toBeUndefined();
+    });
+
+    it("does not include hint on first dequeue call (batch result)", async () => {
+      const evt = makeEvent(200, "first call with events");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult(result);
+      expect(data.updates).toBeDefined();
+      expect(data.hint).toBeUndefined();
+    });
+
+    it("no hint on any subsequent calls either", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      await call({ timeout: 0, token: 1_123_456 });
+      const result2 = await call({ timeout: 0, token: 1_123_456 });
+      const data2 = parseResult(result2);
+      expect(data2.hint).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
   // Reminder fire path — tokenHint propagation
   // =========================================================================
 
   describe("reminder fire path", () => {
-    it("includes tokenHint hint when a string token is used and a reminder fires", async () => {
+    it("fires reminder events and returns updates with no hint fields", async () => {
       // Strategy: mock Date.now so that idleDuration immediately exceeds
       // REMINDER_IDLE_THRESHOLD_MS (60_000 ms) on the first loop iteration.
       // This lets us test the reminder-fire return path without real delays
@@ -977,17 +1077,14 @@ describe("dequeue tool", () => {
         reminderMocks.getActiveReminders.mockReturnValue([fakeReminder]);
         reminderMocks.popActiveReminders.mockReturnValue([fakeReminder]);
 
-        // Pass token as a string to trigger the tokenHint, with a long timeout
-        // (300s deadline). The loop fires reminders before the deadline.
-        const result = await call({ timeout: 300, token: "1123456" as unknown as number });
+        const result = await call({ timeout: 300, token: 1_123_456 });
         const data = parseResult(result);
 
         // The reminder-fire path should have fired
         expect(data.updates).toBeDefined();
         expect(Array.isArray(data.updates)).toBe(true);
-        // tokenHint must be present because token was passed as a string
-        expect(typeof data.hint).toBe("string");
-        expect(data.hint as string).toContain("string");
+        // No hint field in lean response
+        expect(data.hint).toBeUndefined();
       } finally {
         Date.now = realDateNow;
       }

@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   getTopic: vi.fn((): string | null => null),
   showTyping: vi.fn(),
   cancelTyping: vi.fn(),
+  typingGeneration: vi.fn(() => 0),
+  cancelTypingIfSameGeneration: vi.fn(),
   getSessionVoice: vi.fn((): string | null => null),
   getSessionSpeed: vi.fn((): number | null => null),
   splitMessage: vi.fn((t: string) => [t]),
@@ -23,6 +25,9 @@ const mocks = vi.hoisted(() => ({
   handleShowAnimation: vi.fn(),
   handleSendNewProgress: vi.fn(),
   handleSendDirectMessage: vi.fn(),
+  handleConfirm: vi.fn(),
+  handleAppendText: vi.fn(),
+  deliverServiceMessage: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -58,6 +63,8 @@ vi.mock("../tts.js", () => ({
 vi.mock("../typing-state.js", () => ({
   showTyping: (...args: unknown[]) => mocks.showTyping(...args),
   cancelTyping: () => mocks.cancelTyping(),
+  typingGeneration: () => mocks.typingGeneration(),
+  cancelTypingIfSameGeneration: (...args: unknown[]) => mocks.cancelTypingIfSameGeneration(...args),
 }));
 
 vi.mock("../voice-state.js", () => ({
@@ -72,7 +79,7 @@ vi.mock("../config.js", () => ({
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (sid: number, pin: number) => mocks.validateSession(sid, pin),
+  validateSession: (sid: number, suffix: number) => mocks.validateSession(sid, suffix),
 }));
 
 vi.mock("./show_animation.js", () => ({
@@ -87,9 +94,21 @@ vi.mock("./send_direct_message.js", () => ({
   handleSendDirectMessage: (args: unknown) => mocks.handleSendDirectMessage(args),
 }));
 
+vi.mock("./confirm.js", () => ({
+  handleConfirm: (args: unknown) => mocks.handleConfirm(args),
+}));
+
+vi.mock("./append_text.js", () => ({
+  handleAppendText: (args: unknown) => mocks.handleAppendText(args),
+}));
+
+vi.mock("../session-queue.js", () => ({
+  deliverServiceMessage: (...args: unknown[]) => mocks.deliverServiceMessage(...args),
+}));
+
 import { register } from "./send.js";
 
-const TOKEN = 1_123_456; // sid=1, pin=123456
+const TOKEN = 1_123_456; // sid=1, suffix=123456
 const SENT_MSG = { message_id: 42 };
 const SENT_VOICE_MSG = { message_id: 43 };
 
@@ -113,6 +132,7 @@ describe("send tool", () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
     mocks.showTyping.mockResolvedValue(undefined);
+    mocks.deliverServiceMessage.mockReturnValue(undefined);
 
     const server = createMockServer();
     register(server);
@@ -220,7 +240,7 @@ describe("send tool", () => {
     expect(errorCode(result)).toBe("SID_REQUIRED");
   });
 
-  it("returns AUTH_FAILED when token has wrong pin", async () => {
+  it("returns AUTH_FAILED when token has wrong suffix", async () => {
     mocks.validateSession.mockReturnValue(false);
     const result = await call({ text: "hello", token: 1_099_999 });
     expect(isError(result)).toBe(true);
@@ -228,40 +248,47 @@ describe("send tool", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Case 9: combined mode — caption truncation
+  // Case 9: combined mode — caption overflow auto-split
   // ---------------------------------------------------------------------------
-  it("combined mode: truncates caption and returns info when text exceeds 964 chars", async () => {
+  it("combined mode: auto-splits into two messages when text exceeds 964 chars", async () => {
     const longText = "A".repeat(965); // 965 chars > MAX_CAPTION (964)
-    // applyTopicToText returns the text as-is (mock default)
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
     const result = await call({ text: longText, audio: "nova", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    // Voice note was sent
+    // Voice note was sent (no caption)
     expect(mocks.synthesizeToOgg).toHaveBeenCalledOnce();
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
-    // Result is success
+    // Text message was sent separately
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    // Result has split + both IDs + _hint
     expect(data.audio).toBe(true);
-    // Caption truncation info is present
-    expect(data.info).toBe("Caption was truncated to fit Telegram's 1024-character limit.");
+    expect(data.split).toBe(true);
+    expect(data.message_id).toBe(43);
+    expect(data.text_message_id).toBe(99);
+    expect(typeof data._hint).toBe("string");
+    // Voice note sent with no caption
+    const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
+    expect(voiceCallArgs[2].caption).toBeUndefined();
   });
 
   // ---------------------------------------------------------------------------
-  // Case 10: combined mode — trailing backslash strip after caption truncation
+  // Case 10: combined mode — no split when text is under limit
   // ---------------------------------------------------------------------------
-  it("combined mode: strips trailing backslash from truncated caption", async () => {
-    const MAX_CAPTION = 964; // 1024 - 60
-    // markdownToV2 returns a string where position MAX_CAPTION-1 (0-indexed) is a backslash,
-    // with one extra char to trigger truncation (length = MAX_CAPTION + 1 = 965)
-    const converted = "A".repeat(MAX_CAPTION - 1) + "\\B"; // "A"*963 + "\B", length=965
-    // After slice(0, MAX_CAPTION): "A"*963 + "\" — ends with backslash → must be stripped
-    mocks.markdownToV2.mockReturnValue(converted);
-    const result = await call({ text: "some text", audio: "shimmer", token: TOKEN });
+  it("combined mode: no split when text is under 964 chars (single hybrid message)", async () => {
+    const shortText = "A".repeat(963); // under MAX_CAPTION (964)
+    const result = await call({ text: shortText, audio: "nova", token: TOKEN });
     expect(isError(result)).toBe(false);
-    expect(mocks.sendVoiceDirect).toHaveBeenCalled();
+    const data = parseResult(result);
+    // Voice note sent with caption
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(data.audio).toBe(true);
+    expect(data.split).toBeUndefined();
+    expect(data._hint).toBeUndefined();
+    expect(data.text_message_id).toBeUndefined();
     const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
-    const caption = voiceCallArgs[2].caption ?? "";
-    expect(caption.endsWith("\\")).toBe(false);
-    expect(caption.endsWith("A")).toBe(true);
+    expect(voiceCallArgs[2].caption).toBeDefined();
   });
 
   // ---------------------------------------------------------------------------
@@ -279,6 +306,109 @@ describe("send tool", () => {
     // No synthesis or delivery — validation runs before the send loop
     expect(mocks.synthesizeToOgg).not.toHaveBeenCalled();
     expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gap 1: voice chunk partial failure — synthesizeToOgg fails mid-sequence
+  // ---------------------------------------------------------------------------
+  it("voice chunk partial failure: error returned when TTS fails on second chunk", async () => {
+    mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
+    // Both chunks pass pre-send validation
+    mocks.validateText.mockReturnValue(null);
+    // First chunk synthesizes OK, second throws mid-sequence
+    mocks.synthesizeToOgg
+      .mockResolvedValueOnce(Buffer.from("ogg-chunk1"))
+      .mockRejectedValueOnce(new Error("TTS upstream failure"));
+    // First sendVoiceDirect call succeeds
+    mocks.sendVoiceDirect.mockResolvedValueOnce({ message_id: 43 });
+
+    const result = await call({ audio: "hello world chunk test", token: TOKEN });
+
+    expect(isError(result)).toBe(true);
+    // First chunk was already sent; error propagates from the second
+    expect(mocks.synthesizeToOgg).toHaveBeenCalledTimes(2);
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledTimes(1);
+    // cancelTypingIfSameGeneration cleanup must still run (finally block)
+    expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gap 2: VOICE_RESTRICTED — sendVoiceDirect throws privacy restriction error
+  // ---------------------------------------------------------------------------
+  it("VOICE_RESTRICTED: returns correct error when Telegram blocks voice due to privacy settings", async () => {
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendVoiceDirect.mockRejectedValue(
+      new Error("user restricted receiving of voice note messages"),
+    );
+
+    const result = await call({ audio: "say something", token: TOKEN });
+
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("VOICE_RESTRICTED");
+    // cancelTypingIfSameGeneration cleanup must still run (finally block)
+    expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// 10-508: message alias tests
+// =============================================================================
+describe("send — message alias", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.isTtsEnabled.mockReturnValue(true);
+    mocks.stripForTts.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
+    mocks.showTyping.mockResolvedValue(undefined);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("message alias: send(message: 'hello') succeeds and returns message_id (no hint field)", async () => {
+    const result = await call({ message: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_id).toBe(42);
+    expect(data.hint).toBeUndefined();
+  });
+
+  it("message alias: send(text: 'hello', message: 'world') uses text (no hint)", async () => {
+    const result = await call({ text: "hello", message: "world", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_id).toBe(42);
+    expect(data.hint).toBeUndefined();
+    // Confirm text wins — applyTopicToText was called with "hello" not "world"
+    expect(mocks.applyTopicToText).toHaveBeenCalledWith("hello", expect.anything());
+  });
+
+  it("message alias: send(message: 'hello', audio: 'spoken') works — voice with caption alias (no hint)", async () => {
+    const result = await call({ message: "caption via alias", audio: "spoken content", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.audio).toBe(true);
+    expect(data.hint).toBeUndefined();
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+  });
+
+  it("canonical text still works normally (no hint)", async () => {
+    const result = await call({ text: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_id).toBe(42);
+    expect(data.hint).toBeUndefined();
   });
 });
 
@@ -399,6 +529,24 @@ describe("send type routing", () => {
     expect(errorCode(result)).toBe("MISSING_PARAM");
   });
 
+  it("type: append without text returns MISSING_PARAM", async () => {
+    const result = await call({ type: "append", message_id: 10, token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_PARAM");
+  });
+
+  it("type: append routes to handleAppendText with correct params", async () => {
+    mocks.handleAppendText.mockResolvedValue({ content: [{ type: "text", text: '{"message_id":10,"length":14}' }] });
+    const result = await call({ type: "append", message_id: 10, text: "hello", separator: " | ", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleAppendText).toHaveBeenCalledOnce();
+    const called = mocks.handleAppendText.mock.calls[0][0] as Record<string, unknown>;
+    expect(called.message_id).toBe(10);
+    expect(called.text).toBe("hello");
+    expect(called.separator).toBe(" | ");
+    expect(called.parse_mode).toBe("Markdown");
+  });
+
   it("type: checklist without title returns MISSING_PARAM", async () => {
     const result = await call({
       type: "checklist",
@@ -419,6 +567,17 @@ describe("send type routing", () => {
     const result = await call({ type: "question", token: TOKEN });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MISSING_QUESTION_TYPE");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 10-463 regression: confirm yes_style defaults to "primary"
+  // ---------------------------------------------------------------------------
+  it('type: question/confirm — yes_style defaults to "primary" when not provided', async () => {
+    mocks.handleConfirm.mockResolvedValue({ content: [{ type: "text", text: '{"answer":"yes"}' }] });
+    await call({ type: "question", confirm: "Are you sure?", token: TOKEN });
+    expect(mocks.handleConfirm).toHaveBeenCalledOnce();
+    const called = mocks.handleConfirm.mock.calls[0][0] as Record<string, unknown>;
+    expect(called.yes_style).toBe("primary");
   });
 
   // ---------------------------------------------------------------------------
@@ -449,5 +608,198 @@ describe("send type routing", () => {
     await call({ type: "progress", title: "My title", text: "ignored", percent: 10, token: TOKEN });
     const called = mocks.handleSendNewProgress.mock.calls[0][0] as Record<string, unknown>;
     expect(called.title).toBe("My title");
+  });
+});
+
+// =============================================================================
+// Hybrid auto-split on caption overflow
+// =============================================================================
+describe("hybrid auto-split on caption overflow", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.isTtsEnabled.mockReturnValue(true);
+    mocks.stripForTts.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendVoiceDirect.mockResolvedValue({ message_id: 43 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    mocks.showTyping.mockResolvedValue(undefined);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("sends two messages when text exceeds 1024-char limit with audio, response has split:true, both IDs, and _hint", async () => {
+    const longText = "X".repeat(970); // > MAX_CAPTION (964)
+    const result = await call({ text: longText, audio: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+
+    // Both sends happened
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+
+    // Response shape
+    expect(data.split).toBe(true);
+    expect(data.audio).toBe(true);
+    expect(data.message_id).toBe(43);
+    expect(data.text_message_id).toBe(99);
+    expect(typeof data._hint).toBe("string");
+    expect(data._hint).toContain("43");
+    expect(data._hint).toContain("99");
+
+    // Voice note sent with no caption (overflow → no caption)
+    const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
+    expect(voiceCallArgs[2].caption).toBeUndefined();
+
+    // Text message sent with MarkdownV2
+    const textCallArgs = mocks.sendMessage.mock.calls[0] as [unknown, unknown, { parse_mode?: string }];
+    expect(textCallArgs[2].parse_mode).toBe("MarkdownV2");
+  });
+
+  it("sends single hybrid message (no split) when text is under the 1024-char limit", async () => {
+    const shortText = "Y".repeat(500); // < MAX_CAPTION (964)
+    const result = await call({ text: shortText, audio: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+
+    // Only voice sent, no separate text message
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+
+    // Response shape — no split
+    expect(data.audio).toBe(true);
+    expect(data.split).toBeUndefined();
+    expect(data._hint).toBeUndefined();
+    expect(data.text_message_id).toBeUndefined();
+    expect(data.message_id).toBe(43);
+
+    // Caption present on the voice note
+    const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
+    expect(voiceCallArgs[2].caption).toBeDefined();
+  });
+});
+
+// =============================================================================
+// 10-621: findUnrenderableChars scans finalText (not raw text)
+// =============================================================================
+describe("unrenderable char warning — scans finalText including topic prefix", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    // markdownToV2 passes through — we control the injected prefix directly
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.sendMessage.mockResolvedValue({ message_id: 42 });
+    mocks.deliverServiceMessage.mockReturnValue(undefined);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("does NOT trigger warning when topic prefix contains an em-dash (no longer flagged)", async () => {
+    mocks.applyTopicToText.mockImplementation((t: string) => `\u2014Topic\u2014\n${t}`);
+
+    const result = await call({ text: "hello", token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    expect(parseResult(result).message_id).toBe(42);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+  });
+
+  it("does NOT trigger warning when topic prefix is clean ASCII and text is clean ASCII", async () => {
+    mocks.applyTopicToText.mockImplementation((t: string) => `[MyTopic]\n${t}`);
+
+    const result = await call({ text: "hello", token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// 10-622: unrenderable char scan in audio+caption and captionOverflow paths
+// =============================================================================
+describe("unrenderable char warning — audio+caption and captionOverflow paths", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.isTtsEnabled.mockReturnValue(true);
+    mocks.stripForTts.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendVoiceDirect.mockResolvedValue({ message_id: 43 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    mocks.showTyping.mockResolvedValue(undefined);
+    mocks.deliverServiceMessage.mockReturnValue(undefined);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Audio + caption (inline) — unrenderable char in caption text
+  // ---------------------------------------------------------------------------
+  it("audio+caption: no warning when caption contains an em-dash (no longer flagged)", async () => {
+    const captionWithEmDash = "Status\u2014done"; // em dash U+2014 — no longer flagged
+    const result = await call({ text: captionWithEmDash, audio: "spoken content", token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.audio).toBe(true);
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+  });
+
+  it("audio+caption: no warning when caption is clean ASCII", async () => {
+    const result = await call({ text: "clean caption text", audio: "spoken", token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // captionOverflow path — unrenderable char in overflow text message
+  // ---------------------------------------------------------------------------
+  it("captionOverflow: fires warning when overflow text message contains an unrenderable char", async () => {
+    // Build a string > MAX_CAPTION (1024-60=964) that contains an arrow (→ U+2192)
+    const longTextWithBadChar = "A".repeat(962) + "\u2192end"; // 966 chars > 964, contains →
+    const result = await call({ text: longTextWithBadChar, audio: "hello", token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    // captionOverflow triggered: voice sent + separate text message
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(data.split).toBe(true);
+    expect(data.audio).toBe(true);
+    // Warning fired for the overflow text
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
+    const warningMsg = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[1] as string;
+    expect(warningMsg).toContain("U+2192");
+    const eventType = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[2] as string;
+    expect(eventType).toBe("unrenderable_chars_warning");
   });
 });

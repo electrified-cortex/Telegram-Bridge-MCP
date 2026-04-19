@@ -64,7 +64,7 @@ When a session closes:
 | --- | --- |
 | Non-governor closes | No routing change. Remaining sessions continue. |
 | Governor closes, 2+ remain | Lowest remaining SID becomes governor. The new governor receives a DM. |
-| Governor closes, 1 remains | Single-session mode restored. Routing resets to `load_balance`. |
+| Governor closes, 1 remains | Remaining session promoted to governor. Governor SID set to remaining session. |
 
 ### N → 1 Session
 

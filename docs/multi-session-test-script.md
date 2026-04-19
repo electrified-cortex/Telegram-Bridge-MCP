@@ -68,7 +68,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 1. **[Op]** Reply to S2's intro message (the "ℹ️ Session Start" message from Phase 1.2): "Welcome, Scout."
 2. **[S2]** `dequeue` → receives the reply
-3. **[Verify]** S1 does NOT receive it (call `dequeue(timeout: 0)` to confirm empty)
+3. **[Verify]** S1 does NOT receive it (call `dequeue(max_wait: 0)` to confirm empty)
 4. **[Debug]** `get_debug_log` → find `targeted event=X → sid=2` (the reply was routed by reply-to ownership, not governor)
 5. **[Verify]** This proves that intro messages are correctly registered in the message owner map
 
@@ -77,7 +77,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 1. **[S1]** `send(type: "text", text: "I'm session 1")`
 2. **[Op]** Reply to S1's message: "Got it, S1."
 3. **[S1]** `dequeue` → receives the reply
-4. **[Verify]** S2 does NOT receive it (`dequeue(timeout: 0)` returns empty)
+4. **[Verify]** S2 does NOT receive it (`dequeue(max_wait: 0)` returns empty)
 5. **[Debug]** `get_debug_log` → find `targeted event=X → sid=1`
 
 ### 2.3 Reply-To — Session 2
@@ -125,7 +125,7 @@ Step-by-step test plan requiring 2–3 MCP agent sessions and one operator on Te
 
 1. **[Op]** Send a plain text message (not a reply): "Hello, who gets this?"
 2. **[S1]** `dequeue` → receives it
-3. **[Verify]** S2 `dequeue(timeout: 0)` returns empty — S2 did NOT receive it
+3. **[Verify]** S2 `dequeue(max_wait: 0)` returns empty — S2 did NOT receive it
 4. **[Debug]** `get_debug_log` → find `governor event=X → sid=1`
 
 ### 3.3 Governor Delegation

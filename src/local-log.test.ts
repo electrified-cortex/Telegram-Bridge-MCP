@@ -121,6 +121,77 @@ describe("logEvent", () => {
       await flushCurrentLog(); // ensure clean state
     }
   });
+
+  it("flushCurrentLog after timer-flush serializes — no entries lost", async () => {
+    vi.useFakeTimers();
+    try {
+      const writeOrder: string[] = [];
+      fsMocks.appendFile.mockImplementation((_path: string, content: string) => {
+        content.split('\n').filter(Boolean).forEach(line => writeOrder.push(line));
+        return Promise.resolve();
+      });
+
+      logEvent({ seq: 1 });
+      logEvent({ seq: 2 });
+      // Advance timer — triggers _flushPromise = _flushPromise.then(_actualFlush)
+      await vi.runAllTimersAsync();
+
+      // Call flushCurrentLog immediately after timer fires with new events
+      logEvent({ seq: 3 });
+      await flushCurrentLog();
+
+      const seqs = writeOrder.map(line => (JSON.parse(line) as { event: { seq: number } }).event.seq);
+      expect(seqs).toEqual([1, 2, 3]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("concurrent flushCurrentLog calls serialize — no entries lost or interleaved", async () => {
+    // Track the order in which appendFile is called so we can verify sequencing.
+    const writeOrder: string[] = [];
+    // Async mock: resolves on the next tick so overlapping calls are structurally
+    // possible if serialization is broken. inFlight guard throws on any overlap.
+    let inFlight = 0;
+    fsMocks.appendFile.mockImplementation((_path: string, content: string) => {
+      return new Promise<void>((resolve, reject) => {
+        if (inFlight > 0) { reject(new Error("concurrent appendFile call detected")); return; }
+        inFlight++;
+        setImmediate(() => {
+          content.split('\n').filter(Boolean).forEach(line => writeOrder.push(line));
+          inFlight--;
+          resolve();
+        });
+      });
+    });
+
+    // Log several events without awaiting any flush
+    logEvent({ seq: 1 });
+    logEvent({ seq: 2 });
+    logEvent({ seq: 3 });
+
+    // Kick off multiple concurrent flushCurrentLog calls without awaiting
+    const f1 = flushCurrentLog();
+    const f2 = flushCurrentLog();
+    const f3 = flushCurrentLog();
+
+    // Add more events while flushes are in-flight
+    logEvent({ seq: 4 });
+    logEvent({ seq: 5 });
+
+    // Await all pending flushes plus one final drain
+    await Promise.all([f1, f2, f3]);
+    await flushCurrentLog();
+
+    // All five events must appear in the written output
+    const written = writeOrder.flatMap(line => [JSON.parse(line)]);
+    const seqs = written.map((e: { ts: string; event: { seq: number } }) => e.event.seq);
+    expect(seqs).toHaveLength(5);
+    expect(seqs).toEqual([1, 2, 3, 4, 5]);
+
+    // No duplicates — inFlight guard would have thrown on any concurrent overlap
+    expect(new Set(seqs).size).toBe(5);
+  });
 });
 
 // ---------------------------------------------------------------------------

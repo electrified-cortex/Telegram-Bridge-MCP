@@ -34,9 +34,16 @@ vi.mock("fs", async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
+    existsSync: (path: unknown) => {
+      const p = String(path);
+      if (p.includes("docs") && p.includes("help")) return true;
+      return (actual.existsSync as (...a: unknown[]) => unknown)(path);
+    },
     readFileSync: (path: unknown, _encoding?: unknown) => {
       const p = String(path);
-      if (p.includes("behavior.md")) return MOCK_GUIDE;
+      if (p.includes("docs") && p.includes("help") && p.includes("guide.md")) return MOCK_GUIDE;
+      if (p.includes("docs") && p.includes("help") && p.includes("dequeue.md")) return "Dequeue Loop — drain before acting. pending > 0 → call dequeue again.";
+      if (p.includes("docs") && p.includes("help") && p.includes("shutdown.md")) return "Graceful Shutdown — shutdown signal triggers clean exit.";
       // Fall through to actual for anything else
       return (actual.readFileSync as (...a: unknown[]) => unknown)(path, _encoding);
     },
@@ -92,14 +99,33 @@ describe("help tool", () => {
     expect(content).toContain("notification");
   });
 
-  it("help(topic: 'startup') returns token formula, reconnect hint, and message/history with count", async () => {
+  it("help(topic: 'start') returns profile load, dequeue loop, send basics, and quick reference", async () => {
+    const result = await call({ topic: "start" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("profile/load");
+    expect(content).toContain("dequeue(token)");
+    expect(content).toContain("5 minutes");
+    expect(content).toContain("help('guide')");
+    expect(content).toContain("Quick reference");
+    expect(content).toContain("help('send')");
+    expect(content).toContain("help('action')");
+  });
+
+  it("help(topic: 'startup') is aliased to 'start'", async () => {
     const result = await call({ topic: "startup" });
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);
-    expect(content).toContain("sid * 1_000_000");
-    expect(content).toContain("reconnect: true");
-    expect(content).toContain("message/history");
-    expect(content).toContain("count: 20");
+    expect(content).toContain("profile/load");
+    expect(content).toContain("dequeue(token)");
+  });
+
+  it("help(topic: 'quick_start') is aliased to 'start'", async () => {
+    const result = await call({ topic: "quick_start" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("dequeue");
+    expect(content).toContain("send");
   });
 
   it("help(topic: 'unknown_tool') returns isError: true with UNKNOWN code", async () => {
@@ -111,8 +137,22 @@ describe("help tool", () => {
     expect(parsed.message).toContain("help()");
   });
 
+  it("returns rich dequeue guide", async () => {
+    const result = await call({ topic: "dequeue" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("drain");
+  });
+
+  it("returns rich shutdown guide", async () => {
+    const result = await call({ topic: "shutdown" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("shutdown");
+  });
+
   describe("topic: 'identity'", () => {
-    const VALID_TOKEN = 1123456; // sid=1, pin=123456
+    const VALID_TOKEN = 1123456; // sid=1, suffix=123456
 
     it("returns bot info + mcp metadata when token is valid", async () => {
       const bot = { id: 1, is_bot: true, first_name: "Bot", username: "test_bot" };

@@ -59,7 +59,7 @@ describe("send_new_checklist tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(10);
-    expect(data.hint).toBeDefined();
+    expect(data.hint).toBeUndefined();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
     expect(mocks.editMessageText).not.toHaveBeenCalled();
   });
@@ -125,7 +125,7 @@ describe("send_new_checklist tool", () => {
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    it("returns AUTH_FAILED when identity has wrong suffix", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({"title":"T","steps":[{"label":"a","status":"pending"}],"token": 1099999});
       expect(isError(result)).toBe(true);
@@ -220,9 +220,58 @@ describe("update_checklist tool", () => {
     await update({ title: "CI", steps: terminalSteps, message_id: 10, token: 1123456 });
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       1,
-      "✅ Complete",
+      expect.stringMatching(/^🔴 Failed/),
       expect.objectContaining({ reply_to_message_id: 10, _skipHeader: true }),
     );
+  });
+
+  it("completion badge: all done → starts with ✅ Complete", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 20 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 21 });
+    const allDoneSteps = [
+      { label: "Build", status: "done" },
+      { label: "Test", status: "done" },
+    ];
+    await update({ title: "CI", steps: allDoneSteps, message_id: 20, token: 1123456 });
+    const badge = mocks.sendMessage.mock.calls[0][1] as string;
+    expect(badge).toMatch(/^✅ Complete/);
+  });
+
+  it("completion badge: some failed → starts with 🔴 Failed", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 30 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 31 });
+    const failedSteps = [
+      { label: "Build", status: "done" },
+      { label: "Test", status: "failed" },
+    ];
+    await update({ title: "CI", steps: failedSteps, message_id: 30, token: 1123456 });
+    const badge = mocks.sendMessage.mock.calls[0][1] as string;
+    expect(badge).toMatch(/^🔴 Failed/);
+  });
+
+  it("completion badge: some skipped (no failed) → starts with 🟡 Incomplete", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 40 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 41 });
+    const skippedSteps = [
+      { label: "Build", status: "done" },
+      { label: "Deploy", status: "skipped" },
+    ];
+    await update({ title: "CI", steps: skippedSteps, message_id: 40, token: 1123456 });
+    const badge = mocks.sendMessage.mock.calls[0][1] as string;
+    expect(badge).toMatch(/^🟡 Incomplete/);
+  });
+
+  it("completion badge: failed + skipped → starts with 🔴 Failed", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 50 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 51 });
+    const mixedSteps = [
+      { label: "Build", status: "done" },
+      { label: "Test", status: "failed" },
+      { label: "Deploy", status: "skipped" },
+    ];
+    await update({ title: "CI", steps: mixedSteps, message_id: 50, token: 1123456 });
+    const badge = mocks.sendMessage.mock.calls[0][1] as string;
+    expect(badge).toMatch(/^🔴 Failed/);
   });
 
   it("does not send duplicate completion reply on repeated terminal updates", async () => {

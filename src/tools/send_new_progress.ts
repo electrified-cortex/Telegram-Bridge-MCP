@@ -60,10 +60,7 @@ export async function handleSendNewProgress({
       _rawText: title ?? "",
     } as Record<string, unknown>);
     await getApi().pinChatMessage(chatId, msg.message_id, { disable_notification: true }).catch(() => {});
-    return toResult({
-      message_id: msg.message_id,
-      hint: "Pass this message_id to update_progress to edit in-place.",
-    });
+    return toResult({ message_id: msg.message_id });
   } catch (err) {
     return toError(err);
   }

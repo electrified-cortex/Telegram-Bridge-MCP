@@ -12,7 +12,7 @@ import { createServer } from "./server.js";
 import { getSecurityConfig, getApi, resolveChat, installOutboundProxy, sendServiceMessage } from "./telegram.js";
 import { clearCommandsOnShutdown } from "./shutdown.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
-import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
+import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startHealthCheck } from "./health-check.js";
 import { setAuthHook } from "./session-gate.js";
 import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "./session-manager.js";
@@ -22,7 +22,7 @@ import { setDelegationEnabled } from "./agent-approval.js";
 import { setPreToolHook, buildDenyPatternHook } from "./tool-hooks.js";
 import { timelineSize, setOnLocalLog } from "./message-store.js";
 import { initDebugLog } from "./debug-log.js";
-import { cleanupStalePins } from "./startup-pin-cleanup.js";
+import { cleanupStalePins } from "./startup-token-cleanup.js";
 import { resolveHttpPort } from "./cli-args.js";
 import { enableLogging, isLoggingEnabled, rollLog, logEvent as logLocalEvent, flushCurrentLog } from "./local-log.js";
 
@@ -178,7 +178,19 @@ if (mcpPort !== undefined) {
       return;
     }
 
-    await transport.handleRequest(req, res, req.body);
+    // SSE keepalive: prevent idle transport death during long-running tool calls
+    // (e.g. dequeue blocking on voice transcription for 5-60 s).
+    const keepaliveTimer = setInterval(() => {
+      if (res.headersSent && !res.writableEnded && !res.destroyed) {
+        res.write(":keepalive\n\n");
+      }
+    }, 30_000);
+    res.on("close", () => { clearInterval(keepaliveTimer); });
+    try {
+      await transport.handleRequest(req, res, req.body);
+    } finally {
+      clearInterval(keepaliveTimer);
+    }
   });
 
   app.get("/mcp", async (req: Request, res: Response) => {
@@ -188,6 +200,16 @@ if (mcpPort !== undefined) {
       res.status(400).send("Invalid or missing session ID");
       return;
     }
+
+    // SSE keepalive: periodic comment pings prevent idle transport death.
+    // The MCP client already skips events with no data (priming events, keep-alives).
+    const keepaliveTimer = setInterval(() => {
+      if (res.headersSent && !res.writableEnded && !res.destroyed) {
+        res.write(":keepalive\n\n");
+      }
+    }, 30_000);
+    res.on("close", () => { clearInterval(keepaliveTimer); });
+
     await transport.handleRequest(req, res);
   });
 
@@ -209,6 +231,7 @@ if (mcpPort !== undefined) {
   const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  process.stderr.write("[info] MCP stdio transport connected\n");
 }
 
 // Register built-in commands and start the background poller after server startup.
@@ -222,6 +245,10 @@ void (async () => {
     });
   } catch { /* ignore */ }
 })();
+
+// Start the background poller unconditionally so built-in Telegram commands
+// (e.g. /shutdown, /session) work even when no agent session is active.
+startPoller();
 
 startHealthCheck();
 setAuthHook((sid: number) => {

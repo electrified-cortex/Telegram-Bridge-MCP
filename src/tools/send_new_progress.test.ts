@@ -48,7 +48,7 @@ describe("send_new_progress tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
-    expect(data.hint).toBeDefined();
+    expect(data.hint).toBeUndefined();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
   });
 
@@ -128,7 +128,7 @@ describe("send_new_progress tool", () => {
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when identity has wrong pin", async () => {
+    it("returns AUTH_FAILED when identity has wrong suffix", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({"percent":50,"token": 1099999});
       expect(isError(result)).toBe(true);

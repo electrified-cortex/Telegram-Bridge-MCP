@@ -1,5 +1,48 @@
 # [Unreleased]
 
+## v7.0.0 — Unreleased
+
+### Added
+
+- Unrenderable character detection: `send` warns when message content contains Unicode characters that do not render in Telegram (e.g. certain symbol blocks); the warning lists the offending characters and their code points
+- Behavioral nudge system: per-session checklist tracks button awareness (`knowsButtons`) and question-without-button count; fires `behavior_nudge_question_hint` on first actionable `?` question sent without buttons, and `behavior_nudge_question_escalation` after 10+ such questions — nudges are suppressed once the agent uses buttons in any form or consults button help
+- `onboarding_buttons` service message: delivered during session start (both first-session and subsequent-session paths) covering OK / OK-Cancel / Y-N presets and hybrid message guidance (audio + caption + buttons in one message)
+- `MAX_NUDGES_PER_SESSION` raised from 3 to 5 to accommodate the two new question nudge types without crowding other behavioral nudges
+- `src/behavior-tracker.ts`: `recordButtonUse(sid)` — marks session as button-aware and suppresses all subsequent question nudges; `recordOutboundText(sid, text)` — evaluates outbound text against actionable-question heuristics and fires hint/escalation nudges as appropriate
+- `docs/help/send.md`: Hybrid section documenting audio + caption + buttons composition pattern
+- `docs/help/guide.md`: Button presets table covering OK, OK-Cancel, Y-N, and custom choose patterns
+- `docs/communication.md`: Quick-presets callout added under Hard Rule 2
+- `session/rename` action: added optional `color` parameter — applies a session color change atomically with the rename in the same operator-approval flow
+- `session/rename` action: added optional `target_sid` parameter (governor only) — allows the governor to rename another session; returns `PERMISSION_DENIED` for non-governor callers; validates the target session exists before prompting the operator
+- `session/close` action: added `force?: boolean` parameter — when `true`, allows closing the last active session without triggering the last-session guard
+- `session/close/signal` action (governor only): accepts `target_sid` and optional `timeout_seconds` — delivers a `session_close_signal` service message to the target, waits up to the timeout for self-close, force-closes via `closeSessionById` on expiry; re-checks governor status before force-closing (returns `PERMISSION_DENIED` if governor changed during the wait), detects self-close mid-wait, and rejects callers that are non-governor, target themselves, or name an unknown SID
+
+### Changed
+
+- Unknown-parameter warning middleware: `registerTool` wrapper now strips unrecognised parameters before passing args to the handler and injects a `warning` field into the response payload listing the dropped keys — tools always execute with the valid subset, the call is never rejected (PR #147)
+- `shutdown` MCP tool: now bypasses the pending-message guard and exits immediately when no sessions are active (pending items cannot be processed without a session to route to); the guard still applies when one or more sessions exist
+- Button callback `timeout_seconds` now has no default — omitting it holds buttons open for up to 24 hours (server-side ceiling). Explicit values are still honored. Max raised from 300 s to 86400 s (24 h).
+- Service message content rewrite: all `SERVICE_MESSAGES` constant values rewritten to ultra-compressed spec — minimum words, help() breadcrumbs, no pin/formula references; consolidated 6 governor-change variants to single `GOVERNOR_CHANGED`; added `SESSION_JOINED`
+
+### Fixed
+
+- `send_new_checklist`/`update_checklist`: completion reply now reflects actual outcome — `✅ Complete`, `🟡 Incomplete N/M done`, or `🔴 Failed — N/M passed, F failed` with step counts; was always `✅ Complete` regardless of failed/skipped steps (task 20-471)
+
+- `set_reaction` with a `reactions` array: permanent base layer no longer makes its own redundant API call when a temporary overlay is active — the base is registered virtually and applied only when the last temporary reaction expires (`_fireRestoreForSlot` / `clearAllTempReactions`). `getBotReaction(messageId)` is now updated after each restore or clear so the bot reaction index remains accurate.
+
+- Recording indicator no longer drops prematurely between TTS synthesis/upload and message render: `gen` is now updated after each `showTyping()` call so `cancelTypingIfSameGeneration` targets the correct generation; voice file sends via `send_file` now include a 3 s post-send delay and explicit `cancelTypingIfSameGeneration` in a `finally` block (task 10-recording-indicator-gap)
+- `session/close`: rejects with `LAST_SESSION` error code (and actionable hint) when called on the last active session without `force: true`; prevents accidental orphaning of the bridge process
+- Fixed governor SID being cleared when governor closes a non-governor session in a 2-session setup (10-493). Governor role is now correctly preserved when a non-governor session closes.
+- `/shutdown` built-in command: with zero active sessions, shutdown now skips poller wait/drain and the extra stdio delay so it exits immediately instead of waiting through timeout windows
+- Shutdown log handling: local log buffers are flushed before exit, and when session-log mode is disabled the active local log is rolled on shutdown if one exists
+- `/shutdown` built-in command handling now schedules shutdown on the next tick so poller-driven command handling cannot self-block the graceful shutdown wait path
+- Built-in command stale filtering now includes a 30-second clock-skew grace window so fresh slash commands are not incorrectly ignored as stale
+- `dequeue` wait loop: fixed a lost-wakeup race where an event enqueued between the empty-check and waiter registration could leave the agent blocked until another message arrived
+- `AUTH_FAILED` guidance now explicitly mentions closed/restarted sessions so mid-session token failures direct agents to `action(type: 'session/reconnect', ...)`
+- Graceful shutdown now has a hard-exit watchdog and duplicate-request guard so `/shutdown` cannot hang indefinitely on stalled network cleanup calls
+- Background Telegram poller now starts unconditionally at server startup so built-in commands (`/shutdown`, `/session`, etc.) work even when no agent session is active
+- `src/local-log.ts`: Fixed concurrent flush race — serialized `_actualFlush` calls via promise chaining to prevent dropped or interleaved log entries when `flushCurrentLog()` is called concurrently (PR #148)
+
 ## v6.0.2 — 2026-04-11
 
 ### Fixed

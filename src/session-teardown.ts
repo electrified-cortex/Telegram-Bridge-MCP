@@ -23,12 +23,14 @@ import {
   routeToSession,
 } from "./session-queue.js";
 import { revokeAllForSession } from "./dm-permissions.js";
+import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
 import { replaceSessionCallbackHooks } from "./message-store.js";
 import { dlog } from "./debug-log.js";
 import { stopPoller } from "./poller.js";
 import { clearSessionReminders } from "./reminder-state.js";
 import { cancelAnimation } from "./animation-state.js";
+import { removeSession as removeBehaviorTrackerSession } from "./behavior-tracker.js";
 
 /**
  * Perform the full teardown for a session identified by `sid`.
@@ -55,6 +57,7 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
   const orphaned = drainQueue(sid);
 
   removeSessionQueue(sid);
+  removeBehaviorTrackerSession(sid);
   clearSessionReminders(sid);
   // Cancel any active animation owned by this session
   cancelAnimation(sid).catch(() => {});
@@ -76,9 +79,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
   }
 
   if (remaining.length === 1) {
-    // 2 → 1: single-session mode restored — always reset routing
+    // 2 → 1: single-session mode restored
     const last = remaining[0];
-    setGovernorSid(0);
     // Unpin the remaining session's announcement (back to single-session, no need for pins)
     const lastAnnouncement = getSessionAnnouncementMessage(last.sid);
     if (lastAnnouncement !== undefined) {
@@ -87,12 +89,25 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
         getApi().unpinChatMessage(chatId, lastAnnouncement).catch(() => {});
       }
     }
-    sendServiceMessage(
-      wasGovernor
-        ? "⚠️ Governor session closed. Single-session mode restored."
-        : "ℹ️ Session closed. Single-session mode restored.",
-    ).catch(() => {});
-    deliverDirectMessage(0, last.sid, "📢 Single-session mode restored. Governor cleared.");
+    if (wasGovernor) {
+      // Closed session was the governor: promote the single remaining session
+      setGovernorSid(last.sid);
+      sendServiceMessage(
+        "⚠️ Governor session closed. Single-session mode restored.",
+      ).catch(() => {});
+      deliverServiceMessage(
+        last.sid,
+        SERVICE_MESSAGES.GOVERNOR_PROMOTED_SINGLE.text(sessionName),
+        SERVICE_MESSAGES.GOVERNOR_PROMOTED_SINGLE.eventType,
+        { closed_sid: sid, closed_name: sessionName, new_governor_sid: last.sid },
+      );
+    } else {
+      // Closed session was not the governor: governor remains unchanged
+      sendServiceMessage(
+        "ℹ️ Session closed. Single-session mode restored.",
+      ).catch(() => {});
+      deliverDirectMessage(0, last.sid, "📢 Single-session mode restored.");
+    }
   } else if (wasGovernor) {
     if (remaining.length === 0) {
       // Last session (was governor): reset routing
@@ -111,16 +126,16 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
       // Notify the promoted governor
       deliverServiceMessage(
         next.sid,
-        `You are now the governor (${sessionName} closed). Ambiguous messages will be routed to you.`,
-        "governor_promoted",
+        SERVICE_MESSAGES.GOVERNOR_PROMOTED_MULTI.text(sessionName),
+        SERVICE_MESSAGES.GOVERNOR_PROMOTED_MULTI.eventType,
         { closed_sid: sid, closed_name: sessionName, new_governor_sid: next.sid },
       );
       // Notify other remaining sessions of the new governor
       for (const s of remaining.slice(1)) {
         deliverServiceMessage(
           s.sid,
-          `Session '${sessionName}' (SID ${sid}) has ended. '${label}' (SID ${next.sid}) is now the governor.`,
-          "session_closed",
+          SERVICE_MESSAGES.SESSION_CLOSED_NEW_GOVERNOR.text(sessionName, next.sid, label),
+          SERVICE_MESSAGES.SESSION_CLOSED_NEW_GOVERNOR.eventType,
           { closed_sid: sid, closed_name: sessionName, new_governor_sid: next.sid },
         );
       }
@@ -133,8 +148,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
     for (const s of remaining) {
       deliverServiceMessage(
         s.sid,
-        `Session '${sessionName}' (SID ${sid}) has ended.`,
-        "session_closed",
+        SERVICE_MESSAGES.SESSION_CLOSED.text(sessionName, sid),
+        SERVICE_MESSAGES.SESSION_CLOSED.eventType,
         { closed_sid: sid, closed_name: sessionName },
       );
     }

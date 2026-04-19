@@ -1,5 +1,5 @@
 import { createRequire } from "module";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -29,12 +29,41 @@ try {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/** Absolute path to docs/help/ directory (resolved relative to this module). */
+const HELP_DIR = join(__dirname, "..", "..", "docs", "help");
+
+/**
+ * Load a help topic from docs/help/<topic>.md.
+ * Returns the file content, or null if the file does not exist.
+ */
+function loadTopic(topic: string): string | null {
+  const filePath = join(HELP_DIR, `${topic}.md`);
+  try {
+    if (!existsSync(filePath)) return null;
+    return readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
 const DESCRIPTION =
   "Returns discovery information about this MCP server. " +
   "Call with no arguments for an overview and full tool index. " +
+  "Pass topic: 'index' for a categorized skill index and navigation menu. " +
   "Pass topic: 'guide' for the full agent communication guide. " +
-  "Pass topic: 'startup' for the post-session-start checklist. " +
+  "Pass topic: 'start' for the post-session-start checklist (aliases: 'startup', 'quick_start'). " +
   "Pass topic: 'compression' for the compression cheat sheet. " +
+  "Pass topic: 'compacted' for post-compaction recovery steps. " +
+  "Pass topic: 'dequeue' for dequeue loop rules and flow. " +
+  "Pass topic: 'shutdown' for graceful shutdown procedure. " +
+  "Pass topic: 'forced-stop' for forced-stop detection and recovery. " +
+  "Pass topic: 'reminders' for reminder-driven delegation pattern. " +
+  "Pass topic: 'dump' for session dump filing procedure. " +
+  "Pass topic: 'orphaned' for closing an orphaned session. " +
+  "Pass topic: 'stop-hook' for VS Code stop hook recovery. " +
+  "Pass topic: 'send' for full send tool reference including append mode. " +
+  "Pass topic: 'append_text' for append_text tool reference (params, edge cases, examples). " +
+  "Pass topic: 'reactions' for the full reaction protocol (priority queue, voice auto-salute, temporary vs permanent, DM rules). " +
   "Pass topic: '<tool_name>' for detailed docs on a specific tool.";
 
 /**
@@ -44,10 +73,10 @@ const DESCRIPTION =
  * added in the future, this list should be updated to match.
  */
 const TOOL_INDEX: Record<string, string> = {
-  help: "Discovery tool — overview, communication guide, and per-tool docs. Specialized topics: 'startup' (post-session checklist), 'guide' (agent comms guide), 'compression' (compression cheat sheet), 'checklist' (step statuses), 'animation' (frame guide). No auth required for most topics; topic: 'identity' requires a session token.",
+  help: "Discovery tool — overview, communication guide, and per-tool docs. Specialized topics: 'index' (categorized skill menu), 'startup' (post-session checklist), 'quick_start' (dequeue loop + send basics), 'guide' (agent comms guide), 'compression' (compression cheat sheet), 'checklist' (step statuses), 'animation' (frame guide), 'dequeue' (loop rules), 'shutdown' (graceful shutdown), 'forced-stop' (context-limit recovery), 'reminders' (delegation follow-up), 'dump' (session dump filing), 'orphaned' (close dangling session), 'stop-hook' (VS Code stop hook). No auth required for most topics; topic: 'identity' requires a session token.",
   session_start: "Authenticate and start a named agent session. Returns a token for all subsequent calls.",
   close_session: "End the current agent session and release its slot.",
-  list_sessions: "List all active sessions with their SIDs and display names.",
+  list_sessions: "List active sessions. Without a token: returns only SIDs — no auth required (use as a probe after a bridge restart). With a valid token: returns full session details (ID, name, color, createdAt) and the active SID.",
   rename_session: "Rename the current session's display name.",
   dequeue: "Poll for new Telegram messages and events. Core loop — call repeatedly.",
   set_dequeue_default: "Set the default timeout for dequeue calls.",
@@ -96,7 +125,7 @@ const TOOL_INDEX: Record<string, string> = {
   get_debug_log: "Read recent entries from the debug log.",
   send_direct_message: "Send a message directly to a specific session (bypasses routing).",
   route_message: "Route a message to a specific session or change routing mode.",
-  approve_agent: "Approve a pending session_start request by name. Only available when agent delegation is enabled by the operator via the /approve panel.",
+  approve_agent: "Approve a pending session_start request by ticket. Only available when agent delegation is enabled by the operator via the /approve panel. The one-time ticket is delivered to the governor via dequeue when the session requests approval.",
   shutdown: "Shut down the MCP server process.",
   notify_shutdown_warning: "Broadcast a shutdown warning to all active sessions.",
 };
@@ -152,146 +181,39 @@ export function register(server: McpServer) {
         }
       }
 
-      // topic: "guide" → full agent communication guide
+      // topic: "guide" → full agent communication guide (loaded from docs/help/guide.md)
       if (topic === "guide") {
-        try {
-          const content = readFileSync(
-            join(__dirname, "..", "..", "docs", "behavior.md"),
-            "utf-8"
-          );
+        const content = loadTopic("guide");
+        if (content !== null) {
           return toResult({ content: `Agent Communication Guide\n\n${content}` });
-        } catch {
-          return toResult({
-            content:
-              "Agent Communication Guide\n\nUnavailable: docs/behavior.md not found in distribution.",
-          });
         }
-      }
-
-      // topic: "checklist" → checklist step status values
-      if (topic === "checklist") {
         return toResult({
-          content: [
-            "Checklist Step Statuses",
-            "",
-            "Valid status values for send(type: 'checklist') and action(type: 'checklist/update') steps:",
-            "",
-            "| Status | Meaning |",
-            "| --- | --- |",
-            "| pending | Not yet started (default — shows ⬜) |",
-            "| running | In progress (shows 🔄) |",
-            "| done | Completed successfully (shows ✅) |",
-            "| failed | Completed with error (shows ❌) |",
-            "| skipped | Intentionally skipped (shows ⏭️) |",
-            "",
-            "Common mistake: using 'in-progress' — not valid. Use 'running'.",
-            "",
-            "Example:",
-            "```",
-            "action(type: 'checklist/update', message_id: 123, steps: [",
-            "  { label: 'Fetch data', status: 'done' },",
-            "  { label: 'Process', status: 'running' },",
-            "  { label: 'Save', status: 'pending' }",
-            "])",
-            "```",
-          ].join("\n"),
+          content:
+            "Agent Communication Guide\n\nUnavailable: docs/help/guide.md not found in distribution.",
         });
       }
 
-      // topic: "animation" → animation frames guide
-      if (topic === "animation") {
-        return toResult({
-          content: [
-            "Animation Frames Guide",
-            "",
-            "Starting an animation:",
-            "send(type: 'animation', frames: [...], interval: 1000, timeout: 600)",
-            "Or a named preset: send(type: 'animation', preset: 'working')",
-            "",
-            "Single-emoji frames warning:",
-            "Frames with only a single emoji render as large stickers on mobile (Telegram behavior).",
-            "",
-            "Fix: append \\u200b (zero-width space) to single-emoji frames:",
-            "  frames: ['⏳\\u200b', '🔄\\u200b']",
-            "Or use multi-character frames:",
-            "  frames: ['`⏳ working`', '`🔄 thinking`']",
-            "",
-            "Built-in presets:",
-            "| Preset | Description |",
-            "| --- | --- |",
-            "| bounce | Block-character bouncing bar (default) |",
-            "| working | ⚙ Working… cycling dots |",
-            "| thinking | 🤔 Thinking… cycling dots |",
-            "| reviewing | 🔍 Reviewing… cycling dots |",
-          ].join("\n"),
-        });
-      }
+      // Topics with rich file-based content — skip TOOL_INDEX even if present
+      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions"]);
 
-      // topic: "compression" → standalone compression cheat sheet
-      if (topic === "compression") {
-        return toResult({
-          content: [
-            "Compression Cheat Sheet",
-            "",
-            "Tiers:",
-            "| Tier | Use when |",
-            "| --- | --- |",
-            "| None | Full English — audio msgs, spec files |",
-            "| Lite | Drop filler/hedging, keep articles — operator text |",
-            "| Full | Drop articles, fragments OK — general docs |",
-            "| Ultra | Telegraphic, abbreviate, arrows — agent DMs, agent files |",
-            "",
-            "Surface Map:",
-            "| Surface | Tier |",
-            "| --- | --- |",
-            "| Agent-to-agent DMs | Ultra |",
-            "| Agent files (CLAUDE.md, .agent.md) | Ultra |",
-            "| Skills (SKILL.md), instructions | Ultra |",
-            "| Reminder text | Ultra |",
-            "| Text to operator (Telegram) | Lite |",
-            "| Audio captions | Lite |",
-            "| Audio messages | None |",
-            "| Spec files, code blocks | None |",
-            "",
-            "Ultra Rules:",
-            "Drop: articles (a/an/the), filler (just/really/basically/actually), pleasantries, hedging.",
-            "Keep: technical terms exact, code/paths/URLs verbatim.",
-            "Pattern: [thing] [action] [reason]. [next step].",
-            "Abbreviate: DB auth config req res fn impl msg sess conn dir env repo.",
-            "Fragments OK. Arrows: X → Y.",
-            "",
-            "Examples:",
-            "Bad: 'Sure! I'd be happy to help with that.'",
-            "Good: 'Issue: token expiry, auth middleware.'",
-            "",
-            "Bad: 'The implementation could potentially involve adding a check...'",
-            "Good: 'Impl: null-check before fn call.'",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "startup" → post-session-start checklist
-      if (topic === "startup") {
-        return toResult({
-          content: [
-            "Startup — Post-Session-Start",
-            "",
-            "Token: token = sid * 1_000_000 + pin. Required for all session-bound calls. Save it now.",
-            "Reconnect: action(type: 'session/start', name: '...', reconnect: true) if token is lost.",
-            "Missed messages: action(type: 'message/history', count: 20) after reconnect.",
-            "",
-            "Profile: action(type: 'profile/load', key: '<name>') to restore voice/animation/reminders.",
-            "",
-            "Discover: help() → tool index · help(topic: 'guide') → full comms guide · help(topic: '<tool>') → per-tool docs.",
-            "Compression: help(topic: 'compression') → message brevity tiers.",
-          ].join("\n"),
-        });
-      }
-
-      // topic: "<tool_name>" → per-tool description
-      const desc = TOOL_INDEX[topic];
+      // topic: "<tool_name>" → per-tool description (checked before file lookup)
+      // Skip for rich topics that have dedicated file-based content
+      const desc = !RICH_TOPICS.has(topic) ? TOOL_INDEX[topic] : undefined;
       if (desc) {
         return toResult({ content: `${topic}\n\n${desc}` });
+      }
+
+      // Alias resolution: startup/quick_start → start
+      const TOPIC_ALIASES: Record<string, string> = {
+        startup: "start",
+        quick_start: "start",
+      };
+      const resolvedTopic = TOPIC_ALIASES[topic] ?? topic;
+
+      // All other named topics → load from docs/help/<topic>.md
+      const fileContent = loadTopic(resolvedTopic);
+      if (fileContent !== null) {
+        return toResult({ content: fileContent });
       }
 
       return toError({

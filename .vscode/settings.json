@@ -6,7 +6,8 @@
         "git clean": false,
         "git stash drop": false,
         "git branch -D": false,
-        "npx tsc": true
+        "npx tsc": true,
+        "pnpm": true
     },
     "docker.lsp.experimental.scout.criticalHighVulnerabilities": true
 }

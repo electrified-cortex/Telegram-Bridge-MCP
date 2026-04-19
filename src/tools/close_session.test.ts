@@ -107,7 +107,7 @@ describe("close_session tool", () => {
     mocks.closeSession.mockReturnValue(true);
     mocks.getGovernorSid.mockReturnValue(0);
     mocks.listSessions.mockReturnValue([]);
-    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(2);
     mocks.sendServiceMessage.mockResolvedValue(undefined);
     mocks.getSession.mockReturnValue({ token: 1123456, name: "Alpha", createdAt: "2026-03-17" });
     mocks.drainQueue.mockReturnValue([]);
@@ -282,7 +282,7 @@ describe("close_session tool", () => {
   // 2 → 1 teardown: single-session mode restoration
   // =========================================================================
 
-  it("clears governor SID when dropping from 2 to 1 session (governor closes)", async () => {
+  it("promotes remaining session to governor when governor closes (2→1)", async () => {
     mocks.getGovernorSid.mockReturnValue(1);
     mocks.listSessions.mockReturnValue([
       { sid: 2, name: "Worker", createdAt: "2026-03-17" },
@@ -290,13 +290,14 @@ describe("close_session tool", () => {
 
     await call({ token: 1123456 });
 
-    expect(mocks.setGovernorSid).toHaveBeenCalledWith(0);
+    // Remaining session (sid 2) becomes governor, not cleared to 0
+    expect(mocks.setGovernorSid).toHaveBeenCalledWith(2);
     expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
       expect.stringContaining("Single-session mode restored"),
     );
   });
 
-  it("clears governor SID when dropping from 2 to 1 session (non-governor closes)", async () => {
+  it("does not touch governor SID when non-governor closes (2→1)", async () => {
     mocks.getGovernorSid.mockReturnValue(1); // session 1 is governor, we're closing session 2
     mocks.listSessions.mockReturnValue([
       { sid: 1, name: "Primary", createdAt: "2026-03-17" },
@@ -304,7 +305,8 @@ describe("close_session tool", () => {
 
     await call({ token: 2123456 });
 
-    expect(mocks.setGovernorSid).toHaveBeenCalledWith(0);
+    // Governor (sid 1) must remain — setGovernorSid must NOT be called
+    expect(mocks.setGovernorSid).not.toHaveBeenCalled();
     expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
       expect.stringContaining("Single-session mode restored"),
     );
@@ -513,8 +515,8 @@ describe("close_session tool", () => {
     expect(promotionMsg![0]).toBe(2); // lowest SID promoted
     expect(String(promotionMsg![1])).toContain("governor");
 
-    // Other remaining session gets session_closed
-    const closedMsg = calls.find((c: unknown[]) => c[0] === 3 && c[2] === "session_closed");
+    // Other remaining session gets session_closed_new_governor (governor path)
+    const closedMsg = calls.find((c: unknown[]) => c[0] === 3 && c[2] === "session_closed_new_governor");
     expect(closedMsg).toBeDefined();
   });
 
@@ -531,7 +533,7 @@ describe("close_session tool", () => {
   // Self-close regression (Task 150)
   // Root cause: "close_session currently disabled" was reported by an AI agent
   // (client-side reasoning), NOT by the server. The server never disables this
-  // tool — it is always registered with enabled: true and accepts any SID+PIN,
+  // tool — it is always registered with enabled: true and accepts any SID+token,
   // including a session closing itself with its own credentials.
   // =========================================================================
 
@@ -601,7 +603,7 @@ describe("close_session tool", () => {
 
   it("does not stop poller when sessions remain after close", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 2, name: "Worker", createdAt: "2026-03-22" }]);
-    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.activeSessionCount.mockReturnValue(1); // 1 remains after close — poller stays up
 
     await call({ token: 1123456 });
 
@@ -697,6 +699,44 @@ describe("close_session tool", () => {
     expect(result.closed).toBe(false);
     expect(result.reason).toBe("cancelled");
     expect(mocks.closeSession).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Last-session guard (task: session/close safety)
+  // =========================================================================
+
+  it("rejects self-close when it is the last session and force is omitted", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+
+    const result = await call({ token: 1123456 });
+
+    expect(isError(result)).toBe(true);
+    const parsed = parseResult(result);
+    expect(parsed.code).toBe("LAST_SESSION");
+    expect(parsed.message).toContain("You are the last session");
+    expect(parsed.message).toContain("action(type: 'shutdown')");
+    expect(mocks.closeSession).not.toHaveBeenCalled();
+  });
+
+  it("closes normally when it is the last session and force is true", async () => {
+    // force=true short-circuits the guard (no activeSessionCount call there).
+    // The only call is in session-teardown after close, where 0 triggers stopPoller.
+    mocks.activeSessionCount.mockReturnValueOnce(0);
+
+    const result = parseResult(await call({ token: 1123456, force: true }));
+
+    expect(result.closed).toBe(true);
+    expect(mocks.closeSession).toHaveBeenCalledWith(1);
+    expect(mocks.stopPoller).toHaveBeenCalled();
+  });
+
+  it("closes normally without force when sessions remain (non-last session)", async () => {
+    mocks.activeSessionCount.mockReturnValue(2);
+
+    const result = parseResult(await call({ token: 1123456 }));
+
+    expect(result.closed).toBe(true);
+    expect(mocks.closeSession).toHaveBeenCalledWith(1);
   });
 
   // =========================================================================

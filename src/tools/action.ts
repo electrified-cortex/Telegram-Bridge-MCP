@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { toResult, toError } from "../telegram.js";
+import { toResult, toError, resolveChat } from "../telegram.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { requireAuth } from "../session-gate.js";
 import { getGovernorSid } from "../routing-mode.js";
@@ -15,7 +15,7 @@ import {
 import { handleSetVoice } from "./set_voice.js";
 import { handleListSessions } from "./list_sessions.js";
 import { handleCloseSession } from "./close_session.js";
-import { handleSessionStart } from "./session_start.js";
+import { handleSessionStart, handleSessionReconnect } from "./session_start.js";
 import { handleRenameSession } from "./rename_session.js";
 import { handleSessionIdle } from "./session_idle.js";
 import { handleEditMessage } from "./edit_message.js";
@@ -23,7 +23,7 @@ import { handleEditMessage } from "./edit_message.js";
 // Phase 2 imports — message/*
 import { handleDeleteMessage } from "./delete_message.js";
 import { handlePinMessage } from "./pin_message.js";
-import { handleSetReaction } from "./set_reaction.js";
+import { handleSetReaction, handleSetReactionPreset } from "./set_reaction.js";
 import { handleAnswerCallbackQuery } from "./answer_callback_query.js";
 import { handleRouteMessage } from "./route_message.js";
 // Phase 2 imports — profile/*, reminder/*, etc.
@@ -46,7 +46,7 @@ import { handleGetLog } from "./get_log.js";
 import { handleListLogs } from "./list_logs.js";
 import { handleRollLog } from "./roll_log.js";
 import { handleDeleteLog } from "./delete_log.js";
-import { handleGetDebugLog } from "./get_debug_log.js";
+import { handleGetDebugLog, handleGetTraceLog } from "./get_debug_log.js";
 // Phase 2 imports — animation/*
 import { handleCancelAnimation } from "./cancel_animation.js";
 // Phase 2 imports — standalone
@@ -55,11 +55,13 @@ import { handleConfirm } from "./confirm.js";
 import { handleApproveAgent } from "./approve_agent.js";
 import { handleShutdown } from "./shutdown.js";
 import { handleNotifyShutdownWarning } from "./notify_shutdown_warning.js";
+import { handleCloseSessionSignal } from "./close_session_signal.js";
 import { handleTranscribeVoice } from "./transcribe_voice.js";
 import { handleDownloadFile } from "./download_file.js";
 import { handleUpdateChecklist } from "./send_new_checklist.js";
 import { handleUpdateProgress } from "./update_progress.js";
 import { handleSetCommands } from "./set_commands.js";
+import { setTutorialEnabled } from "../session-manager.js";
 
 type ToolResult = ReturnType<typeof toResult>;
 
@@ -93,7 +95,9 @@ function levenshtein(a: string, b: string): number {
  */
 export function setupActionRegistry(): void {
   registerAction("session/start", handleSessionStart as unknown as ActionHandler);
+  registerAction("session/reconnect", handleSessionReconnect as unknown as ActionHandler);
   registerAction("session/close", handleCloseSession as unknown as ActionHandler);
+  registerAction("session/close/signal", handleCloseSessionSignal as unknown as ActionHandler, { governor: true });
   registerAction("session/list", handleListSessions as unknown as ActionHandler);
   registerAction("session/idle", handleSessionIdle as unknown as ActionHandler);
   registerAction("session/rename", handleRenameSession as unknown as ActionHandler);
@@ -103,7 +107,17 @@ export function setupActionRegistry(): void {
   // message/*
   registerAction("message/delete", handleDeleteMessage as unknown as ActionHandler);
   registerAction("message/pin", handlePinMessage as unknown as ActionHandler);
-  registerAction("react", handleSetReaction as unknown as ActionHandler);
+  registerAction("react", (async (args: Record<string, unknown>) => {
+    // Preset path: dispatch before single-emoji / array handling
+    if (args.preset && typeof args.preset === "string" && !args.emoji && !args.reactions) {
+      const _sid = requireAuth(args.token as number);
+      if (typeof _sid !== "number") return toError(_sid);
+      const chatId = resolveChat();
+      if (typeof chatId !== "number") return toError(chatId);
+      return handleSetReactionPreset(_sid, chatId, args.message_id as number, args.preset);
+    }
+    return handleSetReaction(args as Parameters<typeof handleSetReaction>[0]);
+  }) as unknown as ActionHandler);
   registerAction("acknowledge", handleAnswerCallbackQuery as unknown as ActionHandler);
   registerAction("message/route", handleRouteMessage as unknown as ActionHandler, { governor: true });
 
@@ -137,6 +151,7 @@ export function setupActionRegistry(): void {
   registerAction("log/roll", handleRollLog as unknown as ActionHandler, { governor: true });
   registerAction("log/delete", handleDeleteLog as unknown as ActionHandler, { governor: true });
   registerAction("log/debug", handleGetDebugLog as unknown as ActionHandler, { governor: true });
+  registerAction("log/trace", handleGetTraceLog as unknown as ActionHandler, { governor: true });
   // animation/*
   registerAction("animation/cancel", handleCancelAnimation as unknown as ActionHandler);
 
@@ -172,6 +187,20 @@ export function setupActionRegistry(): void {
       token: args.token as number,
     })
   ) as unknown as ActionHandler);
+
+  // tutorial/*
+  registerAction("tutorial/on", ((args: Record<string, unknown>) => {
+    const _sid = requireAuth(args.token as number);
+    if (typeof _sid !== "number") return toError(_sid);
+    setTutorialEnabled(_sid, true);
+    return toResult({ message: "Tutorial mode enabled." });
+  }) as unknown as ActionHandler);
+  registerAction("tutorial/off", ((args: Record<string, unknown>) => {
+    const _sid = requireAuth(args.token as number);
+    if (typeof _sid !== "number") return toError(_sid);
+    setTutorialEnabled(_sid, false);
+    return toResult({ message: "Tutorial mode disabled." });
+  }) as unknown as ActionHandler);
 }
 
 const DESCRIPTION =
@@ -196,23 +225,22 @@ export function register(server: McpServer): void {
             "Action path to dispatch (e.g. 'session/list', 'profile/voice'). " +
             "Omit to list all categories. Pass a category name to list sub-paths.",
           ),
-        // Auth token — required for all paths except session/start
+        // Auth token — required for most paths; see exceptions below
         token: TOKEN_SCHEMA.optional().describe(
-          "Session token (sid * 1_000_000 + pin). Required for all paths except session/start.",
+          "Session token from action(type: 'session/start'). " +
+          "Token-optional paths: `session/start`, `session/reconnect`, and `session/list` (unauthenticated probe returns SIDs only). " +
+          "Omitting `type` (discovery/category listing) also requires no token. " +
+          "All other paths require a valid token.",
         ),
-        // session/start params
+        // session/start and session/reconnect params
         name: z
           .string()
           .default("")
-          .describe("session/start: Human-friendly session name."),
-        reconnect: z
-          .boolean()
-          .default(false)
-          .describe("session/start: Set true to reconnect after context loss."),
+          .describe("session/start, session/reconnect: Human-friendly session name."),
         color: z
           .string()
           .optional()
-          .describe("session/start: Preferred color square emoji hint."),
+          .describe("session/start: Preferred color square emoji hint. session/rename: Color to apply (must be a valid palette emoji)."),
         // session/rename params
         new_name: z
           .string()
@@ -235,7 +263,7 @@ export function register(server: McpServer): void {
           .int()
           .min(1)
           .optional()
-          .describe("message/edit, message/delete, message/pin, react, message/get, checklist/update, progress/update: Target message ID."),
+          .describe("message/edit, message/delete, message/pin, react, message/get, checklist/update, progress/update, acknowledge: Target message ID."),
         text: z
           .string()
           .optional()
@@ -319,13 +347,17 @@ export function register(server: McpServer): void {
           .int()
           .optional()
           .describe("acknowledge: Seconds the result may be cached client-side."),
-        // message/route params
+        remove_keyboard: z
+          .boolean()
+          .optional()
+          .describe("acknowledge: Clear the inline keyboard on message_id after answering. Returns MISSING_MESSAGE_ID error if message_id is absent."),
+        // message/route and session/rename params
         target_sid: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("message/route: Session ID to route the message to."),
+          .describe("message/route: Session ID to route the message to. session/rename: SID of session to rename (governor only)."),
         // profile/topic params
         topic: z
           .string()
@@ -398,7 +430,7 @@ export function register(server: McpServer): void {
         preset: z
           .string()
           .optional()
-          .describe("animation/default: Named preset key for registration or recall."),
+          .describe("react: Named reaction preset (e.g. \"processing\"). animation/default: Named preset key for registration or recall."),
         reset: z
           .boolean()
           .optional()
@@ -447,21 +479,36 @@ export function register(server: McpServer): void {
           .boolean()
           .optional()
           .describe("log/debug: Toggle debug logging on/off."),
+        // log/trace params
+        session_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("log/trace: Filter to a specific session ID (governor-only for other sessions)."),
+        tool: z
+          .string()
+          .optional()
+          .describe("log/trace: Filter trace entries to a specific tool name."),
+        since_ts: z
+          .string()
+          .optional()
+          .describe("log/trace: Only return trace entries at or after this ISO timestamp."),
         // show-typing params
         cancel: z
           .boolean()
           .optional()
           .describe("show-typing: If true, immediately stop the typing indicator."),
         // approve params
-        target_name: z
+        ticket: z
           .string()
           .optional()
-          .describe("approve: Name of the pending session to approve."),
-        // shutdown params
+          .describe("approve: One-time approval ticket delivered to the governor via dequeue when the session requested approval."),
+        // shutdown / session/close params
         force: z
           .boolean()
           .optional()
-          .describe("shutdown: Bypass the pending-message safety guard."),
+          .describe("shutdown: Bypass the pending-message safety guard. session/close: Force-close the last remaining session (bypasses the last-session guard)."),
         // shutdown/warn params
         reason: z
           .string()

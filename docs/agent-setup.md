@@ -111,10 +111,10 @@ Claude Code agents write their session credentials to a `telegram/session.md` fi
 Agents using this MCP must not exit between messages. The correct pattern is:
 
 ```text
-action(type: "session/start") → drain (dequeue timeout:0 until empty) → block (dequeue) → handle → drain → block → ...
+action(type: "session/start") → drain (dequeue max_wait:0 until empty) → block (dequeue) → handle → drain → block → ...
 ```
 
-- **Drain first** — call `dequeue(timeout: 0)` in a loop until `empty: true` to clear any backlog.
+- **Drain first** — call `dequeue(max_wait: 0)` in a loop until `empty: true` to clear any backlog.
 - **Block** — call `dequeue()` (no args) to wait up to 300 seconds for the next message.
 - **On timeout** — call `dequeue()` again immediately. Optionally send a brief check-in `send(type: "notification")`.
 - **On message** — handle it, then drain, then block again.

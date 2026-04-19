@@ -6,10 +6,17 @@ import { requireAuth } from "../session-gate.js";
 
 const DESCRIPTION =
   "List active sessions. " +
-  "Requires a valid token. " +
-  "Returns full session details (ID, name, color, createdAt) and the active SID.";
+  "Token is optional. " +
+  "Without a token: returns only the list of active SIDs — no auth required. " +
+  "Use this as a probe after a bridge restart to check if your SID survived. " +
+  "With a valid token: returns full session details (ID, name, color, createdAt) and the active SID.";
 
-export function handleListSessions({ token }: { token: number }) {
+export function handleListSessions({ token }: { token?: number }) {
+  if (token === undefined) {
+    // Unauthenticated probe — SIDs only, no details
+    return toResult({ sids: listSessions().map(s => s.sid) });
+  }
+
   const sid = requireAuth(token);
   if (typeof sid !== "number") return toError(sid);
 
@@ -24,8 +31,10 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        token: TOKEN_SCHEMA.describe(
-          "Session token from session_start (sid * 1_000_000 + pin). Required.",
+        token: TOKEN_SCHEMA.optional().describe(
+          "Session token (sid * 1_000_000 + suffix). " +
+          "Omit for an unauthenticated SID probe (returns { sids: [...] }). " +
+          "Provide to get full session details (requires a valid token).",
         ),
       },
     },

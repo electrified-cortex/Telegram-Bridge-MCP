@@ -7,6 +7,11 @@ interface AuthenticatedResult {
   active_sid: number;
 }
 
+// Unauthenticated probe response shape
+interface ProbeResult {
+  sids: number[];
+}
+
 const mocks = vi.hoisted(() => ({
   listSessions: vi.fn(),
   getActiveSession: vi.fn(),
@@ -24,7 +29,7 @@ vi.mock("../session-gate.js", () => ({
 
 import { register } from "./list_sessions.js";
 
-// A valid encoded token for sid=1, pin=123456: 1 * 1_000_000 + 123456 = 1_123_456
+// A valid encoded token for sid=1, suffix=123456: 1 * 1_000_000 + 123456 = 1_123_456
 const VALID_TOKEN = 1_123_456;
 
 describe("list_sessions tool", () => {
@@ -40,15 +45,33 @@ describe("list_sessions tool", () => {
     call = server.getHandler("list_sessions");
   });
 
-  // ── No token path ─────────────────────────────────────────
+  // ── No token path — unauthenticated SID probe ─────────────
 
-  describe("no token provided", () => {
-    it("returns SID_REQUIRED error when token is omitted", async () => {
-      // Token validation is rejected at Zod schema level — requireAuth is never reached.
-      const result = await call({});
-      expect(isError(result)).toBe(true);
-      expect(errorCode(result)).toBe("SID_REQUIRED");
+  describe("no token provided (unauthenticated probe)", () => {
+    it("returns empty sids array when no sessions exist", async () => {
+      mocks.listSessions.mockReturnValue([]);
+      const result = parseResult<ProbeResult>(await call({}));
+      expect(result).toEqual({ sids: [] });
       expect(mocks.requireAuth).not.toHaveBeenCalled();
+    });
+
+    it("returns sids array with active SIDs when sessions exist", async () => {
+      mocks.listSessions.mockReturnValue([
+        { sid: 1, name: "alpha", color: "🟦", createdAt: "2026-01-01T00:00:00.000Z" },
+        { sid: 2, name: "beta", color: "🟩", createdAt: "2026-01-01T00:01:00.000Z" },
+      ]);
+      const result = parseResult<ProbeResult>(await call({}));
+      expect(result).toEqual({ sids: [1, 2] });
+      expect(mocks.requireAuth).not.toHaveBeenCalled();
+    });
+
+    it("does not expose session names, colors, or createdAt in probe response", async () => {
+      mocks.listSessions.mockReturnValue([
+        { sid: 3, name: "secret", color: "🟥", createdAt: "2026-01-01T00:00:00.000Z" },
+      ]);
+      const result = parseResult<ProbeResult>(await call({}));
+      expect(Object.keys(result)).toEqual(["sids"]);
+      expect(result.sids).toEqual([3]);
     });
   });
 

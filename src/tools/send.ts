@@ -4,12 +4,14 @@ import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText, getTopic } from "../topic-state.js";
-import { showTyping, cancelTyping } from "../typing-state.js";
+import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
+import { findUnrenderableChars } from "../unrenderable-chars.js";
+import { deliverServiceMessage } from "../session-queue.js";
 // Type-routing handlers (v6 Phase 2)
 import { handleSendFile } from "./send_file.js";
 import { handleNotify } from "./notify.js";
@@ -29,6 +31,21 @@ const MARKDOWN_TABLE_RE = /^\|.*\|$/;
 
 function containsMarkdownTable(text: string): boolean {
   return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
+}
+
+/** Scan text for unrenderable chars and deliver a service warning to the session if any are found. */
+function warnUnrenderableChars(sid: number, text: string): void {
+  const badChars = findUnrenderableChars(text);
+  if (badChars.length > 0) {
+    const charList = badChars
+      .map(c => `\`${c}\` (U+${(c.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")})`)
+      .join(", ");
+    deliverServiceMessage(
+      sid,
+      `Message sent, but some characters may not render in Telegram: ${charList}. Use ASCII alternatives.`,
+      "unrenderable_chars_warning",
+    );
+  }
 }
 
 /** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
@@ -123,7 +140,7 @@ export function register(server: McpServer) {
           .enum(["info", "success", "warning", "error"])
           .default("info")
           .describe("Severity level for notifications"),
-        message: z.string().optional().describe("Alias for text in notification mode"),
+        message: z.string().optional().describe("Alias for text in all modes. When provided and text is absent, resolves to text. Canonical parameter: 'text'."),
         // ── direct ─────────────────────────────────────────────────────────
         target_sid: z.number().int().optional().describe("Target session ID (for type: \"dm\")"),
         target: z.number().int().optional().describe("Alias for target_sid (for type: \"dm\"). Use either target or target_sid, not both."),
@@ -153,19 +170,23 @@ export function register(server: McpServer) {
         // ── question sub-types ─────────────────────────────────────────────
         ask: z.string().optional().describe("Free-text question for type: \"question\" ask mode"),
         confirm: z.string().optional().describe("Confirmation text for type: \"question\" confirm mode"),
-        timeout_seconds: z.number().int().min(1).max(300).default(60).describe("Timeout for interactive question types (seconds)"),
+        timeout_seconds: z.number().int().min(1).max(86400).optional().describe("Timeout for interactive question types (seconds). Omit to use the server maximum (24 h)."),
         ignore_pending: z.boolean().optional().describe("Skip pending-updates check for interactive types"),
         yes_text: z.string().default("OK").describe("Affirmative button label (for confirm)"),
         no_text: z.string().default("Cancel").describe("Negative button label (for confirm)"),
         yes_data: z.string().default("confirm_yes").describe("Affirmative callback data"),
         no_data: z.string().default("confirm_no").describe("Negative callback data"),
-        yes_style: BUTTON_STYLE_SCHEMA.optional().describe("Affirmative button color"),
+        yes_style: BUTTON_STYLE_SCHEMA.default("primary").describe("Affirmative button color"),
         no_style: BUTTON_STYLE_SCHEMA.optional().describe("Negative button color"),
-        token: TOKEN_SCHEMA,
+        token: TOKEN_SCHEMA.describe(
+          "Session token from action(type: 'session/start') (sid * 1_000_000 + suffix). Required for all send paths.",
+        ),
       },
     },
     async (args, { signal }) => {
-      const { type, text, audio } = args;
+      // 'message' is a universal alias for 'text' — resolve before any routing
+      const { type, audio } = args;
+      const text = args.text ?? args.message;
 
       const _sid = requireAuth(args.token);
       if (typeof _sid !== "number") return toError(_sid);
@@ -176,8 +197,6 @@ export function register(server: McpServer) {
       if (!type && !text && !audio) {
         return toResult({
           available_types: SEND_TYPES,
-          hint: 'Pass type: "<type>" with required params, or just text/audio for plain text mode.',
-          help: 'Call help(topic: "send") for full documentation.',
         });
       }
 
@@ -217,13 +236,19 @@ export function register(server: McpServer) {
             const resolvedSpeed = getSessionSpeed() ?? undefined;
             let resolvedCaption: string | undefined;
             let captionParseMode: "MarkdownV2" | undefined;
-            let captionTruncated = false;
+            let captionOverflow = false;
+            let finalTextForSplit: string | undefined;
             if (text) {
               const MAX_CAPTION = 1024 - 60;
               const converted = markdownToV2(applyTopicToText(text, "Markdown"));
-              captionTruncated = converted.length > MAX_CAPTION;
-              resolvedCaption = captionTruncated ? converted.slice(0, MAX_CAPTION).replace(/\\$/, "") : converted;
-              captionParseMode = "MarkdownV2";
+              captionOverflow = converted.length > MAX_CAPTION;
+              if (captionOverflow) {
+                resolvedCaption = undefined;
+                finalTextForSplit = converted;
+              } else {
+                resolvedCaption = converted;
+                captionParseMode = "MarkdownV2";
+              }
             } else {
               const topic = getTopic();
               if (topic) {
@@ -236,11 +261,27 @@ export function register(server: McpServer) {
               const chunkErr = validateText(chunk);
               if (chunkErr) return toError(chunkErr);
             }
-            const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
+            // Initial typing budget: generous estimate; extended per-chunk below.
+            const typingSeconds = Math.max(5, Math.ceil(plainText.length / 20));
+            // RECORD_VOICE_EXTEND_SECS: how far ahead to push the deadline before
+            // each synthesis+upload so the indicator never drops mid-operation.
+            const RECORD_VOICE_EXTEND_SECS = 30;
+            // gen is updated after each showTyping() so cancelTypingIfSameGeneration
+            // always targets the most recent generation, not a stale pre-start value.
+            let gen = typingGeneration();
+            let voiceSent = false;
             try {
               await showTyping(typingSeconds, "record_voice");
+              gen = typingGeneration();
               const message_ids: number[] = [];
               for (let i = 0; i < voiceChunks.length; i++) {
+                // Extend the recording indicator deadline before each chunk so it
+                // stays visible throughout the full TTS synthesis + upload cycle,
+                // even for long messages where synthesis takes many seconds.
+                // showTyping() detects the already-running interval and only
+                // updates the deadline — no extra Telegram API call is made.
+                await showTyping(RECORD_VOICE_EXTEND_SECS, "record_voice");
+                gen = typingGeneration();
                 const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice, resolvedSpeed);
                 const isFirst = i === 0;
                 const msg = await sendVoiceDirect(chatId, ogg, {
@@ -251,10 +292,42 @@ export function register(server: McpServer) {
                 });
                 message_ids.push(msg.message_id);
               }
-              if (message_ids.length === 1) {
-                return toResult({ message_id: message_ids[0], audio: true, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
+              voiceSent = true;
+              if (captionOverflow && finalTextForSplit) {
+                const splitText = finalTextForSplit;
+                const textMsg = await callApi(() =>
+                  getApi().sendMessage(chatId, splitText, {
+                    parse_mode: "MarkdownV2",
+                    disable_notification,
+                  } as Record<string, unknown>),
+                );
+                // Scan the overflow text for unrenderable characters after it is sent
+                warnUnrenderableChars(_sid, splitText);
+                if (message_ids.length === 1) {
+                  return toResult({
+                    message_id: message_ids[0],
+                    text_message_id: textMsg.message_id,
+                    split: true,
+                    audio: true,
+                    _hint: `Caption exceeded limit; audio sent as msg ${message_ids[0]}, text sent separately as msg ${textMsg.message_id}.`,
+                  });
+                }
+                return toResult({
+                  message_ids,
+                  text_message_id: textMsg.message_id,
+                  split: true,
+                  audio: true,
+                  _hint: `Caption exceeded limit; audio sent as msgs ${message_ids.join(", ")}, text sent separately as msg ${textMsg.message_id}.`,
+                });
               }
-              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true, ...(captionTruncated ? { info: "Caption was truncated to fit Telegram's 1024-character limit." } : {}) });
+              // Scan the inline caption for unrenderable characters after voice is sent
+              if (resolvedCaption) {
+                warnUnrenderableChars(_sid, resolvedCaption);
+              }
+              if (message_ids.length === 1) {
+                return toResult({ message_id: message_ids[0], audio: true });
+              }
+              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes("user restricted receiving of voice note messages")) {
@@ -265,7 +338,11 @@ export function register(server: McpServer) {
               }
               return toError(err);
             } finally {
-              cancelTyping();
+              if (voiceSent) {
+                // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
+                await new Promise<void>(resolve => setTimeout(resolve, 3000));
+              }
+              cancelTypingIfSameGeneration(gen);
             }
           }
 
@@ -297,6 +374,7 @@ export function register(server: McpServer) {
               message_ids.push(msg.message_id);
             }
             const hasTable = containsMarkdownTable(text ?? "");
+            warnUnrenderableChars(_sid, finalText);
             if (message_ids.length === 1) {
               return toResult(hasTable ? { message_id: message_ids[0], info: TABLE_WARNING } : { message_id: message_ids[0] });
             }
@@ -332,10 +410,10 @@ export function register(server: McpServer) {
           });
 
         case "choice":
-          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
+          if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
           if (!args.options?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires an "options" array.', hint: "Call help(topic: 'send') for the required params for this type." });
           return handleSendChoice({
-            text: args.text,
+            text,
             options: args.options,
             columns: args.columns,
             parse_mode: args.parse_mode,
@@ -352,16 +430,16 @@ export function register(server: McpServer) {
             return toError({ code: "CONFLICT" as const, message: 'Both "target_sid" and "target" were provided with different values. Use one or the other.' });
           const resolvedTarget = targetA ?? targetB;
           if (!resolvedTarget) return toError({ code: "MISSING_PARAM" as const, message: 'type: "dm" requires a "target_sid" (or "target") param.', hint: "Call help(topic: 'send') for the required params for this type." });
-          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "dm" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
-          return handleSendDirectMessage({ token: args.token, target_sid: resolvedTarget, text: args.text });
+          if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "dm" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
+          return handleSendDirectMessage({ token: args.token, target_sid: resolvedTarget, text });
         }
 
         case "append":
           if (!args.message_id) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "message_id" param.', hint: "Call help(topic: 'send') for the required params for this type." });
-          if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
+          if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
           return handleAppendText({
             message_id: args.message_id,
-            text: args.text,
+            text,
             separator: args.separator,
             parse_mode: args.parse_mode,
             token: args.token,
@@ -382,7 +460,7 @@ export function register(server: McpServer) {
 
         case "checklist":
           {
-            const checklistTitle = args.title ?? args.text;
+            const checklistTitle = args.title ?? text;
             if (!checklistTitle) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
             if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
             return handleSendNewChecklist({ title: checklistTitle, steps: args.steps, token: args.token });
@@ -392,7 +470,7 @@ export function register(server: McpServer) {
           if (args.percent === undefined) return toError({ code: "MISSING_PARAM" as const, message: 'type: "progress" requires a "percent" param (0\u2013100).', hint: "type: \"progress\" requires a percent (0\u2013100). Call help(topic: 'send')." });
           return handleSendNewProgress({
             percent: args.percent,
-            title: args.title ?? args.text,
+            title: args.title ?? text,
             subtext: args.subtext,
             width: args.width,
             token: args.token,
@@ -410,9 +488,9 @@ export function register(server: McpServer) {
           }
           if (args.choose !== undefined || args.options !== undefined) {
             const chooseButtons = (args.choose ?? args.options) as NonNullable<typeof args.choose>;
-            if (!args.text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "question" with choose requires a "text" param (prompt shown above buttons).', hint: "Call help(topic: 'send') for question param requirements." });
+            if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "question" with choose requires a "text" param (prompt shown above buttons).', hint: "Call help(topic: 'send') for question param requirements." });
             return handleChoose({
-              text: args.text,
+              text,
               options: chooseButtons,
               timeout_seconds: args.timeout_seconds,
               columns: args.columns,

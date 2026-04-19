@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { TOKEN_SCHEMA, decodeToken, consumeTokenStringHint, runInTokenHintContext } from "./identity-schema.js";
+import { TOKEN_SCHEMA, TOKEN_STRING_HINT, decodeToken, consumeTokenStringHint, runInTokenHintContext } from "./identity-schema.js";
 
 // ---------------------------------------------------------------------------
 // Replicate the MCP SDK's Zod v4 → JSON Schema conversion.
@@ -23,12 +23,12 @@ describe("TOKEN_SCHEMA", () => {
   // Basic Zod-level validation
   // -----------------------------------------------------------------------
   describe("Zod validation", () => {
-    it("accepts a valid token (sid=1, pin=815519)", () => {
+    it("accepts a valid token (sid=1, suffix=815519)", () => {
       const token = 1 * 1_000_000 + 815519;
       expect(TOKEN_SCHEMA.safeParse(token).success).toBe(true);
     });
 
-    it("accepts a valid multi-sid token (sid=5, pin=303780)", () => {
+    it("accepts a valid multi-sid token (sid=5, suffix=303780)", () => {
       const token = 5 * 1_000_000 + 303780;
       expect(TOKEN_SCHEMA.safeParse(token).success).toBe(true);
     });
@@ -133,40 +133,40 @@ describe("TOKEN_SCHEMA", () => {
 describe("decodeToken", () => {
   it("decodes a simple token correctly", () => {
     const sid = 1;
-    const pin = 123456;
-    const token = sid * 1_000_000 + pin;
-    expect(decodeToken(token)).toEqual({ sid: 1, pin: 123456 });
+    const suffix = 123456;
+    const token = sid * 1_000_000 + suffix;
+    expect(decodeToken(token)).toEqual({ sid: 1, suffix: 123456 });
   });
 
-  it("decodes token for sid=3, pin=366556", () => {
+  it("decodes token for sid=3, suffix=366556", () => {
     const token = 3 * 1_000_000 + 366556;
-    expect(decodeToken(token)).toEqual({ sid: 3, pin: 366556 });
+    expect(decodeToken(token)).toEqual({ sid: 3, suffix: 366556 });
   });
 
-  it("decodes token for sid=7, pin=303780", () => {
+  it("decodes token for sid=7, suffix=303780", () => {
     const token = 7 * 1_000_000 + 303780;
-    expect(decodeToken(token)).toEqual({ sid: 7, pin: 303780 });
+    expect(decodeToken(token)).toEqual({ sid: 7, suffix: 303780 });
   });
 
-  it("decodes token for sid=1, pin=0 (edge: pin=0)", () => {
+  it("decodes token for sid=1, suffix=0 (edge: suffix=0)", () => {
     const token = 1 * 1_000_000 + 0;
-    expect(decodeToken(token)).toEqual({ sid: 1, pin: 0 });
+    expect(decodeToken(token)).toEqual({ sid: 1, suffix: 0 });
   });
 
-  it("decodes token for sid=1, pin=999999 (max pin)", () => {
+  it("decodes token for sid=1, suffix=999999 (max suffix)", () => {
     const token = 1 * 1_000_000 + 999999;
-    expect(decodeToken(token)).toEqual({ sid: 1, pin: 999999 });
+    expect(decodeToken(token)).toEqual({ sid: 1, suffix: 999999 });
   });
 
-  it("decodes token for sid=10, pin=123456 (multi-digit sid)", () => {
+  it("decodes token for sid=10, suffix=123456 (multi-digit sid)", () => {
     const token = 10 * 1_000_000 + 123456;
-    expect(decodeToken(token)).toEqual({ sid: 10, pin: 123456 });
+    expect(decodeToken(token)).toEqual({ sid: 10, suffix: 123456 });
   });
 
   it("is the inverse of token encoding", () => {
-    for (const [sid, pin] of [[1, 100000], [3, 366556], [7, 303780], [2, 457250]]) {
-      const token = sid * 1_000_000 + pin;
-      expect(decodeToken(token)).toEqual({ sid, pin });
+    for (const [sid, suffix] of [[1, 100000], [3, 366556], [7, 303780], [2, 457250]]) {
+      const token = sid * 1_000_000 + suffix;
+      expect(decodeToken(token)).toEqual({ sid, suffix });
     }
   });
 });
@@ -177,7 +177,7 @@ describe("consumeTokenStringHint", () => {
       TOKEN_SCHEMA.safeParse("1000000");
       return consumeTokenStringHint();
     });
-    expect(hint).toBe("token was passed as a string — use a plain integer for better performance");
+    expect(hint).toBe(TOKEN_STRING_HINT);
   });
 
   it("returns undefined when token was passed as an integer", () => {
@@ -229,7 +229,7 @@ describe("consumeTokenStringHint", () => {
     ]);
 
     // First context should see the string hint; second should see undefined.
-    expect(results[0]).toBe("token was passed as a string — use a plain integer for better performance");
+    expect(results[0]).toBe(TOKEN_STRING_HINT);
     expect(results[1]).toBeUndefined();
   });
 

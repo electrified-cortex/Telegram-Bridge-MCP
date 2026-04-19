@@ -3,10 +3,24 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { runInSessionContext } from "./session-context.js";
-import { getActiveSession } from "./session-manager.js";
+import { getActiveSession, getSession } from "./session-manager.js";
 import { runInTokenHintContext } from "./tools/identity-schema.js";
 import { invokePreToolHook } from "./tool-hooks.js";
+import { checkUnknownParams, injectWarningIntoResult } from "./unknown-param-warning.js";
 import { toError } from "./telegram.js";
+import { recordToolCall } from "./trace-log.js";
+import {
+  initSession,
+  setNudgeInjector,
+  recordDequeue as btRecordDequeue,
+  recordTyping as btRecordTyping,
+  recordAnimation as btRecordAnimation,
+  recordReaction as btRecordReaction,
+  recordSend as btRecordSend,
+  recordButtonUse as btRecordButtonUse,
+  recordOutboundText as btRecordOutboundText,
+} from "./behavior-tracker.js";
+import { deliverServiceMessage } from "./session-queue.js";
 
 import { register as registerDequeueUpdate } from "./tools/dequeue.js";
 import { register as registerSend } from "./tools/send.js";
@@ -44,6 +58,12 @@ export function createServer(): McpServer {
     version: PKG_VERSION,
   });
 
+  // ── Behavior tracker wiring ────────────────────────────────────────────
+  // Wire the nudge injector to deliver service messages into session queues.
+  setNudgeInjector((sid, text, eventType) => {
+    deliverServiceMessage(sid, text, eventType);
+  });
+
   // ── Session context middleware ──────────────────────────────────────────
   // Wrap every tool handler in AsyncLocalStorage so outbound messages
   // are attributed to the correct session even when multiple sessions
@@ -62,14 +82,21 @@ export function createServer(): McpServer {
     cb: AnyCallback,
   ) => {
     const original = cb as unknown as CallableCb;
+    // Capture the set of known param names once at registration time so the
+    // per-call unknown-param check is a cheap Set lookup.
+    const knownParams = new Set<string>(Object.keys((config as { inputSchema?: Record<string, unknown> }).inputSchema ?? {}));
     const wrappedCb = (
       (args: Record<string, unknown>, extra: unknown) => {
-        // Decode sid from token (sid * 1_000_000 + pin) for session context.
+        // Strip unknown params and capture any warning before anything else runs.
+        // This runs before auth so the hook and handler never see hallucinated keys.
+        const { clean: cleanArgs, warning: unknownParamWarning } = checkUnknownParams(name, knownParams, args);
+
+        // Decode sid from token (sid * 1_000_000 + suffix) for session context.
         // Falls back to active session for tools that don't require auth.
         // Each call is also wrapped in a token-hint context so the TOKEN_SCHEMA
         // preprocess and the handler share per-request hint state, preventing
         // concurrent requests from corrupting each other's hint flag.
-        const token = args.token;
+        const token = cleanArgs.token;
         const sid = (typeof token === "number" && token > 0)
           ? Math.floor(token / 1_000_000)
           : getActiveSession();
@@ -79,21 +106,128 @@ export function createServer(): McpServer {
           // A hook returning allowed:false short-circuits the call and
           // returns a 403-style error.  If the hook itself throws, we
           // fail safe by treating it as blocked.
+          const sessionName = (sid > 0 ? getSession(sid)?.name : undefined) ?? "";
+
           let hookResult: { allowed: boolean; reason?: string };
           try {
-            hookResult = await invokePreToolHook(name, args);
+            hookResult = await invokePreToolHook(name, cleanArgs);
           } catch (err) {
             // Hook threw — treat as blocked to fail safe
             const reason = err instanceof Error ? err.message : "Hook error";
             logBlockedToolCall(name, reason);
+            recordToolCall(name, cleanArgs, sid, sessionName, "blocked", "HOOK_ERROR");
             return toError({ code: "BLOCKED", message: `Pre-tool hook error: ${reason}` });
           }
           if (!hookResult.allowed) {
             const reason = hookResult.reason ?? "Blocked by pre-tool hook";
             logBlockedToolCall(name, reason);
+            recordToolCall(name, cleanArgs, sid, sessionName, "blocked", "BLOCKED");
             return toError({ code: "BLOCKED", message: reason });
           }
-          return original(args, extra);
+
+          let callResult: unknown;
+          try {
+            callResult = await Promise.resolve(original(cleanArgs, extra));
+          } catch (err) {
+            const code = err instanceof Error ? err.message : "UNKNOWN_ERROR";
+            recordToolCall(name, cleanArgs, sid, sessionName, "error", code);
+            throw err;
+          }
+
+          // Detect error responses returned as values (isError: true in MCP content)
+          const isError = (callResult as { isError?: boolean }).isError === true;
+
+          // Also check for toResult-wrapped error objects (e.g. TIMEOUT_EXCEEDS_DEFAULT)
+          let isStructuredError = false;
+          try {
+            const text = (callResult as { content?: Array<{ text?: string }> }).content?.[0]?.text;
+            if (text) {
+              const parsed: unknown = JSON.parse(text);
+              isStructuredError = typeof parsed === "object" && parsed !== null &&
+                ("error" in parsed || "code" in parsed) && !("updates" in parsed) && !("timed_out" in parsed) && !("empty" in parsed);
+            }
+          } catch { /* ignore parse errors */ }
+
+          const outcome = (isError || isStructuredError) ? "error" : "ok";
+          recordToolCall(name, cleanArgs, sid, sessionName, outcome);
+
+          // ── Behavior tracking ──────────────────────────────────────────
+          // Record tool calls for per-session behavioral nudges.
+          // Only track successful calls on authenticated sessions.
+          if (outcome === "ok" && sid > 0) {
+            // Ensure the session is initialized in the tracker (idempotent).
+            initSession(sid);
+
+            if (name === "show_typing") {
+              // Only count non-cancel typing calls as activity indicators.
+              const isCancel = cleanArgs.cancel === true;
+              if (!isCancel) btRecordTyping(sid);
+            } else if (name === "show_animation" || (name === "send" && cleanArgs.type === "animation")) {
+              // Animation sends count as activity but not toward typing-rate sendCount —
+              // they are not text/file deliveries and don't need a preceding show_typing.
+              btRecordAnimation(sid);
+            } else if (name === "set_reaction") {
+              btRecordReaction(sid);
+            } else if (name === "send") {
+              // Skip behavioral tracking for DM sends — DMs are agent-to-agent;
+              // button guidance is irrelevant there.
+              const isDm = cleanArgs.type === "dm";
+              if (!isDm) {
+                const hasChoose = cleanArgs.choose !== undefined;
+                const hasConfirm = cleanArgs.confirm !== undefined;
+                const hasOptions = cleanArgs.options !== undefined;
+                const isChoiceSend = cleanArgs.type === "choice";
+                const isQuestionWithOptions =
+                  cleanArgs.type === "question" && hasOptions;
+                const usesButtons =
+                  hasChoose || hasConfirm || isChoiceSend || isQuestionWithOptions;
+                if (usesButtons) {
+                  btRecordButtonUse(sid);
+                } else {
+                  // Track outbound text via text, message alias, or ask (free-text question).
+                  const outboundText =
+                    (typeof cleanArgs.text === "string" ? cleanArgs.text : null) ??
+                    (typeof cleanArgs.message === "string" ? cleanArgs.message : null) ??
+                    (typeof cleanArgs.ask === "string" ? cleanArgs.ask : null);
+                  if (outboundText !== null) {
+                    btRecordOutboundText(sid, outboundText);
+                  }
+                }
+              }
+              // Count any outbound send (text, file, notification, etc.)
+              btRecordSend(sid);
+            } else if (name === "action" && typeof cleanArgs.type === "string" && cleanArgs.type.startsWith("confirm/")) {
+              btRecordButtonUse(sid);
+            } else if (name === "help" && cleanArgs.topic === "send") {
+              btRecordButtonUse(sid);
+            } else if (name === "dequeue") {
+              // Detect whether the batch contained user content events.
+              // A successful dequeue with `updates` array counts if any
+              // event has from: "user".
+              try {
+                const text = (callResult as { content?: Array<{ text?: string }> }).content?.[0]?.text;
+                if (text) {
+                  const parsed = JSON.parse(text) as Record<string, unknown>;
+                  const updates = parsed.updates;
+                  if (Array.isArray(updates)) {
+                    const hasUserContent = updates.some(
+                      (u: unknown) =>
+                        typeof u === "object" && u !== null &&
+                        (u as Record<string, unknown>).from === "user",
+                    );
+                    btRecordDequeue(sid, hasUserContent);
+                  }
+                }
+              } catch { /* ignore parse errors */ }
+            }
+          }
+
+          // Inject unknown-param warning into the response if any params were stripped.
+          if (unknownParamWarning !== undefined) {
+            callResult = injectWarningIntoResult(callResult, unknownParamWarning);
+          }
+
+          return callResult;
         };
 
         if (sid > 0) {
@@ -115,7 +249,7 @@ export function createServer(): McpServer {
 
   // ── Resources ────────────────────────────────────────────────────────────
   const agentGuideContent = readFileSync(
-    join(__dirname, "..", "docs", "behavior.md"),
+    join(__dirname, "..", "docs", "help", "guide.md"),
     "utf-8"
   );
   const communicationContent = readFileSync(

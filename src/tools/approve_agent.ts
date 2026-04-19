@@ -8,12 +8,12 @@ import { getAvailableColors, COLOR_PALETTE } from "../session-manager.js";
 import { getGovernorSid } from "../routing-mode.js";
 
 const DESCRIPTION =
-  "Approve a pending session_start request by name. " +
+  "Approve a pending session_start request by ticket. " +
   "Only available when agent delegation is enabled by the operator via the /approve panel. " +
-  "Call with the target_name matching the session name used in the pending session_start call. " +
+  "The one-time ticket is delivered to the governor via the dequeue service message when the session requests approval. " +
   "Optionally specify a color to assign; falls back to the agent's requested color, or the least-recently-used color if no color was requested.";
 
-export function handleApproveAgent({ token, target_name, color }: { token: number; target_name: string; color?: string }) {
+export function handleApproveAgent({ token, ticket, color }: { token: number; ticket: string; color?: string }) {
   const sid = requireAuth(token);
   if (typeof sid !== "number") return toError(sid);
 
@@ -35,22 +35,22 @@ export function handleApproveAgent({ token, target_name, color }: { token: numbe
     });
   }
 
-  const pending = getPendingApproval(target_name);
+  const pending = getPendingApproval(ticket);
   if (!pending) {
     return toError({
-      code: "UNKNOWN",
+      code: "NOT_PENDING",
       message:
-        `NOT_PENDING: No pending session_start request found for name "${target_name}". ` +
-        "The request may have already been resolved, timed out, or the name is incorrect.",
+        `No pending session_start request found for ticket "${ticket}". ` +
+        "The request may have already been resolved, timed out, or the ticket is incorrect.",
     });
   }
 
   // Validate color if provided; fall back to first available if omitted.
   if (color && !(COLOR_PALETTE as readonly string[]).includes(color)) {
     return toError({
-      code: "UNKNOWN",
+      code: "INVALID_COLOR",
       message:
-        `INVALID_COLOR: "${color}" is not a valid color. ` +
+        `"${color}" is not a valid color. ` +
         `Valid options: ${COLOR_PALETTE.join(", ")}`,
     });
   }
@@ -62,15 +62,15 @@ export function handleApproveAgent({ token, target_name, color }: { token: numbe
         ? pending.colorHint
         : (getAvailableColors()[0] ?? COLOR_PALETTE[0]);
 
-  clearPendingApproval(target_name);
+  clearPendingApproval(ticket);
   pending.resolve({ approved: true, color: resolvedColor, forceColor: true });
 
-  const safeName = target_name.replace(/[\x00-\x1F\x7F-\x9F]/g, "?");
+  const safeName = pending.name.replace(/[\x00-\x1F\x7F-\x9F]/g, "?");
   process.stderr.write(
     `[agent-approval] approved name=${safeName} by_sid=${sid} color=${resolvedColor} at=${new Date().toISOString()}\n`,
   );
 
-  return toResult({ approved: true, target_name, color: resolvedColor });
+  return toResult({ approved: true, name: pending.name, color: resolvedColor });
 }
 
 export function register(server: McpServer): RegisteredTool {
@@ -80,9 +80,9 @@ export function register(server: McpServer): RegisteredTool {
       description: DESCRIPTION,
       inputSchema: {
         token: TOKEN_SCHEMA,
-        target_name: z
+        ticket: z
           .string()
-          .describe("Name of the pending session to approve — must match the name used in session_start."),
+          .describe("One-time approval ticket delivered to the governor via dequeue when the session requested approval."),
         color: z
           .string()
           .optional()

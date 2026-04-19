@@ -6,8 +6,8 @@ import { DIGITS_ONLY } from "../utils/patterns.js";
  * Human-readable description for the `token` parameter used in all tool schemas.
  */
 export const TOKEN_PARAM_DESCRIPTION =
-  "Session token from session_start (sid * 1_000_000 + pin). " +
-  "Always required — pass your token on every tool call.";
+  "Session token from action(type: 'session/start') (sid * 1_000_000 + suffix). " +
+  "Required for all paths except session/start, session/reconnect, and unauthenticated `session/list` probe — pass your token on every other tool call.";
 
 // ---------------------------------------------------------------------------
 // Token string-coercion hint
@@ -36,11 +36,14 @@ const _tokenStringHintAls = new AsyncLocalStorage<{ wasString: boolean }>();
  * Call this in tool handlers that want to nudge the LLM toward passing the
  * correct type. Currently used by `dequeue`.
  */
+/** User-facing hint emitted when a token is passed as a numeric string instead of an integer. */
+export const TOKEN_STRING_HINT = "token was passed as a string — use a plain integer for better performance";
+
 export function consumeTokenStringHint(): string | undefined {
   const store = _tokenStringHintAls.getStore();
   if (store?.wasString) {
     store.wasString = false;
-    return "token was passed as a string — use a plain integer for better performance";
+    return TOKEN_STRING_HINT;
   }
   return undefined;
 }
@@ -48,14 +51,14 @@ export function consumeTokenStringHint(): string | undefined {
 /**
  * Zod schema for the `token` parameter.
  *
- * A single integer encoding both the session ID and PIN:
- *   token = sid * 1_000_000 + pin
+ * A single integer encoding both the session ID and token suffix:
+ *   token = sid * 1_000_000 + suffix
  *
  * Accepts both plain integers and numeric strings (e.g. "10982170") — the
  * latter are coerced to integer via `z.preprocess`. The JSON Schema output
  * still produces `type: "integer"` so OpenAI-style validators stay happy.
  *
- * Use `decodeToken(token)` to extract `{ sid, pin }`.
+ * Use `decodeToken(token)` to extract `{ sid, suffix }`.
  */
 export const TOKEN_SCHEMA = z
   .preprocess(
@@ -86,15 +89,15 @@ export function runInTokenHintContext<T>(fn: () => T): T {
 }
 
 /**
- * Decode a session token into its constituent sid and pin.
+ * Decode a session token into its constituent sid and suffix.
  *
- * @param token  Positive integer: sid * 1_000_000 + pin
- * @returns      { sid, pin }
+ * @param token  Positive integer: sid * 1_000_000 + suffix
+ * @returns      { sid, suffix }
  */
-export function decodeToken(token: number): { sid: number; pin: number } {
-  const pin = token % 1_000_000;
+export function decodeToken(token: number): { sid: number; suffix: number } {
+  const suffix = token % 1_000_000;
   const sid = Math.floor(token / 1_000_000);
-  return { sid, pin };
+  return { sid, suffix };
 }
 
 // ---------------------------------------------------------------------------

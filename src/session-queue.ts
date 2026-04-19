@@ -310,25 +310,70 @@ export function deliverDirectMessage(
 }
 
 /**
+ * A bundled service-message descriptor — `eventType` + `text` in one object.
+ * Pass a static `SERVICE_MESSAGES.*` entry (from `service-messages.ts`) directly
+ * as the second argument to `deliverServiceMessage` to avoid duplicating
+ * `.text` / `.eventType` at every call site.
+ */
+export interface ServiceMessageSpec {
+  eventType: string;
+  text: string;
+}
+
+/**
  * Inject a server-generated service message into a session queue.
  * Returned events have `from: "system"` and `event: "service_message"`.
  * Returns false if the target queue does not exist.
+ *
+ * Two forms:
+ *   - `deliverServiceMessage(sid, entry, details?)` — bundled entry form;
+ *     pass a `SERVICE_MESSAGES.*` entry (or any `ServiceMessageSpec`) directly.
+ *   - `deliverServiceMessage(sid, text, eventType, details?)` — raw-string form;
+ *     used when the entry's `text` is a function (dynamic) and the caller
+ *     already invoked it, or for inline one-off messages.
  */
+export function deliverServiceMessage(
+  targetSid: number,
+  entry: ServiceMessageSpec,
+  details?: Record<string, unknown>,
+): boolean;
 export function deliverServiceMessage(
   targetSid: number,
   text: string,
   eventType: string,
   details?: Record<string, unknown>,
+): boolean;
+export function deliverServiceMessage(
+  targetSid: number,
+  textOrEntry: string | ServiceMessageSpec,
+  eventTypeOrDetails?: string | Record<string, unknown>,
+  details?: Record<string, unknown>,
 ): boolean {
   const q = _queues.get(targetSid);
   if (!q) return false;
+
+  let text: string;
+  let eventType: string;
+  let resolvedDetails: Record<string, unknown> | undefined;
+
+  if (typeof textOrEntry === "object") {
+    // Bundled entry form: deliverServiceMessage(sid, entry, details?)
+    text = textOrEntry.text;
+    eventType = textOrEntry.eventType;
+    resolvedDetails = eventTypeOrDetails as Record<string, unknown> | undefined;
+  } else {
+    // Raw-string form: deliverServiceMessage(sid, text, eventType, details?)
+    text = textOrEntry;
+    eventType = eventTypeOrDetails as string;
+    resolvedDetails = details;
+  }
 
   const event: TimelineEvent = {
     id: _nextServiceId--,
     timestamp: new Date().toISOString(),
     event: "service_message",
     from: "system",
-    content: { type: "service", text, event_type: eventType, ...(details && { details }) },
+    content: { type: "service", text, event_type: eventType, ...(resolvedDetails && { details: resolvedDetails }) },
     sid: 0,
   };
 

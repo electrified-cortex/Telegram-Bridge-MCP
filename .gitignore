@@ -11,7 +11,11 @@ data/
 # Session state files — regenerated each session by the agent
 HANDOFF.md
 memory.md
+# Legacy session state file (superseded by data/session-snapshot.json)
+session-state.json
 # Local operator config — copy mcp-config.example.json to customize
 mcp-config.json
 # Git worktrees — managed locally, not tracked in source
 .worktrees/
+# Local scratchpad: dispatch briefings, PR body drafts, audit dumps
+notes/

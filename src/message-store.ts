@@ -121,6 +121,12 @@ let _highestMessageId = 0;
 /** Per-message bot reaction index — tracks the current bot reaction for restore. */
 const _botReactionIndex = new Map<number, string>();
 
+/**
+ * Tracks messages that have already had the implicit 👌 base reaction inserted.
+ * Key format: `${chatId}:${messageId}`.
+ */
+const _baseReactionMessages = new Set<string>();
+
 /** Optional callback fired after every timeline push. Used by auto-dump. */
 let _onEventCallback: ((timelineSize: number) => void) | null = null;
 
@@ -578,6 +584,30 @@ export function getBotReaction(messageId: number): string | null {
   return _botReactionIndex.get(messageId) ?? null;
 }
 
+/**
+ * Returns true if the implicit 👌 base reaction has already been placed on this
+ * (chatId, messageId) pair. Used to enforce idempotency.
+ */
+export function hasBaseReaction(chatId: number, messageId: number): boolean {
+  return _baseReactionMessages.has(`${chatId}:${messageId}`);
+}
+
+/**
+ * Marks a (chatId, messageId) as having received the implicit 👌 base reaction.
+ */
+export function markBaseReaction(chatId: number, messageId: number): void {
+  _baseReactionMessages.add(`${chatId}:${messageId}`);
+}
+
+/**
+ * Removes the implicit 👌 base reaction registration for (chatId, messageId).
+ * Called after the base has been restored (one-shot consume), so subsequent
+ * restore calls from other temp slots do not fire a duplicate 👌 API call.
+ */
+export function clearBaseReaction(chatId: number, messageId: number): void {
+  _baseReactionMessages.delete(`${chatId}:${messageId}`);
+}
+
 // ---------------------------------------------------------------------------
 // Dequeue — consumption by the agent (delegates to TemporalQueue)
 // ---------------------------------------------------------------------------
@@ -733,6 +763,7 @@ export function resetStoreForTest(): void {
   _callbackHookOwners.clear();
   _messageHooks.clear();
   _botReactionIndex.clear();
+  _baseReactionMessages.clear();
   _onEventCallback = null;
   _onLocalLogCallback = null;
 }

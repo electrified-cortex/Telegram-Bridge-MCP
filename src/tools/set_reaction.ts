@@ -1,10 +1,17 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, type ReactionEmoji } from "../telegram.js";
-import { recordBotReaction } from "../message-store.js";
+import { recordBotReaction, hasBaseReaction, markBaseReaction } from "../message-store.js";
 import { setTempReaction } from "../temp-reaction.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
+import { isTemporaryByDefault, getReactionPreset, listReactionPresets } from "../reaction-presets.js";
+
+const REACTION_ITEM_SCHEMA = z.object({
+  emoji: z.string().describe("Emoji or semantic alias"),
+  priority: z.number().int().default(0).describe("Layer priority: negative = permanent base, 0 = standard temp"),
+  temporary: z.boolean().optional().describe("Whether this auto-reverts. Defaults false for priority < 0, true for priority >= 0."),
+});
 
 /**
  * Allowed emoji reactions from the Telegram Bot API.
@@ -107,10 +114,205 @@ const DESCRIPTION =
   "Set an emoji reaction on a message (max 1 for non-premium bots). " +
   "Accepts aliases (thinking, done, salute, reading, approve…) or raw emoji; omit/empty to remove. " +
   "temporary=true auto-reverts on next outbound action or timeout_seconds. " +
+  "Use `reactions` array for atomic multi-layer reactions (permanent base + temp overlay). " +
   "Call `help(topic: 'set_reaction')` for details.";
 
-export async function handleSetReaction({ message_id, emoji, is_big, temporary, restore_emoji, timeout_seconds, token }: {
+type ReactionItem = z.infer<typeof REACTION_ITEM_SCHEMA>;
+
+async function handleSetReactionArray(
+  args: { message_id: number; reactions: ReactionItem[]; timeout_seconds?: number; token: number },
+  chatId: number,
+  _sid: number,
+) {
+  const { message_id, reactions, timeout_seconds } = args;
+
+  // Fix 3: Reject empty reactions array with a clear error
+  if (reactions.length === 0) {
+    return toError({ code: "REACTION_ARRAY_EMPTY" as const, message: "reactions array must not be empty. Pass at least one reaction item." });
+  }
+
+  // Validate and resolve all emoji up-front before any API call
+  // Store candidates array for each item so fallback logic can be applied later
+  const resolved: Array<{ emoji: string; candidates: string[]; priority: number; temporary: boolean }> = [];
+  for (const item of reactions) {
+    const r = resolveEmoji(item.emoji);
+    if (!r) {
+      return toError({
+        code: "REACTION_EMOJI_INVALID" as const,
+        message: `"${item.emoji}" is not an allowed reaction emoji.`,
+      });
+    }
+    // Default temporary: false for priority < 0, true for priority >= 0
+    const isTemp = item.temporary !== undefined ? item.temporary : item.priority >= 0;
+    resolved.push({ emoji: r[0], candidates: r, priority: item.priority, temporary: isTemp });
+  }
+
+  // Check for multiple temp items (unsupported)
+  const tempItems = resolved.filter(r => r.temporary);
+  if (tempItems.length > 1) {
+    return toError({
+      code: "REACTION_MULTI_TEMP_UNSUPPORTED" as const,
+      message: "Multiple temporary reaction layers are not supported. Provide at most one item with priority >= 0 (or temporary: true).",
+    });
+  }
+
+  // Sort by priority ascending (lowest first)
+  resolved.sort((a, b) => a.priority - b.priority);
+
+  // Helper: try emoji candidates in order, same fallback pattern as single-emoji path
+  async function tryWithFallback(candidates: string[]): Promise<string | null> {
+    for (const [i, candidate] of candidates.entries()) {
+      try {
+        await getApi().setMessageReaction(chatId, message_id, [{ type: "emoji" as const, emoji: candidate as ReactionEmoji }], {});
+        if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = true;
+        return candidate;
+      } catch (err) {
+        const isLast = i === candidates.length - 1;
+        if (isReactionInvalid(err) && !isLast) {
+          if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = false;
+          continue;
+        }
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Strip candidates from layers output (internal detail)
+  const layers = resolved.map(({ emoji, priority, temporary }) => ({ emoji, priority, temporary }));
+
+  // All permanent path (no temp items)
+  if (tempItems.length === 0) {
+    // Apply the highest-priority permanent item directly, with fallback
+    const top = resolved[resolved.length - 1];
+    const usedEmoji = await tryWithFallback(top.candidates);
+    if (!usedEmoji) {
+      return toError({ code: "UNKNOWN" as const, message: "Failed to set permanent reaction." });
+    }
+    recordBotReaction(message_id, usedEmoji);
+    _insertBaseReaction(chatId, message_id);
+    // Fix 4: Warn when multiple permanent items were provided but only one can be applied
+    const note = resolved.length > 1 ? ` (only highest-priority item applied — Telegram supports 1 reaction)` : "";
+    return toResult({ ok: true, message_id, visible: usedEmoji, layers, restore_emoji: null, note: note || undefined });
+  }
+
+  // Mixed path: permanent base + temp overlay
+  const baseItem = resolved.find(r => !r.temporary);
+  // Fix 2: Use tempItems[0] for topItem — exactly one temp item is guaranteed here
+  const topItem = tempItems[0];
+
+  // Resolve the temp item emoji with fallback to get the actual emoji to display
+  let resolvedTopEmoji = topItem.emoji;
+  if (topItem.candidates.length > 1 && _botIsPremium === false) {
+    const free = topItem.candidates.filter(c => !PREMIUM_EMOJI.has(c));
+    resolvedTopEmoji = free.length > 0 ? free[0] : topItem.emoji;
+  }
+
+  // Fix 1: Capture restoreEmoji before the API call, but defer recordBotReaction until after success
+  let restoreEmoji: ReactionEmoji | undefined;
+  if (baseItem) {
+    // Resolve base emoji with fallback
+    let resolvedBaseEmoji = baseItem.emoji;
+    if (baseItem.candidates.length > 1 && _botIsPremium === false) {
+      const free = baseItem.candidates.filter(c => !PREMIUM_EMOJI.has(c));
+      resolvedBaseEmoji = free.length > 0 ? free[0] : baseItem.emoji;
+    }
+    restoreEmoji = resolvedBaseEmoji as ReactionEmoji;
+  }
+
+  const ok = await setTempReaction(message_id, resolvedTopEmoji as ReactionEmoji, restoreEmoji, timeout_seconds);
+  if (!ok) return toError({ code: "UNKNOWN" as const, message: "Failed to set reaction — message may be too old or unavailable." });
+
+  // Fix 1: Only record the bot reaction after setTempReaction succeeds
+  if (baseItem && restoreEmoji) {
+    recordBotReaction(message_id, restoreEmoji);
+  }
+  // Temp reaction is now active — register 👌 base locally but do NOT make an API
+  // call (it would overwrite the visible temp). The temp-reaction restore path will
+  // apply 👌 when the last temp expires.
+  _insertBaseReaction(chatId, message_id);
+
+  return toResult({
+    ok: true,
+    message_id,
+    visible: resolvedTopEmoji,
+    layers,
+    restore_emoji: restoreEmoji ?? null,
+  });
+}
+
+/**
+ * Register the implicit 👌 base reaction for this (chatId, messageId) pair.
+ * Idempotent — no-ops if already registered.
+ *
+ * When applyNow is true the 👌 API call is made immediately (all-permanent preset path).
+ * Otherwise base is virtual — surfaces only when the last temporary expires.
+ */
+function _insertBaseReaction(chatId: number, messageId: number, applyNow = false): void {
+  if (hasBaseReaction(chatId, messageId)) return;
+  markBaseReaction(chatId, messageId);
+  if (applyNow) {
+    void getApi().setMessageReaction(chatId, messageId, [{ type: "emoji" as const, emoji: "👌" }], {});
+  }
+}
+
+/**
+ * Apply a named reaction preset to a message.
+ * Presets are multi-layer reactions fired sequentially.
+ */
+export async function handleSetReactionPreset(
+  sessionId: number,
+  chatId: number,
+  messageId: number,
+  presetName: string,
+): Promise<ReturnType<typeof toError> | ReturnType<typeof toResult>> {
+  const entries = getReactionPreset(presetName);
+  if (!entries) {
+    return toError({
+      code: "UNKNOWN" as const,
+      message: `Unknown reaction preset "${presetName}". Available: ${listReactionPresets().join(', ')}.`,
+    });
+  }
+
+  const results: string[] = [];
+
+  // Sort by priority ascending
+  const sorted = [...entries].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+
+  let hasTempEntry = false;
+  for (const entry of sorted) {
+    const candidates = resolveEmoji(entry.emoji);
+    if (!candidates) continue;
+    const emoji = candidates[0] as ReactionEmoji;
+
+    if (entry.temporary) {
+      hasTempEntry = true;
+      await setTempReaction(messageId, emoji, undefined, entry.timeout_seconds);
+      // Do NOT recordBotReaction for temp entries — the stable "bot reaction"
+      // should reflect the permanent base, not transient temps. Recording a temp
+      // emoji here would mislead chained-preset restore (Fix 4).
+    } else {
+      try {
+        await getApi().setMessageReaction(chatId, messageId, [{ type: "emoji" as const, emoji }], {});
+        recordBotReaction(messageId, emoji);
+      } catch {
+        // Suppress individual layer failures
+      }
+    }
+    results.push(emoji);
+  }
+
+  // Register the virtual 👌 base only when at least one temp entry was applied.
+  // The temp-reaction restore path will apply 👌 when the last temp expires.
+  // If all entries are permanent there is no temp to restore, so no base is needed.
+  if (hasTempEntry) _insertBaseReaction(chatId, messageId);
+
+  return toResult({ ok: true, message_id: messageId, preset: presetName, applied: results });
+}
+
+export async function handleSetReaction(args: {
   message_id: number;
+  reactions?: ReactionItem[];
   emoji?: string;
   is_big?: boolean;
   temporary?: boolean;
@@ -118,10 +320,16 @@ export async function handleSetReaction({ message_id, emoji, is_big, temporary, 
   timeout_seconds?: number;
   token: number;
 }) {
+  const { message_id, emoji, is_big, temporary, restore_emoji, timeout_seconds, token } = args;
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
+
+  // Array-based reaction path (also catches empty arrays to return a clear error)
+  if (args.reactions !== undefined) {
+    return handleSetReactionArray({ message_id, reactions: args.reactions, timeout_seconds, token }, chatId, _sid);
+  }
   try {
     // Resolve alias or raw emoji → ordered candidate array
     let candidates: string[] = [];
@@ -145,7 +353,12 @@ export async function handleSetReaction({ message_id, emoji, is_big, temporary, 
     }
 
     // Temporary reaction path — use first (preferred) candidate only, no fallback
+    // Also treat as temporary when `temporary` is not set and the emoji is in
+    // TEMPORARY_BY_DEFAULT (🤔 👀 ⏳ ✍️ 👨‍💻). Explicit `temporary: false` overrides.
+    const resolvedFirst = candidates[0];
+    const defaultTemp = temporary === undefined && isTemporaryByDefault(resolvedFirst);
     const isTemp = temporary === true
+      || defaultTemp
       || restore_emoji !== undefined
       || timeout_seconds !== undefined;
     if (isTemp) {
@@ -164,6 +377,10 @@ export async function handleSetReaction({ message_id, emoji, is_big, temporary, 
       const ok = await setTempReaction(message_id, primary as ReactionEmoji, restoreResolved, timeout_seconds);
       if (!ok) return toError({ code: "UNKNOWN" as const, message: "Failed to set reaction — message may be too old or unavailable." });
       recordBotReaction(message_id, primary);
+      // Temp reaction is now active — register 👌 base locally but do NOT make an API
+      // call (it would overwrite the visible temp). The temp-reaction restore path will
+      // apply 👌 when the last temp expires.
+      _insertBaseReaction(chatId, message_id);
       return toResult({ ok: true, message_id, emoji: primary, temporary: true, restore_emoji: restoreResolved ?? null, timeout_seconds: timeout_seconds ?? null });
     }
 
@@ -179,6 +396,7 @@ export async function handleSetReaction({ message_id, emoji, is_big, temporary, 
         await getApi().setMessageReaction(chatId, message_id, [{ type: "emoji" as const, emoji: candidate as ReactionEmoji }], { is_big });
         recordBotReaction(message_id, candidate);
         if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = true;
+        _insertBaseReaction(chatId, message_id);
         const result: Record<string, unknown> = { ok: true, message_id, emoji: candidate, temporary: false };
         if (candidate !== originalFirst) {
           result.requested = originalFirst;
@@ -209,6 +427,8 @@ export function register(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: {
         message_id: z.number().int().min(1).describe("ID of the message to react to"),
+        reactions: z.array(REACTION_ITEM_SCHEMA).optional()
+          .describe("Array of reaction layers applied atomically. Priority -1 = permanent base, 0 = standard temp overlay."),
         emoji: z
           .string()
           .optional()

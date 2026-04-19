@@ -104,12 +104,15 @@ export function logEvent(event: unknown): void {
   currentFilePath(); // eagerly initialize _currentFilename so rollLog/getCurrentLogFilename work immediately
   _buffer.enqueue(JSON.stringify({ ts: new Date().toISOString(), event }) + '\n');
   if (_flushTimer === null) {
-    _flushTimer = setTimeout(() => { _flushPromise = _flush(); }, FLUSH_DELAY_MS);
+    _flushTimer = setTimeout(() => {
+      _flushTimer = null;
+      _flushPromise = _flushPromise.then(_actualFlush);
+    }, FLUSH_DELAY_MS);
   }
 }
 
-async function _flush(): Promise<void> {
-  _flushTimer = null;
+/** Drain the buffer and append to the current log file. */
+async function _actualFlush(): Promise<void> {
   if (_buffer.count === 0) return;
   const lines: string[] = [];
   while (_buffer.count > 0) {
@@ -144,8 +147,9 @@ export async function flushCurrentLog(): Promise<void> {
     clearTimeout(_flushTimer);
     _flushTimer = null;
   }
-  await _flushPromise;   // wait for any timer-triggered flush in progress
-  await _flush();        // drain any remaining buffer
+  // Chain the drain onto any in-flight flush so writes are serialized.
+  _flushPromise = _flushPromise.then(_actualFlush);
+  await _flushPromise;
 }
 
 /**

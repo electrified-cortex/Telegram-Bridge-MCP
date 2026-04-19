@@ -45,6 +45,7 @@ import { timelineSize, setOnEvent } from "./message-store.js";
 import { listSessions, getIdleSessions } from "./session-manager.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
 import { deliverServiceMessage } from "./session-queue.js";
+import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getCallerSid, runInSessionContext } from "./session-context.js";
 import { closeSessionById } from "./session-teardown.js";
 
@@ -207,6 +208,15 @@ setShutdownDumpHook(() => {
  */
 const _startupEpoch = Math.floor(Date.now() / 1000);
 
+/**
+ * Clock-skew grace for stale-command filtering.
+ *
+ * Telegram message timestamps can be a few seconds behind local process time,
+ * especially right after startup. Without a grace window, valid fresh
+ * commands may be misclassified as stale.
+ */
+const STALE_COMMAND_GRACE_SECONDS = 30;
+
 export function isBuiltInPanelQuery(update: Update): boolean {
   const msgId = update.callback_query?.message?.message_id;
   if (msgId === undefined) return false;
@@ -294,12 +304,13 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
     const entities = update.message.entities ?? [];
     const cmd = entities.find(e => e.type === "bot_command" && e.offset === 0);
     if (cmd) {
-      // Ignore commands sent before this process started (prevents e.g. a
-      // queued /shutdown from killing a freshly-restarted server).
-      if ((update.message.date) < _startupEpoch) {
+      // Ignore commands that are clearly older than process startup (with a
+      // small grace window to tolerate clock skew).
+      const staleCutoff = _startupEpoch - STALE_COMMAND_GRACE_SECONDS;
+      if (update.message.date < staleCutoff) {
         process.stderr.write(
           `[built-in] ignoring stale /${update.message.text.slice(1, cmd.length).split("@")[0]} `
-          + `(msg date ${update.message.date}, startup ${_startupEpoch})\n`,
+          + `(msg date ${update.message.date}, startup ${_startupEpoch}, grace ${STALE_COMMAND_GRACE_SECONDS}s)\n`,
         );
         return true; // consumed — don't forward to agent either
       }
@@ -567,34 +578,12 @@ async function handleGovernorCallback(
     // Broadcast to Telegram chat: visible operator-facing announcement
     sendServiceMessage(`🔀 ${newLabel} is now the primary session.`).catch(() => {});
 
-    // Notify new governor
-    deliverServiceMessage(
-      newSid,
-      `You are now the governor. Ambiguous messages will be routed to you.`,
-      "governor_changed",
-      { old_governor_sid: oldSid, new_governor_sid: newSid },
-    );
-
-    // Notify old governor if different
-    if (oldSid > 0 && oldSid !== newSid) {
-      const oldGovernor = sessions.find(s => s.sid === oldSid);
-      if (oldGovernor) {
-        deliverServiceMessage(
-          oldSid,
-          `You are no longer the governor. ${newLabel} is now the governor.`,
-          "governor_changed",
-          { old_governor_sid: oldSid, new_governor_sid: newSid },
-        );
-      }
-    }
-
-    // Notify all other sessions
+    // Notify all sessions of the governor change
     for (const s of sessions) {
-      if (s.sid === newSid || s.sid === oldSid) continue;
       deliverServiceMessage(
         s.sid,
-        `Governor changed: ${newLabel} is now the governor.`,
-        "governor_changed",
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.text(newSid, newGovernor.name),
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.eventType,
         { old_governor_sid: oldSid, new_governor_sid: newSid },
       );
     }
@@ -655,7 +644,10 @@ async function handleVersionCommand(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function handleShutdownCommand(): void {
-  void elegantShutdown();
+  process.stderr.write("[built-in] /shutdown received\n");
+  // Fire on the next tick so the poller can finish handling this update.
+  // This avoids waiting on the poll loop from inside the poll loop itself.
+  setImmediate(() => { void elegantShutdown(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -1417,31 +1409,12 @@ async function handleSessionCallback(
 
     sendServiceMessage(`🔀 ${newLabel} is now the primary session.`).catch(() => {});
 
-    deliverServiceMessage(
-      sid,
-      `You are now the governor. Ambiguous messages will be routed to you.`,
-      "governor_changed",
-      { old_governor_sid: oldSid, new_governor_sid: sid },
-    );
-
-    if (oldSid > 0 && oldSid !== sid) {
-      const oldGovernor = sessions.find(s => s.sid === oldSid);
-      if (oldGovernor) {
-        deliverServiceMessage(
-          oldSid,
-          `You are no longer the governor. ${newLabel} is now the governor.`,
-          "governor_changed",
-          { old_governor_sid: oldSid, new_governor_sid: sid },
-        );
-      }
-    }
-
+    // Notify all sessions of the governor change
     for (const s of sessions) {
-      if (s.sid === sid || s.sid === oldSid) continue;
       deliverServiceMessage(
         s.sid,
-        `Governor changed: ${newLabel} is now the governor.`,
-        "governor_changed",
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.text(sid, target.name),
+        SERVICE_MESSAGES.GOVERNOR_CHANGED.eventType,
         { old_governor_sid: oldSid, new_governor_sid: sid },
       );
     }

@@ -7,7 +7,7 @@ import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMess
 import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
 import { requireAuth } from "../session-gate.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
   type ButtonStyle,
 } from "./button-helpers.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -16,7 +16,7 @@ import { runInSessionContext } from "../session-context.js";
 import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../tts.js";
 import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
-import { showTyping, cancelTyping } from "../typing-state.js";
+import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
 
 const DESCRIPTION_CONFIRM =
   "Sends an OK/Cancel confirmation message and waits until the user presses a " +
@@ -43,7 +43,7 @@ export interface ConfirmArgs {
   no_data: string;
   yes_style?: ButtonStyle;
   no_style?: ButtonStyle;
-  timeout_seconds: number;
+  timeout_seconds?: number;
   reply_to?: number;
   ignore_pending?: boolean;
   ignore_parity?: boolean;
@@ -131,6 +131,8 @@ export async function confirmHandler(
       const resolvedSpeed = getSessionSpeed() ?? undefined;
       const typingSeconds = Math.min(120, Math.max(5, Math.ceil(plainText.length / 20)));
       await showTyping(typingSeconds, "record_voice");
+      const gen = typingGeneration();
+      let voiceSent = false;
       try {
         const ogg = await synthesizeToOgg(plainText, resolvedVoice, resolvedSpeed);
         // Apply topic prefix to caption (not to TTS input — don't read the prefix aloud).
@@ -149,8 +151,13 @@ export async function confirmHandler(
           reply_markup: replyMarkup,
         });
         sentMessageId = msg.message_id;
+        voiceSent = true;
       } finally {
-        cancelTyping();
+        if (voiceSent) {
+          // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
+          await new Promise<void>(resolve => setTimeout(resolve, 3000));
+        }
+        cancelTypingIfSameGeneration(gen);
       }
     } else {
       const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {
@@ -193,15 +200,27 @@ export async function confirmHandler(
     );
 
     if (!result) {
-      // Timeout — register a message hook so the next user message
-      // cleans up the stale buttons (callback hook handles late clicks).
-      // Run editWithSkipped in the tool's session context so the session
-      // header remains consistent with the original message.
+      // Timeout or abort — immediately remove the buttons and show "Timed out".
+      // Run in the tool's session context so the session header is consistent.
+      void runInSessionContext(_sid, () =>
+        editWithTimedOut(chatId, sent.message_id, text, !!audio),
+      ).catch(() => {/* non-fatal */});
+      // Replace the callback hook with an ack-only version: if a late button
+      // press arrives, we still acknowledge it (removes the Telegram spinner)
+      // but skip the re-edit since the message was already cleaned up above.
+      clearCallbackHook(sent.message_id);
+      registerCallbackHook(sent.message_id, (evt) => {
+        const qid = evt.content.qid;
+        clearMessageHook(sent.message_id);
+        if (qid) {
+          void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
+        }
+      }, _sid);
+      // Also register a message hook: if a late click still comes in before
+      // the callback hook processes it, the next message will clear up anything
+      // that remains (buttons already gone, but hook cleans the callback hook).
       registerMessageHook(sent.message_id, () => {
         clearCallbackHook(sent.message_id);
-        void runInSessionContext(_sid, () =>
-          editWithSkipped(chatId, sent.message_id, text, !!audio),
-        ).catch(() => {/* non-fatal */});
       });
       return toResult({ timed_out: true, message_id: sent.message_id });
     }
@@ -276,9 +295,9 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
       .number()
       .int()
       .min(1)
-      .max(300)
-      .default(60)
-      .describe("Seconds to wait for a button press before returning timed_out: true"),
+      .max(86400)
+      .optional()
+      .describe("Seconds to wait for a button press. Omit to use the server maximum (24 h)."),
     reply_to: z
       .number()
       .int()

@@ -54,7 +54,7 @@ describe("toggle_logging tool", () => {
       expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
-    it("returns AUTH_FAILED when token has wrong PIN", async () => {
+    it("returns AUTH_FAILED when token has wrong suffix", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({ enabled: true, token: 1099999 });
       expect(isError(result)).toBe(true);

@@ -1,158 +1,103 @@
-# Multi-Session Restart Protocol
+# Bounce / Restart Protocol
 
-> **Who this is for:** The Overseer agent and any worker agents. This document describes the **procedure** for shutting down and restarting the multi-session environment safely.
+## Overview
 
----
+The bridge supports two restart modes:
 
-## Roles
-
-| Role | Responsibility |
-| --- | --- |
-| **Overseer** | Coordinates shutdown. Sends pre-warnings. Commits, stages. Writes tasks. Does NOT implement code. |
-| **Worker** | Implements tasks. Responds to pre-warning. Waits for restart. Re-engages after restart. |
-| **Operator** | Initiates restart, waits, and re-engages agents after the server comes back up. |
+| Mode | State file | Reconnect approval |
+|------|------------|--------------------|
+| **Planned bounce** | `session-state.json` with `plannedBounce: true` | Skipped — token accepted automatically |
+| **Unplanned crash** | File absent or `plannedBounce: false` | Required — operator must approve via dialog |
 
 ---
 
-## Why Sessions Are Invalidated on Restart
+## Planned Bounce
 
-Each session (SID) is held in memory by the running server process. When that process exits and restarts, all session state is wiped — pending queues, session IDs, registered commands. A worker that tries to call `dequeue` after a restart will receive an error (or hang) because its SID no longer exists.
+A planned bounce is triggered by `action(type: "session/bounce", ...)` or by calling `elegantShutdown(planned: true)`.
 
-**Workers must start a fresh session after every restart.** The old SID is dead.
+### What happens
 
----
+1. `markPlannedBounce()` writes `session-state.json` with `plannedBounce: true` and the current session list.
+2. All active sessions receive a service message:
+   > ⚡ Server bouncing for fast restart. Session state saved. Wait ~30s then probe.
+3. The server shuts down cleanly.
+4. On restart, `restoreSessions()` reads `session-state.json`, restores session state, sets `plannedBounce` flag in memory, and clears the flag from the file.
+5. Agents reconnect with their saved token — no approval dialog is shown.
 
-## Two-Phase Shutdown Procedure
+### Agent reconnect procedure (planned bounce)
 
-### Phase 1 — Overseer Pre-Warning (before `/shutdown`)
+```
+# Step 1: Probe — no token needed
+action(type: "session/list")
+# → { sids: [1, 2, 3] }
 
-Before issuing the actual shutdown, the Overseer notifies all active worker sessions directly:
+# Step 2: If your SID is present, reconnect with your saved token
+action(type: "session/reconnect", token: <saved_token>, name: "<your_name>")
+# → { token, sid, pin, action: "reconnected", ... }
 
-1. Identify all active worker sessions (via `action(type: "session/list")` or known SIDs from session startup).
-2. Send each worker a DM via their session:
+# Step 3: Resume dequeue loop as normal
+```
 
-   > "Heads up — we're shutting down shortly. Your session will be invalidated when the server restarts. **Do not start new work.** Finish your current tool call if safe, then end your agent turn and wait. After the server comes back up (~60 seconds), the operator will re-engage you and you'll need to start a new session via `action(type: "session/start")`."
-
-3. Wait for each worker to acknowledge and confirm they have ended their turn (operator can visually confirm agents have stopped making tool calls).
-4. Confirm with the operator before proceeding to Phase 2.
-
-### Phase 2 — Actual Shutdown
-
-1. Overseer issues `/shutdown` (built-in command) or calls the `shutdown` MCP tool.
-2. `elegantShutdown()` runs automatically:
-   - Stops the Telegram poller (10 s cap).
-   - Drains any remaining pending updates.
-   - Delivers a **system-level service message** to every active session — this wakes blocked `dequeue` calls.
-   - Waits 2 s for MCP transport to flush.
-   - Sends a final operator notification and calls `process.exit(0)`.
+If the probe returns `{ sids: [] }` or your SID is absent, the bridge restarted fresh — use `session/start` instead.
 
 ---
 
-## How to Sleep (Concrete Mechanism)
+## Unplanned Crash
 
-For an AI agent in VS Code Copilot, **"sleeping" means ending your agent turn**. You cannot pause mid-turn — the only real sleep state is yielding control back to the operator by making no further tool calls.
+If the bridge crashes without a planned bounce, `session-state.json` either does not exist or contains `plannedBounce: false`. The session queue is empty and SIDs are gone.
 
-The concrete steps:
+### Agent recovery procedure (unplanned crash)
 
-1. Send a final status message to the operator (or a DM to the overseer) summarising where you stopped.
-2. Run a visible terminal command so the operator can see you have parked:
+```
+# Probe first — no token needed
+action(type: "session/list")
+# → { sids: [] }  (empty — fresh restart)
 
-   ```powershell
-   Write-Host "Session ended — awaiting operator restart and re-engagement."
-   ```
-
-3. **Stop making tool calls.** End your response. Do not call `dequeue` or any other MCP tool.
-4. Wait for the operator to re-engage you (new message, new conversation, or a re-engagement prompt).
-
-> This is the protocol equivalent of putting a sign on your desk that says "gone for restart — back shortly". The operator knows where you stopped, and they control when you resume.
+# Start a new session
+action(type: "session/start", name: "<your_name>")
+```
 
 ---
 
-## What Workers Should Do
+## Unauthenticated SID Probe
 
-### On receiving the Overseer's pre-warning (Phase 1)
+`list_sessions` accepts an optional token. When called without a token it returns only the list of active SIDs:
 
-1. Acknowledge via DM or 👍 reaction — one brief message is enough.
-2. Do not start new tasks or long-running tool calls.
-3. Finish the current tool call only if it will complete in seconds.
-4. Run the "going to sleep" terminal command:
+```
+action(type: "session/list")
+# → { sids: [1, 2] }
+```
 
-   ```powershell
-   Write-Host "Session ended — awaiting operator restart and re-engagement."
-   ```
-
-5. **End your agent turn.** Do not call `dequeue` again. You are now parked.
-
-### On receiving the shutdown service message (Phase 2)
-
-If you are still in the `dequeue` loop when shutdown fires, you will receive an event with `type: "service"` and `subtype: "shutdown"`:
-
-1. Do not call `dequeue` again on this session.
-2. Send a brief final status message (if your MCP channel is still open).
-3. Run the "going to sleep" terminal command.
-4. **End your agent turn.** The MCP connection will close when the server exits — this is expected.
-
-### What the Overseer must do after issuing shutdown
-
-The Overseer is **also subject to this protocol.** After calling the `shutdown` MCP tool:
-
-1. Send one final operator message confirming shutdown was issued.
-2. Run the "going to sleep" terminal command.
-3. **End your agent turn immediately.** Do not make any further tool calls — not even `dequeue`.
-4. Wait for the operator to re-engage you after the server restarts.
-
-### After the server restarts
-
-When the operator re-engages you (new message or re-engagement prompt):
-
-1. Call `action(type: "session/start")` to register a new session. Your old SID is dead — do not reuse it.
-2. The new `action(type: "session/start")` response gives you a fresh `sid` and `pin`. Use these for all subsequent tool calls.
-3. Resume from the last known task state (check your task file or the terminal output left by the "going to sleep" command).
-4. Re-enter the `dequeue` loop as normal.
-
-> **Do not hardcode or remember old SIDs.** Always obtain a fresh SID from `action(type: "session/start")` after a restart.
->
-> **Overseer restarts first.** The Overseer must establish its new session before signalling workers to reconnect, so it is ready to coordinate again.
+No auth is required. This is safe to call immediately after a restart to determine which reconnect path to take.
 
 ---
 
-## Fault Tolerance
+## State File
 
-### If the pre-warning is not sent (emergency shutdown)
+Location: `session-state.json` at the project root (next to `mcp-config.json`).
 
-If the operator issues `/shutdown` without a Phase 1 warning:
+Schema:
 
-- Workers will still receive the system service message from `elegantShutdown()`.
-- Workers should treat any `shutdown` service message as an immediate stop signal.
-- Session recovery follows the same "start fresh" procedure above.
+```json
+{
+  "nextId": 3,
+  "sessions": [
+    { "sid": 1, "pin": 123456, "name": "Governor", "color": "🟦", "createdAt": "..." },
+    { "sid": 2, "pin": 654321, "name": "Worker",   "color": "🟩", "createdAt": "..." }
+  ],
+  "plannedBounce": true
+}
+```
 
-### If a worker's `dequeue` times out after restart
-
-If a worker calls `dequeue` and receives repeated timeouts (or connection errors) after a restart:
-
-- Assume the server restarted without notification.
-- Wait 60 s, then call `action(type: "session/start")` to establish a fresh session.
-- Notify the operator that a reconnect occurred.
-
----
-
-## Operator Checklist
-
-When restarting the server:
-
-- [ ] Tell the Overseer to issue Phase 1 pre-warnings to all workers.
-- [ ] Wait for worker acknowledgments (or a reasonable timeout).
-- [ ] Tell the Overseer to issue Phase 2 shutdown (`/shutdown` or `shutdown` tool).
-- [ ] Wait for the server to exit (watch for final operator notification).
-- [ ] Restart the server process (Docker, systemd, or manual).
-- [ ] Re-engage agents by sending a new message to each one.
-- [ ] Confirm each agent has started a fresh session and resumed their task.
+The `plannedBounce` field is cleared (set to `false`) immediately after being read on startup so a second restart without a new bounce does not incorrectly skip approval.
 
 ---
 
-## Future Enhancements
+## Implementation Notes
 
-See **task 610** for planned improvements:
-
-- Update the `elegantShutdown()` service message to include explicit restart guidance for worker agents.
-- Add a `notify_shutdown` tool or built-in command that the Overseer can use for Phase 1 pre-warnings without triggering full shutdown.
+- `bounce-state.ts` — in-memory flag (`isPlannedBounce()`, `setPlannedBounce()`)
+- `session-manager.ts` — `persistSessions()`, `restoreSessions()`, `markPlannedBounce()`
+- `shutdown.ts` — calls `markPlannedBounce()` at the start of `elegantShutdown(planned: true)`
+- `index.ts` — calls `restoreSessions()` after `loadConfig()`, sets the in-memory flag
+- `tools/list_sessions.ts` — token is optional; unauthenticated path returns `{ sids: [...] }`
+- `tools/session_start.ts` — `handleSessionReconnect` skips approval when `isPlannedBounce()` is true

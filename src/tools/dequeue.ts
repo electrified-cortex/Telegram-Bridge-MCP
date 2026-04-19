@@ -1,13 +1,15 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, ackVoiceMessage } from "../telegram.js";
+import { dlog } from "../debug-log.js";
 import { requireAuth } from "../session-gate.js";
 import {
   type TimelineEvent,
 } from "../message-store.js";
-import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle } from "../session-manager.js";
+import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession } from "../session-manager.js";
+import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner } from "../session-queue.js";
-import { TOKEN_SCHEMA, consumeTokenStringHint } from "./identity-schema.js";
+import { TOKEN_SCHEMA } from "./identity-schema.js";
 import {
   promoteDeferred,
   getActiveReminders,
@@ -50,10 +52,26 @@ function compactBatch(events: TimelineEvent[], sid: number): Record<string, unkn
 const DESCRIPTION =
   "Consume queued updates. Non-content events drain first, then up to one content event (text, media, voice) is appended. " +
   "Returns: `{ updates, pending? }` with data; `{ timed_out: true }` on blocking-wait expiry (call again immediately); " +
-  "`{ empty: true }` for instant polls (timeout: 0); " +
+  "`{ empty: true }` for instant polls (max_wait: 0); " +
   "`{ error: \"session_closed\", message }` (isError: false) when the session queue is gone — stop looping. " +
-  "pending > 0 → call again. Omit timeout to use session default (action(type: 'profile/dequeue-default'), fallback 300 s); max explicit: 300 s. " +
+  "pending > 0 → call again. Omit max_wait to use session default (action(type: 'profile/dequeue-default'), fallback 300 s); max explicit: 300 s. " +
   "Call `help(topic: 'dequeue')` for details.";
+
+/**
+ * Tracks which sessions have already received the TIMEOUT_EXCEEDS_DEFAULT hint.
+ * The hint is only included in the first occurrence per session to avoid repetition.
+ */
+const _timeoutHintShownForSession = new Set<number>();
+
+/** Exported for test reset only — do not call in production code. */
+export function _resetTimeoutHintForTest(): void {
+  _timeoutHintShownForSession.clear();
+}
+
+/** Exported for test reset only — kept for backward compat with tests. */
+export function _resetFirstDequeueHintForTest(): void {
+  // No-op: first-dequeue hint removed.
+}
 
 export function register(server: McpServer) {
   server.registerTool(
@@ -61,37 +79,48 @@ export function register(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
+        max_wait: z
+          .number()
+          .int({ message: "max_wait must be an integer number of seconds." })
+          .min(0, { message: "max_wait must be \u2265 0. Call help(topic: 'dequeue') for usage." })
+          .max(300, { message: "max_wait must be \u2264 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
+          .optional()
+          .describe("Seconds to block when queue is empty. Omit to use your session default (set via action(type: 'profile/dequeue-default')); server fallback is 300 s. Pass 0 for an instant non-blocking poll (drain loops only). Values above the session default require force: true or action(type: 'profile/dequeue-default'). Max 300 s — use action(type: 'profile/dequeue-default') to configure persistent agents. You almost never need to set this — the session default handles blocking. Only exception: max_wait: 0 for drain loops."),
         timeout: z
           .number()
-          .int({ message: "timeout must be an integer number of seconds." })
-          .min(0, { message: "timeout must be \u2265 0. Call help(topic: 'dequeue') for usage." })
-          .max(300, { message: "timeout must be \u2264 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
+          .int()
+          .min(0)
+          .max(300)
           .optional()
-          .describe("Seconds to block when queue is empty. Omit to use your session default (set via action(type: 'profile/dequeue-default')); server fallback is 300 s. Pass 0 for an instant non-blocking poll (drain loops only). Values above the session default require force: true or action(type: 'profile/dequeue-default'). Max 300 s — use action(type: 'profile/dequeue-default') to configure persistent agents."),
+          .describe("Deprecated alias for max_wait. Use max_wait instead."),
         force: z
           .boolean()
           .default(false)
-          .describe("Pass true to allow a one-time override when timeout exceeds your current session default. Only applies to values ≤ 300 s (the hard cap on timeout). To wait longer than 300 s by default, use action(type: 'profile/dequeue-default') instead."),
+          .describe("Pass true to allow a one-time override when max_wait exceeds your current session default. Only applies to values ≤ 300 s (the hard cap on max_wait). To wait longer than 300 s by default, use action(type: 'profile/dequeue-default') instead."),
         token: TOKEN_SCHEMA,
       },
     },
-    async ({ timeout, force, token }, { signal }) => {
+    async ({ max_wait, timeout: timeoutAlias, force, token }, { signal }) => {
+      // Resolve max_wait from primary param or deprecated `timeout` alias.
+      const timeout = max_wait ?? timeoutAlias;
       const _sid = requireAuth(token);
       if (typeof _sid !== "number") return toError(_sid);
       const sid = _sid;
-
-      // Capture the token-string hint now (before any early returns consume it).
-      const tokenHint = consumeTokenStringHint();
 
       // Gate: reject timeout values above the session default unless force is set
       const sessionDefault = getDequeueDefault(sid);
       const effectiveTimeout = timeout ?? sessionDefault;
       if (timeout !== undefined && timeout > sessionDefault && !force) {
-        return toResult({
-          error: "TIMEOUT_EXCEEDS_DEFAULT",
-          message: `timeout ${timeout} exceeds your current default of ${sessionDefault}s.`,
-          hint: `Pass force: true for a one-time override, or call action(type: 'profile/dequeue-default', timeout: ${timeout}) to raise your default.`,
-        });
+        const firstOccurrence = !_timeoutHintShownForSession.has(sid);
+        _timeoutHintShownForSession.add(sid);
+        const response: Record<string, unknown> = {
+          code: "TIMEOUT_EXCEEDS_DEFAULT",
+          message: `max_wait ${timeout} exceeds your current default of ${sessionDefault}s.`,
+        };
+        if (firstOccurrence) {
+          response.hint = `Pass force: true for a one-time override, or call action(type: 'profile/dequeue-default', timeout: ${timeout}) to raise your default.`;
+        }
+        return toResult(response);
       }
 
       const sessionQueue = getSessionQueue(sid);
@@ -130,6 +159,19 @@ export function register(server: McpServer) {
         return sq.waitForEnqueue();
       }
 
+      function hasVersionedWaitAny(q: unknown): q is { getWakeVersion(): number; waitForEnqueueSince(v: number): Promise<void> } {
+        return typeof (q as Record<string, unknown>)["getWakeVersion"] === "function" &&
+               typeof (q as Record<string, unknown>)["waitForEnqueueSince"] === "function";
+      }
+
+      function getWakeVersionAny(q: unknown): number {
+        return (q as { getWakeVersion(): number }).getWakeVersion();
+      }
+
+      function waitForEnqueueSinceAny(q: unknown, v: number): Promise<void> {
+        return (q as { waitForEnqueueSince(v: number): Promise<void> }).waitForEnqueueSince(v);
+      }
+
       // Try immediate batch dequeue
       let batch = dequeueBatchAny();
       if (batch.length > 0) {
@@ -137,15 +179,13 @@ export function register(server: McpServer) {
         const pending = pendingCountAny();
         const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
         if (pending > 0) result.pending = pending;
-        if (tokenHint) result.hint = tokenHint;
         resyncActiveSession();
+        dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
         return toResult(result);
       }
 
       if (effectiveTimeout === 0) {
-        const emptyResult: Record<string, unknown> = { empty: true, pending: pendingCountAny() };
-        if (tokenHint) emptyResult.hint = tokenHint;
-        return toResult(emptyResult);
+        return toResult({ empty: true, pending: pendingCountAny() });
       }
 
       // Block until something arrives or timeout expires.
@@ -168,9 +208,13 @@ export function register(server: McpServer) {
           // Fire active reminders after 60 s of idle (no real messages).
           if (idleDuration >= REMINDER_IDLE_THRESHOLD_MS && activeReminders.length > 0) {
             const fired = popActiveReminders(sid);
+            const sessionName = getSession(sid)?.name ?? "";
+            for (const reminder of fired) {
+              recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
+            }
             resyncActiveSession();
             const reminderResult: Record<string, unknown> = { updates: fired.map(buildReminderEvent), pending: pendingCountAny() };
-            if (tokenHint) reminderResult.hint = tokenHint;
+            dlog("queue", `dequeue returning sid=${sid} batch=${fired.length} payloadLen=${JSON.stringify(reminderResult).length}`);
             return toResult(reminderResult);
           }
 
@@ -183,14 +227,33 @@ export function register(server: McpServer) {
             : Infinity;
           const deferredMs = getSoonestDeferredMs(sid);
           const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
+          const useVersionedWait = hasVersionedWaitAny(sq);
+          const wakeVersion = useVersionedWait ? getWakeVersionAny(sq) : 0;
+
+          if (useVersionedWait) {
+            // Re-check after capturing wakeVersion to avoid a lost wakeup if an
+            // event arrives between an "empty" check and waiter registration.
+            batch = dequeueBatchAny();
+            if (batch.length > 0) {
+              for (const evt of batch) ackVoice(evt);
+              const pending = pendingCountAny();
+              const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
+              if (pending > 0) result.pending = pending;
+              resyncActiveSession();
+              dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
+              return toResult(result);
+            }
+          }
 
           let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+          dlog("queue", `dequeue wait sid=${sid} wakeVersion=${wakeVersion} waitMs=${waitMs}`);
           await Promise.race([
-            waitForEnqueueAny(),
+            useVersionedWait ? waitForEnqueueSinceAny(sq, wakeVersion) : waitForEnqueueAny(),
             new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(Math.max(0, waitMs), MAX_SET_TIMEOUT_MS)); }),
             abortPromise,
           ]);
           clearTimeout(timeoutHandle);
+          dlog("queue", `dequeue woke sid=${sid} aborted=${signal.aborted}`);
 
           batch = dequeueBatchAny();
           if (batch.length > 0) {
@@ -198,16 +261,14 @@ export function register(server: McpServer) {
             const pending = pendingCountAny();
             const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
             if (pending > 0) result.pending = pending;
-            if (tokenHint) result.hint = tokenHint;
             resyncActiveSession();
+            dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
             return toResult(result);
           }
         }
 
         resyncActiveSession();
-        const timedOutResult: Record<string, unknown> = { timed_out: true, pending: pendingCountAny() };
-        if (tokenHint) timedOutResult.hint = tokenHint;
-        return toResult(timedOutResult);
+        return toResult({ timed_out: true, pending: pendingCountAny() });
       } finally {
         // Note: if two concurrent dequeue calls share the same sid (unusual but
         // possible), the second finally will clear the idle flag while the first
