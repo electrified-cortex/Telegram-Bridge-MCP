@@ -13,7 +13,7 @@ Valid status values for send(type: 'checklist') and action(type: 'checklist/upda
 Common mistake: using 'in-progress' — not valid. Use 'running'.
 
 Example:
-```
+```js
 action(type: 'checklist/update', message_id: 123, steps: [
   { label: 'Fetch data', status: 'done' },
   { label: 'Process', status: 'running' },
