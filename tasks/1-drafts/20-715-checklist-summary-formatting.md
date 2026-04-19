@@ -17,11 +17,17 @@ Current rendered checklist summary uses an em-dash separator and inline placemen
 1. **Locate** the checklist summary render code in TMCP (likely `src/services/checklist*` or wherever `send(type: "checklist")` formats the rendered message).
 2. **Remove em-dash** from the summary line. Use plain newlines as separators.
 3. **Place "incomplete" indicator on its own line.** The yellow visual stays; only the placement changes.
-4. **Standardize phrasing — final form per operator 2026-04-19:**
-   - **Header** is the existing yellow "Incomplete" / green "Complete" status line. No change.
-   - **Summary line** (one line, below header): just the done count, in the terse adjective form: `6 complete` (not "6 completed", not "6 of 7"). Drop the trailing -d, drop the fraction.
-   - **Do NOT** add `1 incomplete` / `1 skipped` lines -- the header already carries the incomplete-state signal in color, and tapping the summary jumps to the full breakdown. Counts beyond the done count are noise.
-   - When everything is done, the header shifts to "Complete" and the summary line is redundant -- omit it.
+4. **Standardize phrasing — final form per operator 2026-04-19 (after four refinement passes):**
+   - **Header** is the existing colored status word — three real states per current code:
+     - green check + "Complete"
+     - yellow circle + "Incomplete"
+     - red X + "Failed" (or whatever the existing failed-state header word is — verify against the renderer)
+   - **Header alone is the baseline.** When all steps are done, the header carries the entire signal — no summary line.
+   - **Summary line (only when there's something exceptional to draw attention to):** counts of the EXCEPTIONAL states — skipped and/or failed. NOT the success count. The point is to surface what didn't go to plan, not to restate progress the header already conveys.
+     - Format: terse adjective form (no trailing -d). `1 skipped`, `2 failed`, `1 skipped, 2 failed` if both apply.
+     - Omit entirely if nothing exceptional happened.
+   - **Do NOT** include framing copy like "tap to see breakdown" — the reply-thread affordance is implicit; explaining it is noise.
+   - **Do NOT** include the success count (`6 complete`) — that's the boring case. The header already says "Incomplete" or "Complete"; the summary's job is to highlight the exception, not to count progress.
 5. **Verify against a real checklist** before merging — render a 7-item checklist with 6 done, 1 incomplete, and confirm the new layout.
 
 ## Constraints
@@ -33,8 +39,8 @@ Current rendered checklist summary uses an em-dash separator and inline placemen
 
 ## Open Questions
 
-- Is the summary count `done / total` or `done / (total - skipped)`? Verify which the user expects before changing the math.
-- Should "incomplete" line list the count of incomplete items, or just the status indicator? (Operator implied just the indicator on its own line.)
+- Confirm exact existing failed-state header word/icon when reading the renderer (operator referenced "red failed or something like that" — verify the actual string).
+- The "exceptional counts" rule treats `skipped` and `failed` as exceptions worth highlighting. Is `pending`/`running` ever surfaced post-completion? (Probably not — those are mid-flight states.)
 
 ## Delegation
 
