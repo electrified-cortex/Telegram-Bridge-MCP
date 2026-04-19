@@ -25,3 +25,8 @@ This applies primarily to buttons attached to voice message acknowledgments and 
 - [ ] On timeout: message text is appended or edited to indicate "> options timed out"
 - [ ] Existing approval dialog cleanup (session_start) is not regressed
 - [ ] Tests cover the timeout cleanup path for at least `confirm` and `choose`
+
+## Completion
+
+- PR: #138 — "fix: expired callback button cleanup on timeout"
+- Merged: 2026-04-17
