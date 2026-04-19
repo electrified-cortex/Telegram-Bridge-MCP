@@ -23,3 +23,12 @@ Small, but exactly the kind of doc drift that accumulates if left.
 ## Related
 
 - 20-721 (parent V7 merge readiness audit).
+
+## Completion
+
+Committed on branch `30-728` (commit `878027d`) by Worker 4 (2026-04-19).
+
+- `docs/help/checklist.md` line 16: ` ``` ` → ` ```js `
+- Fixes MD040 untagged fence.
+
+Overseer notified. Ready for Curator review and merge.
