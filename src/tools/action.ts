@@ -225,9 +225,12 @@ export function register(server: McpServer): void {
             "Action path to dispatch (e.g. 'session/list', 'profile/voice'). " +
             "Omit to list all categories. Pass a category name to list sub-paths.",
           ),
-        // Auth token — required for all paths except session/start and session/reconnect
+        // Auth token — required for most paths; see exceptions below
         token: TOKEN_SCHEMA.optional().describe(
-          "Session token from action(type: 'session/start'). Required for all paths except `session/start` and `session/reconnect`.",
+          "Session token from action(type: 'session/start'). " +
+          "Token-optional paths: `session/start`, `session/reconnect`, and `session/list` (unauthenticated probe returns SIDs only). " +
+          "Omitting `type` (discovery/category listing) also requires no token. " +
+          "All other paths require a valid token.",
         ),
         // session/start and session/reconnect params
         name: z

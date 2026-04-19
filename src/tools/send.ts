@@ -178,7 +178,9 @@ export function register(server: McpServer) {
         no_data: z.string().default("confirm_no").describe("Negative callback data"),
         yes_style: BUTTON_STYLE_SCHEMA.default("primary").describe("Affirmative button color"),
         no_style: BUTTON_STYLE_SCHEMA.optional().describe("Negative button color"),
-        token: TOKEN_SCHEMA,
+        token: TOKEN_SCHEMA.describe(
+          "Session token from action(type: 'session/start') (sid * 1_000_000 + suffix). Required for all send paths.",
+        ),
       },
     },
     async (args, { signal }) => {
