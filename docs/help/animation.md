@@ -16,6 +16,7 @@ Built-in presets:
 | Preset | Description |
 | --- | --- |
 | bounce | Block-character bouncing bar (default) |
-| working | ⚙ Working… cycling dots |
-| thinking | 🤔 Thinking… cycling dots |
-| reviewing | 🔍 Reviewing… cycling dots |
+| dots | Minimal cycling dot indicator |
+| working | `[ working ]` cycling bracket animation |
+| thinking | `[ thinking ]` cycling bracket animation |
+| loading | `[ loading ]` cycling bracket animation |
