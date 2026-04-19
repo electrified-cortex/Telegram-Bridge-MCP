@@ -26,7 +26,6 @@ import { getApi, getRawApi, resolveChat, sendServiceMessage } from "./telegram.j
 import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
 import { hasActiveAnimation } from "./animation-state.js";
-import { getCallerSid } from "./session-context.js";
 import { registerOnceOnSend, clearOnceOnSend } from "./outbound-proxy.js";
 
 // ── Constants ──────────────────────────────────────────────
@@ -78,12 +77,6 @@ async function sendGovernorPrompt(
   const chatId = resolveChat();
   if (typeof chatId !== "number") return;
 
-  // Capture the active session SID before the async send so the callback hook
-  // runs in the same session context, keeping the name-tag consistent on edit.
-  // getCallerSid() returns 0 when there is no ALS context (e.g. a timer callback);
-  // registerCallbackHook only stores ownerSid when > 0, so pass undefined in that case.
-  const hookOwnerSid = getCallerSid();
-
   const text =
     `⚠️ *${markdownToV2(governorName)}* \\(primary\\) appears unresponsive\\.\n` +
     `Next available session: *${markdownToV2(nextName)}*`;
@@ -94,7 +87,7 @@ async function sendGovernorPrompt(
     [{ text: `⏳ Wait for ${governorName}`,  callback_data: CB_WAIT                         }],
   ];
 
-  const sent = await getApi().sendMessage(chatId, text, {
+  const sent = await getRawApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
     reply_markup: { inline_keyboard: keyboard },
   } as Record<string, unknown>);
@@ -106,10 +99,10 @@ async function sendGovernorPrompt(
 
     const data = evt.content.data ?? "";
     const qid  = evt.content.qid;
-    if (qid) getApi().answerCallbackQuery(qid).catch(() => {});
+    if (qid) getRawApi().answerCallbackQuery(qid).catch(() => {});
 
     if (data === CB_WAIT) {
-      void getApi().editMessageText(chatId, msgId,
+      void getRawApi().editMessageText(chatId, msgId,
         `⏳ Waiting for ${governorName} to come back\\.`,
         { parse_mode: "MarkdownV2" },
       ).catch(() => {});
@@ -146,14 +139,14 @@ async function sendGovernorPrompt(
     }
 
     const verb = data.startsWith(CB_MAKE_PRIMARY) ? "primary session" : "rerouted to";
-    void getApi().editMessageText(
+    void getRawApi().editMessageText(
       chatId, msgId,
       `✓ *${markdownToV2(targetName)}* is now the ${verb === "primary session" ? "primary session" : `target for new messages`}\\.`,
       { parse_mode: "MarkdownV2" },
     ).catch(() => {});
 
     dlog("health", `governor rerouted: new governor sid=${targetSid} name=${targetName}`);
-  }, hookOwnerSid > 0 ? hookOwnerSid : undefined);
+  }, undefined);
 }
 
 // ── Health check tick ─────────────────────────────────────
