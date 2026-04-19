@@ -116,8 +116,9 @@ async function _fireRestoreForSlot(sid: number, messageId: number): Promise<void
       .then(ok => { if (ok) recordBotReaction(messageId, effectiveRestore); })
       .catch(() => undefined);
   } else {
-    await getApi().setMessageReaction(chatId, messageId, []).catch(() => undefined);
-    recordBotReaction(messageId, "");
+    await getApi().setMessageReaction(chatId, messageId, [])
+      .then(() => { recordBotReaction(messageId, ""); })
+      .catch(() => undefined);
   }
 }
 
