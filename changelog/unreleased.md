@@ -14,6 +14,11 @@
 - `session/rename` action: added optional `color` parameter — applies a session color change atomically with the rename in the same operator-approval flow
 - `session/rename` action: added optional `target_sid` parameter (governor only) — allows the governor to rename another session; returns `PERMISSION_DENIED` for non-governor callers; validates the target session exists before prompting the operator
 - `session/close` action: added `force?: boolean` parameter — when `true`, allows closing the last active session without triggering the last-session guard
+- `session/close/signal` action (governor only): accepts `target_sid` and optional `timeout_seconds` — delivers a `session_close_signal` service message to the target, waits up to the timeout for self-close, force-closes via `closeSessionById` on expiry; re-checks governor status before force-closing (returns `PERMISSION_DENIED` if governor changed during the wait), detects self-close mid-wait, and rejects callers that are non-governor, target themselves, or name an unknown SID
+
+### Changed
+
+- `shutdown` MCP tool: now bypasses the pending-message guard and exits immediately when no sessions are active (pending items cannot be processed without a session to route to); the guard still applies when one or more sessions exist
 
 ### Fixed
 
