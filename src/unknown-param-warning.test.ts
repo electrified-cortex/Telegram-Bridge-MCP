@@ -207,7 +207,7 @@ async function callThroughWrapper(
 
 describe("composed wiring (callThroughWrapper)", () => {
   it("handler receives only known params", async () => {
-    const handler = vi.fn((args: Record<string, unknown>) => ({
+    const handler = vi.fn((_args: Record<string, unknown>) => ({
       content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
     }));
     await callThroughWrapper("my_tool", ["token"], handler, { token: 1, bogus: "x" });
@@ -216,7 +216,7 @@ describe("composed wiring (callThroughWrapper)", () => {
   });
 
   it("warning is injected into response JSON when unknown params present", async () => {
-    const handler = vi.fn((args: Record<string, unknown>) => ({
+    const handler = vi.fn((_args: Record<string, unknown>) => ({
       content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
     }));
     const result = await callThroughWrapper("my_tool", ["token"], handler, { token: 1, bogus: "x" });
@@ -226,7 +226,7 @@ describe("composed wiring (callThroughWrapper)", () => {
   });
 
   it("no warning field when all params are known", async () => {
-    const handler = vi.fn((args: Record<string, unknown>) => ({
+    const handler = vi.fn((_args: Record<string, unknown>) => ({
       content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
     }));
     const result = await callThroughWrapper("my_tool", ["token"], handler, { token: 1 });
