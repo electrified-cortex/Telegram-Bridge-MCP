@@ -27,6 +27,7 @@ Current rendered checklist summary uses an em-dash separator and inline placemen
 ## Constraints
 
 - Don't touch the per-step rendering (status icons + label) — only the summary footer.
+- **Preserve `reply_to` threading on the completion summary.** That's what makes the summary tap-to-jump to the original checklist message; Telegram's reply mechanic provides the indexability. Removing it would break the affordance the whole minimal-summary design depends on.
 - Preserve the existing status enum values (`pending`, `running`, `done`, `failed`, `skipped`).
 - Em-dashes elsewhere in TMCP output are not in scope for this task; just the checklist summary.
 
