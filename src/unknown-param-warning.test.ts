@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { checkUnknownParams, injectWarningIntoResult } from "./unknown-param-warning.js";
 
 // ---------------------------------------------------------------------------
@@ -183,5 +183,54 @@ describe("injectWarningIntoResult", () => {
     const result = { isError: true };
     const out = injectWarningIntoResult(result, "w");
     expect(out).toBe(result);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration: composed wiring (mirrors server.ts registerTool wrapper)
+// ---------------------------------------------------------------------------
+
+async function callThroughWrapper(
+  toolName: string,
+  knownParamNames: string[],
+  handler: (args: Record<string, unknown>) => unknown,
+  incomingArgs: Record<string, unknown>,
+): Promise<unknown> {
+  const knownParams = new Set(knownParamNames);
+  const { clean, warning } = checkUnknownParams(toolName, knownParams, incomingArgs);
+  let result = await Promise.resolve(handler(clean));
+  if (warning !== undefined) {
+    result = injectWarningIntoResult(result, warning);
+  }
+  return result;
+}
+
+describe("composed wiring (callThroughWrapper)", () => {
+  it("handler receives only known params", async () => {
+    const handler = vi.fn((args: Record<string, unknown>) => ({
+      content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
+    }));
+    await callThroughWrapper("my_tool", ["token"], handler, { token: 1, bogus: "x" });
+    expect(handler).toHaveBeenCalledWith({ token: 1 });
+    expect(handler.mock.calls[0][0]).not.toHaveProperty("bogus");
+  });
+
+  it("warning is injected into response JSON when unknown params present", async () => {
+    const handler = vi.fn((args: Record<string, unknown>) => ({
+      content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
+    }));
+    const result = await callThroughWrapper("my_tool", ["token"], handler, { token: 1, bogus: "x" });
+    const parsed = JSON.parse((result as { content: { text: string }[] }).content[0].text);
+    expect(typeof parsed.warning).toBe("string");
+    expect(parsed.warning).toContain("bogus");
+  });
+
+  it("no warning field when all params are known", async () => {
+    const handler = vi.fn((args: Record<string, unknown>) => ({
+      content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
+    }));
+    const result = await callThroughWrapper("my_tool", ["token"], handler, { token: 1 });
+    const parsed = JSON.parse((result as { content: { text: string }[] }).content[0].text);
+    expect(parsed.warning).toBeUndefined();
   });
 });
