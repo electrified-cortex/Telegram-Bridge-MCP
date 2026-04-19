@@ -34,7 +34,31 @@ Worker (TMCP). Curator stages, operator merges.
 
 15 - behavior shaping. Not blocking, but fixes a recurring "agent DMs are too long" friction.
 
+## Source content for `help('compression')` (operator voice 2026-04-19)
+
+The compression help topic must distinguish modality-by-modality. Operator's spec, captured verbatim then codified:
+
+### Text
+
+- Default channel. Always acceptable.
+- **Brief until it needs to be long.** This is a chat, not a research session. Humans don't want to read tomes.
+- Lean **inquisitive**: exchange shape, not monologue. Ask a question, get an answer, ask the next.
+- **Use buttons** for back-and-forth. Question/choose/confirm carry the conversation faster than prose.
+
+### Voice / audio (has its own compression form -- codify explicitly)
+
+- Excellent when sent to operator. Best when in plain English (or operator's working language).
+- **Not over-compressed.** Light tier at most. Audio compression is a different form than text compression -- text compresses by deleting words; audio compresses by being structurally fluid, not by being terse.
+- **Fluid, conversational.** Not choppy. Not punchy. Not bullets. The listener should be able to unpack effortlessly.
+- Use audio when the *intent* is to talk through something -- explain, narrate, walk through context. Not when the intent is structured information transfer (use text + buttons for that).
+
+### Inter-agent DM (where this task's service message fires)
+
+- Ultra-tier compression. Maximum density, minimum prose.
+- This is the channel that warrants the protocol-level service message because it's the easiest to overshoot.
+
 ## Related
 
-- Memory: `feedback_compression_as_talent.md`, `feedback_lazy_load_service_msgs.md`.
+- Memory: `feedback_compression_as_talent.md`, `feedback_lazy_load_service_msgs.md`, `feedback_telegram_voice.md`, `feedback_hybrid_message_caption.md`.
 - Architectural cousin: any future "first-time-X-do-Y" service messages follow the same lazy-load pattern.
+- `15-714` (modality matching) - sister; both feed the same `help` topic family.
