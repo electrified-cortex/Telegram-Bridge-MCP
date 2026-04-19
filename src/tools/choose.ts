@@ -35,7 +35,7 @@ export async function handleChoose(
   {
     text,
     options,
-    timeout_seconds = 300,
+    timeout_seconds,
     columns = 2,
     reply_to,
     ignore_pending,
@@ -304,9 +304,9 @@ export function register(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(300)
-        .default(300)
-        .describe("Seconds to wait before returning timed_out: true and removing buttons (default 300 — buttons stay live for 5 minutes). A text or voice message from the user will immediately return skipped regardless of timeout."),
+        .max(86400)
+        .optional()
+        .describe("Seconds to wait before returning timed_out: true and removing buttons. Omit to use the server maximum (24 h). A text or voice message immediately returns skipped regardless of timeout."),
       columns: z
         .number()
         .int()

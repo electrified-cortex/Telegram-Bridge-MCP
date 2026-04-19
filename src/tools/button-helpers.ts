@@ -8,6 +8,8 @@ import { applyTopicToText } from "../topic-state.js";
 import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
 import { getSessionQueue } from "../session-queue.js";
 
+const NO_TIMEOUT_CEILING_SECONDS = 86_400; // 24 h server-side ceiling when no timeout requested
+
 // ---------------------------------------------------------------------------
 // Result types
 // ---------------------------------------------------------------------------
@@ -62,14 +64,15 @@ export type ButtonStyle = "success" | "primary" | "danger";
 export async function pollButtonPress(
   _chatId: number,
   messageId: number,
-  timeoutSeconds: number,
+  timeoutSeconds: number | undefined,
   signal?: AbortSignal,
   sid?: number,
 ): Promise<ButtonResult | null> {
+  const effectiveTimeout = timeoutSeconds ?? NO_TIMEOUT_CEILING_SECONDS;
   const sq = sid && sid > 0
     ? getSessionQueue(sid)
     : undefined;
-  const deadline = Date.now() + timeoutSeconds * 1000;
+  const deadline = Date.now() + effectiveTimeout * 1000;
   const abortPromise = signal
     ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); })
     : null;
@@ -114,15 +117,16 @@ export async function pollButtonPress(
 export async function pollButtonOrTextOrVoice(
   _chatId: number,
   messageId: number,
-  timeoutSeconds: number,
+  timeoutSeconds: number | undefined,
   onVoiceDetected?: () => void,
   signal?: AbortSignal,
   sid?: number,
 ): Promise<ButtonOrTextResult | null> {
+  const effectiveTimeout = timeoutSeconds ?? NO_TIMEOUT_CEILING_SECONDS;
   const sq = sid && sid > 0
     ? getSessionQueue(sid)
     : undefined;
-  const deadline = Date.now() + timeoutSeconds * 1000;
+  const deadline = Date.now() + effectiveTimeout * 1000;
   let voiceDetectedFired = false;
   const abortPromise = signal
     ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); })

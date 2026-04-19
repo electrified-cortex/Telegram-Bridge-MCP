@@ -43,7 +43,7 @@ export interface ConfirmArgs {
   no_data: string;
   yes_style?: ButtonStyle;
   no_style?: ButtonStyle;
-  timeout_seconds: number;
+  timeout_seconds?: number;
   reply_to?: number;
   ignore_pending?: boolean;
   ignore_parity?: boolean;
@@ -295,9 +295,9 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
       .number()
       .int()
       .min(1)
-      .max(300)
-      .default(60)
-      .describe("Seconds to wait for a button press before returning timed_out: true"),
+      .max(86400)
+      .optional()
+      .describe("Seconds to wait for a button press. Omit to use the server maximum (24 h)."),
     reply_to: z
       .number()
       .int()

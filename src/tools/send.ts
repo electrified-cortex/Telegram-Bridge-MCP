@@ -170,7 +170,7 @@ export function register(server: McpServer) {
         // ── question sub-types ─────────────────────────────────────────────
         ask: z.string().optional().describe("Free-text question for type: \"question\" ask mode"),
         confirm: z.string().optional().describe("Confirmation text for type: \"question\" confirm mode"),
-        timeout_seconds: z.number().int().min(1).max(300).default(60).describe("Timeout for interactive question types (seconds)"),
+        timeout_seconds: z.number().int().min(1).max(86400).optional().describe("Timeout for interactive question types (seconds). Omit to use the server maximum (24 h)."),
         ignore_pending: z.boolean().optional().describe("Skip pending-updates check for interactive types"),
         yes_text: z.string().default("OK").describe("Affirmative button label (for confirm)"),
         no_text: z.string().default("Cancel").describe("Negative button label (for confirm)"),
