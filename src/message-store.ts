@@ -599,6 +599,15 @@ export function markBaseReaction(chatId: number, messageId: number): void {
   _baseReactionMessages.add(`${chatId}:${messageId}`);
 }
 
+/**
+ * Removes the implicit 👌 base reaction registration for (chatId, messageId).
+ * Called after the base has been restored (one-shot consume), so subsequent
+ * restore calls from other temp slots do not fire a duplicate 👌 API call.
+ */
+export function clearBaseReaction(chatId: number, messageId: number): void {
+  _baseReactionMessages.delete(`${chatId}:${messageId}`);
+}
+
 // ---------------------------------------------------------------------------
 // Dequeue — consumption by the agent (delegates to TemporalQueue)
 // ---------------------------------------------------------------------------
