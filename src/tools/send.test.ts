@@ -78,7 +78,7 @@ vi.mock("../config.js", () => ({
 vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
-  validateSession: (sid: number, pin: number) => mocks.validateSession(sid, pin),
+  validateSession: (sid: number, suffix: number) => mocks.validateSession(sid, suffix),
 }));
 
 vi.mock("./show_animation.js", () => ({
@@ -103,7 +103,7 @@ vi.mock("./append_text.js", () => ({
 
 import { register } from "./send.js";
 
-const TOKEN = 1_123_456; // sid=1, pin=123456
+const TOKEN = 1_123_456; // sid=1, suffix=123456
 const SENT_MSG = { message_id: 42 };
 const SENT_VOICE_MSG = { message_id: 43 };
 
@@ -234,7 +234,7 @@ describe("send tool", () => {
     expect(errorCode(result)).toBe("SID_REQUIRED");
   });
 
-  it("returns AUTH_FAILED when token has wrong pin", async () => {
+  it("returns AUTH_FAILED when token has wrong suffix", async () => {
     mocks.validateSession.mockReturnValue(false);
     const result = await call({ text: "hello", token: 1_099_999 });
     expect(isError(result)).toBe(true);

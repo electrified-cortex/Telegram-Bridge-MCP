@@ -40,7 +40,7 @@ import { register } from "./approve_agent.js";
 
 describe("approve_agent tool", () => {
   let call: ToolHandler;
-  // Valid token: sid=1, pin=123456 → token=1_123_456
+  // Valid token: sid=1, suffix=123456 → token=1_123_456
   const VALID_TOKEN = 1_123_456;
   const VALID_TICKET = "abcdef1234567890abcdef1234567890";
   const mockResolve = vi.fn();

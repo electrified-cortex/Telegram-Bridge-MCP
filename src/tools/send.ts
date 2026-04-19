@@ -10,6 +10,8 @@ import { getSessionVoice, getSessionSpeed } from "../voice-state.js";
 import { getDefaultVoice } from "../config.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
+import { findUnrenderableChars } from "../unrenderable-chars.js";
+import { deliverServiceMessage } from "../session-queue.js";
 // Type-routing handlers (v6 Phase 2)
 import { handleSendFile } from "./send_file.js";
 import { handleNotify } from "./notify.js";
@@ -349,6 +351,17 @@ export function register(server: McpServer) {
               message_ids.push(msg.message_id);
             }
             const hasTable = containsMarkdownTable(text ?? "");
+            const badChars = findUnrenderableChars(text ?? "");
+            if (badChars.length > 0) {
+              const charList = badChars
+                .map(c => `\`${c}\` (U+${(c.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")})`)
+                .join(", ");
+              deliverServiceMessage(
+                _sid,
+                `Message sent, but some characters may not render in Telegram: ${charList}. Use ASCII alternatives.`,
+                "unrenderable_chars_warning",
+              );
+            }
             if (message_ids.length === 1) {
               return toResult(hasTable ? { message_id: message_ids[0], info: TABLE_WARNING } : { message_id: message_ids[0] });
             }

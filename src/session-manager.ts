@@ -10,7 +10,7 @@ export type SessionColor = (typeof COLOR_PALETTE)[number];
 
 export interface Session {
   sid: number;
-  pin: number;
+  suffix: number;
   name: string;
   color: string;
   createdAt: string;
@@ -24,7 +24,7 @@ export interface Session {
   tutorialSeenTools?: Set<string>;
 }
 
-/** Public view returned by `listSessions` — no PIN. */
+/** Public view returned by `listSessions` — no token suffix. */
 export interface SessionInfo {
   sid: number;
   name: string;
@@ -35,7 +35,7 @@ export interface SessionInfo {
 /** Value returned from `createSession`. */
 export interface SessionCreateResult {
   sid: number;
-  pin: number;
+  suffix: number;
   name: string;
   color: string;
   sessionsActive: number;
@@ -43,8 +43,8 @@ export interface SessionCreateResult {
 
 // ── State ──────────────────────────────────────────────────
 
-const PIN_MIN = 100_000;
-const PIN_MAX = 999_999;
+const SUFFIX_MIN = 100_000;
+const SUFFIX_MAX = 999_999;
 
 let _nextId = 1;
 const _sessions = new Map<number, Session>();
@@ -61,8 +61,8 @@ const _everUsedColors = new Set<string>();
 
 // ── Helpers ────────────────────────────────────────────────
 
-function generatePin(): number {
-  return randomInt(PIN_MIN, PIN_MAX + 1);
+function generateSuffix(): number {
+  return randomInt(SUFFIX_MIN, SUFFIX_MAX + 1);
 }
 
 /** Move a color to the MRU (far right) position in the LRU queue and mark it as ever-used. */
@@ -139,23 +139,23 @@ export function getAvailableColors(hint?: string): string[] {
 
 export function createSession(name = "", colorHint?: string, forceColor = false): SessionCreateResult {
   const sid = _nextId++;
-  const usedPins = new Set([..._sessions.values()].map((s) => s.pin));
-  let pin: number;
-  const MAX_PIN_ATTEMPTS = 10;
+  const usedSuffixes = new Set([..._sessions.values()].map((s) => s.suffix));
+  let suffix: number;
+  const MAX_SUFFIX_ATTEMPTS = 10;
   let attempt = 0;
   do {
-    pin = generatePin();
+    suffix = generateSuffix();
     attempt++;
-  } while (usedPins.has(pin) && attempt < MAX_PIN_ATTEMPTS);
-  if (usedPins.has(pin)) {
+  } while (usedSuffixes.has(suffix) && attempt < MAX_SUFFIX_ATTEMPTS);
+  if (usedSuffixes.has(suffix)) {
     throw new Error(
-      `[session-manager] Failed to generate a unique PIN after ${MAX_PIN_ATTEMPTS} attempts.`,
+      `[session-manager] Failed to generate a unique token suffix after ${MAX_SUFFIX_ATTEMPTS} attempts.`,
     );
   }
   const color = assignColor(colorHint, forceColor);
   const session: Session = {
     sid,
-    pin,
+    suffix,
     name,
     color,
     createdAt: new Date().toISOString(),
@@ -165,16 +165,16 @@ export function createSession(name = "", colorHint?: string, forceColor = false)
   _sessions.set(sid, session);
   dlog("session", `created sid=${sid} name=${JSON.stringify(name)} color=${color} total=${_sessions.size}`);
   recordNonToolEvent("session_create", sid, name);
-  return { sid, pin, name, color, sessionsActive: _sessions.size };
+  return { sid, suffix, name, color, sessionsActive: _sessions.size };
 }
 
 export function getSession(sid: number): Session | undefined {
   return _sessions.get(sid);
 }
 
-export function validateSession(sid: number, pin: number): boolean {
+export function validateSession(sid: number, suffix: number): boolean {
   const session = _sessions.get(sid);
-  return session !== undefined && session.pin === pin;
+  return session !== undefined && session.suffix === suffix;
 }
 
 export function closeSession(sid: number): boolean {

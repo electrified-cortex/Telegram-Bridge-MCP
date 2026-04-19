@@ -55,6 +55,7 @@ import { handleConfirm } from "./confirm.js";
 import { handleApproveAgent } from "./approve_agent.js";
 import { handleShutdown } from "./shutdown.js";
 import { handleNotifyShutdownWarning } from "./notify_shutdown_warning.js";
+import { handleCloseSessionSignal } from "./close_session_signal.js";
 import { handleTranscribeVoice } from "./transcribe_voice.js";
 import { handleDownloadFile } from "./download_file.js";
 import { handleUpdateChecklist } from "./send_new_checklist.js";
@@ -96,6 +97,7 @@ export function setupActionRegistry(): void {
   registerAction("session/start", handleSessionStart as unknown as ActionHandler);
   registerAction("session/reconnect", handleSessionReconnect as unknown as ActionHandler);
   registerAction("session/close", handleCloseSession as unknown as ActionHandler);
+  registerAction("session/close/signal", handleCloseSessionSignal as unknown as ActionHandler, { governor: true });
   registerAction("session/list", handleListSessions as unknown as ActionHandler);
   registerAction("session/idle", handleSessionIdle as unknown as ActionHandler);
   registerAction("session/rename", handleRenameSession as unknown as ActionHandler);

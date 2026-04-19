@@ -19,6 +19,14 @@ const DESCRIPTION =
   "Drain pending messages first or pass `force: true` to shut down anyway.";
 
 export function handleShutdown({ force }: { force?: boolean }) {
+  // With no active sessions, pending items can never be processed — shut down immediately.
+  const activeSessions = listSessions();
+  if (activeSessions.length === 0) {
+    const result = toResult({ shutting_down: true, pending_flushed: pendingCount() });
+    setImmediate(() => { void elegantShutdown(); });
+    return result;
+  }
+
   // Sum pending across the global queue (unrouted messages) and all active
   // session queues (routed but not yet consumed by agents).
   const globalPending = pendingCount();

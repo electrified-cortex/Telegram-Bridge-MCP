@@ -4,6 +4,7 @@
 
 ### Added
 
+- Unrenderable character detection: `send` warns when message content contains Unicode characters that do not render in Telegram (e.g. combining marks, certain symbol blocks); the warning lists the offending characters and their code points
 - Behavioral nudge system: per-session checklist tracks button awareness (`knowsButtons`) and question-without-button count; fires `behavior_nudge_question_hint` on first actionable `?` question sent without buttons, and `behavior_nudge_question_escalation` after 10+ such questions — nudges are suppressed once the agent uses buttons in any form or consults button help
 - `onboarding_buttons` service message: delivered during session start (both first-session and subsequent-session paths) covering OK / OK-Cancel / Y-N presets and hybrid message guidance (audio + caption + buttons in one message)
 - `MAX_NUDGES_PER_SESSION` raised from 3 to 5 to accommodate the two new question nudge types without crowding other behavioral nudges
@@ -14,12 +15,19 @@
 - `session/rename` action: added optional `color` parameter — applies a session color change atomically with the rename in the same operator-approval flow
 - `session/rename` action: added optional `target_sid` parameter (governor only) — allows the governor to rename another session; returns `PERMISSION_DENIED` for non-governor callers; validates the target session exists before prompting the operator
 - `session/close` action: added `force?: boolean` parameter — when `true`, allows closing the last active session without triggering the last-session guard
+- `session/close/signal` action (governor only): accepts `target_sid` and optional `timeout_seconds` — delivers a `session_close_signal` service message to the target, waits up to the timeout for self-close, force-closes via `closeSessionById` on expiry; re-checks governor status before force-closing (returns `PERMISSION_DENIED` if governor changed during the wait), detects self-close mid-wait, and rejects callers that are non-governor, target themselves, or name an unknown SID
+
+### Changed
+
+- `shutdown` MCP tool: now bypasses the pending-message guard and exits immediately when no sessions are active (pending items cannot be processed without a session to route to); the guard still applies when one or more sessions exist
 
 ### Changed
 
 - Service message content rewrite: all `SERVICE_MESSAGES` constant values rewritten to ultra-compressed spec — minimum words, help() breadcrumbs, no pin/formula references; consolidated 6 governor-change variants to single `GOVERNOR_CHANGED`; added `SESSION_JOINED` and `ONBOARDING_ROLE_PARTICIPANT` messages
 
 ### Fixed
+
+- `set_reaction` with a `reactions` array: permanent base layer no longer makes its own redundant API call when a temporary overlay is active — the base is registered virtually and applied only when the last temporary reaction expires (`_fireRestoreForSlot` / `clearAllTempReactions`). `getBotReaction(messageId)` is now updated after each restore or clear so the bot reaction index remains accurate.
 
 - Recording indicator no longer drops prematurely between TTS synthesis/upload and message render: `gen` is now updated after each `showTyping()` call so `cancelTypingIfSameGeneration` targets the correct generation; voice file sends via `send_file` now include a 3 s post-send delay and explicit `cancelTypingIfSameGeneration` in a `finally` block (task 10-recording-indicator-gap)
 - `session/close`: rejects with `LAST_SESSION` error code (and actionable hint) when called on the last active session without `force: true`; prevents accidental orphaning of the bridge process

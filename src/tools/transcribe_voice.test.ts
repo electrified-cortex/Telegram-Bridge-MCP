@@ -59,7 +59,7 @@ describe("identity gate", () => {
     expect(errorCode(result)).toBe("SID_REQUIRED");
   });
 
-  it("returns AUTH_FAILED when identity has wrong pin", async () => {
+  it("returns AUTH_FAILED when identity has wrong suffix", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
     const result = await call({"file_id":"x","token": 1099999});
     expect(isError(result)).toBe(true);

@@ -80,7 +80,7 @@ function cbUpdate(targetMsgId: number, data: string, qid = "qid1") {
 const SENT_MSG = { message_id: 5, chat: { id: 42 }, date: 0 };
 
 let sid: number;
-let pin: number;
+let suffix: number;
 let token: number;
 let handlers: {
   confirm: ToolHandler;
@@ -108,8 +108,8 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
     setActiveSession(session.sid);
     createSessionQueue(session.sid);
     sid = session.sid;
-    pin = session.pin;
-    token = sid * 1_000_000 + pin;
+    suffix = session.suffix;
+    token = sid * 1_000_000 + suffix;
 
     const server = createMockServer();
     registerConfirm(server);

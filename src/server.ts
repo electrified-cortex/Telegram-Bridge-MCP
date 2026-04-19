@@ -6,6 +6,7 @@ import { runInSessionContext } from "./session-context.js";
 import { getActiveSession, getSession } from "./session-manager.js";
 import { runInTokenHintContext } from "./tools/identity-schema.js";
 import { invokePreToolHook } from "./tool-hooks.js";
+import { checkUnknownParams, injectWarningIntoResult } from "./unknown-param-warning.js";
 import { toError } from "./telegram.js";
 import { recordToolCall } from "./trace-log.js";
 import {
@@ -81,14 +82,21 @@ export function createServer(): McpServer {
     cb: AnyCallback,
   ) => {
     const original = cb as unknown as CallableCb;
+    // Capture the set of known param names once at registration time so the
+    // per-call unknown-param check is a cheap Set lookup.
+    const knownParams = new Set<string>(Object.keys((config as { inputSchema?: Record<string, unknown> }).inputSchema ?? {}));
     const wrappedCb = (
       (args: Record<string, unknown>, extra: unknown) => {
-        // Decode sid from token (sid * 1_000_000 + pin) for session context.
+        // Strip unknown params and capture any warning before anything else runs.
+        // This runs before auth so the hook and handler never see hallucinated keys.
+        const { clean: cleanArgs, warning: unknownParamWarning } = checkUnknownParams(name, knownParams, args);
+
+        // Decode sid from token (sid * 1_000_000 + suffix) for session context.
         // Falls back to active session for tools that don't require auth.
         // Each call is also wrapped in a token-hint context so the TOKEN_SCHEMA
         // preprocess and the handler share per-request hint state, preventing
         // concurrent requests from corrupting each other's hint flag.
-        const token = args.token;
+        const token = cleanArgs.token;
         const sid = (typeof token === "number" && token > 0)
           ? Math.floor(token / 1_000_000)
           : getActiveSession();
@@ -102,27 +110,27 @@ export function createServer(): McpServer {
 
           let hookResult: { allowed: boolean; reason?: string };
           try {
-            hookResult = await invokePreToolHook(name, args);
+            hookResult = await invokePreToolHook(name, cleanArgs);
           } catch (err) {
             // Hook threw — treat as blocked to fail safe
             const reason = err instanceof Error ? err.message : "Hook error";
             logBlockedToolCall(name, reason);
-            recordToolCall(name, args, sid, sessionName, "blocked", "HOOK_ERROR");
+            recordToolCall(name, cleanArgs, sid, sessionName, "blocked", "HOOK_ERROR");
             return toError({ code: "BLOCKED", message: `Pre-tool hook error: ${reason}` });
           }
           if (!hookResult.allowed) {
             const reason = hookResult.reason ?? "Blocked by pre-tool hook";
             logBlockedToolCall(name, reason);
-            recordToolCall(name, args, sid, sessionName, "blocked", "BLOCKED");
+            recordToolCall(name, cleanArgs, sid, sessionName, "blocked", "BLOCKED");
             return toError({ code: "BLOCKED", message: reason });
           }
 
           let callResult: unknown;
           try {
-            callResult = await Promise.resolve(original(args, extra));
+            callResult = await Promise.resolve(original(cleanArgs, extra));
           } catch (err) {
             const code = err instanceof Error ? err.message : "UNKNOWN_ERROR";
-            recordToolCall(name, args, sid, sessionName, "error", code);
+            recordToolCall(name, cleanArgs, sid, sessionName, "error", code);
             throw err;
           }
 
@@ -141,7 +149,7 @@ export function createServer(): McpServer {
           } catch { /* ignore parse errors */ }
 
           const outcome = (isError || isStructuredError) ? "error" : "ok";
-          recordToolCall(name, args, sid, sessionName, outcome);
+          recordToolCall(name, cleanArgs, sid, sessionName, outcome);
 
           // ── Behavior tracking ──────────────────────────────────────────
           // Record tool calls for per-session behavioral nudges.
@@ -152,9 +160,9 @@ export function createServer(): McpServer {
 
             if (name === "show_typing") {
               // Only count non-cancel typing calls as activity indicators.
-              const isCancel = args.cancel === true;
+              const isCancel = cleanArgs.cancel === true;
               if (!isCancel) btRecordTyping(sid);
-            } else if (name === "show_animation" || (name === "send" && args.type === "animation")) {
+            } else if (name === "show_animation" || (name === "send" && cleanArgs.type === "animation")) {
               // Animation sends count as activity but not toward typing-rate sendCount —
               // they are not text/file deliveries and don't need a preceding show_typing.
               btRecordAnimation(sid);
@@ -163,14 +171,14 @@ export function createServer(): McpServer {
             } else if (name === "send") {
               // Skip behavioral tracking for DM sends — DMs are agent-to-agent;
               // button guidance is irrelevant there.
-              const isDm = args.type === "dm";
+              const isDm = cleanArgs.type === "dm";
               if (!isDm) {
-                const hasChoose = args.choose !== undefined;
-                const hasConfirm = args.confirm !== undefined;
-                const hasOptions = args.options !== undefined;
-                const isChoiceSend = args.type === "choice";
+                const hasChoose = cleanArgs.choose !== undefined;
+                const hasConfirm = cleanArgs.confirm !== undefined;
+                const hasOptions = cleanArgs.options !== undefined;
+                const isChoiceSend = cleanArgs.type === "choice";
                 const isQuestionWithOptions =
-                  args.type === "question" && hasOptions;
+                  cleanArgs.type === "question" && hasOptions;
                 const usesButtons =
                   hasChoose || hasConfirm || isChoiceSend || isQuestionWithOptions;
                 if (usesButtons) {
@@ -178,9 +186,9 @@ export function createServer(): McpServer {
                 } else {
                   // Track outbound text via text, message alias, or ask (free-text question).
                   const outboundText =
-                    (typeof args.text === "string" ? args.text : null) ??
-                    (typeof args.message === "string" ? args.message : null) ??
-                    (typeof args.ask === "string" ? args.ask : null);
+                    (typeof cleanArgs.text === "string" ? cleanArgs.text : null) ??
+                    (typeof cleanArgs.message === "string" ? cleanArgs.message : null) ??
+                    (typeof cleanArgs.ask === "string" ? cleanArgs.ask : null);
                   if (outboundText !== null) {
                     btRecordOutboundText(sid, outboundText);
                   }
@@ -188,9 +196,9 @@ export function createServer(): McpServer {
               }
               // Count any outbound send (text, file, notification, etc.)
               btRecordSend(sid);
-            } else if (name === "action" && typeof args.type === "string" && args.type.startsWith("confirm/")) {
+            } else if (name === "action" && typeof cleanArgs.type === "string" && cleanArgs.type.startsWith("confirm/")) {
               btRecordButtonUse(sid);
-            } else if (name === "help" && args.topic === "send") {
+            } else if (name === "help" && cleanArgs.topic === "send") {
               btRecordButtonUse(sid);
             } else if (name === "dequeue") {
               // Detect whether the batch contained user content events.
@@ -212,6 +220,11 @@ export function createServer(): McpServer {
                 }
               } catch { /* ignore parse errors */ }
             }
+          }
+
+          // Inject unknown-param warning into the response if any params were stripped.
+          if (unknownParamWarning !== undefined) {
+            callResult = injectWarningIntoResult(callResult, unknownParamWarning);
           }
 
           return callResult;

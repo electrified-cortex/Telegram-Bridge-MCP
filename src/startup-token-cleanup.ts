@@ -22,7 +22,7 @@ function isStaleBotAnnouncement(msg: Record<string, unknown>): boolean {
  *
  * Strategy: call `getChat` to get the most-recently pinned message. If it
  * is a bot-sent session announcement, unpin it and repeat until the latest
- * pin is either absent or operator-owned.
+ * pinned message is either absent or operator-owned.
  *
  * This is entirely best-effort — errors are swallowed and startup never blocks.
  */
@@ -45,8 +45,8 @@ export async function cleanupStalePins(): Promise<void> {
       break;
     }
 
-    if (!pinnedMsg) break; // no more pins
-    if (!isStaleBotAnnouncement(pinnedMsg)) break; // next pin is operator-owned — stop
+    if (!pinnedMsg) break; // no more pinned messages
+    if (!isStaleBotAnnouncement(pinnedMsg)) break; // next pinned message is operator-owned — stop
 
     const msgId = pinnedMsg.message_id as number;
     try {
@@ -60,6 +60,6 @@ export async function cleanupStalePins(): Promise<void> {
   }
 
   if (cleaned > 0) {
-    process.stderr.write(`[startup] cleaned up ${cleaned} stale pin(s)\n`);
+    process.stderr.write(`[startup] cleaned up ${cleaned} stale announcement(s)\n`);
   }
 }

@@ -215,9 +215,9 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 
 const DESCRIPTION =
   "Call once at the start of every session. Creates a fresh session " +
-  "with a unique ID and PIN. Fresh sessions auto-drain pending messages. " +
+  "with a unique ID and token. Fresh sessions auto-drain pending messages. " +
   "If you lost your token (context loss, crash), use action(type: 'session/reconnect', ...) instead. " +
-  "Returns { token, sid, pin, sessions_active, action, pending } so " +
+  "Returns { token, sid, suffix, sessions_active, action, pending } so " +
   "you have the token and context without extra steps. " +
   "Call help() first to load the API guide, then call action(type: 'session/start', ...) to join.";
 
@@ -290,11 +290,11 @@ export async function handleSessionStart({ name, color }: { name: string; color?
         let discarded = 0;
         while (dequeue() !== undefined) discarded++;
 
-        const sessionToken = session.sid * 1_000_000 + session.pin;
+        const sessionToken = session.sid * 1_000_000 + session.suffix;
         const res: Record<string, unknown> = {
           token: sessionToken,
           sid: session.sid,
-          pin: session.pin,
+          suffix: session.suffix,
           sessions_active: session.sessionsActive,
           action: "fresh",
           pending: 0,
@@ -442,7 +442,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     });
   }
 
-  // Get full session object (listSessions omits PIN)
+  // Get full session object (listSessions omits token suffix)
   const fullSession = getSession(existing.sid);
   if (!fullSession) {
     return toError({
@@ -528,7 +528,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     deliverReminderEvent(existing.sid, buildReminderEvent(r));
   }
 
-  const reconToken = fullSession.sid * 1_000_000 + fullSession.pin;
+  const reconToken = fullSession.sid * 1_000_000 + fullSession.suffix;
   return toResult({
     token: reconToken,
     sid: fullSession.sid,
