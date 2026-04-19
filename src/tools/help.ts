@@ -51,8 +51,7 @@ const DESCRIPTION =
   "Call with no arguments for an overview and full tool index. " +
   "Pass topic: 'index' for a categorized skill index and navigation menu. " +
   "Pass topic: 'guide' for the full agent communication guide. " +
-  "Pass topic: 'startup' for the post-session-start checklist. " +
-  "Pass topic: 'quick_start' for the minimum-operational guide (dequeue loop, send, DM). " +
+  "Pass topic: 'start' for the post-session-start checklist (aliases: 'startup', 'quick_start'). " +
   "Pass topic: 'compression' for the compression cheat sheet. " +
   "Pass topic: 'compacted' for post-compaction recovery steps. " +
   "Pass topic: 'dequeue' for dequeue loop rules and flow. " +
@@ -77,7 +76,7 @@ const TOOL_INDEX: Record<string, string> = {
   help: "Discovery tool — overview, communication guide, and per-tool docs. Specialized topics: 'index' (categorized skill menu), 'startup' (post-session checklist), 'quick_start' (dequeue loop + send basics), 'guide' (agent comms guide), 'compression' (compression cheat sheet), 'checklist' (step statuses), 'animation' (frame guide), 'dequeue' (loop rules), 'shutdown' (graceful shutdown), 'forced-stop' (context-limit recovery), 'reminders' (delegation follow-up), 'dump' (session dump filing), 'orphaned' (close dangling session), 'stop-hook' (VS Code stop hook). No auth required for most topics; topic: 'identity' requires a session token.",
   session_start: "Authenticate and start a named agent session. Returns a token for all subsequent calls.",
   close_session: "End the current agent session and release its slot.",
-  list_sessions: "List all active sessions with their SIDs and display names.",
+  list_sessions: "List active sessions. Without a token: returns only SIDs — no auth required (use as a probe after a bridge restart). With a valid token: returns full session details (ID, name, color, createdAt) and the active SID.",
   rename_session: "Rename the current session's display name.",
   dequeue: "Poll for new Telegram messages and events. Core loop — call repeatedly.",
   set_dequeue_default: "Set the default timeout for dequeue calls.",
@@ -126,7 +125,7 @@ const TOOL_INDEX: Record<string, string> = {
   get_debug_log: "Read recent entries from the debug log.",
   send_direct_message: "Send a message directly to a specific session (bypasses routing).",
   route_message: "Route a message to a specific session or change routing mode.",
-  approve_agent: "Approve a pending session_start request by name. Only available when agent delegation is enabled by the operator via the /approve panel.",
+  approve_agent: "Approve a pending session_start request by ticket. Only available when agent delegation is enabled by the operator via the /approve panel. The one-time ticket is delivered to the governor via dequeue when the session requests approval.",
   shutdown: "Shut down the MCP server process.",
   notify_shutdown_warning: "Broadcast a shutdown warning to all active sessions.",
 };
