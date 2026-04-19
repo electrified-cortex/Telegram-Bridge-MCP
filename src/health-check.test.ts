@@ -330,7 +330,7 @@ describe("health-check", () => {
       );
     });
 
-    it("does not deliver governor_changed to the new governor itself", async () => {
+    it("delivers governor_changed to all sessions including the new governor", async () => {
       const gov = makeSession(1, "Primary");
       const worker2 = makeSession(2, "Worker2");
       mocks.getUnhealthySessions.mockReturnValue([gov]);
@@ -339,10 +339,10 @@ describe("health-check", () => {
       mocks.getSession.mockReturnValue(worker2);
       await _runHealthCheckNow();
       pressButton("hc_reroute_now:2");
-      // deliverServiceMessage should NOT have been called with sid 2 (the new governor)
+      // deliverServiceMessage SHOULD be called with sid 2 (the new governor) — matching /primary behavior
       const calls = mocks.deliverServiceMessage.mock.calls as unknown as [number, ...unknown[]][];
       const calledForTarget = calls.some(([sid]) => sid === 2);
-      expect(calledForTarget).toBe(false);
+      expect(calledForTarget).toBe(true);
     });
 
     it("delivers governor_changed on make-primary path too", async () => {

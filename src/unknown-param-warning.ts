@@ -44,11 +44,16 @@ export function checkUnknownParams(
   }
 
   const unknownList = unknownKeys.map(k => `'${k}'`).join(", ");
-  const acceptsList = [...knownParams].sort().join(", ");
+  const acceptsList = knownParams.size === 0
+    ? undefined
+    : [...knownParams].sort().join(", ");
+  const acceptsSuffix = acceptsList
+    ? ` ${toolName} accepts: ${acceptsList}.`
+    : ` ${toolName} accepts no parameters.`;
   const plural = unknownKeys.length === 1 ? "parameter" : "parameters";
   const warning =
-    `Unknown ${plural} ${unknownList} ${unknownKeys.length === 1 ? "was" : "were"} ignored. ` +
-    `${toolName} accepts: ${acceptsList}.`;
+    `Unknown ${plural} ${unknownList} ${unknownKeys.length === 1 ? "was" : "were"} ignored.` +
+    acceptsSuffix;
 
   return { clean, warning };
 }

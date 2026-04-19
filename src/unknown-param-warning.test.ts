@@ -29,6 +29,18 @@ describe("checkUnknownParams", () => {
     expect(clean).toEqual({});
   });
 
+  it("warns 'accepts no parameters' when knownParams is empty and unknown args are present (singular)", () => {
+    const { clean, warning } = checkUnknownParams("help", new Set(), { topic: "send" });
+    expect(clean).toEqual({});
+    expect(warning).toBe("Unknown parameter 'topic' was ignored. help accepts no parameters.");
+  });
+
+  it("warns 'accepts no parameters' when knownParams is empty and multiple unknown args are present (plural)", () => {
+    const { clean, warning } = checkUnknownParams("help", new Set(), { topic: "send", extra: true });
+    expect(clean).toEqual({});
+    expect(warning).toMatch(/Unknown parameters .* were ignored\. help accepts no parameters\./);
+  });
+
   // ── Single unknown param ───────────────────────────────────────────────
 
   it("strips a single unknown param and returns a singular warning", () => {
