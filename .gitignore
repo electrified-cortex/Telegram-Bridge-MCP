@@ -17,3 +17,5 @@ session-state.json
 mcp-config.json
 # Git worktrees — managed locally, not tracked in source
 .worktrees/
+# Local scratchpad: dispatch briefings, PR body drafts, audit dumps
+notes/

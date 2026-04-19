@@ -49,7 +49,7 @@ describe("set_default_animation tool", () => {
     mocks.validateSession.mockReturnValue(true);
     mocks.getDefaultFrames.mockReturnValue(["`...`", "`·..`"]);
     mocks.listPresets.mockReturnValue([]);
-    mocks.listBuiltinPresets.mockReturnValue(["bounce", "dots", "working", "thinking", "loading"]);
+    mocks.listBuiltinPresets.mockReturnValue(["bounce", "dots", "working", "thinking", "loading", "compacting"]);
     const server = createMockServer();
     register(server);
     call = server.getHandler("set_default_animation");
@@ -63,7 +63,7 @@ describe("set_default_animation tool", () => {
     const data = parseResult(result);
     expect(data.default_frames).toEqual(["a", "b"]);
     expect(data.session_presets).toEqual(["thinking"]);
-    expect(data.builtin_presets).toEqual(["bounce", "dots", "working", "thinking", "loading"]);
+    expect(data.builtin_presets).toEqual(["bounce", "dots", "working", "thinking", "loading", "compacting"]);
   });
 
   it("sets session default frames", async () => {
