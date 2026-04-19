@@ -486,7 +486,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
       const isGovernorFellow = fellow.sid === governorSid;
       const text = isGovernorFellow
-        ? SERVICE_MESSAGES.SESSION_JOINED.text(existing.name, existing.sid) + " (reconnected)"
+        ? `${existing.name} (SID ${existing.sid}) reconnected. You are the governor — route ambiguous messages.`
         : `${existing.name} (SID ${existing.sid}) reconnected. Ambiguous messages go to ${governorLabel}.`;
       deliverServiceMessage(
         fellow.sid,
