@@ -44,8 +44,23 @@ Curator orchestrates: dispatches the Sonnet audit, triages output, files follow-
 
 20 - quality / shipping cadence. Not blocking active work; ships accumulated value.
 
+## GPT-5.4 Audit Findings (2026-04-19)
+
+External audit run by operator. Build green, 2441 tests pass across 115 files, lint **fails** on 3 unused-vars errors. Findings filed as separate actionable drafts:
+
+- **05-722** (BLOCKER) — fix lint: unused `args` parameter in `unknown-param-warning.test.ts:210/219/229`.
+- **10-723** — `help.ts` content drift (3 places: startup/quick_start, list_sessions probe, approve_agent ticket).
+- **10-724** — `action.ts:230` token schema description omits token-optional `session/list` path.
+- **10-725** — tutorial control surface (`action.ts:192-202` + `session-manager.ts:376/393`) is a no-op; wire it or delete it.
+- **15-726** — finish `docs/behavior.md` -> `docs/guide.md` rename cleanup (4 stale references).
+- **20-727** — `action.ts:207` still brands itself "v6 API" in a v7 release.
+- **30-728** — `checklist.md:16` fence missing language tag.
+
+**Merge gate:** 05-722 MUST land before merge. 10-723 / 10-724 / 20-727 strongly recommended (public API surface). 10-725 is a design decision that can defer if time-pressed. 15-726 and 30-728 are nice-to-have cleanup that can ride on the next dev cycle.
+
 ## Related
 
+- Audit-derived tasks: `05-722`, `10-723`, `10-724`, `10-725`, `15-726`, `20-727`, `30-728`.
 - All open TMCP dev tasks: `15-713`, `15-714`, `20-715`, `20-716`, `10-719`, `10-720`.
 - Memory `feedback_no_merge.md` (Curator never merges to master).
 - Memory `feedback_commit_review.md` (don't commit to own repo without operator review — applies to merge commit).
