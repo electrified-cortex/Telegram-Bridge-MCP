@@ -48,3 +48,12 @@ Worker (TMCP). Curator stages, operator merges.
 - Memory `feedback_deputy_session_end.md` (SESSION_DENIED on reconnect = intentional, do not retry).
 - Memory `feedback_session_token_file.md` (token is plain-value file; empty = closed).
 - The PreCompact / Stop hooks in `cortex.lan/.claude/` that enforce the dequeue loop (don't modify those — fix the hint instead).
+
+## Completion
+
+Committed on branch `10-720` (commit `5cdf522`) by Worker 4 (2026-04-19).
+
+- `close_session.ts`: hint appended to self-close success response
+- `session_start.ts`: hint appended to SESSION_DENIED reconnect error
+
+Overseer notified. Ready for Curator review and merge.
