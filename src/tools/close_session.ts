@@ -35,7 +35,10 @@ export async function handleCloseSession({ token, target_sid, force }: { token?:
 
     const result = closeSessionById(callerSid);
     void refreshGovernorCommand();
-    return toResult({ ...result, reason: result.closed ? "closed" : "not_found" });
+    const CLOSE_HINT =
+      "Wipe your stored session token before exiting. " +
+      "If your loop guard re-prompts, do NOT call session/start -- wipe the token, then exit.";
+    return toResult({ ...result, reason: result.closed ? "closed" : "not_found", hint: CLOSE_HINT });
   }
 
   // ── Governor-close path (target_sid provided) ─────────────────────────

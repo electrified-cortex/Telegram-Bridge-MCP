@@ -457,6 +457,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     return toError({
       code: "SESSION_DENIED",
       message: `Session reconnect for "${existing.name}" was denied by the operator. Check memory for a previously saved token — if found, use that token directly without calling action(type: 'session/reconnect', ...) again.`,
+      hint: "Wipe your stored session token before exiting. If your loop guard re-prompts, do NOT call session/start -- wipe the token, then exit.",
     });
   }
 
