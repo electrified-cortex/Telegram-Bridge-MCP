@@ -122,6 +122,31 @@ describe("logEvent", () => {
     }
   });
 
+  it("flushCurrentLog after timer-flush serializes — no entries lost", async () => {
+    vi.useFakeTimers();
+    try {
+      const writeOrder: string[] = [];
+      fsMocks.appendFile.mockImplementation((_path: string, content: string) => {
+        content.split('\n').filter(Boolean).forEach(line => writeOrder.push(line));
+        return Promise.resolve();
+      });
+
+      logEvent({ seq: 1 });
+      logEvent({ seq: 2 });
+      // Advance timer — triggers _flushPromise = _flushPromise.then(_actualFlush)
+      await vi.runAllTimersAsync();
+
+      // Call flushCurrentLog immediately after timer fires with new events
+      logEvent({ seq: 3 });
+      await flushCurrentLog();
+
+      const seqs = writeOrder.map(line => (JSON.parse(line) as { event: { seq: number } }).event.seq);
+      expect(seqs).toEqual([1, 2, 3]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("concurrent flushCurrentLog calls serialize — no entries lost or interleaved", async () => {
     // Track the order in which appendFile is called so we can verify sequencing.
     const writeOrder: string[] = [];
