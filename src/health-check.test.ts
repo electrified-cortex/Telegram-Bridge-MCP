@@ -56,6 +56,9 @@ vi.mock("./telegram.js", async (importActual) => {
       answerCallbackQuery: mocks.answerCallbackQuery,
     }),
     getRawApi: () => ({
+      sendMessage: mocks.sendMessage,
+      editMessageText: mocks.editMessageText,
+      answerCallbackQuery: mocks.answerCallbackQuery,
       deleteMessage: mocks.deleteMessage,
     }),
   };
@@ -192,7 +195,7 @@ describe("health-check", () => {
       mocks.getGovernorSid.mockReturnValue(1);
       mocks.listSessions.mockReturnValue([gov, next]);
       await _runHealthCheckNow();
-      expect(mocks.registerCallbackHook).toHaveBeenCalledWith(999, expect.any(Function), 1);
+      expect(mocks.registerCallbackHook).toHaveBeenCalledWith(999, expect.any(Function), undefined);
     });
   });
 
