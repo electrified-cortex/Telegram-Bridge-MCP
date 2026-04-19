@@ -68,6 +68,21 @@ const UPDATE_DESCRIPTION =
 
 export type ChecklistStep = z.infer<typeof STEP_SCHEMA>;
 
+function completionBadge(steps: ChecklistStep[]): string {
+  const total = steps.length;
+  const failed = steps.filter(s => s.status === "failed").length;
+  const skipped = steps.filter(s => s.status === "skipped").length;
+  const done = steps.filter(s => s.status === "done").length;
+
+  if (failed > 0) {
+    return `🔴 Failed — ${done}/${total} passed${failed > 0 ? `, ${failed} failed` : ""}${skipped > 0 ? `, ${skipped} skipped` : ""}`;
+  }
+  if (skipped > 0) {
+    return `🟡 Incomplete — ${done}/${total} completed, ${skipped} skipped`;
+  }
+  return `✅ Complete — ${done}/${total}`;
+}
+
 export async function handleSendNewChecklist({
   title, steps, token,
 }: {
@@ -125,7 +140,7 @@ export async function handleUpdateChecklist({ title, steps, message_id, token }:
       getApi().unpinChatMessage(chatId, message_id).catch(() => {});
       if (!_completedMessageIds.has(message_id)) {
         _completedMessageIds.add(message_id);
-        getApi().sendMessage(chatId, "✅ Complete", {
+        getApi().sendMessage(chatId, completionBadge(steps), {
           reply_to_message_id: message_id,
           _skipHeader: true,
         } as Record<string, unknown>).catch(() => {});
