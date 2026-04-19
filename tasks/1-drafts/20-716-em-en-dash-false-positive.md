@@ -23,6 +23,12 @@ Confirmed live: Curator's reply containing `—` triggered the warning while ope
 
 - Are curly quotes ever broken on any Telegram client? If unsure, leave them flagged and only remove em/en dash in this task.
 
+## Note on the original rationale (operator 2026-04-19)
+
+Em/en dashes were probably flagged because they cause real problems when LLM output gets pasted into bash/PowerShell scripts (parser confusion, copy-paste hazards). That context IS legitimate — but it's a script-safety concern, not a Telegram-rendering concern. The `unrenderable_chars_warning` event_type promises the latter; conflating the two produces false positives in the channel that uses it.
+
+If we want to keep an LLM-output script-safety check, it belongs in a different signal (different event_type, possibly opt-in per-target) — not this one. Out of scope for this task; just don't lose the rationale when trimming.
+
 ## Delegation
 
 Worker (TMCP). Curator stages, operator merges. Trivial scope — single-file edit + test fix.
