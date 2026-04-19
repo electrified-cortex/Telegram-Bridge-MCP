@@ -35,3 +35,11 @@ Worker (TMCP). Curator stages, Overseer reviews, operator merges.
 ## Priority
 
 15 - operator-facing UX defect. Frequent friction.
+
+## Completion
+
+Branch `15-701`, commit `b3e99fb`.
+
+Changes: removed `.default()` from `timeout_seconds` in `ask.ts`, `choose.ts`, `confirm.ts`, `send.ts` schemas; raised `.max()` from 300 to 86400. Added `NO_TIMEOUT_CEILING_SECONDS = 86_400` in `button-helpers.ts` with `timeoutSeconds: number | undefined` signatures. `ask.ts` applies ceiling locally (`effectiveTimeout = timeout_seconds ?? 86_400`). `ConfirmArgs.timeout_seconds` updated to optional. Schema descriptions unified to "Omit to use the server maximum (24 h)." Changelog updated.
+
+Build: tsc pass. Lint/test blocked (node_modules missing in worktree — Overseer to verify).
