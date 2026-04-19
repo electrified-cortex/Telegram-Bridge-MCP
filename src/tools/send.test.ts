@@ -710,19 +710,14 @@ describe("unrenderable char warning — scans finalText including topic prefix",
     call = server.getHandler("send");
   });
 
-  it("triggers warning when topic prefix (injected by applyTopicToText) contains an unrenderable char", async () => {
-    // Simulate applyTopicToText prepending a topic header that contains an em dash (—, U+2014)
-    // This is the bug: scanning `text ?? ""` would miss this prefix; scanning finalText catches it.
+  it("does NOT trigger warning when topic prefix contains an em-dash (no longer flagged)", async () => {
     mocks.applyTopicToText.mockImplementation((t: string) => `\u2014Topic\u2014\n${t}`);
 
     const result = await call({ text: "hello", token: TOKEN });
 
     expect(isError(result)).toBe(false);
     expect(parseResult(result).message_id).toBe(42);
-    // deliverServiceMessage must have been called with the unrenderable-chars warning
-    expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
-    const warningMsg = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[1] as string;
-    expect(warningMsg).toContain("U+2014");
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 
   it("does NOT trigger warning when topic prefix is clean ASCII and text is clean ASCII", async () => {
@@ -765,24 +760,16 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
   // ---------------------------------------------------------------------------
   // Audio + caption (inline) — unrenderable char in caption text
   // ---------------------------------------------------------------------------
-  it("audio+caption: fires warning when caption contains an unrenderable char (em dash)", async () => {
-    // markdownToV2 passes through; inject em dash directly in caption text
-    const captionWithBadChar = "Status\u2014done"; // em dash U+2014
-    const result = await call({ text: captionWithBadChar, audio: "spoken content", token: TOKEN });
+  it("audio+caption: no warning when caption contains an em-dash (no longer flagged)", async () => {
+    const captionWithEmDash = "Status\u2014done"; // em dash U+2014 — no longer flagged
+    const result = await call({ text: captionWithEmDash, audio: "spoken content", token: TOKEN });
 
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.audio).toBe(true);
-    // Voice was sent with caption inline (text < MAX_CAPTION)
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
-    // Warning fired
-    expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
-    const warningMsg = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[1] as string;
-    expect(warningMsg).toContain("U+2014");
-    expect(warningMsg).toContain("may not render");
-    const eventType = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[2] as string;
-    expect(eventType).toBe("unrenderable_chars_warning");
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 
   it("audio+caption: no warning when caption is clean ASCII", async () => {
