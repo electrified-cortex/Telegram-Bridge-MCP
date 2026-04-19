@@ -135,9 +135,8 @@ async function sendGovernorPrompt(
       `↑ You are now the primary session. Ambiguous messages will be routed to you.`,
     );
 
-    // Notify all other active sessions that the governor has changed
+    // Notify all active sessions (including the new governor) that the governor has changed
     for (const s of listSessions()) {
-      if (s.sid === targetSid) continue; // already notified via DM above
       deliverServiceMessage(
         s.sid,
         SERVICE_MESSAGES.GOVERNOR_CHANGED.text(targetSid, targetName),

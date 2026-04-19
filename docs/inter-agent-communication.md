@@ -213,7 +213,7 @@ The server injects service messages for lifecycle events. These have
 | `session_orientation` | New session | Your role, governor SID, fellow sessions |
 | `session_closed` | Remaining sessions | A session disconnected |
 | `governor_promoted` | New governor | You are now the governor (via `action(type: "session/close")` path) |
-| `governor_changed` | All sessions (including the new governor) | The governor was switched; the promoted session receives a personalized `GOVERNOR_CHANGED` message; other sessions receive `SESSION_CLOSED_NEW_GOVERNOR`; `details` contains `new_governor_sid` and `new_governor_name` |
+| `governor_changed` | All sessions (including the new governor) | The governor was switched (via health-check reroute or `/primary` command); `details` contains `new_governor_sid` and `new_governor_name`. On health-check reroute, the new governor additionally receives a direct-message notification. |
 | `session_closed_new_governor` | Non-governor sessions | Governor session closes and a new governor is promoted; `details` contains `{ closed_sid, closed_name, new_governor_sid }` |
 | `voice_transcription_failed` | Governor (or all sessions if no governor) | A voice message could not be transcribed; `details` contains `message_id`, `reason` (`service_timeout` or `service_error`), and human-readable `details` |
 
