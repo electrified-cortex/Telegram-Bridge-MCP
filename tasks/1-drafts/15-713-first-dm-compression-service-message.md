@@ -64,7 +64,11 @@ Two valid patterns. Both produce more value than either modality alone.
 1. **Long fluid audio + brief caption.** Audio carries a comfortable, plain-language explanation. Caption is a short topic label so the operator can glance and decide whether to play. *The caption summarizes the topic, not the content.*
 2. **Short audio + long structured text.** Audio carries a quick orientation ("here's what's in the breakdown"). Text carries the detailed checklist, table, or structured payload that needs to be skimmed/searched.
 
-**The anti-pattern, hard rule:** never send the same text as the audio in the caption. Duplication wastes the channel and trains the user to ignore one of the two. (Already in memory `feedback_hybrid_message_caption.md`; this codifies it at the protocol layer.)
+**The anti-pattern, hard rule:** never send the same content as the audio in the caption. Duplication wastes tokens, period.
+
+- **Even paraphrased duplication is a fail.** Same content with one version verbose and the other brief is still duplication.
+- **Why it doesn't help:** Telegram has built-in audio-to-text transcription for users who want it. Re-stating the audio in the caption is reinventing a feature the platform already ships.
+- The caption's job is something the audio cannot do (topic label, structured payload, link, callback). If the caption is just text-form audio, delete it.
 
 ## Related
 
