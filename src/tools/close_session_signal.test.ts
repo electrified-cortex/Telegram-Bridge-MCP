@@ -228,6 +228,8 @@ describe("session/close/signal action", () => {
 
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("PERMISSION_DENIED");
+    const parsed = parseResult<{ code: string; message: string }>(result);
+    expect(parsed.message).toContain("changed during wait");
     expect(mocks.closeSessionById).not.toHaveBeenCalled();
   });
 
