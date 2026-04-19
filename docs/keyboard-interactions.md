@@ -143,7 +143,7 @@ When handling a manual keyboard flow (e.g. a media-player control loop via `dequ
 `answer_callback_query`), pass `remove_keyboard: true` and `message_id: <id>` to collapse both
 operations into a single tool call:
 
-```
+```text
 answer_callback_query(
   callback_query_id: qid,
   remove_keyboard: true,

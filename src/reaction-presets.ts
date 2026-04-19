@@ -9,11 +9,11 @@ export interface ReactionPresetEntry {
 
 // Canonical emoji that are temporary by default (when `temporary` not explicitly set).
 export const TEMPORARY_BY_DEFAULT = new Set<string>([
-  '🤔', // thinking
-  '👀', // eyeballs / reading
-  '⏳', // hourglass / working
-  '\u270D', // writing hand (U+270D, no VS16) — matches ALLOWED_EMOJI in set_reaction.ts
-  '👨‍💻', // coding
+  "🤔", // thinking
+  "👀", // eyeballs / reading
+  "⏳", // hourglass / working
+  "\u270D", // writing hand (U+270D, no VS16) — matches ALLOWED_EMOJI in set_reaction.ts
+  "👨‍💻", // coding
 ]);
 
 export function isTemporaryByDefault(emoji: string): boolean {
@@ -24,9 +24,9 @@ export function isTemporaryByDefault(emoji: string): boolean {
 // "processing": eyeballs flash (10s), thinking until next outbound.
 // Implicit 👌 base at priority -100 is inserted separately by set_reaction.ts.
 export const BUILTIN_REACTION_PRESETS = new Map<string, ReactionPresetEntry[]>([
-  ['processing', [
-    { emoji: '🤔', temporary: true }, // clears on next outbound
-    { emoji: '👀', priority: 1, temporary: true, timeout_seconds: 10 },
+  ["processing", [
+    { emoji: "🤔", temporary: true }, // clears on next outbound
+    { emoji: "👀", priority: 1, temporary: true, timeout_seconds: 10 },
   ]],
 ]);
 
