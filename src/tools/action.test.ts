@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => ({
   handleDownloadFile: vi.fn(),
   handleUpdateChecklist: vi.fn(),
   handleUpdateProgress: vi.fn(),
+  handleCloseSessionSignal: vi.fn(),
 }));
 
 vi.mock("../action-registry.js", () => ({
@@ -149,6 +150,7 @@ vi.mock("./transcribe_voice.js", () => ({ handleTranscribeVoice: mocks.handleTra
 vi.mock("./download_file.js", () => ({ handleDownloadFile: mocks.handleDownloadFile, register: vi.fn() }));
 vi.mock("./send_new_checklist.js", () => ({ handleUpdateChecklist: mocks.handleUpdateChecklist, register: vi.fn() }));
 vi.mock("./update_progress.js", () => ({ handleUpdateProgress: mocks.handleUpdateProgress, register: vi.fn() }));
+vi.mock("./close_session_signal.js", () => ({ handleCloseSessionSignal: mocks.handleCloseSessionSignal, register: vi.fn() }));
 
 import { register } from "./action.js";
 
@@ -305,6 +307,7 @@ describe("action tool", () => {
       );
       expect(registeredPaths).toContain("session/start");
       expect(registeredPaths).toContain("session/close");
+      expect(registeredPaths).toContain("session/close/signal");
       expect(registeredPaths).toContain("session/list");
       expect(registeredPaths).toContain("session/rename");
       expect(registeredPaths).toContain("profile/voice");
@@ -392,6 +395,7 @@ describe("action tool", () => {
       expect(governorPaths).toContain("approve");
       expect(governorPaths).toContain("shutdown");
       expect(governorPaths).toContain("shutdown/warn");
+      expect(governorPaths).toContain("session/close/signal");
     });
   });
 
@@ -528,6 +532,29 @@ describe("action tool", () => {
         expect.objectContaining({ yes_text: "OK", no_text: "" }),
         undefined,
       );
+    });
+
+    it("dispatches session/close/signal to handleCloseSessionSignal (governor-only)", async () => {
+      const fakeHandler = vi.fn().mockResolvedValue({ content: [{ type: "text", text: JSON.stringify({ signaled: true, closed: true, sid: 2, reason: "self_closed" }) }] });
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: { governor: true } });
+      mocks.requireAuth.mockReturnValue(1);
+      mocks.getGovernorSid.mockReturnValue(1);
+      const result = await call({ type: "session/close/signal", token: VALID_TOKEN, target_sid: 2 });
+      expect(fakeHandler).toHaveBeenCalledOnce();
+      const calledArgs = fakeHandler.mock.calls[0][0] as Record<string, unknown>;
+      expect(calledArgs.target_sid).toBe(2);
+      expect(isError(result)).toBe(false);
+    });
+
+    it("rejects session/close/signal when caller is not governor", async () => {
+      const fakeHandler = vi.fn();
+      mocks.resolveAction.mockReturnValue({ handler: fakeHandler, meta: { governor: true } });
+      mocks.requireAuth.mockReturnValue(2); // SID 2 is not governor
+      mocks.getGovernorSid.mockReturnValue(1); // SID 1 is governor
+      const result = await call({ type: "session/close/signal", token: 2_123_456, target_sid: 3 });
+      expect(isError(result)).toBe(true);
+      expect(errorCode(result)).toBe("NOT_GOVERNOR");
+      expect(fakeHandler).not.toHaveBeenCalled();
     });
 
     it("action(type: 'acknowledge', remove_keyboard: true) passes args to handleAnswerCallbackQuery", async () => {

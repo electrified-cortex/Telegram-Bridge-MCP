@@ -2,6 +2,7 @@ import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
 import { stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { listSessions, getSessionAnnouncementMessage } from "./session-manager.js";
 import { deliverServiceMessage, notifySessionWaiters } from "./session-queue.js";
+import { closeSessionById } from "./session-teardown.js";
 import { getSessionLogMode } from "./config.js";
 import { flushCurrentLog, isLoggingEnabled, rollLog } from "./local-log.js";
 
@@ -112,8 +113,15 @@ export async function elegantShutdown(): Promise<never> {
   }
 
   if (hasActiveSessions) {
-    // Give MCP stdio a moment to transmit responses.
-    await new Promise<void>((r) => setTimeout(r, 2000));
+    // Give sessions time to handle the shutdown message and close themselves (up to 10s).
+    const shutdownDeadline = Date.now() + 10_000;
+    while (Date.now() < shutdownDeadline && listSessions().length > 0) {
+      await new Promise<void>((r) => setTimeout(r, 500));
+    }
+    // Force-close any sessions that did not close themselves
+    for (const s of listSessions()) {
+      closeSessionById(s.sid);
+    }
   }
 
   // Operator-facing notification
