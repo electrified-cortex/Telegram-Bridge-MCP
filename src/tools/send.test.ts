@@ -780,7 +780,7 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
     expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
     const warningMsg = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[1] as string;
     expect(warningMsg).toContain("U+2014");
-    expect(warningMsg).toContain("unrenderable");
+    expect(warningMsg).toContain("may not render");
     const eventType = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[2] as string;
     expect(eventType).toBe("unrenderable_chars_warning");
   });
@@ -798,7 +798,7 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
   // ---------------------------------------------------------------------------
   it("captionOverflow: fires warning when overflow text message contains an unrenderable char", async () => {
     // Build a string > MAX_CAPTION (1024-60=964) that contains an arrow (→ U+2192)
-    const longTextWithBadChar = "A".repeat(960) + "\u2192end"; // > 964 chars, contains →
+    const longTextWithBadChar = "A".repeat(962) + "\u2192end"; // 966 chars > 964, contains →
     const result = await call({ text: longTextWithBadChar, audio: "hello", token: TOKEN });
 
     expect(isError(result)).toBe(false);

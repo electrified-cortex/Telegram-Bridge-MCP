@@ -1,3 +1,0 @@
-# Task pipeline files — always accept dev/main version on merge.
-# Prevents worktree branches from capturing transitional task state.
-tasks/** merge=keep-main

@@ -128,6 +128,7 @@ describe("logEvent", () => {
     fsMocks.appendFile.mockImplementation((_path: string, content: string) => {
       // Record each line written (content may contain multiple NDJSON lines)
       content.split('\n').filter(Boolean).forEach(line => writeOrder.push(line));
+      return Promise.resolve(); // must return a Promise so .catch() works in _actualFlush
     });
 
     // Log several events without awaiting any flush

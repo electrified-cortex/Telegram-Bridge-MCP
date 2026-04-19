@@ -48,6 +48,7 @@ describe("shutdown tool", () => {
   });
 
   it("returns warning (not error) when global queue has items and force is not set", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1 }]);
     mocks.pendingCount.mockReturnValue(3);
     const result = await call({});
     expect(isError(result)).toBe(false);

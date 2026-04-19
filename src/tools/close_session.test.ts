@@ -515,8 +515,8 @@ describe("close_session tool", () => {
     expect(promotionMsg![0]).toBe(2); // lowest SID promoted
     expect(String(promotionMsg![1])).toContain("governor");
 
-    // Other remaining session gets session_closed
-    const closedMsg = calls.find((c: unknown[]) => c[0] === 3 && c[2] === "session_closed");
+    // Other remaining session gets session_closed_new_governor (governor path)
+    const closedMsg = calls.find((c: unknown[]) => c[0] === 3 && c[2] === "session_closed_new_governor");
     expect(closedMsg).toBeDefined();
   });
 

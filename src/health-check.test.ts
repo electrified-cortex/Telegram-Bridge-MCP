@@ -324,7 +324,7 @@ describe("health-check", () => {
       // worker3 (sid 3) should receive governor_changed; worker2 (sid 2) should not
       expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
         3,
-        expect.stringContaining("Governor switched"),
+        expect.stringContaining("Governor is now SID 2"),
         "governor_changed",
         { new_governor_sid: 2, new_governor_name: "Worker2" },
       );
@@ -357,7 +357,7 @@ describe("health-check", () => {
       pressButton("hc_make_primary:2");
       expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
         3,
-        expect.stringContaining("Governor switched"),
+        expect.stringContaining("Governor is now SID 2"),
         "governor_changed",
         { new_governor_sid: 2, new_governor_name: "Worker2" },
       );

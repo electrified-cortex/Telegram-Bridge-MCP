@@ -25,7 +25,7 @@ export function isTemporaryByDefault(emoji: string): boolean {
 // Implicit 👌 base at priority -100 is inserted separately by set_reaction.ts.
 export const BUILTIN_REACTION_PRESETS = new Map<string, ReactionPresetEntry[]>([
   ['processing', [
-    { emoji: '🤔', priority: 0, temporary: true }, // clears on next outbound
+    { emoji: '🤔', temporary: true }, // clears on next outbound
     { emoji: '👀', priority: 1, temporary: true, timeout_seconds: 10 },
   ]],
 ]);
