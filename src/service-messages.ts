@@ -147,4 +147,21 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "behavior_nudge_question_escalation" as const,
     text: `You've sent 10+ questions without buttons. Use action(type: "confirm/ok-cancel", ...), action(type: "confirm/yn", ...), or send(type: "question", choose: [...]) for any predictable-answer question.`,
   },
+
+  // ── Presence / silent-work nudges ─────────────────────────────────────────
+
+  NUDGE_PRESENCE_RUNG1: {
+    eventType: "behavior_nudge_presence_rung1" as const,
+    text: (elapsedSeconds: number) =>
+      `You've been silent for ${elapsedSeconds}s while the operator is waiting. ` +
+      `Consider show-typing, a reaction, or a persistent animation (preset: 'working' or 'thinking').`,
+  },
+
+  NUDGE_PRESENCE_RUNG2: {
+    eventType: "behavior_nudge_presence_rung2" as const,
+    text: (elapsedSeconds: number) =>
+      `Still silent after ${elapsedSeconds}s. Strongly consider starting a persistent animation ` +
+      `(preset: 'working' or 'thinking') or sending a brief status message. ` +
+      `The operator cannot distinguish working from stuck.`,
+  },
 });

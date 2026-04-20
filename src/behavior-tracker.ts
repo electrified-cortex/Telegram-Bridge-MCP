@@ -79,6 +79,9 @@ export interface SessionBehaviorState {
 
   /** Whether the 10-question escalation nudge has fired. */
   questionEscalationFired: boolean;
+
+  /** Timestamp of the last outbound presence signal (typing, animation, reaction, send). */
+  lastOutboundAt: number | undefined;
 }
 
 /** Function type for injecting service message nudges into a session. */
@@ -155,6 +158,7 @@ export function initSession(sid: number): void {
     knowsButtons: false,
     questionHintFired: false,
     questionEscalationFired: false,
+    lastOutboundAt: undefined,
   });
 }
 
@@ -368,6 +372,17 @@ export function recordOutboundText(sid: number, text: string): void {
 // ---------------------------------------------------------------------------
 // Reset (testing only)
 // ---------------------------------------------------------------------------
+
+/**
+ * Record any outbound presence signal — resets the silence clock.
+ * Called from server.ts middleware for: show_typing (non-cancel),
+ * show_animation, set_reaction, and send (non-DM types).
+ */
+export function recordPresenceSignal(sid: number, now: number = Date.now()): void {
+  const state = _sessions.get(sid);
+  if (!state) return;
+  state.lastOutboundAt = now;
+}
 
 /** Reset all tracker state. For tests only. */
 export function resetBehaviorTrackerForTest(): void {

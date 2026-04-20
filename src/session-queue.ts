@@ -113,6 +113,17 @@ export function peekSessionCategories(sid: number): Record<string, number> | und
   return _queues.get(sid)?.peekCategories((evt) => evt.content.type);
 }
 
+/**
+ * Returns true if the session queue has at least one pending heavyweight
+ * user event (text or voice). Non-destructive — does not consume any items.
+ * Returns false if no queue exists for this sid.
+ */
+export function hasPendingUserContent(sid: number): boolean {
+  const cats = peekSessionCategories(sid);
+  if (!cats) return false;
+  return (cats["text"] ?? 0) > 0 || (cats["voice"] ?? 0) > 0;
+}
+
 /** Number of active session queues. */
 export function sessionQueueCount(): number {
   return _queues.size;

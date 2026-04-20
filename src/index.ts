@@ -14,6 +14,7 @@ import { clearCommandsOnShutdown } from "./shutdown.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
 import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startHealthCheck } from "./health-check.js";
+import { startSilenceDetector } from "./silence-detector.js";
 import { setAuthHook } from "./session-gate.js";
 import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
@@ -251,6 +252,7 @@ void (async () => {
 startPoller();
 
 startHealthCheck();
+startSilenceDetector();
 setAuthHook((sid: number) => {
   touchSession(sid);
   const reauthMsgId = getSessionReauthDialogMsgId(sid);

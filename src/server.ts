@@ -19,8 +19,10 @@ import {
   recordSend as btRecordSend,
   recordButtonUse as btRecordButtonUse,
   recordOutboundText as btRecordOutboundText,
+  recordPresenceSignal,
 } from "./behavior-tracker.js";
 import { deliverServiceMessage } from "./session-queue.js";
+import { setPresenceNudgeInjector } from "./silence-detector.js";
 
 import { register as registerDequeueUpdate } from "./tools/dequeue.js";
 import { register as registerSend } from "./tools/send.js";
@@ -61,6 +63,9 @@ export function createServer(): McpServer {
   // ── Behavior tracker wiring ────────────────────────────────────────────
   // Wire the nudge injector to deliver service messages into session queues.
   setNudgeInjector((sid, text, eventType) => {
+    deliverServiceMessage(sid, text, eventType);
+  });
+  setPresenceNudgeInjector((sid, text, eventType) => {
     deliverServiceMessage(sid, text, eventType);
   });
 
@@ -161,13 +166,13 @@ export function createServer(): McpServer {
             if (name === "show_typing") {
               // Only count non-cancel typing calls as activity indicators.
               const isCancel = cleanArgs.cancel === true;
-              if (!isCancel) btRecordTyping(sid);
+              if (!isCancel) { btRecordTyping(sid); recordPresenceSignal(sid); }
             } else if (name === "show_animation" || (name === "send" && cleanArgs.type === "animation")) {
               // Animation sends count as activity but not toward typing-rate sendCount —
               // they are not text/file deliveries and don't need a preceding show_typing.
-              btRecordAnimation(sid);
+              btRecordAnimation(sid); recordPresenceSignal(sid);
             } else if (name === "set_reaction") {
-              btRecordReaction(sid);
+              btRecordReaction(sid); recordPresenceSignal(sid);
             } else if (name === "send") {
               // Skip behavioral tracking for DM sends — DMs are agent-to-agent;
               // button guidance is irrelevant there.
@@ -196,6 +201,7 @@ export function createServer(): McpServer {
               }
               // Count any outbound send (text, file, notification, etc.)
               btRecordSend(sid);
+              recordPresenceSignal(sid);
             } else if (name === "action" && typeof cleanArgs.type === "string" && cleanArgs.type.startsWith("confirm/")) {
               btRecordButtonUse(sid);
             } else if (name === "help" && cleanArgs.topic === "send") {
