@@ -54,6 +54,71 @@ export function logBlockedToolCall(toolName: string, reason: string): void {
   process.stderr.write(`[hook:blocked] ${normalizeLogField(toolName)} — ${normalizeLogField(reason)}\n`);
 }
 
+/**
+ * Dispatch behavior-tracking record calls for a completed tool call.
+ * Exported for unit testing. Called only when outcome === "ok" && sid > 0.
+ */
+export function dispatchBehaviorTracking(
+  sid: number,
+  name: string,
+  cleanArgs: Record<string, unknown>,
+  callResult: unknown,
+): void {
+  initSession(sid);
+
+  if (name === "show_typing" || (name === "action" && cleanArgs.type === "show-typing")) {
+    const isCancel = cleanArgs.cancel === true;
+    if (!isCancel) { btRecordTyping(sid); recordPresenceSignal(sid); }
+  } else if (name === "show_animation" || (name === "send" && cleanArgs.type === "animation")) {
+    btRecordAnimation(sid); recordPresenceSignal(sid);
+  } else if (name === "set_reaction" || (name === "action" && cleanArgs.type === "react")) {
+    btRecordReaction(sid); recordPresenceSignal(sid);
+  } else if (name === "send") {
+    const isDm = cleanArgs.type === "dm";
+    if (!isDm) {
+      const hasChoose = cleanArgs.choose !== undefined;
+      const hasConfirm = cleanArgs.confirm !== undefined;
+      const hasOptions = cleanArgs.options !== undefined;
+      const isChoiceSend = cleanArgs.type === "choice";
+      const isQuestionWithOptions = cleanArgs.type === "question" && hasOptions;
+      const usesButtons = hasChoose || hasConfirm || isChoiceSend || isQuestionWithOptions;
+      if (usesButtons) {
+        btRecordButtonUse(sid);
+      } else {
+        const outboundText =
+          (typeof cleanArgs.text === "string" ? cleanArgs.text : null) ??
+          (typeof cleanArgs.message === "string" ? cleanArgs.message : null) ??
+          (typeof cleanArgs.ask === "string" ? cleanArgs.ask : null);
+        if (outboundText !== null) {
+          btRecordOutboundText(sid, outboundText);
+        }
+      }
+      recordPresenceSignal(sid);
+    }
+    btRecordSend(sid);
+  } else if (name === "action" && typeof cleanArgs.type === "string" && cleanArgs.type.startsWith("confirm/")) {
+    btRecordButtonUse(sid);
+  } else if (name === "help" && cleanArgs.topic === "send") {
+    btRecordButtonUse(sid);
+  } else if (name === "dequeue") {
+    try {
+      const text = (callResult as { content?: Array<{ text?: string }> }).content?.[0]?.text;
+      if (text) {
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        const updates = parsed.updates;
+        if (Array.isArray(updates)) {
+          const hasUserContent = updates.some(
+            (u: unknown) =>
+              typeof u === "object" && u !== null &&
+              (u as Record<string, unknown>).from === "user",
+          );
+          btRecordDequeue(sid, hasUserContent);
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  }
+}
+
 export function createServer(): McpServer {
   const server = new McpServer({
     name: "telegram-bridge-mcp",
@@ -160,72 +225,7 @@ export function createServer(): McpServer {
           // Record tool calls for per-session behavioral nudges.
           // Only track successful calls on authenticated sessions.
           if (outcome === "ok" && sid > 0) {
-            // Ensure the session is initialized in the tracker (idempotent).
-            initSession(sid);
-
-            if (name === "show_typing") {
-              // Only count non-cancel typing calls as activity indicators.
-              const isCancel = cleanArgs.cancel === true;
-              if (!isCancel) { btRecordTyping(sid); recordPresenceSignal(sid); }
-            } else if (name === "show_animation" || (name === "send" && cleanArgs.type === "animation")) {
-              // Animation sends count as activity but not toward typing-rate sendCount —
-              // they are not text/file deliveries and don't need a preceding show_typing.
-              btRecordAnimation(sid); recordPresenceSignal(sid);
-            } else if (name === "set_reaction") {
-              btRecordReaction(sid); recordPresenceSignal(sid);
-            } else if (name === "send") {
-              // Skip behavioral tracking for DM sends — DMs are agent-to-agent;
-              // button guidance is irrelevant there.
-              const isDm = cleanArgs.type === "dm";
-              if (!isDm) {
-                const hasChoose = cleanArgs.choose !== undefined;
-                const hasConfirm = cleanArgs.confirm !== undefined;
-                const hasOptions = cleanArgs.options !== undefined;
-                const isChoiceSend = cleanArgs.type === "choice";
-                const isQuestionWithOptions =
-                  cleanArgs.type === "question" && hasOptions;
-                const usesButtons =
-                  hasChoose || hasConfirm || isChoiceSend || isQuestionWithOptions;
-                if (usesButtons) {
-                  btRecordButtonUse(sid);
-                } else {
-                  // Track outbound text via text, message alias, or ask (free-text question).
-                  const outboundText =
-                    (typeof cleanArgs.text === "string" ? cleanArgs.text : null) ??
-                    (typeof cleanArgs.message === "string" ? cleanArgs.message : null) ??
-                    (typeof cleanArgs.ask === "string" ? cleanArgs.ask : null);
-                  if (outboundText !== null) {
-                    btRecordOutboundText(sid, outboundText);
-                  }
-                }
-                recordPresenceSignal(sid);
-              }
-              // Count any outbound send (text, file, notification, etc.)
-              btRecordSend(sid);
-            } else if (name === "action" && typeof cleanArgs.type === "string" && cleanArgs.type.startsWith("confirm/")) {
-              btRecordButtonUse(sid);
-            } else if (name === "help" && cleanArgs.topic === "send") {
-              btRecordButtonUse(sid);
-            } else if (name === "dequeue") {
-              // Detect whether the batch contained user content events.
-              // A successful dequeue with `updates` array counts if any
-              // event has from: "user".
-              try {
-                const text = (callResult as { content?: Array<{ text?: string }> }).content?.[0]?.text;
-                if (text) {
-                  const parsed = JSON.parse(text) as Record<string, unknown>;
-                  const updates = parsed.updates;
-                  if (Array.isArray(updates)) {
-                    const hasUserContent = updates.some(
-                      (u: unknown) =>
-                        typeof u === "object" && u !== null &&
-                        (u as Record<string, unknown>).from === "user",
-                    );
-                    btRecordDequeue(sid, hasUserContent);
-                  }
-                }
-              } catch { /* ignore parse errors */ }
-            }
+            dispatchBehaviorTracking(sid, name, cleanArgs, callResult);
           }
 
           // Inject unknown-param warning into the response if any params were stripped.
