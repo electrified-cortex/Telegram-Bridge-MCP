@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isTemporaryByDefault } from './reaction-presets';
+import { isTemporaryByDefault } from './reaction-presets.js';
 
 describe('isTemporaryByDefault', () => {
   it('returns true for ✍ (U+270D, no VS16)', () => {
