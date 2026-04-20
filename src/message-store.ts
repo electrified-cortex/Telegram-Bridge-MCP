@@ -143,6 +143,14 @@ export function setOnLocalLog(callback: ((event: TimelineEvent) => void) | null)
   _onLocalLogCallback = callback;
 }
 
+/** Optional callback fired after transcription completes. Independent of main log. */
+let _onTranscriptionLogCallback: ((messageId: number, text: string) => void) | null = null;
+
+/** Register a callback that fires with (messageId, text) when patchVoiceText completes. */
+export function setOnTranscriptionLog(callback: ((messageId: number, text: string) => void) | null): void {
+  _onTranscriptionLogCallback = callback;
+}
+
 /** A queue item is ready unless it's a voice message still waiting for text. */
 function isQueueItemReady(item: QueueItem): boolean {
   const c = item.event.content;
@@ -766,6 +774,7 @@ export function resetStoreForTest(): void {
   _baseReactionMessages.clear();
   _onEventCallback = null;
   _onLocalLogCallback = null;
+  _onTranscriptionLogCallback = null;
 }
 
 /** Register a one-shot auto-lock hook for a send_choice message. */
@@ -828,4 +837,7 @@ export function patchVoiceText(messageId: number, text: string): void {
   current.content.text = text;
   _queue.notifyWaiters();
   notifySessionWaiters();
+  if (_onTranscriptionLogCallback) {
+    try { _onTranscriptionLogCallback(messageId, text); } catch { /* isolate logging failures */ }
+  }
 }

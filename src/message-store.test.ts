@@ -18,6 +18,7 @@ import {
   storeSize,
   resetStoreForTest,
   patchVoiceText,
+  setOnTranscriptionLog,
   registerMessageHook,
   clearMessageHook,
   CURRENT,
@@ -325,6 +326,54 @@ describe("patchVoiceText — two-phase voice recording", () => {
     const evt = getMessage(22);
     // Text message unchanged
     expect(evt!.content.text).toBe("hello");
+  });
+});
+
+describe("setOnTranscriptionLog — transcription follow-up log callback", () => {
+  it("fires with messageId and text when patchVoiceText completes on a voice event", () => {
+    const calls: [number, string][] = [];
+    setOnTranscriptionLog((mid, txt) => calls.push([mid, txt]));
+    recordInbound(voiceUpdate(60));
+    patchVoiceText(60, "hello world");
+    expect(calls).toEqual([[60, "hello world"]]);
+  });
+
+  it("fires for failure text starting with [transcription failed:", () => {
+    const calls: [number, string][] = [];
+    setOnTranscriptionLog((mid, txt) => calls.push([mid, txt]));
+    recordInbound(voiceUpdate(61));
+    patchVoiceText(61, "[transcription failed: whisper down]");
+    expect(calls).toEqual([[61, "[transcription failed: whisper down]"]]);
+  });
+
+  it("does not fire on unknown messageId (no matching voice event)", () => {
+    const calls: number[] = [];
+    setOnTranscriptionLog((mid) => calls.push(mid));
+    patchVoiceText(999, "no match");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not fire on non-voice message (text event)", () => {
+    const calls: number[] = [];
+    setOnTranscriptionLog((mid) => calls.push(mid));
+    recordInbound(textUpdate(62, "text msg"));
+    patchVoiceText(62, "should not fire");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("isolates callback errors — patchVoiceText does not throw", () => {
+    setOnTranscriptionLog(() => { throw new Error("boom"); });
+    recordInbound(voiceUpdate(63));
+    expect(() => { patchVoiceText(63, "safe"); }).not.toThrow();
+  });
+
+  it("callback is cleared by resetStoreForTest", () => {
+    const calls: number[] = [];
+    setOnTranscriptionLog((mid) => { calls.push(mid); });
+    resetStoreForTest();
+    recordInbound(voiceUpdate(64));
+    patchVoiceText(64, "should not reach callback");
+    expect(calls).toHaveLength(0);
   });
 });
 
