@@ -31,6 +31,7 @@ import { stopPoller } from "./poller.js";
 import { clearSessionReminders } from "./reminder-state.js";
 import { cancelAnimation } from "./animation-state.js";
 import { removeSession as removeBehaviorTrackerSession } from "./behavior-tracker.js";
+import { removeSilenceState } from "./silence-detector.js";
 
 /**
  * Perform the full teardown for a session identified by `sid`.
@@ -58,6 +59,7 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
 
   removeSessionQueue(sid);
   removeBehaviorTrackerSession(sid);
+  removeSilenceState(sid);
   clearSessionReminders(sid);
   // Cancel any active animation owned by this session
   cancelAnimation(sid).catch(() => {});

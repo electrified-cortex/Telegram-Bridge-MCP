@@ -57,7 +57,7 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
 
   // Reminder navigation hint — only when reminders were loaded
   if (reminders.length > 0) {
-    parts.push("→ help('reminders') for reminder docs. reminders/list for details.");
+    parts.push("-> help('reminders') for reminder docs. reminders/list for details.");
   }
 
   const summary = parts.join(" ");

@@ -14,13 +14,14 @@ import { clearCommandsOnShutdown } from "./shutdown.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
 import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startHealthCheck } from "./health-check.js";
+import { startSilenceDetector } from "./silence-detector.js";
 import { setAuthHook } from "./session-gate.js";
 import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
 import { loadConfig, getSessionLogMode, isDebugConfig, getPreToolDenyPatterns, getSessionApproval } from "./config.js";
 import { setDelegationEnabled } from "./agent-approval.js";
 import { setPreToolHook, buildDenyPatternHook } from "./tool-hooks.js";
-import { timelineSize, setOnLocalLog } from "./message-store.js";
+import { timelineSize, setOnLocalLog, setOnTranscriptionLog } from "./message-store.js";
 import { initDebugLog } from "./debug-log.js";
 import { cleanupStalePins } from "./startup-token-cleanup.js";
 import { resolveHttpPort } from "./cli-args.js";
@@ -113,6 +114,24 @@ setOnLocalLog((event) => {
   // Strip raw Telegram update before logging — it's verbose and contains PII
   const { _update: _discarded, ...loggableEvent } = event;
   logLocalEvent(loggableEvent);
+});
+const TRANSCRIPTION_FAILED_PREFIX = "[transcription failed:";
+setOnTranscriptionLog((messageId, text) => {
+  if (text.startsWith(TRANSCRIPTION_FAILED_PREFIX)) {
+    const errMsg = text.slice(TRANSCRIPTION_FAILED_PREFIX.length, -1).trim();
+    const errorCode = errMsg.includes("timed out") ? "service_timeout" : "service_error";
+    logLocalEvent({
+      id: messageId,
+      event: "transcription_error",
+      content: { type: "voice_transcription_error", error_code: errorCode, error: errMsg },
+    });
+  } else {
+    logLocalEvent({
+      id: messageId,
+      event: "transcription",
+      content: { type: "voice_transcription", text },
+    });
+  }
 });
 
 // Parse --http [port] from argv (takes precedence over MCP_PORT env var)
@@ -251,6 +270,7 @@ void (async () => {
 startPoller();
 
 startHealthCheck();
+startSilenceDetector();
 setAuthHook((sid: number) => {
   touchSession(sid);
   const reauthMsgId = getSessionReauthDialogMsgId(sid);

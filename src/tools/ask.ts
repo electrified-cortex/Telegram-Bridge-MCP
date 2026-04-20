@@ -7,6 +7,7 @@ import { dequeueMatch, waitForEnqueue, pendingCount, type TimelineEvent } from "
 import { getSessionQueue, peekSessionCategories } from "../session-queue.js";
 import { getCallerSid } from "../session-context.js";
 import { requireAuth } from "../session-gate.js";
+import { getDequeueDefault } from "../session-manager.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
@@ -70,7 +71,7 @@ export async function handleAsk({
     const sq = pollSid > 0
       ? getSessionQueue(pollSid)
       : undefined;
-    const effectiveTimeout = timeout_seconds ?? 86_400;
+    const effectiveTimeout = timeout_seconds ?? getDequeueDefault(_sid);
     const deadline = Date.now() + effectiveTimeout * 1000;
     const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
 
@@ -148,7 +149,7 @@ export function register(server: McpServer) {
         .min(1)
         .max(86400)
         .optional()
-        .describe("Seconds to wait for a reply before returning timed_out: true. Omit to use the server maximum (24 h)."),
+        .describe("Seconds to wait for a reply before returning timed_out: true. Omit to use the caller session's dequeue default (300s if unset)."),
       reply_to: z
         .number()
         .int()

@@ -10,7 +10,7 @@ Routes:
 
 action(type: "session") — lists sub-paths in live API.
 
-Token format: sid * 1_000_000 + pin. Save immediately after session/start or session/reconnect.
+Token format: sid * 1_000_000 + suffix. Save immediately after session/start or session/reconnect.
 First session = governor by default. Second+ require operator approval.
 
 Related: profile/load, shutdown, dequeue

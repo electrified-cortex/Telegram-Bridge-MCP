@@ -23,11 +23,13 @@ and provided detailed feedback. Key principles:
 ## Operator Feedback Per Message
 
 ### onboarding_token_save
+
 - Current: verbose explanation of token formula
 - Target: "Save your token to your session memory file."
 - No formula, no sid/pin explanation
 
 ### onboarding_protocol (reactions/responsiveness)
+
 - Needs full redesign as a reaction-focused message
 - Voice messages arrive pre-saluted (auto 🫡 on dequeue)
 - Salute = strongest acknowledgment — explain this
@@ -38,32 +40,38 @@ and provided detailed feedback. Key principles:
 - Must be ultra compressed
 
 ### onboarding_role (governor)
+
 - Add forwarding protocol: governor reads ambiguous messages,
   forwards to correct session via DM with message ID
 - Target session uses message/get to read the forwarded message
 - Governor routes, doesn't relay content
 
 ### onboarding_buttons
+
 - Hybrid message mention should be optional, not default
 - Buttons are the focus — hybrid is a "you can also" footnote
 
 ### behavior_nudge_* (all nudges)
+
 - Every nudge hint must end with help() pointer
 - Keep extremely short — one sentence + help pointer
 - Ultra compressed
 
 ### Governor change messages
+
 - Deduplicate: "no longer governor", "governor changed",
   "governor switched" → consolidate into single clear message
 - Show SID + name label in session references
 
 ### DM protocol (new message needed)
+
 - DMs are pure data channel
 - No reactions, no typing, no animations in response to DMs
 - Reply over DM only — nothing goes to main chat
 - Should be part of the multi-session onboarding
 
 ### Single emoji warning (new or part of reactions message)
+
 - Single emoji in a text message renders as Telegram sticker
 - Warn agents to use multi-character content for status messages
 

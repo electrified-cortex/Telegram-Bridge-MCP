@@ -113,6 +113,32 @@ export function peekSessionCategories(sid: number): Record<string, number> | und
   return _queues.get(sid)?.peekCategories((evt) => evt.content.type);
 }
 
+/**
+ * Returns true if the session queue has at least one pending heavyweight
+ * user event (text or voice). Non-destructive — does not consume any items.
+ * Returns false if no queue exists for this sid.
+ */
+export function hasPendingUserContent(sid: number): boolean {
+  const cats = peekSessionCategories(sid);
+  if (!cats) return false;
+  return (cats["text"] ?? 0) > 0 || (cats["voice"] ?? 0) > 0;
+}
+
+/**
+ * Returns the arrival timestamp (ms since epoch) of the oldest pending text
+ * or voice event in the session queue. Used by the silence detector to anchor
+ * the elapsed clock to inbound content arrival, not just last outbound.
+ * Returns undefined if no queue exists or no matching event is pending.
+ */
+export function getPendingUserContentSince(sid: number): number | undefined {
+  const queue = _queues.get(sid);
+  if (!queue) return undefined;
+  const evt = queue.peekFirst(
+    (e) => e.content.type === "text" || e.content.type === "voice",
+  );
+  return evt ? new Date(evt.timestamp).getTime() : undefined;
+}
+
 /** Number of active session queues. */
 export function sessionQueueCount(): number {
   return _queues.size;

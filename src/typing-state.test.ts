@@ -104,20 +104,29 @@ describe("typing-state", () => {
       expect(isTypingActive()).toBe(false);
     });
 
-    it("cancels non-persistent animation before starting indicator", async () => {
+    it("does not cancel non-persistent animation on show_typing (ephemeral must not cancel)", async () => {
       mocks.sendChatAction.mockResolvedValue(undefined);
       mocks.isAnimationActive.mockReturnValue(true);
       mocks.isAnimationPersistent.mockReturnValue(false);
       await showTyping(5);
-      expect(mocks.cancelAnimation).toHaveBeenCalled();
+      expect(mocks.cancelAnimation).not.toHaveBeenCalled();
       cancelTyping();
     });
 
-    it("does not cancel persistent animation before starting indicator", async () => {
+    it("does not cancel persistent animation on show_typing", async () => {
       mocks.sendChatAction.mockResolvedValue(undefined);
       mocks.isAnimationActive.mockReturnValue(true);
       mocks.isAnimationPersistent.mockReturnValue(true);
       await showTyping(5);
+      expect(mocks.cancelAnimation).not.toHaveBeenCalled();
+      cancelTyping();
+    });
+
+    it("does not cancel animation on record_voice action (ephemeral indicator)", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      mocks.isAnimationActive.mockReturnValue(true);
+      mocks.isAnimationPersistent.mockReturnValue(false);
+      await showTyping(5, "record_voice");
       expect(mocks.cancelAnimation).not.toHaveBeenCalled();
       cancelTyping();
     });

@@ -86,7 +86,7 @@ Parameter design for token efficiency:
 `session_start` response example:
 
 ```json
-{ "sid": 3, "pin": 719304, "sessions_active": 3, "discarded": 0, "fellow_sessions": [] }
+{ "sid": 3, "suffix": 719304, "sessions_active": 3, "discarded": 0, "fellow_sessions": [] }
 ```
 
 Agent guide instructs: "If `sid > 1`, call `set_topic` before doing anything else."
@@ -454,8 +454,8 @@ For multi-session, the recommended timeline size is **100+ messages** (up from t
 ### Phase 1: Session Manager & Auth
 
 - Session ID generation (incrementing integer) and PIN generation (6-digit random).
-- In-memory session store: `Map<sid, { pin, name, state, queue, muteConfig, dmPermissions }>`.
-- `session_start` returns `{ sid, pin, sessions_active, discarded, fellow_sessions }`.
+- In-memory session store: `Map<sid, { suffix, name, state, queue, muteConfig, dmPermissions }>`.
+- `session_start` returns `{ sid, suffix, sessions_active, discarded, fellow_sessions }`.
 - Auth middleware: validate `sid`+`pin` on all non-bootstrap tool calls.
 - `close_session(sid)` tool with queue drain and cleanup.
 - Message tagging: all outbound messages tagged with `sid` in store metadata.

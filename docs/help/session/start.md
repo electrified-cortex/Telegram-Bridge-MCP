@@ -1,6 +1,6 @@
 session/start — Create and register new Telegram session.
 
-Generates SID and PIN; returns token (sid*1000000+pin). Pass token on every subsequent call.
+Generates SID and suffix; returns token (sid*1000000+suffix). Pass token on every subsequent call.
 Second+ sessions require operator approval via Telegram color-picker dialog.
 Name collision → error: use dequeue with saved token instead.
 
@@ -11,7 +11,7 @@ color: preferred color emoji hint for approval dialog (optional)
 
 ## Example
 action(type: "session/start", name: "Worker 2", color: "🟩")
-→ { token: 3165424, sid: 3, pin: 165424, sessions_active: 2, action: "fresh", pending: 0 }
+→ { token: 3165424, sid: 3, suffix: 165424, sessions_active: 2, action: "fresh", pending: 0 }
 
 Save token immediately: Worker N/telegram/session.md
 

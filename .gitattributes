@@ -1,4 +1,4 @@
-# Disable line-ending normalization. Windows-first workspace; CRLF is
-# native and git's autocrlf warnings ("LF will be replaced by CRLF the
-# next time Git touches it") are noise for our workflow.
-* -text
+# Preserve Git's normal text handling and automatic text/binary detection.
+# This avoids disabling diffs, merges, and EOL normalization heuristics
+# for all files while still allowing Git to manage text files safely.
+* text=auto

@@ -18,11 +18,13 @@ close. The full lifecycle needs to work end-to-end.
 ## Requirements
 
 ### Bridge `/shutdown` command
+
 - Zero sessions active → skip all guards → write log → close. Instant.
 - Sessions active → `shutdown/warn` service message to all sessions
   with countdown → wait N seconds → force close remaining.
 
 ### Governor-directed session close
+
 - New action: `session/close` with target SID
 - Sends service message to target session: "Governor requested shutdown.
   Save state and call session/close within N seconds."
@@ -30,6 +32,7 @@ close. The full lifecycle needs to work end-to-end.
 - Governor can still call `shutdown` to close everything
 
 ### Agent-side shutdown hook
+
 - On receiving shutdown signal service message, agent should:
   1. Save state (handoff doc, session memory)
   2. Wipe session token file

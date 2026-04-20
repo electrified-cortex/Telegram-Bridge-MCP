@@ -91,7 +91,7 @@ export async function handleCloseSession({ token, target_sid, force }: { token?:
   // 6. Execute close
   const result = closeSessionById(target_sid);
   void refreshGovernorCommand();
-  return toResult({ ...result, reason: "closed" });
+  return toResult({ ...result, reason: result.closed ? "closed" : "not_found" });
 }
 
 export function register(server: McpServer) {
