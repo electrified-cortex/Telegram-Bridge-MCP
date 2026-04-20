@@ -1,8 +1,8 @@
 # Telegram Bridge MCP
 
-[![CI](https://github.com/electricessence/Telegram-Bridge-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/electricessence/Telegram-Bridge-MCP/actions/workflows/ci.yml)
-[![Docker](https://github.com/electricessence/Telegram-Bridge-MCP/actions/workflows/publish.yml/badge.svg)](https://github.com/electricessence/Telegram-Bridge-MCP/actions/workflows/publish.yml)
-[![Docker Image](https://img.shields.io/badge/ghcr.io-telegram--bridge--mcp-blue?logo=docker)](https://github.com/electricessence/Telegram-Bridge-MCP/pkgs/container/telegram-bridge-mcp)
+[![CI](https://github.com/electrified-cortex/Telegram-Bridge-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/electrified-cortex/Telegram-Bridge-MCP/actions/workflows/ci.yml)
+[![Docker](https://github.com/electrified-cortex/Telegram-Bridge-MCP/actions/workflows/publish.yml/badge.svg)](https://github.com/electrified-cortex/Telegram-Bridge-MCP/actions/workflows/publish.yml)
+[![Docker Image](https://img.shields.io/badge/ghcr.io-telegram--bridge--mcp-blue?logo=docker)](https://github.com/electrified-cortex/Telegram-Bridge-MCP/pkgs/container/telegram-bridge-mcp)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 <img align="right" src="interaction.jpg" width="320" alt="AI agents coordinating through Telegram Bridge MCP" />
@@ -42,7 +42,7 @@
 > **Tip:** If your AI has web access, paste this to get started (requires web access):
 >
 > ```text
-> Set me up: https://github.com/electricessence/Telegram-Bridge-MCP
+> Set me up: https://github.com/electrified-cortex/Telegram-Bridge-MCP
 > ```
 
 <details>
@@ -51,7 +51,7 @@
 ### 1. Clone and build
 
 ```bash
-git clone https://github.com/electricessence/Telegram-Bridge-MCP.git
+git clone https://github.com/electrified-cortex/Telegram-Bridge-MCP.git
 cd Telegram-Bridge-MCP
 pnpm install && pnpm build
 ```
