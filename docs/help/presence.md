@@ -29,5 +29,5 @@ Active animations suppress all nudges — they are sufficient presence signals.
 
 ## Opt-Out
 
-The governor can disable the detector for a specific session (e.g. headless batch workers).
+Per-session disable is not yet exposed. The detector is active for all sessions.
 Default: **on** for all sessions.
