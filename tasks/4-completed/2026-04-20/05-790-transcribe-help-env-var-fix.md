@@ -32,3 +32,12 @@ An agent reading the help topic would incorrectly conclude transcription needs T
 ## Delegation
 
 Worker (TMCP). Trivial scope, sub-10-minute job.
+
+## Completion
+
+Fixed 2026-04-21. Replaced wrong bullet in `docs/help/transcribe.md` (line 23):
+- Before: "Requires TTS provider configured (TTS_HOST or OPENAI_API_KEY)"
+- After: STT_HOST listed as optional; local ONNX fallback noted as zero-config
+
+TTS_HOST and OPENAI_API_KEY no longer appear in the file. Code Reviewer: LGTM.
+Commit: `8079cbf` on branch `05-790-transcribe-help-env-var-fix`.
