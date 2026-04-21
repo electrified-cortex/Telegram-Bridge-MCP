@@ -62,6 +62,7 @@ function fakeApi() {
     sendAudio: vi.fn().mockResolvedValue({ message_id: 4 }),
     sendDocument: vi.fn().mockResolvedValue({ message_id: 5 }),
     editMessageText: vi.fn().mockResolvedValue(true),
+    editMessageCaption: vi.fn().mockResolvedValue(true),
     getChat: vi.fn().mockResolvedValue({ id: 42 }),
     someProperty: "not-a-function",
   };
@@ -284,6 +285,74 @@ describe("outbound-proxy", () => {
       );
 
       expect(raw.editMessageText).toHaveBeenCalled();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // editMessageCaption — nametag injection for voice message caption edits
+  // -----------------------------------------------------------------------
+
+  describe("editMessageCaption", () => {
+    it("prepends nametag to caption in multi-session mode", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Worker 1", color: "🟨" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).editMessageCaption(42, 10, {
+        caption: "Voice caption text",
+        parse_mode: "MarkdownV2",
+      });
+
+      const callArgs = (raw.editMessageCaption as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect((callArgs[2] as Record<string, unknown>).caption as string).toMatch(/🟨.*Worker 1/);
+      expect((callArgs[2] as Record<string, unknown>).caption as string).toContain("Voice caption text");
+    });
+
+    it("does not add nametag in single-session mode", async () => {
+      mocks.activeSessionCount.mockReturnValue(1);
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).editMessageCaption(42, 10, {
+        caption: "Voice caption text",
+        parse_mode: "MarkdownV2",
+      });
+
+      const callArgs = (raw.editMessageCaption as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect((callArgs[2] as Record<string, unknown>).caption).toBe("Voice caption text");
+    });
+
+    it("skips nametag when _skipHeader is true", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Worker 1", color: "🟨" });
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).editMessageCaption(42, 10, {
+        caption: "Voice caption text",
+        _skipHeader: true,
+      });
+
+      const callArgs = (raw.editMessageCaption as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect((callArgs[2] as Record<string, unknown>).caption).toBe("Voice caption text");
+      expect((callArgs[2] as Record<string, unknown>)._skipHeader).toBeUndefined();
+    });
+
+    it("strips _skipHeader from options before passing to real API", async () => {
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).editMessageCaption(42, 10, {
+        caption: "Text",
+        parse_mode: "MarkdownV2",
+        reply_markup: { inline_keyboard: [] },
+        _skipHeader: true,
+      });
+
+      const callArgs = (raw.editMessageCaption as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect((callArgs[2] as Record<string, unknown>)._skipHeader).toBeUndefined();
     });
   });
 

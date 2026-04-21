@@ -31,3 +31,11 @@ Regular text and voice messages from the same agent session *do* get nametagged.
 ## Delegation
 
 Worker (TMCP).
+
+## Completion
+
+Fixed 2026-04-21 by Worker 1. Branch: `15-791`, commit `8276dbb`.
+
+**Root cause:** `appendSuffixAndEdit` in `button-helpers.ts` calls `getApi().editMessageCaption()` to replace the caption after a voice-mode confirm/choose interaction. The outbound proxy intercepted `editMessageText` but not `editMessageCaption`, so the replacement caption stripped the nametag that was prepended by the initial `sendVoiceDirect` call.
+
+**Fix:** Added `editMessageCaption` interceptor to `src/outbound-proxy.ts` mirroring the `editMessageText` pattern. Adds 4 regression tests in `outbound-proxy.test.ts`. Build, lint, 2482 tests all pass.

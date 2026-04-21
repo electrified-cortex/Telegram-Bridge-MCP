@@ -372,6 +372,33 @@ export function createOutboundProxy(realApi: Api): Api {
         };
       }
 
+      // --- editMessageCaption: nametag injection for voice message caption edits ---
+      if (method === "editMessageCaption") {
+        return async function proxiedEditMessageCaption(...args: unknown[]) {
+          if (isBypassing()) return fn(...args);
+
+          // args: (chatId, messageId, opts?)
+          const captionOpts = args[2] as Record<string, unknown> | undefined;
+          const skipHeader = captionOpts?._skipHeader === true;
+          const cleanOpts = captionOpts ? { ...captionOpts } : undefined;
+          if (cleanOpts) delete cleanOpts._skipHeader;
+          args[2] = cleanOpts;
+
+          if (!skipHeader && cleanOpts?.caption) {
+            const captionParseMode = cleanOpts.parse_mode as string | undefined;
+            const { formatted: captionHeader } = buildHeader(captionParseMode);
+            if (captionHeader) {
+              cleanOpts.caption = captionHeader + (cleanOpts.caption as string);
+              if (!captionParseMode) {
+                cleanOpts.parse_mode = "Markdown";
+              }
+            }
+          }
+
+          return fn(...args);
+        };
+      }
+
       // --- Everything else: pass through ---
       return value;
     },
