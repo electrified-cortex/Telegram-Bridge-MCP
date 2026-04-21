@@ -106,7 +106,7 @@ export function logEvent(event: unknown): void {
   if (_flushTimer === null) {
     _flushTimer = setTimeout(() => {
       _flushTimer = null;
-      _flushPromise = _flushPromise.then(_actualFlush, (error) => {
+      _flushPromise = _flushPromise.then(_actualFlush, (error: unknown) => {
         console.error("local-log: previous flush failed", error);
         return _actualFlush();
       });
@@ -151,7 +151,7 @@ export async function flushCurrentLog(): Promise<void> {
     _flushTimer = null;
   }
   // Chain the drain onto any in-flight flush so writes are serialized.
-  _flushPromise = _flushPromise.then(_actualFlush, (error) => {
+  _flushPromise = _flushPromise.then(_actualFlush, (error: unknown) => {
     console.error("local-log: previous flush failed", error);
     return _actualFlush();
   });

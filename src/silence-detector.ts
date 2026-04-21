@@ -110,8 +110,8 @@ export function stopSilenceDetector(): void {
 }
 
 /**
- * Enable or disable nudges for a specific session (governor-only action).
- * Opt-out is session-scoped and in-memory only.
+ * Intended to be governor-only once wired — not currently exposed via any action/tool.
+ * Enables or disables silence nudges for a session. Opt-out is session-scoped and in-memory only.
  */
 export function setSilenceDetectorOptOut(sid: number, disabled: boolean): void {
   if (disabled) _optedOut.add(sid);

@@ -114,12 +114,12 @@ describe("legacy show_typing and set_reaction still work", () => {
 // ---------------------------------------------------------------------------
 
 describe("other action types don't trigger typing or reaction tracking", () => {
-  it("action(type:'confirm/yn') only fires btRecordButtonUse, not typing", () => {
+  it("action(type:'confirm/yn') fires btRecordButtonUse and recordPresenceSignal, not typing", () => {
     initSession(1);
     dispatchBehaviorTracking(1, "action", { type: "confirm/yn" }, {});
     const state = getSessionState(1)!;
     expect(state.lastTypingAt).toBeUndefined();
-    expect(state.lastOutboundAt).toBeUndefined();
+    expect(state.lastOutboundAt).toBeDefined();
     expect(state.knowsButtons).toBe(true);
   });
 

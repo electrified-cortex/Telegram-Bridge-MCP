@@ -1,4 +1,4 @@
 # Preserve Git's normal text handling and automatic text/binary detection.
 # This avoids disabling diffs, merges, and EOL normalization heuristics
 # for all files while still allowing Git to manage text files safely.
-* text=auto
+* text=auto eol=lf

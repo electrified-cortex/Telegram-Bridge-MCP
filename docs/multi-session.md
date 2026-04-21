@@ -453,13 +453,13 @@ For multi-session, the recommended timeline size is **100+ messages** (up from t
 
 ### Phase 1: Session Manager & Auth
 
-- Session ID generation (incrementing integer) and PIN generation (6-digit random).
+- Session ID generation (incrementing integer) and suffix assignment.
 - In-memory session store: `Map<sid, { suffix, name, state, queue, muteConfig, dmPermissions }>`.
 - `session_start` returns `{ sid, suffix, sessions_active, discarded, fellow_sessions }`.
-- Auth middleware: validate `sid`+`pin` on all non-bootstrap tool calls.
+- Auth middleware: validate token on all non-bootstrap tool calls.
 - `close_session(sid)` tool with queue drain and cleanup.
 - Message tagging: all outbound messages tagged with `sid` in store metadata.
-- **TDD approach** — write tests first for session creation, PIN validation, auth rejection, session closure.
+- **TDD approach** — write tests first for session creation, token validation, auth rejection, session closure.
 
 ### Phase 2: Queues & Routing Modes
 
