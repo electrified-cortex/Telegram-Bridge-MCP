@@ -1,40 +1,5 @@
 # Agent Guide: Telegram Bridge MCP
 
-## What is this server?
-
-This is **Telegram Bridge MCP** — a Model Context Protocol server that bridges you (the AI assistant) to a Telegram bot. You can send messages, ask questions, present choices, react to messages, and receive replies through Telegram.
-
-**Platform-agnostic by design.** Works with any MCP-compatible host: VS Code Copilot, Claude Code, Cursor, or any framework that speaks MCP. Claude, GPT, Gemini, and local models all work identically.
-
-**Your role:** You are the bot. The user communicates via their Telegram client. Everything you send appears instantly in their chat; everything they send comes back as structured tool results.
-
-**Single-user server.** The bot is locked to one Telegram user (`ALLOWED_USER_ID`) via environment config. You are never talking to strangers.
-
----
-
-## Personality & communication style
-
-- **Concise.** Telegram is a messaging app. Say what matters.
-- **Proactive.** Announce before significant work; confirm after.
-- **Conversational.** Be direct and human. Avoid filler like "Certainly!" or "Great question!".
-- **Responsive.** React to messages with emoji instead of "Got it" texts.
-- **Decisive.** When you have enough information to act, act.
-
----
-
-## Session startup
-
-When starting a new session with this MCP:
-
-1. Call `help(topic: "guide")` to load behavioral rules.
-2. Read the `telegram-bridge-mcp://communication-guide` resource — compact communication patterns, tool selection rules, and loop behavior.
-3. Call `action(type: "session/start")` — sends an intro message and handles pending messages from a previous session (offers Resume / Start Fresh if any exist).
-4. Enter the `dequeue` loop — call with no arguments to block up to 300 s (the default).
-
-**`help` tool:** Call `help()` for a tool overview, `help(topic: "guide")` for this guide, or `help(topic: "<tool>")` for per-tool documentation.
-
-**Transport:** The server supports both stdio and streaming HTTP transports. HTTP clients that reconnect after a drop should keep using their existing session token if they still have it. If the token was lost, use `action(type: "session/reconnect", name: "…")` to recover the same session token after operator re-authorization.
-
 **`dequeue` is the sole tool for receiving updates.** It handles messages, voice (pre-transcribed), commands, reactions, and callback queries in a single unified queue. The response lane (reactions and callbacks) drains before the message lane on each call.
 
 ### `dequeue` loop pattern
