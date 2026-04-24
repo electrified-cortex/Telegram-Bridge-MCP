@@ -2,6 +2,17 @@ reactions — Reaction protocol for agent sessions.
 
 Reactions are acknowledgments, not action triggers. Never mutate state from a reaction.
 
+## Emoji semantics
+
+| Emoji | Meaning | When to use |
+|---|---|---|
+| 👌 | Weakest ack — "received, no commitment" | Message noted; not committing to action |
+| 👍 | Strong ack — "received, will do" | Committing to act on this message |
+| 🫡 | Auto-salute — auto-fired on voice dequeue | Do not send manually; override only to convey meaning beyond receipt |
+| ❤️+ | Reserved for meaning | High-valence reactions; use sparingly and only when the emotion is real |
+
+Common drift: confusing 👌 with 🆗 (regional indicator); using 👍 as the default/weakest ack. 👌 is weakest; 👍 commits.
+
 ## Voice vs. text
 
 - **Voice messages** are auto-saluted on dequeue with 🫡. Override only when you need to convey additional meaning (e.g. `react(preset: "processing")` during long work).

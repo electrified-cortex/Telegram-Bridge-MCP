@@ -123,6 +123,11 @@ export const SERVICE_MESSAGES = deepFreeze({
 
   // ── Behavior nudges ───────────────────────────────────────────────────────
 
+  NUDGE_REACTION_SEMANTICS: {
+    eventType: "behavior_nudge_reaction_semantics" as const,
+    text: "👌 = weakest ack (received). 👍 = strong ack (will do). 🫡 = auto-fired on voice. Reserve ❤️+ for meaning. See help('reactions').",
+  },
+
   NUDGE_FIRST_MESSAGE: {
     eventType: "behavior_nudge_first_message" as const,
     text: "First operator message. Signal receipt — show-typing or react. help('reactions')",

@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { runInSessionContext } from "./session-context.js";
 import { getActiveSession, getSession } from "./session-manager.js";
+import { markFirstUseHintSeen } from "./first-use-hints.js";
 import { runInTokenHintContext } from "./tools/identity-schema.js";
 import { invokePreToolHook } from "./tool-hooks.js";
 import { checkUnknownParams, injectWarningIntoResult } from "./unknown-param-warning.js";
@@ -22,6 +23,7 @@ import {
   recordPresenceSignal,
 } from "./behavior-tracker.js";
 import { deliverServiceMessage } from "./session-queue.js";
+import { SERVICE_MESSAGES } from "./service-messages.js";
 import { setPresenceNudgeInjector } from "./silence-detector.js";
 
 import { register as registerDequeueUpdate } from "./tools/dequeue.js";
@@ -73,6 +75,10 @@ export function dispatchBehaviorTracking(
     btRecordAnimation(sid); recordPresenceSignal(sid);
   } else if (name === "set_reaction" || (name === "action" && cleanArgs.type === "react")) {
     btRecordReaction(sid); recordPresenceSignal(sid);
+    // Part B: reaction semantics first-call nudge (task 15-745)
+    if (markFirstUseHintSeen(sid, "reaction_semantics")) {
+      deliverServiceMessage(sid, SERVICE_MESSAGES.NUDGE_REACTION_SEMANTICS);
+    }
   } else if (name === "send") {
     const isDm = cleanArgs.type === "dm";
     if (!isDm) {

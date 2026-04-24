@@ -21,6 +21,7 @@ Use presence signals to keep the operator informed.
 1. **Reaction** — single emoji on a message. Zero text. Use for quick acknowledgement.
 2. **show-typing** — typing indicator, lasts up to 20 s. Use only when text is actually arriving.
 3. **Animation (persistent)** — cycling frame loop. Use for work taking 30 s+.
+4. **Progress** — percentaged bar for work with a known completion dimension. Use `send(type: "progress")` + `action(type: "progress/update", percent: N)`. Close explicitly when done — orphaned bars stay pinned.
 
 ## Animation Presets for Working
 
