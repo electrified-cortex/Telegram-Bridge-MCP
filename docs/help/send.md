@@ -59,9 +59,6 @@ is passed; the bridge builds the full accumulated string.
   supported.
 - Telegram rate-limits edits to approximately 1 edit/second per message. Rapid
   appends may be throttled; the bridge will surface the API error if this occurs.
-- In rare cases Telegram's API returns `true` instead of a message object. The
-  bridge handles this gracefully by returning
-  `{ message_id: <original_id>, length: <previous_length> }`.
 - Passing an empty `text` string when the message already has content will append
   only the separator (e.g. `"existing\n"`). To avoid this, validate that `text`
   is non-empty before calling append.
