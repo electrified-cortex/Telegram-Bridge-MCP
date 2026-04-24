@@ -69,6 +69,7 @@ vi.mock("../action-registry.js", () => ({
   listCategories: mocks.listCategories,
   listSubPaths: mocks.listSubPaths,
   clearRegistry: mocks.clearRegistry,
+  toActionHandler: (fn: unknown) => fn,
 }));
 
 vi.mock("../session-gate.js", () => ({
