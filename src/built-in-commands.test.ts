@@ -858,7 +858,7 @@ describe("built-in-commands", () => {
       // New governor notified
       expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
         2,
-        expect.stringContaining("Governor is now SID 2"),
+        expect.stringContaining("**New governor:**"),
         "governor_changed",
         expect.objectContaining({ old_governor_sid: 1, new_governor_sid: 2 }),
       );
@@ -866,7 +866,7 @@ describe("built-in-commands", () => {
       // Old governor notified
       expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
         1,
-        expect.stringContaining("Governor is now SID 2"),
+        expect.stringContaining("**New governor:**"),
         "governor_changed",
         expect.objectContaining({ old_governor_sid: 1, new_governor_sid: 2 }),
       );
@@ -874,7 +874,7 @@ describe("built-in-commands", () => {
       // Third session notified
       expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
         3,
-        expect.stringContaining("Governor is now SID 2"),
+        expect.stringContaining("**New governor:**"),
         "governor_changed",
         expect.objectContaining({ old_governor_sid: 1, new_governor_sid: 2 }),
       );

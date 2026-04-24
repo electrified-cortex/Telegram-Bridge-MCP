@@ -65,7 +65,7 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "governor_changed" as const,
     /** @param sid SID of the new governor, @param name name of the new governor */
     text: (sid: number, name: string) =>
-      `Governor is now SID ${sid} (${name}).`,
+      `**New governor:**\n**SID:** ${sid}\n**Name:** ${name}`,
   },
 
   // ── Governor promotion (after governor session closes) ───────────────────
@@ -75,7 +75,7 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "governor_promoted" as const,
     /** @param sessionName name of the session that closed */
     text: (sessionName: string) =>
-      `You are now the governor (${sessionName} closed). Single-session mode restored.`,
+      `**You are now the governor.**\n**Closed session:** ${sessionName}\nSingle-session mode restored.`,
   },
 
   /** @param sessionName name of the session that closed, multi-session variant */
@@ -83,7 +83,7 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "governor_promoted" as const,
     /** @param sessionName name of the session that closed */
     text: (sessionName: string) =>
-      `You are now the governor (${sessionName} closed). Ambiguous messages will be routed to you.`,
+      `**You are now the governor.**\n**Closed session:** ${sessionName}\nAmbiguous messages will be routed to you.`,
   },
 
   // ── Session lifecycle notifications ───────────────────────────────────────
@@ -93,7 +93,7 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "session_joined" as const,
     /** @param name display name of the joining session, @param sid SID of the joining session */
     text: (name: string, sid: number) =>
-      `${name} (SID ${sid}) joined. You are the governor — route ambiguous messages.`,
+      `**Session joined:**\n**Name:** ${name}\n**SID:** ${sid}\nYou are the governor — route ambiguous messages.`,
   },
 
   SESSION_CLOSED: {
@@ -103,7 +103,7 @@ export const SERVICE_MESSAGES = deepFreeze({
      * @param sid SID of the closed session
      */
     text: (sessionName: string, sid: number) =>
-      `${sessionName} (SID ${sid}) closed.`,
+      `**Session closed:**\n**Name:** ${sessionName}\n**SID:** ${sid}`,
   },
 
   /** @param name name of the closed session, @param newSid SID of the new governor, @param newName name of the new governor */
@@ -111,7 +111,7 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "session_closed_new_governor" as const,
     /** @param name name of the closed session, @param newSid SID of the new governor, @param newName name of the new governor */
     text: (name: string, newSid: number, newName: string) =>
-      `${name} closed. Governor is now SID ${newSid} (${newName}).`,
+      `**Session closed:** ${name}\n**New governor:**\n**SID:** ${newSid}\n**Name:** ${newName}`,
   },
 
   // ── Shutdown ──────────────────────────────────────────────────────────────

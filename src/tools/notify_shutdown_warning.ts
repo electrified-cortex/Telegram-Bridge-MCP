@@ -7,12 +7,14 @@ import { deliverDirectMessage } from "../session-queue.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const SHUTDOWN_CLEANUP =
-  "Action required: (1) finish current task, (2) delete stored session token from memory, " +
-  "(3) call action(type: \"session/close\") to close cleanly, " +
+  "**Action required:**\n" +
+  "(1) finish current task\n" +
+  "(2) delete stored session token from memory\n" +
+  "(3) call action(type: \"session/close\") to close cleanly\n" +
   "(4) do NOT retry — session is being terminated.";
 
 const BASE_WARNING =
-  "⛔ Shutdown warning: session termination imminent. " +
+  "⛔ **Shutdown warning:** session termination imminent.\n" +
   SHUTDOWN_CLEANUP;
 
 const DESCRIPTION =
@@ -35,9 +37,9 @@ export function handleNotifyShutdownWarning({ token, reason, wait_seconds }: {
   }
 
   const parts: string[] = [BASE_WARNING];
-  if (reason) parts.push(`Reason: ${reason}`);
+  if (reason) parts.push(`**Reason:** ${reason}`);
   if (typeof wait_seconds === "number") {
-    parts.push(`Shutdown in: ~${wait_seconds}s`);
+    parts.push(`**Shutdown in:** ~${wait_seconds}s`);
   }
   const text = parts.join("\n");
 

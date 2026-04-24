@@ -104,7 +104,7 @@ async function requestApproval(
     if (governorSid) {
       deliverServiceMessage(
         governorSid,
-        `Session "${name}" is requesting access. Ticket: ${ticket}\nHint: action(type: 'approve', token: <your_token>, ticket: ${ticket})`,
+        `**Pending approval:**\n**Session:** ${name}\n**Ticket:** ${ticket}\n**Action:** action(type: 'approve', token: <your_token>, ticket: ${ticket})`,
         "pending_approval",
         { name, ticket },
       );
