@@ -9,7 +9,7 @@ import {
   resolveAction,
   listCategories,
   listSubPaths,
-  type ActionHandler,
+  toActionHandler,
 } from "../action-registry.js";
 
 import { handleSetVoice } from "./set_voice.js";
@@ -94,20 +94,20 @@ function levenshtein(a: string, b: string): number {
  * Idempotent — can safely be called multiple times (last write wins).
  */
 export function setupActionRegistry(): void {
-  registerAction("session/start", handleSessionStart as unknown as ActionHandler);
-  registerAction("session/reconnect", handleSessionReconnect as unknown as ActionHandler);
-  registerAction("session/close", handleCloseSession as unknown as ActionHandler);
-  registerAction("session/close/signal", handleCloseSessionSignal as unknown as ActionHandler, { governor: true });
-  registerAction("session/list", handleListSessions as unknown as ActionHandler);
-  registerAction("session/idle", handleSessionIdle as unknown as ActionHandler);
-  registerAction("session/rename", handleRenameSession as unknown as ActionHandler);
-  registerAction("profile/voice", handleSetVoice as unknown as ActionHandler);
-  registerAction("message/edit", handleEditMessage as unknown as ActionHandler);
+  registerAction("session/start", toActionHandler(handleSessionStart));
+  registerAction("session/reconnect", toActionHandler(handleSessionReconnect));
+  registerAction("session/close", toActionHandler(handleCloseSession));
+  registerAction("session/close/signal", toActionHandler(handleCloseSessionSignal), { governor: true });
+  registerAction("session/list", toActionHandler(handleListSessions));
+  registerAction("session/idle", toActionHandler(handleSessionIdle));
+  registerAction("session/rename", toActionHandler(handleRenameSession));
+  registerAction("profile/voice", toActionHandler(handleSetVoice));
+  registerAction("message/edit", toActionHandler(handleEditMessage));
 
   // message/*
-  registerAction("message/delete", handleDeleteMessage as unknown as ActionHandler);
-  registerAction("message/pin", handlePinMessage as unknown as ActionHandler);
-  registerAction("react", (async (args: Record<string, unknown>) => {
+  registerAction("message/delete", toActionHandler(handleDeleteMessage));
+  registerAction("message/pin", toActionHandler(handlePinMessage));
+  registerAction("react", toActionHandler(async (args: Record<string, unknown>) => {
     // Preset path: dispatch before single-emoji / array handling
     if (args.preset && typeof args.preset === "string" && !args.emoji && !args.reactions) {
       const _sid = requireAuth(args.token as number);
@@ -117,49 +117,49 @@ export function setupActionRegistry(): void {
       return handleSetReactionPreset(_sid, chatId, args.message_id as number, args.preset);
     }
     return handleSetReaction(args as Parameters<typeof handleSetReaction>[0]);
-  }) as unknown as ActionHandler);
-  registerAction("acknowledge", handleAnswerCallbackQuery as unknown as ActionHandler);
-  registerAction("message/route", handleRouteMessage as unknown as ActionHandler, { governor: true });
+  }));
+  registerAction("acknowledge", toActionHandler(handleAnswerCallbackQuery));
+  registerAction("message/route", toActionHandler(handleRouteMessage), { governor: true });
 
   // profile/*, reminder/*, logging/*, commands/*
-  registerAction("profile/topic", handleSetTopic as unknown as ActionHandler);
-  registerAction("profile/save", handleSaveProfile as unknown as ActionHandler);
-  registerAction("profile/load", handleLoadProfile as unknown as ActionHandler);
-  registerAction("profile/import", handleImportProfile as unknown as ActionHandler);
-  registerAction("reminder/set", handleSetReminder as unknown as ActionHandler);
-  registerAction("reminder/cancel", handleCancelReminder as unknown as ActionHandler);
-  registerAction("reminder/list", handleListReminders as unknown as ActionHandler);
-  registerAction("profile/dequeue-default", handleSetDequeueDefault as unknown as ActionHandler);
-  registerAction("animation/default", handleSetDefaultAnimation as unknown as ActionHandler);
-  registerAction("logging/toggle", handleToggleLogging as unknown as ActionHandler);
+  registerAction("profile/topic", toActionHandler(handleSetTopic));
+  registerAction("profile/save", toActionHandler(handleSaveProfile));
+  registerAction("profile/load", toActionHandler(handleLoadProfile));
+  registerAction("profile/import", toActionHandler(handleImportProfile));
+  registerAction("reminder/set", toActionHandler(handleSetReminder));
+  registerAction("reminder/cancel", toActionHandler(handleCancelReminder));
+  registerAction("reminder/list", toActionHandler(handleListReminders));
+  registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
+  registerAction("animation/default", toActionHandler(handleSetDefaultAnimation));
+  registerAction("logging/toggle", toActionHandler(handleToggleLogging));
 
   // message/history
-  registerAction("message/history", ((args: Record<string, unknown>) => {
+  registerAction("message/history", toActionHandler((args: Record<string, unknown>) => {
     if (args.count !== undefined || args.before_id !== undefined) {
       return handleGetChatHistory(args as Parameters<typeof handleGetChatHistory>[0]);
     }
     return handleGetChat(args as Parameters<typeof handleGetChat>[0]);
-  }) as unknown as ActionHandler);
-  registerAction("message/get", handleGetMessage as unknown as ActionHandler);
+  }));
+  registerAction("message/get", toActionHandler(handleGetMessage));
 
   // chat/*
-  registerAction("chat/info", handleGetChat as unknown as ActionHandler);
+  registerAction("chat/info", toActionHandler(handleGetChat));
 
   // log/* (governor-only)
-  registerAction("log/get", handleGetLog as unknown as ActionHandler, { governor: true });
-  registerAction("log/list", handleListLogs as unknown as ActionHandler, { governor: true });
-  registerAction("log/roll", handleRollLog as unknown as ActionHandler, { governor: true });
-  registerAction("log/delete", handleDeleteLog as unknown as ActionHandler, { governor: true });
-  registerAction("log/debug", handleGetDebugLog as unknown as ActionHandler, { governor: true });
-  registerAction("log/trace", handleGetTraceLog as unknown as ActionHandler, { governor: true });
+  registerAction("log/get", toActionHandler(handleGetLog), { governor: true });
+  registerAction("log/list", toActionHandler(handleListLogs), { governor: true });
+  registerAction("log/roll", toActionHandler(handleRollLog), { governor: true });
+  registerAction("log/delete", toActionHandler(handleDeleteLog), { governor: true });
+  registerAction("log/debug", toActionHandler(handleGetDebugLog), { governor: true });
+  registerAction("log/trace", toActionHandler(handleGetTraceLog), { governor: true });
   // animation/*
-  registerAction("animation/cancel", handleCancelAnimation as unknown as ActionHandler);
+  registerAction("animation/cancel", toActionHandler(handleCancelAnimation));
 
   // standalone
-  registerAction("show-typing", handleShowTyping as unknown as ActionHandler);
+  registerAction("show-typing", toActionHandler(handleShowTyping));
   // confirm/* presets (preset buttons, caller only needs to supply `text`)
   const makeConfirmHandler = (yesText: string, noText: string, yesStyle?: "success" | "primary" | "danger") =>
-    ((args: Record<string, unknown>) => handleConfirm({
+    toActionHandler((args: Record<string, unknown>) => handleConfirm({
       text: (args.text as string | undefined) ?? "",
       yes_text: yesText,
       no_text: noText,
@@ -169,38 +169,38 @@ export function setupActionRegistry(): void {
       timeout_seconds: (args.timeout_seconds as number | undefined) ?? 600,
       ignore_pending: args.ignore_pending as boolean | undefined,
       token: args.token as number,
-    }, undefined as unknown as AbortSignal)) as unknown as ActionHandler;
+    }, undefined as unknown as AbortSignal));
   registerAction("confirm/ok", makeConfirmHandler("OK", "", "primary"));
   registerAction("confirm/ok-cancel", makeConfirmHandler("OK", "Cancel", "primary"));
   registerAction("confirm/yn", makeConfirmHandler("🟢 Yes", "🔴 No"));
-  registerAction("approve", handleApproveAgent as unknown as ActionHandler, { governor: true });
-  registerAction("shutdown", handleShutdown as unknown as ActionHandler, { governor: true });
-  registerAction("shutdown/warn", handleNotifyShutdownWarning as unknown as ActionHandler, { governor: true });
-  registerAction("transcribe", handleTranscribeVoice as unknown as ActionHandler);
-  registerAction("download", handleDownloadFile as unknown as ActionHandler);
-  registerAction("checklist/update", handleUpdateChecklist as unknown as ActionHandler);
-  registerAction("progress/update", handleUpdateProgress as unknown as ActionHandler);
-  registerAction("commands/set", ((args: Record<string, unknown>) =>
+  registerAction("approve", toActionHandler(handleApproveAgent), { governor: true });
+  registerAction("shutdown", toActionHandler(handleShutdown), { governor: true });
+  registerAction("shutdown/warn", toActionHandler(handleNotifyShutdownWarning), { governor: true });
+  registerAction("transcribe", toActionHandler(handleTranscribeVoice));
+  registerAction("download", toActionHandler(handleDownloadFile));
+  registerAction("checklist/update", toActionHandler(handleUpdateChecklist));
+  registerAction("progress/update", toActionHandler(handleUpdateProgress));
+  registerAction("commands/set", toActionHandler((args: Record<string, unknown>) =>
     handleSetCommands({
       commands: (args.commands ?? []) as Parameters<typeof handleSetCommands>[0]["commands"],
       scope: args.scope as "chat" | "default" | undefined,
       token: args.token as number,
     })
-  ) as unknown as ActionHandler);
+  ));
 
   // tutorial/*
-  registerAction("tutorial/on", ((args: Record<string, unknown>) => {
+  registerAction("tutorial/on", toActionHandler((args: Record<string, unknown>) => {
     const _sid = requireAuth(args.token as number);
     if (typeof _sid !== "number") return toError(_sid);
     setTutorialEnabled(_sid, true);
     return toResult({ message: "Tutorial mode enabled." });
-  }) as unknown as ActionHandler);
-  registerAction("tutorial/off", ((args: Record<string, unknown>) => {
+  }));
+  registerAction("tutorial/off", toActionHandler((args: Record<string, unknown>) => {
     const _sid = requireAuth(args.token as number);
     if (typeof _sid !== "number") return toError(_sid);
     setTutorialEnabled(_sid, false);
     return toResult({ message: "Tutorial mode disabled." });
-  }) as unknown as ActionHandler);
+  }));
 }
 
 const DESCRIPTION =

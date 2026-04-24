@@ -8,6 +8,15 @@
 
 export type ActionHandler = (args: Record<string, unknown>, extra: unknown) => Promise<unknown>;
 
+/**
+ * Consolidates the handler-to-ActionHandler cast to one location.
+ * Accepts any callable value; the single `as ActionHandler` cast replaces
+ * the per-registration `as unknown as ActionHandler` double-cast pattern.
+ */
+export function toActionHandler(fn: unknown): ActionHandler {
+  return fn as ActionHandler;
+}
+
 export interface ActionMeta {
   /** When true, the action is restricted to the governor session. */
   governor?: boolean;
