@@ -24,7 +24,7 @@ announce ready → dequeue (loop) → on message:
 
 1. **Reply via Telegram** for every substantive response — not the agent panel.
 2. **`confirm`** for yes/no · **`choose`** for multi-option — always buttons.
-3. **👀 is optional and always temporary.** The server automatically manages voice reactions (✍ while transcribing, 😴 if queued, 🫡 when dequeued) — no agent action needed for voice. You may set 👀 voluntarily on any message (`temporary: true`, omit `restore_emoji`). Skip 👀 on text messages entirely. See `docs/behavior.md` § *👀 rules* for the full table.
+3. **👀 is optional and always temporary.** The server automatically manages voice reactions (✍ while transcribing, 😴 if queued, 🫡 when dequeued) — no agent action needed for voice. You may set 👀 voluntarily on any message (`temporary: true`, omit `restore_emoji`). Skip 👀 on text messages entirely. See `docs/help/guide.md` § *👀 rules* for the full table.
 4. **`action(type: "show-typing")`** just before sending a reply — signals response is imminent, not a generic receipt.
 5. **Watch `pending`.** Non-zero means the operator sent more while you were working — check before acting.
 6. **Announce before major actions** (`send` or `send(type: "notification")`). Require `confirm` for destructive/irreversible ones.

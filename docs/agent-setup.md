@@ -121,7 +121,7 @@ action(type: "session/start") → drain (dequeue max_wait:0 until empty) → blo
 
 **There is no exit condition.** The agent loops until it receives a shutdown signal or `action(type: "session/close")` is called. The loop guard enforces this at the host level — if the host tries to stop the agent while a session is active, the guard blocks it.
 
-For full behavioral rules and tool usage patterns, see [`docs/behavior.md`](behavior.md).
+For full behavioral rules and tool usage patterns, see [`docs/help/guide.md`](help/guide.md).
 
 ---
 

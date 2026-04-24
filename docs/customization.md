@@ -99,7 +99,7 @@ Open your AI assistant (VS Code Copilot, Claude Desktop, etc.) and paste the con
 
 **Edit behaviors:**
 
-- "Add a new reaction convention to behavior.md: 🔥 for critical errors"
+- "Add a new reaction convention to docs/help/guide.md: 🔥 for critical errors"
 - "Update LOOP-PROMPT.md to poll every 60 seconds instead of 300"
 
 **Modify tools:**
@@ -130,7 +130,7 @@ Open your AI assistant (VS Code Copilot, Claude Desktop, etc.) and paste the con
 
 | File | What it controls |
 | ---- | ---------------- |
-| `behavior.md` | Agent personality, tool usage conventions, formatting rules. Also served as the `telegram-bridge-mcp://agent-guide` MCP resource. |
+| `docs/help/guide.md` | Agent personality, tool usage conventions, formatting rules. Also served as the `telegram-bridge-mcp://agent-guide` MCP resource. |
 | `formatting.md` | Markdown/HTML/MarkdownV2 reference for message formatting. Served as `telegram-bridge-mcp://formatting-guide`. |
 | `LOOP-PROMPT.md` | Your session startup script — the instructions you paste to begin a loop session. Customize this to change session behavior. |
 | `setup.md` | Bot creation and pairing walkthrough. Served as `telegram-bridge-mcp://setup-guide`. |
@@ -170,7 +170,7 @@ The loop prompt requires the assistant to send a **silent notification** before:
 - Editing any source file (`src/*.ts`, `src/tools/*.ts`)
 - Editing any test file (`*.test.ts`)
 - Editing config/build files (`package.json`, `tsconfig.json`, etc.)
-- Editing documentation (`behavior.md`, `setup.md`, `formatting.md`, `LOOP-PROMPT.md`, etc.)
+- Editing documentation (`docs/help/guide.md`, `setup.md`, `formatting.md`, `LOOP-PROMPT.md`, etc.)
 - Running commands (`pnpm build`, `pnpm test`, `git commit`, etc.)
 - Deleting any file
 
@@ -312,7 +312,7 @@ This is a success notification.
 
 ## Customizing Agent Behavior
 
-The assistant's personality and tool usage conventions are defined in `behavior.md`. You can modify this file to:
+The assistant's personality and tool usage conventions are defined in `docs/help/guide.md`. You can modify this file to:
 
 - Change reaction emoji conventions
 - Add new proactive notification rules
@@ -328,7 +328,7 @@ Always send photos with captions unless told otherwise.
 Default `parse_mode` is Markdown for captions.
 ```
 
-After editing `behavior.md`, the changes take effect immediately — the assistant re-reads the guide at the start of each session (or you can ask it to reload: _"Re-read the agent guide"_).
+After editing `docs/help/guide.md`, the changes take effect immediately — the assistant re-reads the guide at the start of each session (or you can ask it to reload: _"Re-read the agent guide"_).
 
 ---
 
@@ -371,9 +371,9 @@ Absolutely — fork the repo, make your changes, and publish your fork. Or submi
 
 ## Next Steps
 
-- Read `behavior.md` to understand the agent's personality and conventions
+- Read `docs/help/guide.md` to understand the agent's personality and conventions
 - Read `LOOP-PROMPT.md` to see the full session startup sequence
-- Try a simple edit: _"Add a new emoji reaction to behavior.md"_
+- Try a simple edit: _"Add a new emoji reaction to docs/help/guide.md"_
 - Experiment with voice commands on your phone
 
 ---

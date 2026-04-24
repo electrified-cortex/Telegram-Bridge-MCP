@@ -47,7 +47,7 @@ Tools are grouped by abstraction level.
 
 | Tool | Description |
 | --- | --- |
-| `get_agent_guide` | Returns behavior.md — the behavioral guide for this server. Call at session start. |
+| `get_agent_guide` | Returns help/guide.md — the behavioral guide for this server. Call at session start. |
 | `set_topic` | Sets a default title prepended to all outbound messages as `[Title]`. Useful when multiple MCP host instances share the same Telegram chat — each process labels its messages so you can tell which agent sent what. Pass empty string to clear. Scoped to this server process. |
 | `notify` | Sends a titled, severity-coded notification with optional body. Supports silent delivery. |
 | `ask` | Sends a question and blocks until the user replies with free text or voice. |
@@ -136,7 +136,7 @@ Five Markdown documents are exposed as MCP resources and via `get_agent_guide`:
 
 | URI | File | Description |
 | --- | --- | --- |
-| `telegram-bridge-mcp://agent-guide` | `behavior.md` | Behavioral guide: personality, tool conventions, formatting rules |
+| `telegram-bridge-mcp://agent-guide` | `help/guide.md` | Behavioral guide: personality, tool conventions, formatting rules |
 | `telegram-bridge-mcp://communication-guide` | `communication.md` | Tool selection, commit/push flow, loop rules, and multi-step task patterns |
 | `telegram-bridge-mcp://quick-reference` | `.github/instructions/telegram-communication.instructions.md` | Hard rules + tool selection table — compact injected rules card |
 | `telegram-bridge-mcp://setup-guide` | `setup.md` | Step-by-step setup guide for new users |
@@ -235,7 +235,7 @@ telegram-bridge-mcp/
 │       ├── dump_session_record.ts
 │       └── shutdown.ts
 ├── docs/
-│   ├── behavior.md               # Agent behavioral guide (also served as MCP resource)
+│   ├── help/guide.md             # Agent behavioral guide (also served as MCP resource)
 │   ├── communication.md          # Communication patterns (also served as MCP resource)
 │   ├── formatting.md             # Formatting reference (also served as MCP resource)
 │   ├── setup.md                  # Setup guide (also served as MCP resource)

@@ -147,7 +147,7 @@
 - Added `docs/migration-v5-to-v6.md` — complete v5→v6 tool mapping, before/after examples, breaking changes
 - Updated `README.md` to reflect 4-tool v6 architecture
 - Updated `docs/setup.md` to remove v5 tool name references
-- Updated `docs/behavior.md` and `LOOP-PROMPT.md` for v6 tool names
+- Updated `docs/help/guide.md` (renamed from `docs/behavior.md`) and `LOOP-PROMPT.md` for v6 tool names
 - Added `docs/git-index-safety.md` — GIT_INDEX_FILE contamination hazard, fix pattern (PowerShell and bash), and historical incident reference (task 10-429)
 
 ## Deprecated

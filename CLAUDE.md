@@ -4,7 +4,7 @@ See `.github/copilot-instructions.md` for changelog and merge policy.
 
 ## Agent Behavioral Guide
 
-See [`docs/behavior.md`](docs/behavior.md) for the full agent behavioral guide — dequeue loop pattern, session startup, communication style, multi-session protocol, and shutdown flow.
+See [`docs/help/guide.md`](docs/help/guide.md) for the full agent behavioral guide — dequeue loop pattern, session startup, communication style, multi-session protocol, and shutdown flow.
 
 ## Loop Guard Hooks
 

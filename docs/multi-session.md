@@ -8,7 +8,7 @@
 >
 > **Current documentation:**
 > - [multi-session-protocol.md](multi-session-protocol.md) — authoritative routing protocol spec
-> - [behavior.md](behavior.md) — agent behavioral guidelines
+> - [guide.md](help/guide.md) — agent behavioral guidelines
 > - [multi-session-flow.md](multi-session-flow.md) — sequence diagrams and flow reference
 >
 > This file is retained as a historical design record only.
