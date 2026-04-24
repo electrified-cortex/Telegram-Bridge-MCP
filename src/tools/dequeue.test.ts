@@ -1079,17 +1079,20 @@ describe("dequeue tool", () => {
       expect(data.hint).toBeUndefined();
     });
 
-    it("does not include hint when batch is text-only even if pending voice exists", async () => {
+    it("does not include voice hint when batch is text-only even if pending voice exists", async () => {
       const evt = makeEvent(103, "text only");
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
       mocks.pendingCount.mockReturnValue(1);
       mocks.peekSessionCategories.mockReturnValue({ voice: 3 });
       const result = await call({ timeout: 0, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
-      expect(data.hint).toBeUndefined();
+      // No voice backlog hint, but pending nudge IS present (pending=1)
+      expect(data.hint).toBeDefined();
+      expect(data.hint).not.toContain("voice msg pending");
+      expect(data.hint).toContain("pending=1");
     });
 
-    it("does not include hint when batch has voice but only text is pending (no voice key)", async () => {
+    it("does not include voice hint when batch has voice but only text is pending (no voice key)", async () => {
       const evt = makeVoiceEvent(104);
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
       mocks.pendingCount.mockReturnValue(2);
@@ -1097,7 +1100,10 @@ describe("dequeue tool", () => {
       mocks.peekSessionCategories.mockReturnValue({ text: 2 });
       const result = await call({ timeout: 0, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
-      expect(data.hint).toBeUndefined();
+      // No voice backlog hint, but pending nudge IS present (pending=2)
+      expect(data.hint).toBeDefined();
+      expect(data.hint).not.toContain("voice msg pending");
+      expect(data.hint).toContain("pending=2");
     });
 
     it("cascade: consecutive dequeues in a voice backlog each produce a hint", async () => {
@@ -1112,6 +1118,7 @@ describe("dequeue tool", () => {
       const data1 = parseResult<DequeueResult>(result1);
       expect(data1.hint).toBeDefined();
       expect(data1.hint).toContain("1 voice msg pending");
+      expect(data1.hint).toContain("pending=1");
 
       // Second dequeue: returns v2, 0 voice pending (backlog exhausted)
       mocks.dequeueBatch.mockReturnValueOnce([v2]);
@@ -1120,6 +1127,58 @@ describe("dequeue tool", () => {
       const result2 = await call({ timeout: 0, token: 1_123_456 });
       const data2 = parseResult<DequeueResult>(result2);
       expect(data2.hint).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
+  // Pending-queue nudge hint
+  // =========================================================================
+
+  describe("pending-queue nudge hint", () => {
+    it("does not include pending nudge hint when pending is 0", async () => {
+      const evt = makeEvent(200, "no backlog");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(0);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.pending).toBeUndefined();
+      // hint should not contain a pending nudge; it may be undefined or contain
+      // other hints (e.g. silence/voice) — just confirm no pending nudge text
+      expect(data.hint ?? "").not.toContain("pending=");
+    });
+
+    it("includes pending nudge hint with correct N when pending > 0", async () => {
+      // peekSessionCategories is not mocked here: the voice hint requires a voice
+      // event in the batch; this is a text event so the voice hint cannot fire.
+      const evt = makeEvent(201, "has backlog");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(2);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.pending).toBe(2);
+      expect(data.hint).toBeDefined();
+      expect(data.hint).toContain("pending=2");
+      expect(data.hint).toContain("processing preset");
+    });
+
+    it("pending nudge hint reflects the exact pending count", async () => {
+      const evt = makeEvent(202, "large backlog");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(7);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toContain("pending=7");
+    });
+
+    it("pending nudge coexists with voice backlog hint in hint string", async () => {
+      const evt = makeVoiceEvent(203);
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(3);
+      mocks.peekSessionCategories.mockReturnValue({ voice: 3 });
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toContain("voice msg pending");
+      expect(data.hint).toContain("pending=3");
     });
   });
 

@@ -568,6 +568,18 @@ When `sessions_active > 1`, a parallel agent may be working on related tasks. Ch
 
 ---
 
+## Server message severity tiers
+
+The server communicates with agents through two distinct channels with different interruption weights:
+
+**Service messages** are interruption-worthy events injected directly into the `dequeue` stream as first-class update objects. Reserve service messages for situations that require the agent to change behavior immediately and cannot be ignored: for example, a `shutdown` event (the server is exiting — stop the dequeue loop, wait for restart) or a `forced_stop` recovery event (the previous session ended uncleanly — take corrective action before resuming). Service messages break normal flow by design.
+
+**Envelope hints** are lightweight, in-band nudges attached to an existing dequeue response as a `hint` string. They are informational and non-disruptive — the agent processes its update normally and may act on the hint at its own discretion. Examples: a pending-backlog reaction suggestion (`pending=N; react with processing preset to signal you see the backlog`) appended when `pending > 0`, or a voice-backlog note advising the agent that additional voice messages are queued. Envelope hints are space-joined to the `hint` field of the response envelope; they do not add new top-level fields and do not interrupt the current task.
+
+When adding a new server-to-agent signal, use this rule: if missing the signal could cause data loss, user-visible failure, or require operator intervention, it is a service message. If it is a suggestion that helps efficiency or visibility but can safely be ignored, it is an envelope hint.
+
+---
+
 ## Loop Guard: Keeping Agents Alive
 
 ### Why the dequeue loop must never exit

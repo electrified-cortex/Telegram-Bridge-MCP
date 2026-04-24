@@ -196,6 +196,11 @@ export function register(server: McpServer) {
         if (silenceHint !== undefined) hints.push(silenceHint);
         const voiceHint = buildVoiceBacklogHint(events, sid);
         if (voiceHint !== undefined) hints.push(voiceHint);
+        // Pending-queue nudge: when more messages are waiting, suggest the
+        // processing preset so the operator knows the agent sees the backlog.
+        // TODO: honor a profile flag (e.g. ProfileData.suppress_pending_hint)
+        // to let agents opt out once that flag is introduced in profile-store.ts.
+        if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
         if (hints.length > 0) result.hint = hints.join(" ");
         return result;
       }
