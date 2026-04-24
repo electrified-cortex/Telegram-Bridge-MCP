@@ -22,9 +22,13 @@ Add two new reminder actions:
 - `action(type: "reminder/enable", id: "<reminder-id>")` — re-activates a disabled reminder.
 
 `sleep` variant (distinct from disable):
-- `action(type: "reminder/sleep", id: "<reminder-id>", until: "<timestamp>" or duration_seconds: N)` — auto-re-enable at some point. Good for "quiet until next session" or "quiet for 1h."
-- **Key semantic:** sleep is TRANSIENT — the sleep state does NOT persist across session end or profile-save. Profile stores reminder config only; sleep status is lost on save. Contrast with `disable` which persists.
-- Operator 2026-04-24: "the nice thing about sleep is that information wouldn't get stored. If they saved their profile, they wouldn't lose their reminder; that sleep info just wouldn't go along with it."
+
+- `action(type: "reminder/sleep", id: "<reminder-id>", until: "<ISO-8601 datetime>")` — sleep until the given datetime. On every reminder tick, the bridge checks `now >= until`; if still in the future, skip firing. When `now >= until`, resume normal firing.
+- **Sleep value is a datetime, not a duration.** Durations would keep running post-compaction; a datetime is the cleanest check.
+- To wake early: `reminder/sleep` again with a past datetime (sets sleep to "already expired" — reminder resumes).
+- "Forever" = pass a far-future date (e.g., year 9999). No special sentinel values needed.
+- **Key semantic:** sleep is TRANSIENT — the sleep state does NOT persist across session end or `profile/save`. Profile stores reminder config (text, interval, recurring) only; the `until` field is memory-only. Operator 2026-04-24: "the nice thing about sleep is that information wouldn't get stored; if they saved their profile, they wouldn't lose their reminder, and that sleep info just wouldn't go along with it."
+- Contrast with `disable`, which persists across session + profile-save.
 
 ## Requirements
 
