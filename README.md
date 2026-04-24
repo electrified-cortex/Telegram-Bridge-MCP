@@ -163,9 +163,9 @@ See [`docs/setup.md`](docs/setup.md) for per-client config snippets (VS Code, Cl
 
 ---
 
-## Tools — The v6 API
+## Tools — The v7 API
 
-Version 6 consolidates the entire API into **4 tools** with type-based routing. Call `help(topic?)` at any time for interactive documentation discovery.
+Version 7 consolidates the entire API into **4 tools** with type-based routing. Call `help(topic?)` at any time for interactive documentation discovery.
 
 ### `send` — Outbound Messaging
 

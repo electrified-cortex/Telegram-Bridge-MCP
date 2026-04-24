@@ -189,7 +189,7 @@ export function setupActionRegistry(): void {
 }
 
 const DESCRIPTION =
-  "Universal action dispatcher for v6 API. Uses `type` as a RESTful path " +
+  "Universal action dispatcher for v7 API. Uses `type` as a RESTful path " +
   "to route to existing handler logic, supporting progressive discovery. " +
   "Omit `type` to list all categories. Pass a category (e.g. `session`) " +
   "to list sub-paths. Pass a full path (e.g. `session/list`) to execute. " +
