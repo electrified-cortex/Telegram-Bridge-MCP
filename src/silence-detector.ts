@@ -100,6 +100,8 @@ export function startSilenceDetector(intervalMs = CHECK_INTERVAL_S * 1000): void
 
 /**
  * Stop the silence detector background timer and clear per-session rung state.
+ * Opt-out registrations (`_optedOut`) are preserved — governor opt-out decisions
+ * survive timer restarts by design.
  */
 export function stopSilenceDetector(): void {
   if (_timer !== undefined) {

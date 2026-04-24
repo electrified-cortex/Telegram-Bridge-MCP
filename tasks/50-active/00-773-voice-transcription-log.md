@@ -4,14 +4,14 @@
 
 A voice message arriving in the bridge MUST produce two separate entries in the NDJSON dump log, in this order:
 
-**1. Arrival event — appended immediately when the voice message enters the queue.**
+### 1. Arrival event — appended immediately when the voice message enters the queue.
 
 - `event: "message"`
 - `content.type: "voice"`
 - Includes `file_id` and the Telegram message `id`
 - MUST NOT wait for transcription. The arrival event is written before the transcription call even starts.
 
-**2. Transcription event — appended after `patchVoiceText` completes.**
+### 2. Transcription event — appended after `patchVoiceText` completes.
 
 On success:
 - `event: "transcription"`

@@ -123,9 +123,13 @@ async function _actualFlush(): Promise<void> {
     if (line === undefined) break;
     lines.push(line);
   }
-  ensureLogsDir();
-  const filePath = currentFilePath();
-  await appendFile(filePath, lines.join(''), 'utf-8').catch(() => { /* best-effort */ });
+  try {
+    ensureLogsDir();
+    const filePath = currentFilePath();
+    await appendFile(filePath, lines.join(""), "utf-8");
+  } catch {
+    // best-effort
+  }
 }
 
 /**
