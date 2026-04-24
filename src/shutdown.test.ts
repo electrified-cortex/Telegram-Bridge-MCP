@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   flushCurrentLog: vi.fn((): Promise<void> => Promise.resolve()),
   isLoggingEnabled: vi.fn((): boolean => true),
   rollLog: vi.fn((): string | null => null),
+  closeSessionById: vi.fn((): { closed: boolean; sid: number } => ({ closed: true, sid: 0 })),
 }));
 
 vi.mock("./telegram.js", () => ({
@@ -50,7 +51,19 @@ vi.mock("./local-log.js", () => ({
   rollLog: mocks.rollLog,
 }));
 
-import { clearCommandsOnShutdown, elegantShutdown, setShutdownDumpHook } from "./shutdown.js";
+vi.mock("./session-teardown.js", () => ({
+  closeSessionById: mocks.closeSessionById,
+}));
+
+import {
+  clearCommandsOnShutdown,
+  elegantShutdown,
+  setShutdownDumpHook,
+  postShutdownAnnouncement,
+  postSessionClosedLine,
+  postSessionSummaryLine,
+  postGravestone,
+} from "./shutdown.js";
 
 describe("shutdown", () => {
   beforeEach(() => {
@@ -93,6 +106,71 @@ describe("shutdown", () => {
       [],
       { scope: { type: "default" } },
     );
+  });
+});
+
+describe("shutdown announcement helpers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveChat.mockReturnValue(123);
+  });
+
+  it("postShutdownAnnouncement sends operator cause with session count", async () => {
+    await postShutdownAnnouncement("operator", 3);
+    expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(1);
+    const text = mocks.sendServiceMessage.mock.calls[0]?.[0] as string;
+    expect(text).toContain("operator /shutdown");
+    expect(text).toContain("closing 3 active sessions");
+    expect(text).toContain("pnpm start");
+  });
+
+  it("postShutdownAnnouncement uses singular for 1 session", async () => {
+    await postShutdownAnnouncement("agent", 1);
+    const text = mocks.sendServiceMessage.mock.calls[0]?.[0] as string;
+    expect(text).toContain("closing 1 active session");
+    // Guard against plural regression: must say "1 active session" not "1 active sessions"
+    expect(text).not.toContain("active sessions,");
+  });
+
+  it("postShutdownAnnouncement mentions no active sessions when count is 0", async () => {
+    await postShutdownAnnouncement("operator", 0);
+    const text = mocks.sendServiceMessage.mock.calls[0]?.[0] as string;
+    expect(text).toContain("no active sessions");
+  });
+
+  it("postShutdownAnnouncement swallows Telegram errors", async () => {
+    mocks.sendServiceMessage.mockRejectedValue(new Error("network error"));
+    await expect(postShutdownAnnouncement("agent", 2)).resolves.toBeUndefined();
+  });
+
+  it("postSessionClosedLine sends the session name and SID", async () => {
+    await postSessionClosedLine("Worker 1", 5);
+    const text = mocks.sendServiceMessage.mock.calls[0]?.[0] as string;
+    expect(text).toContain("Worker 1");
+    expect(text).toContain("SID 5");
+  });
+
+  it("postSessionClosedLine swallows Telegram errors", async () => {
+    mocks.sendServiceMessage.mockRejectedValue(new Error("timeout"));
+    await expect(postSessionClosedLine("A", 1)).resolves.toBeUndefined();
+  });
+
+  it("postSessionSummaryLine includes the count", async () => {
+    await postSessionSummaryLine(12);
+    const text = mocks.sendServiceMessage.mock.calls[0]?.[0] as string;
+    expect(text).toContain("12");
+    expect(text).toContain("sessions closed");
+  });
+
+  it("postGravestone sends the offline marker", async () => {
+    await postGravestone();
+    const text = mocks.sendServiceMessage.mock.calls[0]?.[0] as string;
+    expect(text).toContain("Bridge offline");
+  });
+
+  it("postGravestone swallows Telegram errors", async () => {
+    mocks.sendServiceMessage.mockRejectedValue(new Error("timeout"));
+    await expect(postGravestone()).resolves.toBeUndefined();
   });
 });
 
@@ -248,6 +326,113 @@ describe("elegantShutdown", () => {
     mocks.getSessionAnnouncementMessage.mockReturnValue(888);
     mocks.unpinChatMessage.mockRejectedValue(new Error("unpin failed"));
     await expect(elegantShutdown()).resolves.toBeUndefined();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("sends pre-shutdown announcement before poller stops", async () => {
+    // stopPoller is called after announcement — verify announcement fires
+    mocks.listSessions.mockReturnValue([]);
+    await elegantShutdown("operator");
+    const calls = mocks.sendServiceMessage.mock.calls as Array<[string]>;
+    const announcement = calls.find(([text]) => text.includes("Bridge shutting down"));
+    expect(announcement).toBeDefined();
+    expect(announcement![0]).toContain("operator /shutdown");
+  });
+
+  it("sends gravestone after all sessions closed", async () => {
+    mocks.listSessions.mockReturnValue([]);
+    await elegantShutdown();
+    const calls = mocks.sendServiceMessage.mock.calls as Array<[string]>;
+    const gravestone = calls.find(([text]) => text.includes("Bridge offline"));
+    expect(gravestone).toBeDefined();
+  });
+
+  it("continues shutdown if pre-shutdown announcement fails", async () => {
+    mocks.listSessions.mockReturnValue([]);
+    // First sendServiceMessage call is the announcement — make it fail
+    mocks.sendServiceMessage.mockRejectedValueOnce(new Error("Telegram unreachable"));
+    await expect(elegantShutdown()).resolves.toBeUndefined();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("continues shutdown if gravestone fails", async () => {
+    mocks.listSessions.mockReturnValue([]);
+    // The gravestone is sent after the announcement and before "Shutting down…"
+    // Make all sendServiceMessage calls fail
+    mocks.sendServiceMessage.mockRejectedValue(new Error("Telegram unreachable"));
+    await expect(elegantShutdown()).resolves.toBeUndefined();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression test — AC5: 4 chat-visible messages in order for 2 fake sessions
+// ---------------------------------------------------------------------------
+
+describe("elegantShutdown — chat announcement sequence (AC5)", () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.setMyCommands.mockResolvedValue(true);
+    mocks.resolveChat.mockReturnValue(123);
+    mocks.getSessionLogMode.mockReturnValue(null);
+    mocks.isLoggingEnabled.mockReturnValue(false);  // skip log-roll noise
+    mocks.rollLog.mockReturnValue(null);
+    exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+  });
+
+  it("emits announcement → session-1-closed → session-2-closed → gravestone in order", async () => {
+    const session1 = { sid: 1, name: "Overseer" };
+    const session2 = { sid: 2, name: "Worker" };
+
+    // call 1: snapshot → [s1, s2]
+    // call 2: wait-loop while-check → [] (exit loop immediately — sessions self-closed)
+    // call 3: force-close listSessions() → [] (nothing left to force-close)
+    // Per-session closed lines come from the gracefully-closed set (snapshot minus remaining).
+    mocks.listSessions
+      .mockReturnValueOnce([session1, session2])  // snapshot
+      .mockReturnValueOnce([])                     // wait-loop exits immediately (all self-closed)
+      .mockReturnValueOnce([]);                    // force-close query: nothing remaining
+
+    await elegantShutdown("operator");
+
+    // Collect only the chat-visible sendServiceMessage calls (not the "⛔️ Shutting down…" one)
+    const chatCalls = (mocks.sendServiceMessage.mock.calls as Array<[string]>).map(([t]) => t);
+
+    // The 4 expected chat-visible messages (in order):
+    // 1. Pre-shutdown announcement
+    // 2. Session 1 closed line
+    // 3. Session 2 closed line
+    // 4. Gravestone
+    // (The "⛔️ Shutting down…" call also exists but is separate and order-preserved after gravestone)
+
+    const announcementIdx = chatCalls.findIndex((t) => t.includes("Bridge shutting down"));
+    const session1Idx     = chatCalls.findIndex((t) => t.includes("Overseer") && t.includes("SID 1"));
+    const session2Idx     = chatCalls.findIndex((t) => t.includes("Worker") && t.includes("SID 2"));
+    const gravestoneIdx   = chatCalls.findIndex((t) => t.includes("Bridge offline"));
+
+    expect(announcementIdx).toBeGreaterThanOrEqual(0);
+    expect(session1Idx).toBeGreaterThanOrEqual(0);
+    expect(session2Idx).toBeGreaterThanOrEqual(0);
+    expect(gravestoneIdx).toBeGreaterThanOrEqual(0);
+
+    // Order: announcement < session1 < session2 < gravestone
+    expect(announcementIdx).toBeLessThan(session1Idx);
+    expect(session1Idx).toBeLessThan(session2Idx);
+    expect(session2Idx).toBeLessThan(gravestoneIdx);
+
+    // Announcement content: operator cause, session count, restart hint
+    const announcementText = chatCalls[announcementIdx];
+    expect(announcementText).toContain("operator /shutdown");
+    expect(announcementText).toContain("closing 2 active sessions");
+    expect(announcementText).toContain("pnpm start");
+
+    // Process exits cleanly
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
 });

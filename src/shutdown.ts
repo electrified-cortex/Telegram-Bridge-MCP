@@ -7,6 +7,25 @@ import { closeSessionById } from "./session-teardown.js";
 import { getSessionLogMode } from "./config.js";
 import { flushCurrentLog, isLoggingEnabled, rollLog } from "./local-log.js";
 
+// ---------------------------------------------------------------------------
+// Shutdown cause
+// ---------------------------------------------------------------------------
+
+/**
+ * Who or what triggered the shutdown. Used in the operator-visible chat announcement.
+ *
+ * - `"operator"` — operator typed `/shutdown` in Telegram chat
+ * - `"agent"`    — MCP `shutdown` tool was called by an agent
+ *
+ * Note: `"signal"` (OS SIGTERM/SIGINT) and `"crash"` (uncaught exception recovery)
+ * are reserved for future wiring — the SIGINT/SIGTERM handler in `index.ts` currently
+ * uses its own inline sequence and does not call `elegantShutdown`.
+ */
+export type ShutdownCause = "operator" | "agent";
+
+/** When session count exceeds this, emit one summary line instead of one line per session. */
+const SESSION_SUMMARY_THRESHOLD = 10;
+
 /** Hard-stop guard: force process exit if graceful shutdown stalls. */
 const HARD_EXIT_TIMEOUT_MS = 20_000;
 
@@ -32,6 +51,69 @@ export async function clearCommandsOnShutdown(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Chat-visible shutdown announcement helpers
+// ---------------------------------------------------------------------------
+
+function causeLabel(cause: ShutdownCause): string {
+  switch (cause) {
+    case "operator": return "operator /shutdown";
+    case "agent":    return "agent shutdown tool";
+  }
+}
+
+/**
+ * Post the pre-shutdown announcement to the Telegram chat.
+ * Never throws — errors are logged to stderr and ignored.
+ */
+export async function postShutdownAnnouncement(
+  cause: ShutdownCause,
+  sessionCount: number,
+): Promise<void> {
+  const who = causeLabel(cause);
+  const sessionPart = sessionCount > 0
+    ? `closing ${sessionCount} active session${sessionCount === 1 ? "" : "s"}, invalidating tokens`
+    : "no active sessions";
+  const text =
+    `⛔ *Bridge shutting down*\n` +
+    `Initiated by: ${who}\n` +
+    `Action: ${sessionPart}\n` +
+    `Next state: bridge offline until \`pnpm start\``;
+  await sendServiceMessage(text).catch((err: unknown) => {
+    process.stderr.write(`[shutdown] announcement failed (non-blocking): ${String(err)}\n`);
+  });
+}
+
+/**
+ * Post a single per-session closure line to the Telegram chat.
+ * Never throws — errors are logged to stderr and ignored.
+ */
+export async function postSessionClosedLine(name: string, sid: number): Promise<void> {
+  await sendServiceMessage(`↳ Session ${name} (SID ${sid}) closed`).catch((err: unknown) => {
+    process.stderr.write(`[shutdown] session-closed line failed (non-blocking): ${String(err)}\n`);
+  });
+}
+
+/**
+ * Post a summary line when too many sessions are closing to list individually.
+ * Never throws — errors are logged to stderr and ignored.
+ */
+export async function postSessionSummaryLine(count: number): Promise<void> {
+  await sendServiceMessage(`↳ ${count} sessions closed`).catch((err: unknown) => {
+    process.stderr.write(`[shutdown] session-summary line failed (non-blocking): ${String(err)}\n`);
+  });
+}
+
+/**
+ * Post the final "bridge offline" gravestone to the Telegram chat.
+ * Never throws — errors are logged to stderr and ignored.
+ */
+export async function postGravestone(): Promise<void> {
+  await sendServiceMessage("🪦 Bridge offline").catch((err: unknown) => {
+    process.stderr.write(`[shutdown] gravestone failed (non-blocking): ${String(err)}\n`);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Elegant shutdown sequence
 // ---------------------------------------------------------------------------
 
@@ -46,17 +128,26 @@ export function setShutdownDumpHook(hook: () => Promise<void>): void {
 /**
  * Graceful shutdown: flush all session queues, notify agents, then exit.
  *
- * 1. Stop the poller (no new updates)
- * 2. [active sessions only] Wait for poll loop exit and drain pending updates
- * 4. Deliver a shutdown service message to every active session
- * 5. Wake up all blocked dequeue calls so agents receive it
- * 6. [active sessions only] Brief delay so MCP responses transmit through stdio
- * 7. Send operator notification
- * 8. Flush and roll local logs
- * 9. Clear command menus
- * 10. process.exit(0)
+ * 1.  Post a chat-visible pre-shutdown announcement (who/what/next-state)
+ * 2.  Stop the poller (no new updates)
+ * 3.  [active sessions only] Wait for poll loop exit and drain pending updates
+ * 4.  Deliver a shutdown service_message to every active session (agent-facing)
+ * 5.  Wake up all blocked dequeue calls so agents receive it
+ * 6.  Unpin all session announcement messages
+ * 7.  [active sessions only] Wait up to 10 s for sessions to self-close, then force-close
+ *     — chat-visible line per session (or one summary when >10 sessions)
+ * 8.  Post gravestone: "bridge offline" chat line
+ * 9.  Send operator notification ("⛔️ Shutting down…") — existing behaviour preserved
+ * 10. Flush and roll local logs
+ * 11. Clear command menus
+ * 12. process.exit(0)
+ *
+ * All Telegram chat calls (steps 1, 7, 8) are fire-and-forget: errors are
+ * logged to stderr but never block the shutdown sequence.
+ *
+ * @param cause  Who triggered the shutdown. Defaults to `"agent"`.
  */
-export async function elegantShutdown(): Promise<never> {
+export async function elegantShutdown(cause: ShutdownCause = "agent"): Promise<never> {
   if (_shutdownInProgress) {
     process.stderr.write("[shutdown] already in progress — ignoring duplicate request\n");
     return new Promise<never>(() => {});
@@ -73,11 +164,14 @@ export async function elegantShutdown(): Promise<never> {
   hardExitTimer.unref();
 
   try {
-  stopPoller();
-
   // Snapshot sessions once so this shutdown run uses a consistent view.
   const sessions = listSessions();
   const hasActiveSessions = sessions.length > 0;
+
+  // Step 1: pre-shutdown chat announcement (before tearing anything down)
+  await postShutdownAnnouncement(cause, sessions.length);
+
+  stopPoller();
 
   if (hasActiveSessions) {
     // Finish in-flight transcriptions and drain last-mile updates.
@@ -89,14 +183,14 @@ export async function elegantShutdown(): Promise<never> {
     await drainPendingUpdates();
   }
 
-  // Notify all active sessions via their DM queues
+  // Step 4: Notify all active sessions via their DM queues (agent-facing service_message)
   for (const s of sessions) {
     deliverServiceMessage(s.sid, SERVICE_MESSAGES.SHUTDOWN);
   }
-  // Wake up any agents blocked in dequeue
+  // Step 5: Wake up any agents blocked in dequeue
   notifySessionWaiters();
 
-  // Unpin all session announcement messages (best-effort)
+  // Step 6: Unpin all session announcement messages (best-effort)
   const chatId = resolveChat();
   if (typeof chatId === "number") {
     const api = getApi();
@@ -114,16 +208,40 @@ export async function elegantShutdown(): Promise<never> {
     while (Date.now() < shutdownDeadline && listSessions().length > 0) {
       await new Promise<void>((r) => setTimeout(r, 500));
     }
-    // Force-close any sessions that did not close themselves
-    for (const s of listSessions()) {
+
+    // Step 7: Emit chat lines for closed sessions and force-close any that remain.
+    const remaining = listSessions();
+    const useSummary = sessions.length > SESSION_SUMMARY_THRESHOLD;
+
+    // Determine which sessions self-closed gracefully (original snapshot minus remaining).
+    const remainingSids = new Set(remaining.map(s => s.sid));
+    const gracefullyClosed = sessions.filter(s => !remainingSids.has(s.sid));
+
+    if (useSummary) {
+      // Emit one summary line covering all sessions (self-closed + force-closed).
+      await postSessionSummaryLine(sessions.length);
+    } else {
+      // Emit per-session lines: graceful closes first (as they happened), then force-closes.
+      for (const s of gracefullyClosed) {
+        await postSessionClosedLine(s.name, s.sid);
+      }
+    }
+
+    for (const s of remaining) {
       closeSessionById(s.sid);
+      if (!useSummary) {
+        await postSessionClosedLine(s.name, s.sid);
+      }
     }
   }
 
-  // Operator-facing notification
+  // Step 8: Gravestone — bridge is now offline
+  await postGravestone();
+
+  // Step 9: Operator-facing notification (preserved from original behaviour)
   await sendServiceMessage("⛔️ Shutting down…").catch(() => {});
 
-  // Flush buffered local-log writes before any roll/dump logic.
+  // Step 10: Flush buffered local-log writes before any roll/dump logic.
   if (isLoggingEnabled()) {
     try { await flushCurrentLog(); } catch { /* best effort */ }
   }
@@ -144,7 +262,7 @@ export async function elegantShutdown(): Promise<never> {
     } catch { /* best effort */ }
   }
 
-  // Clear command menus and exit
+  // Step 11: Clear command menus and exit
   await clearCommandsOnShutdown();
   process.exit(0);
   } finally {

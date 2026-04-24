@@ -23,7 +23,7 @@ export function handleShutdown({ force }: { force?: boolean }) {
   const activeSessions = listSessions();
   if (activeSessions.length === 0) {
     const result = toResult({ shutting_down: true, pending_at_shutdown: pendingCount() });
-    setImmediate(() => { void elegantShutdown(); });
+    setImmediate(() => { void elegantShutdown("agent"); });
     return result;
   }
 
@@ -53,7 +53,7 @@ export function handleShutdown({ force }: { force?: boolean }) {
   // messages are abandoned (not drained), so callers should not treat this as
   // a delivery confirmation.
   const result = toResult({ shutting_down: true, pending_at_shutdown: pending });
-  setImmediate(() => { void elegantShutdown(); });
+  setImmediate(() => { void elegantShutdown("agent"); });
   return result;
 }
 
