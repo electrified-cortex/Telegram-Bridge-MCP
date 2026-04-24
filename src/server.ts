@@ -98,6 +98,7 @@ export function dispatchBehaviorTracking(
     btRecordSend(sid);
   } else if (name === "action" && typeof cleanArgs.type === "string" && cleanArgs.type.startsWith("confirm/")) {
     btRecordButtonUse(sid);
+    recordPresenceSignal(sid);
   } else if (name === "help" && cleanArgs.topic === "send") {
     btRecordButtonUse(sid);
   } else if (name === "dequeue") {
