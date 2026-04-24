@@ -17,6 +17,7 @@ import {
   COLOR_PALETTE,
   setDequeueIdle,
   getIdleSessions,
+  getOrInitHintsSeen,
 } from "./session-manager.js";
 
 interface SessionWithoutSuffix {
@@ -524,6 +525,33 @@ describe("getAvailableColors", () => {
 // ---------------------------------------------------------------------------
 // setDequeueIdle / getIdleSessions
 // ---------------------------------------------------------------------------
+
+describe("getOrInitHintsSeen", () => {
+  it("returns null for nonexistent SID", () => {
+    expect(getOrInitHintsSeen(9999)).toBeNull();
+  });
+
+  it("returns a Set for valid SID", () => {
+    const { sid } = createSession("test");
+    const seen = getOrInitHintsSeen(sid);
+    expect(seen).toBeInstanceOf(Set);
+  });
+
+  it("returns the SAME Set instance on repeated calls", () => {
+    const { sid } = createSession("test");
+    const first = getOrInitHintsSeen(sid);
+    const second = getOrInitHintsSeen(sid);
+    expect(first).toBe(second);
+  });
+
+  it("mutations to the returned Set are visible on next call", () => {
+    const { sid } = createSession("test");
+    const seen = getOrInitHintsSeen(sid);
+    seen!.add("send:choice");
+    const again = getOrInitHintsSeen(sid);
+    expect(again!.has("send:choice")).toBe(true);
+  });
+});
 
 describe("setDequeueIdle / getIdleSessions", () => {
   it("getIdleSessions returns empty when no sessions are idle", () => {

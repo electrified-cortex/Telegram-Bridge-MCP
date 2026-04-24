@@ -189,12 +189,18 @@ export function setupActionRegistry(): void {
   ));
 
   // tutorial/*
+  // TODO(10-725): This handler is currently a no-op. setTutorialEnabled writes
+  // session.tutorialEnabled, but first-use-hints.ts no longer reads isTutorialEnabled.
+  // Remove this handler when 10-725 completes tutorial mode removal.
   registerAction("tutorial/on", toActionHandler((args: Record<string, unknown>) => {
     const _sid = requireAuth(args.token as number);
     if (typeof _sid !== "number") return toError(_sid);
     setTutorialEnabled(_sid, true);
     return toResult({ message: "Tutorial mode enabled." });
   }));
+  // TODO(10-725): This handler is currently a no-op. setTutorialEnabled writes
+  // session.tutorialEnabled, but first-use-hints.ts no longer reads isTutorialEnabled.
+  // Remove this handler when 10-725 completes tutorial mode removal.
   registerAction("tutorial/off", toActionHandler((args: Record<string, unknown>) => {
     const _sid = requireAuth(args.token as number);
     if (typeof _sid !== "number") return toError(_sid);

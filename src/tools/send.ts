@@ -12,6 +12,7 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { findUnrenderableChars } from "../unrenderable-chars.js";
 import { deliverServiceMessage } from "../session-queue.js";
+import { getFirstUseHint, appendHintToResult } from "../first-use-hints.js";
 // Type-routing handlers (v6 Phase 2)
 import { handleSendFile } from "./send_file.js";
 import { handleNotify } from "./notify.js";
@@ -422,16 +423,19 @@ export function register(server: McpServer) {
         case "choice":
           if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
           if (!args.options?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "choice" requires an "options" array.', hint: "Call help(topic: 'send') for the required params for this type." });
-          return handleSendChoice({
-            text,
-            options: args.options,
-            columns: args.columns,
-            parse_mode: args.parse_mode,
-            disable_notification: args.disable_notification,
-            reply_to: args.reply_to,
-            ignore_parity: args.ignore_parity,
-            token: args.token,
-          });
+          return appendHintToResult(
+            await handleSendChoice({
+              text,
+              options: args.options,
+              columns: args.columns,
+              parse_mode: args.parse_mode,
+              disable_notification: args.disable_notification,
+              reply_to: args.reply_to,
+              ignore_parity: args.ignore_parity,
+              token: args.token,
+            }),
+            getFirstUseHint(_sid, "send:choice"),
+          );
 
         case "dm": {
           const targetA = args.target_sid;
@@ -447,44 +451,56 @@ export function register(server: McpServer) {
         case "append":
           if (!args.message_id) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "message_id" param.', hint: "Call help(topic: 'send') for the required params for this type." });
           if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "append" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
-          return handleAppendText({
-            message_id: args.message_id,
-            text,
-            separator: args.separator,
-            parse_mode: args.parse_mode,
-            token: args.token,
-          });
+          return appendHintToResult(
+            await handleAppendText({
+              message_id: args.message_id,
+              text,
+              separator: args.separator,
+              parse_mode: args.parse_mode,
+              token: args.token,
+            }),
+            getFirstUseHint(_sid, "send:append"),
+          );
 
         case "animation":
-          return handleShowAnimation({
-            preset: args.preset,
-            frames: args.frames,
-            interval: args.interval,
-            timeout: args.timeout,
-            persistent: args.persistent,
-            allow_breaking_spaces: args.allow_breaking_spaces,
-            notify: args.notify_animation,
-            priority: args.priority,
-            token: args.token,
-          });
+          return appendHintToResult(
+            await handleShowAnimation({
+              preset: args.preset,
+              frames: args.frames,
+              interval: args.interval,
+              timeout: args.timeout,
+              persistent: args.persistent,
+              allow_breaking_spaces: args.allow_breaking_spaces,
+              notify: args.notify_animation,
+              priority: args.priority,
+              token: args.token,
+            }),
+            getFirstUseHint(_sid, "send:animation"),
+          );
 
         case "checklist":
           {
             const checklistTitle = args.title ?? text;
             if (!checklistTitle) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
             if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
-            return handleSendNewChecklist({ title: checklistTitle, steps: args.steps, token: args.token });
+            return appendHintToResult(
+              await handleSendNewChecklist({ title: checklistTitle, steps: args.steps, token: args.token }),
+              getFirstUseHint(_sid, "send:checklist"),
+            );
           }
 
         case "progress":
           if (args.percent === undefined) return toError({ code: "MISSING_PARAM" as const, message: 'type: "progress" requires a "percent" param (0\u2013100).', hint: "type: \"progress\" requires a percent (0\u2013100). Call help(topic: 'send')." });
-          return handleSendNewProgress({
-            percent: args.percent,
-            title: args.title ?? text,
-            subtext: args.subtext,
-            width: args.width,
-            token: args.token,
-          });
+          return appendHintToResult(
+            await handleSendNewProgress({
+              percent: args.percent,
+              title: args.title ?? text,
+              subtext: args.subtext,
+              width: args.width,
+              token: args.token,
+            }),
+            getFirstUseHint(_sid, "send:progress"),
+          );
 
         case "question": {
           if (args.ask !== undefined) {
@@ -499,17 +515,20 @@ export function register(server: McpServer) {
           if (args.choose !== undefined || args.options !== undefined) {
             const chooseButtons = (args.choose ?? args.options) as NonNullable<typeof args.choose>;
             if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "question" with choose requires a "text" param (prompt shown above buttons).', hint: "Call help(topic: 'send') for question param requirements." });
-            return handleChoose({
-              text,
-              options: chooseButtons,
-              timeout_seconds: args.timeout_seconds,
-              columns: args.columns,
-              reply_to: args.reply_to,
-              ignore_pending: args.ignore_pending,
-              ignore_parity: args.ignore_parity,
-              audio: args.audio,
-              token: args.token,
-            }, signal);
+            return appendHintToResult(
+              await handleChoose({
+                text,
+                options: chooseButtons,
+                timeout_seconds: args.timeout_seconds,
+                columns: args.columns,
+                reply_to: args.reply_to,
+                ignore_pending: args.ignore_pending,
+                ignore_parity: args.ignore_parity,
+                audio: args.audio,
+                token: args.token,
+              }, signal),
+              getFirstUseHint(_sid, "send:question:choose"),
+            );
           }
           if (args.confirm !== undefined) {
             return handleConfirm({

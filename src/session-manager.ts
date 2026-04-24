@@ -22,8 +22,9 @@ export interface Session {
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
   pendingEnvelopeHint?: string;
   silenceThresholdS?: number;
-  tutorialEnabled?: boolean;   // undefined = true (on by default)
-  tutorialSeenTools?: Set<string>;
+  tutorialEnabled?: boolean;   // undefined = true (on by default) // TODO(10-725): remove after tutorial mode is fully removed
+  tutorialSeenTools?: Set<string>; // TODO(10-725): remove after tutorial mode is fully removed
+  firstUseHintsSeen?: Set<string>;
 }
 
 /** Public view returned by `listSessions` — no token suffix. */
@@ -440,4 +441,17 @@ export function markTutorialToolSeen(sid: number, toolKey: string): boolean {
   if (session.tutorialSeenTools.has(toolKey)) return false;
   session.tutorialSeenTools.add(toolKey);
   return true;
+}
+
+// ── First-Use Hints ────────────────────────────────────────
+
+/**
+ * Return the firstUseHintsSeen Set for a session, initialising it on first
+ * access. Returns null if the session does not exist.
+ */
+export function getOrInitHintsSeen(sid: number): Set<string> | null {
+  const session = _sessions.get(sid);
+  if (!session) return null;
+  if (!session.firstUseHintsSeen) session.firstUseHintsSeen = new Set();
+  return session.firstUseHintsSeen;
 }

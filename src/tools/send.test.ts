@@ -27,7 +27,12 @@ const mocks = vi.hoisted(() => ({
   handleSendDirectMessage: vi.fn(),
   handleConfirm: vi.fn(),
   handleAppendText: vi.fn(),
+  handleSendChoice: vi.fn(),
+  handleSendNewChecklist: vi.fn(),
+  handleAsk: vi.fn(),
+  handleChoose: vi.fn(),
   deliverServiceMessage: vi.fn(),
+  getFirstUseHint: vi.fn((): string | null => null),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -104,6 +109,39 @@ vi.mock("./append_text.js", () => ({
 
 vi.mock("../session-queue.js", () => ({
   deliverServiceMessage: (...args: unknown[]) => mocks.deliverServiceMessage(...args),
+}));
+
+vi.mock("../first-use-hints.js", () => ({
+  getFirstUseHint: (...args: unknown[]) => mocks.getFirstUseHint(...args),
+  appendHintToResult: <T extends { content: { type: string; text: string }[]; isError?: true }>(result: T, hint: string | null): T => {
+    if (!hint || result.isError) return result;
+    try {
+      const entry = result.content[0];
+      if (!entry || entry.type !== "text") return result;
+      const parsed = JSON.parse(entry.text) as Record<string, unknown>;
+      parsed._first_use_hint = hint;
+      entry.text = JSON.stringify(parsed);
+    } catch {
+      // no-op
+    }
+    return result;
+  },
+}));
+
+vi.mock("./send_choice.js", () => ({
+  handleSendChoice: (args: unknown) => mocks.handleSendChoice(args),
+}));
+
+vi.mock("./send_new_checklist.js", () => ({
+  handleSendNewChecklist: (args: unknown) => mocks.handleSendNewChecklist(args),
+}));
+
+vi.mock("./ask.js", () => ({
+  handleAsk: (args: unknown, signal: unknown) => mocks.handleAsk(args, signal),
+}));
+
+vi.mock("./choose.js", () => ({
+  handleChoose: (args: unknown, signal: unknown) => mocks.handleChoose(args, signal),
 }));
 
 import { register } from "./send.js";
@@ -801,5 +839,157 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
     expect(warningMsg).toContain("U+2192");
     const eventType = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[2] as string;
     expect(eventType).toBe("unrenderable_chars_warning");
+  });
+});
+
+// =============================================================================
+// First-use hint key correctness + happy-path routing for new branches
+// =============================================================================
+describe("send — first-use hint injection and happy-path routing", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  const HINT_SENTINEL = "__test_hint__";
+  const OK_RESULT = { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    // Return the sentinel hint for all calls
+    mocks.getFirstUseHint.mockReturnValue(HINT_SENTINEL);
+    // Default handler mocks return a simple ok result
+    mocks.handleSendChoice.mockResolvedValue(OK_RESULT);
+    mocks.handleSendNewChecklist.mockResolvedValue(OK_RESULT);
+    mocks.handleAsk.mockResolvedValue(OK_RESULT);
+    mocks.handleChoose.mockResolvedValue(OK_RESULT);
+    mocks.handleShowAnimation.mockResolvedValue(OK_RESULT);
+    mocks.handleSendNewProgress.mockResolvedValue(OK_RESULT);
+    mocks.handleAppendText.mockResolvedValue(OK_RESULT);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Hint key correctness: verify exact key passed to getFirstUseHint per branch
+  // ---------------------------------------------------------------------------
+
+  it("choice branch passes 'send:choice' hint key and injects hint into result", async () => {
+    const result = await call({
+      type: "choice",
+      text: "Pick one",
+      options: [{ label: "A", value: "a" }, { label: "B", value: "b" }],
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleSendChoice).toHaveBeenCalledOnce();
+    expect(mocks.getFirstUseHint).toHaveBeenCalledWith(expect.any(Number), "send:choice");
+    const data = parseResult(result);
+    expect(data._first_use_hint).toBe(HINT_SENTINEL);
+  });
+
+  it("append branch passes 'send:append' hint key and injects hint into result", async () => {
+    const result = await call({
+      type: "append",
+      message_id: 10,
+      text: "more text",
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleAppendText).toHaveBeenCalledOnce();
+    expect(mocks.getFirstUseHint).toHaveBeenCalledWith(expect.any(Number), "send:append");
+    const data = parseResult(result);
+    expect(data._first_use_hint).toBe(HINT_SENTINEL);
+  });
+
+  it("animation branch passes 'send:animation' hint key and injects hint into result", async () => {
+    const result = await call({
+      type: "animation",
+      preset: "working",
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleShowAnimation).toHaveBeenCalledOnce();
+    expect(mocks.getFirstUseHint).toHaveBeenCalledWith(expect.any(Number), "send:animation");
+    const data = parseResult(result);
+    expect(data._first_use_hint).toBe(HINT_SENTINEL);
+  });
+
+  it("checklist branch passes 'send:checklist' hint key and injects hint into result", async () => {
+    const result = await call({
+      type: "checklist",
+      title: "My Steps",
+      steps: [{ label: "Step 1", status: "pending" }],
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleSendNewChecklist).toHaveBeenCalledOnce();
+    expect(mocks.getFirstUseHint).toHaveBeenCalledWith(expect.any(Number), "send:checklist");
+    const data = parseResult(result);
+    expect(data._first_use_hint).toBe(HINT_SENTINEL);
+  });
+
+  it("progress branch passes 'send:progress' hint key and injects hint into result", async () => {
+    const result = await call({
+      type: "progress",
+      percent: 50,
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleSendNewProgress).toHaveBeenCalledOnce();
+    expect(mocks.getFirstUseHint).toHaveBeenCalledWith(expect.any(Number), "send:progress");
+    const data = parseResult(result);
+    expect(data._first_use_hint).toBe(HINT_SENTINEL);
+  });
+
+  it("question/choose branch passes 'send:question:choose' hint key and injects hint into result", async () => {
+    const result = await call({
+      type: "question",
+      text: "Pick one",
+      choose: [{ label: "A", value: "a" }, { label: "B", value: "b" }],
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleChoose).toHaveBeenCalledOnce();
+    expect(mocks.getFirstUseHint).toHaveBeenCalledWith(expect.any(Number), "send:question:choose");
+    const data = parseResult(result);
+    expect(data._first_use_hint).toBe(HINT_SENTINEL);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Happy-path routing: verify handlers are called for previously untested branches
+  // ---------------------------------------------------------------------------
+
+  it("question/ask happy path: routes to handleAsk", async () => {
+    const result = await call({
+      type: "question",
+      ask: "What is your name?",
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    expect(mocks.handleAsk).toHaveBeenCalledOnce();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Verify null hint does NOT inject _first_use_hint field
+  // ---------------------------------------------------------------------------
+
+  it("when getFirstUseHint returns null, _first_use_hint is absent from result", async () => {
+    mocks.getFirstUseHint.mockReturnValue(null);
+    const result = await call({
+      type: "choice",
+      text: "Pick one",
+      options: [{ label: "A", value: "a" }, { label: "B", value: "b" }],
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data._first_use_hint).toBeUndefined();
   });
 });
