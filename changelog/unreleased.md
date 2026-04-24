@@ -126,7 +126,7 @@
 - `action(type: "animation/default", preset: "working")` / `set_default_animation(preset: "working")` — preset param was accepted without error but fell through to read-only mode; session default was never updated. Now looks up the preset's frames and sets them as the default.
 - `action(type: "log/debug", category: "animation")` — `category` schema was `z.enum(...)`, rejecting valid category strings with an unhelpful error. Changed to `z.string()` with valid values listed in the description; unknown categories produce empty results.
 - `action(type: "message/edit")` without `parse_mode` — schema field was `optional()` with no default, sending messages as plain text instead of running Markdown auto-conversion. Changed to `.default("Markdown")` to match standalone `edit_message` behavior. `parse_mode` description updated to clarify that `"MarkdownV2"` is raw pass-through (manual escaping required).
-- `tasks/claim.ps1` / `tasks/claim.sh` — Replaced with canonical cortex.lan versions using `git mv` for atomic claim (no `GIT_INDEX_FILE` manipulation required; index atomicity provided by `git mv`); `TaskFile` parameter is now optional (scans queue by priority if omitted); rollback via reverse `git mv` on commit failure; added `tasks/claim.spec.md` design specification
+- `tasks/claim.ps1` / `tasks/claim.sh` / `tasks/claim.spec.md` — Removed from this repo; task claiming now lives in the task-engine submodule (canonical cortex.lan flow, atomic `git mv`-based claim, optional queue scan when `TaskFile` is omitted, rollback on commit failure, and design specification)
 - `session_start.ts` orientation messages — removed stale `get_agent_guide` references; replaced with `help(topic: 'guide')` (tool was removed in this release)
 
 ## Removed

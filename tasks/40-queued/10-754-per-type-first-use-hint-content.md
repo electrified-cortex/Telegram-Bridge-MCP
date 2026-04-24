@@ -10,43 +10,37 @@ alternative to mention, and what help pointer to include.
 
 ### `send(type: "choice")`
 
-> **First use — non-blocking buttons**
-> `choice` sends an inline keyboard but does NOT wait for a reply. If you need to
-> block and get the response in the same call, use `question(choose: [...])` instead.
+> **First use — non-blocking buttons**: `send(type: "choice")` sends an inline keyboard but does NOT wait for a reply. If you need to
+> block and get the response in the same call, use `send(type: "question", choose: [...])` instead.
 > See `help("send")` → choice/question comparison.
 
 ### `send(type: "question", choose: [...])`
 
-> **First use — blocking button prompt**
-> `question/choose` blocks until the operator selects a button (or timeout). If you
-> want non-blocking buttons (fire-and-forget), use `choice` instead.
+> **First use — blocking button prompt**: `send(type: "question", choose: [...])` blocks until the operator selects a button (or timeout). If you
+> want non-blocking buttons (fire-and-forget), use `send(type: "choice")` instead.
 > See `help("send")` → choice/question comparison.
 
 ### `send(type: "progress")`
 
-> **First use — progress bar**
-> Creates a pinned bar. Update with `action(type: "progress/update", percent: N)`.
+> **First use — progress bar**: Creates a pinned bar. Update with `action(type: "progress/update", percent: N)`.
 > Close explicitly when done — orphaned bars stay pinned until dismissed.
 > See `help("progress")`.
 
 ### `send(type: "checklist")`
 
-> **First use — pinned checklist**
-> Creates a pinned step-status list. Update individual steps with
+> **First use — pinned checklist**: Creates a pinned step-status list. Update individual steps with
 > `action(type: "checklist/update", step: N, status: "done")`.
 > See `help("checklist")`.
 
 ### `send(type: "animation")`
 
-> **First use — ephemeral animation placeholder**
-> Replaces itself when you send the real message. Do NOT leave an animation
-> running indefinitely — always resolve it with `action(type: "animation/stop")`.
+> **First use — ephemeral animation placeholder**: Replaces itself when you send the real message. Do NOT leave an animation
+> running indefinitely — always resolve it with `action(type: "animation/cancel")`.
 > See `help("animation")`.
 
 ### `send(type: "append")`
 
-> **First use — in-place message growth**
-> Appends text to an existing message without creating a new one. Only works on
+> **First use — in-place message growth**: Appends text to an existing message without creating a new one. Only works on
 > messages from the current session. Keep accumulated length under 3800 chars.
 > See `help("send")` → Append Mode section.
 
