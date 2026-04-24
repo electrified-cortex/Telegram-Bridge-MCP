@@ -8,7 +8,7 @@ import {
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession } from "../session-manager.js";
 import { recordNonToolEvent } from "../trace-log.js";
-import { getSessionQueue, getMessageOwner } from "../session-queue.js";
+import { getSessionQueue, getMessageOwner, peekSessionCategories } from "../session-queue.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import {
   promoteDeferred,
@@ -47,6 +47,20 @@ function compactEvent(event: TimelineEvent, sid: number): Record<string, unknown
 /** Compact a batch of events for the response. */
 function compactBatch(events: TimelineEvent[], sid: number): Record<string, unknown>[] {
   return events.map(e => compactEvent(e, sid));
+}
+
+/**
+ * If the batch contains at least one voice message AND there are still voice
+ * messages pending in the queue, returns a hint string for the caller.
+ * Returns undefined when no hint is needed.
+ */
+function buildVoiceBacklogHint(batch: TimelineEvent[], sid: number): string | undefined {
+  const hasVoice = batch.some(e => e.event === "message" && e.content.type === "voice");
+  if (!hasVoice) return undefined;
+  const cats = peekSessionCategories(sid);
+  const voiceCount = cats?.["voice"] ?? 0;
+  if (voiceCount === 0) return undefined;
+  return `${voiceCount} voice msg pending — react with processing preset.`;
 }
 
 const DESCRIPTION =
@@ -179,6 +193,8 @@ export function register(server: McpServer) {
         const pending = pendingCountAny();
         const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
         if (pending > 0) result.pending = pending;
+        const hint = buildVoiceBacklogHint(batch, sid);
+        if (hint) result.hint = hint;
         resyncActiveSession();
         dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
         return toResult(result);
@@ -239,6 +255,8 @@ export function register(server: McpServer) {
               const pending = pendingCountAny();
               const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
               if (pending > 0) result.pending = pending;
+              const hint = buildVoiceBacklogHint(batch, sid);
+              if (hint) result.hint = hint;
               resyncActiveSession();
               dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
               return toResult(result);
@@ -261,6 +279,8 @@ export function register(server: McpServer) {
             const pending = pendingCountAny();
             const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
             if (pending > 0) result.pending = pending;
+            const hint = buildVoiceBacklogHint(batch, sid);
+            if (hint) result.hint = hint;
             resyncActiveSession();
             dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
             return toResult(result);

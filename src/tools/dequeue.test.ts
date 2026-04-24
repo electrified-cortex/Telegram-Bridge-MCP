@@ -17,6 +17,7 @@ interface DequeueResult {
   pending?: number;
   timed_out?: boolean;
   empty?: boolean;
+  hint?: string;
 }
 
 interface SessionQueue {
@@ -35,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),
   getSessionQueue: vi.fn((_sid: number): SessionQueue | undefined => undefined),
   getMessageOwner: vi.fn((_msgId: number): number => 0),
+  peekSessionCategories: vi.fn((_sid: number): Record<string, number> | undefined => undefined),
   touchSession: vi.fn((_sid: number) => {}),
   validateSession: vi.fn((_sid: number, _suffix: number) => true),
   getDequeueDefault: vi.fn((_sid: number): number => 300),
@@ -82,6 +84,7 @@ vi.mock("../session-manager.js", () => ({
 vi.mock("../session-queue.js", () => ({
   getSessionQueue: (sid: number) => mocks.getSessionQueue(sid),
   getMessageOwner: (msgId: number) => mocks.getMessageOwner(msgId),
+  peekSessionCategories: (sid: number) => mocks.peekSessionCategories(sid),
 }));
 
 vi.mock("../trace-log.js", () => ({
@@ -162,6 +165,7 @@ describe("dequeue tool", () => {
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
     // Default session queue for any sid proxies to the global mock fns
     mocks.getSessionQueue.mockImplementation(() => ({
       dequeueBatch: () => mocks.dequeueBatch(),
@@ -1045,6 +1049,77 @@ describe("dequeue tool", () => {
       await call({ timeout: 0, token: 1_123_456 });
       const result2 = await call({ timeout: 0, token: 1_123_456 });
       const data2 = parseResult(result2);
+      expect(data2.hint).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
+  // Voice backlog hint
+  // =========================================================================
+
+  describe("voice backlog hint", () => {
+    it("includes hint when batch has voice and pending queue has voice", async () => {
+      const evt = makeVoiceEvent(101);
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(2);
+      mocks.peekSessionCategories.mockReturnValue({ voice: 2 });
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toBeDefined();
+      expect(data.hint).toContain("2 voice msg pending");
+      expect(data.hint).toContain("processing preset");
+    });
+
+    it("does not include hint when batch has voice but no pending voice", async () => {
+      const evt = makeVoiceEvent(102);
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(0);
+      mocks.peekSessionCategories.mockReturnValue({ voice: 0 });
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toBeUndefined();
+    });
+
+    it("does not include hint when batch is text-only even if pending voice exists", async () => {
+      const evt = makeEvent(103, "text only");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(1);
+      mocks.peekSessionCategories.mockReturnValue({ voice: 3 });
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toBeUndefined();
+    });
+
+    it("does not include hint when batch has voice but only text is pending (no voice key)", async () => {
+      const evt = makeVoiceEvent(104);
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(2);
+      // peekSessionCategories returns text but no voice
+      mocks.peekSessionCategories.mockReturnValue({ text: 2 });
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toBeUndefined();
+    });
+
+    it("cascade: consecutive dequeues in a voice backlog each produce a hint", async () => {
+      const v1 = makeVoiceEvent(110);
+      const v2 = makeVoiceEvent(111);
+
+      // First dequeue: returns v1, 1 voice still pending
+      mocks.dequeueBatch.mockReturnValueOnce([v1]);
+      mocks.pendingCount.mockReturnValueOnce(1);
+      mocks.peekSessionCategories.mockReturnValueOnce({ voice: 1 });
+      const result1 = await call({ timeout: 0, token: 1_123_456 });
+      const data1 = parseResult<DequeueResult>(result1);
+      expect(data1.hint).toBeDefined();
+      expect(data1.hint).toContain("1 voice msg pending");
+
+      // Second dequeue: returns v2, 0 voice pending (backlog exhausted)
+      mocks.dequeueBatch.mockReturnValueOnce([v2]);
+      mocks.pendingCount.mockReturnValueOnce(0);
+      mocks.peekSessionCategories.mockReturnValueOnce({ voice: 0 });
+      const result2 = await call({ timeout: 0, token: 1_123_456 });
+      const data2 = parseResult<DequeueResult>(result2);
       expect(data2.hint).toBeUndefined();
     });
   });
