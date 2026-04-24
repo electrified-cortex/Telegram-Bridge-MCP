@@ -68,3 +68,16 @@ Updated callback hooks in `send_choice.ts` and `choose.ts` to call
 
 Build: clean (tsc + biome). Lint: clean. Tests: 2489/2489 passed (full suite).
 Code review: `minor_only` — no regressions; one additional no-match test added per review finding.
+
+## Verification
+
+**Verifier:** Overseer (Sonnet dispatch, 2026-04-24)
+**Verdict:** APPROVED
+
+- AC1 (clicked button re-rendered primary): PASS — `buildHighlightedRows` sets `style: "primary"` on matching button; flows through `ackAndEditSelection` in both choose.ts and send_choice.ts
+- AC2 (other buttons unchanged): PASS — non-clicked buttons keep original style; tests assert unstyled buttons remain unstyled
+- AC3 (works for blocking and non-blocking): PASS — both `choose.ts` (blocking) and `send_choice.ts` (non-blocking) updated; voice path also covered
+- AC4 (tests for re-render): PASS — 5 new `buildHighlightedRows` tests, updated `ackAndEditSelection` assertions, new hook invocation test in `send_choice.test.ts`
+- AC5 (no regression): PASS — `appendSuffixAndEdit` defaults to `{ inline_keyboard: [] }` preserving prior behavior; existing confirm/skip/timeout paths untouched
+- TypeScript: clean (zero errors)
+- Tests: 100/100 passing across relevant test files
