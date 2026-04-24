@@ -1,13 +1,17 @@
-Post-Compaction Recovery
+Post-Compaction Recovery (Telegram side)
 
-You just lost conversational context. Follow these steps:
+You just lost conversational context. This help topic covers Telegram/MCP recovery only — your agent harness injects the agent-specific checklist on startup.
 
-1. Read your agent file (CLAUDE.md) — it has your identity and routing pointers.
-2. Read startup-context.md in your agent folder — full operating procedures.
-3. Read recovery-context.md in your agent folder — session state and invariants.
-4. Test Telegram: dequeue(max_wait: 0, token) — drain any pending messages.
-5. Check session memory file for token and SID.
-6. If token is lost: action(type: 'session/reconnect', name: '<your_name>').
-7. Resume your dequeue loop or last task.
+1. Your session token is in your memory if previously configured. Read it from there.
+2. If token is present: `dequeue(max_wait: 0, token)` to drain pending messages and confirm the bridge link.
+3. If token is missing or `dequeue` returns `session_closed`: `action(type: 'session/reconnect', name: '<your_name>')` to rejoin, or `action(type: 'session/start', name: '<your_name>')` for a fresh session.
+4. Resume your dequeue loop or last task.
 
-Key: your agent file is the router. It tells you where everything else lives.
+For a richer refresher, call:
+
+- `help('guide')` — full communication/routing protocol
+- `help('send')` — message forms (text, voice, hybrid, buttons, checklist, progress)
+- `help('reactions')` — reaction priority queue, voice auto-salute, temporary vs permanent
+- `help('presence')` — show-typing, animations, presence cascade
+- `help('reminders')` — reminder-driven delegation pattern
+- `help('identity')` — bot + server version (requires token)
