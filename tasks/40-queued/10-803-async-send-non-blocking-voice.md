@@ -1,7 +1,7 @@
 ---
 id: 10-803
 title: Async (non-blocking) send — voice/audio TTS returns immediately, result via dequeue callback
-status: draft
+status: queued
 priority: 10
 origin: operator voice 2026-04-24 (msg 41755)
 ---
@@ -37,8 +37,10 @@ Observed 2026-04-24: audio TTS returned 504 mid-session; sent a text-only fallba
 - `async: true` is opt-in per call.
 - Callback event type is distinguishable from user messages (new `event: "send_callback"` or similar).
 - Failure callback includes enough info to act: HTTP status, error string, the pending_id used to correlate.
+- On async failure: if the send had a `text` component, bridge must inline-deliver the text as a plain message with a `⚠ [async failed]` prefix so the agent does not resend; callback must include `text_fallback: true` + the error code so agent knows text was already delivered.
 - Provisional `message_id_pending` is valid for correlation only — do NOT use it for `edit`/`pin`/`react` until the callback confirms the real `message_id`.
-- Queue ordering: callback events ordered by completion time, not submission time (a shorter async after a longer one may land first).
+- FIFO send ordering: async sends must enqueue behind all preceding sends (both sync and async); Telegram message delivery order must match submission order regardless of TTS completion time.
+- Queue ordering: callback events delivered in submission order (FIFO), not completion order.
 
 ## Acceptance criteria
 
