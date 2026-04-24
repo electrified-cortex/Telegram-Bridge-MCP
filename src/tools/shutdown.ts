@@ -8,10 +8,8 @@ import { getSessionQueue } from "../session-queue.js";
 
 const DESCRIPTION =
   "Shuts down the MCP server process cleanly. Notifies all active sessions, " +
-  "flushes pending queues, dumps the session log, then exits. The MCP host " +
-  "will detect the exit and can relaunch it automatically. Reconnecting to " +
-  "the server after shutdown starts it back up. Call this after running " +
-  "`pnpm build` to pick up code changes. " +
+  "flushes pending queues, dumps the session log, then exits. " +
+  "Call this after running `pnpm build` to pick up code changes. " +
   "If there are pending messages across any active session queue, a success " +
   "result containing a `warning` field is returned (not a tool error) — " +
   "callers must handle both the warning form (`shutting_down: false, warning: " +

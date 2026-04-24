@@ -7,10 +7,8 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
-  "Delta-append text to an existing message. The server reads the current text " +
-  "from the store, concatenates the new chunk after a separator, and edits the " +
-  "message in-place. Agent sends only the new chunk — O(1) token cost per call. " +
-  "Each append creates an edit event in the timeline with the full accumulated text.";
+  "Delta-append text to an existing message. Agent sends only the new chunk — O(1) token cost per call. " +
+  "The bridge concatenates and edits the message in-place.";
 
 export async function handleAppendText({
   message_id, text, separator = "\n", parse_mode = "Markdown", token,

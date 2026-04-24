@@ -43,8 +43,6 @@ TMCP automatically monitors session silence. The window opens the moment you **d
 Any ack signal (message, reaction, typing, animation) clears the window.
 Active animations suppress all nudges — they are sufficient presence signals.
 
-**Severity tiers:** Envelope hints are lightweight nudges (in-band, non-disruptive). Service messages are interruption-weight — reserved for things that should genuinely interrupt your frame. The silence detector uses the right tier for each rung: hint first, service message only if still silent.
-
 ## Opt-Out
 
 Per-session disable is not yet exposed via an action. The detector is active for all sessions.

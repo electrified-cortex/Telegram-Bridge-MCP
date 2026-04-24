@@ -10,10 +10,8 @@ import { closeSessionById } from "../session-teardown.js";
 
 const DESCRIPTION =
   "Close the current session, or (if target_sid is provided) close another " +
-  "session — governor only. Removes the session from the active session list " +
-  "and cleans up resources. The session ID cannot be reclaimed after closure. " +
-  "When target_sid is given, the operator is asked to confirm before the close " +
-  "takes effect.";
+  "session — governor only. The session ID cannot be reclaimed after closure. " +
+  "When target_sid is given, the operator must confirm before closure takes effect.";
 
 export async function handleCloseSession({ token, target_sid, force }: { token?: number; target_sid?: number; force?: boolean }) {
   const _sid = requireAuth(token);

@@ -13,7 +13,6 @@ const DESCRIPTION =
   "Requests operator approval to read the configured chat metadata (id, type, title, " +
   "username, first/last name, description). Sends an interactive Allow/Deny prompt and " +
   "blocks until the operator responds or the request times out. " +
-  "Requires an active session token. " +
   "Returns { approved: true, ...chatInfo } on approval, or { approved: false, timed_out: true|false } on denial/timeout.";
 
 export async function handleGetChat({ token }: { token: number }) {

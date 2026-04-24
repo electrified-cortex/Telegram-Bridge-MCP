@@ -1,40 +1,5 @@
 # Agent Guide: Telegram Bridge MCP
 
-## What is this server?
-
-This is **Telegram Bridge MCP** — a Model Context Protocol server that bridges you (the AI assistant) to a Telegram bot. You can send messages, ask questions, present choices, react to messages, and receive replies through Telegram.
-
-**Platform-agnostic by design.** Works with any MCP-compatible host: VS Code Copilot, Claude Code, Cursor, or any framework that speaks MCP. Claude, GPT, Gemini, and local models all work identically.
-
-**Your role:** You are the bot. The user communicates via their Telegram client. Everything you send appears instantly in their chat; everything they send comes back as structured tool results.
-
-**Single-user server.** The bot is locked to one Telegram user (`ALLOWED_USER_ID`) via environment config. You are never talking to strangers.
-
----
-
-## Personality & communication style
-
-- **Concise.** Telegram is a messaging app. Say what matters.
-- **Proactive.** Announce before significant work; confirm after.
-- **Conversational.** Be direct and human. Avoid filler like "Certainly!" or "Great question!".
-- **Responsive.** React to messages with emoji instead of "Got it" texts.
-- **Decisive.** When you have enough information to act, act.
-
----
-
-## Session startup
-
-When starting a new session with this MCP:
-
-1. Call `help(topic: "guide")` to load behavioral rules.
-2. Read the `telegram-bridge-mcp://communication-guide` resource — compact communication patterns, tool selection rules, and loop behavior.
-3. Call `action(type: "session/start")` — sends an intro message and handles pending messages from a previous session (offers Resume / Start Fresh if any exist).
-4. Enter the `dequeue` loop — call with no arguments to block up to 300 s (the default).
-
-**`help` tool:** Call `help()` for a tool overview, `help(topic: "guide")` for this guide, or `help(topic: "<tool>")` for per-tool documentation.
-
-**Transport:** The server supports both stdio and streaming HTTP transports. HTTP clients that reconnect after a drop should keep using their existing session token if they still have it. If the token was lost, use `action(type: "session/reconnect", name: "…")` to recover the same session token after operator re-authorization.
-
 **`dequeue` is the sole tool for receiving updates.** It handles messages, voice (pre-transcribed), commands, reactions, and callback queries in a single unified queue. The response lane (reactions and callbacks) drains before the message lane on each call.
 
 ### `dequeue` loop pattern
@@ -76,15 +41,9 @@ Use `action(type: "message/get", message_id: ...)` to retrieve a previously seen
 
 The operator should **always** know what you are doing. Silence is confusing.
 
-**While working:** Send frequent `send(type: "notification")` (silent) updates — brief, one per significant action (editing a file, running a command, thinking about a design decision).
-
-**When done:** Explicitly say so. Never leave an animation running or go silent while waiting for input. Cancel any animation and send a completion message before entering a wait.
-
-**Rule: never confuse working with waiting.** An active animation while idle misleads the operator.
-
 Before any significant action, send a **silent** `send(type: "notification", disable_notification: true)`: title = short action label, text = brief description of what and why.
 
-**On completion:** Send a `send(type: "notification")` with the outcome whenever a task took meaningful time — even outside an active loop. Use `severity: "success"` or `severity: "error"`. The user may have walked away; a completion notification is how they know to come back.
+**When done:** Cancel any active animation, send a completion `send(type: "notification")` with `severity: "success"` or `severity: "error"`. Never go silent while waiting for input — silence is indistinguishable from stuck.
 
 ---
 
@@ -94,8 +53,6 @@ When you receive a message with `reply_to_message_id`, the user is responding to
 
 - Acknowledge which message they're replying to if relevant.
 - Use `reply_to_message_id` when sending your response — this creates a visible quote block.
-
-When sending a follow-up about a specific earlier message, reply to that message rather than sending standalone.
 
 ---
 
@@ -319,26 +276,15 @@ The bot must be in the Always Allow exceptions list. The base setting can stay a
 
 ## Reactions from the user
 
-`DEFAULT_ALLOWED_UPDATES` includes `"message_reaction"` so user reactions come through.
-
-- `dequeue` returns reaction events with `content.type: "reaction"` containing `added` and `removed` emoji arrays.
-- Reactions arrive on the response lane (higher priority than messages).
-
-Use this to acknowledge what the user reacted to and adapt behavior accordingly.
+`dequeue` returns reaction events with `content.type: "reaction"` containing `added` and `removed` emoji arrays. Reactions arrive on the response lane (higher priority than messages).
 
 ---
 
 ## Received file handling
 
-When `dequeue` returns an event with a non-text `content.type`, **always ask the user what to do — never read or process the file automatically.**
+When `dequeue` returns an event with a non-text `content.type`, **always ask the user what to do — never read or process the file automatically.** Do not call `action(type: "download")` until the user has selected an action requiring it — the file name and MIME type from `dequeue` are sufficient to present the choice.
 
 Optionally react with 👀 to signal receipt, then use `send(type: "question", choose: [...])` with inferred action buttons.
-
-### Core rule: always ask first, download only when needed
-
-Do **not** call `action(type: "download")` until the user has selected an action that requires it. The metadata returned by `dequeue` (file name, MIME type) is sufficient to present the choice.
-
-Never silently download, read, or process a received file without explicit instruction.
 
 ### Handling batched file uploads
 
@@ -403,8 +349,6 @@ The message store records all inbound and outbound events automatically. The rol
 
 **Key rules:**
 
-- The timeline is **always on** and in-memory only. It does not persist across server restarts.
-- The timeline is a rolling window — oldest events are evicted when the 1000-event limit is reached.
 - `dump_session_record()` contains sensitive user content. Only call when the user explicitly requests session history, context recovery, or an audit.
 - The document caption includes the `file_id` in monospace for crash recovery.
 - Use `action(type: "download")` with the returned `file_id` to retrieve the JSON content.
@@ -465,7 +409,7 @@ When 2+ agent sessions are active simultaneously, additional rules apply.
 
 ### Session identity
 
-`action(type: "session/start")` returns a `sid` (session ID), your session `name` (if set), a `discarded` count (always 0 when no pending messages were discarded), and a `fellow_sessions` list of co-active agents (always present; empty array in single-session).
+`action(type: "session/start")` returns a `sid` (session ID), your session `name` (if set), a `discarded` count, and a `fellow_sessions` list of co-active agents (empty array in single-session).
 
 Your outbound messages automatically include a `🤖 YourName` header line — you do not need to add it manually.
 
@@ -603,12 +547,3 @@ The loop guard hooks intercept the host's Stop event before the agent conversati
 | `.claude/hooks/telegram-loop-guard.sh` | Claude Code | macOS / Linux (Bash) |
 
 See [`docs/agent-setup.md`](agent-setup.md) for step-by-step installation instructions.
-
-### What happens without the hook
-
-- The host IDE may terminate the agent conversation after inactivity, a context limit, or any unhandled stop condition.
-- The Telegram session is silently dropped — the operator receives no notification.
-- Pending messages queue up and are delivered to the next agent that calls `action(type: "session/start")`.
-- If another agent is not started promptly, the operator sees silence with no indication the session ended.
-
-The hook is not strictly required for basic use, but strongly recommended for long-lived or unattended sessions.

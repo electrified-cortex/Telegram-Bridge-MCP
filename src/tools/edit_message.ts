@@ -14,7 +14,7 @@ const DESCRIPTION =
   "Edit an existing message by ID — updates text, inline keyboard, or both. " +
   "Pass text to update message content, keyboard to update or remove buttons, or both together. " +
   "Pass keyboard: null to remove all buttons while leaving text unchanged. " +
-  "Omit text to update only the keyboard (uses editMessageReplyMarkup internally). " +
+  "Omit text to update only the keyboard. " +
   "Omit keyboard to update only the text (keyboard is preserved). " +
   "Default parse_mode is Markdown (auto-converted).";
 

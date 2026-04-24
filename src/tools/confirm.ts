@@ -25,7 +25,7 @@ const DESCRIPTION_CONFIRM =
   "chosen option. Returns { confirmed: true|false }, or { timed_out: true } " +
   "if the timeout expires without input. " +
   "Fails if there are unread pending updates (unless replying to a specific message) — drain them with " +
-  "dequeue(timeout:0) first, or pass ignore_pending: true to proceed anyway. Requires an active session token.";
+  "dequeue(timeout:0) first, or pass ignore_pending: true to proceed anyway.";
 
 const DESCRIPTION_CONFIRM_YN =
   "Yes/No confirmation variant. Same as confirm but defaults to 🟢 Yes / 🔴 No buttons with no color styling.";

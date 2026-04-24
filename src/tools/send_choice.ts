@@ -18,7 +18,7 @@ const DESCRIPTION =
   "The callback_query event still appears in dequeue so the agent can read " +
   "which option was picked at its own pace. " +
   "Use choose for blocking single-selection (waits for the press). " +
-  "For a blocking yes/no or multi-option selection, use confirm or choose. Requires an active session token.";
+  "For a blocking yes/no or multi-option selection, use confirm or choose.";
 
 const optionSchema = z.object({
   label: z

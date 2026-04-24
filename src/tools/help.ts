@@ -115,7 +115,7 @@ const TOOL_INDEX: Record<string, string> = {
   set_reminder: "Schedule a future reminder event delivered via dequeue.",
   cancel_reminder: "Cancel a scheduled reminder by ID.",
   list_reminders: "List all pending reminders for the current session.",
-  get_chat: "Request operator approval to read the configured chat metadata. Sends an interactive Allow/Deny prompt — requires an active session token.",
+  get_chat: "Request operator approval to read the configured chat metadata. Sends an interactive Allow/Deny prompt.",
   save_profile: "Save the current session's profile (name, color, voice) to disk.",
   load_profile: "Load a saved profile and apply it to the current session.",
   import_profile: "Import a profile definition from a JSON object.",

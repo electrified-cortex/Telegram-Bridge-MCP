@@ -35,7 +35,7 @@ const DESCRIPTION =
   "For discrete named steps with pass/fail status, use send_new_checklist instead. " +
   "Pass the returned message_id to update_progress to edit in-place. " +
   "At 100% update_progress auto-unpins the message. " +
-  "Multiple concurrent progress bars are supported — each is tracked by its own message_id. Requires an active session token.";
+  "Multiple concurrent progress bars are supported — each is tracked by its own message_id.";
 
 export async function handleSendNewProgress({
   percent, title, subtext, width = DEFAULT_WIDTH, token,

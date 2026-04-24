@@ -6,14 +6,11 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 
 const DESCRIPTION =
-  "Schedule a reminder that fires as a synthetic event. " +
-  "trigger: \"time\" (default) — fires after the message queue is idle for 60 seconds. " +
-  "trigger: \"startup\" — fires automatically on the next session_start (including reconnects). " +
-  "Immediate time reminders (no delay) enter the active queue and fire on the next 60s idle window. " +
-  "Deferred time reminders (delay_seconds > 0) enter a waiting queue and auto-promote to active after the delay elapses. " +
+  "Schedule a reminder that fires as a synthetic event in dequeue. " +
+  "trigger: \"time\" (default) — fires after 60s of queue idle (delay_seconds defers activation). " +
+  "trigger: \"startup\" — fires on the next session_start (delay_seconds ignored). " +
   "Startup reminders fire on every session_start when recurring: true; one-shot startup reminders fire once then are deleted. " +
   "One-shot time reminders are deleted after firing; recurring time reminders re-arm automatically. " +
-  "delay_seconds is optional for trigger: \"startup\" (ignored for startup trigger). " +
   `Maximum ${MAX_REMINDERS_PER_SESSION} reminders per session.`;
 
 export function handleSetReminder({ text, trigger = "time", delay_seconds = 0, recurring = false, id, token }: {

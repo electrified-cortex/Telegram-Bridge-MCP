@@ -59,9 +59,6 @@ is passed; the bridge builds the full accumulated string.
   supported.
 - Telegram rate-limits edits to approximately 1 edit/second per message. Rapid
   appends may be throttled; the bridge will surface the API error if this occurs.
-- In rare cases Telegram's API returns `true` instead of a message object. The
-  bridge handles this gracefully by returning
-  `{ message_id: <original_id>, length: <previous_length> }`.
 - Passing an empty `text` string when the message already has content will append
   only the separator (e.g. `"existing\n"`). To avoid this, validate that `text`
   is non-empty before calling append.
@@ -90,9 +87,7 @@ send(type: "append", token: <token>, message_id, text: "…", separator: " ")
 
 ## Other Modes (brief)
 
-**text** — Auto-splits messages over 4096 chars. Markdown auto-converted to
-MarkdownV2. Pass `audio` for TTS voice note. Both text+audio → caption + voice.
-Reply threading: pass `reply_to: <message_id>`.
+**text** — Reply threading: pass `reply_to: <message_id>`.
 
 **Audio + Text (`"text"` type):** `send(type: "text", text: "...", audio: "...")` → voice note + text caption in one msg.
 Use for urgent updates where operator may be away from phone.

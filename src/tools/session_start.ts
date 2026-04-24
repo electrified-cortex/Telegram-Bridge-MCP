@@ -217,8 +217,7 @@ const DESCRIPTION =
   "Call once at the start of every session. Creates a fresh session " +
   "with a unique ID and token. Fresh sessions auto-drain pending messages. " +
   "If you lost your token (context loss, crash), use action(type: 'session/reconnect', ...) instead. " +
-  "Returns { token, sid, suffix, sessions_active, action, pending } so " +
-  "you have the token and context without extra steps. " +
+  "Returns { token, sid, suffix, sessions_active, action, pending }. " +
   "Call help() first to load the API guide, then call action(type: 'session/start', ...) to join.";
 
 export async function handleSessionStart({ name, color }: { name: string; color?: string }) {

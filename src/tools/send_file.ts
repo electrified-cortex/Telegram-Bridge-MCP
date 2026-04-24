@@ -45,7 +45,6 @@ const DESCRIPTION =
   "Accepts a local file path, public HTTPS URL, or Telegram file_id. " +
   "Auto-detects the file type by extension when type=\"auto\" (default). " +
   "For file_id inputs, specify type explicitly since there's no extension to detect. " +
-  "Requires an active session token. " +
   "WARNING: " + CDN_WARNING;
 
 export async function handleSendFile({
