@@ -22,8 +22,6 @@ export interface Session {
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
   pendingEnvelopeHint?: string;
   silenceThresholdS?: number;
-  tutorialEnabled?: boolean;   // undefined = true (on by default) // TODO(10-725): remove after tutorial mode is fully removed
-  tutorialSeenTools?: Set<string>; // TODO(10-725): remove after tutorial mode is fully removed
   firstUseHintsSeen?: Set<string>;
 }
 
@@ -414,41 +412,9 @@ export function setSessionColor(sid: number, color: string): string | null {
   return color;
 }
 
-// ── Tutorial Mode ──────────────────────────────────────────
-
-/** Return true if tutorial mode is enabled for the session (default: true). */
-export function isTutorialEnabled(sid: number): boolean {
-  const session = _sessions.get(sid);
-  if (!session) return false;
-  return session.tutorialEnabled !== false;
-}
-
-/** Enable or disable tutorial mode for a session. */
-export function setTutorialEnabled(sid: number, enabled: boolean): void {
-  const session = _sessions.get(sid);
-  if (session) session.tutorialEnabled = enabled;
-}
-
-/**
- * Mark a tool as seen for tutorial purposes.
- * Returns true if this is the first time the tool has been seen (hint should be shown),
- * false if the tool has already been seen (skip hint).
- */
-export function markTutorialToolSeen(sid: number, toolKey: string): boolean {
-  const session = _sessions.get(sid);
-  if (!session) return false;
-  if (!session.tutorialSeenTools) session.tutorialSeenTools = new Set();
-  if (session.tutorialSeenTools.has(toolKey)) return false;
-  session.tutorialSeenTools.add(toolKey);
-  return true;
-}
 
 // ── First-Use Hints ────────────────────────────────────────
 
-/**
- * Return the firstUseHintsSeen Set for a session, initialising it on first
- * access. Returns null if the session does not exist.
- */
 export function getOrInitHintsSeen(sid: number): Set<string> | null {
   const session = _sessions.get(sid);
   if (!session) return null;

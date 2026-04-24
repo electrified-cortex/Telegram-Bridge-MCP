@@ -135,6 +135,7 @@
 - `send_message` — replaced by `send`
 - `send_text_as_voice` — replaced by `send`
 - `get_agent_guide` — removed; replace with `help` tool and `agent-guide` MCP resource
+- Removed orphaned `tutorial/on` and `tutorial/off` action handlers and backing session state (`tutorialEnabled`, `tutorialSeenTools`, `isTutorialEnabled`, `setTutorialEnabled`, `markTutorialToolSeen`). The tutorial hint read path was removed by task 10-579; this cleans up the write-only remnants.
 
 ## Security
 
