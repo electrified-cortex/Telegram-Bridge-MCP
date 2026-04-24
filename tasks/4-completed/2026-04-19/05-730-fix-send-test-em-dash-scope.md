@@ -34,7 +34,3 @@ Worker (TMCP). Curator stages, Overseer reviews, operator merges.
 
 - 20-716 (the fix that created the test/behavior drift).
 - 20-721 (v7 master merge readiness parent).
-
-## Completion
-
-Branch `05-730`, commit `1d9ac29`. Inverted two em-dash test assertions in `src/tools/send.test.ts` (lines 713 and 768): changed from asserting `deliverServiceMessage` called with U+2014 to asserting it was NOT called. Arrow U+2192 test (line 799) left intact. Build: tsc pass.

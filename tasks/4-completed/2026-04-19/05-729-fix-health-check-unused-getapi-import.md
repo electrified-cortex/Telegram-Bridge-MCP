@@ -35,7 +35,3 @@ Worker (TMCP). Curator stages, Overseer reviews, operator merges.
 
 - 10-719 (the fix that introduced the unused import).
 - 20-721 (v7 master merge readiness parent).
-
-## Completion
-
-Branch `05-729`, commit `828661f`. Removed `getApi` from the named import on `src/health-check.ts:25` — remaining imports (`getRawApi`, `resolveChat`, `sendServiceMessage`) unchanged. Build: tsc pass.

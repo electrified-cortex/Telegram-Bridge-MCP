@@ -27,16 +27,6 @@ This is the third and final known CI blocker before v7.0.0 can merge to master.
 
 Worker (TMCP). Can be claimed immediately; workers 3 and 6 are idle.
 
-## Completion
-
-Branch: `05-731` — commit `4d67cde`
-
-Two changes in `src/health-check.test.ts`:
-1. Expanded `getRawApi` mock to include `sendMessage`, `editMessageText`, `answerCallbackQuery` alongside `deleteMessage` — these were under `getApi` mock but production code only calls `getRawApi`.
-2. Updated stale `ownerSid` assertion from `1` to `undefined` — 10-719 removed the `hookOwnerSid` capture and now always passes `undefined` to `registerCallbackHook`.
-
-Validated: 2441/2441 tests pass on main dev branch with equivalent fix applied.
-
 ## Related
 
 - 10-719 (the `getRawApi()` switch that broke the tests).
