@@ -90,9 +90,7 @@ send(type: "append", token: <token>, message_id, text: "…", separator: " ")
 
 ## Other Modes (brief)
 
-**text** — Auto-splits messages over 4096 chars. Markdown auto-converted to
-MarkdownV2. Pass `audio` for TTS voice note. Both text+audio → caption + voice.
-Reply threading: pass `reply_to: <message_id>`.
+**text** — Reply threading: pass `reply_to: <message_id>`.
 
 **Audio + Text (`"text"` type):** `send(type: "text", text: "...", audio: "...")` → voice note + text caption in one msg.
 Use for urgent updates where operator may be away from phone.
