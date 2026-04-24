@@ -41,15 +41,9 @@ Use `action(type: "message/get", message_id: ...)` to retrieve a previously seen
 
 The operator should **always** know what you are doing. Silence is confusing.
 
-**While working:** Send frequent `send(type: "notification")` (silent) updates — brief, one per significant action (editing a file, running a command, thinking about a design decision).
-
-**When done:** Explicitly say so. Never leave an animation running or go silent while waiting for input. Cancel any animation and send a completion message before entering a wait.
-
-**Rule: never confuse working with waiting.** An active animation while idle misleads the operator.
-
 Before any significant action, send a **silent** `send(type: "notification", disable_notification: true)`: title = short action label, text = brief description of what and why.
 
-**On completion:** Send a `send(type: "notification")` with the outcome whenever a task took meaningful time — even outside an active loop. Use `severity: "success"` or `severity: "error"`. The user may have walked away; a completion notification is how they know to come back.
+**When done:** Cancel any active animation, send a completion `send(type: "notification")` with `severity: "success"` or `severity: "error"`. Never go silent while waiting for input — silence is indistinguishable from stuck.
 
 ---
 
