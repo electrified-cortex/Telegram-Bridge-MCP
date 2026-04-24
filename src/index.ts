@@ -118,7 +118,8 @@ setOnLocalLog((event) => {
 const TRANSCRIPTION_FAILED_PREFIX = "[transcription failed:";
 setOnTranscriptionLog((messageId, text) => {
   if (text.startsWith(TRANSCRIPTION_FAILED_PREFIX)) {
-    const errMsg = text.slice(TRANSCRIPTION_FAILED_PREFIX.length, -1).trim();
+    const raw = text.slice(TRANSCRIPTION_FAILED_PREFIX.length);
+    const errMsg = (raw.endsWith(']') ? raw.slice(0, -1) : raw).trim();
     const errorCode = errMsg.includes("timed out") ? "service_timeout" : "service_error";
     logLocalEvent({
       id: messageId,

@@ -1,4 +1,16 @@
-# Preserve Git's normal text handling and automatic text/binary detection.
-# This avoids disabling diffs, merges, and EOL normalization heuristics
-# for all files while still allowing Git to manage text files safely.
+# Set default behavior — Git still auto-detects binary vs text
 * text=auto
+
+# Source files — LF everywhere
+*.ts   text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.sh   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+
+# Windows scripts — CRLF
+*.ps1  text eol=crlf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
