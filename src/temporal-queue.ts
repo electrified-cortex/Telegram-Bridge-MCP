@@ -194,7 +194,8 @@ export class TemporalQueue<T> {
 
   /**
    * Non-destructive peek: returns the first item matching the predicate, or undefined.
-   * Uses the queue's built-in iterator — does not drain or re-enqueue.
+   * Safe: `@tsdotnet/queue` Queue._getIterator() is a non-consuming generator that reads
+   * by index offset into the internal array — early return does not drain or corrupt state.
    * Does not check isReady — finds items regardless of readiness.
    */
   peekFirst(predicate: (item: T) => boolean): T | undefined {
