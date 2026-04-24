@@ -20,6 +20,8 @@ export interface Session {
   reauthDialogMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
+  pendingEnvelopeHint?: string;
+  silenceThresholdS?: number;
   tutorialEnabled?: boolean;   // undefined = true (on by default)
   tutorialSeenTools?: Set<string>;
 }
@@ -231,6 +233,11 @@ export function getUnhealthySessions(thresholdMs: number): SessionInfo[] {
     .map(({ sid, name, color, createdAt }) => ({ sid, name, color, createdAt }));
 }
 
+// ── Silence Detection ─────────────────────────────────────
+
+const SILENCE_THRESHOLD_DEFAULT_S = 30;
+const SILENCE_THRESHOLD_FLOOR_S = 15;
+
 // ── Dequeue Default ───────────────────────────────────────
 
 const DEFAULT_DEQUEUE_TIMEOUT = 300;
@@ -252,6 +259,42 @@ export function getDequeueDefault(sid: number): number {
 export function setDequeueDefault(sid: number, timeout: number): void {
   const session = _sessions.get(sid);
   if (session) session.dequeueDefault = timeout;
+}
+
+/** Set a pending envelope hint to be included on the next dequeue response for this session. */
+export function setSilenceHint(sid: number, hint: string): void {
+  const s = _sessions.get(sid);
+  if (s) s.pendingEnvelopeHint = hint;
+}
+
+/**
+ * Consume and return the pending envelope hint for this session (if any).
+ * Clears the hint so it is only included once.
+ */
+export function takeSilenceHint(sid: number): string | undefined {
+  const s = _sessions.get(sid);
+  if (!s) return undefined;
+  const hint = s.pendingEnvelopeHint;
+  s.pendingEnvelopeHint = undefined;
+  return hint;
+}
+
+/**
+ * Return the per-session silence-detection threshold in seconds.
+ * Returns the session default (30 s) if none has been set or session doesn't exist.
+ */
+export function getSilenceThreshold(sid: number): number {
+  return _sessions.get(sid)?.silenceThresholdS ?? SILENCE_THRESHOLD_DEFAULT_S;
+}
+
+/**
+ * Set the per-session silence-detection threshold.
+ * Clamped to a minimum of 15 s (SILENCE_THRESHOLD_FLOOR_S).
+ * No-op if the session does not exist.
+ */
+export function setSilenceThreshold(sid: number, seconds: number): void {
+  const s = _sessions.get(sid);
+  if (s) s.silenceThresholdS = Math.max(SILENCE_THRESHOLD_FLOOR_S, Math.floor(seconds));
 }
 
 // ── Active Session Context ─────────────────────────────────

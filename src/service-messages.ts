@@ -160,8 +160,8 @@ export const SERVICE_MESSAGES = deepFreeze({
   NUDGE_PRESENCE_RUNG2: {
     eventType: "behavior_nudge_presence_rung2" as const,
     text: (elapsedSeconds: number) =>
-      `Still silent after ${elapsedSeconds}s. Strongly consider starting a persistent animation ` +
-      `(preset: 'working' or 'thinking') or sending a brief status message. ` +
-      `The operator cannot distinguish working from stuck. help('presence')`,
+      `silence: ${elapsedSeconds}s since last dequeue; operator sees no progress. ` +
+      `Acknowledge with show-typing, a reaction, or a persistent animation ` +
+      `(preset: 'working' or 'thinking'). help('presence')`,
   },
 });

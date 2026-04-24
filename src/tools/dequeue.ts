@@ -6,7 +6,7 @@ import { requireAuth } from "../session-gate.js";
 import {
   type TimelineEvent,
 } from "../message-store.js";
-import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession } from "../session-manager.js";
+import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint } from "../session-manager.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories } from "../session-queue.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -186,15 +186,25 @@ export function register(server: McpServer) {
         return (q as { waitForEnqueueSince(v: number): Promise<void> }).waitForEnqueueSince(v);
       }
 
+      /** Build a content batch result, attaching any pending hints. */
+      function buildBatchResult(events: TimelineEvent[]): Record<string, unknown> {
+        const pending = pendingCountAny();
+        const result: Record<string, unknown> = { updates: compactBatch(events, sid) };
+        if (pending > 0) result.pending = pending;
+        const hints: string[] = [];
+        const silenceHint = takeSilenceHint(sid);
+        if (silenceHint !== undefined) hints.push(silenceHint);
+        const voiceHint = buildVoiceBacklogHint(events, sid);
+        if (voiceHint !== undefined) hints.push(voiceHint);
+        if (hints.length > 0) result.hint = hints.join(" ");
+        return result;
+      }
+
       // Try immediate batch dequeue
       let batch = dequeueBatchAny();
       if (batch.length > 0) {
         for (const evt of batch) ackVoice(evt);
-        const pending = pendingCountAny();
-        const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
-        if (pending > 0) result.pending = pending;
-        const hint = buildVoiceBacklogHint(batch, sid);
-        if (hint) result.hint = hint;
+        const result = buildBatchResult(batch);
         resyncActiveSession();
         dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
         return toResult(result);
@@ -252,11 +262,7 @@ export function register(server: McpServer) {
             batch = dequeueBatchAny();
             if (batch.length > 0) {
               for (const evt of batch) ackVoice(evt);
-              const pending = pendingCountAny();
-              const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
-              if (pending > 0) result.pending = pending;
-              const hint = buildVoiceBacklogHint(batch, sid);
-              if (hint) result.hint = hint;
+              const result = buildBatchResult(batch);
               resyncActiveSession();
               dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
               return toResult(result);
@@ -276,11 +282,7 @@ export function register(server: McpServer) {
           batch = dequeueBatchAny();
           if (batch.length > 0) {
             for (const evt of batch) ackVoice(evt);
-            const pending = pendingCountAny();
-            const result: Record<string, unknown> = { updates: compactBatch(batch, sid) };
-            if (pending > 0) result.pending = pending;
-            const hint = buildVoiceBacklogHint(batch, sid);
-            if (hint) result.hint = hint;
+            const result = buildBatchResult(batch);
             resyncActiveSession();
             dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
             return toResult(result);

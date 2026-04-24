@@ -1,23 +1,27 @@
 /**
  * Silent-work presence detector.
  *
- * Runs a background timer and emits service-message nudges when a session
- * has been silent for too long while an operator event is pending.
+ * Runs a background timer and emits presence nudges when a session has been
+ * silent after dequeuing a user message with no acknowledgement signal.
  *
- * Escalation rungs (while pending operator content exists):
- *   < 30 s  → nothing
- *   30–60 s → rung-1 nudge (consider show-typing / reaction / animation)
- *   60 s+   → rung-2 nudge (stronger wording, names animation presets)
+ * Trigger: silence window opens when the agent dequeues a message (any content
+ * type). It does NOT open during dequeue-idle-wait (empty/timed_out responses).
  *
- * Any outbound signal (detected via lastOutboundAt change in behavior-tracker)
- * resets the silence clock and rung state for the next episode.
+ * Cleared by: any acknowledgement signal (show-typing, reaction, animation
+ * start, or any outbound message on the same session).
  *
- * Active animations suppress all nudges — they are sufficient presence signals.
+ * Escalation rungs (since last dequeue, while no ack has been emitted):
+ *   < threshold s     → nothing (default: 30 s, floor: 15 s, configurable)
+ *   threshold s       → rung-1: envelope hint on next dequeue response
+ *   threshold × 2 s   → rung-2: service message (heavier weight)
+ *
+ * Rung state resets on each new dequeue (per-dequeue episode).
+ * Active animations suppress all nudges.
  */
 
 import { listSessions } from "./session-manager.js";
+import { setSilenceHint, getSilenceThreshold } from "./session-manager.js";
 import { getSessionState } from "./behavior-tracker.js";
-import { hasPendingUserContent, getPendingUserContentSince } from "./session-queue.js";
 import { hasActiveAnimation } from "./animation-state.js";
 import { SERVICE_MESSAGES } from "./service-messages.js";
 
@@ -25,13 +29,7 @@ import { SERVICE_MESSAGES } from "./service-messages.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Seconds of silence before rung-1 nudge (pending operator content required). */
-const RUNG_1_THRESHOLD_S = 30;
-
-/** Seconds of silence before rung-2 (stronger) nudge. */
-const RUNG_2_THRESHOLD_S = 60;
-
-/** How often the background timer fires (seconds). Must be < RUNG_1_THRESHOLD_S. */
+/** How often the background timer fires (seconds). Must be < minimum threshold (15 s). */
 const CHECK_INTERVAL_S = 10;
 
 /** Grace period after session creation before the detector activates (ms). */
@@ -42,20 +40,15 @@ const STARTUP_GRACE_MS = 30_000;
 // ---------------------------------------------------------------------------
 
 interface SilenceState {
-  /** Whether the rung-1 nudge has been injected in the current silence episode. */
+  /** Whether the rung-1 hint has been injected in the current silence episode. */
   rung1Fired: boolean;
   /** Whether the rung-2 nudge has been injected in the current silence episode. */
   rung2Fired: boolean;
   /**
-   * The lastOutboundAt value observed last tick.
-   * When this changes, a new episode has started — reset rung flags.
+   * The lastDequeueAt value observed at the previous tick.
+   * When this advances, a new episode has started — reset rung flags.
    */
-  lastKnownOutboundAt: number | undefined;
-  /**
-   * The pendingSince value observed last tick.
-   * When this advances, the operator sent a new message — reset rung flags.
-   */
-  lastKnownPendingSince: number | undefined;
+  lastKnownDequeueAt: number | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,67 +147,47 @@ export function _runSilenceDetectorTickForTest(now = Date.now()): void {
     const createdAtMs = new Date(session.createdAt).getTime();
     if (createdAtMs + STARTUP_GRACE_MS > now) continue;
 
-    // Scope guard: only nudge when there is pending operator input
-    if (!hasPendingUserContent(sid)) continue;
-
     // Animation guard: agent is showing presence via animation
     if (hasActiveAnimation(sid)) continue;
 
-    // Read last outbound signal timestamp from behavior tracker
+    // Read behavior state: last dequeue and last outbound signal
     const behaviorState = getSessionState(sid);
-    const currentOutboundAt = behaviorState?.lastOutboundAt;
+    const lastDequeueAt = behaviorState?.lastDequeueAt;
+    const lastOutboundAt = behaviorState?.lastOutboundAt;
+
+    // Window guard: only open when agent has dequeued a user message
+    if (lastDequeueAt === undefined) continue;
+
+    // Window guard: closed when agent has already acked after last dequeue
+    if (lastOutboundAt !== undefined && lastOutboundAt >= lastDequeueAt) continue;
 
     // Get or create per-session rung state
     let state = _states.get(sid);
     if (!state) {
-      state = { rung1Fired: false, rung2Fired: false, lastKnownOutboundAt: undefined, lastKnownPendingSince: undefined };
+      state = { rung1Fired: false, rung2Fired: false, lastKnownDequeueAt: undefined };
       _states.set(sid, state);
     }
 
-    // Episode reset: only when the outbound timestamp advances — a genuinely new
-    // signal was sent. Backward/equal moves (clock drift, test-mock quirks) are
-    // ignored so a stale value doesn't falsely clear the rung-2 window.
-    if (currentOutboundAt !== undefined) {
-      const isNew = state.lastKnownOutboundAt !== undefined
-        && currentOutboundAt > state.lastKnownOutboundAt;
-      if (isNew) {
-        state.rung1Fired = false;
-        state.rung2Fired = false;
-      }
-      if (state.lastKnownOutboundAt === undefined || currentOutboundAt > state.lastKnownOutboundAt) {
-        state.lastKnownOutboundAt = currentOutboundAt;
-      }
+    // Episode reset: when lastDequeueAt advances, a new dequeue episode began.
+    // Reset rungs so nudges can fire again in the fresh episode.
+    const isNewDequeue = state.lastKnownDequeueAt !== undefined
+      && lastDequeueAt > state.lastKnownDequeueAt;
+    if (isNewDequeue) {
+      state.rung1Fired = false;
+      state.rung2Fired = false;
+    }
+    if (state.lastKnownDequeueAt === undefined || lastDequeueAt > state.lastKnownDequeueAt) {
+      state.lastKnownDequeueAt = lastDequeueAt;
     }
 
-    // Compute elapsed silence. Anchor to the more recent of: last outbound signal
-    // or when the current pending inbound content arrived. This ensures a fresh
-    // 30s grace window starts whenever the operator sends a new message, even if
-    // the last outbound was minutes ago.
-    const pendingSince = getPendingUserContentSince(sid);
+    // Elapsed since last dequeue
+    const elapsed = Math.floor((now - lastDequeueAt) / 1000);
+    const threshold = getSilenceThreshold(sid);
 
-    // Episode reset: when the operator sends a new message (pendingSince advances),
-    // clear rung state so nudges can fire again in the fresh episode.
-    if (pendingSince !== undefined) {
-      const isNewInbound = state.lastKnownPendingSince !== undefined
-        && pendingSince > state.lastKnownPendingSince;
-      if (isNewInbound) {
-        state.rung1Fired = false;
-        state.rung2Fired = false;
-      }
-      if (state.lastKnownPendingSince === undefined || pendingSince > state.lastKnownPendingSince) {
-        state.lastKnownPendingSince = pendingSince;
-      }
-    }
+    if (elapsed < threshold) continue;
 
-    const base = Math.max(
-      currentOutboundAt ?? createdAtMs,
-      pendingSince ?? createdAtMs,
-    );
-    const elapsed = Math.floor((now - base) / 1000);
-
-    if (elapsed < RUNG_1_THRESHOLD_S) continue;
-
-    if (!state.rung2Fired && elapsed >= RUNG_2_THRESHOLD_S) {
+    if (!state.rung2Fired && elapsed >= threshold * 2) {
+      // Rung-1 is superseded — mark fired without emitting hint
       if (!state.rung1Fired) {
         state.rung1Fired = true;
       }
@@ -224,12 +197,9 @@ export function _runSilenceDetectorTickForTest(now = Date.now()): void {
         SERVICE_MESSAGES.NUDGE_PRESENCE_RUNG2.eventType,
       );
       state.rung2Fired = true;
-    } else if (!state.rung1Fired && elapsed >= RUNG_1_THRESHOLD_S) {
-      _nudgeInjector(
-        sid,
-        SERVICE_MESSAGES.NUDGE_PRESENCE_RUNG1.text(elapsed),
-        SERVICE_MESSAGES.NUDGE_PRESENCE_RUNG1.eventType,
-      );
+    } else if (!state.rung1Fired && elapsed >= threshold) {
+      // Rung-1: lightweight envelope hint (no service message)
+      setSilenceHint(sid, `silence: ${elapsed}s since last dequeue; operator sees no progress`);
       state.rung1Fired = true;
     }
   }
