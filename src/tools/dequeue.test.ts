@@ -79,6 +79,7 @@ vi.mock("../session-manager.js", () => ({
   isTutorialEnabled: vi.fn(() => false),
   markTutorialToolSeen: vi.fn(() => false),
   getSession: vi.fn(() => ({ name: "TestSession" })),
+  takeSilenceHint: vi.fn().mockReturnValue(undefined),
 }));
 
 vi.mock("../session-queue.js", () => ({
