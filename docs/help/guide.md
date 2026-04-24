@@ -282,12 +282,7 @@ The bot must be in the Always Allow exceptions list. The base setting can stay a
 
 ## Reactions from the user
 
-`DEFAULT_ALLOWED_UPDATES` includes `"message_reaction"` so user reactions come through.
-
-- `dequeue` returns reaction events with `content.type: "reaction"` containing `added` and `removed` emoji arrays.
-- Reactions arrive on the response lane (higher priority than messages).
-
-Use this to acknowledge what the user reacted to and adapt behavior accordingly.
+`dequeue` returns reaction events with `content.type: "reaction"` containing `added` and `removed` emoji arrays. Reactions arrive on the response lane (higher priority than messages).
 
 ---
 
