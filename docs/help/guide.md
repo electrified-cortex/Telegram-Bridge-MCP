@@ -288,15 +288,9 @@ The bot must be in the Always Allow exceptions list. The base setting can stay a
 
 ## Received file handling
 
-When `dequeue` returns an event with a non-text `content.type`, **always ask the user what to do — never read or process the file automatically.**
+When `dequeue` returns an event with a non-text `content.type`, **always ask the user what to do — never read or process the file automatically.** Do not call `action(type: "download")` until the user has selected an action requiring it — the file name and MIME type from `dequeue` are sufficient to present the choice.
 
 Optionally react with 👀 to signal receipt, then use `send(type: "question", choose: [...])` with inferred action buttons.
-
-### Core rule: always ask first, download only when needed
-
-Do **not** call `action(type: "download")` until the user has selected an action that requires it. The metadata returned by `dequeue` (file name, MIME type) is sufficient to present the choice.
-
-Never silently download, read, or process a received file without explicit instruction.
 
 ### Handling batched file uploads
 
