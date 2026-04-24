@@ -99,7 +99,7 @@ export function register(server: McpServer) {
           .min(0, { message: "max_wait must be \u2265 0. Call help(topic: 'dequeue') for usage." })
           .max(300, { message: "max_wait must be \u2264 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
           .optional()
-          .describe("Seconds to block when queue is empty. Omit to use your session default (set via action(type: 'profile/dequeue-default')); server fallback is 300 s. Pass 0 for an instant non-blocking poll (drain loops only). Values above the session default require force: true or action(type: 'profile/dequeue-default'). Max 300 s — use action(type: 'profile/dequeue-default') to configure persistent agents. You almost never need to set this — the session default handles blocking. Only exception: max_wait: 0 for drain loops."),
+          .describe("Seconds to block when queue is empty. Omit to use your session default (fallback 300 s). Pass 0 for an instant non-blocking poll (drain loops). Values above the session default require force: true. Use action(type: 'profile/dequeue-default') to raise your default."),
         timeout: z
           .number()
           .int()
