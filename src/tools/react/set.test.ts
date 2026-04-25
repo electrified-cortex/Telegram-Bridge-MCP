@@ -93,10 +93,135 @@ describe("set_reaction tool", () => {
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
   });
 
+  // ── UNSUPPORTED_EMOJI_ALIASES fallback (emoji_alias_applied hint) ────────
+
+  it("aliased unsupported emoji (👂) → ok:true, temporary:true (👀 is TEMPORARY_BY_DEFAULT), hint:emoji_alias_applied", async () => {
+    const result = await call({ message_id: 1, emoji: "👂", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    // 👂 maps to 👀 which is in TEMPORARY_BY_DEFAULT — routes via setTempReaction
+    expect(data.temporary).toBe(true);
+    expect(data.hint).toBe("emoji_alias_applied");
+    expect(data.applied).toEqual(["👀"]);
+    expect(typeof data.hint_detail).toBe("string");
+    expect((data.hint_detail as string)).toContain("👂");
+    expect((data.hint_detail as string)).toContain("👀");
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(1, "👀", undefined, undefined);
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+  });
+
+  it("supported emoji (👍) → ok:true, no hint field", async () => {
+    const result = await call({ message_id: 2, emoji: "👍", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.hint).toBeUndefined();
+  });
+
+  // Confirms 🎭 is not in the alias map (negative alias coverage — distinct from 💀 above)
+  it("unsupported AND unmapped emoji (🎭) → REACTION_EMOJI_INVALID, no API call", async () => {
+    const result = await call({ message_id: 3, emoji: "🎭", token: 1123456 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("REACTION_EMOJI_INVALID");
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+  });
+
   it("rejects an arbitrary string that is not an emoji or alias (returns error)", async () => {
     const result = await call({ message_id: 1, emoji: "notanemoji", token: 1123456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("REACTION_EMOJI_INVALID");
+  });
+
+  it("alias path + temporary:true → setTempReaction (not permanent), hint:emoji_alias_applied", async () => {
+    // Minor-2: 👂 maps to 👀; explicit temporary:true must route through setTempReaction
+    const result = await call({ message_id: 5, emoji: "👂", temporary: true, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.temporary).toBe(true);
+    expect(data.hint).toBe("emoji_alias_applied");
+    expect(data.applied).toEqual(["👀"]);
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(5, "👀", undefined, undefined);
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+  });
+
+  it("alias path + temporary:false → permanent path (overrides TEMPORARY_BY_DEFAULT), hint:emoji_alias_applied", async () => {
+    // 👂 maps to 👀; 👀 is TEMPORARY_BY_DEFAULT, but explicit temporary:false must override
+    // to the permanent path (setMessageReaction, not setTempReaction)
+    const result = await call({ message_id: 7, emoji: "👂", temporary: false, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.temporary).toBe(false);
+    expect(data.hint).toBe("emoji_alias_applied");
+    expect(data.applied).toEqual(["👀"]);
+    expect(mocks.setMessageReaction).toHaveBeenCalledWith(42, 7, [{ type: "emoji", emoji: "👀" }], { is_big: undefined });
+    expect(mocks.setTempReaction).not.toHaveBeenCalled();
+  });
+
+  it("alias path + hasBaseReaction=false → markBaseReaction is called", async () => {
+    // Minor-3: alias path must still register the implicit 👌 base when not yet present
+    mocks.hasBaseReaction.mockReturnValue(false);
+    // 🤚 maps to 👍 (permanent), so permanent path runs and registers base
+    const result = await call({ message_id: 6, emoji: "🤚", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.applied).toEqual(["👍"]);
+    await new Promise(r => setTimeout(r, 0));
+    expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 6);
+  });
+
+  // ── New alias coverage: 🧠, 👁, 🦻 ──────────────────────────────────────
+
+  it("🧠 → 🤔: ok:true, hint:emoji_alias_applied, applied:[🤔], permanent (🤔 is NOT in TEMPORARY_BY_DEFAULT when forced permanent by default)", async () => {
+    // 🧠 maps to 🤔 — but 🤔 IS in TEMPORARY_BY_DEFAULT, so default routing is temp
+    const result = await call({ message_id: 20, emoji: "🧠", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    // 🤔 is in TEMPORARY_BY_DEFAULT → routes via setTempReaction by default
+    expect(data.hint).toBe("emoji_alias_applied");
+    expect(data.applied).toEqual(["🤔"]);
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(20, "🤔", undefined, undefined);
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+  });
+
+  it("🧠 + temporary:false → permanent path, hint:emoji_alias_applied, applied:[🤔]", async () => {
+    // 🧠 maps to 🤔; explicit temporary:false overrides TEMPORARY_BY_DEFAULT
+    const result = await call({ message_id: 21, emoji: "🧠", temporary: false, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.temporary).toBe(false);
+    expect(data.hint).toBe("emoji_alias_applied");
+    expect(data.applied).toEqual(["🤔"]);
+    expect(mocks.setMessageReaction).toHaveBeenCalledWith(42, 21, [{ type: "emoji", emoji: "🤔" }], { is_big: undefined });
+    expect(mocks.setTempReaction).not.toHaveBeenCalled();
+  });
+
+  it("👁 → 👀: ok:true, hint:emoji_alias_applied, applied:[👀], temp (👀 is TEMPORARY_BY_DEFAULT)", async () => {
+    // 👁 maps to 👀 which is in TEMPORARY_BY_DEFAULT — routes via setTempReaction
+    const result = await call({ message_id: 22, emoji: "👁", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.hint).toBe("emoji_alias_applied");
+    expect(data.applied).toEqual(["👀"]);
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(22, "👀", undefined, undefined);
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
+  });
+
+  it("🦻 → 👀: ok:true, hint:emoji_alias_applied, applied:[👀], temp (👀 is TEMPORARY_BY_DEFAULT)", async () => {
+    // 🦻 maps to 👀 which is in TEMPORARY_BY_DEFAULT — routes via setTempReaction
+    const result = await call({ message_id: 23, emoji: "🦻", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.hint).toBe("emoji_alias_applied");
+    expect(data.applied).toEqual(["👀"]);
+    expect(mocks.setTempReaction).toHaveBeenCalledWith(23, "👀", undefined, undefined);
+    expect(mocks.setMessageReaction).not.toHaveBeenCalled();
   });
 
   it("maps API errors to TelegramError", async () => {

@@ -10,7 +10,7 @@ import { getCallerSid, runInSessionContext } from "../../session-context.js";
 import { requireAuth } from "../../session-gate.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
-  sendChoiceMessage, buildKeyboardRows, buildHighlightedRows, type KeyboardOption,
+  sendChoiceMessage, buildKeyboardRows, type KeyboardOption,
 } from "../button-helpers.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { validateButtonSymbolParity } from "../../button-validation.js";
@@ -183,9 +183,8 @@ export async function handleChoose(
     registerCallbackHook(messageId, (evt) => {
       const chosen = options.find((o) => o.value === evt.content.data);
       const chosenLabel = chosen?.label ?? evt.content.data ?? "";
-      const highlighted = buildHighlightedRows(options as KeyboardOption[], columns, evt.content.data ?? "");
       clearMessageHook(messageId);
-      void ackAndEditSelection(chatId, messageId, text, chosenLabel, evt.content.qid, !!audio, highlighted)
+      void ackAndEditSelection(chatId, messageId, text, chosenLabel, evt.content.qid, !!audio)
         .catch((e: unknown) => process.stderr.write(`[warn] choose hook failed: ${String(e)}\n`));
     }, _sid);
 

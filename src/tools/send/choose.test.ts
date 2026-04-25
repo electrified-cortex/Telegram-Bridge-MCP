@@ -190,12 +190,9 @@ describe("choose tool", () => {
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "opt_b", qid: "cq1" } });
     await new Promise((r) => setTimeout(r, 0));
+    // No highlighted rows — buttons are cleared (inline_keyboard: []) after selection
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
       42, 7, "Pick", "Option B", "cq1", false,
-      [[
-        { text: "Option A", callback_data: "opt_a" },
-        { text: "Option B", callback_data: "opt_b", style: "primary" },
-      ]],
     );
   });
 
@@ -206,12 +203,9 @@ describe("choose tool", () => {
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "opt_a", qid: "cq1" } });
     await new Promise((r) => setTimeout(r, 0));
+    // No highlighted rows — buttons are cleared (inline_keyboard: []) after selection
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
       42, 7, "Pick one", "Option A", "cq1", false,
-      [[
-        { text: "Option A", callback_data: "opt_a", style: "primary" },
-        { text: "Option B", callback_data: "opt_b" },
-      ]],
     );
   });
 
@@ -594,18 +588,15 @@ describe("identity gate", () => {
       expect(isError(result)).toBe(true);
     });
 
-    it("calls ackAndEditSelection with isVoice=true and highlighted rows when button pressed on voice message", async () => {
+    it("calls ackAndEditSelection with isVoice=true and no highlighted rows when button pressed on voice message", async () => {
       mocks.pollButtonOrTextOrVoice.mockResolvedValue({ kind: "button", data: "a", message_id: 8 });
       await call(BASE_VOICE_ARGS);
       const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
       hookFn({ content: { data: "a", qid: "cq1" } });
       await new Promise((r) => setTimeout(r, 0));
+      // No highlighted rows — buttons are cleared (inline_keyboard: []) after selection
       expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
         42, 8, "Which option?", "Alpha", "cq1", true,
-        [[
-          { text: "Alpha", callback_data: "a", style: "primary" },
-          { text: "Beta", callback_data: "b" },
-        ]],
       );
       expect(mocks.editMessageText).not.toHaveBeenCalled();
     });

@@ -34,6 +34,23 @@ Common drift: confusing 👌 with 🆗 (regional indicator); using 👍 as the d
 - All other emojis are permanent by default.
 - Pass `temporary: true` to force auto-revert, or `temporary: false` to pin a normally-temporary emoji. Explicit always wins.
 
+## Unsupported emoji fallback
+
+Some emoji are commonly used by agents but are not accepted by Telegram as reactions (e.g. 👂 ear, 🤚 raised hand, 🧠 brain, 👁 single eye, 🦻 ear with hearing aid). Rather than failing, the bridge remaps these to the closest supported semantic equivalent and returns a hint:
+
+```json
+{
+  "ok": true,
+  "temporary": true,
+  "hint": "emoji_alias_applied",
+  "hint_detail": "👂 is not a supported Telegram reaction. Used 👀 (closest semantic alias). The fallback uses the same temporality rules as the alias target directly."
+}
+```
+
+The response also includes standard fields from the normal routing path such as `temporary`, `restore_emoji`, and `timeout_seconds`, reflecting the actual routing taken after substitution.
+
+This applies to the single-emoji path only. The alias target is substituted and then routed normally — including `temporary`, `timeout_seconds`, and TEMPORARY_BY_DEFAULT rules. Unknown unsupported emoji (with no semantic mapping) still return `REACTION_EMOJI_INVALID`.
+
 ## Constraints
 
 - **DMs**: no reactions, no typing indicators, no animations — DMs are a pure data channel.

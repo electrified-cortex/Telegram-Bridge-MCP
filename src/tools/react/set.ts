@@ -44,6 +44,27 @@ export function resetPremiumCacheForTest(): void {
 }
 
 /**
+ * Maps unsupported (non-Telegram-reaction) emoji to the closest semantic alias
+ * that IS in ALLOWED_EMOJI. Used by the single-emoji path; routes through normal
+ * temporary/permanent logic.
+ *
+ * Entries here must NOT appear in ALLOWED_EMOJI — they are emoji agents commonly
+ * reach for that Telegram does not accept as reactions.
+ * Values MUST be present in ALLOWED_EMOJI.
+ *
+ * When a match is found the bridge substitutes the alias target and falls through into the
+ * normal routing logic (so temporary/timeout_seconds/TEMPORARY_BY_DEFAULT all apply).
+ * The result includes hint:"emoji_alias_applied" so the caller knows about the substitution.
+ */
+const UNSUPPORTED_EMOJI_ALIASES: Record<string, string | undefined> = {
+  "👂": "👀", // ear (listening) → eyes (watching/processing); note: 👀 is in TEMPORARY_BY_DEFAULT
+  "🤚": "👍", // raised hand → thumbs up (acknowledgment)
+  "🧠": "🤔", // brain (thinking) → thinking face
+  "👁": "👀", // single eye → eyes; note: 👀 is in TEMPORARY_BY_DEFAULT
+  "🦻": "👀", // ear with hearing aid → eyes; note: 👀 is in TEMPORARY_BY_DEFAULT
+};
+
+/**
  * Semantic aliases mapped to ordered fallback arrays.
  * First element is preferred; subsequent elements are tried on REACTION_INVALID.
  * Aliases with a single element have no fallback (always work for free bots).
@@ -333,13 +354,25 @@ export async function handleSetReaction(args: {
     // Resolve alias or raw emoji → ordered candidate array
     let candidates: string[] = [];
     let originalFirst: string | undefined;
+    // Set when an unsupported emoji was remapped via UNSUPPORTED_EMOJI_ALIASES.
+    // The hint fields are injected into the final toResult(...) call below.
+    let aliasHint: { original: string; target: string } | undefined;
     if (emoji) {
-      const resolved = resolveEmoji(emoji);
+      let resolved = resolveEmoji(emoji);
       if (!resolved) {
-        return toError({
-          code: "REACTION_EMOJI_INVALID" as const,
-          message: `"${emoji}" is not an allowed reaction emoji.`,
-        });
+        // Check UNSUPPORTED_EMOJI_ALIASES before returning an error.
+        // If found, substitute the alias target and fall through into the normal
+        // routing logic (so temporary/timeout_seconds/TEMPORARY_BY_DEFAULT all apply).
+        const aliasTarget = UNSUPPORTED_EMOJI_ALIASES[emoji];
+        if (aliasTarget !== undefined) {
+          aliasHint = { original: emoji, target: aliasTarget };
+          resolved = resolveEmoji(aliasTarget) ?? [aliasTarget];
+        } else {
+          return toError({
+            code: "REACTION_EMOJI_INVALID" as const,
+            message: `"${emoji}" is not an allowed reaction emoji.`,
+          });
+        }
       }
       originalFirst = resolved[0];
       // Premium shortcut: skip known premium-only emojis for non-premium bots
@@ -380,7 +413,14 @@ export async function handleSetReaction(args: {
       // call (it would overwrite the visible temp). The temp-reaction restore path will
       // apply 👌 when the last temp expires.
       _insertBaseReaction(chatId, message_id);
-      return toResult({ ok: true, temporary: true, restore_emoji: restoreResolved ?? null, timeout_seconds: timeout_seconds ?? null });
+      const tempResult: Record<string, unknown> = { ok: true, temporary: true, restore_emoji: restoreResolved ?? null, timeout_seconds: timeout_seconds ?? null };
+      if (aliasHint) {
+        const hint_detail = `${aliasHint.original} is not a supported Telegram reaction. Used ${aliasHint.target} (closest semantic alias). The fallback uses the same temporality rules as the alias target directly.`;
+        tempResult.hint = "emoji_alias_applied";
+        tempResult.hint_detail = hint_detail;
+        tempResult.applied = [aliasHint.target];
+      }
+      return toResult(tempResult);
     }
 
     // Permanent reaction — clear if no emoji given
@@ -401,6 +441,12 @@ export async function handleSetReaction(args: {
           result.requested = originalFirst;
           result.fallback_used = true;
           result.reason = "The preferred emoji requires Telegram Premium. Used the closest free alternative.";
+        }
+        if (aliasHint) {
+          const hint_detail = `${aliasHint.original} is not a supported Telegram reaction. Used ${aliasHint.target} (closest semantic alias). The fallback uses the same temporality rules as the alias target directly.`;
+          result.hint = "emoji_alias_applied";
+          result.hint_detail = hint_detail;
+          result.applied = [aliasHint.target];
         }
         return toResult(result);
       } catch (err) {
