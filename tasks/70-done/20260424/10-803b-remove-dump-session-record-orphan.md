@@ -29,3 +29,17 @@ Decision: remove these files post-v6 (Curator, 2026-04-24).
 ## Reversal
 
 Git revert is sufficient — no schema or API surface change.
+
+## Activity Log
+
+- **2026-04-24** — Pipeline started. Variant: Implement only.
+- **2026-04-24** — [Stage 4] Task Runner dispatched ×1. 5 files deleted/modified. Pre-existing lint errors in tool-hooks.ts and session_status.ts also fixed.
+- **2026-04-24** — [Stage 5] Verification: diff non-empty, build PASS, 2629 tests PASS, lint PASS.
+- **2026-04-24** — [Stage 6] Code Reviewer ×2: stale JSDoc comments fixed after pass 1 finding; pass 2 clean.
+- **2026-04-24** — [Stage 7] Complete. Branch: 10-803b, commit: 8d42176.
+
+## Completion
+
+Deleted `src/tools/dump_session_record.ts` and its test. Removed TOOL_INDEX entry from `help.ts`, mock stubs from `action.test.ts` and `error-guidance.test.ts`, and stale JSDoc references in `debug-log.ts`, `message-store.ts`, `session-recording.ts`. Fixed two pre-existing lint errors. Build, lint, 2629 tests all pass.
+
+Subagent passes: Task Runner ×1, Code Reviewer ×2. Final: 0 critical, 0 major, 0 minor.

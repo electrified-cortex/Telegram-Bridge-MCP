@@ -2,7 +2,7 @@
  * Always-on message store — the core of V3.
  *
  * Two access patterns over one set of objects:
- *   1. Timeline: ordered event log (dump_session_record)
+ *   1. Timeline: ordered event log (get_chat_history)
  *   2. Index:    Map<message_id, Map<version, event>> (get_message)
  *
  * Both point to the same TimelineEvent objects — no duplication.
@@ -697,7 +697,7 @@ export function getVersions(messageId: number): number[] {
 }
 
 // ---------------------------------------------------------------------------
-// Timeline dump — full event log for dump_session_record
+// Timeline dump — full event log
 // ---------------------------------------------------------------------------
 
 /**

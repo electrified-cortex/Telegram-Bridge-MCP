@@ -119,7 +119,6 @@ const TOOL_INDEX: Record<string, string> = {
   save_profile: "Save the current session's profile (name, color, voice) to disk.",
   load_profile: "Load a saved profile and apply it to the current session.",
   import_profile: "Import a profile definition from a JSON object.",
-  dump_session_record: "Roll and return the current session log.",
   roll_log: "Archive the current local log and start a fresh one.",
   get_log: "Read the current or a named local log file.",
   list_logs: "List all available local log files.",

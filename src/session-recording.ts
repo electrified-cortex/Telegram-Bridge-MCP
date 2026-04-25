@@ -6,7 +6,7 @@
  * flow: start/stop recording, auto-dump when the buffer fills, and export
  * raw entries for the agent's session-prefs questionnaire.
  *
- * `dump_session_record` reads from the message store timeline, NOT from
+ * `get_chat_history` reads from the message store timeline, NOT from
  * this buffer. This module is only used by the `/session` command panel
  * and the startup prefs prompt.
  */

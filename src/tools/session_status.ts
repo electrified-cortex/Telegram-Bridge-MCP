@@ -29,7 +29,7 @@ export function handleSessionStatus({ token }: { token: number }) {
       const idleAt = full.dequeueIdleAt ?? null;
       const is_waiting = idleAt !== null;
       const waiting_s = idleAt !== null ? Math.floor((now - idleAt) / 1000) : null;
-      const healthy = full.healthy ?? false;
+      const healthy = full.healthy;
 
       return {
         sid: info.sid,
