@@ -5,7 +5,7 @@ Reactions are acknowledgments, not action triggers. Never mutate state from a re
 ## Emoji semantics
 
 | Emoji | Meaning | When to use |
-|---|---|---|
+| --- | --- | --- |
 | 👌 | Weakest ack — "received, no commitment" | Message noted; not committing to action |
 | 👍 | Strong ack — "received, will do" | Committing to act on this message |
 | 🫡 | Auto-salute — auto-fired on voice dequeue | Do not send manually; override only to convey meaning beyond receipt |

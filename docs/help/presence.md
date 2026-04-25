@@ -10,7 +10,7 @@ Use presence signals to keep the operator informed.
 ## Decision Tree
 
 | Situation | Signal |
-|---|---|
+| --- | --- |
 | Text reply is being composed | `show-typing` — honest indicator; only if text is actually arriving |
 | Thinking, reply not yet composed | `thinking` animation — temporary, overwritten by next outbound |
 | Long message to absorb, need time | `processing` preset reaction, then `thinking` → `working` animation |

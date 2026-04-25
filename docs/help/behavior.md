@@ -5,7 +5,7 @@ The TMCP behavioral-shaping layer delivers guidance as service messages or envel
 ## Severity tiers
 
 | Tier | Channel | Weight | When to use |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **service-message** | Session queue — appears as an `updates` event on next dequeue | Interruption-weight | Behavioral corrections that must be adopted; semantics the agent is misusing |
 | **hint** | `hint` field on dequeue response — lightweight, in-band | Suggestion-weight | Soft nudges, timing suggestions, ambient guidance the agent can choose to act on |
 
@@ -14,7 +14,7 @@ Service messages are reserved for things that genuinely need to change. Hints ar
 ## Active rules
 
 | Name | Severity | Trigger | Help topic |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `reaction_semantics` | service-message | first react() | reactions |
 | `presence_silence_rung1` | hint | silence > threshold | presence |
 | `presence_silence_rung2` | service-message | silence > 2× threshold | presence |
