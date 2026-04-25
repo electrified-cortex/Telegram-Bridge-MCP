@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { TelegramError } from "../../telegram.js";
 import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
 
@@ -11,10 +11,13 @@ const mocks = vi.hoisted(() => ({
   editMessageReplyMarkup: vi.fn(),
   editMessageText: vi.fn(),
   registerCallbackHook: vi.fn(),
+  registerPersistentCallbackHook: vi.fn(),
   applyTopicToText: vi.fn((t: string) => t),
   resolveChat: vi.fn((): number | TelegramError => 42),
   validateText: vi.fn((): TelegramError | null => null),
 }));
+
+type HookFn = (evt: { content: { qid?: string; data?: string } }) => void;
 
 vi.mock("../../telegram.js", async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
@@ -37,6 +40,7 @@ vi.mock("../../topic-state.js", () => ({
 
 vi.mock("../../message-store.js", () => ({
   registerCallbackHook: mocks.registerCallbackHook,
+  registerPersistentCallbackHook: mocks.registerPersistentCallbackHook,
 }));
 
 vi.mock("../../session-manager.js", () => ({
@@ -137,77 +141,208 @@ describe("send_choice tool", () => {
     expect(mocks.editMessageReplyMarkup).not.toHaveBeenCalled();
   });
 
-  it("hook invokes answerCallbackQuery and highlights clicked button on press", async () => {
-    await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
-    const [hookedMessageId, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string; data?: string } }) => void];
-    expect(hookedMessageId).toBe(9);
+  // ---------------------------------------------------------------------------
+  // One-shot highlight-then-collapse (default mode)
+  // ---------------------------------------------------------------------------
 
-    mocks.answerCallbackQuery.mockResolvedValue(undefined);
-    mocks.editMessageText.mockResolvedValue(undefined);
+  describe("one-shot collapse (default, persistent omitted)", () => {
+    beforeEach(() => {
+      mocks.answerCallbackQuery.mockResolvedValue(undefined);
+      mocks.editMessageReplyMarkup.mockResolvedValue(undefined);
+      mocks.editMessageText.mockResolvedValue(undefined);
+    });
 
-    // Simulate a button press callback event — user picked "like"
-    hookFn({ content: { qid: "ack123", data: "like" } });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-    // Flush async microtasks
-    await new Promise<void>((r) => setTimeout(r, 0));
+    it("stage 1: acks callback and calls editMessageReplyMarkup with highlighted rows", async () => {
+      vi.useFakeTimers();
+      await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456 });
+      const [hookedMessageId, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, HookFn];
+      expect(hookedMessageId).toBe(9);
 
-    expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("ack123");
-    expect(mocks.editMessageText).toHaveBeenCalledWith(
-      42, 9,
-      expect.stringContaining("Like it"),
-      expect.objectContaining({
-        reply_markup: {
-          inline_keyboard: [[
-            { text: "Like it", callback_data: "like", style: "primary" },
-            { text: "Dislike it", callback_data: "dislike" },
-          ]],
-        },
-      }),
-    );
+      hookFn({ content: { qid: "ack123", data: "like" } });
+      // Flush microtasks — enough for stage 1 (no timer needed)
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("ack123");
+      expect(mocks.editMessageReplyMarkup).toHaveBeenCalledWith(
+        42, 9,
+        expect.objectContaining({
+          reply_markup: {
+            inline_keyboard: [[
+              // Clicked "like" gets primary (no original style → fallback)
+              { text: "Like it", callback_data: "like", style: "primary" },
+              // Non-clicked "dislike" style stripped (plain)
+              { text: "Dislike it", callback_data: "dislike" },
+            ]],
+          },
+        }),
+      );
+      // editMessageText not yet called (timer hasn't fired)
+      expect(mocks.editMessageText).not.toHaveBeenCalled();
+    });
+
+    it("stage 2: after ~150 ms timer fires, collapses keyboard and appends selection suffix", async () => {
+      vi.useFakeTimers();
+      await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456 });
+      const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, HookFn];
+
+      hookFn({ content: { qid: "ack123", data: "like" } });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Stage 1 done — advance timer past collapse delay
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        42, 9,
+        expect.stringContaining("Like it"),
+        expect.objectContaining({
+          reply_markup: { inline_keyboard: [] },
+        }),
+      );
+    });
+
+    it("stage 2 keyboard is explicitly empty (not omitted)", async () => {
+      vi.useFakeTimers();
+      await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456 });
+      const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, HookFn];
+
+      hookFn({ content: { qid: "ack123", data: "like" } });
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+
+      const callArgs = mocks.editMessageText.mock.calls[0] as [number, number, string, Record<string, unknown>];
+      const markup = callArgs[3].reply_markup as { inline_keyboard: unknown[][] };
+      // reply_markup must be explicitly present with empty inline_keyboard
+      // (omitting it would leave the keyboard intact in Telegram)
+      expect(markup).toBeDefined();
+      expect(markup.inline_keyboard).toEqual([]);
+    });
+
+    it("non-clicked buttons have style stripped in stage-1 highlight", async () => {
+      vi.useFakeTimers();
+      const styledOptions = [
+        { label: "Yes", value: "yes", style: "success" as const },
+        { label: "No", value: "no", style: "danger" as const },
+      ];
+      await call({ text: "Confirm?", options: styledOptions, token: 1123456 });
+      const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, HookFn];
+
+      hookFn({ content: { qid: "q1", data: "yes" } });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const rmArgs = mocks.editMessageReplyMarkup.mock.calls[0] as [number, number, Record<string, unknown>];
+      const keyboard = (rmArgs[2].reply_markup as { inline_keyboard: { text: string; callback_data: string; style?: string }[][] }).inline_keyboard;
+      // Clicked "yes" keeps original style (success)
+      expect(keyboard[0][0]).toMatchObject({ style: "success" });
+      // Non-clicked "no" has style stripped (plain)
+      expect(keyboard[0][1]).not.toHaveProperty("style");
+    });
+
+    it("hook skips answerCallbackQuery when qid is absent", async () => {
+      vi.useFakeTimers();
+      await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456 });
+      const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, HookFn];
+
+      hookFn({ content: { data: "dislike" } });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mocks.answerCallbackQuery).not.toHaveBeenCalled();
+      expect(mocks.editMessageReplyMarkup).toHaveBeenCalled();
+    });
+
+    it("hook uses raw data as label when data does not match any option", async () => {
+      vi.useFakeTimers();
+      await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456 });
+      const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, HookFn];
+
+      hookFn({ content: { data: "ghost" } });
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        42, 9,
+        expect.stringContaining("ghost"),
+        expect.any(Object),
+      );
+    });
   });
 
-  it("hook leaves non-clicked buttons unchanged after selection", async () => {
-    await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
-    const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string; data?: string } }) => void];
+  // ---------------------------------------------------------------------------
+  // Persistent / multi-tap mode (persistent: true)
+  // ---------------------------------------------------------------------------
 
-    mocks.answerCallbackQuery.mockResolvedValue(undefined);
-    mocks.editMessageText.mockResolvedValue(undefined);
+  describe("persistent mode (persistent: true)", () => {
+    beforeEach(() => {
+      mocks.answerCallbackQuery.mockResolvedValue(undefined);
+      mocks.editMessageReplyMarkup.mockResolvedValue(undefined);
+      mocks.editMessageText.mockResolvedValue(undefined);
+    });
 
-    // User picked "dislike" — "like" button should remain unstyled
-    hookFn({ content: { qid: "ack456", data: "dislike" } });
-    await new Promise<void>((r) => setTimeout(r, 0));
+    it("uses registerPersistentCallbackHook (not one-shot) in persistent mode", async () => {
+      await call({ text: "Pick", options: TWO_OPTIONS, persistent: true, token: 1123456 });
+      expect(mocks.registerPersistentCallbackHook).toHaveBeenCalledWith(9, expect.any(Function), expect.any(Number));
+      expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
+    });
 
-    const callArgs = mocks.editMessageText.mock.calls[0] as [number, number, string, { reply_markup: { inline_keyboard: { text: string; callback_data: string; style?: string }[][] } }];
-    const keyboard = callArgs[3].reply_markup.inline_keyboard;
-    expect(keyboard[0][0]).not.toHaveProperty("style"); // "like" unchanged
-    expect(keyboard[0][1]).toMatchObject({ style: "primary" }); // "dislike" highlighted
-  });
+    it("keeps keyboard visible after press — calls editMessageText with highlighted rows (not empty)", async () => {
+      await call({ text: "Pick", options: TWO_OPTIONS, persistent: true, token: 1123456 });
+      const [, hookFn] = mocks.registerPersistentCallbackHook.mock.calls[0] as [number, HookFn];
 
-  it("hook skips answerCallbackQuery when qid is absent", async () => {
-    await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
-    const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string; data?: string } }) => void];
+      hookFn({ content: { qid: "ack123", data: "like" } });
+      await new Promise<void>((r) => setTimeout(r, 0));
 
-    mocks.editMessageText.mockResolvedValue(undefined);
-    hookFn({ content: { data: "dislike" } });
-    await new Promise<void>((r) => setTimeout(r, 0));
+      expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("ack123");
+      // editMessageText called with non-empty keyboard (persistent highlight)
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        42, 9,
+        expect.stringContaining("Like it"),
+        expect.objectContaining({
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "Like it", callback_data: "like", style: "primary" },
+              { text: "Dislike it", callback_data: "dislike" },
+            ]],
+          },
+        }),
+      );
+      // editMessageReplyMarkup not called (persistent path skips stage-1 markup edit)
+      expect(mocks.editMessageReplyMarkup).not.toHaveBeenCalled();
+    });
 
-    expect(mocks.answerCallbackQuery).not.toHaveBeenCalled();
-    expect(mocks.editMessageText).toHaveBeenCalled();
-  });
+    it("does not call editMessageReplyMarkup in persistent mode (single editMessageText call)", async () => {
+      await call({ text: "Pick", options: TWO_OPTIONS, persistent: true, token: 1123456 });
+      const [, hookFn] = mocks.registerPersistentCallbackHook.mock.calls[0] as [number, HookFn];
 
-  it("hook uses raw data as label when data does not match any option", async () => {
-    await call({ text: "Pick", options: TWO_OPTIONS, token: 1123456});
-    const [, hookFn] = mocks.registerCallbackHook.mock.calls[0] as [number, (evt: { content: { qid?: string; data?: string } }) => void];
+      hookFn({ content: { qid: "ack456", data: "dislike" } });
+      await new Promise<void>((r) => setTimeout(r, 0));
 
-    mocks.editMessageText.mockResolvedValue(undefined);
-    hookFn({ content: { data: "ghost" } });
-    await new Promise<void>((r) => setTimeout(r, 0));
+      expect(mocks.editMessageReplyMarkup).not.toHaveBeenCalled();
+      expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
+    });
 
-    expect(mocks.editMessageText).toHaveBeenCalledWith(
-      42, 9,
-      expect.stringContaining("ghost"),
-      expect.any(Object),
-    );
+    it("each tap invokes the registered hook fn independently (closure is stateless)", async () => {
+      // Verifies that the hook closure itself is reusable: calling it multiple
+      // times (as registerPersistentCallbackHook guarantees at the infra layer)
+      // results in a separate ackAndEditSelection call for each press.
+      await call({ text: "Pick", options: TWO_OPTIONS, persistent: true, token: 1123456 });
+      const [, hookFn] = mocks.registerPersistentCallbackHook.mock.calls[0] as [number, HookFn];
+
+      hookFn({ content: { qid: "q1", data: "like" } });
+      await new Promise<void>((r) => setTimeout(r, 0));
+      hookFn({ content: { qid: "q2", data: "dislike" } });
+      await new Promise<void>((r) => setTimeout(r, 0));
+
+      expect(mocks.editMessageText).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("passes reply_to via reply_parameters", async () => {

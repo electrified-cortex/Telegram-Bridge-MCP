@@ -271,6 +271,8 @@ describe("interactive flows — end-to-end integration", () => {
   // -------------------------------------------------------------------------
 
   it("SC-5: send_choice auto-locks on first press and callback appears in dequeue", async () => {
+    vi.useFakeTimers();
+
     const sendResult = await runInSessionContext(sid, () =>
       handlers.send_choice({
         text: "Choose:",
@@ -281,14 +283,30 @@ describe("interactive flows — end-to-end integration", () => {
     expect(isError(sendResult)).toBe(false);
     expect(parseResult(sendResult).message_id).toBe(5);
 
-    // Simulate button press — hook fires (ack + remove keyboard), event queues
+    // Simulate button press — hook fires two-stage highlight-then-collapse:
+    // stage 1 (immediate): answerCallbackQuery + editMessageReplyMarkup
+    // stage 2 (~150 ms): editMessageText with empty keyboard + selection suffix
     recordInbound(cbUpdate(5, "yes"));
+
+    // Flush microtasks for stage 1
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Hook fired — stage 1: callback answered + keyboard highlighted
+    expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
+    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledTimes(1);
+    // Stage 2 not yet: timer hasn't fired
+    expect(mocks.editMessageText).not.toHaveBeenCalled();
+
+    // Advance past collapse delay (150 ms) — stage 2 fires
+    await vi.advanceTimersByTimeAsync(200);
+    // Stage 2: keyboard cleared and suffix appended
+    expect(mocks.editMessageText).toHaveBeenCalled();
+
+    vi.useRealTimers();
 
     // dequeue should surface the callback event
     const dqResult = await handlers.dequeue({ timeout: 0, token });
-    // Allow the fire-and-forget hook chain (answerCallbackQuery → editMessageReplyMarkup)
-    // to complete — it needs one extra microtask tick after dequeue resolves.
-    await Promise.resolve();
 
     expect(isError(dqResult)).toBe(false);
     const dq = parseResult(dqResult);
@@ -300,10 +318,52 @@ describe("interactive flows — end-to-end integration", () => {
     expect(firstEvt.event).toBe("callback");
     const content = firstEvt.content as Record<string, unknown>;
     expect(content.data).toBe("yes");
+  });
 
-    // Hook fired — keyboard removed and callback answered
+  // -------------------------------------------------------------------------
+  // SC-5b: send_choice persistent — keyboard stays, every tap goes to dequeue
+  // -------------------------------------------------------------------------
+
+  it("SC-5b: send_choice persistent — keyboard stays after each press, both taps appear in dequeue", async () => {
+    const sendResult = await runInSessionContext(sid, () =>
+      handlers.send_choice({
+        text: "Control:",
+        options: [{ label: "On", value: "on" }, { label: "Off", value: "off" }],
+        persistent: true,
+        token,
+      }),
+    );
+    expect(isError(sendResult)).toBe(false);
+    expect(parseResult(sendResult).message_id).toBe(5);
+
+    // First press
+    recordInbound(cbUpdate(5, "on", "qid1"));
+    await new Promise<void>((r) => { setTimeout(r, 20); });
+
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
-    expect(mocks.editMessageText).toHaveBeenCalled();
+    // Persistent mode: editMessageText called (with keyboard kept), editMessageReplyMarkup NOT called
+    expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
+    expect(mocks.editMessageReplyMarkup).not.toHaveBeenCalled();
+
+    // Second press — hook must still be alive
+    recordInbound(cbUpdate(5, "off", "qid2"));
+    await new Promise<void>((r) => { setTimeout(r, 20); });
+
+    expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(2);
+    expect(mocks.editMessageText).toHaveBeenCalledTimes(2);
+
+    // Both callbacks routed to dequeue
+    const dqResult = await runInSessionContext(sid, () =>
+      handlers.dequeue({ timeout: 0, token }),
+    );
+    expect(isError(dqResult)).toBe(false);
+    const dq = parseResult(dqResult);
+    const updates = dq.updates as Record<string, unknown>[];
+    const cbQids = updates
+      .filter((e) => e.event === "callback")
+      .map((e) => (e.content as Record<string, unknown>).qid);
+    expect(cbQids).toContain("qid1");
+    expect(cbQids).toContain("qid2");
   });
 
   // -------------------------------------------------------------------------

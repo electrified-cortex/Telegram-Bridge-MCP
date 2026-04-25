@@ -3,20 +3,23 @@ import { z } from "zod";
 import {
   toResult, toError, validateText, resolveChat, validateCallbackData, LIMITS,
 } from "../../telegram.js";
-import { registerCallbackHook } from "../../message-store.js";
+import { registerCallbackHook, registerPersistentCallbackHook } from "../../message-store.js";
 import { requireAuth } from "../../session-gate.js";
 import {
-  sendChoiceMessage, ackAndEditSelection, buildHighlightedRows, type KeyboardOption,
+  sendChoiceMessage, ackAndEditSelection, buildHighlightedRows, highlightThenCollapse,
+  type KeyboardOption,
 } from "../button-helpers.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { validateButtonSymbolParity } from "../../button-validation.js";
 
 const DESCRIPTION =
   "Non-blocking one-shot keyboard — sends a message with choice buttons and " +
-  "returns immediately with a message_id. The first button press is auto-locked: " +
-  "the keyboard is removed and the callback_query is answered automatically. " +
+  "returns immediately with a message_id. On first button press the keyboard " +
+  "highlights the chosen option and collapses within ~150 ms (highlight-then-collapse). " +
   "The callback_query event still appears in dequeue so the agent can read " +
   "which option was picked at its own pace. " +
+  "Pass persistent: true to opt into multi-tap control-panel mode where the " +
+  "keyboard stays visible after each press and every tap is handled. " +
   "Use choose for blocking single-selection (waits for the press). " +
   "For a blocking yes/no or multi-option selection, use confirm or choose.";
 
@@ -41,7 +44,7 @@ export type ChoiceOption = { label: string; value: string; style?: "success" | "
 
 export async function handleSendChoice({
   text, options, columns = 2, parse_mode = "Markdown", disable_notification,
-  reply_to, ignore_parity, token,
+  reply_to, ignore_parity, persistent, token,
 }: {
   text: string;
   options: ChoiceOption[];
@@ -50,6 +53,9 @@ export async function handleSendChoice({
   disable_notification?: boolean;
   reply_to?: number;
   ignore_parity?: boolean;
+  /** When true, keyboard stays after each press (multi-tap control-panel mode).
+   *  Default false = one-shot highlight-then-collapse. */
+  persistent?: boolean;
   token: number;
 }) {
   const _sid = requireAuth(token);
@@ -108,22 +114,41 @@ export async function handleSendChoice({
       replyToMessageId: replyTo,
     });
 
-    // Register one-shot auto-lock: on first press, dismiss the spinner and
-    // collapse the message to show the selected option. The callback_query event
-    // is still enqueued normally.
+    // Register callback hook. Behaviour depends on persistent mode:
+    //
+    // One-shot (default, persistent !== true):
+    //   Two-stage highlight-then-collapse — chosen button highlighted immediately,
+    //   keyboard removed + selection suffix appended ~150 ms later.
+    //   The hook is one-shot; a second tap between stage 1 and stage 2 is ignored
+    //   (the hook has already fired and won't re-enter this path).
+    //
+    // Persistent (persistent === true):
+    //   Multi-tap control-panel mode — keyboard stays visible after each press,
+    //   chosen button highlighted in primary, repeat presses allowed.
+    //   Uses registerPersistentCallbackHook so the hook re-registers itself
+    //   after each fire, enabling genuine multi-tap support.
+    //
     // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
-    registerCallbackHook(messageId, (evt) => {
+    const hookFn = (evt: import("../../message-store.js").TimelineEvent) => {
       const qid = evt.content.qid;
       const clickedValue = evt.content.data ?? "";
       const matched = options.find((o) => o.value === clickedValue);
       const label = (matched?.label ?? clickedValue) || "?";
-      // Intentionally keep the keyboard visible with the clicked option highlighted.
-      // send_choice is non-blocking: the caller reads the result via dequeue, so the
-      // highlight serves as visible confirmation in chat. Contrast with choose (blocking),
-      // which clears the keyboard immediately on answer.
       const highlighted = buildHighlightedRows(options as KeyboardOption[], columns, clickedValue);
-      void ackAndEditSelection(chatId, messageId, text, label, qid, false, highlighted);
-    }, _sid);
+
+      if (persistent) {
+        // Persistent / multi-tap: keep keyboard visible with highlight after each press.
+        void ackAndEditSelection(chatId, messageId, text, label, qid, false, highlighted);
+      } else {
+        // One-shot: highlight immediately, then collapse keyboard after ~150 ms.
+        void highlightThenCollapse(chatId, messageId, text, label, qid, highlighted);
+      }
+    };
+    if (persistent) {
+      registerPersistentCallbackHook(messageId, hookFn, _sid);
+    } else {
+      registerCallbackHook(messageId, hookFn, _sid);
+    }
 
     return toResult({ message_id: messageId });
   } catch (err) {
@@ -168,6 +193,14 @@ export function register(server: McpServer) {
           .boolean()
           .optional()
           .describe("Set true to bypass button label emoji-consistency check"),
+        persistent: z
+          .boolean()
+          .optional()
+          .describe(
+            "Set true to enable multi-tap control-panel mode: the keyboard stays visible " +
+            "after each press, the chosen button is highlighted, and every tap is handled. " +
+            "Default false = one-shot highlight-then-collapse (~150 ms).",
+          ),
               token: TOKEN_SCHEMA,
 },
     },

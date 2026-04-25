@@ -21,6 +21,7 @@ import {
   setOnTranscriptionLog,
   registerMessageHook,
   clearMessageHook,
+  registerPersistentCallbackHook,
   CURRENT,
 } from "./message-store.js";
 import {
@@ -1161,5 +1162,44 @@ describe("registerMessageHook", () => {
     const evt = dequeue();
     expect(evt).toBeDefined();
     expect(evt!.content.text).toBe("hello");
+  });
+});
+
+// ===========================================================================
+// registerPersistentCallbackHook — re-registration after each fire
+// ===========================================================================
+
+describe("registerPersistentCallbackHook — wrapper re-registration", () => {
+  it("hook remains present after first fire and fires again on second callback", () => {
+    const fn = vi.fn();
+    const messageId = 42;
+
+    // Register via the real implementation
+    registerPersistentCallbackHook(messageId, fn, 0);
+
+    // Verify hook is stored
+    recordInbound(callbackUpdate(messageId, "tap1"));
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn.mock.calls[0][0]).toMatchObject({ content: { data: "tap1" } });
+
+    // After first fire the hook must have re-registered — fire again
+    recordInbound(callbackUpdate(messageId, "tap2"));
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fn.mock.calls[1][0]).toMatchObject({ content: { data: "tap2" } });
+  });
+
+  it("each firing receives the correct callback event", () => {
+    const received: string[] = [];
+    const messageId = 43;
+
+    registerPersistentCallbackHook(messageId, (evt) => {
+      received.push(evt.content.data ?? "");
+    });
+
+    recordInbound(callbackUpdate(messageId, "A"));
+    recordInbound(callbackUpdate(messageId, "B"));
+    recordInbound(callbackUpdate(messageId, "C"));
+
+    expect(received).toEqual(["A", "B", "C"]);
   });
 });
