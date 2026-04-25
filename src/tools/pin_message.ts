@@ -22,18 +22,20 @@ export async function handlePinMessage({ message_id, disable_notification, unpin
   if (typeof chatId !== "number") return toError(chatId);
   try {
     if (unpin) {
-      const ok = message_id === undefined
-        ? await getApi().unpinChatMessage(chatId)
-        : await getApi().unpinChatMessage(chatId, message_id);
-      return toResult({ ok, unpinned: true });
+      if (message_id === undefined) {
+        await getApi().unpinChatMessage(chatId);
+      } else {
+        await getApi().unpinChatMessage(chatId, message_id);
+      }
+      return toResult({ unpinned: true });
     }
     if (message_id === undefined) {
       return toError({ code: "MISSING_MESSAGE_ID" as const, message: "message_id is required when pinning. Pass the message_id returned by send or a prior message query." });
     }
-    const ok = await getApi().pinChatMessage(chatId, message_id, {
+    await getApi().pinChatMessage(chatId, message_id, {
       disable_notification,
     });
-    return toResult({ ok });
+    return toResult({});
   } catch (err) {
     return toError(err);
   }

@@ -44,7 +44,6 @@ describe("show_typing tool", () => {
     const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.ok).toBe(true);
     expect(data.timeout_seconds).toBe(20);
     expect(mocks.showTyping).toHaveBeenCalledWith(20);
   });
@@ -77,7 +76,6 @@ describe("show_typing tool", () => {
     const result = await call({ cancel: true, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.ok).toBe(true);
     expect(data.cancelled).toBe(true);
     expect(mocks.showTyping).not.toHaveBeenCalled();
   });

@@ -155,8 +155,6 @@ describe("show_animation tool", () => {
       false,
       0,
     );
-    const data = parseResult(result);
-    expect(data.persistent).toBe(true);
   });
 
   it("returns error when resolveChat returns non-number", async () => {

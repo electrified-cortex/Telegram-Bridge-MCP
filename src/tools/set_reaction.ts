@@ -193,7 +193,7 @@ async function handleSetReactionArray(
     _insertBaseReaction(chatId, message_id);
     // Fix 4: Warn when multiple permanent items were provided but only one can be applied
     const note = resolved.length > 1 ? ` (only highest-priority item applied — Telegram supports 1 reaction)` : "";
-    return toResult({ ok: true, message_id, visible: usedEmoji, layers, restore_emoji: null, note: note || undefined });
+    return toResult({ ok: true, visible: usedEmoji, layers, restore_emoji: null, note: note || undefined });
   }
 
   // Mixed path: permanent base + temp overlay
@@ -234,7 +234,6 @@ async function handleSetReactionArray(
 
   return toResult({
     ok: true,
-    message_id,
     visible: resolvedTopEmoji,
     layers,
     restore_emoji: restoreEmoji ?? null,
@@ -307,7 +306,7 @@ export async function handleSetReactionPreset(
   // If all entries are permanent there is no temp to restore, so no base is needed.
   if (hasTempEntry) _insertBaseReaction(chatId, messageId);
 
-  return toResult({ ok: true, message_id: messageId, preset: presetName, applied: results });
+  return toResult({ ok: true, applied: results });
 }
 
 export async function handleSetReaction(args: {
@@ -381,13 +380,13 @@ export async function handleSetReaction(args: {
       // call (it would overwrite the visible temp). The temp-reaction restore path will
       // apply 👌 when the last temp expires.
       _insertBaseReaction(chatId, message_id);
-      return toResult({ ok: true, message_id, emoji: primary, temporary: true, restore_emoji: restoreResolved ?? null, timeout_seconds: timeout_seconds ?? null });
+      return toResult({ ok: true, temporary: true, restore_emoji: restoreResolved ?? null, timeout_seconds: timeout_seconds ?? null });
     }
 
     // Permanent reaction — clear if no emoji given
     if (candidates.length === 0) {
       await getApi().setMessageReaction(chatId, message_id, [], { is_big });
-      return toResult({ ok: true, message_id, emoji: null, temporary: false });
+      return toResult({ ok: true, temporary: false });
     }
 
     // Permanent reaction — try candidates in order, fall back on REACTION_INVALID
@@ -397,7 +396,7 @@ export async function handleSetReaction(args: {
         recordBotReaction(message_id, candidate);
         if (PREMIUM_EMOJI.has(candidate)) _botIsPremium = true;
         _insertBaseReaction(chatId, message_id);
-        const result: Record<string, unknown> = { ok: true, message_id, emoji: candidate, temporary: false };
+        const result: Record<string, unknown> = { ok: true, temporary: false };
         if (candidate !== originalFirst) {
           result.requested = originalFirst;
           result.fallback_used = true;

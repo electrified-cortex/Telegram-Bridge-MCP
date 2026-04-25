@@ -162,7 +162,6 @@ describe("update_checklist tool", () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     const result = await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, token: 1123456 });
     expect(isError(result)).toBe(false);
-    expect((parseResult(result)).updated).toBe(true);
     expect(mocks.editMessageText).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
   });

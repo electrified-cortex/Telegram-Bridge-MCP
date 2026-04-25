@@ -58,11 +58,8 @@ describe("send_direct_message tool", () => {
   });
 
   it("delivers a DM successfully", async () => {
-    const result = parseResult(
-      await call({ token: 1123456, target_sid: 2, text: "hello" }),
-    );
-    expect(result.delivered).toBe(true);
-    expect(result.target_sid).toBe(2);
+    const result = await call({ token: 1123456, target_sid: 2, text: "hello" });
+    expect(isError(result)).toBe(false);
     expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(1, 2, "hello");
   });
 
@@ -75,11 +72,8 @@ describe("send_direct_message tool", () => {
   });
 
   it("coerces target_sid from string to integer", async () => {
-    const result = parseResult(
-      await call({ token: 1123456, target_sid: "2", text: "hello" }),
-    );
-    expect(result.delivered).toBe(true);
-    expect(result.target_sid).toBe(2);
+    const result = await call({ token: 1123456, target_sid: "2", text: "hello" });
+    expect(isError(result)).toBe(false);
     expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(1, 2, "hello");
   });
 });

@@ -207,7 +207,6 @@ describe("send tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
-    expect(data.audio).toBe(true);
     expect(mocks.synthesizeToOgg).toHaveBeenCalledOnce();
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
@@ -221,7 +220,6 @@ describe("send tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
-    expect(data.audio).toBe(true);
     expect(mocks.synthesizeToOgg).toHaveBeenCalledWith("hello", undefined, undefined);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
   });
@@ -234,7 +232,6 @@ describe("send tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
-    expect(data.audio).toBe(true);
     // Voice was sent (not text message)
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
@@ -308,12 +305,10 @@ describe("send tool", () => {
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     // Text message was sent separately
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
-    // Result has split + both IDs + _hint
-    expect(data.audio).toBe(true);
+    // Result has split + both IDs
     expect(data.split).toBe(true);
     expect(data.message_id).toBe(43);
     expect(data.text_message_id).toBe(99);
-    expect(typeof data._hint).toBe("string");
     // Voice note sent with no caption
     const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
     expect(voiceCallArgs[2].caption).toBeUndefined();
@@ -330,9 +325,7 @@ describe("send tool", () => {
     // Voice note sent with caption
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
-    expect(data.audio).toBe(true);
     expect(data.split).toBeUndefined();
-    expect(data._hint).toBeUndefined();
     expect(data.text_message_id).toBeUndefined();
     const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
     expect(voiceCallArgs[2].caption).toBeDefined();
@@ -480,9 +473,6 @@ describe("send — message alias", () => {
   it("message alias: send(message: 'hello', audio: 'spoken') works — voice with caption alias (no hint)", async () => {
     const result = await call({ message: "caption via alias", audio: "spoken content", token: TOKEN });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.audio).toBe(true);
-    expect(data.hint).toBeUndefined();
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
   });
 
@@ -619,7 +609,7 @@ describe("send type routing", () => {
   });
 
   it("type: append routes to handleAppendText with correct params", async () => {
-    mocks.handleAppendText.mockResolvedValue({ content: [{ type: "text", text: '{"message_id":10,"length":14}' }] });
+    mocks.handleAppendText.mockResolvedValue({ content: [{ type: "text", text: '{"message_id":10}' }] });
     const result = await call({ type: "append", message_id: 10, text: "hello", separator: " | ", token: TOKEN });
     expect(isError(result)).toBe(false);
     expect(mocks.handleAppendText).toHaveBeenCalledOnce();
@@ -732,12 +722,8 @@ describe("hybrid auto-split on caption overflow", () => {
 
     // Response shape
     expect(data.split).toBe(true);
-    expect(data.audio).toBe(true);
     expect(data.message_id).toBe(43);
     expect(data.text_message_id).toBe(99);
-    expect(typeof data._hint).toBe("string");
-    expect(data._hint).toContain("43");
-    expect(data._hint).toContain("99");
 
     // Voice note sent with no caption (overflow → no caption)
     const voiceCallArgs = mocks.sendVoiceDirect.mock.calls[0] as [unknown, unknown, { caption?: string }];
@@ -759,9 +745,7 @@ describe("hybrid auto-split on caption overflow", () => {
     expect(mocks.sendMessage).not.toHaveBeenCalled();
 
     // Response shape — no split
-    expect(data.audio).toBe(true);
     expect(data.split).toBeUndefined();
-    expect(data._hint).toBeUndefined();
     expect(data.text_message_id).toBeUndefined();
     expect(data.message_id).toBe(43);
 
@@ -848,8 +832,6 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
     const result = await call({ text: captionWithEmDash, audio: "spoken content", token: TOKEN });
 
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.audio).toBe(true);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).not.toHaveBeenCalled();
     expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
@@ -877,7 +859,6 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
     expect(data.split).toBe(true);
-    expect(data.audio).toBe(true);
     // Warning fired for the overflow text
     expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
     const warningMsg = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[1] as string;
@@ -1076,7 +1057,6 @@ describe("audio markup leak detection", () => {
     });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.audio).toBe(true);
     expect(data.warning).toBeDefined();
     expect((data.warning as { code: string }).code).toBe("AUDIO_MARKUP_LEAK");
     // TTS should receive only the pre-tag content (voice/speed are undefined from mocks)

@@ -67,7 +67,6 @@ describe("send_file tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(10);
-    expect(data.type).toBe("photo");
     expect(mocks.sendPhoto).toHaveBeenCalledOnce();
   });
 
@@ -87,7 +86,6 @@ describe("send_file tool", () => {
     const result = await call({ file: "/docs/report.pdf", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.type).toBe("document");
     expect(data.file_id).toBe("doc1");
   });
 
@@ -101,7 +99,6 @@ describe("send_file tool", () => {
     const result = await call({ file: "/vids/clip.mp4", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.type).toBe("video");
     expect(data.file_id).toBe("vid1");
   });
 
@@ -115,7 +112,6 @@ describe("send_file tool", () => {
     const result = await call({ file: "/music/song.mp3", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.type).toBe("audio");
     expect(data.file_id).toBe("aud1");
   });
 
@@ -129,7 +125,6 @@ describe("send_file tool", () => {
     const result = await call({ file: "/audio/note.ogg", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.type).toBe("voice");
     expect(data.file_id).toBe("vce1");
   });
 
@@ -142,8 +137,6 @@ describe("send_file tool", () => {
     });
     const result = await call({ file: "/img/image.jpg", type: "document", token: 1123456});
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.type).toBe("document");
     expect(mocks.sendPhoto).not.toHaveBeenCalled();
   });
 

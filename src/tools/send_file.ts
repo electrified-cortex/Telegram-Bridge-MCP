@@ -112,7 +112,6 @@ export async function handleSendFile({
         );
         return toResult({
           message_id: msg.message_id,
-          type: "photo",
           caption: msg.caption,
           warning: CDN_WARNING,
         });
@@ -133,7 +132,6 @@ export async function handleSendFile({
         );
         return toResult({
           message_id: msg.message_id,
-          type: "video",
           file_id: msg.video.file_id,
           duration: msg.video.duration,
           warning: CDN_WARNING,
@@ -155,7 +153,6 @@ export async function handleSendFile({
         );
         return toResult({
           message_id: msg.message_id,
-          type: "audio",
           file_id: msg.audio.file_id,
           title: msg.audio.title,
           warning: CDN_WARNING,
@@ -178,7 +175,6 @@ export async function handleSendFile({
           setTimeout(() => cancelTypingIfSameGeneration(gen), 1000);
           return toResult({
             message_id: msg.message_id,
-            type: "voice",
             file_id: msg.voice?.file_id,
             warning: CDN_WARNING,
           });
@@ -203,7 +199,6 @@ export async function handleSendFile({
         );
         return toResult({
           message_id: msg.message_id,
-          type: "document",
           file_id: msg.document.file_id,
           file_name: msg.document.file_name,
           warning: CDN_WARNING,

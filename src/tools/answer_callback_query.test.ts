@@ -41,11 +41,10 @@ describe("answer_callback_query tool", () => {
     call = server.getHandler("answer_callback_query");
   });
 
-  it("returns ok: true on success", async () => {
+  it("returns empty object on success", async () => {
     mocks.answerCallbackQuery.mockResolvedValue(true);
     const result = await call({ callback_query_id: "cq123", token: 1_123_456});
     expect(isError(result)).toBe(false);
-    expect((parseResult(result)).ok).toBe(true);
   });
 
   it("passes optional text and show_alert", async () => {
@@ -71,7 +70,6 @@ describe("answer_callback_query tool", () => {
       mocks.editMessageReplyMarkup.mockResolvedValue(true);
       const result = await call({ callback_query_id: "cq1", token: 1_123_456, remove_keyboard: true, message_id: 42 });
       expect(isError(result)).toBe(false);
-      expect((parseResult(result)).ok).toBe(true);
       expect(mocks.editMessageReplyMarkup).toHaveBeenCalledOnce();
       expect(mocks.editMessageReplyMarkup).toHaveBeenCalledWith(12345, 42, { reply_markup: { inline_keyboard: [] } });
     });
@@ -82,7 +80,6 @@ describe("answer_callback_query tool", () => {
       const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       const result = await call({ callback_query_id: "cq2", token: 1_123_456, remove_keyboard: true, message_id: 99 });
       expect(isError(result)).toBe(false);
-      expect((parseResult(result)).ok).toBe(true);
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("[warn] remove_keyboard failed:"));
       stderrSpy.mockRestore();
     });
@@ -109,7 +106,6 @@ describe("answer_callback_query tool", () => {
       const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       const result = await call({ callback_query_id: "cq6", token: 1_123_456, remove_keyboard: true, message_id: 42 });
       expect(isError(result)).toBe(false);
-      expect((parseResult(result)).ok).toBe(true);
       expect(mocks.editMessageReplyMarkup).not.toHaveBeenCalled();
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("[warn] remove_keyboard skipped: could not resolve chat"));
       stderrSpy.mockRestore();

@@ -14,8 +14,8 @@ export async function handleDeleteMessage({ message_id, token }: { message_id: n
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
   try {
-    const ok = await getApi().deleteMessage(chatId, message_id);
-    return toResult({ ok });
+    await getApi().deleteMessage(chatId, message_id);
+    return toResult({});
   } catch (err) {
     return toError(err);
   }

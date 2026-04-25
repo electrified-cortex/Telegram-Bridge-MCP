@@ -27,13 +27,11 @@ describe("cancel_reminder tool", () => {
     call = server.getHandler("cancel_reminder");
   });
 
-  it("cancels an existing reminder and returns { cancelled: true, id }", async () => {
+  it("cancels an existing reminder and returns empty object", async () => {
     mocks.cancelReminder.mockReturnValue(true);
     const result = await call({ id: "r1", token: 1123456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.cancelled).toBe(true);
-    expect(data.id).toBe("r1");
+    expect(parseResult(result)).toEqual({});
     expect(mocks.cancelReminder).toHaveBeenCalledWith("r1");
   });
 

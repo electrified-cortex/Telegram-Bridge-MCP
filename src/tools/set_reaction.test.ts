@@ -61,8 +61,6 @@ describe("set_reaction tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
-    expect(data.message_id).toBe(100);
-    expect(data.emoji).toBe("👍");
     expect(data.temporary).toBe(false);
     expect(mocks.setMessageReaction).toHaveBeenCalledWith(
       42, 100, [{ type: "emoji", emoji: "👍" }], { is_big: undefined },
@@ -74,7 +72,6 @@ describe("set_reaction tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
-    expect(data.emoji).toBeNull();
     expect(mocks.setMessageReaction).toHaveBeenCalledWith(42, 55, [], { is_big: undefined });
   });
 
@@ -87,8 +84,6 @@ describe("set_reaction tool", () => {
   it("resolves aliases to canonical emoji", async () => {
     const result = await call({ message_id: 100, emoji: "rocket", token: 1123456});
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.emoji).toBe("🚀");
   });
 
   it("rejects an emoji not in the allowed list (returns error)", async () => {
@@ -120,7 +115,6 @@ describe("set_reaction tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.temporary).toBe(true);
-    expect(data.emoji).toBe("👀");
     expect(data.restore_emoji).toBeNull();
     expect(mocks.setTempReaction).toHaveBeenCalledWith(77, "👀", undefined, undefined);
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
@@ -131,7 +125,6 @@ describe("set_reaction tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.temporary).toBe(true);
-    expect(data.emoji).toBe("👀");
     expect(data.restore_emoji).toBe("🫡");
     expect(mocks.setTempReaction).toHaveBeenCalledWith(100, "👀", "🫡", undefined);
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
@@ -184,7 +177,6 @@ describe("set_reaction tool", () => {
     const result = await call({ message_id: 10, emoji: "done", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.emoji).toBe("👍");
     expect(data.fallback_used).toBe(true);
     expect(data.requested).toBe("✅");
     expect(mocks.setMessageReaction).toHaveBeenCalledTimes(2);
@@ -194,7 +186,6 @@ describe("set_reaction tool", () => {
     const result = await call({ message_id: 11, emoji: "done", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.emoji).toBe("✅");
     expect(data.fallback_used).toBeUndefined();
     expect(mocks.setMessageReaction).toHaveBeenCalledTimes(1);
   });
@@ -228,7 +219,6 @@ describe("set_reaction tool", () => {
     const result = await call({ message_id: 11, emoji: "done", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.emoji).toBe("👍");
     expect(data.fallback_used).toBe(true);
     // Only one attempt (skipped ✅)
     const [, , reaction] = mocks.setMessageReaction.mock.calls[0];
@@ -247,7 +237,6 @@ describe("set_reaction tool", () => {
     // Second call: still tries ✅ first (premium confirmed)
     const result = await call({ message_id: 11, emoji: "done", token: 1123456 });
     const data = parseResult(result);
-    expect(data.emoji).toBe("✅");
     expect(data.fallback_used).toBeUndefined();
     const [, , reaction2] = mocks.setMessageReaction.mock.calls[0];
     expect((reaction2 as { emoji: string }[])[0].emoji).toBe("✅");
@@ -305,7 +294,6 @@ describe("set_reaction tool — array reactions form", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
-    expect(data.message_id).toBe(100);
     expect(data.visible).toBe("👀");
     expect(data.restore_emoji).toBe("👍");
     // recordBotReaction called with base emoji
@@ -457,6 +445,44 @@ describe("set_reaction tool — array reactions form", () => {
     expect(errorCode(result)).toBe("REACTION_ARRAY_EMPTY");
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
     expect(mocks.setTempReaction).not.toHaveBeenCalled();
+  });
+
+  // ── layers shape ──────────────────────────────────────────────────────────
+
+  it("layers array: each element has emoji (string), priority (number), temporary (boolean)", async () => {
+    const result = await call({
+      message_id: 100,
+      reactions: [
+        { emoji: "👍", priority: -1 },
+        { emoji: "👀", priority: 0 },
+      ],
+      token: 1123456,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(Array.isArray(data.layers)).toBe(true);
+    expect(data.layers.length).toBe(2);
+    for (const layer of data.layers as { emoji: unknown; priority: unknown; temporary: unknown }[]) {
+      expect(typeof layer.emoji).toBe("string");
+      expect(typeof layer.priority).toBe("number");
+      expect(typeof layer.temporary).toBe("boolean");
+    }
+  });
+
+  it("layers array (permanent-only): emoji field identifies which emoji each layer uses", async () => {
+    const result = await call({
+      message_id: 200,
+      reactions: [{ emoji: "👍", priority: -1 }],
+      token: 1123456,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(Array.isArray(data.layers)).toBe(true);
+    expect(data.layers.length).toBe(1);
+    const [layer] = data.layers as { emoji: string; priority: number; temporary: boolean }[];
+    expect(layer.emoji).toBe("👍");
+    expect(layer.priority).toBe(-1);
+    expect(layer.temporary).toBe(false);
   });
 });
 
@@ -648,7 +674,6 @@ describe("handleSetReactionPreset — built-in presets", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.ok).toBe(true);
-    expect(data.preset).toBe("processing");
     expect(data.applied).toEqual(["🤔", "👀"]);
     // No permanent reaction via setMessageReaction
     expect(mocks.setMessageReaction).not.toHaveBeenCalledWith(

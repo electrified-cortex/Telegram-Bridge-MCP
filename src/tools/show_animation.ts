@@ -48,7 +48,7 @@ export async function handleShowAnimation({
 
   try {
     const message_id = await startAnimation(_sid, resolvedFrames, interval, timeout, persistent, allow_breaking_spaces, notify, priority);
-    return toResult({ message_id, persistent });
+    return toResult({ message_id });
   } catch (err) {
     return toError(err);
   }

@@ -52,7 +52,7 @@ export async function handleAppendText({
     );
     const editedId = typeof result === "boolean" ? message_id : result.message_id;
     recordOutgoingEdit(editedId, "text", accumulated);
-    return toResult({ message_id: editedId, length: accumulated.length });
+    return toResult({ message_id: editedId });
   } catch (err) {
     return toError(err);
   }

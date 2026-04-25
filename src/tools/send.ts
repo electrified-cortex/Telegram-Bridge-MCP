@@ -375,8 +375,6 @@ export function register(server: McpServer) {
                     message_id: message_ids[0],
                     text_message_id: textMsg.message_id,
                     split: true,
-                    audio: true,
-                    _hint: `Caption exceeded limit; audio sent as msg ${message_ids[0]}, text sent separately as msg ${textMsg.message_id}.`,
                     ...(leakWarning ? { warning: leakWarning } : {}),
                   });
                 }
@@ -384,8 +382,6 @@ export function register(server: McpServer) {
                   message_ids,
                   text_message_id: textMsg.message_id,
                   split: true,
-                  audio: true,
-                  _hint: `Caption exceeded limit; audio sent as msgs ${message_ids.join(", ")}, text sent separately as msg ${textMsg.message_id}.`,
                   ...(leakWarning ? { warning: leakWarning } : {}),
                 });
               }
@@ -394,9 +390,9 @@ export function register(server: McpServer) {
                 warnUnrenderableChars(_sid, resolvedCaption);
               }
               if (message_ids.length === 1) {
-                return toResult({ message_id: message_ids[0], audio: true, ...(leakWarning ? { warning: leakWarning } : {}) });
+                return toResult({ message_id: message_ids[0], ...(leakWarning ? { warning: leakWarning } : {}) });
               }
-              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true, ...(leakWarning ? { warning: leakWarning } : {}) });
+              return toResult({ message_ids, split_count: message_ids.length, split: true, ...(leakWarning ? { warning: leakWarning } : {}) });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes("user restricted receiving of voice note messages")) {

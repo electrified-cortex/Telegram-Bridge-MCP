@@ -34,11 +34,10 @@ describe("delete_message tool", () => {
     call = server.getHandler("delete_message");
   });
 
-  it("returns ok: true on success", async () => {
+  it("returns empty object on success", async () => {
     mocks.deleteMessage.mockResolvedValue(true);
     const result = await call({ message_id: 5, token: 1123456});
     expect(isError(result)).toBe(false);
-    expect((parseResult(result)).ok).toBe(true);
   });
 
   it("passes chat_id and message_id to API", async () => {

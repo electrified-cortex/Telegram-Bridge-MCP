@@ -4,7 +4,6 @@ import { createMockServer, parseResult, isError, errorCode } from "./test-utils.
 
 interface AppendTextResult {
   message_id: number;
-  length: number;
 }
 
 const mocks = vi.hoisted(() => ({
@@ -60,7 +59,6 @@ describe("append_text tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult<AppendTextResult>(result);
     expect(data.message_id).toBe(10);
-    expect(data.length).toBe("Line 1\nLine 2".length);
   });
 
   it("passes accumulated text to editMessageText", async () => {
@@ -80,8 +78,7 @@ describe("append_text tool", () => {
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "A" } });
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     const result = await call({ message_id: 10, text: "B", separator: " | ", token: 1_123_456});
-    const data = parseResult<AppendTextResult>(result);
-    expect(data.length).toBe("A | B".length);
+    expect(isError(result)).toBe(false);
   });
 
   it("handles empty current text (first append)", async () => {
@@ -89,8 +86,6 @@ describe("append_text tool", () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     const result = await call({ message_id: 10, text: "First chunk", token: 1_123_456});
     expect(isError(result)).toBe(false);
-    const data = parseResult<AppendTextResult>(result);
-    expect(data.length).toBe("First chunk".length);
   });
 
   it("returns MESSAGE_NOT_FOUND when message is not in store", async () => {
@@ -122,7 +117,7 @@ describe("append_text tool", () => {
     mocks.editMessageText.mockResolvedValue(true);
     const result = await call({ message_id: 10, text: "More", token: 1_123_456});
     expect(isError(result)).toBe(false);
-    const data = parseResult<AppendTextResult>(result);
+    const data = parseResult(result);
     // Falls back to the passed message_id when API returns boolean
     expect(data.message_id).toBe(10);
   });

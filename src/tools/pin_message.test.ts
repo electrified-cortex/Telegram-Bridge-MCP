@@ -38,7 +38,6 @@ describe("pin_message tool", () => {
     mocks.pinChatMessage.mockResolvedValue(true);
     const result = await call({ message_id: 5, token: 1123456});
     expect(isError(result)).toBe(false);
-    expect((parseResult(result)).ok).toBe(true);
   });
 
   it("passes disable_notification option", async () => {

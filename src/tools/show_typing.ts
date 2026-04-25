@@ -25,10 +25,10 @@ export async function handleShowTyping({ timeout_seconds = 20, cancel, token }: 
   if (typeof chatId !== "number") return toError(chatId);
   if (cancel) {
     const wasActive = cancelTyping();
-    return toResult({ ok: true, cancelled: wasActive });
+    return toResult({ cancelled: wasActive });
   }
   const started = await showTyping(timeout_seconds);
-  return toResult({ ok: true, timeout_seconds, started });
+  return toResult({ timeout_seconds, started });
 }
 
 export function register(server: McpServer) {

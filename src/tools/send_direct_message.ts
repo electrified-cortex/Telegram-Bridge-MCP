@@ -40,7 +40,7 @@ export function handleSendDirectMessage({ token, target_sid, text }: { token: nu
     });
   }
 
-  return toResult({ delivered: true, target_sid });
+  return toResult({});
 }
 
 export function register(server: McpServer) {

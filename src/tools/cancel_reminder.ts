@@ -16,7 +16,7 @@ export function handleCancelReminder({ id, token }: { id: string; token: number 
       message: `No reminder with id="${id}" found for this session. Call action(type: 'reminder/list') to see active reminder IDs.`,
     });
   }
-  return toResult({ cancelled: true, id });
+  return toResult({});
 }
 
 export function register(server: McpServer) {

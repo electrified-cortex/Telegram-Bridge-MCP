@@ -41,7 +41,7 @@ export async function handleAnswerCallbackQuery({ callback_query_id, text, show_
   }
 
   try {
-    const ok = await getApi().answerCallbackQuery(callback_query_id, {
+    await getApi().answerCallbackQuery(callback_query_id, {
       text,
       show_alert,
       url,
@@ -65,7 +65,7 @@ export async function handleAnswerCallbackQuery({ callback_query_id, text, show_
       }
     }
 
-    return toResult({ ok });
+    return toResult({});
   } catch (err) {
     return toError(err);
   }
