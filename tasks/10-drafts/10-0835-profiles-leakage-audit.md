@@ -57,7 +57,7 @@ If B:
 ## Related
 
 - `feedback_task_engine_repo_hygiene` (Curator memory) — TMCP is public-intent; zero leakage.
-- `project_cortex_lan_as_dogfood_template` — the parent workspace IS the dogfood; profiles belong there, not in the dogfooded library.
+- The parent workspace is the dogfood template; profiles belong there, not in the dogfooded library.
 
 ## Branch
 

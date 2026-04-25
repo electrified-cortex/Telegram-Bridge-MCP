@@ -51,7 +51,7 @@ disastrous.
 
 1. **Automated scan:** `grep -rn` for patterns:
    - IP addresses: `\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`
-   - Hostnames: `cortex\.lan|\.cortex\.|lxc[- ]?\d{3}|vm[- ]?\d{3}`
+   - Hostnames: internal domain names, LXC/VM identifiers specific to your infrastructure
    - Secrets: `token|secret|password|api[_-]?key|bearer`
    - Paths: `D:\\|C:\\|/home/|/Users/`
    - PII: operator names, emails (check git log too)
