@@ -10,7 +10,7 @@ token: session token (required)
 action(type: "chat/info", token: 3165424)
 
 On approval:
-→ { approved: true, id: -100123456, type: "group", title: "cortex.lan", username: null, ... }
+→ { approved: true, id: -100123456, type: "group", title: "Example Group", username: null, ... }
 
 On denial:
 → { approved: false, timed_out: false, message_id: 42 }
