@@ -78,3 +78,13 @@ This gives the agent an actionable signal on the NEXT call rather than silently 
 
 - Curator memory `feedback_hybrid_tool_call_drift` — the agent-side observation of this drift.
 - Origin observation in `log/trace` from session 2026-04-24T21:xx (Curator SID 1).
+
+## Completion
+
+- Added `detectAudioMarkupLeak()` helper and `AUDIO_LEAK_PATTERNS` constant to `src/tools/send.ts`.
+- Audio branch now detects stray `</audio>` / `<parameter name=` / `</invoke>` / `</function_calls>` before TTS.
+- Strips to pre-tag content; recovers `<parameter name="text">` block as caption when `text` param absent.
+- `warning: { code: "AUDIO_MARKUP_LEAK", message: "..." }` added to all 5 success `toResult` calls in audio branch.
+- Stderr warn line emitted on detection for post-hoc diagnostics.
+- 3 new unit tests added; all 2641 tests pass; TypeScript build clean.
+- Commit: `12a9c97` on branch `15-0818` in `.worktrees/15-0818`.

@@ -30,6 +30,28 @@ import { handleConfirm } from "./confirm.js";
 
 const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
 
+const AUDIO_LEAK_PATTERNS = [
+  /<\/audio>/i,
+  /<parameter\s+name=/i,
+  /<\/parameter>/i,
+  /<\/invoke>/i,
+  /<\/function_calls>/i,
+  /<invoke\s+name=/i,
+] as const;
+
+function detectAudioMarkupLeak(raw: string): { cleanAudio: string; recoveredText: string | null; leaked: boolean } {
+  let firstIdx = -1;
+  for (const pat of AUDIO_LEAK_PATTERNS) {
+    const m = pat.exec(raw);
+    if (m !== null && (firstIdx === -1 || m.index < firstIdx)) firstIdx = m.index;
+  }
+  if (firstIdx === -1) return { cleanAudio: raw, recoveredText: null, leaked: false };
+  const cleanAudio = raw.slice(0, firstIdx).trimEnd();
+  const suffix = raw.slice(firstIdx);
+  const textMatch = /<(?:antml:)?parameter\s+name="text">([\s\S]*?)<\/(?:antml:)?parameter>/i.exec(suffix);
+  return { cleanAudio, recoveredText: textMatch ? textMatch[1].trim() : null, leaked: true };
+}
+
 const MARKDOWN_TABLE_RE = /^\|.*\|$/;
 
 function containsMarkdownTable(text: string): boolean {
@@ -242,10 +264,21 @@ export function register(server: McpServer) {
 
           // ── Voice mode ───────────────────────────────────────────────────
           if (audio) {
+            const { cleanAudio, recoveredText, leaked: audioLeaked } = detectAudioMarkupLeak(audio);
+            const effectiveAudio = audioLeaked ? cleanAudio : audio;
+            const effectiveText = text ?? (audioLeaked && recoveredText ? recoveredText : undefined);
+            let leakWarning: { code: string; message: string } | undefined;
+            if (audioLeaked) {
+              leakWarning = {
+                code: "AUDIO_MARKUP_LEAK",
+                message: "Audio payload contained tool-call markup (`</audio>` or `<parameter name=`). Stripped before TTS; recovered caption from trailing `<parameter name=\"text\">` block. Your client may be emitting parameters without the antml:parameter namespace — check hybrid emission on long audio strings.",
+              };
+              process.stderr.write(`[send] AUDIO_MARKUP_LEAK detected sid=${_sid} recoveredText=${recoveredText !== null ? "yes" : "no"}\n`);
+            }
             if (!isTtsEnabled()) {
               return toError({ code: "TTS_NOT_CONFIGURED", message: "TTS is not configured. Set TTS_HOST or OPENAI_API_KEY to use voice.", hint: "Set TTS_HOST or OPENAI_API_KEY environment variable to enable voice." } as const);
             }
-            const plainText = stripForTts(audio);
+            const plainText = stripForTts(effectiveAudio);
             if (!plainText) {
               return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS.", hint: "Provide non-empty audio text for TTS." } as const);
             }
@@ -255,9 +288,9 @@ export function register(server: McpServer) {
             let captionParseMode: "MarkdownV2" | undefined;
             let captionOverflow = false;
             let finalTextForSplit: string | undefined;
-            if (text) {
+            if (effectiveText) {
               const MAX_CAPTION = 1024 - 60;
-              const converted = markdownToV2(applyTopicToText(text, "Markdown"));
+              const converted = markdownToV2(applyTopicToText(effectiveText, "Markdown"));
               captionOverflow = converted.length > MAX_CAPTION;
               if (captionOverflow) {
                 resolvedCaption = undefined;
@@ -288,7 +321,7 @@ export function register(server: McpServer) {
                 replyToMessageId: reply_to_message_id,
                 timeoutMs: _timeoutMs,
               });
-              return toResult({ ok: true, message_id_pending: pendingId, status: "queued" });
+              return toResult({ ok: true, message_id_pending: pendingId, status: "queued", ...(leakWarning ? { warning: leakWarning } : {}) });
             }
             const voiceChunks = splitMessage(plainText);
             for (const chunk of voiceChunks) {
@@ -344,6 +377,7 @@ export function register(server: McpServer) {
                     split: true,
                     audio: true,
                     _hint: `Caption exceeded limit; audio sent as msg ${message_ids[0]}, text sent separately as msg ${textMsg.message_id}.`,
+                    ...(leakWarning ? { warning: leakWarning } : {}),
                   });
                 }
                 return toResult({
@@ -352,6 +386,7 @@ export function register(server: McpServer) {
                   split: true,
                   audio: true,
                   _hint: `Caption exceeded limit; audio sent as msgs ${message_ids.join(", ")}, text sent separately as msg ${textMsg.message_id}.`,
+                  ...(leakWarning ? { warning: leakWarning } : {}),
                 });
               }
               // Scan the inline caption for unrenderable characters after voice is sent
@@ -359,9 +394,9 @@ export function register(server: McpServer) {
                 warnUnrenderableChars(_sid, resolvedCaption);
               }
               if (message_ids.length === 1) {
-                return toResult({ message_id: message_ids[0], audio: true });
+                return toResult({ message_id: message_ids[0], audio: true, ...(leakWarning ? { warning: leakWarning } : {}) });
               }
-              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true });
+              return toResult({ message_ids, split_count: message_ids.length, split: true, audio: true, ...(leakWarning ? { warning: leakWarning } : {}) });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes("user restricted receiving of voice note messages")) {

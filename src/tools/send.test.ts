@@ -1041,3 +1041,68 @@ describe("send — first-use hint injection and happy-path routing", () => {
     expect(data._first_use_hint).toBeUndefined();
   });
 });
+
+// =============================================================================
+// Audio markup leak detection
+// =============================================================================
+describe("audio markup leak detection", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.isTtsEnabled.mockReturnValue(true);
+    mocks.stripForTts.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.showTyping.mockResolvedValue(undefined);
+    mocks.deliverServiceMessage.mockReturnValue(undefined);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("audio markup leak: </audio> tag → strips audio and returns AUDIO_MARKUP_LEAK warning", async () => {
+    const result = await call({
+      audio: "Diagnosis. TMCP help send hybrid guidance is underspecified.</audio>\n<parameter name=\"text\">TMCP bug located.</parameter>",
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.audio).toBe(true);
+    expect(data.warning).toBeDefined();
+    expect((data.warning as { code: string }).code).toBe("AUDIO_MARKUP_LEAK");
+    // TTS should receive only the pre-tag content (voice/speed are undefined from mocks)
+    expect(mocks.synthesizeToOgg).toHaveBeenCalledWith(
+      "Diagnosis. TMCP help send hybrid guidance is underspecified.",
+      undefined,
+      undefined,
+    );
+  });
+
+  it("audio markup leak: recovers caption from trailing <parameter name=\"text\"> block", async () => {
+    const result = await call({
+      audio: "Voice content here.</audio>\n<parameter name=\"text\">Recovered caption text.</parameter>",
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.warning).toBeDefined();
+    // Caption (effectiveText) should have been passed to markdownToV2
+    expect(mocks.markdownToV2).toHaveBeenCalledWith(expect.stringContaining("Recovered caption text."));
+  });
+
+  it("clean audio payload: no warning in response", async () => {
+    const result = await call({ audio: "Clean voice message.", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.warning).toBeUndefined();
+  });
+});
