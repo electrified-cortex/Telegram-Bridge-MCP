@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { TelegramError } from "../telegram.js";
-import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
+import { createMockServer, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),

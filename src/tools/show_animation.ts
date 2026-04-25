@@ -39,7 +39,7 @@ export async function handleShowAnimation({
   let resolvedFrames: string[] | undefined;
   if (preset) {
     const presetFrames = getPreset(_sid, preset);
-    if (!presetFrames) return toError(`Unknown animation preset: "${preset}"`);
+    if (!presetFrames) return toError({ code: "UNKNOWN_PRESET", message: `Unknown animation preset: "${preset}"` });
     resolvedFrames = [...presetFrames];
   } else if (frames) {
     resolvedFrames = frames;

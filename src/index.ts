@@ -26,6 +26,7 @@ import { initDebugLog } from "./debug-log.js";
 import { cleanupStalePins } from "./startup-token-cleanup.js";
 import { resolveHttpPort } from "./cli-args.js";
 import { enableLogging, isLoggingEnabled, rollLog, logEvent as logLocalEvent, flushCurrentLog } from "./local-log.js";
+import { attachHookRoutes } from "./hook-animation.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -246,6 +247,9 @@ if (mcpPort !== undefined) {
     }
     await transport.handleRequest(req, res);
   });
+
+  // ── REST hooks ────────────────────────────────────────────────────────────
+  attachHookRoutes(app);
 
   app.listen(mcpPort, "127.0.0.1", () => {
     process.stderr.write(`[info] MCP Streamable HTTP server listening on http://127.0.0.1:${mcpPort}/mcp\n`);

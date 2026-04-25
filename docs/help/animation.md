@@ -20,3 +20,9 @@ Built-in presets:
 | working | `[ working ]` cycling bracket animation |
 | thinking | `[ thinking ]` cycling bracket animation |
 | loading | `[ loading ]` cycling bracket animation |
+
+REST hook (HTTP mode only):
+POST /hook/animation — Trigger an animation from outside the MCP tool layer.
+Supply the session token as ?token=N (query param) or as a "token" field in the JSON body.
+Body: { "preset": "working", "timeout": 60, "persistent": false } — preset is required; timeout and persistent are optional (same semantics as show_animation).
+Returns 200 { "ok": true } on success, 401 on invalid/missing token, or 400 on bad body / unknown preset.

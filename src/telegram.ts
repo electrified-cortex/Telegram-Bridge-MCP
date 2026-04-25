@@ -103,6 +103,7 @@ export type TelegramErrorCode =
   | "PERMISSION_DENIED"
   | "NOT_PENDING"
   | "INVALID_COLOR"
+  | "UNKNOWN_PRESET"
   | "UNKNOWN";
 
 export interface TelegramError {

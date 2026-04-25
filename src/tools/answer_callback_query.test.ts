@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
+import { createMockServer, isError, errorCode } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),
