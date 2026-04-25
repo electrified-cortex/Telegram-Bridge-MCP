@@ -63,3 +63,10 @@ Also consider (lower priority): parameter-level reminder when both `text` and `a
 ## Related
 
 Curator memory (already correct, predates this doc drift): `feedback_hybrid_messaging_spectrum`, `feedback_hybrid_message_caption`, `feedback_operator_prefers_audio`.
+
+## Completion
+
+- File already had "TL;DR" removed and "topic label" in place from a prior pass.
+- Added concrete Good:/Bad: example pair after the Hard rule line in `docs/help/send.md`.
+- All acceptance criteria met: no "TL;DR", "topic label" present, good/bad example included.
+- Commit: `1418fd1` on branch `15-0817` in `.worktrees/15-0817`.
