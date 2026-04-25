@@ -54,3 +54,18 @@ Telegram Bot API note: `editMessageText` does NOT clear inline keyboards by itse
 
 - `feedback_callback_ack_first` (Curator memory) — adjacent acknowledgment-protocol concern.
 - Existing branch `05-204-expired-callback-button-cleanup` — possibly addresses the stale-button side; verify scope overlap.
+
+## Completion
+
+Branch: `05-0825` (off `dev`)
+Commit: `6a809d7`
+
+**Root cause:** In `choose.ts`, the callback hook called `ackAndEditSelection` with a `highlighted` rows argument (output of `buildHighlightedRows`). Without `inline_keyboard: []` explicitly passed, Telegram preserves the existing keyboard on `editMessageText`. The fix removes the `highlighted` argument so the `replyMarkup ?? { inline_keyboard: [] }` fallback in `appendSuffixAndEdit` fires, clearing all buttons on answer.
+
+**Files changed:**
+- `src/tools/send/choose.ts` — removed `buildHighlightedRows` call and `highlighted` arg from `ackAndEditSelection`
+- `src/tools/send/choose.test.ts` — updated 3 tests to reflect new signature
+- `src/tools/send/choice.ts` — added comment explaining intentional divergence (non-blocking `send_choice` keeps highlighted keyboard by design)
+
+**Build:** PASS (2752 tests, lint clean, tsc clean)
+**Code review:** No blockers or majors. Minor finding addressed (comment added to `choice.ts`).

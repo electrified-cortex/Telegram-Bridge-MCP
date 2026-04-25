@@ -117,6 +117,10 @@ export async function handleSendChoice({
       const clickedValue = evt.content.data ?? "";
       const matched = options.find((o) => o.value === clickedValue);
       const label = (matched?.label ?? clickedValue) || "?";
+      // Intentionally keep the keyboard visible with the clicked option highlighted.
+      // send_choice is non-blocking: the caller reads the result via dequeue, so the
+      // highlight serves as visible confirmation in chat. Contrast with choose (blocking),
+      // which clears the keyboard immediately on answer.
       const highlighted = buildHighlightedRows(options as KeyboardOption[], columns, clickedValue);
       void ackAndEditSelection(chatId, messageId, text, label, qid, false, highlighted);
     }, _sid);
