@@ -436,6 +436,38 @@ describe("confirm tool", () => {
     expect(data.confirmed).toBe(true);
   });
 
+  describe("response_format: compact", () => {
+    it("compact: button press omits timed_out:false", async () => {
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+      const result = await call({ text: "Proceed?", token: 1123456, response_format: "compact" });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.confirmed).toBe(true);
+      expect(data.timed_out).toBeUndefined();
+    });
+
+    it("default: button press includes timed_out:false", async () => {
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+      const result = await call({ text: "Proceed?", token: 1123456, response_format: "default" });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.timed_out).toBe(false);
+      expect(data.confirmed).toBe(true);
+    });
+
+    it("omitted response_format: button press includes timed_out:false (backward compat)", async () => {
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_no"));
+      const result = await call({ text: "Proceed?", token: 1123456 });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.timed_out).toBe(false);
+      expect(data.confirmed).toBe(false);
+    });
+  });
+
 describe("identity gate", () => {
   it("returns SID_REQUIRED when no identity provided", async () => {
     const result = await call({"text":"x"});

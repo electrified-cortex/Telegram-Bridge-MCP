@@ -113,6 +113,7 @@ describe("ask tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
+    mocks.pendingCount.mockReturnValue(0);
     mocks._storeQueue.length = 0;
     mocks._waitResolvers.length = 0;
     const server = createMockServer();
@@ -183,6 +184,8 @@ describe("ask tool", () => {
     // Should not time out — command should be treated as a response
     expect(data.timed_out).toBe(false);
     expect(data.command).toBe("cancel");
+    // args is always null on the default format path (null-sentinel contract)
+    expect(data.args).toBeNull();
   });
 
   it("rejects with PENDING_UPDATES when queue is non-empty", async () => {
@@ -266,6 +269,84 @@ describe("identity gate", () => {
 // =========================================================================
 // Cross-session isolation
 // =========================================================================
+
+describe("response_format: compact", () => {
+  it("compact: text reply omits timed_out:false", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeTextEvent(11, "hello"));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "compact" });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.text).toBe("hello");
+    expect(data.timed_out).toBeUndefined();
+  });
+
+  it("compact: voice reply omits timed_out:false and voice:true", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeVoiceEvent(11, "transcribed"));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "compact" });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.text).toBe("transcribed");
+    expect(data.timed_out).toBeUndefined();
+    expect(data.voice).toBeUndefined();
+  });
+
+  it("default: text reply includes timed_out:false", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeTextEvent(11, "hello"));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "default" });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBe(false);
+  });
+
+  it("default: voice reply includes timed_out:false and voice:true", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeVoiceEvent(11, "transcribed"));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "default" });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBe(false);
+    expect(data.voice).toBe(true);
+  });
+
+  it("omitted response_format: voice reply includes timed_out:false and voice:true (backward compat)", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeVoiceEvent(11, "transcribed"));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBe(false);
+    expect(data.voice).toBe(true);
+  });
+
+  it("compact: command response omits timed_out while command and args are present", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks._storeQueue.push(makeCommandEvent(11, "cancel"));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "compact" });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBeUndefined();
+    expect(data.command).toBe("cancel");
+    expect("args" in data).toBe(true);
+    expect(data.args).toBeNull();
+  });
+
+  it("compact: abort (signal abort) omits timed_out:false while aborted:true is present", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    const controller = new AbortController();
+    controller.abort();
+    const result = await (call as (args: Record<string, unknown>, extra: Record<string, unknown>) => Promise<unknown>)(
+      { question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "compact" },
+      { signal: controller.signal },
+    );
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.timed_out).toBeUndefined();
+    expect(data.aborted).toBe(true);
+  });
+});
 
 describe("cross-session isolation", () => {
   it("session 2 reads from its own queue, not session 1's", async () => {

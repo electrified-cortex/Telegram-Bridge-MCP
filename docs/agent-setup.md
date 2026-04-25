@@ -121,6 +121,8 @@ action(type: "session/start") → drain (dequeue max_wait:0 until empty) → blo
 
 **There is no exit condition.** The agent loops until it receives a shutdown signal or `action(type: "session/close")` is called. The loop guard enforces this at the host level — if the host tries to stop the agent while a session is active, the guard blocks it.
 
+**Reducing token usage with compact mode:** Pass `response_format: "compact"` on each `dequeue` call to save approximately 445 tokens per session. In compact mode, `empty: true` is omitted on empty drain polls (infer empty from the absence of `updates`), while `timed_out: true` is always emitted. See [`docs/compact-mode-migration.md`](compact-mode-migration.md) for the before/after loop pattern and a full field-suppression table.
+
 For full behavioral rules and tool usage patterns, see [`docs/help/guide.md`](help/guide.md).
 
 ---

@@ -17,14 +17,23 @@ const DESCRIPTION =
   "Drain pending updates first or pass ignore_pending: true. " +
   "Call `help(topic: 'ask')` for details.";
 
+/**
+ * Handle an interactive ask interaction.
+ *
+ * In compact mode, `timed_out: false` is suppressed as inferrable from the
+ * presence of `text`, `command`, or `aborted` fields. However, `timed_out: true`
+ * (on timeout expiry) is always emitted regardless of `response_format` since
+ * it is not inferrable from any other response field.
+ */
 export async function handleAsk({
-  question, timeout_seconds, reply_to, ignore_pending, token,
+  question, timeout_seconds, reply_to, ignore_pending, token, response_format,
 }: {
   question: string;
   timeout_seconds?: number;
   reply_to?: number;
   ignore_pending?: boolean;
   token: number;
+  response_format?: "default" | "compact";
 }, signal: AbortSignal) {
   const reply_to_message_id = reply_to;
   const _sid = requireAuth(token);
@@ -76,7 +85,10 @@ export async function handleAsk({
     const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
 
     while (Date.now() < deadline) {
-      if (signal.aborted) return toResult({ timed_out: false, aborted: true });
+      if (signal.aborted) {
+        const compact = response_format === "compact";
+        return toResult({ ...(compact ? {} : { timed_out: false }), aborted: true });
+      }
       const matchFn = (event: TimelineEvent) => {
         if (event.event === "message" && event.id > sent.message_id) {
           if (event.content.type === "text"
@@ -94,25 +106,26 @@ export async function handleAsk({
         : dequeueMatch(matchFn);
 
       if (match) {
+        const compact = response_format === "compact";
         if (match.content.type === "voice") {
           ackVoiceMessage(match.id);
           return toResult({
-            timed_out: false,
+            ...(compact ? {} : { timed_out: false }),
             text: match.content.text ?? "",
             message_id: match.id,
-            voice: true,
+            ...(compact ? {} : { voice: true }),
           });
         }
         if (match.content.type === "command") {
           return toResult({
-            timed_out: false,
+            ...(compact ? {} : { timed_out: false }),
             command: match.content.text,
-            args: match.content.data,
+            args: match.content.data ?? null,
             message_id: match.id,
           });
         }
         return toResult({
-          timed_out: false,
+          ...(compact ? {} : { timed_out: false }),
           text: match.content.text,
           message_id: match.id,
         });
@@ -161,6 +174,10 @@ export function register(server: McpServer) {
         .optional()
         .describe("Set true to skip the pending-updates check and block immediately"),
               token: TOKEN_SCHEMA,
+      response_format: z
+        .enum(["default", "compact"])
+        .optional()
+        .describe("Response format. \"compact\" omits inferrable fields (timed_out: false, voice: true) to reduce token usage. Defaults to \"default\"."),
 },
     },
     async (args, { signal }) => handleAsk(args, signal),

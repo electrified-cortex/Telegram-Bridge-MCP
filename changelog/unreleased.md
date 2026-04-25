@@ -20,6 +20,8 @@
 - `src/behavior-tracker.ts`: `recordPresenceSignal(sid)` — resets the per-session silence clock on any outbound action; now also called in the `confirm/` action branch (alongside `btRecordButtonUse`) so confirm interactions count as agent presence
 - Transcription log events: voice note processing now emits `event: "transcription"` (`type: "voice_transcription"`, includes transcribed text) on success and `event: "transcription_error"` (`type: "voice_transcription_error"`, includes `error_code` and `error`) on failure — surfacing transcription outcomes in the session event log
 
+- `response_format: "compact"` parameter added to `dequeue`, `send`, `ask`, `choose`, `confirm`, and `send_new_checklist`: suppresses always-inferrable fields (e.g. `empty: true` on empty polls, `timed_out: false` on answered prompts, `split: true`/`split_count` on multi-chunk sends) to reduce per-call response size — estimated savings of ~445 tokens per session; `timed_out: true` is always emitted in compact mode so timeout detection remains unambiguous
+
 ### Changed
 
 - `send` audio default: TTS sends with `audio` param are now **async by default** — returns `message_id_pending` + `status: queued` immediately; result delivered via `dequeue` `send_callback` event. Pass `async: false` to opt back into synchronous behavior. Non-audio sends unchanged (task 10-820).

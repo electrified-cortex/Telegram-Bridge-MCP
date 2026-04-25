@@ -42,6 +42,7 @@ export async function handleChoose(
     ignore_parity,
     audio,
     token,
+    response_format,
   }: {
     text: string;
     options: ChooseOption[];
@@ -52,6 +53,7 @@ export async function handleChoose(
     ignore_parity?: boolean;
     audio?: string;
     token: number;
+    response_format?: "default" | "compact";
   },
   signal: AbortSignal,
 ) {
@@ -268,9 +270,10 @@ export async function handleChoose(
     // Button was pressed — hook already acked + edited.
     const chosen = options.find((o) => o.value === match.data);
     const chosenLabel = chosen?.label ?? match.data;
+    const compact = response_format === "compact";
 
     return toResult({
-      timed_out: false,
+      ...(compact ? {} : { timed_out: false }),
       label: chosenLabel,
       value: match.data,
       message_id: messageId,
@@ -334,6 +337,10 @@ export function register(server: McpServer) {
         .optional()
         .describe("Spoken TTS content — when present, sends the prompt as a voice note with the inline keyboard attached. Uses session/global voice settings. Requires TTS to be configured."),
               token: TOKEN_SCHEMA,
+      response_format: z
+        .enum(["default", "compact"])
+        .optional()
+        .describe("Response format. \"compact\" omits inferrable fields to reduce token usage. Compact only suppresses `timed_out: false` on the success (button-press) path; `timed_out: true` and `skipped: true` are always emitted regardless of compact mode. Defaults to \"default\"."),
 },
     },
     async (args, { signal }) => handleChoose(args, signal),

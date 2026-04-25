@@ -453,6 +453,36 @@ describe("choose tool", () => {
     expect(data.label).toBe("Option B");
   });
 
+  describe("response_format: compact", () => {
+    it("compact: button press omits timed_out:false", async () => {
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_a"));
+      const result = await call({ text: "Pick one", options: OPTIONS, token: 1123456, response_format: "compact" });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.value).toBe("opt_a");
+      expect(data.timed_out).toBeUndefined();
+    });
+
+    it("default: button press includes timed_out:false", async () => {
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_a"));
+      const result = await call({ text: "Pick one", options: OPTIONS, token: 1123456, response_format: "default" });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.timed_out).toBe(false);
+    });
+
+    it("omitted response_format: button press includes timed_out:false (backward compat)", async () => {
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_b"));
+      const result = await call({ text: "Pick one", options: OPTIONS, token: 1123456 });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.timed_out).toBe(false);
+    });
+  });
+
 describe("identity gate", () => {
   it("returns SID_REQUIRED when no identity provided", async () => {
     const result = await call({"text":"x","options":[{"label":"A","value":"a"},{"label":"B","value":"b"}]});

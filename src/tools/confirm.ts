@@ -49,10 +49,11 @@ export interface ConfirmArgs {
   ignore_parity?: boolean;
   audio?: string;
   token?: number;
+  response_format?: "default" | "compact";
 }
 
 export async function confirmHandler(
-  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to, ignore_pending, ignore_parity, audio, token }: ConfirmArgs,
+  { text, yes_text, no_text, yes_data, no_data, yes_style, no_style, timeout_seconds, reply_to, ignore_pending, ignore_parity, audio, token, response_format }: ConfirmArgs,
   signal: AbortSignal,
 ) {
   const reply_to_message_id = reply_to;
@@ -251,9 +252,10 @@ export async function confirmHandler(
 
     // Button was pressed — hook already acked + edited.
     const confirmed = result.data === yes_data;
+    const compact = response_format === "compact";
 
     return toResult({
-      timed_out: false,
+      ...(compact ? {} : { timed_out: false }),
       confirmed,
       value: result.data,
       message_id: sent.message_id,
@@ -317,6 +319,10 @@ function makeInputSchema(defaults: { yes_text: string; no_text: string; yes_styl
       .optional()
       .describe("Spoken audio content for TTS — when present, sends the question as a voice note with the inline keyboard attached. Uses session/global voice settings. Requires TTS to be configured."),
     token: TOKEN_SCHEMA,
+    response_format: z
+      .enum(["default", "compact"])
+      .optional()
+      .describe("Response format. \"compact\" omits inferrable fields to reduce token usage. Compact only suppresses `timed_out: false` on the success (button-press) path; `timed_out: true` and `skipped: true` are always emitted regardless of compact mode. Defaults to \"default\"."),
   };
 }
 

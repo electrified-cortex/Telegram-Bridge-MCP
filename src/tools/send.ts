@@ -210,6 +210,10 @@ export function register(server: McpServer) {
         token: TOKEN_SCHEMA.describe(
           "Session token from action(type: 'session/start') (sid * 1_000_000 + suffix). Required for all send paths.",
         ),
+        response_format: z
+          .enum(["default", "compact"])
+          .optional()
+          .describe("Response format. \"compact\" omits inferrable fields (split: true, split_count, timed_out: false, voice: true) to reduce token usage. Defaults to \"default\"."),
       },
     },
     async (args, { signal }) => {
@@ -261,6 +265,7 @@ export function register(server: McpServer) {
           }
           const { parse_mode, disable_notification } = args;
           const reply_to_message_id = args.reply_to;
+          const compact = args.response_format === "compact";
 
           // ── Voice mode ───────────────────────────────────────────────────
           if (audio) {
@@ -374,14 +379,18 @@ export function register(server: McpServer) {
                   return toResult({
                     message_id: message_ids[0],
                     text_message_id: textMsg.message_id,
-                    split: true,
+                    ...(compact ? {} : { split: true }),
+                    audio: true,
+                    _hint: `Caption exceeded limit; audio sent as msg ${message_ids[0]}, text sent separately as msg ${textMsg.message_id}.`,
                     ...(leakWarning ? { warning: leakWarning } : {}),
                   });
                 }
                 return toResult({
                   message_ids,
                   text_message_id: textMsg.message_id,
-                  split: true,
+                  ...(compact ? {} : { split: true }),
+                  audio: true,
+                  _hint: `Caption exceeded limit; audio sent as msgs ${message_ids.join(", ")}, text sent separately as msg ${textMsg.message_id}.`,
                   ...(leakWarning ? { warning: leakWarning } : {}),
                 });
               }
@@ -392,7 +401,7 @@ export function register(server: McpServer) {
               if (message_ids.length === 1) {
                 return toResult({ message_id: message_ids[0], ...(leakWarning ? { warning: leakWarning } : {}) });
               }
-              return toResult({ message_ids, split_count: message_ids.length, split: true, ...(leakWarning ? { warning: leakWarning } : {}) });
+              return toResult({ message_ids, ...(compact ? {} : { split_count: message_ids.length, split: true }), audio: true, ...(leakWarning ? { warning: leakWarning } : {}) });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes("user restricted receiving of voice note messages")) {
@@ -443,7 +452,9 @@ export function register(server: McpServer) {
             if (message_ids.length === 1) {
               return toResult(hasTable ? { message_id: message_ids[0], info: TABLE_WARNING } : { message_id: message_ids[0] });
             }
-            return toResult(hasTable ? { message_ids, split_count: message_ids.length, split: true, info: TABLE_WARNING } : { message_ids, split_count: message_ids.length, split: true });
+            return toResult(hasTable
+              ? { message_ids, ...(compact ? {} : { split_count: message_ids.length, split: true }), info: TABLE_WARNING }
+              : { message_ids, ...(compact ? {} : { split_count: message_ids.length, split: true }) });
           } catch (err) {
             return toError(err);
           }
@@ -570,6 +581,7 @@ export function register(server: McpServer) {
               reply_to: args.reply_to,
               ignore_pending: args.ignore_pending,
               token: args.token,
+              response_format: args.response_format,
             }, signal);
           }
           if (args.choose !== undefined || args.options !== undefined) {
@@ -586,6 +598,7 @@ export function register(server: McpServer) {
                 ignore_parity: args.ignore_parity,
                 audio: args.audio,
                 token: args.token,
+                response_format: args.response_format,
               }, signal),
               getFirstUseHint(_sid, "send:question:choose"),
             );
@@ -605,6 +618,7 @@ export function register(server: McpServer) {
               ignore_parity: args.ignore_parity,
               audio: args.audio,
               token: args.token,
+              response_format: args.response_format,
             }, signal);
           }
           return toError({ code: "MISSING_QUESTION_TYPE" as const, message: 'For type "question", provide one of: ask (string), choose (ChoiceOption[]), or confirm (string).', hint: "Pass one of: ask (string), choose (array), or confirm (string) with type: \"question\"." });

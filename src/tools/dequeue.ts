@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+﻿import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, ackVoiceMessage } from "../telegram.js";
 import { dlog } from "../debug-log.js";
@@ -119,9 +119,13 @@ export function register(server: McpServer) {
           .uuid()
           .optional()
           .describe("UUID returned by session/start. Pass on every dequeue call to enable duplicate-session detection. The bridge alerts the governor (without rejecting the call) if two agents share the same SID but present different connection tokens."),
+        response_format: z
+          .enum(["default", "compact"])
+          .optional()
+          .describe("Response format. \"compact\" only suppresses `empty: true` (inferrable from the caller's use of `max_wait: 0`); `timed_out: true` is always emitted regardless of compact mode. Defaults to \"default\"."),
       },
     },
-    async ({ max_wait, timeout: timeoutAlias, force, token, connection_token }, { signal }) => {
+    async ({ max_wait, timeout: timeoutAlias, force, token, connection_token, response_format }, { signal }) => {
       // Resolve max_wait from primary param or deprecated `timeout` alias.
       const timeout = max_wait ?? timeoutAlias;
       const _sid = requireAuth(token);
@@ -264,7 +268,8 @@ export function register(server: McpServer) {
       }
 
       if (effectiveTimeout === 0) {
-        return toResult({ empty: true, pending: pendingCountAny() });
+        const compact = response_format === "compact";
+        return toResult({ ...(compact ? {} : { empty: true }), pending: pendingCountAny() });
       }
 
       // Block until something arrives or timeout expires.
@@ -292,8 +297,15 @@ export function register(server: McpServer) {
               recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
             }
             resyncActiveSession();
-            const reminderResult: Record<string, unknown> = { updates: fired.map(buildReminderEvent), pending: pendingCountAny() };
+            const reminderPending = pendingCountAny();
+            const reminderResult: Record<string, unknown> = {
+              updates: fired.map(buildReminderEvent),
+              ...(reminderPending > 0 ? { pending: reminderPending } : {}),
+            };
             dlog("queue", `dequeue returning sid=${sid} batch=${fired.length} payloadLen=${JSON.stringify(reminderResult).length}`);
+            // response_format is not applied here: the reminder response only contains
+            // `updates` (real event data) and optionally `pending` (when > 0), neither
+            // of which are compact-suppressible fields.
             return toResult(reminderResult);
           }
 
@@ -343,7 +355,8 @@ export function register(server: McpServer) {
         }
 
         resyncActiveSession();
-        return toResult({ timed_out: true, pending: pendingCountAny() });
+        const pending = pendingCountAny();
+        return toResult({ timed_out: true, ...(pending > 0 ? { pending } : {}) });
       } finally {
         // Note: if two concurrent dequeue calls share the same sid (unusual but
         // possible), the second finally will clear the idle flag while the first

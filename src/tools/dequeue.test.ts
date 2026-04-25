@@ -44,6 +44,9 @@ const mocks = vi.hoisted(() => ({
   checkConnectionToken: vi.fn((_sid: number, _token: string | undefined): "match" | "mismatch" | "absent" => "absent"),
   deliverServiceMessage: vi.fn((_targetSid: number, ..._args: unknown[]) => true),
   getGovernorSid: vi.fn((): number => 0),
+  getSession: vi.fn((_sid: number) => ({ name: "TestSession" })),
+  takeSilenceHint: vi.fn((_sid: number): string | undefined => undefined),
+  setDequeueIdle: vi.fn((_sid: number, _idle: boolean) => {}),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -78,9 +81,9 @@ vi.mock("../session-manager.js", () => ({
   setDequeueDefault: (sid: number, timeout: number) => {
     mocks.setDequeueDefault(sid, timeout);
   },
-  setDequeueIdle: vi.fn(),
-  getSession: vi.fn(() => ({ name: "TestSession" })),
-  takeSilenceHint: vi.fn().mockReturnValue(undefined),
+  setDequeueIdle: (sid: number, idle: boolean) => { mocks.setDequeueIdle(sid, idle); },
+  getSession: (sid: number) => mocks.getSession(sid),
+  takeSilenceHint: (sid: number) => mocks.takeSilenceHint(sid),
   checkConnectionToken: (sid: number, token: string | undefined) => mocks.checkConnectionToken(sid, token),
 }));
 
@@ -269,7 +272,7 @@ describe("dequeue tool", () => {
     const result = await call({ timeout: 1, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
     expect(data.timed_out).toBe(true);
-    expect(data.pending).toBe(0);
+    expect(data.pending).toBeUndefined();
   });
 
   it("calls waitForEnqueue when queue is empty and timeout > 0", async () => {
@@ -1386,6 +1389,89 @@ describe("dequeue tool", () => {
       mocks.getSessionQueue.mockReturnValue(undefined);
       await call({ token: 8_001_234 });
       expect(mocks.setActiveSession).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // response_format: "compact" — omits empty/timed_out fields
+  // =========================================================================
+
+  describe("response_format: compact", () => {
+    it("compact: omits empty:true on instant poll (timeout:0, empty queue)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ timeout: 0, token: 1_123_456, response_format: "compact" });
+      expect(isError(result)).toBe(false);
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBeUndefined();
+      // pending is still present
+      expect(data.pending).toBe(0);
+    });
+
+    it("compact: timed_out:true is present when blocking wait expires (always emitted)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise<void>((r) => setTimeout(r, 50)),
+      );
+      const result = await call({ timeout: 1, token: 1_123_456, response_format: "compact" });
+      expect(isError(result)).toBe(false);
+      const data = parseResult<DequeueResult>(result);
+      expect(data.timed_out).toBe(true);
+    });
+
+    it("default: empty:true is present on instant poll (response_format: default)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ timeout: 0, token: 1_123_456, response_format: "default" });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBe(true);
+    });
+
+    it("default: timed_out:true is present when blocking wait expires (response_format: default)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise<void>((r) => setTimeout(r, 50)),
+      );
+      const result = await call({ timeout: 1, token: 1_123_456, response_format: "default" });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.timed_out).toBe(true);
+    });
+
+    it("omitted response_format: empty:true is present (backward compat)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.empty).toBe(true);
+    });
+
+    it("omitted response_format: timed_out:true is present (backward compat)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise<void>((r) => setTimeout(r, 50)),
+      );
+      const result = await call({ timeout: 1, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.timed_out).toBe(true);
+    });
+
+    it("compact has no effect on batch responses — shape is identical to default", async () => {
+      const evt = makeEvent(42, "batch event");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(1);
+      const resultCompact = await call({ timeout: 0, token: 1_123_456, response_format: "compact" });
+      const dataCompact = parseResult<DequeueResult>(resultCompact);
+      expect(dataCompact.updates).toHaveLength(1);
+      expect(dataCompact.updates[0].id).toBe(42);
+      expect(dataCompact.pending).toBe(1);
+
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(1);
+      const resultDefault = await call({ timeout: 0, token: 1_123_456, response_format: "default" });
+      const dataDefault = parseResult<DequeueResult>(resultDefault);
+      expect(dataDefault.updates).toHaveLength(1);
+      expect(dataDefault.updates[0].id).toBe(42);
+      expect(dataDefault.pending).toBe(1);
+
+      // Compact and default batch shapes are identical
+      expect(JSON.stringify(dataCompact)).toBe(JSON.stringify(dataDefault));
     });
   });
 });

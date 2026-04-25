@@ -1029,6 +1029,120 @@ describe("send — first-use hint injection and happy-path routing", () => {
 });
 
 // =============================================================================
+// response_format: "compact" — split/split_count omitted
+// =============================================================================
+describe("send — response_format: compact (split/split_count omitted)", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.isTtsEnabled.mockReturnValue(true);
+    mocks.stripForTts.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    mocks.sendVoiceDirect.mockResolvedValue({ message_id: 43 });
+    mocks.showTyping.mockResolvedValue(undefined);
+    mocks.deliverServiceMessage.mockReturnValue(undefined);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("compact: text split omits split:true and split_count when multiple chunks", async () => {
+    mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 10 })
+      .mockResolvedValueOnce({ message_id: 11 });
+    const result = await call({ text: "long text", response_format: "compact", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_ids).toBeDefined();
+    expect(data.split).toBeUndefined();
+    expect(data.split_count).toBeUndefined();
+  });
+
+  it("default: text split includes split:true and split_count when multiple chunks", async () => {
+    mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 10 })
+      .mockResolvedValueOnce({ message_id: 11 });
+    const result = await call({ text: "long text", response_format: "default", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.split).toBe(true);
+    expect(data.split_count).toBe(2);
+  });
+
+  it("omitted response_format: text split includes split:true and split_count (backward compat)", async () => {
+    mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
+    mocks.sendMessage
+      .mockResolvedValueOnce({ message_id: 10 })
+      .mockResolvedValueOnce({ message_id: 11 });
+    const result = await call({ text: "long text", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.split).toBe(true);
+    expect(data.split_count).toBe(2);
+  });
+
+  it("compact: audio multi-chunk omits split:true and split_count", async () => {
+    mocks.splitMessage.mockReturnValue(["audio1", "audio2"]);
+    mocks.sendVoiceDirect
+      .mockResolvedValueOnce({ message_id: 43 })
+      .mockResolvedValueOnce({ message_id: 44 });
+    const result = await call({ audio: "hello", response_format: "compact", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_ids).toBeDefined();
+    expect(data.split).toBeUndefined();
+    expect(data.split_count).toBeUndefined();
+    expect(data.audio).toBe(true);
+  });
+
+  it("default: audio multi-chunk includes split:true and split_count", async () => {
+    mocks.splitMessage.mockReturnValue(["audio1", "audio2"]);
+    mocks.sendVoiceDirect
+      .mockResolvedValueOnce({ message_id: 43 })
+      .mockResolvedValueOnce({ message_id: 44 });
+    const result = await call({ audio: "hello", response_format: "default", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.split).toBe(true);
+    expect(data.split_count).toBe(2);
+    expect(data.audio).toBe(true);
+  });
+
+  it("compact: caption-overflow path omits split:true (single audio chunk)", async () => {
+    const longText = "X".repeat(970); // > MAX_CAPTION (964)
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    const result = await call({ text: longText, audio: "hello", response_format: "compact", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.audio).toBe(true);
+    expect(data.split).toBeUndefined();
+    expect(data.message_id).toBe(43);
+    expect(data.text_message_id).toBe(99);
+  });
+
+  it("default: caption-overflow path includes split:true (single audio chunk)", async () => {
+    const longText = "X".repeat(970);
+    mocks.sendMessage.mockResolvedValue({ message_id: 99 });
+    const result = await call({ text: longText, audio: "hello", response_format: "default", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.split).toBe(true);
+    expect(data.audio).toBe(true);
+  });
+});
+
+// =============================================================================
 // Audio markup leak detection
 // =============================================================================
 describe("audio markup leak detection", () => {

@@ -88,6 +88,8 @@ function completionBadge(steps: ChecklistStep[]): string {
   return `${header}\n${parts.join(", ")}`;
 }
 
+// Note: the create path returns only { message_id } — there are no compact-suppressible
+// fields, so response_format is only accepted on the update path (handleUpdateChecklist).
 export async function handleSendNewChecklist({
   title, steps, token,
 }: {
@@ -116,11 +118,12 @@ export async function handleSendNewChecklist({
   }
 }
 
-export async function handleUpdateChecklist({ title, steps, message_id, token }: {
+export async function handleUpdateChecklist({ title, steps, message_id, token, response_format }: {
   title: string;
   steps: ChecklistStep[];
   message_id: number;
   token: number;
+  response_format?: "default" | "compact";
 }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
@@ -151,7 +154,8 @@ export async function handleUpdateChecklist({ title, steps, message_id, token }:
         } as Record<string, unknown>).catch(() => {});
       }
     }
-    return toResult({ message_id: edited.message_id });
+    const compact = response_format === "compact";
+    return toResult({ message_id: edited.message_id, ...(compact ? {} : { updated: true }) });
   } catch (err) {
     return toError(err);
   }
@@ -184,6 +188,10 @@ export function register(server: McpServer) {
           .min(1)
           .describe("ID of the checklist message to update, as returned by send_new_checklist."),
         token: TOKEN_SCHEMA,
+        response_format: z
+          .enum(["default", "compact"])
+          .optional()
+          .describe("Response format. \"compact\" omits inferrable fields (updated: true) to reduce token usage. Defaults to \"default\"."),
       },
     },
     handleUpdateChecklist,

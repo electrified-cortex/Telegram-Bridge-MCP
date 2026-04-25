@@ -22,6 +22,22 @@ Normal drain-then-block sequence:
 
 `pending` (included when more updates are queued) tells you how many items are still waiting. When `pending > 0`, skip straight to another `dequeue(max_wait: 0)` instead of blocking.
 
+### Compact mode (`response_format: "compact"`)
+
+Pass `response_format: "compact"` to any `dequeue` call to reduce token usage (~445 tokens/session saved). In compact mode, certain always-inferrable fields are omitted:
+
+- **Empty poll result:** `empty: true` is suppressed. Infer empty from the *absence* of an `updates` key.
+- **Timeout:** `timed_out: true` is **always** emitted (never suppressed) — so a `timed_out` key still signals the timeout case reliably.
+
+Compact mode drain-then-block pattern:
+
+```text
+Default:  if (result.empty) { /* empty */ } else if (result.timed_out) { /* timeout */ } else { /* process result.updates */ }
+Compact:  if (!result.updates) { /* empty — no updates key means empty poll */ } else if (result.timed_out) { /* timeout — always present */ } else { /* process result.updates */ }
+```
+
+`response_format` defaults to `"default"` — no existing calls are affected unless you opt in.
+
 ### Handling a full timeout
 
 When `dequeue()` returns `{ timed_out: true }` after a full blocking wait (not a `max_wait: 0` drain poll), 5 minutes have passed with no activity. Do not silently loop:

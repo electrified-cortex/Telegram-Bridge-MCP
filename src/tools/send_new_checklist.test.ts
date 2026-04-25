@@ -366,4 +366,31 @@ describe("update_checklist tool", () => {
     await update({ title: "CI", steps: mixedSteps, message_id: 10, token: 1123456 });
     expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
   });
+
+  describe("response_format: compact", () => {
+    it("compact: update_checklist omits updated:true from response", async () => {
+      mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+      const result = await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, token: 1123456, response_format: "compact" });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.message_id).toBe(10);
+      expect(data.updated).toBeUndefined();
+    });
+
+    it("default: update_checklist includes updated:true", async () => {
+      mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+      const result = await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, token: 1123456, response_format: "default" });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.updated).toBe(true);
+    });
+
+    it("omitted response_format: update_checklist includes updated:true (backward compat)", async () => {
+      mocks.editMessageText.mockResolvedValue({ message_id: 10 });
+      const result = await update({ title: "CI Pipeline", steps: STEPS, message_id: 10, token: 1123456 });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.updated).toBe(true);
+    });
+  });
 });
