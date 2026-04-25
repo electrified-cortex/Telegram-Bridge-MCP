@@ -22,6 +22,7 @@
 
 ### Changed
 
+- `send` audio default: TTS sends with `audio` param are now **async by default** — returns `message_id_pending` + `status: queued` immediately; result delivered via `dequeue` `send_callback` event. Pass `async: false` to opt back into synchronous behavior. Non-audio sends unchanged (task 10-820).
 - Unknown-parameter warning middleware: `registerTool` wrapper now strips unrecognised parameters before passing args to the handler and injects a `warning` field into the response payload listing the dropped keys — tools always execute with the valid subset, the call is never rejected (PR #147)
 - `shutdown` MCP tool: now bypasses the pending-message guard and exits immediately when no sessions are active (pending items cannot be processed without a session to route to); the guard still applies when one or more sessions exist
 - Button callback `timeout_seconds` now has no default — omitting it holds buttons open for up to 24 hours (server-side ceiling). Explicit values are still honored. Max raised from 300 s to 86400 s (24 h).

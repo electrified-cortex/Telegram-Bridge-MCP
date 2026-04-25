@@ -203,7 +203,7 @@ describe("send tool", () => {
   // Case 2: voice-only (string)
   // ---------------------------------------------------------------------------
   it("voice-only (string): calls TTS and sends voice note", async () => {
-    const result = await call({ audio: "nova", token: TOKEN });
+    const result = await call({ audio: "nova", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
@@ -216,7 +216,7 @@ describe("send tool", () => {
   // Case 3: audio-only (no voice override — uses session/default)
   // ---------------------------------------------------------------------------
   it("audio-only: calls TTS with session voice (or undefined if none set)", async () => {
-    const result = await call({ audio: "hello", token: TOKEN });
+    const result = await call({ audio: "hello", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
@@ -228,7 +228,7 @@ describe("send tool", () => {
   // Case 4: combined mode (text + voice)
   // ---------------------------------------------------------------------------
   it("combined mode: sends voice note with text as caption", async () => {
-    const result = await call({ text: "caption text", audio: "shimmer", token: TOKEN });
+    const result = await call({ text: "caption text", audio: "shimmer", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(43);
@@ -297,7 +297,7 @@ describe("send tool", () => {
   it("combined mode: auto-splits into two messages when text exceeds 964 chars", async () => {
     const longText = "A".repeat(965); // 965 chars > MAX_CAPTION (964)
     mocks.sendMessage.mockResolvedValue({ message_id: 99 });
-    const result = await call({ text: longText, audio: "nova", token: TOKEN });
+    const result = await call({ text: longText, audio: "nova", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     // Voice note was sent (no caption)
@@ -319,7 +319,7 @@ describe("send tool", () => {
   // ---------------------------------------------------------------------------
   it("combined mode: no split when text is under 964 chars (single hybrid message)", async () => {
     const shortText = "A".repeat(963); // under MAX_CAPTION (964)
-    const result = await call({ text: shortText, audio: "nova", token: TOKEN });
+    const result = await call({ text: shortText, audio: "nova", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     // Voice note sent with caption
@@ -340,7 +340,7 @@ describe("send tool", () => {
     mocks.validateText
       .mockReturnValueOnce(null)
       .mockReturnValueOnce({ code: "MESSAGE_TOO_LONG", message: "chunk too long" });
-    const result = await call({ audio: "hello world", token: TOKEN });
+    const result = await call({ audio: "hello world", async: false, token: TOKEN });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("MESSAGE_TOO_LONG");
     // No synthesis or delivery — validation runs before the send loop
@@ -362,7 +362,7 @@ describe("send tool", () => {
     // First sendVoiceDirect call succeeds
     mocks.sendVoiceDirect.mockResolvedValueOnce({ message_id: 43 });
 
-    const result = await call({ audio: "hello world chunk test", token: TOKEN });
+    const result = await call({ audio: "hello world chunk test", async: false, token: TOKEN });
 
     expect(isError(result)).toBe(true);
     // First chunk was already sent; error propagates from the second
@@ -381,7 +381,7 @@ describe("send tool", () => {
       new Error("user restricted receiving of voice note messages"),
     );
 
-    const result = await call({ audio: "say something", token: TOKEN });
+    const result = await call({ audio: "say something", async: false, token: TOKEN });
 
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("VOICE_RESTRICTED");
@@ -418,11 +418,16 @@ describe("send tool", () => {
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
   });
 
-  it("async omitted — synchronous TTS path is used (enqueueAsyncSend not called)", async () => {
-    await call({ audio: "hello no async flag", token: TOKEN });
-    expect(mocks.enqueueAsyncSend).not.toHaveBeenCalled();
-    expect(mocks.synthesizeToOgg).toHaveBeenCalledOnce();
-    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+  it("async omitted — async TTS path is used by default (enqueueAsyncSend called)", async () => {
+    mocks.enqueueAsyncSend.mockReturnValue(-1_000_000_001);
+    const result = await call({ audio: "hello no async flag", token: TOKEN });
+    expect(mocks.enqueueAsyncSend).toHaveBeenCalledOnce();
+    expect(mocks.synthesizeToOgg).not.toHaveBeenCalled();
+    expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
+    expect(isError(result)).toBe(false);
+    const parsed = parseResult(result);
+    expect(parsed.message_id_pending).toBe(-1_000_000_001);
+    expect(parsed.status).toBe("queued");
   });
 });
 
@@ -471,7 +476,7 @@ describe("send — message alias", () => {
   });
 
   it("message alias: send(message: 'hello', audio: 'spoken') works — voice with caption alias (no hint)", async () => {
-    const result = await call({ message: "caption via alias", audio: "spoken content", token: TOKEN });
+    const result = await call({ message: "caption via alias", audio: "spoken content", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
   });
@@ -712,7 +717,7 @@ describe("hybrid auto-split on caption overflow", () => {
 
   it("sends two messages when text exceeds 1024-char limit with audio, response has split:true, both IDs, and _hint", async () => {
     const longText = "X".repeat(970); // > MAX_CAPTION (964)
-    const result = await call({ text: longText, audio: "hello", token: TOKEN });
+    const result = await call({ text: longText, audio: "hello", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
 
@@ -736,7 +741,7 @@ describe("hybrid auto-split on caption overflow", () => {
 
   it("sends single hybrid message (no split) when text is under the 1024-char limit", async () => {
     const shortText = "Y".repeat(500); // < MAX_CAPTION (964)
-    const result = await call({ text: shortText, audio: "hello", token: TOKEN });
+    const result = await call({ text: shortText, audio: "hello", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
 
@@ -829,7 +834,7 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
   // ---------------------------------------------------------------------------
   it("audio+caption: no warning when caption contains an em-dash (no longer flagged)", async () => {
     const captionWithEmDash = "Status\u2014done"; // em dash U+2014 — no longer flagged
-    const result = await call({ text: captionWithEmDash, audio: "spoken content", token: TOKEN });
+    const result = await call({ text: captionWithEmDash, audio: "spoken content", async: false, token: TOKEN });
 
     expect(isError(result)).toBe(false);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
@@ -838,7 +843,7 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
   });
 
   it("audio+caption: no warning when caption is clean ASCII", async () => {
-    const result = await call({ text: "clean caption text", audio: "spoken", token: TOKEN });
+    const result = await call({ text: "clean caption text", audio: "spoken", async: false, token: TOKEN });
 
     expect(isError(result)).toBe(false);
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
@@ -851,7 +856,7 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
   it("captionOverflow: fires warning when overflow text message contains an unrenderable char", async () => {
     // Build a string > MAX_CAPTION (1024-60=964) that contains an arrow (→ U+2192)
     const longTextWithBadChar = "A".repeat(962) + "\u2192end"; // 966 chars > 964, contains →
-    const result = await call({ text: longTextWithBadChar, audio: "hello", token: TOKEN });
+    const result = await call({ text: longTextWithBadChar, audio: "hello", async: false, token: TOKEN });
 
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
@@ -1053,6 +1058,7 @@ describe("audio markup leak detection", () => {
   it("audio markup leak: </audio> tag → strips audio and returns AUDIO_MARKUP_LEAK warning", async () => {
     const result = await call({
       audio: "Diagnosis. TMCP help send hybrid guidance is underspecified.</audio>\n<parameter name=\"text\">TMCP bug located.</parameter>",
+      async: false,
       token: TOKEN,
     });
     expect(isError(result)).toBe(false);
@@ -1070,6 +1076,7 @@ describe("audio markup leak detection", () => {
   it("audio markup leak: recovers caption from trailing <parameter name=\"text\"> block", async () => {
     const result = await call({
       audio: "Voice content here.</audio>\n<parameter name=\"text\">Recovered caption text.</parameter>",
+      async: false,
       token: TOKEN,
     });
     expect(isError(result)).toBe(false);
@@ -1080,7 +1087,7 @@ describe("audio markup leak detection", () => {
   });
 
   it("clean audio payload: no warning in response", async () => {
-    const result = await call({ audio: "Clean voice message.", token: TOKEN });
+    const result = await call({ audio: "Clean voice message.", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.warning).toBeUndefined();

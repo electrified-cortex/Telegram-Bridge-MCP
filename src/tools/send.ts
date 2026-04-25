@@ -155,7 +155,7 @@ export function register(server: McpServer) {
           .describe("For text content only. Default Markdown (auto-converted)."),
         disable_notification: z.boolean().optional().describe("Send silently (no sound/notification)"),
         reply_to: z.number().int().min(1).optional().describe("Reply to this message ID"),
-        async: z.boolean().optional().describe("If true, accepts immediately and delivers result via dequeue send_callback event. Audio TTS only. Default: false."),
+        async: z.boolean().optional().describe("Applies to audio sends only. Defaults to async when audio is present — returns message_id_pending immediately; pass false to block until TTS completes and receive real message_id. Has no effect on non-audio sends."),
         // ── file ───────────────────────────────────────────────────────────
         file: z.string().optional().describe("Local path, HTTPS URL, or file_id (for type: \"file\")"),
         file_type: z
@@ -308,7 +308,7 @@ export function register(server: McpServer) {
             }
 
             // ── Async TTS path ────────────────────────────────────────────
-            if (args.async === true) {
+            if (args.async !== false) {
               const pendingId = enqueueAsyncSend(_sid, {
                 sid: _sid,
                 chatId,

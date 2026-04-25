@@ -101,6 +101,8 @@ If you need audio + caption + inline buttons in one message, use interactive
 modes such as `send(type: "question", choose: [...], audio: "...")`,
 `send(type: "choice", options: [...], audio: "...")`, or `send(type: "question", confirm: "...")`.
 
+**Async default for audio:** When `audio` is present, the send is async by default — returns `{ message_id_pending, status: "queued" }` immediately; result delivered via `dequeue` as a `send_callback` event. Pass `async: false` to force synchronous execution (blocks until TTS completes, returns real `message_id`). Non-audio sends are always synchronous.
+
 **notification** — Formatted block with severity emoji header. Required: `title`.
 Optional: `text`, `severity` (info/success/warning/error). Silent by default.
 
