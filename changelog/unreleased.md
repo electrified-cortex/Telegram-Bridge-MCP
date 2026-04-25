@@ -4,6 +4,10 @@
 
 ### Added
 
+- `POST /event` endpoint: external event system for cross-participant lifecycle signaling. Any participant POSTs `{ kind, actor_sid?, details? }` with a session token; the bridge logs the event to `data/events.ndjson`, fans out an `agent_event` service message to all active sessions, and triggers kind-mapped animations for governor actors (`compacting` → `working` preset; `compacted` → cancels active animation immediately). Strict kind allow-list: `compacting`, `compacted`, `startup`, `shutdown_warn`, `shutdown_complete` — unknown kinds return 400. `help(topic: 'events')` for full reference.
+- `action(type: "react")` emoji alias fallback: when an emoji Telegram does not support as a reaction is requested, the bridge remaps to a semantically similar supported emoji (`👂→👀`, `🤚→👍`, `🧠→🤔`, `👁→👀`, `🦻→👀`), applies the reaction, and returns `hint: "emoji_alias_applied"` with the substituted emoji. Unmapped unsupported emojis still return `REACTION_EMOJI_INVALID`.
+- `send(type: "choice")` callback two-stage UX: on button tap, the chosen button highlights (primary style, all others reset to default) for ~500 ms, then the keyboard collapses and the message updates with the standard selection suffix — provides visual confirmation before auto-collapse.
+
 - `response_format: "compact"` parameter added to `dequeue`, `send`, `ask`, `choose`, `confirm`, and `send_new_checklist`: suppresses always-inferrable fields (e.g. `empty: true` on empty polls, `timed_out: false` on answered prompts, `split: true`/`split_count` on multi-chunk sends) to reduce per-call response size — estimated savings of ~445 tokens per session; `timed_out: true` is always emitted in compact mode so timeout detection remains unambiguous
 
 ### Changed
@@ -12,6 +16,7 @@
 
 ### Fixed
 
+- `send(type: "question", choose: [...])`: inline keyboard is now removed in the same edit that records the answer; previously the keyboard remained visible and tappable after selection, allowing stale taps to re-fire against an already-resolved question.
 - `hook-animation.ts`: updated import path for `handleShowAnimation` from removed `tools/show_animation.ts` to `tools/animation/show.ts`
 - `hook-animation.test.ts` / `hook-animation.integration.test.ts`: updated mock and `importActual` paths to match the new module location; fixed `no-confusing-void-expression` lint errors in `server.close` callbacks
 - `tools/acknowledge/query.test.ts`, `tools/message/delete.test.ts`: removed unused `parseResult` imports
