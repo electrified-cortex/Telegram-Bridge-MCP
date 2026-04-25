@@ -36,6 +36,13 @@ The caller can drain the dequeue stream to learn outcome, or ignore it entirely.
 6. Default behavior unchanged: omitting `fire_and_forget` (or setting `false`) keeps existing blocking semantics.
 7. Existing integration tests pass; new tests cover: delivery event appears, concurrent send calls don't interfere, failure path propagates error correctly.
 
+## Superseded (2026-04-24)
+
+Task 10-803 (async TTS send with dequeue callback) implemented this feature as `async: true`
+parameter on the send tool (not `fire_and_forget`). All acceptance criteria are met:
+immediate return with `{ ok: true, message_id_pending, status: "queued" }`, delivery via
+`send_callback` dequeue event. Close this draft.
+
 ## Don'ts
 
 - Do not make fire-and-forget the default — blocking is correct for interactive flows.
