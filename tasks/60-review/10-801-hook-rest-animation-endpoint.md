@@ -40,7 +40,7 @@ Narrowly scoped: this endpoint does ONE thing — fires an animation on an authe
 - [ ] Valid token + valid preset → 200 + animation visible on that session.
 - [ ] Invalid token → 401, no side effect.
 - [ ] Invalid preset → 400, no side effect.
-- [ ] Test: integration test confirming the endpoint fires the `compacting` preset end-to-end.
+- [ ] Test: integration test confirming the endpoint fires the `compacting` preset end-to-end. *Integration test = real HTTP server instance (e.g. supertest), real handler chain, no mocked core internals (`validateSession`, `handleShowAnimation`).*
 - [ ] Docs: one paragraph in TMCP guide/help explaining the endpoint exists and its narrow scope.
 
 ## Don'ts
@@ -55,3 +55,14 @@ Narrowly scoped: this endpoint does ONE thing — fires an animation on an authe
 
 - `cortex.lan/tasks/10-drafts/curator-only/15-0584-precompact-direct-animation.md` — blocked on this task.
 - Future: any other one-shot hook-driven animation needs (shutdown? stop-hook recovery?). Track as separate tasks, don't pre-build.
+
+## Completion
+
+Branch: `10-801` in Telegram MCP repo (worktree `.worktrees/10-801`).
+Commit: `1867d00` — feat(http): add POST /hook/animation REST endpoint
+
+8 files changed, 351 insertions. 2705 tests pass.
+Build: PASS. Lint: PASS. Code review: 3 passes, clean.
+
+All acceptance criteria met. New files: `src/hook-animation.ts`, `src/hook-animation.test.ts` (17 tests).
+Also added `"UNKNOWN_PRESET"` to `TelegramErrorCode` union for typed error routing (400 vs 500 distinction).
