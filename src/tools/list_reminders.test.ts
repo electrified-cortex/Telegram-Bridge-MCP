@@ -5,6 +5,7 @@ import type { Reminder } from "../reminder-state.js";
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   listReminders: vi.fn((): Reminder[] => []),
+  computeReminderDisplayState: vi.fn((r: Reminder, _now: number) => ({ state: r.state })),
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -13,6 +14,7 @@ vi.mock("../session-manager.js", () => ({
 
 vi.mock("../reminder-state.js", () => ({
   listReminders: mocks.listReminders,
+  computeReminderDisplayState: mocks.computeReminderDisplayState,
 }));
 
 import { register } from "./list_reminders.js";
@@ -78,6 +80,41 @@ describe("list_reminders tool", () => {
     const result = await call({ token: 1123456 });
     const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
     expect(data.reminders[0].state).toBe("startup");
+    expect(data.reminders[0].fires_in_seconds).toBeUndefined();
+  });
+
+  it("shows state='disabled' for a disabled reminder", async () => {
+    const now = Date.now();
+    const r: Reminder = { id: "r1", text: "disabled one", delay_seconds: 0, recurring: false, trigger: "time", state: "active", created_at: now, activated_at: now, disabled: true };
+    mocks.listReminders.mockReturnValue([r]);
+    mocks.computeReminderDisplayState.mockReturnValue({ state: "disabled" });
+    const result = await call({ token: 1123456 });
+    const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
+    expect(data.reminders[0].state).toBe("disabled");
+    expect(data.reminders[0].until).toBeUndefined();
+  });
+
+  it("shows state='sleeping' with until (ISO string) for a sleeping reminder", async () => {
+    const now = Date.now();
+    const futureMs = now + 60_000;
+    const r: Reminder = { id: "r1", text: "sleeping one", delay_seconds: 0, recurring: false, trigger: "time", state: "active", created_at: now, activated_at: now, sleep_until: futureMs };
+    mocks.listReminders.mockReturnValue([r]);
+    mocks.computeReminderDisplayState.mockReturnValue({ state: "sleeping", until: futureMs });
+    const result = await call({ token: 1123456 });
+    const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
+    expect(data.reminders[0].state).toBe("sleeping");
+    expect(typeof data.reminders[0].until).toBe("string");
+    // Should be a valid ISO string
+    expect(() => new Date(data.reminders[0].until as string)).not.toThrow();
+  });
+
+  it("does not include fires_in_seconds for disabled reminder even if deferred", async () => {
+    const now = Date.now();
+    const r: Reminder = { id: "r1", text: "muted", delay_seconds: 60, recurring: false, trigger: "time", state: "deferred", created_at: now, activated_at: null, disabled: true };
+    mocks.listReminders.mockReturnValue([r]);
+    mocks.computeReminderDisplayState.mockReturnValue({ state: "disabled" });
+    const result = await call({ token: 1123456 });
+    const data = parseResult<{ reminders: Record<string, unknown>[] }>(result);
     expect(data.reminders[0].fires_in_seconds).toBeUndefined();
   });
 

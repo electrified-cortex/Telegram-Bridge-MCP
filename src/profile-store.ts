@@ -20,8 +20,8 @@ const REPO_ROOT = resolve(__dirname, "..");
 // ---------------------------------------------------------------------------
 
 export type ReminderDef =
-  | { trigger?: "time"; text: string; recurring: boolean; delay_seconds: number }
-  | { trigger: "startup"; text: string; recurring: boolean; delay_seconds?: number };
+  | { trigger?: "time"; text: string; recurring: boolean; delay_seconds: number; disabled?: boolean }
+  | { trigger: "startup"; text: string; recurring: boolean; delay_seconds?: number; disabled?: boolean };
 
 export interface ProfileData {
   voice?: string;

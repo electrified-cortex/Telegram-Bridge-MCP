@@ -33,6 +33,16 @@ export interface Reminder {
   created_at: number;      // Date.now() when added
   activated_at: number | null; // Date.now() when promoted to active (null if still deferred/startup)
   state: "deferred" | "active" | "startup";
+  /**
+   * Persists across session restart / profile-save.
+   * When true the reminder will not fire until re-enabled.
+   */
+  disabled?: boolean;
+  /**
+   * Transient sleep — epoch ms after which firing resumes.
+   * NOT persisted to profile; lost on session end or profile/save.
+   */
+  sleep_until?: number;
 }
 
 const _reminders = new Map<number, Reminder[]>();
@@ -104,6 +114,46 @@ export function cancelReminder(id: string): boolean {
   return true;
 }
 
+/**
+ * Disable a reminder (persisted flag). Idempotent.
+ * Returns the reminder if found, null if not found.
+ */
+export function disableReminder(id: string): Reminder | null {
+  const sid = getCallerSid();
+  const list = _reminders.get(sid) ?? [];
+  const r = list.find(r => r.id === id);
+  if (!r) return null;
+  r.disabled = true;
+  return r;
+}
+
+/**
+ * Enable a previously disabled reminder. Idempotent.
+ * Returns the reminder if found, null if not found.
+ */
+export function enableReminder(id: string): Reminder | null {
+  const sid = getCallerSid();
+  const list = _reminders.get(sid) ?? [];
+  const r = list.find(r => r.id === id);
+  if (!r) return null;
+  r.disabled = false;
+  return r;
+}
+
+/**
+ * Sleep a reminder until `until` (epoch ms). Transient — not persisted.
+ * Pass a past datetime to wake early.
+ * Returns the reminder if found, null if not found.
+ */
+export function sleepReminder(id: string, until: number): Reminder | null {
+  const sid = getCallerSid();
+  const list = _reminders.get(sid) ?? [];
+  const r = list.find(r => r.id === id);
+  if (!r) return null;
+  r.sleep_until = until;
+  return r;
+}
+
 // ── Queries ────────────────────────────────────────────────────────────────
 
 /** Return all reminders (deferred + active + startup) for the current caller's session. */
@@ -113,12 +163,30 @@ export function listReminders(): Reminder[] {
 
 /** Return all active reminders for a specific SID (used by dequeue handler). */
 export function getActiveReminders(sid: number): Reminder[] {
-  return (_reminders.get(sid) ?? []).filter(r => r.state === "active");
+  const now = Date.now();
+  return (_reminders.get(sid) ?? []).filter(r =>
+    r.state === "active" &&
+    !r.disabled &&
+    !(r.sleep_until !== undefined && now < r.sleep_until),
+  );
 }
 
 /** Return all startup reminders for a specific SID. */
 export function getStartupReminders(sid: number): Reminder[] {
   return (_reminders.get(sid) ?? []).filter(r => r.state === "startup");
+}
+
+/**
+ * Return all startup reminders for `sid` that are currently fireable
+ * (not disabled, not sleeping past now).
+ */
+export function getFireableStartupReminders(sid: number): Reminder[] {
+  const now = Date.now();
+  return (_reminders.get(sid) ?? []).filter(r =>
+    r.state === "startup" &&
+    !r.disabled &&
+    !(r.sleep_until !== undefined && now < r.sleep_until),
+  );
 }
 
 /**
@@ -153,26 +221,34 @@ export function promoteDeferred(sid: number): void {
 }
 
 /**
- * Remove and return all active reminders for `sid`.
+ * Remove and return all active reminders for `sid` that are fireable
+ * (not disabled, not sleeping past now).
  * One-shot reminders are deleted; recurring ones are re-armed.
  */
 export function popActiveReminders(sid: number): Reminder[] {
   const list = _reminders.get(sid);
   if (!list) return [];
-  const active = list.filter(r => r.state === "active");
-  if (active.length === 0) return [];
-
   const now = Date.now();
+  const fireable = list.filter(r =>
+    r.state === "active" &&
+    !r.disabled &&
+    !(r.sleep_until !== undefined && now < r.sleep_until),
+  );
+  if (fireable.length === 0) return [];
+
+  const fireableIds = new Set(fireable.map(r => r.id));
   const remaining: Reminder[] = [];
   for (const r of list) {
-    if (r.state === "active") {
+    if (fireableIds.has(r.id)) {
       if (r.recurring) {
-        // Re-arm: go back to deferred if has a delay, else reset activated_at
+        // Re-arm: go back to deferred if delay > 0, else stay active with refreshed activated_at
+        // clear sleep_until (sleep is one-shot per fire cycle)
         remaining.push({
           ...r,
           state: r.delay_seconds > 0 ? "deferred" : "active",
           created_at: now,
           activated_at: r.delay_seconds > 0 ? null : now,
+          sleep_until: undefined,
         });
       }
       // one-shot: discarded
@@ -181,11 +257,11 @@ export function popActiveReminders(sid: number): Reminder[] {
     }
   }
   _reminders.set(sid, remaining);
-  return active;
+  return fireable;
 }
 
 /**
- * Fire all startup reminders for `sid`.
+ * Fire all startup reminders for `sid` that are fireable (not disabled, not sleeping).
  * Returns the `Reminder[]` that were fired (callers convert them to events via `buildReminderEvent`).
  * One-shot startup reminders are removed from the list; recurring ones remain and will fire again
  * on the next `session_start`.
@@ -193,15 +269,22 @@ export function popActiveReminders(sid: number): Reminder[] {
 export function fireStartupReminders(sid: number): Reminder[] {
   const list = _reminders.get(sid);
   if (!list) return [];
-  const startupReminders = list.filter(r => r.state === "startup");
-  if (startupReminders.length === 0) return [];
+  const now = Date.now();
+  const fireable = list.filter(r =>
+    r.state === "startup" &&
+    !r.disabled &&
+    !(r.sleep_until !== undefined && now < r.sleep_until),
+  );
+  if (fireable.length === 0) return [];
 
+  const fireableIds = new Set(fireable.map(r => r.id));
   const remaining: Reminder[] = [];
   for (const r of list) {
-    if (r.state === "startup") {
+    if (fireableIds.has(r.id)) {
       if (r.recurring) {
         // Recurring startup reminders persist — they fire every session_start
-        remaining.push(r);
+        // Clear sleep_until after firing (sleep is one-shot per fire cycle)
+        remaining.push({ ...r, sleep_until: undefined });
       }
       // one-shot: discarded after firing
     } else {
@@ -209,7 +292,19 @@ export function fireStartupReminders(sid: number): Reminder[] {
     }
   }
   _reminders.set(sid, remaining);
-  return startupReminders;
+  return fireable;
+}
+
+/**
+ * Compute the display state for a reminder (for `reminder/list`).
+ * - `"disabled"` — reminder.disabled is true
+ * - `"sleeping"` — sleep_until is set and still in the future (returns until ms)
+ * - otherwise falls through to the internal state ("active", "deferred", "startup")
+ */
+export function computeReminderDisplayState(r: Reminder, now: number): { state: string; until?: number } {
+  if (r.disabled) return { state: "disabled" };
+  if (r.sleep_until !== undefined && now < r.sleep_until) return { state: "sleeping", until: r.sleep_until };
+  return { state: r.state };
 }
 
 /** Typed shape of the event object produced by `buildReminderEvent`. */

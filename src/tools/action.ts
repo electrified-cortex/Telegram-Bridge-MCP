@@ -35,6 +35,9 @@ import { handleImportProfile } from "./import_profile.js";
 import { handleSetReminder } from "./set_reminder.js";
 import { handleCancelReminder } from "./cancel_reminder.js";
 import { handleListReminders } from "./list_reminders.js";
+import { handleDisableReminder } from "./disable_reminder.js";
+import { handleEnableReminder } from "./enable_reminder.js";
+import { handleSleepReminder } from "./sleep_reminder.js";
 import { handleSetDequeueDefault } from "./set_dequeue_default.js";
 import { handleSetDefaultAnimation } from "./set_default_animation.js";
 import { handleToggleLogging } from "./toggle_logging.js";
@@ -129,6 +132,9 @@ export function setupActionRegistry(): void {
   registerAction("reminder/set", toActionHandler(handleSetReminder));
   registerAction("reminder/cancel", toActionHandler(handleCancelReminder));
   registerAction("reminder/list", toActionHandler(handleListReminders));
+  registerAction("reminder/disable", toActionHandler(handleDisableReminder));
+  registerAction("reminder/enable", toActionHandler(handleEnableReminder));
+  registerAction("reminder/sleep", toActionHandler(handleSleepReminder));
   registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
   registerAction("animation/default", toActionHandler(handleSetDefaultAnimation));
   registerAction("logging/toggle", toActionHandler(handleToggleLogging));
@@ -376,6 +382,8 @@ export function register(server: McpServer): void {
               text: z.string(),
               delay_seconds: z.number(),
               recurring: z.boolean().default(false),
+              trigger: z.enum(["time", "startup"]).optional(),
+              disabled: z.boolean().optional(),
             }),
           )
           .optional()
@@ -405,7 +413,11 @@ export function register(server: McpServer): void {
         id: z
           .string()
           .optional()
-          .describe("reminder/set: Optional ID for dedup. reminder/cancel: Reminder ID to cancel."),
+          .describe("reminder/set: Optional ID for dedup. reminder/cancel, reminder/disable, reminder/enable, reminder/sleep: Reminder ID to operate on."),
+        until: z
+          .string()
+          .optional()
+          .describe("reminder/sleep: ISO-8601 datetime after which the reminder resumes firing (e.g. \"2026-06-01T09:00:00Z\")."),
         // profile/dequeue-default params
         timeout: z
           .number()

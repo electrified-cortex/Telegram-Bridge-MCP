@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   registerPreset: vi.fn(),
   addReminder: vi.fn(),
   listReminders: vi.fn((): Array<Record<string, unknown>> => []),
+  disableReminder: vi.fn(),
+  enableReminder: vi.fn(),
 }));
 
 vi.mock("../voice-state.js", () => ({
@@ -25,6 +27,8 @@ vi.mock("../animation-state.js", () => ({
 vi.mock("../reminder-state.js", () => ({
   addReminder: mocks.addReminder,
   listReminders: mocks.listReminders,
+  disableReminder: mocks.disableReminder,
+  enableReminder: mocks.enableReminder,
   reminderContentHash: (text: string, recurring: boolean, trigger: "time" | "startup" = "time") =>
     contentHash(text, recurring, trigger),
 }));
@@ -144,5 +148,67 @@ describe("applyProfile — reminder guard behavior", () => {
     const calls = mocks.addReminder.mock.calls.map((c: [{ trigger?: string }]) => c[0].trigger);
     expect(calls).toContain("time");
     expect(calls).toContain("startup");
+  });
+
+  it("applyProfile with r.disabled = true calls disableReminder", () => {
+    const expectedId = contentHash("Disabled reminder", false, "time");
+    mocks.addReminder.mockReturnValue({
+      id: expectedId,
+      text: "Disabled reminder",
+      delay_seconds: 3600,
+      recurring: false,
+      trigger: "time",
+      state: "deferred",
+      created_at: Date.now(),
+      activated_at: null,
+    });
+    const result = applyProfile(1, {
+      reminders: [{ text: "Disabled reminder", recurring: false, delay_seconds: 3600, disabled: true }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.disableReminder).toHaveBeenCalledOnce();
+    expect(mocks.disableReminder).toHaveBeenCalledWith(expectedId);
+    expect(mocks.enableReminder).not.toHaveBeenCalled();
+  });
+
+  it("applyProfile with r.disabled = false calls enableReminder", () => {
+    const expectedId = contentHash("Enabled reminder", false, "time");
+    mocks.addReminder.mockReturnValue({
+      id: expectedId,
+      text: "Enabled reminder",
+      delay_seconds: 1800,
+      recurring: false,
+      trigger: "time",
+      state: "deferred",
+      created_at: Date.now(),
+      activated_at: null,
+    });
+    const result = applyProfile(1, {
+      reminders: [{ text: "Enabled reminder", recurring: false, delay_seconds: 1800, disabled: false }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.enableReminder).toHaveBeenCalledOnce();
+    expect(mocks.enableReminder).toHaveBeenCalledWith(expectedId);
+    expect(mocks.disableReminder).not.toHaveBeenCalled();
+  });
+
+  it("applyProfile with r.disabled = undefined calls neither disableReminder nor enableReminder", () => {
+    const expectedId = contentHash("Neutral reminder", false, "time");
+    mocks.addReminder.mockReturnValue({
+      id: expectedId,
+      text: "Neutral reminder",
+      delay_seconds: 600,
+      recurring: false,
+      trigger: "time",
+      state: "deferred",
+      created_at: Date.now(),
+      activated_at: null,
+    });
+    const result = applyProfile(1, {
+      reminders: [{ text: "Neutral reminder", recurring: false, delay_seconds: 600 }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.disableReminder).not.toHaveBeenCalled();
+    expect(mocks.enableReminder).not.toHaveBeenCalled();
   });
 });

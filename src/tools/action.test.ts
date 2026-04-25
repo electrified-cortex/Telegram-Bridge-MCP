@@ -35,6 +35,9 @@ const mocks = vi.hoisted(() => ({
   handleSetReminder: vi.fn(),
   handleCancelReminder: vi.fn(),
   handleListReminders: vi.fn(),
+  handleDisableReminder: vi.fn(),
+  handleEnableReminder: vi.fn(),
+  handleSleepReminder: vi.fn(),
   handleSetDequeueDefault: vi.fn(),
   handleSetDefaultAnimation: vi.fn(),
   handleToggleLogging: vi.fn(),
@@ -124,6 +127,9 @@ vi.mock("./import_profile.js", () => ({ handleImportProfile: mocks.handleImportP
 vi.mock("./set_reminder.js", () => ({ handleSetReminder: mocks.handleSetReminder, register: vi.fn() }));
 vi.mock("./cancel_reminder.js", () => ({ handleCancelReminder: mocks.handleCancelReminder, register: vi.fn() }));
 vi.mock("./list_reminders.js", () => ({ handleListReminders: mocks.handleListReminders, register: vi.fn() }));
+vi.mock("./disable_reminder.js", () => ({ handleDisableReminder: mocks.handleDisableReminder, register: vi.fn() }));
+vi.mock("./enable_reminder.js", () => ({ handleEnableReminder: mocks.handleEnableReminder, register: vi.fn() }));
+vi.mock("./sleep_reminder.js", () => ({ handleSleepReminder: mocks.handleSleepReminder, register: vi.fn() }));
 vi.mock("./set_dequeue_default.js", () => ({ handleSetDequeueDefault: mocks.handleSetDequeueDefault, register: vi.fn() }));
 vi.mock("./set_default_animation.js", () => ({ handleSetDefaultAnimation: mocks.handleSetDefaultAnimation, register: vi.fn() }));
 vi.mock("./toggle_logging.js", () => ({ handleToggleLogging: mocks.handleToggleLogging, register: vi.fn() }));
@@ -331,6 +337,9 @@ describe("action tool", () => {
       expect(registeredPaths).toContain("reminder/set");
       expect(registeredPaths).toContain("reminder/cancel");
       expect(registeredPaths).toContain("reminder/list");
+      expect(registeredPaths).toContain("reminder/disable");
+      expect(registeredPaths).toContain("reminder/enable");
+      expect(registeredPaths).toContain("reminder/sleep");
       expect(registeredPaths).toContain("profile/dequeue-default");
       expect(registeredPaths).toContain("animation/default");
       expect(registeredPaths).toContain("logging/toggle");

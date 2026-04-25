@@ -1,7 +1,7 @@
 import type { ProfileData } from "../profile-store.js";
 import { setSessionVoice, setSessionSpeed } from "../voice-state.js";
 import { setSessionDefault, registerPreset } from "../animation-state.js";
-import { addReminder, listReminders, reminderContentHash } from "../reminder-state.js";
+import { addReminder, disableReminder, enableReminder, listReminders, reminderContentHash } from "../reminder-state.js";
 import { getSession } from "../session-manager.js";
 
 export interface ApplyResult {
@@ -67,6 +67,9 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
             trigger: "startup",
             delay_seconds: r.delay_seconds ?? 0,
           });
+          // Restore persisted disabled flag (sleep_until is not persisted)
+          if (r.disabled) disableReminder(added.id);
+          else if (r.disabled === false) enableReminder(added.id);
           if (alreadyExists) {
             updatedReminders.push(added.id);
           } else {
@@ -84,6 +87,9 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
             trigger: "time",
             delay_seconds: r.delay_seconds,
           });
+          // Restore persisted disabled flag (sleep_until is not persisted)
+          if (r.disabled) disableReminder(added.id);
+          else if (r.disabled === false) enableReminder(added.id);
           if (alreadyExists) {
             updatedReminders.push(added.id);
           } else {

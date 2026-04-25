@@ -5,6 +5,7 @@ import {
   listReminders,
   getActiveReminders,
   getStartupReminders,
+  getFireableStartupReminders,
   fireStartupReminders,
   promoteDeferred,
   popActiveReminders,
@@ -14,6 +15,10 @@ import {
   resetReminderStateForTest,
   MAX_REMINDERS_PER_SESSION,
   reminderContentHash,
+  disableReminder,
+  enableReminder,
+  sleepReminder,
+  computeReminderDisplayState,
 } from "./reminder-state.js";
 import { runInSessionContext } from "./session-context.js";
 
@@ -401,6 +406,264 @@ describe("reminder-state", () => {
       const hDefault = reminderContentHash("Deploy check", false);
       const hTime = reminderContentHash("Deploy check", false, "time");
       expect(hDefault).toBe(hTime);
+    });
+  });
+
+  // ── disable / enable ──────────────────────────────────────────────────────
+
+  describe("disableReminder / enableReminder", () => {
+    it("disable prevents an active reminder from appearing in getActiveReminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        disableReminder("r1");
+      });
+      expect(getActiveReminders(1)).toHaveLength(0);
+    });
+
+    it("enable restores a disabled reminder to getActiveReminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        disableReminder("r1");
+        enableReminder("r1");
+      });
+      expect(getActiveReminders(1)).toHaveLength(1);
+    });
+
+    it("disable-then-enable round-trip: reminder fires after re-enable but not between", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "ping", delay_seconds: 0, recurring: true });
+      });
+
+      // Disable — should not fire
+      runInSessionContext(1, () => { disableReminder("r1"); });
+      const firedWhileDisabled = popActiveReminders(1);
+      expect(firedWhileDisabled).toHaveLength(0);
+
+      // Re-enable — should fire
+      runInSessionContext(1, () => { enableReminder("r1"); });
+      const firedAfterEnable = popActiveReminders(1);
+      expect(firedAfterEnable).toHaveLength(1);
+      expect(firedAfterEnable[0].id).toBe("r1");
+    });
+
+    it("disable is idempotent — calling twice does not throw", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        disableReminder("r1");
+        expect(() => disableReminder("r1")).not.toThrow();
+      });
+      expect(getActiveReminders(1)).toHaveLength(0);
+    });
+
+    it("enable is idempotent — calling on active reminder does not throw", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        expect(() => enableReminder("r1")).not.toThrow();
+      });
+      expect(getActiveReminders(1)).toHaveLength(1);
+    });
+
+    it("disableReminder returns null for unknown ID", () => {
+      runInSessionContext(1, () => {
+        const result = disableReminder("nope");
+        expect(result).toBeNull();
+      });
+    });
+
+    it("enableReminder returns null for unknown ID", () => {
+      runInSessionContext(1, () => {
+        const result = enableReminder("nope");
+        expect(result).toBeNull();
+      });
+    });
+
+    it("disabled startup reminders do not appear in getFireableStartupReminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+        disableReminder("s1");
+      });
+      expect(getFireableStartupReminders(1)).toHaveLength(0);
+      // But still visible in getStartupReminders (raw list)
+      expect(getStartupReminders(1)).toHaveLength(1);
+    });
+
+    it("disabled startup reminders are skipped by fireStartupReminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+        disableReminder("s1");
+      });
+      const fired = fireStartupReminders(1);
+      expect(fired).toHaveLength(0);
+    });
+  });
+
+  // ── sleep ─────────────────────────────────────────────────────────────────
+
+  describe("sleepReminder", () => {
+    it("a sleeping reminder does not appear in getActiveReminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        sleepReminder("r1", Date.now() + 60_000);
+      });
+      expect(getActiveReminders(1)).toHaveLength(0);
+    });
+
+    it("a sleeping reminder fires once sleep_until is in the past", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        // Set sleep_until to a past time (already expired)
+        sleepReminder("r1", Date.now() - 1000);
+      });
+      expect(getActiveReminders(1)).toHaveLength(1);
+    });
+
+    it("skips firing during sleep, resumes when now >= until", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: true });
+        sleepReminder("r1", Date.now() + 60_000);
+      });
+
+      // Should not fire while sleeping
+      const whileSleeping = popActiveReminders(1);
+      expect(whileSleeping).toHaveLength(0);
+
+      // Manually expire the sleep
+      runInSessionContext(1, () => {
+        sleepReminder("r1", Date.now() - 1000);
+      });
+
+      const afterWake = popActiveReminders(1);
+      expect(afterWake).toHaveLength(1);
+      expect(afterWake[0].id).toBe("r1");
+    });
+
+    it("sleep_until is cleared after firing (not persisted across re-arm for recurring)", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: true });
+        // Set expired sleep so it fires
+        sleepReminder("r1", Date.now() - 1000);
+      });
+      popActiveReminders(1);
+      // After re-arm, sleep_until should be cleared
+      runInSessionContext(1, () => {
+        const list = listReminders();
+        expect(list[0].sleep_until).toBeUndefined();
+      });
+    });
+
+    it("sleeping startup reminders are skipped by fireStartupReminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+        sleepReminder("s1", Date.now() + 60_000);
+      });
+      const fired = fireStartupReminders(1);
+      expect(fired).toHaveLength(0);
+    });
+
+    it("sleepReminder returns null for unknown ID", () => {
+      runInSessionContext(1, () => {
+        const result = sleepReminder("nope", Date.now() + 1000);
+        expect(result).toBeNull();
+      });
+    });
+
+    it("sleeping deferred reminder stays suppressed after promoteDeferred", () => {
+      runInSessionContext(1, () => {
+        // Add a reminder with a future delay (deferred)
+        const r = addReminder({ id: "r1", text: "x", delay_seconds: 3600, recurring: false });
+        // Sleep it with a future timestamp
+        sleepReminder("r1", Date.now() + 60_000);
+        // Manually set created_at to past so promoteDeferred would promote it
+        r.created_at = Date.now() - 7200_000; // 2 hours ago → delay elapsed
+      });
+      // Promote: reminder moves from deferred to active
+      promoteDeferred(1);
+      // But it should still be suppressed (sleeping) — not in getActiveReminders
+      expect(getActiveReminders(1)).toHaveLength(0);
+    });
+
+    it("sleeping startup reminder excluded from getFireableStartupReminders", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "s1", text: "on startup", delay_seconds: 0, recurring: false, trigger: "startup" });
+        sleepReminder("s1", Date.now() + 60_000);
+      });
+      expect(getFireableStartupReminders(1)).toHaveLength(0);
+    });
+  });
+
+  // ── computeReminderDisplayState ───────────────────────────────────────────
+
+  describe("computeReminderDisplayState", () => {
+    it("returns 'disabled' for a disabled reminder regardless of internal state", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        r.disabled = true;
+        const { state } = computeReminderDisplayState(r, Date.now());
+        expect(state).toBe("disabled");
+      });
+    });
+
+    it("returns 'sleeping' with until when sleep_until is in the future", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        const futureMs = Date.now() + 60_000;
+        r.sleep_until = futureMs;
+        const { state, until } = computeReminderDisplayState(r, Date.now());
+        expect(state).toBe("sleeping");
+        expect(until).toBe(futureMs);
+      });
+    });
+
+    it("disabled takes precedence over sleep", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        r.disabled = true;
+        r.sleep_until = Date.now() + 60_000;
+        const { state } = computeReminderDisplayState(r, Date.now());
+        expect(state).toBe("disabled");
+      });
+    });
+
+    it("returns internal state when neither disabled nor sleeping", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        const { state } = computeReminderDisplayState(r, Date.now());
+        expect(state).toBe("active");
+      });
+    });
+
+    it("returns internal state when sleep_until is in the past", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        r.sleep_until = Date.now() - 1000;
+        const { state } = computeReminderDisplayState(r, Date.now());
+        expect(state).toBe("active");
+      });
+    });
+  });
+
+  // ── sleep transience (profile/save must NOT persist sleep_until) ──────────
+
+  describe("sleep transience — profile/save integration contract", () => {
+    it("listReminders exposes sleep_until on the reminder object for callers to inspect", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        sleepReminder("r1", Date.now() + 60_000);
+        const list = listReminders();
+        // sleep_until is available in memory for the computeReminderDisplayState path
+        expect(list[0].sleep_until).toBeDefined();
+        // disabled is not set
+        expect(list[0].disabled).toBeUndefined();
+      });
+    });
+
+    it("disabled flag is preserved on the reminder object for profile/save to persist", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "r1", text: "x", delay_seconds: 0, recurring: false });
+        disableReminder("r1");
+        const list = listReminders();
+        expect(list[0].disabled).toBe(true);
+      });
     });
   });
 });

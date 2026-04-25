@@ -16,7 +16,7 @@ export function handleImportProfile({ voice, voice_speed, animation_default, ani
   voice_speed?: number;
   animation_default?: string[];
   animation_presets?: Record<string, string[]>;
-  reminders?: Array<{ text: string; delay_seconds: number; recurring: boolean }>;
+  reminders?: Array<{ text: string; delay_seconds: number; recurring: boolean; trigger?: "time" | "startup"; disabled?: boolean }>;
   nametag_emoji?: string;
   token: number;
 }) {
@@ -65,6 +65,8 @@ export function register(server: McpServer) {
               text: z.string(),
               delay_seconds: z.number(),
               recurring: z.boolean().default(false),
+              trigger: z.enum(["time", "startup"]).optional(),
+              disabled: z.boolean().optional(),
             }),
           )
           .optional()

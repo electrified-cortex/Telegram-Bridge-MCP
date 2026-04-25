@@ -116,6 +116,36 @@ describe("save_profile tool", () => {
     expect(reminders[0]).not.toHaveProperty("trigger");
   });
 
+  it("persists disabled=true for disabled reminders", async () => {
+    mocks.listReminders.mockReturnValue([
+      { id: "d1", text: "muted", delay_seconds: 0, recurring: false, trigger: "time", disabled: true },
+    ]);
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    const reminders = written.reminders as Array<Record<string, unknown>>;
+    expect(reminders[0].disabled).toBe(true);
+  });
+
+  it("does NOT persist sleep_until — sleep is transient and not saved to profile", async () => {
+    mocks.listReminders.mockReturnValue([
+      { id: "s1", text: "sleeping", delay_seconds: 0, recurring: false, trigger: "time", sleep_until: Date.now() + 60_000 },
+    ]);
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    const reminders = written.reminders as Array<Record<string, unknown>>;
+    expect(reminders[0]).not.toHaveProperty("sleep_until");
+  });
+
+  it("does NOT include disabled field when reminder is not disabled (omit false)", async () => {
+    mocks.listReminders.mockReturnValue([
+      { id: "t1", text: "active one", delay_seconds: 0, recurring: false, trigger: "time", disabled: false },
+    ]);
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    const reminders = written.reminders as Array<Record<string, unknown>>;
+    expect(reminders[0]).not.toHaveProperty("disabled");
+  });
+
   it("rejects path keys (containing /)", async () => {
     const result = await call({ key: "profiles/Test", token: 1123456 });
     expect(isError(result)).toBe(true);
