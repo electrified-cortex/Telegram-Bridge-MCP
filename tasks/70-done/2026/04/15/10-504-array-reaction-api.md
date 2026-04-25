@@ -18,7 +18,7 @@ transition.
 
 ## Current API
 
-```
+```text
 react(message_id, emoji: '👍')                        → call 1
 react(message_id, emoji: '👀', temporary: true)       → call 2
 ```
@@ -30,7 +30,7 @@ change. Flicker and intermediate states are unavoidable.
 
 Allow `react` to accept an array of reactions in a single call:
 
-```
+```text
 react(message_id, reactions: [
   { emoji: '👍', priority: -1 },
   { emoji: '👀', priority: 0, temporary: true }
@@ -55,7 +55,7 @@ is temporary with no priority needed."
 
 ### Full engagement pattern (one call)
 
-```
+```text
 react(message_id, reactions: [
   { emoji: '👍', priority: -1 },                  // permanent base
   { emoji: '👀', temporary: true }                 // "reviewing" (pri 0 default)
@@ -64,7 +64,7 @@ react(message_id, reactions: [
 
 ### Later transition (one call)
 
-```
+```text
 react(message_id, reactions: [
   { emoji: '🤔', temporary: true }                 // replaces 👀 at pri 0
 ])

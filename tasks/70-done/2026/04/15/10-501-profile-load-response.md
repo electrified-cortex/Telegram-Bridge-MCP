@@ -26,7 +26,7 @@ Design principle: every hint leads to a help call or relevant tool.
 
 ## Proposed Response Format
 
-```
+```text
 voice: onyx 1.1×. 5 animation presets. N startup + M recurring reminders active.
 → help('reminders') for reminder docs. reminders/list for details.
 ```
@@ -52,7 +52,7 @@ Ultra compression — agents are the audience, not humans.
 
 Modified `src/tools/load_profile.ts` to replace the raw hex reminder ID dump with an ultra-compressed summary:
 
-```
+```text
 voice: onyx 1.1×. 5 animation presets. 1 startup reminder, 3 recurring. → help('reminders') for reminder docs. reminders/list for details.
 ```
 

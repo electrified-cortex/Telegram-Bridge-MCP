@@ -26,7 +26,7 @@ All topic content should live as markdown files alongside companion
 
 ## Proposed Structure
 
-```
+```text
 docs/help/
   start.md              ← help('start') content
   start.spec.md         ← design rationale

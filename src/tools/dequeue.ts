@@ -60,7 +60,7 @@ function buildVoiceBacklogHint(batch: TimelineEvent[], sid: number): string | un
   const cats = peekSessionCategories(sid);
   const voiceCount = cats?.["voice"] ?? 0;
   if (voiceCount === 0) return undefined;
-  return `${voiceCount} voice msg pending — react with processing preset.`;
+  return `${voiceCount} voice msg pending — use the 'processing' reaction preset.`;
 }
 
 const DESCRIPTION =
