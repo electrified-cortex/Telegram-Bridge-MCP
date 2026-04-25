@@ -25,3 +25,19 @@ Provide a way for both agents and humans to query session status — which sessi
 
 - Consider whether this should be a built-in command (always present) or an agent-registered command
 - May overlap with `list_sessions` tool — evaluate whether to enhance that instead
+
+## Activity Log
+
+- 2026-04-24: Worker 3 claimed task. Pre-flight: audited `session/list`, `Session` interface, action routing. Decided against slash command (existing `/session` panel covers humans) and against modifying `session/list` (would break callers). New `session/status` action is additive.
+- 2026-04-24: Impl subagent created `src/tools/session_status.ts` + registered in `action.ts`. Build clean.
+- 2026-04-24: Code Reviewer — 2 majors (governor-0 edge case, race filter for getSession miss), 3 minors (spurious async, NaN guard, missing is_governor field), 2 nits. All fixed. Second build clean.
+
+## Completion
+
+- Branch: `30-003`
+- Commits: `74d16e1` (impl), `1005585` (review fixes)
+- New file: `src/tools/session_status.ts`; modified: `src/tools/action.ts`
+- Returns per-session: sid, name, color, createdAt, uptime_s, last_poll_s, is_waiting, waiting_s, healthy, is_governor
+- Governor sees all sessions; non-governor sees own only
+- Subagents: Impl ×1, Code Reviewer ×1
+- Ready for Overseer merge.
