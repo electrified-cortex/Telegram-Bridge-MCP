@@ -1,59 +1,22 @@
 # [Unreleased]
 
-## v7.0.0 — Unreleased
+## v7.2.0 — Unreleased
 
 ### Added
-
-- Unrenderable character detection: `send` warns when message content contains Unicode characters that do not render in Telegram (e.g. certain symbol blocks); the warning lists the offending characters and their code points
-- Behavioral nudge system: per-session checklist tracks button awareness (`knowsButtons`) and question-without-button count; fires `behavior_nudge_question_hint` on first actionable `?` question sent without buttons, and `behavior_nudge_question_escalation` after 10+ such questions — nudges are suppressed once the agent uses buttons in any form or consults button help
-- `onboarding_buttons` service message: delivered during session start (both first-session and subsequent-session paths) covering OK / OK-Cancel / Y-N presets and hybrid message guidance (audio + caption + buttons in one message)
-- `MAX_NUDGES_PER_SESSION` raised from 3 to 5 to accommodate the two new question nudge types without crowding other behavioral nudges
-- `src/behavior-tracker.ts`: `recordButtonUse(sid)` — marks session as button-aware and suppresses all subsequent question nudges; `recordOutboundText(sid, text)` — evaluates outbound text against actionable-question heuristics and fires hint/escalation nudges as appropriate
-- `docs/help/send.md`: Hybrid section documenting audio + caption + buttons composition pattern
-- `docs/help/guide.md`: Button presets table covering OK, OK-Cancel, Y-N, and custom choose patterns
-- `docs/communication.md`: Quick-presets callout added under Hard Rule 2
-- `session/rename` action: added optional `color` parameter — applies a session color change atomically with the rename in the same operator-approval flow
-- `session/rename` action: added optional `target_sid` parameter (governor only) — allows the governor to rename another session; returns `PERMISSION_DENIED` for non-governor callers; validates the target session exists before prompting the operator
-- `session/close` action: added `force?: boolean` parameter — when `true`, allows closing the last active session without triggering the last-session guard
-- `session/close/signal` action (governor only): accepts `target_sid` and optional `timeout_seconds` — delivers a `session_close_signal` service message to the target, waits up to the timeout for self-close, force-closes via `closeSessionById` on expiry; re-checks governor status before force-closing (returns `PERMISSION_DENIED` if governor changed during the wait), detects self-close mid-wait, and rejects callers that are non-governor, target themselves, or name an unknown SID
-- `src/silence-detector.ts`: two-rung silence nudge system — fires a presence reminder after 30 s of agent inactivity when operator content is pending (rung-1) and a stronger nudge after 60 s (rung-2); outbound signals (send, typing, animation, reaction, confirm) reset the clock per episode; each new inbound message grants a 30 s grace window before rung-1 can fire
-- `src/behavior-tracker.ts`: `recordPresenceSignal(sid)` — resets the per-session silence clock on any outbound action; now also called in the `confirm/` action branch (alongside `btRecordButtonUse`) so confirm interactions count as agent presence
-- Transcription log events: voice note processing now emits `event: "transcription"` (`type: "voice_transcription"`, includes transcribed text) on success and `event: "transcription_error"` (`type: "voice_transcription_error"`, includes `error_code` and `error`) on failure — surfacing transcription outcomes in the session event log
 
 - `response_format: "compact"` parameter added to `dequeue`, `send`, `ask`, `choose`, `confirm`, and `send_new_checklist`: suppresses always-inferrable fields (e.g. `empty: true` on empty polls, `timed_out: false` on answered prompts, `split: true`/`split_count` on multi-chunk sends) to reduce per-call response size — estimated savings of ~445 tokens per session; `timed_out: true` is always emitted in compact mode so timeout detection remains unambiguous
 
 ### Changed
 
 - `send` audio default: TTS sends with `audio` param are now **async by default** — returns `message_id_pending` + `status: queued` immediately; result delivered via `dequeue` `send_callback` event. Pass `async: false` to opt back into synchronous behavior. Non-audio sends unchanged (task 10-820).
-- Unknown-parameter warning middleware: `registerTool` wrapper now strips unrecognised parameters before passing args to the handler and injects a `warning` field into the response payload listing the dropped keys — tools always execute with the valid subset, the call is never rejected (PR #147)
-- `shutdown` MCP tool: now bypasses the pending-message guard and exits immediately when no sessions are active (pending items cannot be processed without a session to route to); the guard still applies when one or more sessions exist
-- Button callback `timeout_seconds` now has no default — omitting it holds buttons open for up to 24 hours (server-side ceiling). Explicit values are still honored. Max raised from 300 s to 86400 s (24 h).
-- Service message content rewrite: all `SERVICE_MESSAGES` constant values rewritten to ultra-compressed spec — minimum words, help() breadcrumbs, no pin/formula references; consolidated 6 governor-change variants to single `GOVERNOR_CHANGED`; added `SESSION_JOINED`
-- `ask` timeout default: omitting `timeout_seconds` now uses the caller session's dequeue default (300 s if unset) instead of 24 h — agents that relied on the implicit 24 h hold must set an explicit `timeout_seconds` or raise their dequeue default via `action(type: 'profile/dequeue-default')`
 
 ### Fixed
 
-- `send_new_checklist`/`update_checklist`: completion reply now reflects actual outcome — `✅ Complete`, `🟡 Incomplete N/M done`, or `🔴 Failed — N/M passed, F failed` with step counts; was always `✅ Complete` regardless of failed/skipped steps (task 20-471)
 - `hook-animation.ts`: updated import path for `handleShowAnimation` from removed `tools/show_animation.ts` to `tools/animation/show.ts`
 - `hook-animation.test.ts` / `hook-animation.integration.test.ts`: updated mock and `importActual` paths to match the new module location; fixed `no-confusing-void-expression` lint errors in `server.close` callbacks
 - `tools/acknowledge/query.test.ts`, `tools/message/delete.test.ts`: removed unused `parseResult` imports
 - `tools/send.test.ts`: added `async: false` to four audio-path response_format tests that were routing to the async/queued path instead of the synchronous path
-
-- `set_reaction` with a `reactions` array: permanent base layer no longer makes its own redundant API call when a temporary overlay is active — the base is registered virtually and applied only when the last temporary reaction expires (`_fireRestoreForSlot` / `clearAllTempReactions`). `getBotReaction(messageId)` is now updated after each restore or clear so the bot reaction index remains accurate.
-
-- Recording indicator no longer drops prematurely between TTS synthesis/upload and message render: `gen` is now updated after each `showTyping()` call so `cancelTypingIfSameGeneration` targets the correct generation; voice file sends via `send_file` now include a 3 s post-send delay and explicit `cancelTypingIfSameGeneration` in a `finally` block (task 10-recording-indicator-gap)
 - Async voice send now shows the Telegram recording indicator continuously across batched audio jobs to the same chat (per-chat refcount in `async-send-queue.ts`); typing emission is suppressed while audio is in flight via new `pauseTypingEmission` / `resumeTypingEmission` API in `typing-state.ts`; sync voice path also participates via `acquireRecordingIndicator` / `releaseRecordingIndicator` in `tools/send.ts`; 120 s safety bound force-clears stuck indicators
-- `session/close`: rejects with `LAST_SESSION` error code (and actionable hint) when called on the last active session without `force: true`; prevents accidental orphaning of the bridge process
-- Fixed governor SID being cleared when governor closes a non-governor session in a 2-session setup (10-493). Governor role is now correctly preserved when a non-governor session closes.
-- `/shutdown` built-in command: with zero active sessions, shutdown now skips poller wait/drain and the extra stdio delay so it exits immediately instead of waiting through timeout windows
-- Shutdown log handling: local log buffers are flushed before exit, and when session-log mode is disabled the active local log is rolled on shutdown if one exists
-- `/shutdown` built-in command handling now schedules shutdown on the next tick so poller-driven command handling cannot self-block the graceful shutdown wait path
-- Built-in command stale filtering now includes a 30-second clock-skew grace window so fresh slash commands are not incorrectly ignored as stale
-- `dequeue` wait loop: fixed a lost-wakeup race where an event enqueued between the empty-check and waiter registration could leave the agent blocked until another message arrived
-- `AUTH_FAILED` guidance now explicitly mentions closed/restarted sessions so mid-session token failures direct agents to `action(type: 'session/reconnect', ...)`
-- Graceful shutdown now has a hard-exit watchdog and duplicate-request guard so `/shutdown` cannot hang indefinitely on stalled network cleanup calls
-- Background Telegram poller now starts unconditionally at server startup so built-in commands (`/shutdown`, `/session`, etc.) work even when no agent session is active
-- `src/local-log.ts`: Fixed concurrent flush race — serialized `_actualFlush` calls via promise chaining to prevent dropped or interleaved log entries when `flushCurrentLog()` is called concurrently (PR #148)
 
 ## v6.0.2 — 2026-04-11
 
