@@ -75,3 +75,23 @@ Re-verified by Worker 2 after re-queue. Blocker (10-368) confirmed complete.
 **Doc Audit:** Confirmed stale `message-store.ts.md` entry. All other cleaned docs are consistent.
 
 **Status:** Ready for Overseer merge to dev. No blocking findings.
+
+## Reconciliation Note (2026-04-24, task 40-475)
+
+**Actual state:** `dump_session_record.ts` and `dump_session_record.test.ts` **still exist on the dev branch** as of 2026-04-24. The removal was never merged.
+
+**What happened:** Branch `10-361` no longer exists (deleted). The v6.0.0 Release PR #126 (`ca64942`) was the last commit to touch `dump_session_record.ts` on dev — it modified the file rather than deleting it. The 10-361 deletion commit (`c6791e2`) was not included in that squash-merge.
+
+**Current status of the files:**
+- `src/tools/dump_session_record.ts` — EXISTS on dev
+- `src/tools/dump_session_record.test.ts` — EXISTS on dev
+
+**Action required:** The removal work from 10-361 needs to be re-done on a fresh branch against current dev, or Overseer needs to formally decide whether the removal is still desired (the doc says `roll_log`/`get_log` replaced it; that assessment may need revisiting post-v6).
+
+## Reconciliation Note (Task 40-475, 2026-04-24)
+
+`dump_session_record.ts` **still exists on `dev`** as of 2026-04-24.
+
+The task doc accurately describes work completed in branch `10-361` (commit `c6791e2`), but that branch was never merged to dev. The "Ready for merge to dev branch" status at the bottom of the Completion section was never acted on. All four deleted files (`dump_session_record.ts`, `dump_session_record.test.ts`, `session-recording.ts`, `session-recording.test.ts`) remain present on dev.
+
+**Root cause:** Merge was deferred pending 10-368 completion; both tasks appear to have been sealed without the final merge occurring.
