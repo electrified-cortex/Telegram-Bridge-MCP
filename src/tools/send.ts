@@ -12,6 +12,7 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { findUnrenderableChars } from "../unrenderable-chars.js";
 import { deliverServiceMessage } from "../session-queue.js";
+import { enqueueAsyncSend } from "../async-send-queue.js";
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
 // Type-routing handlers (v6 Phase 2)
@@ -74,6 +75,9 @@ function levenshtein(a: string, b: string): number {
   return dp[m][n];
 }
 
+const _parsedTimeout = Number(process.env.ASYNC_SEND_TIMEOUT_MS);
+const _timeoutMs = Number.isFinite(_parsedTimeout) && _parsedTimeout > 0 ? _parsedTimeout : 300_000;
+
 const SEND_TYPES = ["text", "file", "notification", "choice", "dm", "append", "animation", "checklist", "progress", "question"] as const;
 type SendType = (typeof SEND_TYPES)[number];
 
@@ -129,6 +133,7 @@ export function register(server: McpServer) {
           .describe("For text content only. Default Markdown (auto-converted)."),
         disable_notification: z.boolean().optional().describe("Send silently (no sound/notification)"),
         reply_to: z.number().int().min(1).optional().describe("Reply to this message ID"),
+        async: z.boolean().optional().describe("If true, accepts immediately and delivers result via dequeue send_callback event. Audio TTS only. Default: false."),
         // ── file ───────────────────────────────────────────────────────────
         file: z.string().optional().describe("Local path, HTTPS URL, or file_id (for type: \"file\")"),
         file_type: z
@@ -267,6 +272,23 @@ export function register(server: McpServer) {
                 resolvedCaption = markdownToV2(`**[${topic}]**`);
                 captionParseMode = "MarkdownV2";
               }
+            }
+
+            // ── Async TTS path ────────────────────────────────────────────
+            if (args.async === true) {
+              const pendingId = enqueueAsyncSend(_sid, {
+                sid: _sid,
+                chatId,
+                audioText: plainText,
+                captionText: captionOverflow ? finalTextForSplit : resolvedCaption,
+                captionOverflow,
+                resolvedVoice,
+                resolvedSpeed,
+                disableNotification: disable_notification,
+                replyToMessageId: reply_to_message_id,
+                timeoutMs: _timeoutMs,
+              });
+              return toResult({ ok: true, message_id_pending: pendingId, status: "queued" });
             }
             const voiceChunks = splitMessage(plainText);
             for (const chunk of voiceChunks) {

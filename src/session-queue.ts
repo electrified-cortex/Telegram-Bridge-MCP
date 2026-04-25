@@ -307,6 +307,65 @@ export function isSessionMessageConsumed(messageId: number): boolean {
 /** Auto-incrementing ID for synthetic DM events. Negative to avoid collisions. */
 let _nextDmId = -1;
 let _nextServiceId = -100_000;
+let _nextAsyncCallbackId = -10_000_000;
+
+// ---------------------------------------------------------------------------
+// Async send callback delivery
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload delivered via dequeue when an async TTS send completes, fails, or times out.
+ */
+export interface AsyncSendCallbackPayload {
+  /** Correlation ID — matches the message_id_pending returned by the original send. */
+  pendingId: number;
+  /** Outcome of the async send. */
+  status: "ok" | "failed" | "timeout";
+  /** Primary message ID (voice send with single chunk). */
+  messageId?: number;
+  /** All message IDs (voice send with multiple chunks). */
+  messageIds?: number[];
+  /** Error description (status: "failed"). */
+  error?: string;
+  /** True when a plain-text fallback was sent instead of voice. */
+  textFallback?: boolean;
+  /** Message ID of the caption overflow follow-up text message. */
+  textMessageId?: number;
+}
+
+/**
+ * Deliver an async send result to the originating session's queue.
+ * Injects a synthetic TimelineEvent with event: "send_callback".
+ * Returns true if delivered, false if the session queue no longer exists.
+ *
+ * send_callback is intentionally lightweight (delivered before heavyweight
+ * user content in dequeue batches) — it carries no user message body, only
+ * a small correlation payload, so it does not hold up the batch delimiter.
+ */
+export function deliverAsyncSendCallback(
+  targetSid: number,
+  payload: AsyncSendCallbackPayload,
+): boolean {
+  const q = _queues.get(targetSid);
+  if (!q) return false;
+
+  const event: TimelineEvent = {
+    id: _nextAsyncCallbackId--,
+    timestamp: new Date().toISOString(),
+    event: "send_callback",
+    from: "system",
+    content: {
+      type: "send_callback",
+      ...(payload.error !== undefined && { text: payload.error }),
+      details: payload as unknown as Record<string, unknown>,
+    },
+    sid: targetSid,
+  };
+
+  q.enqueue(event);
+  dlog("async-send", `callback → sid=${targetSid}`, { pendingId: payload.pendingId, status: payload.status });
+  return true;
+}
 
 /**
  * Deliver a direct message from one session to another.
@@ -507,4 +566,5 @@ export function resetSessionQueuesForTest(): void {
   _messageOwnership.clear();
   _nextDmId = -1;
   _nextServiceId = -100_000;
+  _nextAsyncCallbackId = -10_000_000;
 }

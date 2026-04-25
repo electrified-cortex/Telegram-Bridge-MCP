@@ -33,6 +33,9 @@ const mocks = vi.hoisted(() => ({
   handleChoose: vi.fn(),
   deliverServiceMessage: vi.fn(),
   getFirstUseHint: vi.fn((): string | null => null),
+  markFirstUseHintSeen: vi.fn((): boolean => false),
+  enqueueAsyncSend: vi.fn(() => -1_000_000_001),
+  resetAsyncSendQueueForTest: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -111,14 +114,19 @@ vi.mock("../session-queue.js", () => ({
   deliverServiceMessage: (...args: unknown[]) => mocks.deliverServiceMessage(...args),
 }));
 
+vi.mock("../async-send-queue.js", () => ({
+  enqueueAsyncSend: (...args: unknown[]) => mocks.enqueueAsyncSend(...args),
+  resetAsyncSendQueueForTest: () => mocks.resetAsyncSendQueueForTest(),
+}));
+
 vi.mock("../first-use-hints.js", () => ({
   getFirstUseHint: (...args: unknown[]) => mocks.getFirstUseHint(...args),
-  markFirstUseHintSeen: vi.fn(() => false),
+  markFirstUseHintSeen: (...args: unknown[]) => mocks.markFirstUseHintSeen(...args),
   appendHintToResult: <T extends { content: { type: string; text: string }[]; isError?: true }>(result: T, hint: string | null): T => {
     if (!hint || result.isError) return result;
     try {
       const entry = result.content[0];
-      if (!entry || entry.type !== "text") return result;
+      if (entry.type !== "text") return result;
       const parsed = JSON.parse(entry.text) as Record<string, unknown>;
       parsed._first_use_hint = hint;
       entry.text = JSON.stringify(parsed);
@@ -386,6 +394,42 @@ describe("send tool", () => {
     expect(errorCode(result)).toBe("VOICE_RESTRICTED");
     // cancelTypingIfSameGeneration cleanup must still run (finally block)
     expect(mocks.cancelTypingIfSameGeneration).toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Async path tests
+  // ---------------------------------------------------------------------------
+
+  it("async TTS: send(type: text, audio, async: true) returns queued response immediately", async () => {
+    mocks.enqueueAsyncSend.mockReturnValue(-1_000_000_001);
+    const result = await call({ type: "text", audio: "hello async", async: true, token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.message_id_pending).toBe(-1_000_000_001);
+    expect(data.status).toBe("queued");
+  });
+
+  it("async TTS: enqueueAsyncSend is called instead of synchronous TTS path", async () => {
+    mocks.enqueueAsyncSend.mockReturnValue(-1_000_000_001);
+    await call({ type: "text", audio: "hello async", async: true, token: TOKEN });
+    expect(mocks.enqueueAsyncSend).toHaveBeenCalledOnce();
+    expect(mocks.synthesizeToOgg).not.toHaveBeenCalled();
+    expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
+  });
+
+  it("async: false — synchronous TTS path is used (enqueueAsyncSend not called)", async () => {
+    await call({ audio: "hello sync", async: false, token: TOKEN });
+    expect(mocks.enqueueAsyncSend).not.toHaveBeenCalled();
+    expect(mocks.synthesizeToOgg).toHaveBeenCalledOnce();
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
+  });
+
+  it("async omitted — synchronous TTS path is used (enqueueAsyncSend not called)", async () => {
+    await call({ audio: "hello no async flag", token: TOKEN });
+    expect(mocks.enqueueAsyncSend).not.toHaveBeenCalled();
+    expect(mocks.synthesizeToOgg).toHaveBeenCalledOnce();
+    expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
   });
 });
 
@@ -850,7 +894,8 @@ describe("send — first-use hint injection and happy-path routing", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
 
   const HINT_SENTINEL = "__test_hint__";
-  const OK_RESULT = { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
+  // Factory returns a fresh object each time to prevent mutations from leaking across tests.
+  const makeOkResult = () => ({ content: [{ type: "text", text: JSON.stringify({ ok: true }) }] });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -863,14 +908,14 @@ describe("send — first-use hint injection and happy-path routing", () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 99 });
     // Return the sentinel hint for all calls
     mocks.getFirstUseHint.mockReturnValue(HINT_SENTINEL);
-    // Default handler mocks return a simple ok result
-    mocks.handleSendChoice.mockResolvedValue(OK_RESULT);
-    mocks.handleSendNewChecklist.mockResolvedValue(OK_RESULT);
-    mocks.handleAsk.mockResolvedValue(OK_RESULT);
-    mocks.handleChoose.mockResolvedValue(OK_RESULT);
-    mocks.handleShowAnimation.mockResolvedValue(OK_RESULT);
-    mocks.handleSendNewProgress.mockResolvedValue(OK_RESULT);
-    mocks.handleAppendText.mockResolvedValue(OK_RESULT);
+    // Default handler mocks return a fresh result each call to avoid cross-test mutation.
+    mocks.handleSendChoice.mockImplementation(() => Promise.resolve(makeOkResult()));
+    mocks.handleSendNewChecklist.mockImplementation(() => Promise.resolve(makeOkResult()));
+    mocks.handleAsk.mockImplementation(() => Promise.resolve(makeOkResult()));
+    mocks.handleChoose.mockImplementation(() => Promise.resolve(makeOkResult()));
+    mocks.handleShowAnimation.mockImplementation(() => Promise.resolve(makeOkResult()));
+    mocks.handleSendNewProgress.mockImplementation(() => Promise.resolve(makeOkResult()));
+    mocks.handleAppendText.mockImplementation(() => Promise.resolve(makeOkResult()));
 
     const server = createMockServer();
     register(server);

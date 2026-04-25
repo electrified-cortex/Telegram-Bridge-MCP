@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../session-manager.js", () => ({
   validateSession: mocks.validateSession,
   getSession: mocks.getSession,
+  getOrInitHintsSeen: () => new Set<string>(),
 }));
 
 vi.mock("../routing-mode.js", () => ({

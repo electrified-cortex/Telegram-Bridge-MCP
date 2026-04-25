@@ -22,6 +22,7 @@ import {
   deliverServiceMessage,
   routeToSession,
 } from "./session-queue.js";
+import { cancelSessionJobs } from "./async-send-queue.js";
 import { revokeAllForSession } from "./dm-permissions.js";
 import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
@@ -57,6 +58,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number } 
   // Drain orphaned queue items after close succeeds so we can reroute
   const orphaned = drainQueue(sid);
 
+  // cancelSessionJobs must precede removeSessionQueue — in-flight jobs must see queue-gone on delivery, not stale entries
+  cancelSessionJobs(sid);
   removeSessionQueue(sid);
   removeBehaviorTrackerSession(sid);
   removeSilenceState(sid);

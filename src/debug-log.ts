@@ -32,7 +32,8 @@ export type DebugCategory =
   | "service"
   | "animation"
   | "tool"
-  | "health";
+  | "health"
+  | "async-send";
 
 export interface DebugEntry {
   id: number;           // auto-incrementing sequence number
