@@ -66,6 +66,34 @@ The pulse checks failed because the main Worker 2 agent was blocked waiting for 
 
 5. **Recovery preconditions.** Overseer's pulse-check + zero-commit recovery rule needs to factor in long-running subagents. Concretely: before recovering, DM Worker, ask if subagent in flight, only recover after acknowledged-no.
 
+## Worker 1 debrief (confirms Hypothesis A)
+
+Curator DM'd Worker 1 post-seal. Verbatim answers:
+
+1. **Yes** — 24 files staged by Worker 2 when Worker 1 claimed. Not visible to Worker 1's first subagent because it ran `pnpm typecheck` against the index (saw staged fixes = 0 errors) and reported "nothing to do."
+2. ~6 tool calls wasted on first dispatch (discovered nothing to fix), ~6 more for verification after Worker 1 checked `git diff --staged --stat` directly.
+3. Fixes were pre-staged. Worker 1's subagent touched nothing.
+4. Compaction within Worker 1: uncertain.
+5. Worker 1 self-improvement: "Should have run `git diff --staged --stat` before dispatching any subagent on a pre-existing worktree. Would have revealed staged work in 1 tool call."
+
+## Confirmed root cause
+
+Worker 2's subagent finished editing 24 files and **staged** them, then Overseer's recovery rule fired because there were **no commits**. Recovery returned the task to 40-queued. Worker 1 claimed, eventually noticed the staged state, committed.
+
+Two concrete bugs identified:
+
+### Bug 1: Overseer recovery rule uses commits as the only progress signal
+
+`git log dev..<branch>` returns empty even when significant edits are staged but uncommitted. Worker 2's subagent staged 24 files but didn't commit. Overseer saw "zero commits" → "no progress" → recovered. Misclassification.
+
+**Fix:** Overseer's recovery decision must also check `git diff --staged --stat` and `git diff --stat` before recovering. Non-empty staged or unstaged tree = progress in flight, do not recover unilaterally.
+
+### Bug 2: Worker pre-task inspection misses staged state
+
+Worker 1 dispatched a subagent that ran typecheck and reported nothing to do, because the index was already clean (the fix was staged). 12 wasted tool calls.
+
+**Fix:** Worker pre-task checklist must include `git diff --staged --stat` on a pre-existing worktree before dispatching any work. Saves ~6-12 tool calls per claim.
+
 ## Acceptance criteria
 
 - Findings document at `agents/curator/notes/worker-recovery-postmortem-2026-04-25.md` (or similar) with answers to all 4 "What's NOT known" items.
