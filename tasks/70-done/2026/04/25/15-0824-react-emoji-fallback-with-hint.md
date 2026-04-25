@@ -62,3 +62,15 @@ Keep map data-driven (JSON or TS const), easy to extend.
 
 - `help(topic: 'reactions')` — current reaction protocol; update to mention fallback behavior once shipped.
 - Telegram Bot API `setMessageReaction` — authoritative supported-reaction list.
+
+## Completion
+
+Branch: `15-0824`
+Commit: `95f1fb2`
+
+Changes:
+- `src/tools/react/set.ts`: Added `UNSUPPORTED_EMOJI_ALIASES` const; alias resolution falls through normal routing logic (temp/permanent) so TEMPORARY_BY_DEFAULT and caller params respected. Hint name: `emoji_alias_applied`.
+- `src/tools/react/set.test.ts`: Tests for all 3 paths (aliased, supported, unmapped) + alias+temporary:true/false, alias+hasBaseReaction=false.
+- `docs/help/reactions.md`: Documented fallback behavior and response shape.
+
+All acceptance criteria met. 2758 tests pass, lint clean.
