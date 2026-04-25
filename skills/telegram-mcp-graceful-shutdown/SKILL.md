@@ -73,7 +73,7 @@ After Worker calls `close_session`:
 
 PID file absent → process already exited cleanly. No action needed.
 
-> Paths relative to workspace root (`cortex.lan/`).
+> Paths relative to your workspace root.
 
 ## Safety
 
