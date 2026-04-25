@@ -78,47 +78,47 @@ describe("POST /event handler", () => {
 
   // ── 401: missing / invalid token ──────────────────────────────────────────
 
-  it("returns 401 when token is absent from query and body", async () => {
-    const [status, body] = await handlePostEvent(undefined, { kind: "startup" });
+  it("returns 401 when token is absent from query and body", () => {
+    const [status, body] = handlePostEvent(undefined, { kind: "startup" });
     expect(status).toBe(401);
     expect((body as { ok: boolean }).ok).toBe(false);
   });
 
-  it("returns 401 when token is non-numeric string", async () => {
-    const [status] = await handlePostEvent("notanumber", { kind: "startup" });
+  it("returns 401 when token is non-numeric string", () => {
+    const [status] = handlePostEvent("notanumber", { kind: "startup" });
     expect(status).toBe(401);
   });
 
-  it("returns 401 when validateSession fails (AUTH_FAILED)", async () => {
+  it("returns 401 when validateSession fails (AUTH_FAILED)", () => {
     mocks.validateSession.mockReturnValue(false);
-    const [status, body] = await handlePostEvent(String(VALID_TOKEN), { kind: "startup" });
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "startup" });
     expect(status).toBe(401);
     expect((body as { error: string }).error).toBe("AUTH_FAILED");
   });
 
   // ── 400: missing / empty kind ─────────────────────────────────────────────
 
-  it("returns 400 when kind is missing", async () => {
-    const [status, body] = await handlePostEvent(String(VALID_TOKEN), {});
+  it("returns 400 when kind is missing", () => {
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), {});
     expect(status).toBe(400);
     expect((body as { ok: boolean }).ok).toBe(false);
   });
 
-  it("returns 400 when kind is empty string", async () => {
-    const [status] = await handlePostEvent(String(VALID_TOKEN), { kind: "" });
+  it("returns 400 when kind is empty string", () => {
+    const [status] = handlePostEvent(String(VALID_TOKEN), { kind: "" });
     expect(status).toBe(400);
   });
 
-  it("returns 400 when kind is not a string", async () => {
-    const [status, body] = await handlePostEvent(String(VALID_TOKEN), { kind: 42 });
+  it("returns 400 when kind is not a string", () => {
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: 42 });
     expect(status).toBe(400);
     expect((body as { error: string }).error).toBe("kind must be a string");
   });
 
   // ── 400: invalid details ──────────────────────────────────────────────────
 
-  it("returns 400 when details contains a token field", async () => {
-    const [status, body] = await handlePostEvent(String(VALID_TOKEN), {
+  it("returns 400 when details contains a token field", () => {
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), {
       kind: "startup",
       details: { token: "secret" },
     });
@@ -126,16 +126,16 @@ describe("POST /event handler", () => {
     expect((body as { error: string }).error).toMatch(/token/);
   });
 
-  it("returns 400 when details is not a plain object (array)", async () => {
-    const [status] = await handlePostEvent(String(VALID_TOKEN), {
+  it("returns 400 when details is not a plain object (array)", () => {
+    const [status] = handlePostEvent(String(VALID_TOKEN), {
       kind: "startup",
       details: [1, 2, 3],
     });
     expect(status).toBe(400);
   });
 
-  it("returns 400 when details is not a plain object (string)", async () => {
-    const [status] = await handlePostEvent(String(VALID_TOKEN), {
+  it("returns 400 when details is not a plain object (string)", () => {
+    const [status] = handlePostEvent(String(VALID_TOKEN), {
       kind: "startup",
       details: "not-an-object",
     });
@@ -144,22 +144,22 @@ describe("POST /event handler", () => {
 
   // ── 200: success ──────────────────────────────────────────────────────────
 
-  it("returns 200 with fanout count; actor_sid defaults to caller SID", async () => {
+  it("returns 200 with fanout count; actor_sid defaults to caller SID", () => {
     mocks.listSessions.mockReturnValue([makeSession(1), makeSession(2)]);
     mocks.deliverServiceMessage.mockReturnValue(true);
 
-    const [status, body] = await handlePostEvent(String(VALID_TOKEN), { kind: "startup" });
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "startup" });
     expect(status).toBe(200);
     expect((body as { ok: boolean }).ok).toBe(true);
     expect((body as { fanout: number }).fanout).toBe(2);
   });
 
-  it("returns 200 with explicit actor_sid, uses that actor's name", async () => {
+  it("returns 200 with explicit actor_sid, uses that actor's name", () => {
     mocks.getSession.mockImplementation((s: unknown) =>
       (s as number) === 3 ? makeSession(3, "Overseer") : makeSession(1),
     );
 
-    const [status, body] = await handlePostEvent(String(VALID_TOKEN), {
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), {
       kind: "compacting",
       actor_sid: 3,
     });
@@ -174,49 +174,49 @@ describe("POST /event handler", () => {
     );
   });
 
-  it("returns 400 for unknown kind", async () => {
-    const [status, body] = await handlePostEvent(String(VALID_TOKEN), {
+  it("returns 400 for unknown kind", () => {
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), {
       kind: "some_new_custom_event",
     });
     expect(status).toBe(400);
     expect((body as { error: string }).error).toBe("unknown kind");
   });
 
-  it("fanout count reflects only delivered sessions (deliverServiceMessage returns false)", async () => {
+  it("fanout count reflects only delivered sessions (deliverServiceMessage returns false)", () => {
     mocks.listSessions.mockReturnValue([makeSession(1), makeSession(2), makeSession(3)]);
     // Only session 2 has a queue (others return false)
     mocks.deliverServiceMessage.mockImplementation(
       (sid: unknown) => (sid as number) === 2,
     );
 
-    const [status, body] = await handlePostEvent(String(VALID_TOKEN), { kind: "startup" });
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "startup" });
     expect(status).toBe(200);
     expect((body as { fanout: number }).fanout).toBe(1);
   });
 
-  it("triggers animation when actor is governor and kind is mapped", async () => {
+  it("triggers animation when actor is governor and kind is mapped", () => {
     mocks.getGovernorSid.mockReturnValue(1); // sid=1 is the governor
     // VALID_TOKEN decodes to sid=1, so resolvedActorSid defaults to 1
 
-    const [status] = await handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+    const [status] = handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
     expect(status).toBe(200);
     expect(mocks.handleShowAnimation).toHaveBeenCalledWith(
       expect.objectContaining({ preset: "working" }),
     );
   });
 
-  it("returns 400 for unknown kind even when actor is governor", async () => {
+  it("returns 400 for unknown kind even when actor is governor", () => {
     mocks.getGovernorSid.mockReturnValue(1);
 
-    const [status] = await handlePostEvent(String(VALID_TOKEN), { kind: "unknown_kind" });
+    const [status] = handlePostEvent(String(VALID_TOKEN), { kind: "unknown_kind" });
     expect(status).toBe(400);
     expect(mocks.handleShowAnimation).not.toHaveBeenCalled();
   });
 
-  it("triggers animation cancel when actor is governor and kind is compacted", async () => {
+  it("triggers animation cancel when actor is governor and kind is compacted", () => {
     mocks.getGovernorSid.mockReturnValue(1);
 
-    const [status] = await handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
+    const [status] = handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
     expect(status).toBe(200);
     expect(mocks.handleCancelAnimation).toHaveBeenCalledWith(
       expect.objectContaining({ token: VALID_TOKEN }),

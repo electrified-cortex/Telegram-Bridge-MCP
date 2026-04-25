@@ -18,7 +18,7 @@ import { handleCloseSession } from "./session/close.js";
 import { handleSessionStart, handleSessionReconnect } from "./session/start.js";
 import { handleRenameSession } from "./session/rename.js";
 import { handleSessionIdle } from "./session/idle.js";
-import { handleSessionStatus } from "./session_status.js";
+import { handleSessionStatus } from "./session/status.js";
 import { handleEditMessage } from "./message/edit.js";
 
 // Phase 2 imports — message/*

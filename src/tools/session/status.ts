@@ -1,7 +1,7 @@
-import { toResult, toError } from "../telegram.js";
-import { listSessions, getSession } from "../session-manager.js";
-import { getGovernorSid } from "../routing-mode.js";
-import { requireAuth } from "../session-gate.js";
+import { toResult, toError } from "../../telegram.js";
+import { listSessions, getSession } from "../../session-manager.js";
+import { getGovernorSid } from "../../routing-mode.js";
+import { requireAuth } from "../../session-gate.js";
 
 export function handleSessionStatus({ token }: { token: number }) {
   const sid = requireAuth(token);

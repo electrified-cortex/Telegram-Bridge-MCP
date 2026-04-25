@@ -21,7 +21,7 @@ Session token via `?token=<int>` query param **or** JSON body field `"token"`. (
 ```
 
 | Field | Required | Description |
-|-------|----------|-------------|
+| --- | --- | --- |
 | `kind` | Yes | Event kind string. Must be one of the known kinds (see Event Kinds table). Unknown kinds → 400. |
 | `actor_sid` | No | Integer SID of the acting session. Defaults to the token's session. |
 | `details` | No | Arbitrary object. `run_id` is recommended for paired events (see Metrics). Must not contain `token`. |
@@ -37,7 +37,7 @@ Session token via `?token=<int>` query param **or** JSON body field `"token"`. (
 ## Event Kinds
 
 | Kind | Description | Animation |
-|------|-------------|-----------|
+| --- | --- | --- |
 | `compacting` | Agent is compacting context | `working` |
 | `compacted` | Compaction finished | cancel active animation (governor only) |
 | `startup` | Agent starting up | `bounce` |

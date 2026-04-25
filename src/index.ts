@@ -117,7 +117,13 @@ setOnLocalLog((event) => {
   logLocalEvent(loggableEvent);
 });
 setOnTranscriptionLog((messageId, text) => {
-  logLocalEvent({ type: "voice_transcription", messageId, text });
+  logLocalEvent({
+    id: messageId,
+    timestamp: new Date().toISOString(),
+    event: "voice_transcription",
+    from: "system",
+    content: { type: "voice", text },
+  });
 });
 
 // Parse --http [port] from argv (takes precedence over MCP_PORT env var)

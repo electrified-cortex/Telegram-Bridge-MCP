@@ -58,10 +58,10 @@ const VALID_KINDS = new Set(["compacting", "compacted", "startup", "shutdown_war
  * Returns a tuple [statusCode, responseBody] so it can be exercised in unit
  * tests without spinning up an HTTP server.
  */
-export async function handlePostEvent(
+export function handlePostEvent(
   rawToken: unknown,
   body: PostEventBody,
-): Promise<[number, Record<string, unknown>]> {
+): [number, Record<string, unknown>] {
   // ── Token resolution ─────────────────────────────────────────────────────
   const tokenRaw = rawToken !== undefined ? rawToken : body.token;
   if (tokenRaw === undefined || tokenRaw === null || tokenRaw === "") {
@@ -174,9 +174,8 @@ export async function handlePostEvent(
         process.stderr.write(`[event] animation cancel error: ${String(err)}\n`);
       });
     } else {
-      const animPreset = KIND_ANIMATION[kind];
-      if (animPreset !== undefined) {
-        void handleShowAnimation({ token: tokenNum, preset: animPreset }).catch((err: unknown) => {
+      if (kind in KIND_ANIMATION) {
+        void handleShowAnimation({ token: tokenNum, preset: KIND_ANIMATION[kind] }).catch((err: unknown) => {
           process.stderr.write(`[event] animation error: ${String(err)}\n`);
         });
       }
@@ -193,10 +192,10 @@ export async function handlePostEvent(
  * Call this once after the Express app is created, before app.listen().
  */
 export function attachEventRoute(app: Express): void {
-  app.post("/event", async (req: Request, res: Response) => {
+  app.post("/event", (req: Request, res: Response) => {
     const rawToken = typeof req.query["token"] === "string" ? req.query["token"] : undefined;
     const body = (req.body ?? {}) as PostEventBody;
-    const [status, payload] = await handlePostEvent(rawToken, body);
+    const [status, payload] = handlePostEvent(rawToken, body);
     res.status(status).json(payload);
   });
 }

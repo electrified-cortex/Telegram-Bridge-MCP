@@ -32,7 +32,7 @@ vi.mock("../telegram.js", () => ({
   toError: (v: unknown) => mocks.toError(v),
 }));
 
-import { handleSessionStatus } from "./session_status.js";
+import { handleSessionStatus } from "./session/status.js";
 import type { SessionInfo, Session } from "../session-manager.js";
 
 // ---------------------------------------------------------------------------
