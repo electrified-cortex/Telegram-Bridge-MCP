@@ -87,18 +87,18 @@ shutdown procedure.
 Pass `response_format: "compact"` to each `dequeue` call to save ~445 tokens per session.
 Adapting the loop is straightforward:
 
+- **`timed_out: true` is always emitted** — check this first; a timeout also has no `updates`.
 - **Infer empty from absence of `updates`** — `empty: true` is suppressed in compact mode.
-  Check `!result.updates` instead of `result.empty`.
-- **`timed_out: true` is always emitted** — no change needed for the timeout branch.
+  Use `!result.updates && !result.timed_out` instead of `result.empty`.
 
 ```text
 Default:  if (result.empty)    → empty
           if (result.timed_out) → timeout
           else                  → process result.updates
 
-Compact:  if (!result.updates)  → empty (no updates key = empty poll)
-          if (result.timed_out) → timeout (always present)
-          else                  → process result.updates
+Compact:  if (result.timed_out)              → timeout (always present; no updates field)
+          if (!result.updates)               → empty (no updates, not a timeout)
+          else                               → process result.updates
 ```
 
 Migrate each agent independently by adding `response_format: "compact"` to its `dequeue`
