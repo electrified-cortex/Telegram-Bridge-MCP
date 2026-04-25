@@ -3,6 +3,9 @@ import {
   enqueueAsyncSend,
   cancelSessionJobs,
   resetAsyncSendQueueForTest,
+  recordingIndicatorCountForTest,
+  acquireRecordingIndicator,
+  releaseRecordingIndicator,
   type AsyncSendJob,
 } from "./async-send-queue.js";
 
@@ -14,10 +17,13 @@ const mocks = vi.hoisted(() => ({
   synthesizeToOgg: vi.fn(),
   sendVoiceDirect: vi.fn(),
   sendMessage: vi.fn(),
+  sendChatAction: vi.fn().mockResolvedValue(undefined),
   splitMessage: vi.fn((t: string) => [t]),
   deliverAsyncSendCallback: vi.fn(() => true),
   createSessionQueue: vi.fn(),
   removeSessionQueue: vi.fn(),
+  pauseTypingEmission: vi.fn(),
+  resumeTypingEmission: vi.fn(),
 }));
 
 vi.mock("./tts.js", () => ({
@@ -28,7 +34,7 @@ vi.mock("./telegram.js", () => ({
   sendVoiceDirect: (...args: unknown[]) => mocks.sendVoiceDirect(...args),
   splitMessage: (t: string) => mocks.splitMessage(t),
   callApi: (fn: () => unknown) => fn(),
-  getApi: () => ({ sendMessage: mocks.sendMessage }),
+  getApi: () => ({ sendMessage: mocks.sendMessage, sendChatAction: mocks.sendChatAction }),
 }));
 
 vi.mock("./session-queue.js", () => ({
@@ -37,6 +43,11 @@ vi.mock("./session-queue.js", () => ({
 
 vi.mock("./debug-log.js", () => ({
   dlog: vi.fn(),
+}));
+
+vi.mock("./typing-state.js", () => ({
+  pauseTypingEmission: (...args: unknown[]) => mocks.pauseTypingEmission(...args),
+  resumeTypingEmission: (...args: unknown[]) => mocks.resumeTypingEmission(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -84,8 +95,11 @@ describe("async-send-queue", () => {
     mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg-data"));
     mocks.sendVoiceDirect.mockResolvedValue({ message_id: 200 });
     mocks.sendMessage.mockResolvedValue({ message_id: 201 });
+    mocks.sendChatAction.mockResolvedValue(undefined);
     mocks.splitMessage.mockImplementation((t: string) => [t]);
     mocks.deliverAsyncSendCallback.mockReturnValue(true);
+    mocks.pauseTypingEmission.mockReset();
+    mocks.resumeTypingEmission.mockReset();
   });
 
   afterEach(() => {
@@ -260,8 +274,9 @@ describe("async-send-queue", () => {
 
         enqueueAsyncSend(1, makeJobParams({ sid: 1, timeoutMs: 5_000 }));
 
-        // Advance time past the timeout
-        await vi.runAllTimersAsync();
+        // Advance past the timeout. Use runOnlyPendingTimersAsync (not runAllTimersAsync)
+        // so the recording-indicator setInterval does not loop infinitely under fake timers.
+        await vi.runOnlyPendingTimersAsync();
         await flushJobs();
 
         expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
@@ -282,8 +297,9 @@ describe("async-send-queue", () => {
 
         enqueueAsyncSend(1, makeJobParams({ sid: 1, timeoutMs: 5_000 }));
 
-        // Trigger timeout
-        await vi.runAllTimersAsync();
+        // Trigger timeout. Use runOnlyPendingTimersAsync (not runAllTimersAsync)
+        // so the recording-indicator setInterval does not loop infinitely under fake timers.
+        await vi.runOnlyPendingTimersAsync();
         await flushJobs();
 
         expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
@@ -435,6 +451,237 @@ describe("async-send-queue", () => {
 
     it("is a no-op for an unknown session", () => {
       expect(() => { cancelSessionJobs(999); }).not.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 9. Recording indicator — sendChatAction called with "record_voice"
+  // -------------------------------------------------------------------------
+  describe("recording indicator", () => {
+    it("calls sendChatAction with record_voice for each audio send", async () => {
+      enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+      await flushJobs();
+
+      expect(mocks.sendChatAction).toHaveBeenCalledWith(100, "record_voice");
+    });
+
+    it("two concurrent jobs to the same chat share one interval (no stop between them)", async () => {
+      vi.useFakeTimers();
+      try {
+        // First job: controlled — resolves after we advance timers.
+        let resolveJob1!: (buf: Buffer) => void;
+        let resolveJob2!: (buf: Buffer) => void;
+        mocks.synthesizeToOgg
+          .mockImplementationOnce(
+            () => new Promise<Buffer>((resolve) => { resolveJob1 = resolve; }),
+          )
+          .mockImplementationOnce(
+            () => new Promise<Buffer>((resolve) => { resolveJob2 = resolve; }),
+          );
+        mocks.sendVoiceDirect.mockResolvedValue({ message_id: 1 });
+
+        // Enqueue two jobs to the same chat from DIFFERENT sessions so they
+        // run concurrently (per-session chains are independent). Same sid
+        // would serialize them and each would 0→1 the chat refcount in turn,
+        // producing two initial record_voice fires instead of one.
+        enqueueAsyncSend(1, makeJobParams({ sid: 1, chatId: 100 }));
+        enqueueAsyncSend(2, makeJobParams({ sid: 2, chatId: 100 }));
+
+        // Yield enough times for both jobs to start and acquire the indicator.
+        await flushJobs();
+
+        // Refcount is 2 (one shared interval), only one record_voice fired.
+        expect(recordingIndicatorCountForTest()).toBe(1);
+
+        // Complete job1 — refcount drops 2 → 1, interval stays active.
+        resolveJob1(Buffer.from("ogg1"));
+        await flushJobs();
+        expect(recordingIndicatorCountForTest()).toBe(1);
+
+        // Complete job2 — refcount drops 1 → 0, interval cleared.
+        resolveJob2(Buffer.from("ogg2"));
+        await flushJobs();
+        expect(recordingIndicatorCountForTest()).toBe(0);
+
+        // sendChatAction should have been called exactly once initially
+        // (both jobs share the indicator — no extra immediate call for job2).
+        const recordVoiceCalls = mocks.sendChatAction.mock.calls.filter(
+          (c) => c[1] === "record_voice",
+        );
+        expect(recordVoiceCalls).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("interval fires again at 4 s intervals while jobs are in flight", async () => {
+      vi.useFakeTimers();
+      try {
+        let resolveJob!: (buf: Buffer) => void;
+        mocks.synthesizeToOgg.mockImplementationOnce(
+          () => new Promise<Buffer>((resolve) => { resolveJob = resolve; }),
+        );
+        mocks.sendVoiceDirect.mockResolvedValue({ message_id: 1 });
+
+        enqueueAsyncSend(1, makeJobParams({ sid: 1, chatId: 100 }));
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Advance 4 s — interval should fire once more.
+        await vi.advanceTimersByTimeAsync(4_000);
+        const callsAfterInterval = mocks.sendChatAction.mock.calls.filter(
+          (c) => c[1] === "record_voice",
+        );
+        // At minimum: initial call + 1 interval tick
+        expect(callsAfterInterval.length).toBeGreaterThanOrEqual(2);
+
+        // Finish the job so the interval is cleared and fake-timers can be restored cleanly.
+        resolveJob(Buffer.from("ogg"));
+        await flushJobs();
+        expect(recordingIndicatorCountForTest()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. Typing suppression — recording supersedes typing
+  // -------------------------------------------------------------------------
+  describe("typing suppression", () => {
+    it("pauseTypingEmission is called when the first async job starts for a chat", async () => {
+      vi.useFakeTimers();
+      try {
+        let resolveJob!: (buf: Buffer) => void;
+        mocks.synthesizeToOgg.mockImplementationOnce(
+          () => new Promise<Buffer>((resolve) => { resolveJob = resolve; }),
+        );
+        mocks.sendVoiceDirect.mockResolvedValue({ message_id: 1 });
+
+        enqueueAsyncSend(1, makeJobParams({ sid: 1, chatId: 100 }));
+        // Yield until the job actually starts and acquires the indicator.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(mocks.pauseTypingEmission).toHaveBeenCalledWith(100);
+
+        resolveJob(Buffer.from("ogg"));
+        await flushJobs();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("resumeTypingEmission is called when the last job for a chat finishes", async () => {
+      enqueueAsyncSend(1, makeJobParams({ sid: 1, chatId: 100 }));
+      await flushJobs();
+
+      expect(mocks.resumeTypingEmission).toHaveBeenCalledWith(100);
+    });
+
+    it("pauseTypingEmission called once for two concurrent jobs (different sessions, same chat)", async () => {
+      vi.useFakeTimers();
+      try {
+        // Two sessions both targeting chatId 100 run concurrently because each
+        // session has its own independent promise chain.
+        let resolveJob1!: (buf: Buffer) => void;
+        let resolveJob2!: (buf: Buffer) => void;
+        mocks.synthesizeToOgg
+          .mockImplementationOnce(
+            () => new Promise<Buffer>((resolve) => { resolveJob1 = resolve; }),
+          )
+          .mockImplementationOnce(
+            () => new Promise<Buffer>((resolve) => { resolveJob2 = resolve; }),
+          );
+        mocks.sendVoiceDirect.mockResolvedValue({ message_id: 1 });
+
+        // sid 1 and sid 2 — independent chains, both targeting chatId 100.
+        enqueueAsyncSend(1, makeJobParams({ sid: 1, chatId: 100 }));
+        enqueueAsyncSend(2, makeJobParams({ sid: 2, chatId: 100 }));
+        // Yield enough for both independent session chains to start.
+        for (let i = 0; i < 6; i++) await Promise.resolve();
+
+        // pauseTypingEmission fires only once (0 → 1 transition on the shared chatId indicator).
+        expect(mocks.pauseTypingEmission).toHaveBeenCalledTimes(1);
+        expect(mocks.resumeTypingEmission).not.toHaveBeenCalled();
+
+        // Complete job1 (from sid 1) — refcount 2 → 1; resume not yet called.
+        resolveJob1(Buffer.from("ogg1"));
+        await flushJobs();
+        expect(mocks.resumeTypingEmission).not.toHaveBeenCalled();
+
+        // Complete job2 (from sid 2) — refcount 1 → 0; resume now called.
+        resolveJob2(Buffer.from("ogg2"));
+        await flushJobs();
+        expect(mocks.resumeTypingEmission).toHaveBeenCalledTimes(1);
+        expect(mocks.resumeTypingEmission).toHaveBeenCalledWith(100);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. Safety bound — force-clears recording indicator after 120 s
+  // -------------------------------------------------------------------------
+  describe("recording indicator safety bound", () => {
+    it("force-clears the interval after 120 s when a job never releases", async () => {
+      vi.useFakeTimers();
+      try {
+        // Job that never resolves — simulates a completely hung synthesizer.
+        mocks.synthesizeToOgg.mockImplementation(() => new Promise(() => {}));
+
+        enqueueAsyncSend(1, makeJobParams({ sid: 1, chatId: 100, timeoutMs: 300_000 }));
+        // Yield so the job starts and acquires the indicator.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(recordingIndicatorCountForTest()).toBe(1);
+
+        // Advance to just before the safety bound — indicator must still be active.
+        await vi.advanceTimersByTimeAsync(119_999);
+        expect(recordingIndicatorCountForTest()).toBe(1);
+
+        // Advance past the safety bound.
+        await vi.advanceTimersByTimeAsync(2);
+        expect(recordingIndicatorCountForTest()).toBe(0);
+
+        // resumeTypingEmission must be called by the safety handler.
+        expect(mocks.resumeTypingEmission).toHaveBeenCalledWith(100);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Sync voice path — acquireRecordingIndicator / releaseRecordingIndicator
+  // -------------------------------------------------------------------------
+  describe("acquireRecordingIndicator / releaseRecordingIndicator (public API)", () => {
+    it("acquire starts the recording indicator and suppresses typing", () => {
+      acquireRecordingIndicator(200);
+      expect(recordingIndicatorCountForTest()).toBe(1);
+      expect(mocks.pauseTypingEmission).toHaveBeenCalledWith(200);
+      // Cleanup
+      releaseRecordingIndicator(200);
+    });
+
+    it("release clears the indicator and resumes typing", () => {
+      acquireRecordingIndicator(200);
+      releaseRecordingIndicator(200);
+      expect(recordingIndicatorCountForTest()).toBe(0);
+      expect(mocks.resumeTypingEmission).toHaveBeenCalledWith(200);
+    });
+
+    it("acquire/release is balanced across multiple calls", () => {
+      acquireRecordingIndicator(200);
+      acquireRecordingIndicator(200);
+      expect(recordingIndicatorCountForTest()).toBe(1); // one interval entry, count=2
+      releaseRecordingIndicator(200);
+      expect(recordingIndicatorCountForTest()).toBe(1); // count=1, still active
+      releaseRecordingIndicator(200);
+      expect(recordingIndicatorCountForTest()).toBe(0); // released
+      expect(mocks.resumeTypingEmission).toHaveBeenCalledTimes(1);
     });
   });
 });

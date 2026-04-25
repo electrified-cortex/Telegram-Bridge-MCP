@@ -14,6 +14,7 @@
 import { synthesizeToOgg } from "./tts.js";
 import { sendVoiceDirect, callApi, getApi, splitMessage } from "./telegram.js";
 import { deliverAsyncSendCallback, type AsyncSendCallbackPayload } from "./session-queue.js";
+import { pauseTypingEmission, resumeTypingEmission } from "./typing-state.js";
 import { dlog } from "./debug-log.js";
 
 // ---------------------------------------------------------------------------
@@ -206,6 +207,93 @@ async function executeJob(job: AsyncSendJob): Promise<void> {
   }
 }
 
+/** Interval (ms) for re-emitting the record_voice chat action. Telegram auto-expires at ~5 s. */
+const RECORD_VOICE_INTERVAL_MS = 4_000;
+
+/**
+ * Safety bound (ms) for the recording indicator. If a job hangs and never
+ * releases, the indicator is force-cleared after this window. 120 s is
+ * deliberately generous — normal audio jobs complete in under 30 s, but
+ * very long messages under slow TTS hosts can take longer.
+ */
+const RECORDING_INDICATOR_SAFETY_MS = 120_000;
+
+// ---------------------------------------------------------------------------
+// Per-chatId refcounted recording indicator
+// ---------------------------------------------------------------------------
+
+interface RecordingIndicatorState {
+  count: number;
+  handle: NodeJS.Timeout;
+  /** Safety timeout that force-clears the interval if a job never releases. */
+  safetyHandle: NodeJS.Timeout;
+}
+
+/**
+ * Map of chatId → active recording-indicator state.
+ * Multiple concurrent jobs to the same chat share a single interval so there
+ * is no flicker between jobs in a batch.
+ */
+const _recordingIndicators = new Map<number, RecordingIndicatorState>();
+
+/**
+ * Increment the refcount for chatId's recording indicator.
+ * If this is the first job (count 0 → 1):
+ *   - fires `record_voice` immediately and starts the 4-s renewal interval;
+ *   - suppresses any concurrent typing emission for this chat;
+ *   - schedules a 120-s safety timeout that force-clears everything if a job
+ *     hangs and never calls releaseRecordingIndicator.
+ * All sendChatAction errors are swallowed (best-effort).
+ */
+export function acquireRecordingIndicator(chatId: number): void {
+  const existing = _recordingIndicators.get(chatId);
+  if (existing) {
+    existing.count++;
+    // Reset the safety clock on each new acquire so a long batch of sequential
+    // jobs doesn't get killed mid-flight by the safety from the first job.
+    clearTimeout(existing.safetyHandle);
+    existing.safetyHandle = setTimeout(() => {
+      clearInterval(existing.handle);
+      _recordingIndicators.delete(chatId);
+      resumeTypingEmission(chatId);
+    }, RECORDING_INDICATOR_SAFETY_MS);
+    (existing.safetyHandle as unknown as { unref?: () => void }).unref?.();
+    return;
+  }
+  // First job for this chat — suppress typing and start the interval.
+  pauseTypingEmission(chatId);
+  getApi().sendChatAction(chatId, "record_voice").catch(() => {});
+  const handle = setInterval(() => {
+    getApi().sendChatAction(chatId, "record_voice").catch(() => {});
+  }, RECORD_VOICE_INTERVAL_MS);
+  // Prevent the interval from keeping the process alive if everything else exits.
+  (handle as unknown as { unref?: () => void }).unref?.();
+  const safetyHandle = setTimeout(() => {
+    clearInterval(handle);
+    _recordingIndicators.delete(chatId);
+    resumeTypingEmission(chatId);
+  }, RECORDING_INDICATOR_SAFETY_MS);
+  (safetyHandle as unknown as { unref?: () => void }).unref?.();
+  _recordingIndicators.set(chatId, { count: 1, handle, safetyHandle });
+}
+
+/**
+ * Decrement the refcount for chatId's recording indicator.
+ * When the count reaches 0, the interval and safety timeout are cleared,
+ * the map entry is removed, and typing emission is resumed for the chat.
+ */
+export function releaseRecordingIndicator(chatId: number): void {
+  const state = _recordingIndicators.get(chatId);
+  if (!state) return;
+  state.count--;
+  if (state.count <= 0) {
+    clearInterval(state.handle);
+    clearTimeout(state.safetyHandle);
+    _recordingIndicators.delete(chatId);
+    resumeTypingEmission(chatId);
+  }
+}
+
 async function runJob(job: AsyncSendJob): Promise<void> {
   const {
     pendingId,
@@ -223,44 +311,50 @@ async function runJob(job: AsyncSendJob): Promise<void> {
   const voiceChunks = splitMessage(audioText);
   const message_ids: number[] = [];
 
-  for (let i = 0; i < voiceChunks.length; i++) {
-    const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice, resolvedSpeed);
-    const isFirst = i === 0;
-    const msg = await sendVoiceDirect(chatId, ogg, {
-      caption: isFirst && !captionOverflow ? captionText : undefined,
-      parse_mode: isFirst && !captionOverflow && captionText ? "MarkdownV2" : undefined,
-      disable_notification: disableNotification,
-      reply_to_message_id: isFirst ? replyToMessageId : undefined,
-    });
-    message_ids.push(msg.message_id);
-  }
+  acquireRecordingIndicator(chatId);
 
-  let textMessageId: number | undefined;
-  if (captionOverflow && captionText) {
-    const textMsg = await callApi(() =>
-      getApi().sendMessage(chatId, captionText, {
-        parse_mode: "MarkdownV2",
+  try {
+    for (let i = 0; i < voiceChunks.length; i++) {
+      const ogg = await synthesizeToOgg(voiceChunks[i], resolvedVoice, resolvedSpeed);
+      const isFirst = i === 0;
+      const msg = await sendVoiceDirect(chatId, ogg, {
+        caption: isFirst && !captionOverflow ? captionText : undefined,
+        parse_mode: isFirst && !captionOverflow && captionText ? "MarkdownV2" : undefined,
         disable_notification: disableNotification,
-      } as Record<string, unknown>),
-    );
-    textMessageId = textMsg.message_id;
-  }
+        reply_to_message_id: isFirst ? replyToMessageId : undefined,
+      });
+      message_ids.push(msg.message_id);
+    }
 
-  const payload: AsyncSendCallbackPayload = {
-    pendingId,
-    status: "ok",
-    ...(message_ids.length === 1 ? { messageId: message_ids[0] } : { messageIds: message_ids }),
-    textMessageId,
-  };
+    let textMessageId: number | undefined;
+    if (captionOverflow && captionText) {
+      const textMsg = await callApi(() =>
+        getApi().sendMessage(chatId, captionText, {
+          parse_mode: "MarkdownV2",
+          disable_notification: disableNotification,
+        } as Record<string, unknown>),
+      );
+      textMessageId = textMsg.message_id;
+    }
 
-  if (isFinalisedJob(pendingId)) {
-    dlog("async-send", `ok callback skipped — already finalised pendingId=${pendingId} sid=${sid}`);
-    return;
-  }
-  markJobFinalised(pendingId);
-  const delivered = deliverAsyncSendCallback(sid, payload);
-  if (!delivered) {
-    process.stderr.write(`[async-send] ok callback lost for pendingId=${pendingId} sid=${sid} (queue gone)\n`);
+    const payload: AsyncSendCallbackPayload = {
+      pendingId,
+      status: "ok",
+      ...(message_ids.length === 1 ? { messageId: message_ids[0] } : { messageIds: message_ids }),
+      textMessageId,
+    };
+
+    if (isFinalisedJob(pendingId)) {
+      dlog("async-send", `ok callback skipped — already finalised pendingId=${pendingId} sid=${sid}`);
+      return;
+    }
+    markJobFinalised(pendingId);
+    const delivered = deliverAsyncSendCallback(sid, payload);
+    if (!delivered) {
+      process.stderr.write(`[async-send] ok callback lost for pendingId=${pendingId} sid=${sid} (queue gone)\n`);
+    }
+  } finally {
+    releaseRecordingIndicator(chatId);
   }
 }
 
@@ -343,4 +437,23 @@ export function cancelSessionJobs(sid: number): void {
 export function resetAsyncSendQueueForTest(): void {
   _sessions.clear();
   _finalisedJobs.clear();
+  // Resume typing emission for every chat that had an active recording indicator before
+  // clearing, so suppression state in typing-state.ts does not leak across test resets.
+  for (const chatId of _recordingIndicators.keys()) {
+    resumeTypingEmission(chatId);
+  }
+  // Clear any leftover recording-indicator intervals and safety timeouts so fake-timer tests stay clean.
+  for (const { handle, safetyHandle } of _recordingIndicators.values()) {
+    clearInterval(handle);
+    clearTimeout(safetyHandle);
+  }
+  _recordingIndicators.clear();
+}
+
+/**
+ * Expose recording-indicator map size for white-box testing only.
+ * @internal
+ */
+export function recordingIndicatorCountForTest(): number {
+  return _recordingIndicators.size;
 }

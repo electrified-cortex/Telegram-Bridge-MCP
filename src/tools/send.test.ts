@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   markFirstUseHintSeen: vi.fn((): boolean => false),
   enqueueAsyncSend: vi.fn(() => -1_000_000_001),
   resetAsyncSendQueueForTest: vi.fn(),
+  acquireRecordingIndicator: vi.fn(),
+  releaseRecordingIndicator: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -117,6 +119,8 @@ vi.mock("../session-queue.js", () => ({
 vi.mock("../async-send-queue.js", () => ({
   enqueueAsyncSend: (...args: unknown[]) => mocks.enqueueAsyncSend(...args),
   resetAsyncSendQueueForTest: () => mocks.resetAsyncSendQueueForTest(),
+  acquireRecordingIndicator: (...args: unknown[]) => mocks.acquireRecordingIndicator(...args),
+  releaseRecordingIndicator: (...args: unknown[]) => mocks.releaseRecordingIndicator(...args),
 }));
 
 vi.mock("../first-use-hints.js", () => ({
@@ -428,6 +432,52 @@ describe("send tool", () => {
     const parsed = parseResult(result);
     expect(parsed.message_id_pending).toBe(-1_000_000_001);
     expect(parsed.status).toBe("queued");
+  });
+});
+
+// =============================================================================
+// Sync voice path — acquireRecordingIndicator / releaseRecordingIndicator
+// =============================================================================
+describe("send — sync voice path recording indicator", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.isTtsEnabled.mockReturnValue(true);
+    mocks.stripForTts.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+    mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
+    mocks.showTyping.mockResolvedValue(undefined);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("sync voice: acquireRecordingIndicator called once before send", async () => {
+    await call({ audio: "hello", async: false, token: TOKEN });
+    expect(mocks.acquireRecordingIndicator).toHaveBeenCalledOnce();
+    expect(mocks.acquireRecordingIndicator).toHaveBeenCalledWith(42);
+  });
+
+  it("sync voice: releaseRecordingIndicator called once in finally (success path)", async () => {
+    await call({ audio: "hello", async: false, token: TOKEN });
+    expect(mocks.releaseRecordingIndicator).toHaveBeenCalledOnce();
+    expect(mocks.releaseRecordingIndicator).toHaveBeenCalledWith(42);
+  });
+
+  it("sync voice: releaseRecordingIndicator still called in finally when sendVoiceDirect rejects", async () => {
+    mocks.sendVoiceDirect.mockRejectedValue(new Error("network failure"));
+    const result = await call({ audio: "hello", async: false, token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(mocks.releaseRecordingIndicator).toHaveBeenCalledOnce();
+    expect(mocks.releaseRecordingIndicator).toHaveBeenCalledWith(42);
   });
 });
 

@@ -29,16 +29,84 @@ interface TypingState {
   safety: ReturnType<typeof setTimeout> | null;
   deadline: number;
   generation: number;
+  chatId: number | null;
 }
 
 const _states = new Map<number, TypingState>();
+
+// ---------------------------------------------------------------------------
+// Recording-suppression — per-chatId pause/resume for typing emission
+//
+// When the async send queue has audio jobs in flight to a chat, it calls
+// pauseTypingEmission(chatId) so no "typing" tick fires and confuses the user
+// mid-recording. On release it calls resumeTypingEmission(chatId) to restore.
+// ---------------------------------------------------------------------------
+
+/**
+ * Set of chatIds whose typing emission is currently suppressed by an active
+ * recording indicator in the async send queue.
+ */
+const _suppressedChats = new Set<number>();
+
+/**
+ * Suppress typing emission for `chatId`.
+ * Called by acquireRecordingIndicator when the first audio job starts for a chat.
+ * The typing state is preserved; the interval tick just skips the API call.
+ */
+export function pauseTypingEmission(chatId: number): void {
+  _suppressedChats.add(chatId);
+}
+
+/**
+ * Resume typing emission for `chatId` and, if typing is still nominally active
+ * for any session bound to this chat, fire one immediate sendChatAction("typing")
+ * so the user sees it reassert without waiting for the next tick.
+ *
+ * Called by releaseRecordingIndicator when the last audio job for a chat completes.
+ */
+export function resumeTypingEmission(chatId: number): void {
+  _suppressedChats.delete(chatId);
+  // Fire one immediate "typing" ping only for a session whose active timer is
+  // bound to this specific chat, preventing stray pings on unrelated chats in
+  // multi-chat scenarios.
+  for (const [, state] of _states) {
+    if (state.timer !== null && state.chatId === chatId) {
+      getApi().sendChatAction(chatId, "typing").catch(() => {});
+      break; // one immediate ping is enough to reassert the indicator
+    }
+  }
+}
+
+/**
+ * Expose suppression set size for white-box testing only.
+ * @internal
+ */
+export function suppressedChatCountForTest(): number {
+  return _suppressedChats.size;
+}
+
+/**
+ * True if the given chatId currently has typing emission suppressed.
+ * @internal
+ */
+export function isChatSuppressedForTest(chatId: number): boolean {
+  return _suppressedChats.has(chatId);
+}
+
+/**
+ * Clear all suppression state. For testing only.
+ * @internal
+ */
+export function resetTypingSuppressionForTest(): void {
+  _suppressedChats.clear();
+}
 
 const INTERVAL_MS = 4_000; // Telegram indicator expires in ~5 s; 4 s keeps it seamless
 
 function _get(sid: number): TypingState {
   let s = _states.get(sid);
   if (!s) {
-    s = { timer: null, safety: null, deadline: 0, generation: 0 };
+    s = { timer: null, safety: null, deadline: 0, generation: 0, chatId: null };
     _states.set(sid, s);
   }
   return s;
@@ -124,6 +192,7 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
 
   const chatId = resolveChat();
   if (typeof chatId !== "number") return false; // misconfigured — silently skip
+  s.chatId = chatId;
 
   // Send immediately so there's no visible delay
   try {
@@ -134,6 +203,8 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
   }
 
   s.timer = setInterval(() => {
+    // Skip emission while a recording indicator has this chat suppressed.
+    if (_suppressedChats.has(chatId)) return;
     getApi().sendChatAction(chatId, action).catch(() => {
       _cancelForSid(sid);
     });

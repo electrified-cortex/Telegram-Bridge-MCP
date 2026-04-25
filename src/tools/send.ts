@@ -12,7 +12,7 @@ import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { findUnrenderableChars } from "../unrenderable-chars.js";
 import { deliverServiceMessage } from "../session-queue.js";
-import { enqueueAsyncSend } from "../async-send-queue.js";
+import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator } from "../async-send-queue.js";
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
 // Type-routing handlers (v6 Phase 2)
@@ -342,6 +342,7 @@ export function register(server: McpServer) {
             // always targets the most recent generation, not a stale pre-start value.
             let gen = typingGeneration();
             let voiceSent = false;
+            acquireRecordingIndicator(chatId);
             try {
               await showTyping(typingSeconds, "record_voice");
               gen = typingGeneration();
@@ -412,6 +413,7 @@ export function register(server: McpServer) {
               }
               return toError(err);
             } finally {
+              releaseRecordingIndicator(chatId);
               if (voiceSent) {
                 // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
                 await new Promise<void>(resolve => setTimeout(resolve, 3000));
