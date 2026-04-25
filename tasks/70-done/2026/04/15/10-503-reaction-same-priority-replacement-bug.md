@@ -17,7 +17,7 @@ when the second (e.g., 🤔) is applied at the same priority.
 
 ## Observed Behavior
 
-```
+```text
 react(msg, 👍, permanent, pri 0)   → 👍 shows ✓
 react(msg, 👀, temporary, pri 1)   → 👀 shows ✓
 react(msg, 🤔, temporary, pri 1)   → 🤔 shows, but 👀 still visible ✗
@@ -25,7 +25,7 @@ react(msg, 🤔, temporary, pri 1)   → 🤔 shows, but 👀 still visible ✗
 
 ## Expected Behavior
 
-```
+```text
 react(msg, 👍, permanent, pri 0)   → 👍 shows
 react(msg, 👀, temporary, pri 1)   → 👀 shows (covers 👍)
 react(msg, 🤔, temporary, pri 1)   → 🤔 replaces 👀 (covers 👍)

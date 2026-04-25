@@ -1,4 +1,4 @@
-﻿import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, ackVoiceMessage } from "../telegram.js";
 import { dlog } from "../debug-log.js";
