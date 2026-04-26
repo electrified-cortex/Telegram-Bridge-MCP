@@ -77,6 +77,9 @@ export async function pollButtonPress(
     ? new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); })
     : null;
 
+  // No reply_to guard needed here: pollButtonPress only matches callback events,
+  // never text or voice. Callbacks carry a target message_id via event.content.target
+  // (exact-match on messageId) so off-target button presses are already excluded.
   const matchFn = (event: TimelineEvent) => {
     if (event.event === "callback" && event.content.target === messageId) {
       const qid = event.content.qid;
@@ -144,8 +147,21 @@ export async function pollButtonOrTextOrVoice(
         if (!qid || !data) return undefined;
         return { kind: "button" as const, callback_query_id: qid, data, message_id: messageId };
       }
-      // Check for text/voice/command message sent AFTER the question
+      // Check for text/voice/command message sent AFTER the question.
+      // Telegram guarantees message IDs are monotonically increasing, so
+      // event.id > messageId is a reliable proxy for "sent after the question".
       if (event.event === "message" && event.id > messageId) {
+        // Three-way reply_to classification:
+        //   reply_to === undefined       → ambiguous (no explicit target) → existing skip behaviour
+        //   reply_to === messageId       → explicitly targets the active question → existing behaviour
+        //   reply_to !== messageId       → targets a different message → not a response to us
+        //
+        // dequeueMatch re-enqueues non-matched items, so returning undefined here
+        // does NOT drop the event — it stays in the queue for the next consumer.
+        const replyTo = event.content.reply_to;
+        if (replyTo !== undefined && replyTo !== messageId) {
+          return undefined;
+        }
         if (event.content.type === "text") {
           const text = event.content.text;
           if (!text) return undefined;

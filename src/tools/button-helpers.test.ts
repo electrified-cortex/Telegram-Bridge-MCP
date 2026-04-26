@@ -558,6 +558,53 @@ describe("button-helpers", () => {
 
       expect(onVoiceDetected).toHaveBeenCalledOnce();
     });
+
+    // reply_to guard — off-target replies must not resolve the active question
+    it("does not resolve when incoming message is a reply to a different message (reply_to != questionId)", async () => {
+      // The active question is message ID 10. An off-target reply targets message 5.
+      // It should NOT be consumed and the poll should time out (return null).
+      let matchFnResult: unknown = "unset";
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        matchFnResult = fn({
+          event: "message",
+          id: 11,
+          content: { type: "text", text: "reply to something else", reply_to: 5 },
+        });
+        return undefined; // guard returned undefined — event not consumed
+      });
+      mocks.waitForEnqueue.mockImplementation(
+        () => new Promise((r) => setTimeout(r, 100)),
+      );
+      const result = await pollButtonOrTextOrVoice(123, 10, 0.01);
+      expect(matchFnResult).toBeUndefined(); // guard must return undefined for off-target reply
+      expect(result).toBeNull();
+    });
+
+    it("resolves normally when incoming message is a reply targeting the active question (reply_to == questionId)", async () => {
+      // reply_to matches the active question ID — should be consumed as a text response.
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "message",
+          id: 11,
+          content: { type: "text", text: "direct reply", reply_to: 10 },
+        });
+      });
+      const result = await pollButtonOrTextOrVoice(123, 10, 1);
+      expect(result).toEqual({ kind: "text", message_id: 11, text: "direct reply" });
+    });
+
+    it("resolves normally when incoming message has no reply_to (ambiguous — existing behaviour preserved)", async () => {
+      // reply_to is absent — treat as a response to the active question (existing behaviour).
+      mocks.dequeueMatch.mockImplementation((fn: (e: unknown) => unknown) => {
+        return fn({
+          event: "message",
+          id: 11,
+          content: { type: "text", text: "free text" },
+        });
+      });
+      const result = await pollButtonOrTextOrVoice(123, 10, 1);
+      expect(result).toEqual({ kind: "text", message_id: 11, text: "free text" });
+    });
   });
 
   // -- session-aware polling -----------------------------------------------
