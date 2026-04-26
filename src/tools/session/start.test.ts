@@ -872,7 +872,7 @@ describe("session_start tool", () => {
     expect(String((role![1] as Record<string, unknown>).text)).not.toContain("You are a participant session");
   });
 
-  it("first session: injects onboarding_protocol after session_orientation", async () => {
+  it("first session: does NOT inject onboarding_protocol at startup (delivered lazily on first user message)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
@@ -883,11 +883,10 @@ describe("session_start tool", () => {
     const calls = mocks.deliverServiceMessage.mock.calls;
     // spec-form: deliverServiceMessage(sid, { eventType, text }) — c[1] is the spec object
     const protocol = calls.find((c: unknown[]) => c[0] === 1 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_protocol");
-    expect(protocol).toBeDefined();
-    expect(String((protocol![1] as Record<string, unknown>).text)).toContain("Show-typing before every reply");
+    expect(protocol).toBeUndefined();
   });
 
-  it("first session: injects onboarding_hybrid_messaging", async () => {
+  it("first session: does NOT inject onboarding_hybrid_messaging at startup (delivered lazily on first send)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
@@ -897,10 +896,10 @@ describe("session_start tool", () => {
 
     const calls = mocks.deliverServiceMessage.mock.calls;
     const msg = calls.find((c: unknown[]) => c[0] === 1 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_hybrid_messaging");
-    expect(msg).toBeDefined();
+    expect(msg).toBeUndefined();
   });
 
-  it("first session: injects onboarding_modality_priority", async () => {
+  it("first session: does NOT inject onboarding_modality_priority at startup (delivered lazily on first user message)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
@@ -910,10 +909,10 @@ describe("session_start tool", () => {
 
     const calls = mocks.deliverServiceMessage.mock.calls;
     const msg = calls.find((c: unknown[]) => c[0] === 1 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_modality_priority");
-    expect(msg).toBeDefined();
+    expect(msg).toBeUndefined();
   });
 
-  it("first session: injects onboarding_presence_signals", async () => {
+  it("first session: does NOT inject onboarding_presence_signals at startup (delivered lazily on first user message)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
@@ -923,7 +922,20 @@ describe("session_start tool", () => {
 
     const calls = mocks.deliverServiceMessage.mock.calls;
     const msg = calls.find((c: unknown[]) => c[0] === 1 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_presence_signals");
-    expect(msg).toBeDefined();
+    expect(msg).toBeUndefined();
+  });
+
+  it("first session: does NOT inject onboarding_buttons at startup (delivered lazily on first confirm/question use)", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.getGovernorSid.mockReturnValue(1);
+
+    await call({});
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const msg = calls.find((c: unknown[]) => c[0] === 1 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_buttons");
+    expect(msg).toBeUndefined();
   });
 
   it("first session: injects onboarding_no_pending_yet", async () => {
@@ -964,7 +976,7 @@ describe("session_start tool", () => {
     expect(role).toBeUndefined();
   });
 
-  it("second session (participant): token_save and protocol messages are injected (no onboarding_role)", async () => {
+  it("second session (participant): token_save injected, onboarding_role and lazy messages NOT injected at startup", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
@@ -989,10 +1001,10 @@ describe("session_start tool", () => {
     );
     expect(findByType(2, "onboarding_token_save")).toBeDefined();
     expect(findByType(2, "onboarding_role")).toBeUndefined();
-    expect(findByType(2, "onboarding_protocol")).toBeDefined();
+    expect(findByType(2, "onboarding_protocol")).toBeUndefined();
   });
 
-  it("second session (participant): injects onboarding_hybrid_messaging", async () => {
+  it("second session (participant): does NOT inject onboarding_hybrid_messaging at startup (delivered lazily on first send)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
@@ -1012,10 +1024,10 @@ describe("session_start tool", () => {
 
     const calls = mocks.deliverServiceMessage.mock.calls;
     const msg = calls.find((c: unknown[]) => c[0] === 2 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_hybrid_messaging");
-    expect(msg).toBeDefined();
+    expect(msg).toBeUndefined();
   });
 
-  it("second session (participant): injects onboarding_modality_priority", async () => {
+  it("second session (participant): does NOT inject onboarding_modality_priority at startup (delivered lazily on first user message)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
@@ -1035,10 +1047,10 @@ describe("session_start tool", () => {
 
     const calls = mocks.deliverServiceMessage.mock.calls;
     const msg = calls.find((c: unknown[]) => c[0] === 2 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_modality_priority");
-    expect(msg).toBeDefined();
+    expect(msg).toBeUndefined();
   });
 
-  it("second session (participant): injects onboarding_presence_signals", async () => {
+  it("second session (participant): does NOT inject onboarding_presence_signals at startup (delivered lazily on first user message)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
@@ -1058,7 +1070,30 @@ describe("session_start tool", () => {
 
     const calls = mocks.deliverServiceMessage.mock.calls;
     const msg = calls.find((c: unknown[]) => c[0] === 2 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_presence_signals");
-    expect(msg).toBeDefined();
+    expect(msg).toBeUndefined();
+  });
+
+  it("second session (participant): does NOT inject onboarding_buttons at startup (delivered lazily on first confirm/question use)", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+
+    await call({ name: "Worker" });
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const msg = calls.find((c: unknown[]) => c[0] === 2 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_buttons");
+    expect(msg).toBeUndefined();
   });
 
   it("second session (participant): injects onboarding_no_pending_yet", async () => {
@@ -1150,7 +1185,7 @@ describe("session_start tool", () => {
       c[2] === "onboarding_token_save" || c[2] === "onboarding_role" || c[2] === "onboarding_protocol" ||
       (typeof c[1] === "object" && ["onboarding_token_save", "onboarding_role", "onboarding_protocol",
         "onboarding_hybrid_messaging", "onboarding_modality_priority",
-        "onboarding_presence_signals", "onboarding_no_pending_yet"].includes(
+        "onboarding_presence_signals", "onboarding_no_pending_yet", "onboarding_buttons"].includes(
         String((c[1] as Record<string, unknown>).eventType),
       )),
     );

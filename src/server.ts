@@ -100,11 +100,24 @@ export function dispatchBehaviorTracking(
         }
       }
       recordPresenceSignal(sid);
+      // Trigger B — first outbound send of any type (non-DM): lazy hybrid messaging guidance
+      if (markFirstUseHintSeen(sid, "lazy_onboarding_hybrid_messaging")) {
+        deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_HYBRID_MESSAGING);
+      }
     }
     btRecordSend(sid);
+    // Trigger C — first send(type:"question") with choose/options: lazy buttons guidance
+    const isQuestionWithChoose = cleanArgs.type === "question" && (cleanArgs.choose !== undefined || cleanArgs.options !== undefined);
+    if (isQuestionWithChoose && markFirstUseHintSeen(sid, "lazy_onboarding_buttons")) {
+      deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_BUTTONS_TEXT);
+    }
   } else if (name === "action" && typeof cleanArgs.type === "string" && cleanArgs.type.startsWith("confirm/")) {
     btRecordButtonUse(sid);
     recordPresenceSignal(sid);
+    // Trigger C — first confirm/ action: lazy buttons guidance
+    if (markFirstUseHintSeen(sid, "lazy_onboarding_buttons")) {
+      deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_BUTTONS_TEXT);
+    }
   } else if (name === "help" && cleanArgs.topic === "send") {
     btRecordButtonUse(sid);
   } else if (name === "dequeue") {
@@ -130,6 +143,18 @@ export function dispatchBehaviorTracking(
           );
           if (hasUserVoice && markFirstUseHintSeen(sid, "modality_hint_voice")) {
             deliverServiceMessage(sid, SERVICE_MESSAGES.NUDGE_VOICE_MODALITY);
+          }
+          // Trigger A — first dequeue returning user content: lazy onboarding guidance
+          if (hasUserContent) {
+            if (markFirstUseHintSeen(sid, "lazy_onboarding_protocol")) {
+              deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_PROTOCOL);
+            }
+            if (markFirstUseHintSeen(sid, "lazy_onboarding_modality_priority")) {
+              deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_MODALITY_PRIORITY);
+            }
+            if (markFirstUseHintSeen(sid, "lazy_onboarding_presence_signals")) {
+              deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_PRESENCE_SIGNALS);
+            }
           }
         }
       }
