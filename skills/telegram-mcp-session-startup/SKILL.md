@@ -74,16 +74,29 @@ DM Overseer (or Curator if no Overseer) after clean start so they know a new ses
    | `🤖 Worker` | ❌ (emoji) |
    | ` ` | ❌ (whitespace only) |
 
-   Returns `{ token, sid, pin, sessions_active, action, pending }`. **`token` = identity for ALL subsequent calls.** `token = sid * 1_000_000 + pin`. `target_sid` always integer.
+   Returns `{ token, sid, suffix, sessions_active, action, pending }`. **`token` = identity for ALL subsequent calls.** `token = sid * 1_000_000 + suffix`. `target_sid` always integer.
 
-3. **Save token to session memory immediately.**
+3. **Save token to session memory immediately.** Two accepted formats:
 
+   **Minimal** (preferred — single integer, smallest footprint):
+   Write the raw token integer to `<AgentName>/telegram/session.token`:
    ```text
-   Token: <your token>
-   SID: <your SID>
-   Name: <AgentName>
-   Started: <timestamp>
+   <token integer>
    ```
+
+   **Full** (for agents tracking role/status):
+   Write YAML to `<AgentName>/telegram/session.md`:
+   ```yaml
+   ---
+   token: <number>
+   sid: <number>
+   name: <AgentName>
+   started: <YYYY-MM-DD>
+   ---
+   status: online
+   ```
+
+   No PIN field. Negotiate script reads `Token:` / `SID:` key-value lines from session.md, or the bare integer from session.token.
 
 4. **Identify chain of command.**
 
