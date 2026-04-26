@@ -163,16 +163,11 @@ export function handlePostEvent(
   const governorSid = getGovernorSid();
   if (governorSid !== 0 && resolvedActorSid === governorSid) {
     if (kind === "compacted") {
-      void handleCancelAnimation({ token: tokenNum }).catch((err: unknown) => {
-        process.stderr.write(`[event] animation cancel error: ${String(err)}\n`);
-      });
-      void handleShowAnimation({ token: tokenNum, preset: "recovering", timeout: 60 }).catch((err: unknown) => {
-        process.stderr.write(`[event] animation error: ${String(err)}\n`);
+      void handleCancelAnimation({ token: tokenNum }).finally(() => {
+        void handleShowAnimation({ token: tokenNum, preset: "recovering", timeout: 60 });
       });
     } else {
-      void handleShowAnimation({ token: tokenNum, preset: kind }).catch((err: unknown) => {
-        process.stderr.write(`[event] animation error: ${String(err)}\n`);
-      });
+      void handleShowAnimation({ token: tokenNum, preset: kind });
     }
   }
 
