@@ -14,6 +14,7 @@ action(type: "session/start", name: "Worker 2", color: "🟩")
 → { token: 3165424, sid: 3, suffix: 165424, sessions_active: 2, action: "fresh", pending: 0 }
 
 Save token immediately — two formats accepted:
+
 - Minimal: write raw token integer to `<Name>/telegram/session.token`
 - Full: YAML body in `<Name>/telegram/session.md` with `token:`, `sid:`, `name:`, `started:` fields — no PIN field
 
