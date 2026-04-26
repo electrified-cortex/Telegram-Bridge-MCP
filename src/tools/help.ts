@@ -138,7 +138,7 @@ function buildOverview(): string {
   const lines: string[] = [
     "Telegram Bridge MCP — Tool Overview",
     "",
-    "Bridges AI agents to Telegram. help(topic: 'guide') for full comms guide.",
+    "Bridges AI agents to Telegram. help(topic: 'index') for categorized skill index. help(topic: 'guide') for full comms guide.",
     "help(topic: '<tool_name>') for docs on a specific tool.",
     "",
     "Tool Index:",
@@ -160,7 +160,7 @@ export function register(server: McpServer) {
           .string()
           .optional()
           .describe(
-            "Omit for overview. Pass 'guide' for full communication guide. Pass 'identity' for bot info + server version. Pass a tool name for detailed docs on that tool."
+            "Omit for overview. Pass 'index' for a categorized skill index. Pass 'guide' for full communication guide. Pass 'identity' for bot info + server version. Pass a tool name for detailed docs on that tool."
           ),
         token: TOKEN_SCHEMA
           .optional()
