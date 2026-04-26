@@ -82,7 +82,7 @@ Status: <"idle" | "in-progress: <task-id>">
 ```markdown
 Token: 15443938
 SID: 15
-Name: Worker 2
+Name: Subordinate Agent
 Started: 2026-04-04T09:12:00Z
 
 ## Checkpoint
@@ -110,17 +110,16 @@ Read the session memory file and compare timestamps:
 | File has a token, **no checkpoint block** | Previous session never completed 10 cycles — treat as clean start |
 | File has a checkpoint, `handoff.md` is **non-blank** | Clean shutdown — handoff was written after the last checkpoint |
 | File has a checkpoint, `handoff.md` is **blank or missing** | **Forced stop** — agent stopped without writing handoff |
-| File has a checkpoint, agent does **not use handoffs** (e.g. Worker) | Compare checkpoint timestamp to session start time: if gap > 30 min and no clean close recorded, treat as forced stop |
+| File has a checkpoint, agent does **not use handoffs** (e.g. a subordinate agent without handoff duty) | Compare checkpoint timestamp to session start time: if gap > 30 min and no clean close recorded, treat as forced stop |
 
-> **Workers do not write handoffs.** For Workers, forced-stop detection relies
+> **Subordinate agents without handoff duty do not write handoffs.** For those agents, forced-stop detection relies
 > solely on the checkpoint timestamp: if the checkpoint is present and recent
 > (within the last session), a forced stop is assumed.
 
 ### Announcing Forced-Stop Recovery
 
 If forced-stop is detected, announce it immediately after reconnecting to the
-session — before draining messages, before loading profile. DM the **Curator**
-(SID 1 / governor):
+session — before draining messages, before loading profile. DM the **governor session**:
 
 ```text
 ⚠️ Forced-stop recovery: I was terminated uncleanly (context limit or hard stop).
@@ -138,7 +137,7 @@ This announcement is **distinct from compaction recovery** — use the
 
 ## Fleet Detection — Orphaned Sessions
 
-The **Curator and Overseer** can detect orphaned sessions caused by forced stops:
+The **governor and supervising agent** can detect orphaned sessions caused by forced stops:
 
 ### Orphaned Session Signs
 
@@ -147,14 +146,14 @@ The **Curator and Overseer** can detect orphaned sessions caused by forced stops
 - The agent's handoff file is blank (for agents that use handoffs) or the
   checkpoint timestamp is stale (>30 min since last write)
 
-### Overseer Action on Suspected Orphan
+### Supervising Agent Action on Suspected Orphan
 
 1. DM the suspected SID: *"Are you alive? Reply with your current status."*
 2. Wait one full dequeue timeout (typically 30–60 seconds).
 3. If no reply: treat the session as orphaned.
-4. DM the Curator: *"SID <N> (<AgentName>) appears orphaned — no response, no
+4. DM the governor: *"SID N (<AgentName>) appears orphaned — no response, no
    close_session observed. Recommend respawn."*
-5. On Curator confirmation: spawn a replacement using the standard spawn script.
+5. On governor confirmation: spawn a replacement using the standard spawn script.
    The replacement will detect forced-stop on startup and announce recovery.
 
 > **Do NOT close another agent's session.** `close_session` closes **your**
@@ -169,7 +168,7 @@ The **Curator and Overseer** can detect orphaned sessions caused by forced stops
   before proceeding with compaction recovery (see that skill).
 - **`telegram-mcp-stop-hook-recovery`:** The "No Tokens Left" edge case
   documents how forced stops occur at the hook level (see that skill).
-- **`agent-handoff`:** For agents that use handoffs (Overseer, Sentinel),
+- **`agent-handoff`:** For agents that use handoffs (e.g. supervising agents or specialist agents),
   a blank `handoff.md` combined with a present checkpoint is the primary
   forced-stop signal.
 - **`telegram-mcp-session-startup`:** Step 0 of session startup should

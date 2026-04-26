@@ -25,7 +25,7 @@ When a dump document event appears in `dequeue` (see **telegram-mcp-dequeue-loop
 
 1. React ✍ on the dump message.
 2. `action(type: "download", file_id: <id>)` — returns document bytes.
-3. Save to `logs/telegram/YYYYMM/DD/HHmmss/dump.json` using the dump's
+3. Save to an archive subdirectory keyed by date+time (e.g. `logs/telegram/YYYYMM/DD/HHmmss/dump.json`) using the dump's
    timestamp (real seconds, not message ID).
 4. Stage and commit: `git add logs/telegram/<path>` then commit with
    `docs: file telegram dump YYYY-MM-DD`.
@@ -49,8 +49,6 @@ otherwise missed the event.
 
 ## File Path Convention
 
-```text
-logs/telegram/YYYYMM/DD/HHmmss/dump.json
-```
+Save under the workspace's archive convention: an archive subdirectory keyed by date+time within `logs/telegram/`.
 
 Use the dump's creation timestamp, not the current time.
