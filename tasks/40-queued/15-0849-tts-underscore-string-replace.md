@@ -2,7 +2,7 @@
 id: 15-0849-tts-underscore-string-replace
 title: TTS — auto-replace underscores in voice content so words pronounce
 priority: 15
-status: draft
+status: queued
 type: feature
 delegation: worker
 repo: TMCP
