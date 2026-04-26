@@ -24,7 +24,7 @@ Use two-step reactions on dump messages for visual progress feedback:
 When a dump document event appears in `dequeue` (see **telegram-mcp-dequeue-loop**):
 
 1. React ✍ on the dump message.
-2. `download_file` the document.
+2. `action(type: "download", file_id: <id>)` — returns document bytes.
 3. Save to `logs/telegram/YYYYMM/DD/HHmmss/dump.json` using the dump's
    timestamp (real seconds, not message ID).
 4. Stage and commit: `git add logs/telegram/<path>` then commit with

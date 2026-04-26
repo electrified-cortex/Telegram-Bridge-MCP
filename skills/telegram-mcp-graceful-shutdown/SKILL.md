@@ -33,6 +33,12 @@ Triggered by: operator stop or `action(type: "shutdown/warn")` DM from governor.
    action(type: "session/close")
    ```
 
+   If this is the **last remaining session** in the pool, use `force: true`:
+
+   ```text
+   action(type: "session/close", force: true)
+   ```
+
 7. **Stop.** No more tool calls after `action(type: "session/close")`.
 
 > **Workers:** After `action(type: "session/close")`, stop immediately. CLI process terminated externally by Overseer via PID file at `.agents/agents/worker/<Worker-N>.pid`. Don't loop, retry, or continue.

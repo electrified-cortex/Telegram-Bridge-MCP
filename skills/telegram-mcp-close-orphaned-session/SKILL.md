@@ -33,6 +33,10 @@ for example, after a terminal exit, forced kill, or operator-denied reconnect.
 
 5. **Confirm to the operator** that the session is closed.
 
+## Cross-reference
+
+What `action(type: "session/close")` does: see **telegram-mcp-graceful-shutdown**.
+
 ## Notes
 
 - Only close sessions where you are certain no active agent is running. Closing an

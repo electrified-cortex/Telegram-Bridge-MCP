@@ -52,6 +52,15 @@ error      → notify superior → dequeue
 6. **Never assume silence means approval.** The operator may be busy. Wait
    for explicit responses.
 
+## Event Classes
+
+| Class | Examples | Note |
+| --- | --- | --- |
+| User content | text, voice, callback, reaction | Voice is pre-saluted by bridge — do not duplicate |
+| Service messages | `onboarding_*`, `behavior_nudge_*`, `modality_hint_*` | Directives — execute before composing reply |
+| DMs from peer sessions | status reports, task instructions | Handle and reply, then `dequeue` |
+| send_callbacks | own outbound confirmations | Note result, then `dequeue` |
+
 ## Before Exiting
 
 If you ever feel like you should stop, DM your superior first:
