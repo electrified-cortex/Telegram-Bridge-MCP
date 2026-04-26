@@ -26,3 +26,9 @@ the non-governor path will not follow.
 ## Priority
 
 Low — cosmetic consistency. No functional impact.
+
+## Completion
+
+Extracted hardcoded fellow session-join notification to `SERVICE_MESSAGES.SESSION_JOINED_FELLOW` in `src/service-messages.ts`. Updated `src/tools/session/start.ts` to use the new constant. Added tests including boundary cases for empty inputs. All 2898 tests pass. Code review: 3 passes, PASS on final.
+
+Branch: `20-draft-fellow`

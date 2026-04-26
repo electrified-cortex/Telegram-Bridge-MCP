@@ -91,6 +91,38 @@ describe("SERVICE_MESSAGES.SESSION_JOINED layout", () => {
 });
 
 // ---------------------------------------------------------------------------
+// SESSION_JOINED_FELLOW — inline prose (non-governor path)
+// ---------------------------------------------------------------------------
+describe("SERVICE_MESSAGES.SESSION_JOINED_FELLOW layout", () => {
+  it("renders name, SID, and governor label", () => {
+    const text = SERVICE_MESSAGES.SESSION_JOINED_FELLOW.text("Worker", 3, "'Curator' (SID 1)");
+    expect(text).toBe("Worker (SID 3) joined. Ambiguous messages go to 'Curator' (SID 1).");
+  });
+
+  it("works when governorLabel is SID-only (no governor session name)", () => {
+    const text = SERVICE_MESSAGES.SESSION_JOINED_FELLOW.text("Worker", 3, "SID 1");
+    expect(text).toBe("Worker (SID 3) joined. Ambiguous messages go to SID 1.");
+  });
+
+  it("event type is session_joined", () => {
+    // Intentionally shares "session_joined" with SESSION_JOINED — same bridge event, different text.
+    expect(SERVICE_MESSAGES.SESSION_JOINED_FELLOW.eventType).toBe("session_joined");
+  });
+
+  it("empty name produces leading space (pinned degenerate behavior)", () => {
+    // name = "" results in a leading space before "(SID 3)" — pinned so regressions are caught.
+    const text = SERVICE_MESSAGES.SESSION_JOINED_FELLOW.text("", 3, "'Curator' (SID 1)");
+    expect(text).toBe(" (SID 3) joined. Ambiguous messages go to 'Curator' (SID 1).");
+  });
+
+  it("empty governorLabel produces trailing period with no label (pinned degenerate behavior)", () => {
+    // governorLabel = "" results in a trailing "go to ." — pinned so regressions are caught.
+    const text = SERVICE_MESSAGES.SESSION_JOINED_FELLOW.text("Worker", 3, "");
+    expect(text).toBe("Worker (SID 3) joined. Ambiguous messages go to .");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GOVERNOR_CHANGED — 2 attributes → vertical
 // ---------------------------------------------------------------------------
 describe("SERVICE_MESSAGES.GOVERNOR_CHANGED layout", () => {
