@@ -29,14 +29,11 @@ Check **session memory file** (name specified in agent instructions or spawn pro
 | Condition | Action |
 | --- | --- |
 | **No file or empty** | Clean start — continue to step 1 |
-| **File has token** | Ask human: *"Found existing session (token X). Resume, wipe, or exit?"* |
+| **File has token** | Attempt resume — use saved token, verify alive with `dequeue(max_wait: 0)`. If alive → skip to step 4. If dead → clean start. |
 
-Human chooses:
-- **Resume** — use saved token. Skip to step 4. Verify alive with `send(type: "animation", ...)`. If dead → clean start.
-- **Wipe** — overwrite file with empty, then clean start (step 1).
-- **Exit** — stop immediately.
+DM Overseer (or Curator if no Overseer) after clean start so they know a new session replaced the old one.
 
-**Unattended startup** (spawned via script): Token exists → attempt resume automatically. Verify alive with animation. If alive → skip to step 4. If dead → clean start without prompting.
+**Manual/operator-interactive startup only:** If launched directly by the operator (not spawned by fleet automation), you may ask: *"Found existing session (token X). Resume, wipe, or exit?"* and wait for direction. All fleet-spawned agents auto-resume without prompting.
 
 ### 1. Learn the API.
 

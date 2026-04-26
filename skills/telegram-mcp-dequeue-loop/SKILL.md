@@ -45,9 +45,9 @@ error      → notify superior → dequeue
 4. **After an error:** notify your superior (Curator, Overseer, or operator),
    then `dequeue` — do NOT stop.
 
-5. **Default timeout.** Always use the default timeout on `dequeue`.
-   The only exception is `timeout: 0` when draining pending messages after
-   reconnect or when probing.
+5. **Default max_wait.** Always omit `max_wait` on `dequeue` — the session default
+   handles blocking. The only exception is `max_wait: 0` when draining pending
+   messages after reconnect or when probing.
 
 6. **Never assume silence means approval.** The operator may be busy. Wait
    for explicit responses.

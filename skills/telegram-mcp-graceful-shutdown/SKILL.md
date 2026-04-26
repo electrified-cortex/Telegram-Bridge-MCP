@@ -14,7 +14,7 @@ Clean exit for Telegram-enabled agents. Steps vary by role — governor (Curator
 
 Triggered by: operator stop or `action(type: "shutdown/warn")` DM from governor.
 
-1. **Drain queue.** `dequeue(timeout: 0)` loop until `pending` = 0 and response = `empty`. ALWAYS drain before closing — unread messages lost when session ends.
+1. **Drain queue.** `dequeue(max_wait: 0)` loop until `pending` = 0 and response = `empty`. ALWAYS drain before closing — unread messages lost when session ends.
 
 2. **Finish current step.** Don't drop mid-operation.
 
@@ -39,7 +39,7 @@ Triggered by: operator stop or `action(type: "shutdown/warn")` DM from governor.
 
 ## Governor Shutdown (Curator Only)
 
-1. **Drain queue.** `dequeue(timeout: 0)` until empty. ALWAYS drain before closing.
+1. **Drain queue.** `dequeue(max_wait: 0)` until empty. ALWAYS drain before closing.
 
 2. **Wipe session memory file.**
 
