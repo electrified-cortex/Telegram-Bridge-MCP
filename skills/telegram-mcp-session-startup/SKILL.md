@@ -33,7 +33,7 @@ Check **session memory file** (name specified in agent instructions or spawn pro
 
 DM Overseer (or Curator if no Overseer) after clean start so they know a new session replaced the old one.
 
-**Manual/operator-interactive startup only:** If launched directly by the operator (not spawned by fleet automation), you may ask: *"Found existing session (token X). Resume, wipe, or exit?"* and wait for direction. All fleet-spawned agents auto-resume without prompting.
+**Existing token found:** Always auto-resume (attempt dequeue). If the session is dead, perform a clean start automatically. Never prompt the operator and wait for direction — if auto-resume fails, clean-start and DM Overseer to explain the session replacement.
 
 ### 1. Learn the API.
 
