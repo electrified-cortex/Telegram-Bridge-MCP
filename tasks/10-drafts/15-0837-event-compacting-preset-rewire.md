@@ -1,41 +1,41 @@
 ---
 id: 15-0837
-title: Event endpoint — dedicated compacting + recovering animations
+title: Event endpoint — preset name == event kind (drop hardcoded KIND_ANIMATION map)
 priority: 15
 status: draft
-type: feature
+type: refactor
 delegation: any
 ---
 
-# Event endpoint — dedicated `compacting` + `recovering` animations
+# Event endpoint — preset name == event kind
 
-`POST /event` `compacting` and `compacted` should each trigger their own visible animation, not reuse `working` (compacting) and bare-cancel (compacted). The post-compaction animation gives the agent a visible recovery window to re-orient before the next operator turn.
+When a governor event fires, look up an animation preset with the **same name as the event kind** and run it. End of story. No hardcoded `kind → preset` table; convention over config.
 
-## Current state
+## Why
 
-- `src/event-endpoint.ts` `KIND_ANIMATION` map: `compacting: "working"`.
-- `src/event-endpoint.ts` `compacted` branch: calls `handleCancelAnimation` (clears any running animation, shows nothing).
-- `src/animation-state.ts` `BUILTIN_PRESETS`: `compacting` exists as a single static frame `["👨‍💻 compacting..."]`. No `recovering` preset.
+- The current hardcoded `KIND_ANIMATION` map (`compacting → working`, etc.) couples event semantics to specific built-in presets and bakes in mismatches (e.g. `compacting` should not reuse `working`).
+- Agents already have a profile preset library; letting kind name == preset name lets each agent ship its own visual identity per kind without bridge edits.
+- Adding a new event kind (e.g. `recovering`) becomes "register the `recovering` preset" instead of "ship a TMCP code change".
 
 ## Acceptance criteria
 
-1. `BUILTIN_PRESETS.compacting`: replace single-frame entry with a multi-frame, monospace, dot-style animation in the same family as `working`/`thinking`/`loading`. Word shown: `compacting`.
-2. `BUILTIN_PRESETS.recovering` (new): same monospace dot-family style. Word shown: `recovering from compaction` (or shorter if line length forces it). Operator's intent is to clearly signal a post-compaction reorient window.
-3. `src/event-endpoint.ts`:
-   - `KIND_ANIMATION.compacting` = `"compacting"` (was `"working"`).
-   - `compacted` branch: instead of plain cancel, invoke `handleShowAnimation` with the `recovering` preset and a ~60-second auto-cancel timeout. The next inbound operator message / event naturally replaces or cancels it (animation replacement is already the bridge's behavior on new outbound content).
-4. Event-endpoint test asserts: governor `compacting` event → `handleShowAnimation({ preset: "compacting" })`; governor `compacted` event → `handleShowAnimation({ preset: "recovering", timeout: ~60 })` (no longer `handleCancelAnimation`).
-5. Manual smoke test (run by Curator after merge):
-   - POST `kind: "compacting"` → operator sees animated `compacting` frames.
-   - POST `kind: "compacted"` → operator sees the `recovering from compaction` animation; it expires after ~60 s or earlier when a new message replaces it.
+1. `src/event-endpoint.ts`: remove the `KIND_ANIMATION` const. The governor side-effect block becomes:
+   - `compacted` (special case kept, see below): cancel any active animation **and** fire the `recovering` preset if registered, with ~60 s auto-cancel timeout.
+   - All other governor kinds: call `handleShowAnimation({ token, preset: kind })`. If `getPreset(sid, kind)` returns no frames, the animation tool returns `UNKNOWN_PRESET` and nothing renders — that is the correct silent fallback.
+2. `src/animation-state.ts` `BUILTIN_PRESETS`: replace single-frame `compacting` entry with multi-frame dot-family animation, same style as `working`/`thinking`/`loading`. Word: `compacting`.
+3. `src/animation-state.ts` `BUILTIN_PRESETS`: add `recovering` preset, dot-family. Word: `recovering from compaction` (or shorter if the line is too wide).
+4. Tests:
+   - Governor `compacting` event → `handleShowAnimation` called with `preset: "compacting"`.
+   - Governor `compacted` event → cancel + `handleShowAnimation` with `preset: "recovering"` and a ~60 s timeout.
+   - Governor `startup` event → `handleShowAnimation` with `preset: "startup"` (no built-in needed; if absent, silent no-op).
+5. Manual smoke test: governor POSTs `compacting` → animated frames; POSTs `compacted` → recovering animation runs ~60 s or until next outbound replaces it.
 
 ## Out of scope
 
-- Reworking how `KIND_ANIMATION` is sourced (still hardcoded const map is fine).
-- Other kinds (`startup`, `shutdown_*`) — leave their preset mappings untouched.
-- Configurable timeout — 60 s is the agreed default; making it tunable is a follow-up if needed.
+- Removing the kind allow-list at the endpoint layer — paired metrics (compacting/compacted, shutdown_warn/shutdown_complete) still rely on a known kind set; leave the allow-list alone.
+- Per-session timeout config — 60 s is the agreed default for `recovering`.
 
 ## Notes
 
-- Discovered 2026-04-25 during operator's smoke test of the v7.2.0 `/event` endpoint. The fanout / agent_event service message and governor-actor animation trigger both work correctly; only the preset choice and the `compacted` side-effect were wrong.
-- Operator intent: post-compaction visibility — when an agent compacts, the operator should see "compacting" then "recovering from compaction" so they understand the agent's state instead of staring at a static UI.
+- Discovered 2026-04-25 during operator's smoke test of the v7.2.0 `/event` endpoint. Operator's simplification request: stop hardcoding kind→preset mappings; let preset name == kind.
+- The `compacted` branch keeps the cancel-then-fire-recovering shape because operator wants the post-compaction animation to be visibly different from in-flight compacting, and the cancel guarantees a clean handoff.
