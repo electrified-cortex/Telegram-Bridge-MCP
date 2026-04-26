@@ -182,7 +182,7 @@ describe("POST /event — integration", () => {
     expect(startAnimation).toHaveBeenCalled();
   });
 
-  it("triggers cancel animation when actor is governor and kind is compacted", async () => {
+  it("triggers cancel animation + recovering animation when actor is governor and kind is compacted", async () => {
     resetSessions();
     const { sid, suffix } = createSession("gov");
     const govToken = sid * 1_000_000 + suffix;
@@ -196,6 +196,6 @@ describe("POST /event — integration", () => {
 
     expect(res.status).toBe(200);
     expect(cancelAnimation).toHaveBeenCalled();
-    expect(startAnimation).not.toHaveBeenCalled();
+    expect(startAnimation).toHaveBeenCalled();
   });
 });

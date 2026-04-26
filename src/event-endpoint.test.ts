@@ -195,14 +195,14 @@ describe("POST /event handler", () => {
     expect((body as { fanout: number }).fanout).toBe(1);
   });
 
-  it("triggers animation when actor is governor and kind is mapped", () => {
+  it("triggers animation when actor is governor and kind is compacting", () => {
     mocks.getGovernorSid.mockReturnValue(1); // sid=1 is the governor
     // VALID_TOKEN decodes to sid=1, so resolvedActorSid defaults to 1
 
     const [status] = handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
     expect(status).toBe(200);
     expect(mocks.handleShowAnimation).toHaveBeenCalledWith(
-      expect.objectContaining({ preset: "working" }),
+      expect.objectContaining({ preset: "compacting" }),
     );
   });
 
@@ -214,7 +214,7 @@ describe("POST /event handler", () => {
     expect(mocks.handleShowAnimation).not.toHaveBeenCalled();
   });
 
-  it("triggers animation cancel when actor is governor and kind is compacted", () => {
+  it("triggers animation cancel + recovering animation when actor is governor and kind is compacted", async () => {
     mocks.getGovernorSid.mockReturnValue(1);
 
     const [status] = handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
@@ -222,6 +222,9 @@ describe("POST /event handler", () => {
     expect(mocks.handleCancelAnimation).toHaveBeenCalledWith(
       expect.objectContaining({ token: VALID_TOKEN }),
     );
-    expect(mocks.handleShowAnimation).not.toHaveBeenCalled();
+    await Promise.resolve(); // flush .finally() microtask
+    expect(mocks.handleShowAnimation).toHaveBeenCalledWith(
+      expect.objectContaining({ preset: "recovering", timeout: 60 }),
+    );
   });
 });

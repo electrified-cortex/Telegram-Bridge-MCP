@@ -41,13 +41,6 @@ interface PostEventBody {
   details?: unknown;
 }
 
-// ── Animation map ─────────────────────────────────────────────────────────────
-
-const KIND_ANIMATION: Record<string, string> = {
-  compacting: "working",
-  startup: "bounce",
-};
-
 const VALID_KINDS = new Set(["compacting", "compacted", "startup", "shutdown_warn", "shutdown_complete"]);
 
 // ── Internal handler (exported for testing) ──────────────────────────────────
@@ -170,15 +163,11 @@ export function handlePostEvent(
   const governorSid = getGovernorSid();
   if (governorSid !== 0 && resolvedActorSid === governorSid) {
     if (kind === "compacted") {
-      void handleCancelAnimation({ token: tokenNum }).catch((err: unknown) => {
-        process.stderr.write(`[event] animation cancel error: ${String(err)}\n`);
+      void handleCancelAnimation({ token: tokenNum }).finally(() => {
+        void handleShowAnimation({ token: tokenNum, preset: "recovering", timeout: 60 });
       });
     } else {
-      if (kind in KIND_ANIMATION) {
-        void handleShowAnimation({ token: tokenNum, preset: KIND_ANIMATION[kind] }).catch((err: unknown) => {
-          process.stderr.write(`[event] animation error: ${String(err)}\n`);
-        });
-      }
+      void handleShowAnimation({ token: tokenNum, preset: kind });
     }
   }
 

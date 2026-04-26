@@ -1,5 +1,16 @@
 # [Unreleased]
 
+## v7.2.2 — 2026-04-25
+
+### Added
+
+- `recovering` built-in animation preset — 4-frame dot-family animation showing "recovering" with a single dot drifting outward from the word; signals post-compaction recovery window.
+
+### Changed
+
+- `compacting` built-in animation preset replaced with a 4-frame dot-family animation (single dot drifting inward, with one empty frame). Previously was a single static `👨‍💻 compacting...` frame.
+- `POST /event` governor side-effect: removed the hardcoded `KIND_ANIMATION` kind->preset mapping. Convention is now preset name == event kind. The `compacted` kind keeps a special path: cancel any active animation, then show the `recovering` preset with a 60-second timeout. Other kinds look up a preset matching their name; missing presets are a silent no-op.
+
 ## v7.2.1 — 2026-04-25
 
 ### Fixed

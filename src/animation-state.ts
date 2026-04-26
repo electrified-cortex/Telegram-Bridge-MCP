@@ -42,7 +42,8 @@ export const BUILTIN_PRESETS: ReadonlyMap<string, readonly string[]> = new Map([
   ["working",   ["`[   working   ]`", "`[  \u00b7working\u00b7  ]`", "`[ \u00b7\u00b7working\u00b7\u00b7 ]`", "`[\u00b7\u00b7\u00b7working\u00b7\u00b7\u00b7]`", "`[\u00b7\u00b7 working \u00b7\u00b7]`", "`[\u00b7  working  \u00b7]`"]],
   ["thinking",  ["`[   thinking   ]`", "`[  \u00b7thinking\u00b7  ]`", "`[ \u00b7\u00b7thinking\u00b7\u00b7 ]`", "`[\u00b7\u00b7\u00b7thinking\u00b7\u00b7\u00b7]`", "`[\u00b7\u00b7 thinking \u00b7\u00b7]`", "`[\u00b7  thinking  \u00b7]`"]],
   ["loading",   ["`[   loading   ]`", "`[  \u00b7loading\u00b7  ]`", "`[ \u00b7\u00b7loading\u00b7\u00b7 ]`", "`[\u00b7\u00b7\u00b7loading\u00b7\u00b7\u00b7]`", "`[\u00b7\u00b7 loading \u00b7\u00b7]`", "`[\u00b7  loading  \u00b7]`"]],
-  ["compacting", ["\ud83d\udc68\u200d\ud83d\udcbb compacting..."]],
+  ["compacting", ["`[   compacting   ]`", "`[·  compacting  ·]`", "`[ · compacting · ]`", "`[  ·compacting·  ]`"]],
+  ["recovering", ["`[  ·recovering·  ]`", "`[ · recovering · ]`", "`[·  recovering  ·]`", "`[   recovering   ]`"]],
 ]);
 
 /** Named animation presets registered per session (keyed by SID). */
