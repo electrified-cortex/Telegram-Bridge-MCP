@@ -1,5 +1,11 @@
 # [Unreleased]
 
+## v7.2.1 — 2026-04-25
+
+### Fixed
+
+- Test type-correctness: tightened mock signatures to match production void/typed return types in `built-in-commands.test.ts`, `event-endpoint.test.ts`, `event-endpoint.integration.test.ts`, `callback-edge-cases.test.ts`, and `session_status.test.ts`. No production code changes.
+
 ## v7.2.0 — Unreleased
 
 ### Added

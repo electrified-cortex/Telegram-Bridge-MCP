@@ -139,11 +139,11 @@ vi.mock("./voice-state.js", () => ({
 vi.mock("./local-log.js", () => ({
   rollLog: (...args: unknown[]) => mocks.rollLog(...args),
   isLoggingEnabled: (...args: unknown[]) => mocks.isLoggingEnabled(...args),
-  enableLogging: (...args: unknown[]) => mocks.enableLogging(...args),
-  disableLogging: (...args: unknown[]) => mocks.disableLogging(...args),
+  enableLogging: (...args: unknown[]) => { mocks.enableLogging(...args); },
+  disableLogging: (...args: unknown[]) => { mocks.disableLogging(...args); },
   listLogs: (...args: unknown[]) => mocks.listLogs(...args),
   getCurrentLogFilename: (...args: unknown[]) => mocks.getCurrentLogFilename(...args),
-  deleteLog: (...args: unknown[]) => mocks.deleteLog(...args),
+  deleteLog: (...args: unknown[]) => { mocks.deleteLog(...args); },
 }));
 
 vi.mock("./session-teardown.js", () => ({
