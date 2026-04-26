@@ -42,3 +42,11 @@ Operator wants a per-session retrospective: how often did each agent compact, wh
 
 - Discovered 2026-04-25 during operator's smoke test of the v7.2.0 `/event` endpoint. Operator wants the event log to feed an actual debrief, not just be a hidden audit file.
 - Should leverage `15-0832` directly — that task ships the data layer; this task wires it into Curator's shutdown lifecycle.
+
+## Completion
+
+Completed by Worker 1 (SID 4) on 2026-04-26.
+
+Added Step 6 (compaction metrics report) to the `graceful-shutdown` skill in `electrified-cortex`. Curator runs `node "<tmcp-root>/scripts/event-report.mjs" --format text` after all Workers/Overseer close, saves output to `logs/session/<YYYYMM>/<DD>/<HHmmss (UTC)>/compaction-report.md`. Failure-tolerant (script error → warning file + handoff note; never blocks shutdown). Report path included in handoff.md `## State`. Old Steps 6–8 renumbered to 7–9 across spec.md, uncompressed.md, and SKILL.md. Pre-existing diagram bugs corrected. Three code-review iterations; all blocking findings resolved.
+
+Branch: `15-0838` in `electrified-cortex` repo. Commit: `38ebef2`.
