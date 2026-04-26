@@ -60,7 +60,7 @@ import { startAnimation, cancelAnimation } from "./animation-state.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function startServer(app: Parameters<typeof http.createServer>[0]): Promise<{ server: http.Server; port: number }> {
+function startServer(app: http.RequestListener): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolve, reject) => {
     const server = http.createServer(app);
     server.on("error", reject);

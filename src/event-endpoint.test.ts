@@ -13,21 +13,22 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn((..._args: unknown[]): boolean => true),
   listSessions: vi.fn((): Array<{ sid: number; name: string; color: string; createdAt: string }> => []),
-  getSession: vi.fn((): { sid: number; name: string; color: string; createdAt: string } | undefined => undefined),
-  deliverServiceMessage: vi.fn((): boolean => true),
+  getSession: vi.fn((_sid?: unknown): { sid: number; name: string; color: string; createdAt: string } | undefined => undefined),
+  deliverServiceMessage: vi.fn((_sid: unknown, _text?: unknown, _kind?: unknown, _details?: unknown): boolean => true),
   getGovernorSid: vi.fn((): number => 0),
   handleShowAnimation: vi.fn(),
   handleCancelAnimation: vi.fn(),
 }));
 
 vi.mock("./session-manager.js", () => ({
-  validateSession: (...args: unknown[]) => (mocks.validateSession as (...a: unknown[]) => boolean)(...args),
+  validateSession: (sid: number, suffix: number) => mocks.validateSession(sid, suffix),
   listSessions: () => mocks.listSessions(),
-  getSession: (...args: unknown[]) => mocks.getSession(...args),
+  getSession: (sid: unknown) => mocks.getSession(sid),
 }));
 
 vi.mock("./session-queue.js", () => ({
-  deliverServiceMessage: (...args: unknown[]) => (mocks.deliverServiceMessage as (...a: unknown[]) => boolean)(...args),
+  deliverServiceMessage: (sid: number, text?: string, kind?: string, details?: Record<string, unknown>) =>
+    mocks.deliverServiceMessage(sid, text, kind, details),
 }));
 
 vi.mock("./routing-mode.js", () => ({

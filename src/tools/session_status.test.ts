@@ -93,7 +93,7 @@ describe("handleSessionStatus", () => {
       mocks.listSessions.mockReturnValue(infos);
       mocks.getSession.mockImplementation((sid) => makeSession(sid));
 
-      const result = handleSessionStatus({ token }) as { sessions: { sid: number }[] };
+      const result = handleSessionStatus({ token }) as unknown as { sessions: { sid: number }[] };
 
       expect(result).toHaveProperty("sessions");
       const sids = result.sessions.map(s => s.sid);
@@ -116,7 +116,7 @@ describe("handleSessionStatus", () => {
       mocks.listSessions.mockReturnValue(infos);
       mocks.getSession.mockImplementation((sid) => makeSession(sid));
 
-      const result = handleSessionStatus({ token }) as { sessions: { sid: number }[] };
+      const result = handleSessionStatus({ token }) as unknown as { sessions: { sid: number }[] };
 
       expect(result).toHaveProperty("sessions");
       const sids = result.sessions.map(s => s.sid);
@@ -144,7 +144,7 @@ describe("handleSessionStatus", () => {
         return makeSession(sid);
       });
 
-      const result = handleSessionStatus({ token }) as { sessions: { sid: number }[] };
+      const result = handleSessionStatus({ token }) as unknown as { sessions: { sid: number }[] };
 
       expect(result).toHaveProperty("sessions");
       const sids = result.sessions.map(s => s.sid);

@@ -12,7 +12,7 @@
  * No production code changes — test file only.
  */
 import type { Update } from "grammy/types";
-import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, type ToolHandler } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
