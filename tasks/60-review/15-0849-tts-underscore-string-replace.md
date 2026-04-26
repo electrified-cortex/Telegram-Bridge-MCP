@@ -57,3 +57,10 @@ Examples:
 ## Source
 
 Operator directive 2026-04-26 PM.
+
+## Completion
+
+- **Branch:** `15-0849`
+- **Commit:** `b1a9edc`
+- **Files changed:** `src/tts.ts`, `src/tts.test.ts`
+- **Summary:** Added `normalizeCapsForTts()` export and `RE_ALL_CAPS_UNDERSCORE` regex. Integrated into `stripForTts` as a three-step pipeline: MCP escapes + fenced/inline code strip → normalization → HTML + remaining Markdown strip. Toggle via `TTS_CAPS_NORMALIZE=0|false|no|off`. 71 tests pass (up from 64).

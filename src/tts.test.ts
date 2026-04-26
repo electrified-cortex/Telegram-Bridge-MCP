@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach, type Mock } from "vitest";
-import { isTtsEnabled, stripForTts, synthesizeToOgg, fetchVoiceList, TTS_LIMIT, _resetLocalPipeline } from "./tts.js";
+import { isTtsEnabled, stripForTts, normalizeCapsForTts, synthesizeToOgg, fetchVoiceList, TTS_LIMIT, _resetLocalPipeline } from "./tts.js";
 
 // Mock @huggingface/transformers so no model is downloaded during tests
 vi.mock("@huggingface/transformers", () => ({
@@ -122,6 +122,110 @@ describe("stripForTts", () => {
 
   it("normalizes backslash-escaped quotes (MCP transport)", () => {
     expect(stripForTts('use \\"claw\\" and \\"provisioner\\"')).toBe('use "claw" and "provisioner"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeCapsForTts
+// ---------------------------------------------------------------------------
+
+describe("normalizeCapsForTts", () => {
+  beforeEach(() => { delete process.env.TTS_CAPS_NORMALIZE; });
+  afterEach(() => {
+    delete process.env.TTS_CAPS_NORMALIZE;
+  });
+
+  it("transforms SESSION_JOINED → \"session joined\"", () => {
+    expect(normalizeCapsForTts("SESSION_JOINED")).toBe('"session joined"');
+  });
+
+  it("transforms PASS_WITH_FINDINGS → \"pass with findings\"", () => {
+    expect(normalizeCapsForTts("PASS_WITH_FINDINGS")).toBe('"pass with findings"');
+  });
+
+  it("transforms MD_FAIL → \"md fail\"", () => {
+    expect(normalizeCapsForTts("MD_FAIL")).toBe('"md fail"');
+  });
+
+  it("leaves lowercase session_joined unchanged", () => {
+    expect(normalizeCapsForTts("session_joined")).toBe("session_joined");
+  });
+
+  it("leaves lowercase behavior_nudge_first_message unchanged", () => {
+    expect(normalizeCapsForTts("behavior_nudge_first_message")).toBe("behavior_nudge_first_message");
+  });
+
+  it("transforms only the ALL-CAPS token in a mixed sentence", () => {
+    expect(normalizeCapsForTts("Status is PASS_WITH_FINDINGS")).toBe('Status is "pass with findings"');
+  });
+
+  it("leaves ALLCAPS with no underscore unchanged", () => {
+    expect(normalizeCapsForTts("ALLCAPS")).toBe("ALLCAPS");
+  });
+
+  it("transforms A_B (single letter before underscore)", () => {
+    expect(normalizeCapsForTts("A_B")).toBe('"a b"');
+  });
+
+  it("skips transformation when TTS_CAPS_NORMALIZE=false", () => {
+    process.env.TTS_CAPS_NORMALIZE = "false";
+    expect(normalizeCapsForTts("SESSION_JOINED")).toBe("SESSION_JOINED");
+  });
+
+  it("skips transformation when TTS_CAPS_NORMALIZE=0", () => {
+    process.env.TTS_CAPS_NORMALIZE = "0";
+    expect(normalizeCapsForTts("MD_FAIL")).toBe("MD_FAIL");
+  });
+
+  it("transforms when TTS_CAPS_NORMALIZE is unset (default enabled)", () => {
+    delete process.env.TTS_CAPS_NORMALIZE;
+    expect(normalizeCapsForTts("SESSION_JOINED")).toBe('"session joined"');
+  });
+
+  it("skips transformation when TTS_CAPS_NORMALIZE=no", () => {
+    process.env.TTS_CAPS_NORMALIZE = "no";
+    expect(normalizeCapsForTts("SESSION_JOINED")).toBe("SESSION_JOINED");
+  });
+
+  it("skips transformation when TTS_CAPS_NORMALIZE=off", () => {
+    process.env.TTS_CAPS_NORMALIZE = "off";
+    expect(normalizeCapsForTts("SESSION_JOINED")).toBe("SESSION_JOINED");
+  });
+
+  it("skips transformation when TTS_CAPS_NORMALIZE=FALSE (case-insensitive)", () => {
+    process.env.TTS_CAPS_NORMALIZE = "FALSE";
+    expect(normalizeCapsForTts("SESSION_JOINED")).toBe("SESSION_JOINED");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripForTts + normalizeCapsForTts integration
+// ---------------------------------------------------------------------------
+
+describe("stripForTts normalizeCapsForTts integration", () => {
+  beforeEach(() => { delete process.env.TTS_CAPS_NORMALIZE; });
+  afterEach(() => {
+    delete process.env.TTS_CAPS_NORMALIZE;
+  });
+
+  it("applies normalization end-to-end: Result: PASS_WITH_FINDINGS → Result: \"pass with findings\"", () => {
+    expect(stripForTts("Result: PASS_WITH_FINDINGS")).toBe('Result: "pass with findings"');
+  });
+
+  it("normalizes SESSION_JOINED inside <code> tags (TTS pronounces content, not renders it)", () => {
+    expect(stripForTts("<code>SESSION_JOINED</code>")).toBe('"session joined"');
+  });
+
+  it("normalizes SESSION_JOINED inside <pre> tags (TTS pronounces content, not renders it)", () => {
+    expect(stripForTts("<pre>SESSION_JOINED</pre>")).toBe('"session joined"');
+  });
+
+  it("normalizes SESSION_JOINED inside backtick inline code", () => {
+    expect(stripForTts("`SESSION_JOINED`")).toBe('"session joined"');
+  });
+
+  it("normalizes SESSION_JOINED inside fenced code block", () => {
+    expect(stripForTts("```\nSESSION_JOINED\n```")).toBe('"session joined"');
   });
 });
 

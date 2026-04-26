@@ -67,6 +67,9 @@ const RE_HTML_A           = /<a[^>]*>(.*?)<\/a>/gis;
 const RE_HTML_ANY         = /<[^>]+>/g;
 const RE_MV2_UNESCAPE     = /\\([_*[\]()~`>#+=|{}.!-])/g;
 const RE_TRAILING_SLASH   = /\/+$/;
+// Matches ALL-CAPS identifiers with underscores (e.g. SESSION_JOINED, MD_FAIL)
+// Requires: starts with uppercase letter, contains at least one underscore, all chars uppercase/digit/underscore
+const RE_ALL_CAPS_UNDERSCORE = /\b[A-Z][A-Z0-9]*_[A-Z0-9][A-Z0-9_]*\b/g;
 
 /** Maximum characters accepted per TTS request (matches Telegram text limit). */
 export const TTS_LIMIT = 4096;
@@ -88,51 +91,67 @@ export function isTtsEnabled(): boolean {
  *   - Blockquote markers (>) stripped
  *   - HTML tags (b, i, u, s, code, pre, a): unwrapped to content
  *   - MarkdownV2 escape sequences (\. \! etc.) unescaped
+ *   - ALL-CAPS-with-underscores identifiers normalized via normalizeCapsForTts
+ *     (after backtick spans are stripped, before italic regex fires on underscores)
  */
 export function stripForTts(text: string): string {
-  return (
-    text
-      // Normalize MCP transport escape sequences before any other processing
-      .replace(RE_ESCAPE_NEWLINE, "\n")
-      .replace(RE_ESCAPE_QUOTE, '"')
-      .replace(RE_ESCAPE_BACKSLASH, "\\")
-      // Fenced code blocks — keep inner content, strip fence lines
-      .replace(RE_FENCED_CODE, "$1")
-      // Inline code — remove backtick delimiters
-      .replace(RE_INLINE_CODE, "$1")
-      // Bold (**text** and *text*)
-      .replace(RE_BOLD_DOUBLE, "$1")
-      .replace(RE_BOLD_SINGLE, "$1")
-      // Underline (__text__) before italic (_text_)
-      .replace(RE_UNDERLINE, "$1")
-      // Italic / MarkdownV2 italic
-      .replace(RE_ITALIC, "$1")
-      // Strikethrough (~~text~~ and MarkdownV2 ~text~)
-      .replace(RE_STRIKE_DOUBLE, "$1")
-      .replace(RE_STRIKE_SINGLE, "$1")
-      // Links — keep display text, discard URL
-      .replace(RE_LINK, "$1")
-      // Headings — strip leading # markers
-      .replace(RE_HEADING, "")
-      // Blockquotes — strip leading > marker
-      .replace(RE_BLOCKQUOTE, "")
-      // HTML: inline tags — unwrap to content
-      .replace(RE_HTML_B, "$1")
-      .replace(RE_HTML_STRONG, "$1")
-      .replace(RE_HTML_I, "$1")
-      .replace(RE_HTML_EM, "$1")
-      .replace(RE_HTML_U, "$1")
-      .replace(RE_HTML_INS, "$1")
-      .replace(RE_HTML_S, "$1")
-      .replace(RE_HTML_DEL, "$1")
-      .replace(RE_HTML_CODE, "$1")
-      .replace(RE_HTML_PRE, "$1")
-      .replace(RE_HTML_A, "$1")
-      // Strip any remaining HTML tags
-      .replace(RE_HTML_ANY, "")
-      // MarkdownV2 escaped special chars — unescape
-      .replace(RE_MV2_UNESCAPE, "$1")
-      .trim()
+  // Step 1: MCP transport escapes + backtick code stripping
+  // (backtick spans stripped before normalization; html code/pre stripped later in step 3)
+  const afterCodeStrip = text
+    .replace(RE_ESCAPE_NEWLINE, "\n")
+    .replace(RE_ESCAPE_QUOTE, '"')
+    .replace(RE_ESCAPE_BACKSLASH, "\\")
+    .replace(RE_FENCED_CODE, "$1")
+    .replace(RE_INLINE_CODE, "$1");
+  // Step 2: normalize ALL-CAPS identifiers before _italic_ regex fires on underscores
+  const normalized = normalizeCapsForTts(afterCodeStrip);
+  // Step 3: remaining Markdown / HTML stripping
+  return normalized
+    .replace(RE_BOLD_DOUBLE, "$1")
+    .replace(RE_BOLD_SINGLE, "$1")
+    .replace(RE_UNDERLINE, "$1")
+    .replace(RE_ITALIC, "$1")
+    .replace(RE_STRIKE_DOUBLE, "$1")
+    .replace(RE_STRIKE_SINGLE, "$1")
+    .replace(RE_LINK, "$1")
+    .replace(RE_HEADING, "")
+    .replace(RE_BLOCKQUOTE, "")
+    .replace(RE_HTML_B, "$1")
+    .replace(RE_HTML_STRONG, "$1")
+    .replace(RE_HTML_I, "$1")
+    .replace(RE_HTML_EM, "$1")
+    .replace(RE_HTML_U, "$1")
+    .replace(RE_HTML_INS, "$1")
+    .replace(RE_HTML_S, "$1")
+    .replace(RE_HTML_DEL, "$1")
+    .replace(RE_HTML_CODE, "$1")
+    .replace(RE_HTML_PRE, "$1")
+    .replace(RE_HTML_A, "$1")
+    .replace(RE_HTML_ANY, "")
+    .replace(RE_MV2_UNESCAPE, "$1")
+    .trim();
+}
+
+/**
+ * Normalizes ALL-CAPS-with-underscores identifiers in TTS audio text for better pronunciation.
+ * Tokens are wrapped in double-quotes and lowercased: SESSION_JOINED → `"session joined"`.
+ * The double-quote characters ARE spoken by the TTS engine (e.g. "quote session joined quote").
+ *
+ * Applies only to ALL-CAPS tokens (uppercase letters, digits, underscores) with at least one
+ * underscore. Lower-case and mixed-case identifiers are left alone.
+ *
+ * Note: POSIX-style env var names (e.g. TTS_HOST, OPENAI_API_KEY) match this pattern and will
+ * be normalized if they appear verbatim in TTS audio text. This is an accepted trade-off.
+ *
+ * Controlled by env var TTS_CAPS_NORMALIZE: set to "0", "false", "no", or "off" to disable (case-insensitive).
+ */
+export function normalizeCapsForTts(text: string): string {
+  const capsNorm = process.env.TTS_CAPS_NORMALIZE;
+  if (capsNorm !== undefined && ["0", "false", "no", "off"].includes(capsNorm.toLowerCase())) {
+    return text;
+  }
+  return text.replace(RE_ALL_CAPS_UNDERSCORE, (match) =>
+    `"${match.replace(/_/g, " ").toLowerCase()}"`
   );
 }
 
