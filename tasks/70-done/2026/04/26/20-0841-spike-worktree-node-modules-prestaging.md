@@ -52,3 +52,23 @@ Candidates to consider:
 ## Related
 
 - `friction-pnpm-install-worktree-block.md` (filed by Overseer 2026-04-25/26).
+
+## Completion
+
+**Worker 2 — 2026-04-26**
+
+Spike complete. Findings document written to `tasks/10-drafts/spike-results-node-modules-prestaging.md`.
+
+**Summary:** pnpm's content-addressed store already means a hot-store install is relinking only (~15–30s), not downloading. Candidate 4 (worktree-create hook) + Candidate 1 (shared virtual store) is the recommended approach. Per operator guidance, the implementation should be a per-repo sanctioned script (e.g., `tools/setup-worktree.ps1`) on the Worker permissions allowlist — JS/TS repos only — so Workers can self-service without Overseer round-trips. Five operator decisions remain open in the findings document.
+
+## Verification
+
+**Overseer — 2026-04-26**
+
+Verdict: **APPROVED**
+
+All acceptance criteria met:
+- Findings doc present at `tasks/10-drafts/spike-results-node-modules-prestaging.md` (301 lines)
+- All 6 candidates evaluated with mechanism, pros/cons, security posture, recommendations
+- Top recommendation clear: Candidate 4 (Overseer-level worktree hook) + Candidate 1 (shared virtual store), refactored per operator guidance to a per-repo sanctioned script on Worker allowlist
+- Operator guidance (2026-04-26) recorded in findings doc; 5 open decisions documented for follow-on implementation task
