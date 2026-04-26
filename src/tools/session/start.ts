@@ -379,11 +379,14 @@ export async function handleSessionStart({ name, color }: { name: string; color?
             const isGovernor = fellow.sid === governorSid;
             const text = isGovernor
               ? SERVICE_MESSAGES.SESSION_JOINED.text(effectiveName, session.sid)
-              : `${effectiveName} (SID ${session.sid}) joined. Ambiguous messages go to ${governorLabel}.`;
+              : SERVICE_MESSAGES.SESSION_JOINED_FELLOW.text(effectiveName, session.sid, governorLabel);
+            const eventType = isGovernor
+              ? SERVICE_MESSAGES.SESSION_JOINED.eventType
+              : SERVICE_MESSAGES.SESSION_JOINED_FELLOW.eventType; // both share "session_joined" — intentional, same bridge event
             deliverServiceMessage(
               fellow.sid,
               text,
-              SERVICE_MESSAGES.SESSION_JOINED.eventType,
+              eventType,
               { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
             );
           }
@@ -496,6 +499,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     const governorLabel = governorSession
       ? `'${governorSession.name}' (SID ${governorSid})`
       : `SID ${governorSid}`;
+    // TODO: reconnect path below still uses hardcoded inline strings — extract to SERVICE_MESSAGES pair (not in scope of this task)
     for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
       const isGovernorFellow = fellow.sid === governorSid;
       const text = isGovernorFellow

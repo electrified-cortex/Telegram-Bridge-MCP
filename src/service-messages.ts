@@ -116,6 +116,18 @@ export const SERVICE_MESSAGES = deepFreeze({
       `**Session joined:**\n**Name:** ${name}\n**SID:** ${sid}\nYou are the governor — route ambiguous messages.`,
   },
 
+  // NOTE: SESSION_JOINED_FELLOW intentionally shares eventType "session_joined" with
+  // SESSION_JOINED. Both events represent the same bridge-level event (a session joined);
+  // the distinction is only in message text (governor path vs. peer path). Downstream
+  // consumers must not rely on eventType alone to distinguish them.
+  /** @param name display name of the joining session, @param sid SID of the joining session, @param governorLabel formatted label for the governor (e.g. "'Curator' (SID 1)") */
+  SESSION_JOINED_FELLOW: {
+    eventType: "session_joined" as const,
+    /** @param name display name of the joining session, @param sid SID of the joining session, @param governorLabel formatted label for the governor (e.g. "'Curator' (SID 1)") */
+    text: (name: string, sid: number, governorLabel: string) =>
+      `${name} (SID ${sid}) joined. Ambiguous messages go to ${governorLabel}.`,
+  },
+
   SESSION_CLOSED: {
     eventType: "session_closed" as const,
     /**
