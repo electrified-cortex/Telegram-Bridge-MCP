@@ -146,3 +146,20 @@ Operator quote (2026-04-25): "how often does a specific agent compact? How long 
 ## Branch
 
 `10-0831` off `dev`.
+
+## Completion
+
+Implementation complete on `release/7.2`. Commit: `34ac7c47`.
+
+**Files added:**
+- `src/event-endpoint.ts` — `handlePostEvent()` core handler + `attachEventRoute()` Express wiring
+- `src/event-endpoint.test.ts` — 15 unit tests (auth, validation, fan-out, animation trigger)
+- `docs/help/events.md` — `help(topic: 'events')` reference doc
+
+**Files modified:**
+- `src/index.ts` — `attachEventRoute(app)` wired in HTTP mode
+- `src/tools/help.ts` — `events` added to RICH_TOPICS, TOOL_INDEX, and DESCRIPTION
+
+**Phase 3 — hook-animation removal:** `src/tools/hook-animation/`, `src/hook-routes.ts`, `src/tools/animation/hook.ts` removed via `git rm`.
+
+**Verification:** `tsc --noEmit` clean; 2777/2777 tests pass.
