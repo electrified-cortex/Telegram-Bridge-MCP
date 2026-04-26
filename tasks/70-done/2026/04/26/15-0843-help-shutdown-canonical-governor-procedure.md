@@ -2,7 +2,7 @@
 id: 15-0843-help-shutdown-canonical-procedure
 title: help('shutdown') must carry the canonical procedure (participant + governor) verbatim
 priority: 15
-status: draft
+status: done
 type: doc-fix
 delegation: worker
 ---

@@ -2,7 +2,7 @@
 id: 05-0826
 title: recording-indicator refcount race + typing-suppression gaps (post-Copilot review)
 priority: 5
-status: review
+status: done
 type: bug-fix
 delegation: any
 ---
