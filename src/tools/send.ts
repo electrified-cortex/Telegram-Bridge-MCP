@@ -27,7 +27,7 @@ import { handleSendNewProgress } from "./progress/new.js";
 import { handleAsk } from "./send/ask.js";
 import { handleChoose } from "./send/choose.js";
 import { handleConfirm } from "./confirm/handler.js";
-import { detectCaptionDuplication } from "../hybrid-duplication-detector.js";
+import { detectCaptionDuplication, type DuplicationResult } from "../hybrid-duplication-detector.js";
 
 const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
 
@@ -70,6 +70,17 @@ function warnUnrenderableChars(sid: number, text: string): void {
       sid,
       `Message sent, but some characters may not render in Telegram: ${charList}. Use ASCII alternatives.`,
       "unrenderable_chars_warning",
+    );
+  }
+}
+
+/** Delivers the caption-duplication nudge service message if the result indicates a duplicate. */
+function deliverCaptionDuplicationNudge(sid: number, dup: DuplicationResult | null): void {
+  if (dup?.isDuplicate) {
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.NUDGE_CAPTION_DUPLICATION,
+      { jaccard: Math.round(dup.jaccard * 100) / 100, audioWords: dup.audioWords, captionWords: dup.captionWords },
     );
   }
 }
@@ -331,13 +342,7 @@ export function register(server: McpServer) {
                 replyToMessageId: reply_to_message_id,
                 timeoutMs: _timeoutMs,
               });
-              if (dup?.isDuplicate) {
-                deliverServiceMessage(
-                  _sid,
-                  SERVICE_MESSAGES.NUDGE_CAPTION_DUPLICATION,
-                  { jaccard: Math.round(dup.jaccard * 100) / 100, audioWords: dup.audioWords, captionWords: dup.captionWords },
-                );
-              }
+              deliverCaptionDuplicationNudge(_sid, dup);
               return toResult({ ok: true, message_id_pending: pendingId, status: "queued", ...(leakWarning ? { warning: leakWarning } : {}) });
             }
             const voiceChunks = splitMessage(plainText);
@@ -388,13 +393,7 @@ export function register(server: McpServer) {
                 );
                 // Scan the overflow text for unrenderable characters after it is sent
                 warnUnrenderableChars(_sid, splitText);
-                if (dup?.isDuplicate) {
-                  deliverServiceMessage(
-                    _sid,
-                    SERVICE_MESSAGES.NUDGE_CAPTION_DUPLICATION,
-                    { jaccard: Math.round(dup.jaccard * 100) / 100, audioWords: dup.audioWords, captionWords: dup.captionWords },
-                  );
-                }
+                deliverCaptionDuplicationNudge(_sid, dup);
                 if (message_ids.length === 1) {
                   return toResult({
                     message_id: message_ids[0],
@@ -418,13 +417,7 @@ export function register(server: McpServer) {
               if (resolvedCaption) {
                 warnUnrenderableChars(_sid, resolvedCaption);
               }
-              if (dup?.isDuplicate) {
-                deliverServiceMessage(
-                  _sid,
-                  SERVICE_MESSAGES.NUDGE_CAPTION_DUPLICATION,
-                  { jaccard: Math.round(dup.jaccard * 100) / 100, audioWords: dup.audioWords, captionWords: dup.captionWords },
-                );
-              }
+              deliverCaptionDuplicationNudge(_sid, dup);
               if (message_ids.length === 1) {
                 return toResult({ message_id: message_ids[0], ...(leakWarning ? { warning: leakWarning } : {}) });
               }
