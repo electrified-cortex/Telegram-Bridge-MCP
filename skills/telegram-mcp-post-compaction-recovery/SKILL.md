@@ -25,7 +25,7 @@ Compaction truncates conversation history but does NOT kill Telegram session. Se
 Read session memory file (e.g., `memory/telegram/session.token`). The file contains a plain integer token — no frontmatter, no checkpoint blocks:
 
 | Condition | Action |
-|-----------|--------|
+| --- | --- |
 | File empty or missing | No active session — skip to Step 3 to reconnect |
 | File contains a valid integer | Token found — proceed to Step 1 to test liveness |
 

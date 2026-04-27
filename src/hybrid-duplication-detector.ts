@@ -4,16 +4,21 @@
  */
 
 const STOPWORDS = new Set([
-  "a","an","the","and","or","but","if","in","on","at","to","for","of","with",
-  "by","from","as","is","was","are","were","be","been","being","have","has",
-  "had","do","does","did","will","would","could","should","may","might","shall",
-  "must","can","need","this","that","these","those","it","its","you","your",
-  "i","my","we","our","they","their","he","she","his","her","not","no","so",
-  "than","then","there","here","when","where","who","what","how","all","each",
-  "both","few","more","most","other","some","such","only","own","same","too",
-  "very","just","about","above","after","before","between","into","through",
-  "up","out","over","under","again","further","once","any","every","also",
+  "a", "an", "the", "and", "or", "but", "if", "in", "on", "at",
+  "to", "for", "of", "with", "by", "from", "as", "is", "was", "are",
+  "were", "be", "been", "being", "have", "has", "had", "do", "does", "did",
+  "will", "would", "could", "should", "may", "might", "shall", "must", "can", "need",
+  "this", "that", "these", "those", "it", "its", "you", "your", "i", "my",
+  "we", "our", "they", "their", "he", "she", "his", "her", "not", "no",
+  "so", "than", "then", "there", "here", "when", "where", "who", "what", "how",
+  "all", "each", "both", "few", "more", "most", "other", "some", "such", "only",
+  "own", "same", "too", "very", "just", "about", "above", "after", "before", "between",
+  "into", "through", "up", "out", "over", "under", "again", "further", "once", "any",
+  "every", "also",
 ]);
+
+const RE_NON_WORD = /[^a-z0-9\s]/g;
+const RE_WHITESPACE = /\s+/;
 
 /**
  * Tokenizes text into a set of lowercase content words.
@@ -24,8 +29,8 @@ function tokenize(text: string): Set<string> {
   return new Set(
     text
       .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
+      .replace(RE_NON_WORD, " ")
+      .split(RE_WHITESPACE)
       .filter(w => w.length > 1 && !STOPWORDS.has(w)),
   );
 }

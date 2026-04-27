@@ -5,7 +5,7 @@ Guidance fires just before it becomes relevant — not all at once at session st
 ## Trigger Taxonomy
 
 | Trigger | Guidance delivered | Event type |
-|---|---|---|
+| --- | --- | --- |
 | Session start | Identity (session_orientation) | `session_orientation` |
 | Session start | Token save reminder (onboarding_token_save) | `onboarding_token_save` |
 | Session start | Governor/role context (onboarding_role) | `onboarding_role` |
