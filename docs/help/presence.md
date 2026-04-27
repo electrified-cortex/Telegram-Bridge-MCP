@@ -45,7 +45,7 @@ Active animations suppress all nudges — they are sufficient presence signals.
 
 ## Stale Animation Warning
 
-If your session has been idle in the dequeue loop for more than 30 seconds while an animation is still active, the bridge injects an `animation_stale_warning` service event into your queue. This surfaces during your next `dequeue` call as a service message with `event_type: "animation_stale_warning"` and fields `message_id` and `age_seconds`.
+If your session has been idle in the dequeue loop for more than 30 seconds while an animation is still active, the bridge injects an `animation_stale_warning` dequeue event into your response. Your next `dequeue` call returns `{ updates: [{ event: "animation_stale_warning", message_id, age_seconds }] }`.
 
 **What to do:** Check `action(type: "animation/status", token: <token>)` to confirm the animation is still active, then cancel it if you are no longer producing output: `action(type: "animation/cancel", token: <token>)`.
 
