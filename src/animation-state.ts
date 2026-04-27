@@ -717,6 +717,52 @@ export function resetAnimationForTest(): void {
 
 
 /**
+ * Returns the current animation status for a single session.
+ * If no animation is active (or the entry has expired), returns { active: false }.
+ */
+export function getAnimationStatus(sid: number):
+  | { active: false }
+  | { active: true; message_id: number; frames: string[]; started_at: number; expires_at: number | null } {
+  const displayed = getAnimationMessageId(sid); // already exported
+  if (displayed === null) return { active: false };
+  // Find the top stack entry for this sid
+  const entry = _stack.find(e => e.sid === sid);
+  if (!entry) return { active: false };
+  return {
+    active: true,
+    message_id: displayed,
+    frames: entry.rawFrames,
+    started_at: entry.startedAt,
+    expires_at: entry.timeoutMs > 0 ? entry.startedAt + entry.timeoutMs : null,
+  };
+}
+
+/**
+ * Returns status for all sessions that currently have an active (top-of-stack)
+ * animation. Intended for governor-level cross-session inspection.
+ */
+export function getAllActiveAnimations(): Array<{ sid: number; message_id: number; frames: string[]; started_at: number; expires_at: number | null }> {
+  if (_displayedMsgId === null) return [];
+  // Group by sid, return top entry per sid that has an active animation
+  const seen = new Set<number>();
+  const result: Array<{ sid: number; message_id: number; frames: string[]; started_at: number; expires_at: number | null }> = [];
+  for (const entry of _stack) {
+    if (seen.has(entry.sid)) continue;
+    seen.add(entry.sid);
+    const msgId = getAnimationMessageId(entry.sid);
+    if (msgId === null) continue;
+    result.push({
+      sid: entry.sid,
+      message_id: msgId,
+      frames: entry.rawFrames,
+      started_at: entry.startedAt,
+      expires_at: entry.timeoutMs > 0 ? entry.startedAt + entry.timeoutMs : null,
+    });
+  }
+  return result;
+}
+
+/**
  * Returns true if the given session has a non-expired animation entry whose
  * rawFrames match the "recovering" built-in preset (accounting for the
  * space->NBSP normalisation applied by startAnimation).

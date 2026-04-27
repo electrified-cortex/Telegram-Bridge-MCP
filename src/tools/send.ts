@@ -186,7 +186,7 @@ export function register(server: McpServer) {
         preset: z.string().optional().describe("Animation preset name"),
         frames: z.array(z.string()).optional().describe("Animation frame strings"),
         interval: z.number().int().min(1000).max(10000).default(1000).describe("Frame interval ms"),
-        timeout: z.number().int().min(5).max(600).default(600).describe("Animation auto-cleanup timeout in seconds (min 5, max 600, default 600). Pass a low value (e.g. 5) to auto-cancel after N seconds."),
+        timeout: z.number().int().min(5).max(600).default(60).describe("Animation auto-cleanup timeout in seconds (min 5, max 600, default 60). Pass a low value (e.g. 5) to auto-cancel after N seconds."),
         persistent: z.boolean().default(false).describe("Keep animation running after messages"),
         allow_breaking_spaces: z.boolean().default(false).describe("Allow breaking spaces in animation"),
         notify_animation: z.boolean().default(false).describe("Notify on animation start"),

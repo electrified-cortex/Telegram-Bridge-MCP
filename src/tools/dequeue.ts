@@ -9,6 +9,7 @@ import {
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
+import { getAnimationStatus } from "../animation-state.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import {
   promoteDeferred,
@@ -25,6 +26,12 @@ const MAX_SET_TIMEOUT_MS = 2_000_000_000;
 
 /** Seconds an active reminder must be idle before it fires within dequeue. */
 const REMINDER_IDLE_THRESHOLD_MS = 60_000;
+
+/** Minimum animation age (ms) before a stale warning fires on idle. */
+const STALE_ANIM_MIN_AGE_MS = 30_000;
+
+/** Minimum gap (ms) between stale-animation warnings for the same session. */
+const STALE_ANIM_COOLDOWN_MS = 120_000;
 
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
 function ackVoice(event: TimelineEvent): void {
@@ -79,6 +86,17 @@ const DESCRIPTION =
  * The hint is only included in the first occurrence per session to avoid repetition.
  */
 const _timeoutHintShownForSession = new Set<number>();
+
+/**
+ * Tracks the last time (Date.now()) each session received an animation_stale_warning
+ * service message. Used to rate-limit warnings to at most once per 120 seconds.
+ */
+const _lastStaleWarningSentAt = new Map<number, number>();
+
+/** Exported for test reset only — do not call in production code. */
+export function _resetStaleWarningMapForTest(): void {
+  _lastStaleWarningSentAt.clear();
+}
 
 /** Exported for test reset only — do not call in production code. */
 export function _resetTimeoutHintForTest(): void {
@@ -277,10 +295,34 @@ export function register(server: McpServer) {
       const deadline = Date.now() + effectiveTimeout * 1000;
       const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
       const reminderIdleStart = Date.now();
+      let _staleWarnSent = false;
       setDequeueIdle(sid, true);
       try {
         while (Date.now() < deadline) {
           if (signal.aborted) break;
+
+          // On first idle iteration, warn once (rate-limited) if an animation has been
+          // running long enough and we haven't warned this session recently.
+          if (!_staleWarnSent) {
+            _staleWarnSent = true;
+            const _animStatus = getAnimationStatus(sid);
+            if (_animStatus.active) {
+              const ageMs = Date.now() - _animStatus.started_at;
+              const lastWarn = _lastStaleWarningSentAt.get(sid) ?? 0;
+              if (ageMs >= STALE_ANIM_MIN_AGE_MS && Date.now() - lastWarn >= STALE_ANIM_COOLDOWN_MS) {
+                _lastStaleWarningSentAt.set(sid, Date.now());
+                resyncActiveSession();
+                dlog("queue", `dequeue stale animation warning sid=${sid} message_id=${_animStatus.message_id}`);
+                return toResult({
+                  updates: [{
+                    event: "animation_stale_warning",
+                    message_id: _animStatus.message_id,
+                    age_seconds: Math.floor(ageMs / 1000),
+                  }],
+                });
+              }
+            }
+          }
 
           // Promote any deferred reminders whose delay has elapsed.
           promoteDeferred(sid);
