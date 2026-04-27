@@ -36,6 +36,11 @@ vi.mock("../../session-manager.js", () => ({
   validateSession: mocks.validateSession,
 }));
 
+// compaction-recovery is a no-op in react/set tests
+vi.mock("../../compaction-recovery.js", () => ({
+  maybeReplaceRecoveringAnimation: vi.fn(() => Promise.resolve(false)),
+}));
+
 import { register, resetPremiumCacheForTest, handleSetReactionPreset } from "./set.js";
 
 describe("set_reaction tool", () => {

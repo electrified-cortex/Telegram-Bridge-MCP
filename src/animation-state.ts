@@ -714,3 +714,25 @@ export function resetAnimationForTest(): void {
   _presetsMap.clear();
   clearSendInterceptor();
 }
+
+
+/**
+ * Returns true if the given session has a non-expired animation entry whose
+ * rawFrames match the "recovering" built-in preset (accounting for the
+ * space->NBSP normalisation applied by startAnimation).
+ *
+ * Used by the compaction-recovery module to decide whether to replace the
+ * recovering animation with a persistent "compacted" notify.
+ */
+export function isRecoveringAnimation(sid: number): boolean {
+  const entry = getStackEntry(sid);
+  if (!entry) return false;
+  // Verify entry hasn't timed out (non-persistent entries can be stale)
+  if (!entry.persistent && entry.startedAt + entry.timeoutMs <= Date.now()) return false;
+  const recoveringPreset = BUILTIN_PRESETS.get("recovering");
+  if (!recoveringPreset) return false;
+  if (entry.rawFrames.length !== recoveringPreset.length) return false;
+  // startAnimation replaces regular ASCII spaces with NBSP (U+00A0) before storing rawFrames.
+  // Apply the same normalisation to the preset frames for comparison.
+  return entry.rawFrames.every((raw, i) => raw === recoveringPreset[i].replace(/ /g, " "));
+}

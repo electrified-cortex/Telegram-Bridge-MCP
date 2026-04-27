@@ -18,6 +18,9 @@ import {
   setDequeueIdle,
   getIdleSessions,
   getOrInitHintsSeen,
+  setHasCompacted,
+  clearHasCompacted,
+  getHasCompacted,
 } from "./session-manager.js";
 
 interface SessionWithoutSuffix {
@@ -590,6 +593,46 @@ describe("setDequeueIdle / getIdleSessions", () => {
     expect(idle).toHaveLength(1);
     expect(idle[0].sid).toBe(a.sid);
     void b;
+  });
+});
+
+// ── hasCompacted helpers ───────────────────────────────────────────────────
+
+describe("hasCompacted helpers", () => {
+  it("getHasCompacted returns false for a fresh session", () => {
+    const { sid } = createSession("Agent");
+    expect(getHasCompacted(sid)).toBe(false);
+  });
+
+  it("setHasCompacted makes getHasCompacted return true", () => {
+    const { sid } = createSession("Agent");
+    setHasCompacted(sid);
+    expect(getHasCompacted(sid)).toBe(true);
+  });
+
+  it("clearHasCompacted makes getHasCompacted return false after set", () => {
+    const { sid } = createSession("Agent");
+    setHasCompacted(sid);
+    clearHasCompacted(sid);
+    expect(getHasCompacted(sid)).toBe(false);
+  });
+
+  it("getHasCompacted returns false for an unknown sid", () => {
+    expect(getHasCompacted(9999)).toBe(false);
+  });
+
+  it("setHasCompacted and clearHasCompacted are no-ops for unknown sid", () => {
+    expect(() => { setHasCompacted(9999); }).not.toThrow();
+    expect(() => { clearHasCompacted(9999); }).not.toThrow();
+    expect(getHasCompacted(9999)).toBe(false);
+  });
+
+  it("hasCompacted flag is scoped per session", () => {
+    const a = createSession("A");
+    const b = createSession("B");
+    setHasCompacted(a.sid);
+    expect(getHasCompacted(a.sid)).toBe(true);
+    expect(getHasCompacted(b.sid)).toBe(false);
   });
 });
 

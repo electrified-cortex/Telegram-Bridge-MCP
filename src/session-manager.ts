@@ -30,6 +30,12 @@ export interface Session {
    * connection tokens, the bridge alerts the governor (Option A).
    */
   connectionToken: string;
+  /**
+   * Set when a `compacted` event fires for this session.
+   * Cleared after the recovering animation is replaced with a persistent
+   * "compacted" notify (one-shot per compaction cycle).
+   */
+  hasCompacted?: boolean;
 }
 
 /** Public view returned by `listSessions` — no token suffix. */
@@ -462,4 +468,23 @@ export function getOrInitHintsSeen(sid: number): Set<string> | null {
   if (!session) return null;
   if (!session.firstUseHintsSeen) session.firstUseHintsSeen = new Set();
   return session.firstUseHintsSeen;
+}
+
+// ── Compaction Recovery ────────────────────────────────────
+
+/** Mark that a `compacted` event has fired for this session. */
+export function setHasCompacted(sid: number): void {
+  const session = _sessions.get(sid);
+  if (session) session.hasCompacted = true;
+}
+
+/** Clear the compacted flag (called after the one-shot recovery notify fires). */
+export function clearHasCompacted(sid: number): void {
+  const session = _sessions.get(sid);
+  if (session) session.hasCompacted = false;
+}
+
+/** Return true if a `compacted` event has fired and the notify hasn't fired yet. */
+export function getHasCompacted(sid: number): boolean {
+  return !!_sessions.get(sid)?.hasCompacted;
 }

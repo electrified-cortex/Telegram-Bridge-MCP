@@ -26,6 +26,11 @@ vi.mock("../../session-manager.js", () => ({
   validateSession: mocks.validateSession,
 }));
 
+// compaction-recovery is a no-op in show-typing tests
+vi.mock("../../compaction-recovery.js", () => ({
+  maybeReplaceRecoveringAnimation: vi.fn(() => Promise.resolve(false)),
+}));
+
 import { register } from "./show-typing.js";
 
 describe("show_typing tool", () => {

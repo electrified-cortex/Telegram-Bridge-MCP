@@ -46,3 +46,20 @@ Triggers for replacement:
 ## Source
 
 Operator directive 2026-04-26 PM via Curator session.
+
+## Completion
+
+Implemented in this worktree (branch `15-0850`), commit `191a3c0`.
+
+**Files changed (13):**
+- `src/compaction-recovery.ts` — new module; `maybeReplaceRecoveringAnimation(sid)` one-shot helper
+- `src/compaction-recovery.test.ts` — 8 unit tests
+- `src/session-manager.ts` — added `hasCompacted?: boolean` + set/clear/get helpers
+- `src/animation-state.ts` — exported `isRecoveringAnimation(sid)` using NBSP-normalized frame comparison
+- `src/event-endpoint.ts` — calls `setHasCompacted(governorSid)` on `compacted` event
+- `src/outbound-proxy.ts` — calls helper at start of `proxiedSendMessage`
+- `src/tools/show-typing/show-typing.ts` — calls helper before `showTyping()`
+- `src/tools/react/set.ts` — calls helper before `setMessageReaction`
+- Test mocks added in proxy, show-typing, react, session-manager, event-endpoint test files
+
+**Build:** clean. **Tests:** 2913 pass. Dev push hold in effect.

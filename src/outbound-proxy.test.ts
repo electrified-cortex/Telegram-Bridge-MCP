@@ -38,6 +38,11 @@ vi.mock("./session-manager.js", () => ({
   getSession: (sid: number) => mocks.getSession(sid),
 }));
 
+// compaction-recovery is a no-op in outbound-proxy tests
+vi.mock("./compaction-recovery.js", () => ({
+  maybeReplaceRecoveringAnimation: vi.fn(() => Promise.resolve(false)),
+}));
+
 import {
   createOutboundProxy,
   registerSendInterceptor,
