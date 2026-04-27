@@ -20,6 +20,34 @@ Default mode (no `type` or `type: "text"`) sends a plain text message.
 | `progress` | Create a pinned progress bar | `percent` |
 | `question` | Interactive prompt (ask / choose / confirm) | sub-type param |
 
+## Messaging Spectrum
+
+Text-only is the default. Use audio or hybrid only when it adds value.
+
+| Variation | Shape | Use when |
+| --- | --- | --- |
+| **Text-only (long/structured)** | `text` | Code, diffs, tables, paths — reads badly aloud |
+| **Text-only (short)** | `text` (1–3 sentences) | Routine status, terse factual answers |
+| **Text + buttons** | `text` + `type: "choice"` or `choose` | Any decision; tap beats typing |
+| **Voice + caption + buttons** | `audio + text + choose` | Conversational reply with pending decision |
+| **Voice + caption** | `audio + text` | Voice note; caption is topic label, not transcript |
+| **Voice + artifact link** | `audio` + `text: "<path>"` | Long factual output; link the file, don't paste |
+| **Audio-only** | `audio` | Short ack, morning check-in, pure dialogue |
+
+## Audio Format Rules
+
+When `audio` is present, the content must be:
+- **Natural spoken language** — contractions fine; speak like a colleague, not a document.
+- **Fluid prose** — flowing sentences; no bullets-pretending-to-be-speech.
+- **Minimal punctuation** — commas and periods only. Avoid: em-dashes, semicolons, parentheticals, quotation marks, numbered lists (say "first… second…" instead).
+- **No voice-unfriendly content** — code, file paths, tables, diffs go in `text` or a file attachment, never `audio`.
+
+**Don'ts:**
+- Don't duplicate audio content in the caption — even paraphrased. Caption must add something audio cannot (topic label, structured payload, link).
+- Don't use excessive punctuation in audio — it breaks TTS rhythm.
+- Don't send manual reactions on voice messages — the bridge auto-salutes on receipt.
+- Don't paste walls of text when voice + brief caption fits better.
+
 ## Append Mode
 
 Use `send(type: "append", message_id: <id>, text: "chunk")` to append text to an
