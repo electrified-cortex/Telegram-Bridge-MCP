@@ -19,6 +19,7 @@ Save token immediately — two formats accepted:
 - Full: YAML body in `<Name>/telegram/session.md` with `token:`, `sid:`, `name:`, `started:` fields — no PIN field
 
 ## After start
+
 1. Load profile: action(type: "profile/load", token: ..., key: "Worker")
 2. Verify reminders: action(type: "reminder/list", token: ...)
 3. Enter dequeue loop: dequeue(token: ...)
