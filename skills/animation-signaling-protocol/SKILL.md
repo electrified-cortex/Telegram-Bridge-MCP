@@ -35,3 +35,13 @@ Animation presets are loaded from the agent's profile. Use them via
 
 4. **No animations when idle.** Silence is the correct signal that nothing
    requires attention. Only show animations when actively working.
+
+## Timeout
+
+Animations auto-cancel at the timeout (default 600 s, max 600 s). For work
+that runs longer, refire before expiry.
+
+## Presence cascade
+
+This skill covers the animation tier only. Full cascade: reaction → show-typing
+→ animation. See `help('presence')` for the complete reference.

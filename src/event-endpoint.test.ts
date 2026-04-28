@@ -18,12 +18,14 @@ const mocks = vi.hoisted(() => ({
   getGovernorSid: vi.fn((): number => 0),
   handleShowAnimation: vi.fn(),
   handleCancelAnimation: vi.fn(),
+  setHasCompacted: vi.fn((_sid: number): void => {}),
 }));
 
 vi.mock("./session-manager.js", () => ({
   validateSession: (sid: number, suffix: number) => mocks.validateSession(sid, suffix),
   listSessions: () => mocks.listSessions(),
   getSession: (sid: unknown) => mocks.getSession(sid),
+  setHasCompacted: (sid: number) => { mocks.setHasCompacted(sid); },
 }));
 
 vi.mock("./session-queue.js", () => ({
@@ -226,5 +228,19 @@ describe("POST /event handler", () => {
     expect(mocks.handleShowAnimation).toHaveBeenCalledWith(
       expect.objectContaining({ preset: "recovering", timeout: 60 }),
     );
+  });
+
+  it("calls setHasCompacted with the governor sid when kind is compacted", () => {
+    mocks.getGovernorSid.mockReturnValue(1);
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
+    expect(mocks.setHasCompacted).toHaveBeenCalledWith(1);
+  });
+
+  it("does not call setHasCompacted for non-compacted kinds", () => {
+    mocks.getGovernorSid.mockReturnValue(1);
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+    expect(mocks.setHasCompacted).not.toHaveBeenCalled();
   });
 });

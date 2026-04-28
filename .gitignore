@@ -19,3 +19,5 @@ mcp-config.json
 .worktrees/
 # Local scratchpad: dispatch briefings, PR body drafts, audit dumps
 notes/
+# Code review eval artefacts — local-only (contain absolute paths)
+.code-reviews/

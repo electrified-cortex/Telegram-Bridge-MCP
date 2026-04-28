@@ -70,12 +70,73 @@ announce ready → dequeue (loop) → on message:
 
 ## Button Design
 
-- `primary` color for the expected/positive action — guides the operator's eye.
-- Unbiased A/B choices: no color on either button.
-- Symbols/unicode icons strongly encouraged. **All-or-nothing** — if one button
-  has a symbol, all must.
-- Emojis only in unstyled buttons; use plain text + unicode when a style is
-  applied.
+### When to Use Buttons
+
+| Scenario | Tool |
+| --- | --- |
+| Destructive or irreversible operation | `confirm` (blocking) |
+| 2–5 mutually exclusive options, definitive answer needed | `choose` (blocking) |
+| Shortcuts/quick actions operator may ignore | `choice` (non-blocking) |
+| Freeform answer | `ask` — no buttons |
+| Informational only | no buttons — never |
+| >6 options | `ask` — buttons don't scale |
+
+Use buttons when the answer set is **bounded and known at send time** and speed matters (tap beats type). Do not use buttons to convey information.
+
+### `confirm` vs `choose`
+
+**`confirm`** — two options, framed as confirmation of a statement. Uses `yes_text`/`no_text` to relabel built-in buttons. Resolves `tapped` or `timed_out`.
+
+```
+send(type: "question", confirm: "Delete all logs?", yes_text: "🗑 Delete", no_text: "↩ Cancel")
+```
+
+**`choose`** — 2–6 labeled options, framed as a question. Takes a `choose: [...]` array with `label` and `value` per item.
+
+```
+send(type: "question", text: "Which env?", choose: [
+  { label: "🟢 prod", value: "prod" },
+  { label: "🟡 staging", value: "staging" },
+  { label: "🔵 dev", value: "dev" }
+])
+```
+
+Both are **blocking** — do not call other tools while awaiting resolution. Default poll deadline is 5 minutes (spec D1). Minimum is 60 s (spec R16); the bridge rejects anything lower unless the explicit sub-60 opt-in parameter is passed.
+
+### Column Layout
+
+The `columns` parameter (default: 2, max: 4) controls grid width. Match it to label length — never let labels truncate or wrap.
+
+| Columns | Use when |
+| --- | --- |
+| 1 | Long labels — full sentences, file paths, anything over ~20 chars |
+| 2 | Standard pairs — Yes/No, A/B options (default) |
+| 3 | Short labels — single words, icon + 1–2 words |
+| 4 | Icon-only or very short labels |
+
+Rule: match columns to label length. Long labels → fewer columns. Test in chat — Telegram's button width is not programmable.
+
+### Timeout Recovery
+
+On `timed_out` resolution: the resolution is implementation-defined — always handle it explicitly. Do not assume timeout equals rejection or any specific value. Surface the timeout to the operator.
+
+1. Acknowledge to operator: `"Button timed out — reply in text or I can re-ask."`
+2. Re-ask if the decision is still needed.
+3. **Never silently proceed with a default.** Surface the timeout — always.
+
+Use `timeout_seconds` to set a tighter deadline for time-sensitive decisions. The bridge clears the keyboard automatically on expiry (spec R17).
+
+### Style Rules
+
+| Style | Color | When |
+| --- | --- | --- |
+| `primary` | Blue | Expected or positive action |
+| `success` | Green | Confirming a safe/good outcome |
+| `danger` | Red | Destructive or irreversible action |
+| _(none)_ | Neutral | Unbiased A/B — no color on either button |
+
+- Symbols/unicode icons strongly encouraged. **All-or-nothing** — if one button has a symbol, all must.
+- Emojis only in **unstyled** buttons; use plain text + unicode when a style is applied.
 
 ## Async Wait Etiquette
 

@@ -45,12 +45,21 @@ error      → notify superior → dequeue
 4. **After an error:** notify your superior (Curator, Overseer, or operator),
    then `dequeue` — do NOT stop.
 
-5. **Default timeout.** Always use the default timeout on `dequeue`.
-   The only exception is `timeout: 0` when draining pending messages after
-   reconnect or when probing.
+5. **Default max_wait.** Always omit `max_wait` on `dequeue` — the session default
+   handles blocking. The only exception is `max_wait: 0` when draining pending
+   messages after reconnect or when probing.
 
 6. **Never assume silence means approval.** The operator may be busy. Wait
    for explicit responses.
+
+## Event Classes
+
+| Class | Examples | Note |
+| --- | --- | --- |
+| User content | text, voice, callback, reaction | Voice is pre-saluted by bridge — do not duplicate |
+| Service messages | `onboarding_*`, `behavior_nudge_*`, `modality_hint_*` | Directives — execute before composing reply |
+| DMs from peer sessions | status reports, task instructions | Handle and reply, then `dequeue` |
+| send_callbacks | own outbound confirmations | Note result, then `dequeue` |
 
 ## Before Exiting
 

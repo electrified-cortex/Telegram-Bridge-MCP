@@ -29,14 +29,11 @@ Check **session memory file** (name specified in agent instructions or spawn pro
 | Condition | Action |
 | --- | --- |
 | **No file or empty** | Clean start — continue to step 1 |
-| **File has token** | Ask human: *"Found existing session (token X). Resume, wipe, or exit?"* |
+| **File has token** | Attempt resume — use saved token, verify alive with `dequeue(max_wait: 0)`. If alive → skip to step 4. If dead → clean start. |
 
-Human chooses:
-- **Resume** — use saved token. Skip to step 4. Verify alive with `send(type: "animation", ...)`. If dead → clean start.
-- **Wipe** — overwrite file with empty, then clean start (step 1).
-- **Exit** — stop immediately.
+DM Overseer (or Curator if no Overseer) after clean start so they know a new session replaced the old one.
 
-**Unattended startup** (spawned via script): Token exists → attempt resume automatically. Verify alive with animation. If alive → skip to step 4. If dead → clean start without prompting.
+**Existing token found:** Always auto-resume (attempt dequeue). If the session is dead, perform a clean start automatically. Never prompt the operator and wait for direction — if auto-resume fails, clean-start and DM Overseer to explain the session replacement.
 
 ### 1. Learn the API.
 
@@ -77,16 +74,29 @@ Human chooses:
    | `🤖 Worker` | ❌ (emoji) |
    | ` ` | ❌ (whitespace only) |
 
-   Returns `{ token, sid, pin, sessions_active, action, pending }`. **`token` = identity for ALL subsequent calls.** `token = sid * 1_000_000 + pin`. `target_sid` always integer.
+   Returns `{ token, sid, suffix, sessions_active, action, pending }`. **`token` = identity for ALL subsequent calls.** `token = sid * 1_000_000 + suffix`. `target_sid` always integer.
 
-3. **Save token to session memory immediately.**
+3. **Save token to session memory immediately.** Two accepted formats:
 
+   **Minimal** (preferred — single integer, smallest footprint):
+   Write the raw token integer to `<AgentName>/telegram/session.token`:
    ```text
-   Token: <your token>
-   SID: <your SID>
-   Name: <AgentName>
-   Started: <timestamp>
+   <token integer>
    ```
+
+   **Full** (for agents tracking role/status):
+   Write YAML to `<AgentName>/telegram/session.md`:
+   ```yaml
+   ---
+   token: <number>
+   sid: <number>
+   name: <AgentName>
+   started: <YYYY-MM-DD>
+   ---
+   status: online
+   ```
+
+   No PIN field. Negotiate script reads `Token:` / `SID:` key-value lines from session.md, or the bare integer from session.token.
 
 4. **Identify chain of command.**
 

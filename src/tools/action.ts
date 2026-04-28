@@ -53,6 +53,7 @@ import { handleDeleteLog } from "./log/delete.js";
 import { handleGetDebugLog, handleGetTraceLog } from "./log/debug.js";
 // Phase 2 imports — animation/*
 import { handleCancelAnimation } from "./animation/cancel.js";
+import { handleAnimationStatus } from "./animation/status.js";
 // Phase 2 imports — standalone
 import { handleShowTyping } from "./show-typing/show-typing.js";
 import { handleConfirm } from "./confirm/handler.js";
@@ -160,6 +161,12 @@ export function setupActionRegistry(): void {
   registerAction("log/trace", toActionHandler(handleGetTraceLog), { governor: true });
   // animation/*
   registerAction("animation/cancel", toActionHandler(handleCancelAnimation));
+  registerAction("animation/status", toActionHandler((args: Record<string, unknown>) =>
+    handleAnimationStatus({
+      token: args.token as number,
+      sid: args.sid as number | undefined,
+    })
+  ));
 
   // standalone
   registerAction("show-typing", toActionHandler(handleShowTyping));

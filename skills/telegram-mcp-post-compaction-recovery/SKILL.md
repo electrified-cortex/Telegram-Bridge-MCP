@@ -22,30 +22,27 @@ Compaction truncates conversation history but does NOT kill Telegram session. Se
 
 ### Step 0: Check for Forced-Stop (First)
 
-Read session memory file (e.g., `memory/telegram/session.md`):
+Read session memory file (e.g., `memory/telegram/session.token`). The file contains a plain integer token — no frontmatter, no checkpoint blocks:
 
 | Condition | Action |
-|-----------|--------|
-| Empty or missing | Fresh start — skip to Step 1 |
-| Has token, **no checkpoint block** | Compaction recovery — continue to Step 1 |
+| --- | --- |
+| File empty or missing | No active session — skip to Step 3 to reconnect |
+| File contains a valid integer | Token found — proceed to Step 1 to test liveness |
 
-> **Workers:** Checkpoint block in session file → assume forced-stop (unless clean `close_session` recorded). Follow `telegram-mcp-forced-stop-recovery` for announcement, then return to Step 1 to reconnect.
-
-If forced stop detected: announce to Curator per `telegram-mcp-forced-stop-recovery` (use `⚠️ Forced-stop recovery` prefix). Then continue with Step 1.
+> **Workers:** If the token is absent and no clean `close_session` was recorded, treat as a potential forced-stop. Follow `telegram-mcp-forced-stop-recovery` for announcement, then proceed to Step 3 to reconnect.
 
 ---
 
-> **PostCompact context injection:** PostCompact hook injects recovery prompt as `additionalContext`. If present, call `action(type: "message/history", count: 5)` to retrieve recent Telegram context before re-entering loop.
+1. **Read session memory for token.** Get token (single integer).
 
-1. **Read session memory for token.** Get token (single integer). File absent → fall back to conversation summary.
-
-2. **Test session with animation** (see **animation-signaling-protocol**):
+2. **Test session liveness with a silent probe:**
 
    ```text
-   send(type: "animation", preset: "thinking", token: <your_token>)
+   dequeue(max_wait: 0, token: <your_token>)
    ```
 
-   Succeeds → session alive. Skip to step 5.
+   - No error response (updates or empty) → session alive; drain any returned updates, then proceed to Step 5.
+   - Error with `session_closed` → session dead, proceed to Step 3.
 
 3. **Session dead:** ONLY THEN reconnect:
 
@@ -61,18 +58,16 @@ If forced stop detected: announce to Curator per `telegram-mcp-forced-stop-recov
    action(type: "profile/load", key: "<ProfileKey>")
    ```
 
-5. **Check missed messages.**
+5. **Check missed messages** (skip if Step 2 returned updates — those are already in context).
 
-   PostCompact context injected + already called `message/history` → skip to step 6.
-
-   Otherwise: `get_chat_history`
+   If Step 2 returned `{ empty: true }`, call `get_chat_history` to retrieve context that arrived during the compaction gap.
 
 6. **Duplicate prevention.** Before responding to history messages, check whether your SID already has recent outbound message replying to same message ID. If so, skip — already responded before compaction.
 
 7. **Drain pending + re-enter loop:**
 
    ```text
-   dequeue(timeout: 0)
+   dequeue(max_wait: 0)
    ```
 
    Then resume normal `dequeue` calls.

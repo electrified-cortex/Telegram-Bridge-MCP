@@ -4,6 +4,7 @@ import {
   cancelSessionJobs,
   resetAsyncSendQueueForTest,
   recordingIndicatorCountForTest,
+  recordingIndicatorEpochForTest,
   acquireRecordingIndicator,
   releaseRecordingIndicator,
   type AsyncSendJob,
@@ -83,6 +84,14 @@ async function flushJobs(): Promise<void> {
     await Promise.resolve();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+// Mirrors RECORDING_INDICATOR_SAFETY_MS from async-send-queue.ts.
+// Declared here (before the describe block) so source order matches usage order.
+const RECORDING_INDICATOR_SAFETY_MS_FOR_TEST = 120_000;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -659,29 +668,100 @@ describe("async-send-queue", () => {
   // -------------------------------------------------------------------------
   describe("acquireRecordingIndicator / releaseRecordingIndicator (public API)", () => {
     it("acquire starts the recording indicator and suppresses typing", () => {
-      acquireRecordingIndicator(200);
+      const epoch = acquireRecordingIndicator(200);
       expect(recordingIndicatorCountForTest()).toBe(1);
       expect(mocks.pauseTypingEmission).toHaveBeenCalledWith(200);
       // Cleanup
-      releaseRecordingIndicator(200);
+      releaseRecordingIndicator(200, epoch);
     });
 
     it("release clears the indicator and resumes typing", () => {
-      acquireRecordingIndicator(200);
-      releaseRecordingIndicator(200);
+      const epoch = acquireRecordingIndicator(200);
+      releaseRecordingIndicator(200, epoch);
       expect(recordingIndicatorCountForTest()).toBe(0);
       expect(mocks.resumeTypingEmission).toHaveBeenCalledWith(200);
     });
 
     it("acquire/release is balanced across multiple calls", () => {
-      acquireRecordingIndicator(200);
-      acquireRecordingIndicator(200);
+      const epoch1 = acquireRecordingIndicator(200);
+      const epoch2 = acquireRecordingIndicator(200);
+      expect(epoch1).toBe(epoch2); // re-acquire returns same epoch — refcount incremented, not replaced
       expect(recordingIndicatorCountForTest()).toBe(1); // one interval entry, count=2
-      releaseRecordingIndicator(200);
+      releaseRecordingIndicator(200, epoch1);
       expect(recordingIndicatorCountForTest()).toBe(1); // count=1, still active
-      releaseRecordingIndicator(200);
+      releaseRecordingIndicator(200, epoch2);
       expect(recordingIndicatorCountForTest()).toBe(0); // released
       expect(mocks.resumeTypingEmission).toHaveBeenCalledTimes(1);
+    });
+
+    it("acquire returns a new epoch for each fresh indicator (count 0→1)", () => {
+      const epoch1 = acquireRecordingIndicator(200);
+      releaseRecordingIndicator(200, epoch1);
+      const epoch2 = acquireRecordingIndicator(200);
+      releaseRecordingIndicator(200, epoch2);
+      expect(epoch2).toBeGreaterThan(epoch1);
+    });
+
+    it("stale release (wrong epoch) is a no-op and does not clear a newer indicator", () => {
+      const epoch1 = acquireRecordingIndicator(200);
+      // Release with epoch1 — clears indicator
+      releaseRecordingIndicator(200, epoch1);
+      expect(recordingIndicatorCountForTest()).toBe(0);
+
+      // New job acquires a fresh indicator (epoch2)
+      const epoch2 = acquireRecordingIndicator(200);
+      expect(recordingIndicatorCountForTest()).toBe(1);
+      mocks.resumeTypingEmission.mockClear();
+
+      // Late-arriving release from the OLD epoch — must be a no-op
+      releaseRecordingIndicator(200, epoch1);
+      expect(recordingIndicatorCountForTest()).toBe(1); // still active
+      expect(mocks.resumeTypingEmission).not.toHaveBeenCalled();
+
+      // Proper release with epoch2 — should clear
+      releaseRecordingIndicator(200, epoch2);
+      expect(recordingIndicatorCountForTest()).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. Epoch race: safety-timeout + late-release + new-acquire
+  //     Old code: late-arriving release from Job A clears Job B's indicator.
+  //     New code: epoch mismatch makes the late release a no-op.
+  // -------------------------------------------------------------------------
+  describe("epoch/generation race — safety-timeout then late release then new acquire", () => {
+    it("late release from Job A does not clear Job B's indicator", async () => {
+      vi.useFakeTimers();
+      try {
+        // Job A: acquires indicator, epoch=1
+        const epochA = acquireRecordingIndicator(300);
+        expect(recordingIndicatorCountForTest()).toBe(1);
+        expect(recordingIndicatorEpochForTest(300)).toBe(epochA);
+
+        // Safety timeout fires — clears the indicator unconditionally (epoch counter advances)
+        await vi.advanceTimersByTimeAsync(RECORDING_INDICATOR_SAFETY_MS_FOR_TEST);
+        expect(recordingIndicatorCountForTest()).toBe(0);
+
+        // Job B acquires a fresh indicator — new epoch
+        const epochB = acquireRecordingIndicator(300);
+        expect(recordingIndicatorCountForTest()).toBe(1);
+        expect(recordingIndicatorEpochForTest(300)).toBe(epochB);
+        expect(epochB).toBeGreaterThan(epochA);
+
+        mocks.resumeTypingEmission.mockClear();
+
+        // Job A's finally fires — stale release with old epoch. Must be a no-op.
+        releaseRecordingIndicator(300, epochA);
+        expect(recordingIndicatorCountForTest()).toBe(1); // Job B's indicator still active
+        expect(mocks.resumeTypingEmission).not.toHaveBeenCalled();
+
+        // Proper release of Job B cleans up correctly
+        releaseRecordingIndicator(300, epochB);
+        expect(recordingIndicatorCountForTest()).toBe(0);
+        expect(mocks.resumeTypingEmission).toHaveBeenCalledWith(300);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

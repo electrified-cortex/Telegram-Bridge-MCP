@@ -6,6 +6,7 @@ import { setTempReaction } from "../../temp-reaction.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { isTemporaryByDefault, getReactionPreset, listReactionPresets } from "../../reaction-presets.js";
+import { maybeReplaceRecoveringAnimation } from "../../compaction-recovery.js";
 
 const REACTION_ITEM_SCHEMA = z.object({
   emoji: z.string().describe("Emoji or semantic alias"),
@@ -345,6 +346,8 @@ export async function handleSetReaction(args: {
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
+
+  await maybeReplaceRecoveringAnimation(_sid);
 
   // Array-based reaction path (also catches empty arrays to return a clear error)
   if (args.reactions !== undefined) {

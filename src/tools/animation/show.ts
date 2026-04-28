@@ -17,7 +17,7 @@ const DESCRIPTION =
   "Call `help(topic: 'show_animation')` for details.";
 
 export async function handleShowAnimation({
-  preset, frames, interval = 1000, timeout = 600, persistent = false,
+  preset, frames, interval = 1000, timeout = 60, persistent = false,
   allow_breaking_spaces = false, notify = false, priority = 0, token,
 }: {
   preset?: string;
@@ -80,8 +80,8 @@ export function register(server: McpServer) {
           .int()
           .min(5)
           .max(600)
-          .default(600)
-          .describe("Seconds of inactivity before auto-cleanup (default 600, max 600)"),
+          .default(60)
+          .describe("Seconds of inactivity before auto-cleanup (default 60, max 600)"),
         persistent: z
           .boolean()
           .default(false)

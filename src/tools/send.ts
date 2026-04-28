@@ -27,6 +27,7 @@ import { handleSendNewProgress } from "./progress/new.js";
 import { handleAsk } from "./send/ask.js";
 import { handleChoose } from "./send/choose.js";
 import { handleConfirm } from "./confirm/handler.js";
+import { detectCaptionDuplication, type DuplicationResult } from "../hybrid-duplication-detector.js";
 
 const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
 
@@ -69,6 +70,17 @@ function warnUnrenderableChars(sid: number, text: string): void {
       sid,
       `Message sent, but some characters may not render in Telegram: ${charList}. Use ASCII alternatives.`,
       "unrenderable_chars_warning",
+    );
+  }
+}
+
+/** Delivers the caption-duplication nudge service message if the result indicates a duplicate. */
+function deliverCaptionDuplicationNudge(sid: number, dup: DuplicationResult | null): void {
+  if (dup?.isDuplicate) {
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.NUDGE_CAPTION_DUPLICATION,
+      { jaccard: Math.round(dup.jaccard * 100) / 100, audioWords: dup.audioWords, captionWords: dup.captionWords },
     );
   }
 }
@@ -185,7 +197,7 @@ export function register(server: McpServer) {
         preset: z.string().optional().describe("Animation preset name"),
         frames: z.array(z.string()).optional().describe("Animation frame strings"),
         interval: z.number().int().min(1000).max(10000).default(1000).describe("Frame interval ms"),
-        timeout: z.number().int().min(5).max(600).default(600).describe("Animation auto-cleanup timeout in seconds (min 5, max 600, default 600). Pass a low value (e.g. 5) to auto-cancel after N seconds."),
+        timeout: z.number().int().min(5).max(600).default(60).describe("Animation auto-cleanup timeout in seconds (min 5, max 600, default 60). Pass a low value (e.g. 5) to auto-cancel after N seconds."),
         persistent: z.boolean().default(false).describe("Keep animation running after messages"),
         allow_breaking_spaces: z.boolean().default(false).describe("Allow breaking spaces in animation"),
         notify_animation: z.boolean().default(false).describe("Notify on animation start"),
@@ -312,6 +324,10 @@ export function register(server: McpServer) {
               }
             }
 
+            const dup = effectiveText
+              ? detectCaptionDuplication(effectiveAudio, effectiveText)
+              : null;
+
             // ── Async TTS path ────────────────────────────────────────────
             if (args.async !== false) {
               const pendingId = enqueueAsyncSend(_sid, {
@@ -326,6 +342,7 @@ export function register(server: McpServer) {
                 replyToMessageId: reply_to_message_id,
                 timeoutMs: _timeoutMs,
               });
+              deliverCaptionDuplicationNudge(_sid, dup);
               return toResult({ ok: true, message_id_pending: pendingId, status: "queued", ...(leakWarning ? { warning: leakWarning } : {}) });
             }
             const voiceChunks = splitMessage(plainText);
@@ -341,8 +358,8 @@ export function register(server: McpServer) {
             // gen is updated after each showTyping() so cancelTypingIfSameGeneration
             // always targets the most recent generation, not a stale pre-start value.
             let gen = typingGeneration();
-            let voiceSent = false;
-            acquireRecordingIndicator(chatId);
+            let voiceStarted = false;
+            const recordingEpoch = acquireRecordingIndicator(chatId);
             try {
               await showTyping(typingSeconds, "record_voice");
               gen = typingGeneration();
@@ -364,8 +381,8 @@ export function register(server: McpServer) {
                   reply_to_message_id: isFirst ? reply_to_message_id : undefined,
                 });
                 message_ids.push(msg.message_id);
+                voiceStarted = true; // at least one chunk successfully delivered
               }
-              voiceSent = true;
               if (captionOverflow && finalTextForSplit) {
                 const splitText = finalTextForSplit;
                 const textMsg = await callApi(() =>
@@ -376,6 +393,7 @@ export function register(server: McpServer) {
                 );
                 // Scan the overflow text for unrenderable characters after it is sent
                 warnUnrenderableChars(_sid, splitText);
+                deliverCaptionDuplicationNudge(_sid, dup);
                 if (message_ids.length === 1) {
                   return toResult({
                     message_id: message_ids[0],
@@ -399,6 +417,7 @@ export function register(server: McpServer) {
               if (resolvedCaption) {
                 warnUnrenderableChars(_sid, resolvedCaption);
               }
+              deliverCaptionDuplicationNudge(_sid, dup);
               if (message_ids.length === 1) {
                 return toResult({ message_id: message_ids[0], ...(leakWarning ? { warning: leakWarning } : {}) });
               }
@@ -413,12 +432,19 @@ export function register(server: McpServer) {
               }
               return toError(err);
             } finally {
-              releaseRecordingIndicator(chatId);
-              if (voiceSent) {
+              // Order matters: delay first so the recording indicator stays visible
+              // during the post-send render window, then cancel typing, then release.
+              // Releasing before the delay would briefly expose a "typing" tick
+              // during the 3 s window when the voice message is still rendering.
+              // Use voiceStarted (not voiceSent) so the delay also applies when at
+              // least one chunk was delivered but a later chunk failed — the first
+              // chunk is still rendering on the client.
+              if (voiceStarted) {
                 // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
                 await new Promise<void>(resolve => setTimeout(resolve, 3000));
               }
               cancelTypingIfSameGeneration(gen);
+              releaseRecordingIndicator(chatId, recordingEpoch);
             }
           }
 

@@ -1,14 +1,23 @@
 Animation Frames Guide
 
 Starting an animation:
-send(type: 'animation', frames: [...], interval: 1000, timeout: 600)
+send(type: 'animation', frames: [...], interval: 1000, timeout: 60)
 Or a named preset: send(type: 'animation', preset: 'working')
+
+Default timeout: 60 s. Omit timeout only if the animation should self-cancel within a minute.
+For long-running work, pass timeout: N explicitly (max 600) — or use persistent: true and cancel manually.
+
+When to use persistent animations:
+- Only for ongoing work where progress messages flow in (append-mode pattern)
+- The animation gets promoted to real content as messages come in
+- Cancel explicitly when work is done: action(type: 'animation/cancel')
+- Do NOT use for decoration — a stuck animation is a lie
 
 Single-emoji frames warning:
 Frames with only a single emoji render as large stickers on mobile (Telegram behavior).
 
-Fix: append \u200b (zero-width space) to single-emoji frames:
-  frames: ['⏳\u200b', '🔄\u200b']
+Fix: append ​ (zero-width space) to single-emoji frames:
+  frames: ['⏳​', '🔄​']
 Or use multi-character frames:
   frames: ['`⏳ working`', '`🔄 thinking`']
 
@@ -20,6 +29,19 @@ Built-in presets:
 | working | `[ working ]` cycling bracket animation |
 | thinking | `[ thinking ]` cycling bracket animation |
 | loading | `[ loading ]` cycling bracket animation |
+| compacting | `[ compacting ]` cycling bracket animation |
+| recovering | `[ recovering ]` cycling bracket animation |
+
+Checking animation state:
+Own session:    action(type: 'animation/status') → { session: { active, message_id, frames, started_at, expires_at } }
+Other session:  action(type: 'animation/status', sid: N) → { session: { ... } } (governor only)
+All sessions:   action(type: 'animation/status') with no sid, when caller is governor → { sessions: [...] }
+
+Stale-on-idle warning:
+When you call dequeue and your queue is empty (idle wait begins), the bridge injects a warning
+into the first dequeue response if an animation is still active:
+  { event: "animation_stale_warning", message_id, age_seconds }
+This is informational — no auto-cancel. Either cancel the animation or keep it if work is ongoing.
 
 REST trigger (HTTP mode only):
 The dedicated `POST /hook/animation` endpoint was removed in 7.2. Animations are now a side-effect of the agent-event system: when the governor session emits a `compacting` event via `POST /event`, the bridge automatically triggers the `compacting` preset animation on the governor's session and cancels it on the matching `compacted` event. See `help('events')` for the event surface (kinds, body shape, auth) and `tasks/40-queued/10-0831-event-system-rest-endpoint.md` for the full design.

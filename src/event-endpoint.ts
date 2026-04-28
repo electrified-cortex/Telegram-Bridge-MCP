@@ -23,7 +23,7 @@ import { mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { decodeToken } from "./tools/identity-schema.js";
-import { validateSession, listSessions, getSession } from "./session-manager.js";
+import { validateSession, listSessions, getSession, setHasCompacted } from "./session-manager.js";
 import { deliverServiceMessage } from "./session-queue.js";
 import { getGovernorSid } from "./routing-mode.js";
 import { handleShowAnimation } from "./tools/animation/show.js";
@@ -166,6 +166,7 @@ export function handlePostEvent(
       void handleCancelAnimation({ token: tokenNum }).finally(() => {
         void handleShowAnimation({ token: tokenNum, preset: "recovering", timeout: 60 });
       });
+      setHasCompacted(governorSid);
     } else {
       void handleShowAnimation({ token: tokenNum, preset: kind });
     }

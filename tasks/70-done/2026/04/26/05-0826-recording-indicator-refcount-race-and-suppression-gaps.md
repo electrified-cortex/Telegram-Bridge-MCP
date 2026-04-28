@@ -2,7 +2,7 @@
 id: 05-0826
 title: recording-indicator refcount race + typing-suppression gaps (post-Copilot review)
 priority: 5
-status: draft
+status: done
 type: bug-fix
 delegation: any
 ---
@@ -74,3 +74,17 @@ This is the first real-world test of Copilot CLI as a headless reviewer for this
 - `agents/curator/notes/copilot-cli-headless-mode-update-2026-04-25.md` — verification of Copilot CLI on this Windows box.
 - Source commit: `2473daa5` on branch `dev`.
 - Branch: also present on `release/7.2`. If fixes land on `dev`, port to `release/7.2` per `docs/release-branching-process.md`.
+
+## Completion
+
+Completed 2026-04-26 by Worker 1. Branch `05-0826`, commit `679d28f`.
+
+All 5 acceptance criteria satisfied: 2848 tests pass including new tests for the race scenario, suppression coverage, initial sendChatAction suppression, resume priorAction/fallback paths, and sync voice ordering.
+
+**Changes in `src/async-send-queue.ts`:** `acquireRecordingIndicator` returns epoch token; `releaseRecordingIndicator(chatId, epoch)` is a no-op on epoch mismatch; safety-timeout closure on re-acquire path captures epoch to prevent stale-closure clobbering; `cancelSessionJobs` comment added for intentional guard bypass.
+
+**Changes in `src/typing-state.ts`:** `showTyping` checks suppression before initial `sendChatAction`; `pauseTypingEmission` records active action per chat; `resumeTypingEmission` restores recorded action (not hardcoded "typing"); `showTyping` extension path updates `s.action`; total-suppression intent documented.
+
+**Changes in `src/tools/send.ts`:** Post-send delay guarded by `voiceStarted` (first chunk delivered) not `voiceSent` (all chunks); `releaseRecordingIndicator` deferred until after delay + cancel; dead `voiceSent` variable removed.
+
+Note: dev push hold in effect — branch ready for review but cannot merge to dev until hold lifted.

@@ -64,3 +64,25 @@ If Worker checklist update is too disruptive, Option B is acceptable because the
 
 - Today's evidence: `15-0824` task file was modified post-seal without a follow-up commit until Curator cleaned up at `66395c6`.
 - Sealing pipeline: `tools/spawn-overseer.ps1`, Overseer's seal script (path TBD by implementer).
+
+## Investigation findings (2026-04-26, Worker 1)
+
+**Option A is already in SKILL.md step 9:** "Complete — append `## Completion` to task doc. `git mv` task file from `50-active/` to `60-review/`." Present since commit `4a75a98`, which predates the 15-0824 incident. Workers are following it.
+
+**Root cause confirmed via 15-0848 seal:** Worker added `## Completion` to the task file in worktree branch `15-0848` before moving it to `60-review/`. Overseer's seal commit (`f3e449c8`) was `0 insertions, 0 deletions` — a pure rename. The sealed file at `70-done/` has no `## Completion` section.
+
+**Why Option A alone does not prevent the bug:** Overseer cherry-picks only the implementation commits to dev, not the Worker's pipeline commits (`claim`, `complete`). The task file that Overseer seals from is on the dev/main branch, which has no Completion section — the Worker's Completion is in the worktree branch only.
+
+**Fix required is Overseer-side.** Two viable approaches:
+1. Overseer includes the Worker's `complete(<task-id>)` commit when sealing (merge or cherry-pick the Completion commit alongside the impl).
+2. Overseer's seal script reads the task file from the worktree branch and copies the Completion section into the main-branch file before committing the rename.
+
+The Worker SKILL.md (Option A, step 9) is correct and complete — no change needed there.
+
+## Completion
+
+Completed by Worker 1 (SID 4) on 2026-04-26.
+
+Investigation only — no code changes. Root cause identified and confirmed via 15-0848 end-to-end seal. SKILL.md already has the correct Worker procedure. Fix requires Overseer to include Completion content when sealing — by either merging the Worker's `complete()` commit or reading the task file from the worktree branch at seal time.
+
+Branch: `15-0827` in `Telegram MCP` repo.

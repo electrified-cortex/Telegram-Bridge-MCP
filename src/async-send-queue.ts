@@ -227,7 +227,18 @@ interface RecordingIndicatorState {
   handle: NodeJS.Timeout;
   /** Safety timeout that force-clears the interval if a job never releases. */
   safetyHandle: NodeJS.Timeout;
+  /**
+   * Monotonically increasing epoch for this chat's recording-indicator lifetime.
+   * Incremented each time a fresh indicator is created (count 0 → 1 transition).
+   * releaseRecordingIndicator(chatId, epoch) is a no-op if the stored epoch differs,
+   * preventing the 120-s safety handler's unconditional delete from being clobbered
+   * by a late-arriving release from a job that was associated with an earlier epoch.
+   */
+  epoch: number;
 }
+
+/** Per-chatId monotonically increasing epoch counter. */
+const _recordingEpoch = new Map<number, number>();
 
 /**
  * Map of chatId → active recording-indicator state.
@@ -244,23 +255,35 @@ const _recordingIndicators = new Map<number, RecordingIndicatorState>();
  *   - schedules a 120-s safety timeout that force-clears everything if a job
  *     hangs and never calls releaseRecordingIndicator.
  * All sendChatAction errors are swallowed (best-effort).
+ *
+ * Returns an opaque epoch token that must be passed to releaseRecordingIndicator.
+ * This prevents the safety timeout's unconditional clear from clobbering a newly
+ * acquired indicator when a late-arriving release fires after the safety handler
+ * has already cleared the old state and a new job has re-acquired for the same chat.
  */
-export function acquireRecordingIndicator(chatId: number): void {
+export function acquireRecordingIndicator(chatId: number): number {
   const existing = _recordingIndicators.get(chatId);
   if (existing) {
     existing.count++;
     // Reset the safety clock on each new acquire so a long batch of sequential
     // jobs doesn't get killed mid-flight by the safety from the first job.
     clearTimeout(existing.safetyHandle);
+    // Capture epoch into a closure-local variable so the safety handler can
+    // detect if the entry was replaced by a newer indicator before it fires.
+    const safetyEpoch = existing.epoch;
     existing.safetyHandle = setTimeout(() => {
-      clearInterval(existing.handle);
+      const current = _recordingIndicators.get(chatId);
+      if (!current || current.epoch !== safetyEpoch) return; // stale, skip
+      clearInterval(current.handle);
       _recordingIndicators.delete(chatId);
       resumeTypingEmission(chatId);
     }, RECORDING_INDICATOR_SAFETY_MS);
     (existing.safetyHandle as unknown as { unref?: () => void }).unref?.();
-    return;
+    return existing.epoch;
   }
-  // First job for this chat — suppress typing and start the interval.
+  // First job for this chat — assign a new epoch, suppress typing, start interval.
+  const epoch = (_recordingEpoch.get(chatId) ?? 0) + 1;
+  _recordingEpoch.set(chatId, epoch);
   pauseTypingEmission(chatId);
   getApi().sendChatAction(chatId, "record_voice").catch(() => {});
   const handle = setInterval(() => {
@@ -274,17 +297,25 @@ export function acquireRecordingIndicator(chatId: number): void {
     resumeTypingEmission(chatId);
   }, RECORDING_INDICATOR_SAFETY_MS);
   (safetyHandle as unknown as { unref?: () => void }).unref?.();
-  _recordingIndicators.set(chatId, { count: 1, handle, safetyHandle });
+  _recordingIndicators.set(chatId, { count: 1, handle, safetyHandle, epoch });
+  return epoch;
 }
 
 /**
  * Decrement the refcount for chatId's recording indicator.
  * When the count reaches 0, the interval and safety timeout are cleared,
  * the map entry is removed, and typing emission is resumed for the chat.
+ *
+ * The `epoch` parameter must match the epoch returned by the corresponding
+ * acquireRecordingIndicator call. If the epoch differs (or the entry is missing),
+ * this call is a no-op — it means the safety timeout already cleared the old
+ * state and a new job may have re-acquired the indicator for the same chat.
  */
-export function releaseRecordingIndicator(chatId: number): void {
+export function releaseRecordingIndicator(chatId: number, epoch: number): void {
   const state = _recordingIndicators.get(chatId);
   if (!state) return;
+  // Stale release from a job that belongs to an older indicator lifetime — ignore.
+  if (state.epoch !== epoch) return;
   state.count--;
   if (state.count <= 0) {
     clearInterval(state.handle);
@@ -311,7 +342,7 @@ async function runJob(job: AsyncSendJob): Promise<void> {
   const voiceChunks = splitMessage(audioText);
   const message_ids: number[] = [];
 
-  acquireRecordingIndicator(chatId);
+  const recordingEpoch = acquireRecordingIndicator(chatId);
 
   try {
     for (let i = 0; i < voiceChunks.length; i++) {
@@ -354,7 +385,7 @@ async function runJob(job: AsyncSendJob): Promise<void> {
       process.stderr.write(`[async-send] ok callback lost for pendingId=${pendingId} sid=${sid} (queue gone)\n`);
     }
   } finally {
-    releaseRecordingIndicator(chatId);
+    releaseRecordingIndicator(chatId, recordingEpoch);
   }
 }
 
@@ -425,6 +456,7 @@ export function cancelSessionJobs(sid: number): void {
   // the moment they start executing (via .finally()), so in-flight jobs would be
   // missed if we iterated jobs.keys() here.
   for (const pendingId of state.allAllocatedIds) {
+    // Also remove already-finalised entries: if a timed-out job completes late, the queue is gone so double-delivery is harmless.
     _finalisedJobs.delete(pendingId);
   }
   _sessions.delete(sid);
@@ -448,6 +480,7 @@ export function resetAsyncSendQueueForTest(): void {
     clearTimeout(safetyHandle);
   }
   _recordingIndicators.clear();
+  _recordingEpoch.clear();
 }
 
 /**
@@ -456,4 +489,13 @@ export function resetAsyncSendQueueForTest(): void {
  */
 export function recordingIndicatorCountForTest(): number {
   return _recordingIndicators.size;
+}
+
+/**
+ * Expose recording-indicator epoch for a specific chatId for white-box testing only.
+ * Returns undefined if no indicator is active for the chat.
+ * @internal
+ */
+export function recordingIndicatorEpochForTest(chatId: number): number | undefined {
+  return _recordingIndicators.get(chatId)?.epoch;
 }

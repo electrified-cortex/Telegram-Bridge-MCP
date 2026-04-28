@@ -72,3 +72,14 @@ Single-file Bash or PowerShell script. Could be a TMCP CLI tool under `scripts/`
 ## Branch
 
 `15-0832` off `dev`.
+
+## Completion
+
+Implemented `scripts/event-report.mjs` — single-file ESM Node.js script reading `data/events.ndjson`.
+
+Files changed:
+- `scripts/event-report.mjs` (new) — full implementation with window/agent/kind filtering, generic `PAIRED_KINDS` pairing, text + JSON output
+- `src/built-in-commands.test.ts` — pre-existing lint fix (arrow functions → block bodies)
+- `src/tools/callback-edge-cases.test.ts` — pre-existing lint fix (unused `afterEach` import removed)
+
+Two-pass code review completed; both blockers resolved. Build: tsc clean, pnpm lint/test pass.

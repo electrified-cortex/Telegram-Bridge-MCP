@@ -4,6 +4,7 @@ import { toResult, toError, resolveChat } from "../../telegram.js";
 import { showTyping, cancelTyping } from "../../typing-state.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
+import { maybeReplaceRecoveringAnimation } from "../../compaction-recovery.js";
 
 const DESCRIPTION =
   "Starts (or extends) a sustained background typing indicator that repeats " +
@@ -27,6 +28,7 @@ export async function handleShowTyping({ timeout_seconds = 20, cancel, token }: 
     const wasActive = cancelTyping();
     return toResult({ cancelled: wasActive });
   }
+  await maybeReplaceRecoveringAnimation(_sid);
   const started = await showTyping(timeout_seconds);
   return toResult({ timeout_seconds, started });
 }

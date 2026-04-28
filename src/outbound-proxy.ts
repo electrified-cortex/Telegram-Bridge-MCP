@@ -18,6 +18,7 @@ import { recordOutgoing } from "./message-store.js";
 import { clearAllTempReactions } from "./temp-reaction.js";
 import { getCallerSid } from "./session-context.js";
 import { activeSessionCount, getSession } from "./session-manager.js";
+import { maybeReplaceRecoveringAnimation } from "./compaction-recovery.js";
 import { escapeHtml, escapeV2 } from "./markdown.js";
 
 // ---------------------------------------------------------------------------
@@ -225,6 +226,10 @@ export function createOutboundProxy(realApi: Api): Api {
         ) {
           if (isBypassing()) return fn(chatId, text, opts);
 
+          // Replace recovering animation with persistent "compacted" notify (one-shot).
+          const callSid = getCallerSid();
+          await maybeReplaceRecoveringAnimation(callSid);
+
           const gen = typingGeneration();
           clearPendingTemp();
           await clearAllTempReactions(getCallerSid());
@@ -254,7 +259,6 @@ export function createOutboundProxy(realApi: Api): Api {
             : undefined;
 
           // Animation promote: edit animation → real content
-          const callSid = getCallerSid();
           const activeInterceptor = callSid > 0 ? _interceptors.get(callSid) : undefined;
           if (activeInterceptor) {
             const savedInterceptor = activeInterceptor;

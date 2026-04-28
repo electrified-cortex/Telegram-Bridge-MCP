@@ -30,6 +30,8 @@ interface TypingState {
   deadline: number;
   generation: number;
   chatId: number | null;
+  /** The TypingAction currently (or most recently) in use for this session. */
+  action: TypingAction | undefined;
 }
 
 const _states = new Map<number, TypingState>();
@@ -38,8 +40,13 @@ const _states = new Map<number, TypingState>();
 // Recording-suppression — per-chatId pause/resume for typing emission
 //
 // When the async send queue has audio jobs in flight to a chat, it calls
-// pauseTypingEmission(chatId) so no "typing" tick fires and confuses the user
+// pauseTypingEmission(chatId) so no typing ticks fire and confuse the user
 // mid-recording. On release it calls resumeTypingEmission(chatId) to restore.
+//
+// Suppression is intentionally TOTAL — it blocks all TypingAction types, not
+// just "typing". While audio is in flight the dominant user-visible indicator
+// is the record_voice action from the async send queue; any other action type
+// (upload_photo, record_voice from showTyping, etc.) would conflict visually.
 // ---------------------------------------------------------------------------
 
 /**
@@ -49,29 +56,55 @@ const _states = new Map<number, TypingState>();
 const _suppressedChats = new Set<number>();
 
 /**
+ * Tracks the most recent TypingAction that was in flight for a chat when
+ * suppression began (or was re-entered). Used by resumeTypingEmission to
+ * restore the correct action instead of always hardcoding "typing".
+ */
+const _suppressedChatAction = new Map<number, TypingAction>();
+
+/**
  * Suppress typing emission for `chatId`.
  * Called by acquireRecordingIndicator when the first audio job starts for a chat.
- * The typing state is preserved; the interval tick just skips the API call.
+ * The typing state is preserved; the interval tick and any new showTyping call
+ * will skip the API call while suppression is active.
+ *
+ * Records the current active action (if any) for this chat so resumeTypingEmission
+ * can restore the correct action type.
  */
 export function pauseTypingEmission(chatId: number): void {
   _suppressedChats.add(chatId);
+  // Capture the action currently in flight for this chat (if any).
+  // We search _states for the session whose chatId matches.
+  for (const [, state] of _states) {
+    if (state.timer !== null && state.chatId === chatId && state.action !== undefined) {
+      _suppressedChatAction.set(chatId, state.action);
+      return;
+    }
+  }
+  // No active typing session for this chat — no prior action to track.
+  _suppressedChatAction.delete(chatId);
 }
 
 /**
  * Resume typing emission for `chatId` and, if typing is still nominally active
- * for any session bound to this chat, fire one immediate sendChatAction("typing")
- * so the user sees it reassert without waiting for the next tick.
+ * for any session bound to this chat, fire one immediate sendChatAction with the
+ * same action that was suppressed so the user sees it reassert without waiting
+ * for the next tick.
  *
  * Called by releaseRecordingIndicator when the last audio job for a chat completes.
  */
 export function resumeTypingEmission(chatId: number): void {
   _suppressedChats.delete(chatId);
-  // Fire one immediate "typing" ping only for a session whose active timer is
-  // bound to this specific chat, preventing stray pings on unrelated chats in
-  // multi-chat scenarios.
+  const priorAction = _suppressedChatAction.get(chatId);
+  _suppressedChatAction.delete(chatId);
+  // Fire one immediate ping only for a session whose active timer is bound to
+  // this specific chat, preventing stray pings on unrelated chats in multi-chat
+  // scenarios. Use the previously suppressed action — not a hardcoded "typing" —
+  // so record_voice and upload actions are correctly restored.
   for (const [, state] of _states) {
     if (state.timer !== null && state.chatId === chatId) {
-      getApi().sendChatAction(chatId, "typing").catch(() => {});
+      const actionToRestore = priorAction ?? state.action ?? "typing";
+      getApi().sendChatAction(chatId, actionToRestore).catch(() => {});
       break; // one immediate ping is enough to reassert the indicator
     }
   }
@@ -94,11 +127,20 @@ export function isChatSuppressedForTest(chatId: number): boolean {
 }
 
 /**
+ * Returns the suppressed action recorded for chatId, if any.
+ * @internal
+ */
+export function suppressedChatActionForTest(chatId: number): TypingAction | undefined {
+  return _suppressedChatAction.get(chatId);
+}
+
+/**
  * Clear all suppression state. For testing only.
  * @internal
  */
 export function resetTypingSuppressionForTest(): void {
   _suppressedChats.clear();
+  _suppressedChatAction.clear();
 }
 
 const INTERVAL_MS = 4_000; // Telegram indicator expires in ~5 s; 4 s keeps it seamless
@@ -106,7 +148,7 @@ const INTERVAL_MS = 4_000; // Telegram indicator expires in ~5 s; 4 s keeps it s
 function _get(sid: number): TypingState {
   let s = _states.get(sid);
   if (!s) {
-    s = { timer: null, safety: null, deadline: 0, generation: 0, chatId: null };
+    s = { timer: null, safety: null, deadline: 0, generation: 0, chatId: null, action: undefined };
     _states.set(sid, s);
   }
   return s;
@@ -180,6 +222,7 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
   if (s.timer) {
     // Already running — just extend the deadline
     s.deadline = Math.max(s.deadline, newDeadline);
+    s.action = action;
     // Reset the safety timeout too
     if (s.safety) clearTimeout(s.safety);
     s.safety = setTimeout(() => { _cancelForSid(sid); }, Math.max(0, s.deadline - Date.now()));
@@ -194,16 +237,27 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
   if (typeof chatId !== "number") return false; // misconfigured — silently skip
   s.chatId = chatId;
 
-  // Send immediately so there's no visible delay
-  try {
-    await getApi().sendChatAction(chatId, action);
-  } catch {
-    // Best-effort — never throw from a typing indicator
-    return false;
+  // Track the current action so resumeTypingEmission can restore the correct type.
+  s.action = action;
+
+  // Check suppression BEFORE the initial sendChatAction so that a fresh showTyping
+  // call during an active recording does not fire even one spurious action.
+  // The interval tick also checks, but without this guard the very first call
+  // would slip through before suppression is effective.
+  if (!_suppressedChats.has(chatId)) {
+    // Send immediately so there's no visible delay
+    try {
+      await getApi().sendChatAction(chatId, action);
+    } catch {
+      // Best-effort — never throw from a typing indicator
+      return false;
+    }
   }
 
   s.timer = setInterval(() => {
     // Skip emission while a recording indicator has this chat suppressed.
+    // Suppression is intentionally total — all action types are blocked while
+    // the async send queue's record_voice indicator is active for this chat.
     if (_suppressedChats.has(chatId)) return;
     getApi().sendChatAction(chatId, action).catch(() => {
       _cancelForSid(sid);

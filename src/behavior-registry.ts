@@ -92,4 +92,12 @@ export const BEHAVIOR_REGISTRY: readonly BehaviorRuleSpec[] = [
   // NOTE: tasks 15-713 (compression hints) and 15-714 (modality hints) add
   // entries for compression_hint_dm, compression_hint_route, and
   // modality_hint_voice when their branches merge.
+  {
+    name: "caption_duplication",
+    description: "Nudge when audio+text caption Jaccard similarity ≥ 0.7 indicates restating",
+    severity: "service-message",
+    trigger: "anomaly",
+    eventType: "behavior_nudge_caption_duplication",
+    helpTopic: "audio",
+  },
 ];

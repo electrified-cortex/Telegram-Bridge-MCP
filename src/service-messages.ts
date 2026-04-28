@@ -58,6 +58,26 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: `Buttons over typing. action(type: "confirm/ok"), action(type: "confirm/ok-cancel"), action(type: "confirm/yn") for standard prompts. send(type: "question", choose: [...]) for custom options. Free-text ask only when needed. For voice+caption, use type: "text" with audio: "..." — not a separate type. help('send') for full reference.`,
   },
 
+  ONBOARDING_HYBRID_MESSAGING: {
+    eventType: "onboarding_hybrid_messaging" as const,
+    text: "Hybrid send rules: long audio + brief topic label OR short audio + long structured payload. Never restate audio content in the text caption — pick one register, not both. For voice+structured, keep caption to a topic tag only. Reference help('audio') for full hybrid protocol.",
+  },
+
+  ONBOARDING_MODALITY_PRIORITY: {
+    eventType: "onboarding_modality_priority" as const,
+    text: "Default modality priority: buttons > text > audio. Mirror operator modality — if they use voice, prefer voice in reply. Match the user's modality — if operator sends voice, prefer voice reply; if text, prefer text. Audio is presence and nuance, not primary information delivery. Reference help('modality') for the full priority model.",
+  },
+
+  ONBOARDING_PRESENCE_SIGNALS: {
+    eventType: "onboarding_presence_signals" as const,
+    text: "Presence cascade: react on receipt → show-typing for short work → animation for work exceeding show-typing's window (~20 s) or with no clear ETA. >30 s silence with no escalation is a protocol violation. Escalate to animation BEFORE show-typing's timeout expires — do not wait for it to lapse. Reference help('presence') for thresholds and presets.",
+  },
+
+  ONBOARDING_NO_PENDING_YET: {
+    eventType: "onboarding_no_pending_yet" as const,
+    text: "No operator messages were pending at session start. Call dequeue to wait for operator input.",
+  },
+
   // ── Governor change notifications ─────────────────────────────────────────
 
   /** @param sid SID of the new governor, @param name name of the new governor */
@@ -94,6 +114,18 @@ export const SERVICE_MESSAGES = deepFreeze({
     /** @param name display name of the joining session, @param sid SID of the joining session */
     text: (name: string, sid: number) =>
       `**Session joined:**\n**Name:** ${name}\n**SID:** ${sid}\nYou are the governor — route ambiguous messages.`,
+  },
+
+  // NOTE: SESSION_JOINED_FELLOW intentionally shares eventType "session_joined" with
+  // SESSION_JOINED. Both events represent the same bridge-level event (a session joined);
+  // the distinction is only in message text (governor path vs. peer path). Downstream
+  // consumers must not rely on eventType alone to distinguish them.
+  /** @param name display name of the joining session, @param sid SID of the joining session, @param governorLabel formatted label for the governor (e.g. "'Curator' (SID 1)") */
+  SESSION_JOINED_FELLOW: {
+    eventType: "session_joined" as const,
+    /** @param name display name of the joining session, @param sid SID of the joining session, @param governorLabel formatted label for the governor (e.g. "'Curator' (SID 1)") */
+    text: (name: string, sid: number, governorLabel: string) =>
+      `${name} (SID ${sid}) joined. Ambiguous messages go to ${governorLabel}.`,
   },
 
   SESSION_CLOSED: {
@@ -206,5 +238,10 @@ export const SERVICE_MESSAGES = deepFreeze({
       `silence: ${elapsedSeconds}s since last dequeue; operator sees no progress. ` +
       `Acknowledge with show-typing, a reaction, or a persistent animation ` +
       `(preset: 'working' or 'thinking'). help('presence')`,
+  },
+
+  NUDGE_CAPTION_DUPLICATION: {
+    eventType: "behavior_nudge_caption_duplication" as const,
+    text: "Caption appears to restate audio content. Keep it to a brief topic label — see help('audio') for the hybrid pattern.",
   },
 });

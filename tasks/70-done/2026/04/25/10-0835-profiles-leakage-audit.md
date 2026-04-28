@@ -62,3 +62,9 @@ If B:
 ## Branch
 
 `10-0835` off `dev`.
+
+## Completion
+
+**Pre-existing fix detected.** Commit `02f41639` ("chore(profiles): remove bundled profile examples; replace with docs/profiles.md schema doc") already removed all three profile JSON files from `dev` and replaced them with `docs/profiles.md`, which states "The bridge does NOT ship profile files — bring your own." The acceptance criteria for Path A are fully met by that commit. No code changes needed on this branch.
+
+Note: `profiles/` was intentionally NOT added to `.gitignore` — `docs/profiles.md` explicitly documents that users may commit non-secret profiles to `profiles/` in their own fork; ignoring the directory would break that supported use case.

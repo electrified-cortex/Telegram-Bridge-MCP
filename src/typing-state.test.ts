@@ -25,7 +25,18 @@ vi.mock("./telegram.js", async (importActual) => {
   return { ...actual, getApi: () => mocks, resolveChat: mocks.resolveChat };
 });
 
-import { showTyping, cancelTyping, isTypingActive, typingGeneration, cancelTypingIfSameGeneration } from "./typing-state.js";
+import {
+  showTyping,
+  cancelTyping,
+  isTypingActive,
+  typingGeneration,
+  cancelTypingIfSameGeneration,
+  pauseTypingEmission,
+  resumeTypingEmission,
+  isChatSuppressedForTest,
+  resetTypingSuppressionForTest,
+  suppressedChatActionForTest,
+} from "./typing-state.js";
 
 describe("typing-state", () => {
   beforeEach(() => {
@@ -184,6 +195,155 @@ describe("typing-state", () => {
       const gen = typingGeneration();
       expect(cancelTypingIfSameGeneration(gen)).toBe(true);
       expect(isTypingActive()).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Suppression tests (bugs 2, 3, 4)
+  // -------------------------------------------------------------------------
+  describe("typing suppression", () => {
+    beforeEach(() => {
+      resetTypingSuppressionForTest();
+    });
+
+    afterEach(() => {
+      resetTypingSuppressionForTest();
+    });
+
+    // Bug 2: suppression is intentionally total — all TypingAction types blocked
+    it("suppresses all action types (not just 'typing') while a chat is suppressed", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      pauseTypingEmission(123);
+
+      // showTyping with non-default action types must not fire sendChatAction
+      await showTyping(5, "upload_photo");
+      expect(mocks.sendChatAction).not.toHaveBeenCalled();
+      cancelTyping();
+
+      vi.clearAllMocks();
+      await showTyping(5, "record_voice");
+      expect(mocks.sendChatAction).not.toHaveBeenCalled();
+      cancelTyping();
+
+      vi.clearAllMocks();
+      await showTyping(5, "upload_document");
+      expect(mocks.sendChatAction).not.toHaveBeenCalled();
+      cancelTyping();
+    });
+
+    // Bug 3: initial sendChatAction must not fire when suppression is active
+    it("does not fire even one sendChatAction on initial showTyping when chat is suppressed", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      pauseTypingEmission(123);
+
+      const result = await showTyping(10);
+      // showTyping should still return true (started — timer is running for when
+      // suppression is lifted), but sendChatAction must NOT have been called.
+      expect(result).toBe(true);
+      expect(mocks.sendChatAction).not.toHaveBeenCalled();
+
+      // Advance 4 s — interval tick must also be suppressed
+      await vi.advanceTimersByTimeAsync(4100);
+      expect(mocks.sendChatAction).not.toHaveBeenCalled();
+
+      cancelTyping();
+    });
+
+    // Bug 3: interval ticks resume firing after suppression is lifted — priorAction path
+    it("resumeTypingEmission restores priorAction captured before suppression", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      // Start a record_voice indicator BEFORE pausing so priorAction is captured.
+      await showTyping(30, "record_voice");
+      vi.clearAllMocks();
+
+      // Now pause — priorAction is "record_voice" (captured from active state).
+      pauseTypingEmission(123);
+      expect(mocks.sendChatAction).not.toHaveBeenCalled();
+
+      // Resume — should restore the priorAction ("record_voice"), not fall back to state.action.
+      resumeTypingEmission(123);
+      expect(mocks.sendChatAction).toHaveBeenCalledTimes(1);
+      expect(mocks.sendChatAction).toHaveBeenCalledWith(123, "record_voice");
+      vi.clearAllMocks();
+
+      // Advance 4 s — interval tick should now fire normally.
+      await vi.advanceTimersByTimeAsync(4100);
+      expect(mocks.sendChatAction).toHaveBeenCalledTimes(1);
+      cancelTyping();
+    });
+
+    // Bug 3: interval ticks resume firing after suppression — state.action fallback path
+    it("resumeTypingEmission falls back to state.action when no prior action captured", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      // Pause BEFORE showTyping — priorAction is undefined (nothing active yet).
+      pauseTypingEmission(123);
+      // showTyping while suppressed sets state.action = "typing" but does NOT call sendChatAction.
+      await showTyping(30);
+      expect(mocks.sendChatAction).not.toHaveBeenCalled();
+
+      // Resume — priorAction is undefined, so state.action ("typing") is used as fallback.
+      resumeTypingEmission(123);
+      expect(mocks.sendChatAction).toHaveBeenCalledTimes(1);
+      expect(mocks.sendChatAction).toHaveBeenCalledWith(123, "typing");
+      vi.clearAllMocks();
+
+      // Advance 4 s — interval tick should now fire normally.
+      await vi.advanceTimersByTimeAsync(4100);
+      expect(mocks.sendChatAction).toHaveBeenCalledTimes(1);
+      cancelTyping();
+    });
+
+    // Bug 4: resumeTypingEmission restores the prior suppressed action, not hardcoded "typing"
+    it("resumeTypingEmission reasserts the original action type (record_voice), not 'typing'", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+
+      // Start a record_voice indicator first so it is recorded as the active action
+      await showTyping(30, "record_voice");
+      expect(mocks.sendChatAction).toHaveBeenCalledWith(123, "record_voice");
+      vi.clearAllMocks();
+
+      // Now suppress the chat — should record the active action as record_voice
+      pauseTypingEmission(123);
+      expect(suppressedChatActionForTest(123)).toBe("record_voice");
+
+      // Resume — should reassert record_voice not "typing"
+      resumeTypingEmission(123);
+      expect(mocks.sendChatAction).toHaveBeenCalledOnce();
+      expect(mocks.sendChatAction).toHaveBeenCalledWith(123, "record_voice");
+
+      cancelTyping();
+    });
+
+    // Bug 4: resumeTypingEmission with no prior action tracked falls back gracefully
+    it("resumeTypingEmission uses 'typing' as fallback when no prior action was tracked", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      // Suppress without any active typing session
+      pauseTypingEmission(123);
+      expect(suppressedChatActionForTest(123)).toBeUndefined();
+
+      // Start typing (will be suppressed — no initial call)
+      await showTyping(30);
+      vi.clearAllMocks();
+
+      // Resume — state.action is "typing", priorAction is undefined
+      resumeTypingEmission(123);
+      expect(mocks.sendChatAction).toHaveBeenCalledWith(123, "typing");
+      cancelTyping();
+    });
+
+    // Bug 2: verify suppression is total — documents intentional behavior
+    it("suppression blocks all action types while active (intentional total suppression)", async () => {
+      mocks.sendChatAction.mockResolvedValue(undefined);
+      pauseTypingEmission(123);
+      expect(isChatSuppressedForTest(123)).toBe(true);
+
+      // None of these should fire
+      for (const action of ["typing", "record_voice", "upload_photo", "upload_document", "upload_video"] as const) {
+        vi.clearAllMocks();
+        await showTyping(5, action);
+        expect(mocks.sendChatAction).not.toHaveBeenCalled();
+        cancelTyping();
+      }
     });
   });
 });

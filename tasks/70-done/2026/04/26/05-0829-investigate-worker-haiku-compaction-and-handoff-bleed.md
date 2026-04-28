@@ -2,7 +2,7 @@
 id: 05-0829
 title: investigate Worker haiku compaction + cross-Worker working-tree bleed
 priority: 5
-status: draft
+status: done
 type: investigation
 delegation: any
 ---
@@ -94,6 +94,10 @@ Worker 1 dispatched a subagent that ran typecheck and reported nothing to do, be
 
 **Fix:** Worker pre-task checklist must include `git diff --staged --stat` on a pre-existing worktree before dispatching any work. Saves ~6-12 tool calls per claim.
 
+## Operator note (2026-04-26)
+
+Before implementing: verify whether these patterns have already been addressed organically. If current Overseer recovery and Worker pre-task behavior already handles staged state, scope down to a quick audit + documentation only — do not add fixes that solve a problem that no longer exists.
+
 ## Acceptance criteria
 
 - Findings document at `agents/curator/notes/worker-recovery-postmortem-2026-04-25.md` (or similar) with answers to all 4 "What's NOT known" items.
@@ -112,3 +116,20 @@ Worker 1 dispatched a subagent that ran typecheck and reported nothing to do, be
 - `feedback_dispatch_context_truth` — dispatched agents bootstrap fresh; only project CLAUDE.md + memory index transfer. Compaction behavior is separate.
 - `feedback_dispatch_hook_bypass_risk` — git-diff every dispatch (here: confirm Worker 1's commit matches Worker 2's hypothesized edits).
 - `15-0827` — seal commit gap (related: Worker→Worker file handoff isn't well-defined).
+
+## Completion
+
+Completed 2026-04-26 by Worker 1.
+
+**Verification result:** Both bugs were already addressed organically (per operator gate). Scope was audit + documentation + promoting fix from memory to skill.
+
+**Bug 1 (Overseer recovery):** ALREADY FIXED in `overseer/context/refresh.md`. Rule now checks `git diff --stat --staged` alongside `git log`. No further action needed.
+
+**Bug 2 (Worker staged-state inspection):** Fix was in auto-memory (`feedback_inspect_staged_before_dispatch.md`) but NOT in `task-execution/SKILL.md`. Promoted to canonical skill:
+- Worker repo branch `05-0829` (commit `e04b8c5`): added staged-state check as step 3 in Worktree Gate. **Awaiting operator approval to merge.**
+
+**Findings doc:** Curator repo branch `05-0829` (commit `2917415`): `notes/worker-recovery-postmortem-2026-04-25.md` — all 4 "What's NOT known" items resolved.
+
+**Open items (not in scope):** Subagent telemetry, pre-recovery DM protocol, worktree inheritance notice — see postmortem recommendations.
+
+Sealed-By: Overseer

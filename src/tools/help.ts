@@ -68,6 +68,7 @@ const DESCRIPTION =
   "Pass topic: 'behavior' for the behavioral-shaping rule registry and severity tier guidance. " +
   "Pass topic: 'modality' for the priority axis (buttons > text > audio) and modality-matching rules. " +
   "Pass topic: 'events' for the external event system docs (POST /event endpoint, kinds, metrics). " +
+  "Pass topic: 'guidance' for the guidance delivery reference (what fires when and why). " +
   "Pass topic: '<tool_name>' for detailed docs on a specific tool.";
 
 /**
@@ -138,7 +139,7 @@ function buildOverview(): string {
   const lines: string[] = [
     "Telegram Bridge MCP — Tool Overview",
     "",
-    "Bridges AI agents to Telegram. help(topic: 'guide') for full comms guide.",
+    "Bridges AI agents to Telegram. help(topic: 'index') for categorized skill index. help(topic: 'guide') for full comms guide.",
     "help(topic: '<tool_name>') for docs on a specific tool.",
     "",
     "Tool Index:",
@@ -160,7 +161,7 @@ export function register(server: McpServer) {
           .string()
           .optional()
           .describe(
-            "Omit for overview. Pass 'guide' for full communication guide. Pass 'identity' for bot info + server version. Pass a tool name for detailed docs on that tool."
+            "Omit for overview. Pass 'index' for a categorized skill index. Pass 'guide' for full communication guide. Pass 'identity' for bot info + server version. Pass a tool name for detailed docs on that tool."
           ),
         token: TOKEN_SCHEMA
           .optional()
@@ -198,7 +199,7 @@ export function register(server: McpServer) {
       }
 
       // Topics with rich file-based content — skip TOOL_INDEX even if present
-      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions", "presence", "behavior", "audio", "modality", "events"]);
+      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions", "presence", "behavior", "audio", "modality", "events", "guidance"]);
 
       // topic: "<tool_name>" → per-tool description (checked before file lookup)
       // Skip for rich topics that have dedicated file-based content

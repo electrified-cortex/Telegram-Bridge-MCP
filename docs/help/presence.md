@@ -43,6 +43,28 @@ TMCP automatically monitors session silence. The window opens the moment you **d
 Any ack signal (message, reaction, typing, animation) clears the window.
 Active animations suppress all nudges — they are sufficient presence signals.
 
+## Stale Animation Warning
+
+If your session has been idle in the dequeue loop for more than 30 seconds while an animation is still active, the bridge injects an `animation_stale_warning` dequeue event into your response. Your next `dequeue` call returns `{ updates: [{ event: "animation_stale_warning", message_id, age_seconds }] }`.
+
+**What to do:** Check `action(type: "animation/status", token: <token>)` to confirm the animation is still active, then cancel it if you are no longer producing output: `action(type: "animation/cancel", token: <token>)`.
+
+Warnings are rate-limited to once per 120 seconds per session to avoid flooding an idle loop.
+
+## Animation Lifecycle
+
+Persistent animations are **not decoration**. They are for ongoing work where progress messages will flow in (the append-mode pattern: animation → send content → animation promoted to content → repeat → cancel when done).
+
+Rules:
+- Start: `send(type: "animation", preset: "working")` — use a named preset, keep timeout explicit
+- Update: send messages normally — the outbound proxy promotes the animation to real content
+- Cancel: `action(type: "animation/cancel")` — always cancel when work completes
+- Check: `action(type: "animation/status")` — returns `{ active, message_id, started_at, expires_at }`
+
+**Stale-on-idle warning:** When your dequeue blocks on an empty queue and an animation is running,
+the bridge injects `{ event: "animation_stale_warning", message_id, age_seconds }` into the response.
+Act on it — either cancel (if you forgot) or ignore if work is genuinely in progress.
+
 ## Opt-Out
 
 Per-session disable is not yet exposed via an action. The detector is active for all sessions.

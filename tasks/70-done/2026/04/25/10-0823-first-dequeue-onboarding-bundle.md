@@ -94,3 +94,7 @@ This is companion to the onboarding bundle: bundle teaches the rule once at star
 
 - `00-ideas/15-0822-hybrid-duplication-detector.md` — algorithmic detector for caption/audio duplication; complementary, fires reactively when the onboarding rule is forgotten.
 - `help(topic: 'modality')`, `help(topic: 'audio')`, `help(topic: 'presence')`
+
+## Completion
+
+Added 3 new onboarding service messages (`onboarding_hybrid_messaging`, `onboarding_modality_priority`, `onboarding_presence_signals`) + conditional tail (`onboarding_no_pending_yet`) to `src/service-messages.ts`. Injected in both first-session and second-session paths in `src/tools/session/start.ts`. Tail gated on `discarded === 0` — suppressed when operator messages were already in queue at session-start. Added tests covering delivery, conditional suppression (backlog present → tail absent), and reconnect filter cleanup. All 2837 tests pass. Branch: `10-0823` off `dev`.
