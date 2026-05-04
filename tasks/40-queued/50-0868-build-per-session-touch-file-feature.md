@@ -27,22 +27,41 @@ This task implements that design on the TMCP side.
 
 Bridge-side only. **Agent owns the file; TMCP just touches it.**
 
-1. New action: `monitor/enable` — opt-in only. Two call shapes:
-   - **Agent-supplied path**: agent passes `file_path: <abs path>`.
-     TMCP records the path. TMCP does NOT create the file (agent
-     owns it). On session close: TMCP forgets the path; agent
-     cleans up.
-   - **TMCP-supplied path**: agent calls `monitor/enable` with no
-     `file_path`. TMCP generates a cryptographically random
-     filename in its own data dir (e.g.
-     `<bridge_data_dir>/.touch/<random-hash>.stamp`), creates the
-     file, returns the absolute path in the response. On session
-     close: TMCP deletes its own file.
-   - Either way, TMCP does NOTHING until `monitor/enable` is
-     called. No default I/O.
-2. Companion: `monitor/disable` to stop touching, OR auto-disable
-   on `session/close`. Cleanup respects ownership (agent-supplied
-   path: TMCP just forgets; TMCP-supplied: TMCP deletes).
+1. New CRUD action namespace: **`session-file/`** (agnostic, not
+   tied to Claude Code's Monitor concept — any consumer can poll
+   the file with `tail`, `inotify`, or whatever).
+
+   Verbs:
+   - **`session-file/create`** — opt-in start. Two call shapes:
+     - With `file_path: <abs path>` — agent supplies its own path.
+       TMCP records, never creates/deletes the file.
+     - Without `file_path` — TMCP generates a cryptographically
+       random filename in its own data dir, creates the file,
+       returns the absolute path in the response. TMCP owns the
+       lifecycle.
+   - **`session-file/edit`** — change which file the session is
+     pointing at (e.g. agent moves it). New `file_path` replaces
+     the old. Ownership rules apply per-call.
+   - **`session-file/delete`** — stop touching for this session.
+     If TMCP created the file (no path supplied at create time),
+     TMCP deletes it. If agent-supplied, TMCP just forgets.
+   - **`session-file/get`** — query current registration (path,
+     ownership, last-touch timestamp). Read-only.
+
+   Either way, TMCP does NOTHING until `session-file/create` is
+   called. No default I/O.
+
+2. Auto-cleanup on `session/close`: equivalent to firing
+   `session-file/delete` (deletes TMCP-owned file, forgets
+   agent-supplied path).
+
+### Naming rationale
+
+Operator (2026-05-04): "Maybe we shouldn't call it monitor from
+TMCP's perspective. Should be session-file or something —
+agnostic, not tied directly to Claude Code." TMCP exposes a
+filesystem hook; how the consumer watches it (Claude `Monitor`,
+shell `tail -f`, custom polling) is the consumer's choice.
 3. **Touch fires only after the message is fully ready and enqueued**
    (post-transcription, post-routing, post-enqueue — last step).
 4. **Leading + trailing-if-suppressed debounce.** Floor 1s, default
