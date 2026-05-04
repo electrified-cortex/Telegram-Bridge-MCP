@@ -27,11 +27,22 @@ This task implements that design on the TMCP side.
 
 Bridge-side only. **Agent owns the file; TMCP just touches it.**
 
-1. New action: `monitor/register` (or as optional param on
-   `session/start`). Agent provides an absolute file path.
-   TMCP records the path against the session.
-2. Companion: `monitor/clear` to unregister, OR auto-clear on
-   `session/close`.
+1. New action: `monitor/enable` — opt-in only. Two call shapes:
+   - **Agent-supplied path**: agent passes `file_path: <abs path>`.
+     TMCP records the path. TMCP does NOT create the file (agent
+     owns it). On session close: TMCP forgets the path; agent
+     cleans up.
+   - **TMCP-supplied path**: agent calls `monitor/enable` with no
+     `file_path`. TMCP generates a cryptographically random
+     filename in its own data dir (e.g.
+     `<bridge_data_dir>/.touch/<random-hash>.stamp`), creates the
+     file, returns the absolute path in the response. On session
+     close: TMCP deletes its own file.
+   - Either way, TMCP does NOTHING until `monitor/enable` is
+     called. No default I/O.
+2. Companion: `monitor/disable` to stop touching, OR auto-disable
+   on `session/close`. Cleanup respects ownership (agent-supplied
+   path: TMCP just forgets; TMCP-supplied: TMCP deletes).
 3. **Touch fires only after the message is fully ready and enqueued**
    (post-transcription, post-routing, post-enqueue — last step).
 4. **Leading + trailing-if-suppressed debounce.** Floor 1s, default
@@ -40,19 +51,28 @@ Bridge-side only. **Agent owns the file; TMCP just touches it.**
    recent dequeue/send/react in the last N seconds — default 10s),
    suppress touches.
 6. **Max-interval ceiling.** Default 30s, configurable.
-7. On `session/close`: TMCP forgets the path. **Does NOT delete
-   the file.** Agent owns its own cleanup.
+7. On `session/close`: TMCP forgets the registered path. If TMCP
+   had created the file (TMCP-supplied path mode), TMCP deletes
+   it. If agent-supplied: TMCP does not touch the file again,
+   agent owns cleanup.
 8. If file doesn't exist when TMCP goes to touch it: log warning,
-   continue. Don't crash. Agent may have deleted it.
-9. Opt-in by construction: if agent never registers, TMCP never
-   touches anything. Existing agents unchanged.
+   continue. Don't crash.
+9. **Opt-in by default off.** If agent never calls `monitor/enable`,
+   TMCP never touches or creates anything. Existing agents
+   unchanged.
 
-TMCP does NOT:
+TMCP does NOT (in agent-supplied mode):
 
 - Allocate or generate filenames.
 - Create or delete the touch file.
-- Manage a `.touch/` directory.
-- Track random hashes.
+
+TMCP DOES (in TMCP-supplied mode):
+
+- Generate a random-hash filename.
+- Create the file in its own data dir.
+- Delete the file on `session/close`.
+
+In both modes, NOTHING happens until `monitor/enable` is called.
 
 ## Acceptance criteria
 
