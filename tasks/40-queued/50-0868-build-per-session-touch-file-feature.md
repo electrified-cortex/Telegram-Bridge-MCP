@@ -61,11 +61,18 @@ Bridge-side only. **Agent owns the file; TMCP just touches it.**
 ### Auto-shorten dequeue default on activity/file enable
 
 Operator (2026-05-04): when an agent calls `activity/file/create`,
-TMCP auto-drops that session's default `max_wait` to **5s**
-(familiar to Claude users). After `activity/file/delete`, the
-session default reverts. Per-call `max_wait` override still
-honored. Rationale: with the kicker in play, a 5s dequeue window
-gives near-real-time responsiveness AND keeps context cache warm.
+TMCP applies a **temporary override** of that session's default
+`max_wait` to **5s** (familiar to Claude users). On
+`activity/file/delete`, the override clears and the default
+returns to the standard **5 minutes (300s)**.
+
+Important: this is NOT a profile mutation. The session's profile
+default is unchanged. The override lives only while
+`activity/file` is active. Per-call `max_wait` argument still
+trumps the override.
+
+Rationale: with the kicker in play, 5s dequeues stay near-real-
+time AND keep context cache warm.
 
 ### Naming rationale
 
