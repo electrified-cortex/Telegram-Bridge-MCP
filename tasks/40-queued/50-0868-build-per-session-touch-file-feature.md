@@ -25,38 +25,52 @@ This task implements that design on the TMCP side.
 
 ## Scope
 
-Bridge-side only:
+Bridge-side only. **Agent owns the file; TMCP just touches it.**
 
-1. Per-session touch file at `<bridge_data_dir>/.touch/<random-hash>.stamp`
-   (or similar — pick path; document in spec).
-2. Filename = cryptographically random hash (NOT the session token).
-3. File created on `session/start` (or first inbound message).
-4. **Touch fires only after the message is fully ready and enqueued**
+1. New action: `monitor/register` (or as optional param on
+   `session/start`). Agent provides an absolute file path.
+   TMCP records the path against the session.
+2. Companion: `monitor/clear` to unregister, OR auto-clear on
+   `session/close`.
+3. **Touch fires only after the message is fully ready and enqueued**
    (post-transcription, post-routing, post-enqueue — last step).
-5. **Leading + trailing-if-suppressed debounce.** Floor 1s, default
+4. **Leading + trailing-if-suppressed debounce.** Floor 1s, default
    window 5s, configurable via env or session config.
-6. **Activity-aware reset.** While agent is mid-tool-call (any
+5. **Activity-aware reset.** While agent is mid-tool-call (any
    recent dequeue/send/react in the last N seconds — default 10s),
    suppress touches.
-7. **Max-interval ceiling.** Default 30s, configurable.
-8. File deleted on `session/close` — clean teardown.
-9. Path returned in `session/start` response so agent can opt in
-   to monitoring.
+6. **Max-interval ceiling.** Default 30s, configurable.
+7. On `session/close`: TMCP forgets the path. **Does NOT delete
+   the file.** Agent owns its own cleanup.
+8. If file doesn't exist when TMCP goes to touch it: log warning,
+   continue. Don't crash. Agent may have deleted it.
+9. Opt-in by construction: if agent never registers, TMCP never
+   touches anything. Existing agents unchanged.
+
+TMCP does NOT:
+
+- Allocate or generate filenames.
+- Create or delete the touch file.
+- Manage a `.touch/` directory.
+- Track random hashes.
 
 ## Acceptance criteria
 
-- `session/start` response includes `touch_path` (absolute, opaque
-  random-hash filename).
-- Inbound message → file mtime updates within configured cadence.
-- Floods within debounce window: max 2 touches (leading + trailing-
-  if-suppressed). Single message: 1 touch.
+- `monitor/register` action accepts absolute `file_path` and
+  records it against the session.
+- Inbound message → registered file's mtime updates within the
+  configured cadence.
+- Floods within debounce window: max 2 touches (leading +
+  trailing-if-suppressed). Single message: 1 touch.
 - Activity-reset works: if agent did a tool call within last N
   seconds, touch is suppressed.
-- `session/close` deletes the file.
-- Token never appears in filename or path.
+- `session/close` clears the registration WITHOUT deleting the
+  file.
+- File-missing on touch: warning logged, no crash.
+- Without registration: zero filesystem activity.
 - Spec passes spec-audit.
-- Smoke test: spawn a session, send 10 messages in 1s, observe
-  touch file mtime changes ≤ 2 within the window.
+- Smoke test: agent registers a path, send 10 messages in 1s,
+  observe ≤ 2 mtime changes within the window.
 
 ## Out of scope
 
