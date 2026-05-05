@@ -60,7 +60,7 @@ describe("cleanupStalePins", () => {
 
   it("unpins a single stale bot session announcement", async () => {
     mocks.getChat
-      .mockResolvedValueOnce({ id: 42, pinned_message: makeBotPin(100, "🟦 🤖 Overseer\nSession 1 — 🟢 Online") })
+      .mockResolvedValueOnce({ id: 42, pinned_message: makeBotPin(100, "🟦 Overseer\nSession 1 — 🟢 Online") })
       .mockResolvedValueOnce({ id: 42 }); // no more pins after cleanup
     await cleanupStalePins();
     expect(mocks.unpinChatMessage).toHaveBeenCalledTimes(1);
@@ -69,8 +69,8 @@ describe("cleanupStalePins", () => {
 
   it("unpins multiple stale bot announcements in a loop", async () => {
     mocks.getChat
-      .mockResolvedValueOnce({ id: 42, pinned_message: makeBotPin(200, "🟩 🤖 Worker\nSession 2 — 🟢 Online") })
-      .mockResolvedValueOnce({ id: 42, pinned_message: makeBotPin(100, "🟦 🤖 Overseer\nSession 1 — 🟢 Online") })
+      .mockResolvedValueOnce({ id: 42, pinned_message: makeBotPin(200, "🟩 Worker\nSession 2 — 🟢 Online") })
+      .mockResolvedValueOnce({ id: 42, pinned_message: makeBotPin(100, "🟦 Overseer\nSession 1 — 🟢 Online") })
       .mockResolvedValueOnce({ id: 42 }); // done
     await cleanupStalePins();
     expect(mocks.unpinChatMessage).toHaveBeenCalledTimes(2);

@@ -76,7 +76,7 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   const remaining = listSessions().sort((a, b) => a.sid - b.sid);
 
   // Always notify the operator that this session disconnected
-  sendServiceMessage(`🤖 ${sessionName} has disconnected.`).catch(() => {});
+  sendServiceMessage(`${sessionName} has disconnected.`).catch(() => {});
 
   // Unpin the session's announcement message, if one was pinned
   if (announcementMsgId !== undefined) {
@@ -129,7 +129,7 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
       setGovernorSid(next.sid);
       const label = next.name || `Session ${next.sid}`;
       sendServiceMessage(
-        `⚠️ Governor session closed. 🤖 ${label} promoted to governor.`,
+        `⚠️ Governor session closed. ${label} promoted to governor.`,
       ).catch(() => {});
       // Notify the promoted governor
       deliverServiceMessage(

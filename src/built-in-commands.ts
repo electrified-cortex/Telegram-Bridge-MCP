@@ -1280,7 +1280,7 @@ async function handleSessionCommand(): Promise<void> {
 function buildSessionListPanel(
   sessions: Array<{ sid: number; name: string; color: string }>,
 ): { text: string; keyboard: { text: string; callback_data: string }[][] } {
-  const text = "🤖 Active sessions:";
+  const text = "Active sessions:";
   const keyboard: { text: string; callback_data: string }[][] = [];
   for (const s of sessions) {
     const label = `${s.color} ${s.name} (SID ${s.sid})`;
