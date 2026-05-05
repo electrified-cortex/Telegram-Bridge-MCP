@@ -70,6 +70,7 @@ import { handleActivityFileCreate } from "./activity/create.js";
 import { handleActivityFileEdit } from "./activity/edit.js";
 import { handleActivityFileDelete } from "./activity/delete.js";
 import { handleActivityFileGet } from "./activity/get.js";
+import { handleNameTag } from "./name-tag.js";
 type ToolResult = ReturnType<typeof toResult>;
 
 /** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
@@ -210,6 +211,10 @@ export function setupActionRegistry(): void {
   registerAction("activity/file/edit", toActionHandler(handleActivityFileEdit));
   registerAction("activity/file/delete", toActionHandler(handleActivityFileDelete));
   registerAction("activity/file/get", toActionHandler(handleActivityFileGet));
+
+  // name-tag — get or set session name tag
+  registerAction("name-tag", toActionHandler(handleNameTag));
+  registerAction("name-tag/set", toActionHandler(handleNameTag));
 
 }
 
@@ -405,12 +410,11 @@ export function register(server: McpServer): void {
           )
           .optional()
           .describe("profile/import: Reminders to register for this session."),
-        nametag_emoji: z
+        name_tag: z
           .string()
-          .min(1)
-          .max(10)
+          .max(64)
           .optional()
-          .describe("profile/import: Custom emoji to replace the default 🤖 in the session name tag."),
+          .describe("name-tag/set or profile/import: Custom name tag string. Replaces the auto-default (<color> <name>). No newlines. Max 64 chars."),
         // reminder/set params
         trigger: z
           .enum(["time", "startup"])

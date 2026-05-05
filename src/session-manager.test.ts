@@ -21,6 +21,7 @@ import {
   setHasCompacted,
   clearHasCompacted,
   getHasCompacted,
+  defaultNameTag,
 } from "./session-manager.js";
 
 interface SessionWithoutSuffix {
@@ -633,6 +634,31 @@ describe("hasCompacted helpers", () => {
     setHasCompacted(a.sid);
     expect(getHasCompacted(a.sid)).toBe(true);
     expect(getHasCompacted(b.sid)).toBe(false);
+  });
+});
+
+// ── defaultNameTag ──────────────────────────────────────────────────────────
+
+describe("defaultNameTag", () => {
+  it("returns '<color> <name>' when color is set", () => {
+    expect(defaultNameTag({ color: "🟦", name: "Worker" })).toBe("🟦 Worker");
+  });
+
+  it("returns just the name when color is empty string", () => {
+    expect(defaultNameTag({ color: "", name: "Worker" })).toBe("Worker");
+  });
+
+  it("returns just the name when color is undefined", () => {
+    expect(defaultNameTag({ color: undefined as unknown as string, name: "Worker" })).toBe("Worker");
+  });
+
+  it("does NOT contain the robot emoji 🤖", () => {
+    const result = defaultNameTag({ color: "🟦", name: "Worker" });
+    expect(result).not.toContain("🤖");
+  });
+
+  it("handles a different color emoji", () => {
+    expect(defaultNameTag({ color: "🟥", name: "Sentinel" })).toBe("🟥 Sentinel");
   });
 });
 

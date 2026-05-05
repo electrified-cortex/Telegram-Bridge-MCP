@@ -11,13 +11,13 @@ const DESCRIPTION =
   "(sparse merge). Use this to load profiles from external sources or to apply ad-hoc " +
   "configuration without saving a profile to disk first.";
 
-export function handleImportProfile({ voice, voice_speed, animation_default, animation_presets, reminders, nametag_emoji, token }: {
+export function handleImportProfile({ voice, voice_speed, animation_default, animation_presets, reminders, name_tag, token }: {
   voice?: string;
   voice_speed?: number;
   animation_default?: string[];
   animation_presets?: Record<string, string[]>;
   reminders?: Array<{ text: string; delay_seconds: number; recurring: boolean; trigger?: "time" | "startup"; disabled?: boolean }>;
-  nametag_emoji?: string;
+  name_tag?: string;
   token: number;
 }) {
   const _sid = requireAuth(token);
@@ -29,7 +29,7 @@ export function handleImportProfile({ voice, voice_speed, animation_default, ani
     ...(animation_default !== undefined && { animation_default }),
     ...(animation_presets !== undefined && { animation_presets }),
     ...(reminders !== undefined && { reminders }),
-    ...(nametag_emoji !== undefined && { nametag_emoji }),
+    ...(name_tag !== undefined && { name_tag }),
   };
 
   const applyResult = applyProfile(_sid, profile);
@@ -71,7 +71,7 @@ export function register(server: McpServer) {
           )
           .optional()
           .describe("Reminders to register for this session."),
-        nametag_emoji: z.string().min(1).max(10).optional().describe("Custom emoji to replace the default 🤖 in the session name tag."),
+        name_tag: z.string().max(64).optional().describe("Custom name tag string for this session. Replaces the auto-default (<color> <name>). No newlines. Max 64 chars."),
         token: TOKEN_SCHEMA,
       },
     },

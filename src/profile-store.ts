@@ -29,7 +29,7 @@ export interface ProfileData {
   animation_default?: string[];
   animation_presets?: Record<string, string[]>;
   reminders?: ReminderDef[];
-  nametag_emoji?: string;
+  name_tag?: string;
 }
 
 // ---------------------------------------------------------------------------

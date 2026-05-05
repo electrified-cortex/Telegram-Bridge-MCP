@@ -3,7 +3,7 @@ import { createMockServer, parseResult, isError } from "../test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn((): boolean => false),
-  getSession: vi.fn((): { nametag_emoji?: string } | undefined => undefined),
+  getSession: vi.fn((): { name_tag?: string } | undefined => undefined),
   getSessionVoiceFor: vi.fn((): string | null => null),
   getSessionSpeedFor: vi.fn((): number | null => null),
   hasSessionDefault: vi.fn((): boolean => false),
@@ -159,15 +159,23 @@ describe("save_profile tool", () => {
     expect(parseResult(result).code).toBe("WRITE_FAILED");
   });
 
-  it("includes nametag_emoji in profile when session has it set", async () => {
+  it("includes name_tag in profile when session has it set", async () => {
     mocks.writeProfile.mockReset();
-    mocks.getSession.mockReturnValue({ nametag_emoji: "🦊" });
+    mocks.getSession.mockReturnValue({ name_tag: "🦊 Scout" });
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
-    expect(written).toHaveProperty("nametag_emoji", "🦊");
+    expect(written).toHaveProperty("name_tag", "🦊 Scout");
     const data = parseResult(result);
-    expect(data.sections).toContain("nametag_emoji");
+    expect(data.sections).toContain("name_tag");
+  });
+
+  it("does NOT include name_tag in profile when using default (name_tag undefined)", async () => {
+    mocks.writeProfile.mockReset();
+    mocks.getSession.mockReturnValue({ name_tag: undefined });
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).not.toHaveProperty("name_tag");
   });
 
   describe("identity gate", () => {

@@ -23,7 +23,8 @@ export interface Session {
   pendingEnvelopeHint?: string;
   silenceThresholdS?: number;
   firstUseHintsSeen?: Set<string>;
-  nametag_emoji?: string;
+  /** Explicitly-set name tag string. When undefined, callers fall back to defaultNameTag(session). */
+  name_tag?: string;
   /**
    * Connection token assigned at session/start. Used for duplicate-session
    * detection: if two callers present the same SID/suffix but different
@@ -487,4 +488,16 @@ export function clearHasCompacted(sid: number): void {
 /** Return true if a `compacted` event has fired and the notify hasn't fired yet. */
 export function getHasCompacted(sid: number): boolean {
   return !!_sessions.get(sid)?.hasCompacted;
+}
+
+// ── Name Tag ───────────────────────────────────────────────
+
+/**
+ * Compute the default name tag for a session.
+ * Returns `<color-emoji> <name>` when color is set, or just `<name>` otherwise.
+ * Does NOT include the robot emoji. Does NOT apply the "Session N" fallback —
+ * callers must resolve the name first.
+ */
+export function defaultNameTag(session: Pick<Session, "color" | "name">): string {
+  return session.color ? `${session.color} ${session.name}` : session.name;
 }

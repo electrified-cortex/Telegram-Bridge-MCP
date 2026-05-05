@@ -72,9 +72,9 @@ export function handleSaveProfile({ key, token }: { key: string; token: number }
     sections.push("reminders");
   }
 
-  if (sessionObj?.nametag_emoji !== undefined) {
-    data.nametag_emoji = sessionObj.nametag_emoji;
-    sections.push("nametag_emoji");
+  if (sessionObj?.name_tag !== undefined) {
+    data.name_tag = sessionObj.name_tag;
+    sections.push("name_tag");
   }
 
   let path: string;

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   recordOutgoing: vi.fn(),
   getCallerSid: vi.fn(() => 0),
   activeSessionCount: vi.fn(() => 1),
-  getSession: vi.fn((_sid: number) => undefined as { name: string; color?: string; nametag_emoji?: string } | undefined),
+  getSession: vi.fn((_sid: number) => undefined as { name: string; color?: string; name_tag?: string } | undefined),
 }));
 
 vi.mock("./typing-state.js", () => ({
@@ -534,7 +534,7 @@ describe("outbound-proxy", () => {
   // -----------------------------------------------------------------------
 
   describe("session header", () => {
-    it("prepends 🤖 Name header in multi-session mode (sendMessage)", async () => {
+    it("prepends Name header in multi-session mode (sendMessage)", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getCallerSid.mockReturnValue(1);
       mocks.getSession.mockReturnValue({ name: "Scout" });
@@ -544,7 +544,7 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendMessage(42, "Hello world");
 
       const [, sentText, sentOpts] = raw.sendMessage.mock.calls[0] as [number, string, Record<string, unknown> | undefined];
-      expect(sentText).toBe("🤖 `Scout`\nHello world");
+      expect(sentText).toBe("`Scout`\nHello world");
       expect(sentOpts?.parse_mode).toBe("Markdown");
     });
 
@@ -571,7 +571,7 @@ describe("outbound-proxy", () => {
       );
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toMatch(/🤖 `Scout\\_2`\n/);
+      expect(sentText).toMatch(/`Scout_2`\n/);
     });
 
     it("uses HTML code tags in name when parse_mode is HTML (sendMessage)", async () => {
@@ -586,7 +586,7 @@ describe("outbound-proxy", () => {
       );
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🤖 <code>Scout&lt;2&gt;</code>\ncontent");
+      expect(sentText).toBe("<code>Scout&lt;2&gt;</code>\ncontent");
     });
 
     it("does not override existing parse_mode when header is injected", async () => {
@@ -616,7 +616,7 @@ describe("outbound-proxy", () => {
       );
 
       const [, , recordedText] = mocks.recordOutgoing.mock.calls[0] as [number, string, string];
-      expect(recordedText).toBe("🤖 Scout\noriginal text");
+      expect(recordedText).toBe("Scout\noriginal text");
     });
 
     it("uses 'Session N' as fallback when session has no name", async () => {
@@ -629,7 +629,7 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendMessage(42, "text");
 
       const [, sentText, sentOpts] = raw.sendMessage.mock.calls[0] as [number, string, Record<string, unknown> | undefined];
-      expect(sentText).toBe("🤖 `Session 3`\ntext");
+      expect(sentText).toBe("`Session 3`\ntext");
       expect(sentOpts?.parse_mode).toBe("Markdown");
     });
 
@@ -646,7 +646,7 @@ describe("outbound-proxy", () => {
       );
 
       const [, , opts] = raw.sendPhoto.mock.calls[0] as [number, string, { caption: string; parse_mode?: string }];
-      expect(opts.caption).toBe("🤖 `Scout`\nA photo caption");
+      expect(opts.caption).toBe("`Scout`\nA photo caption");
       expect(opts.parse_mode).toBe("Markdown");
     });
 
@@ -679,7 +679,7 @@ describe("outbound-proxy", () => {
       );
 
       const [, , opts] = raw.sendPhoto.mock.calls[0] as [number, string, { caption: string; parse_mode: string }];
-      expect(opts.caption).toBe("🤖 <code>Scout</code>\nMy caption");
+      expect(opts.caption).toBe("<code>Scout</code>\nMy caption");
       expect(opts.parse_mode).toBe("HTML");
     });
 
@@ -709,7 +709,7 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).editMessageText(42, 10, "edited content");
 
       const [, , editedText, editOpts] = raw.editMessageText.mock.calls[0] as [number, number, string, Record<string, unknown> | undefined];
-      expect(editedText).toBe("🤖 `Scout`\nedited content");
+      expect(editedText).toBe("`Scout`\nedited content");
       expect(editOpts?.parse_mode).toBe("Markdown");
     });
 
@@ -725,7 +725,7 @@ describe("outbound-proxy", () => {
       );
 
       const [, , editedText] = raw.editMessageText.mock.calls[0] as [number, number, string];
-      expect(editedText).toBe("🤖 <code>Scout</code>\nedited content");
+      expect(editedText).toBe("<code>Scout</code>\nedited content");
     });
 
     it("omits header in editMessageText in single-session mode", async () => {
@@ -739,7 +739,7 @@ describe("outbound-proxy", () => {
       expect(editedText).toBe("edited content");
     });
 
-    it("prepends color square before 🤖 when session has a color", async () => {
+    it("color is included inside the monospace tag when session has a color", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getCallerSid.mockReturnValue(1);
       mocks.getSession.mockReturnValue({ name: "Scout", color: "🟦" });
@@ -749,7 +749,7 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendMessage(42, "Hello");
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🟦 🤖 `Scout`\nHello");
+      expect(sentText).toBe("`🟦 Scout`\nHello");
     });
 
     it("omits color prefix when session has no color", async () => {
@@ -762,7 +762,7 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendMessage(42, "Hello");
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🤖 `Scout`\nHello");
+      expect(sentText).toBe("`Scout`\nHello");
     });
 
     it("_skipHeader suppresses nametag injection in multi-session mode", async () => {
@@ -799,20 +799,20 @@ describe("outbound-proxy", () => {
       expect(sentOpts.reply_to_message_id).toBe(99);
     });
 
-    it("uses nametag_emoji from session when set", async () => {
+    it("uses name_tag from session when set", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getCallerSid.mockReturnValue(1);
-      mocks.getSession.mockReturnValue({ name: "Scout", color: "🟦", nametag_emoji: "🦊" });
+      mocks.getSession.mockReturnValue({ name: "Scout", color: "🟦", name_tag: "Lawnmower 💃" });
 
       const raw = fakeApi();
       const p = proxy(raw);
       await (p as unknown as FakeApi).sendMessage(42, "Hello");
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🟦 🦊 `Scout`\nHello");
+      expect(sentText).toBe("`Lawnmower 💃`\nHello");
     });
 
-    it("falls back to 🤖 when nametag_emoji is not set", async () => {
+    it("uses auto-default <color> <name> when name_tag is not set", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getCallerSid.mockReturnValue(1);
       mocks.getSession.mockReturnValue({ name: "Scout", color: "🟦" });
@@ -822,7 +822,7 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendMessage(42, "Hello");
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      expect(sentText).toBe("🟦 🤖 `Scout`\nHello");
+      expect(sentText).toBe("`🟦 Scout`\nHello");
     });
 
     it("_skipHeader suppresses nametag injection in editMessageText", async () => {
