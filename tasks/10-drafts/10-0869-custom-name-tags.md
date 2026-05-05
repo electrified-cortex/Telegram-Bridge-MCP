@@ -42,17 +42,20 @@ Strong TDD candidate. Existing name-tag code has accumulated funky logic — wri
 Sequential where dependent; mark which can parallelize. Each subtask is small enough to claim independently if delegation supports it.
 
 **1. Refactor name-tag storage to single string** *(blocks all others)*
+
 - Replace any composite name-tag struct (color/emoji/name) on the session model with a single `name_tag: string` field.
 - Internal helper `defaultNameTag(session) → string` computes `<color-emoji> <name>`.
 - All read sites pull from `session.name_tag` (or fall to `defaultNameTag` if unset).
 - Tests: unit tests for storage round-trip and default fallback.
 
 **2. Drop robot emoji from default** *(parallel with #3)*
+
 - Update `defaultNameTag` to omit `🤖`. New default = `<color-emoji> <name>` separated by single space.
 - Existing sessions retain their stored tag — no migration.
 - Tests: assert default does not contain `🤖`.
 
 **3. New action `name-tag` (jQuery-style get/set)** *(parallel with #2)*
+
 - `action(type: "name-tag", token)` — getter, returns `{ name_tag: <current> }`.
 - `action(type: "name-tag", token, name_tag: "<new>")` OR `action(type: "name-tag/set", token, name_tag: "<new>")` — setter, overrides session's name tag.
 - One action namespace, two shapes (jQuery pattern: same name, parameter presence determines mode).
@@ -62,18 +65,22 @@ Sequential where dependent; mark which can parallelize. Each subtask is small en
 - Tests: get returns current, set overrides, get-after-set returns new value, validation rejects oversized/newlines.
 
 **4. Outbound rendering monospace wrap** *(after #1)*
+
 - Wherever the name tag prefixes outbound messages, wrap in monospace (` `` ` backticks).
 - Tests: outbound from session with `name_tag = "Lawnmower"` renders as `` `Lawnmower` `` prefix.
 
 **5. Profile save: conditional `name_tag`** *(after #1, #3)*
+
 - `profile/save` (or equivalent) serializes `name_tag` ONLY if the session has an explicit custom tag set (i.e. tag differs from `defaultNameTag(session)` OR an explicit set fired).
 - Tests: save with default → no name_tag in profile; save after set → name_tag included.
 
 **6. Profile load: apply `name_tag`** *(after #1, #5)*
+
 - `profile/load` applies `name_tag` if present in the profile, overriding session default.
 - Tests: load profile with name_tag → session uses it; load without → default holds.
 
 **7. Curator dogfood** *(after #1–#6 land)*
+
 - Curator session: set custom tag, verify outbound, save profile, close session, restart, verify reload applies tag.
 - Documented in PR description.
 
