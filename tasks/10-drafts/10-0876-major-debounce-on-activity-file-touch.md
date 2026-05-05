@@ -28,14 +28,32 @@ const ACTIVITY_SUPPRESS_MS = 10_000;
 
 ## Behavior to enforce
 
-The mtime bump is an **idle kick**, not a per-message notification. Bump only when:
+The mtime bump is an **idle kick**, not a per-message notification. The nudge fires when ALL of:
 
-1. The session has been silent (zero session-token tool calls) for at least the debounce window, AND
-2. The session is NOT currently inside a `dequeue` call (active long-poll = agent will see the event when dequeue returns; no kick needed).
+1. There is something pending in the session queue (no point kicking if the queue is empty).
+2. The session has been silent (zero session-token tool calls) for at least the debounce window.
+3. The session is NOT currently inside a `dequeue` call (active long-poll = agent will see the event when dequeue returns; no kick needed).
 
 Any session-token tool call resets the debounce timer — including the dequeue call itself, send/react/etc.
 
-A pending message that arrives BEFORE the debounce window elapses queues but does not bump the mtime. When the window finally elapses (no activity), if there are still pending messages, THEN bump.
+**One-nudge-per-cycle rule (operator 2026-05-05):** once a nudge fires (mtime bumped), no further nudges happen for that session until a `dequeue` call from that session is observed. Subsequent inbound messages may queue up but do NOT trigger additional bumps. The cycle re-arms when dequeue is called — even if dequeue returns empty, that's the reset signal. This prevents nudge-storms when an agent is unresponsive (rare-but-possible failure case) and keeps the wake notification meaningful.
+
+Worst case the agent receives ONE mtime bump per idle period; multiple inbound messages during that period coalesce into the single nudge.
+
+State machine per session:
+
+```
+state: ARMED -> NUDGE_FIRED -> ARMED (on dequeue)
+
+ARMED + (queue not empty) + (silent for >= debounce_ms) + (no in-flight dequeue)
+  → bump mtime, transition to NUDGE_FIRED
+
+NUDGE_FIRED + (any inbound event)
+  → ignore (queue accumulates; do NOT bump)
+
+NUDGE_FIRED + (dequeue call observed)
+  → transition to ARMED (whether dequeue returned events or empty)
+```
 
 ## Implementation sketch
 
@@ -43,24 +61,34 @@ State per session:
 
 - `lastActivityAt: number` — already exists. Updated on every session-token tool call (currently only updated on activity-file touches; needs to be updated on **every** session tool call: dequeue, send, react, action).
 - `inflightDequeue: boolean` (new) — true while a dequeue call is being processed for this session.
+- `nudgeArmed: boolean` (new) — true when the cycle is armed (initial state); flipped to false when an mtime bump fires; flipped back to true on the next observed dequeue call.
 
 Touch logic (replaces the current 10s suppress):
 
 ```
 on inbound event for session S:
-  if (now - lastActivityAt < DEBOUNCE_MS) → skip mtime bump (will retry when timer fires)
-  if (inflightDequeue) → skip mtime bump
-  else → bump mtime, reset absorbed counter
+  if (!nudgeArmed)                            → skip (already nudged this cycle)
+  if (queueEmpty)                             → skip (no point)
+  if (inflightDequeue)                        → skip (agent will drain via dequeue return)
+  if (now - lastActivityAt < DEBOUNCE_MS)     → skip (still in suppression window)
+                                                schedule timer at lastActivityAt + DEBOUNCE_MS
+  else                                        → bump mtime, set nudgeArmed = false
+
+on dequeue call (any return path) for session S:
+  set nudgeArmed = true
+  update lastActivityAt = now
 ```
 
-Schedule a timer at `lastActivityAt + DEBOUNCE_MS` to retry if pending events accumulated during the suppress window. Reset/clear on any new tool call.
+Schedule a timer at `lastActivityAt + DEBOUNCE_MS` so a queued message that arrived during suppression gets a kick when the window finally elapses. Reset/clear on any new tool call.
 
-`DEBOUNCE_MS = 60_000` (60 seconds) as default. Configurable per-session via `profile/dequeue-default` or sibling action if needed (out of scope for first pass).
+**`DEBOUNCE_MS = 60_000` (60 seconds)** as default — operator stated twice this session. Operator also mentioned 2 minutes in passing; treat 60s as the lock-in default and add a constant comment that it can dial up to 120_000 if observed behavior wants it. Configurable per-session is out of scope for first pass.
 
 ## Acceptance criteria
 
 - An agent actively dequeuing in long-poll receives messages through the dequeue payload; mtime is NOT bumped during the dequeue.
 - An agent that has been silent for >= 60 s with pending messages receives an mtime bump.
+- After an mtime bump, no further bumps until a dequeue from that session is observed (one-nudge-per-cycle rule).
+- After dequeue, the cycle re-arms; another idle period with pending messages triggers another bump.
 - Any session tool call (dequeue, send, react, etc.) resets the debounce window — mtime bumps stop until 60 s of silence accumulates.
 - Existing 10-second suppress test is updated/replaced.
 - No regression in activity-file create / delete / get behavior.
