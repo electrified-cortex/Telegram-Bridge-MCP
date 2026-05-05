@@ -1,67 +1,93 @@
 ---
 id: "10-0873"
-title: "HTTP dequeue endpoint — curl-callable from watcher subprocesses"
+title: "Dedicated /dequeue HTTP endpoint — curl-callable from watcher subprocesses"
 type: feature
 priority: 30
 status: draft
 created: 2026-05-05
+updated: 2026-05-05
 repo: Telegram MCP
 delegation: Worker
 blocks: ["10-0872"]
 ---
 
-# HTTP dequeue endpoint for shell watchers
+# Dedicated /dequeue HTTP endpoint
 
-## Why
+## Operator decision (2026-05-05)
 
-Activity-file watchers are bash/PS subprocesses that cannot speak MCP — only HTTP. To genuinely drain the queue at wake time (and so eliminate the second turn per inbound message; see 10-0872), the watcher must call dequeue over an HTTP transport.
+> "We need a custom endpoint for DQ. It's that simple. Not a big deal. We've been building out the HTTP on demand at the moment, so why not. There's no security model, really, that we have to worry about — it's just a matter of can the local models or agents call into it. Just expose DQ as a simple call. The full message — the whole JSON payload — same behavior as if they were just calling DQ from MCP."
 
-TMCP already exposes its MCP server over Streamable HTTP at `/mcp` (see `project_sse_keepalive.md`). Two paths:
+Decision: ship a dedicated `/dequeue` HTTP route. Do NOT route through `/mcp` (which is wrapped by MCP SDK's `StreamableHTTPServerTransport` and requires an `mcp-session-id` header — verified in `src/index.ts:149`). A raw curl against `/mcp` returns 400 "No valid session ID."
 
-1. **Use `/mcp` as-is.** Watcher curls a JSON-RPC envelope `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"...","arguments":{...}},"id":1}`. No new endpoint needed; just documentation.
-2. **Add a dedicated `/dequeue` endpoint.** Simpler curl shape — `POST /dequeue` with token in header or body, returns the drained events directly without the JSON-RPC envelope. Cleaner for shell users.
+## Behavior
 
-**Operator preference (2026-05-05): leaning toward the dedicated `/dequeue` endpoint** — keeps the watcher script simple, no JSON-RPC envelope ceremony. To be confirmed.
-
-## Approach (assuming dedicated endpoint)
-
-Add an HTTP route alongside the existing `/mcp` mount:
+**Primary shape (operator preference): `GET /dequeue?token=<num>`** — simplest possible curl, no body, no headers. Optional query params: `max_wait`, `connection_token`.
 
 ```
-POST /dequeue
-Headers: Authorization: Bearer <token>     (or ?token=<num> query)
-Body: { "max_wait": <number>, "connection_token": "<uuid>"? }   (optional)
-Response: { "updates": [...] } | { "empty": true } | { "timed_out": true } | { "error": "..." }
+GET /dequeue?token=1399313
+GET /dequeue?token=1399313&max_wait=0
 ```
 
-Same drain semantics as `mcp__telegram-bridge-mcp__dequeue` — wraps the same internal handler. Token validation identical.
+Also accept `POST /dequeue` with JSON body for callers that need to set richer args:
 
-## Approach (reusing /mcp)
+```json
+{
+  "token": <session_token>,
+  "max_wait": <0..300>?,
+  "connection_token": "<uuid>"?
+}
+```
 
-Document the JSON-RPC envelope shape in the `activity/file` help topic. Provide a copy-pasteable curl one-liner. No code change — just docs.
+Response: **identical shape to the MCP `dequeue` tool result.** Same `updates` array, same `pending`, same `empty: true` / `timed_out: true` / `{ error: "session_closed" }` paths. Caller sees no behavioral difference vs the MCP tool.
+
+Auth: token validates against the session registry exactly as the MCP tool does. No additional security layer (operator: local-only consumer, no security model needed).
+
+## Help-topic shape (platform-agnostic)
+
+Per operator (2026-05-05): the `activity/file` help topic must be platform-agnostic. Express **intent**, not one shell:
+
+> "Call `GET <base-url>/dequeue?token=<your-token>` from your monitor's wake action. The response is the same JSON you would get from the `dequeue` MCP tool."
+
+Show one example for each common environment (curl, PowerShell `Invoke-RestMethod`, Node `fetch`) but make it clear the underlying contract is just an HTTP GET — any tool that can speak HTTP works.
+
+## Implementation
+
+The MCP `dequeue` tool already wraps the internal drain handler. Refactor (if needed) so the handler is a pure function callable from both the MCP tool path and the new HTTP route. Both paths share validation + drain + response shape.
+
+Express route mount: alongside the existing `/mcp` route in `src/index.ts`. Not behind any transport — direct Express handler.
 
 ## Acceptance criteria
 
-- A watcher subprocess (bash or PS) can drain a session's queue via `curl` against the chosen endpoint.
-- Drained events match what the in-MCP `dequeue` tool returns for the same call.
-- Auth is enforced — invalid token returns 401, no events.
-- The `activity/file/create` response hint and `activity/file` help topic point to this endpoint with a complete one-liner example.
+- `GET /dequeue?token=<num>` returns events for a valid token, identical in shape to the MCP tool result. **Primary shape.**
+- `POST /dequeue` with JSON body works for the same call shape.
+- Invalid token returns 401 with a clear error body.
+- `max_wait: 0` instant-poll behavior matches the MCP tool.
+- Same `pending`, `empty`, `timed_out`, `error: "session_closed"` semantics.
+- `activity/file/create` response hint or related help topic describes the GET shape platform-agnostically (intent: "call this URL"), with examples for curl + PowerShell + Node fetch.
+- The MCP `dequeue` tool continues to work unchanged.
 
 ## Out of scope
 
-- Migrating the in-MCP `dequeue` tool (it stays, both paths coexist).
-- Adding new dequeue features (e.g., the iceboxed `skip` parameter from 10-0872).
-- Streaming / long-poll over HTTP — the watcher uses `max_wait: 0` semantics; pure drain.
+- Exposing other tools as REST. **Iceboxed** — see below.
+- Auth headers / API keys / etc.
+- Long-poll over SSE (caller passes `max_wait`; same blocking semantics as the MCP tool).
+
+## Iceboxed (separate idea, not this task)
+
+Operator noted: "we were considering can we actually just expose everything that the MCP has as a RESTful HTTP. I think as an interim check that's like maybe an icebox thing." Captured for a future task — generic REST surface mirroring the MCP tool catalog. NOT part of 10-0873.
 
 ## Dispatch
 
-Worker-shippable. Haiku-class for documentation-only path; Sonnet for endpoint addition (touches HTTP routing + auth).
+Worker-shippable. Sonnet-class — touches HTTP routing, request validation, response shape parity. Tests: 4–6 cases (happy path, invalid token, instant poll, blocking poll cut short, session-closed, parity-with-MCP-tool).
 
 ## Bailout
 
-If both paths prove harder than expected (e.g., port conflict, auth quirks), surface to Curator. Worker time-cap: 90 minutes for the docs-only path, 4 hours for the dedicated-endpoint path.
+If the internal drain handler isn't easily extractable to a pure function, escalate to Curator — may need a small refactor first that's better as its own task.
 
-## Notes
+Worker time-cap: 4 hours including tests. Checkpoint with Curator if exceeded.
 
-- See sibling 10-0872 for watcher-side design that consumes this endpoint.
-- See `00-ideas/spike-monitor-vs-dequeue-tmcp-2026-05-04.md` for the prior-session spike that mapped the architecture options.
+## Related
+
+- `10-0872` (watcher pre-drain consumes this endpoint).
+- `10-0871` (activity/file help topic — references this URL after merge).
+- `00-ideas/spike-monitor-vs-dequeue-tmcp-2026-05-04.md` (prior architecture survey).
