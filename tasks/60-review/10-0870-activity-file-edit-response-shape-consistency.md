@@ -70,3 +70,20 @@ Worker, Haiku — mechanical edit + build + test.
 - Origin: operator asked for the shape change on `create.ts` only (msg ~13:35Z, 2026-05-05); this task picks up the sibling.
 - See `src/tools/activity/create.ts` (post-change) for the reference shape.
 - `tmcp_owned` is still tracked internally in `file-state.ts` for cleanup; agents don't need it in the response.
+
+## Completion
+
+- Branch: `10-0870`
+- Commit: `171b14716a7ca2e177c80347153919a7f4716890`
+- Changed: `src/tools/activity/edit.ts` — both toResult sites + JSDoc
+- Build: pnpm build GREEN
+- Tests: pnpm test GREEN (2955 tests, 0 failures)
+- Code review: PASSED (no critical/major findings)
+- Worker: Worker 2
+
+## Verification
+
+**Verdict:** APPROVED
+**Date:** 2026-05-05
+**Criteria:** 5/5 passed
+**Evidence:** Diff of 10-0870 vs dev confirms both `toResult` sites (lines 58 and 83) and JSDoc (line 7) in `edit.ts` updated to `{ file_path, hint, previous_path }`; worktree clean; 2955 tests green; no in-tree callers of old `ok`/`tmcp_owned` fields from the edit endpoint.
