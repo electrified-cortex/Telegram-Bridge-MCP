@@ -3,7 +3,7 @@ id: "10-0870"
 title: "Align activity/file/edit response shape with create (drop ok+tmcp_owned, add hint)"
 type: chore
 priority: 50
-status: draft
+status: queued
 created: 2026-05-05
 repo: Telegram MCP
 delegation: Worker

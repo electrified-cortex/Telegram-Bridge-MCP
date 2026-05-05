@@ -3,7 +3,7 @@ id: "10-0871"
 title: "Replace activity/file hint with help() pointer + add help topic"
 type: feature
 priority: 30
-status: draft
+status: queued
 created: 2026-05-05
 repo: Telegram MCP
 delegation: Worker
