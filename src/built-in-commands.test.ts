@@ -43,7 +43,7 @@ const mocks = vi.hoisted(() => ({
   getGovernorSid: vi.fn((): number => 0),
   setGovernorSid: vi.fn(),
   // session-teardown
-  closeSessionById: vi.fn((..._args: unknown[]): { closed: boolean; sid: number } => ({ closed: true, sid: 0 })),
+  closeSessionById: vi.fn((..._args: unknown[]): { closed: boolean; sid: number; name?: string } => ({ closed: true, sid: 0 })),
   // session-queue
   deliverServiceMessage: vi.fn((): boolean => true),
   // session-context
