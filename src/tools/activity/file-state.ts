@@ -51,9 +51,6 @@ const ACTIVITY_SUPPRESS_MS = 10_000;
 /** Max interval ceiling: force a touch after this many ms without one (if messages are pending). */
 const MAX_INTERVAL_MS = 30_000;
 
-/** Dequeue override cap when activity/file is active (seconds). */
-export const ACTIVITY_FILE_DEQUEUE_CAP_S = 5;
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
