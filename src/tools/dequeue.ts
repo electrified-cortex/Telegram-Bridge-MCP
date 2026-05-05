@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { isActivityFileActive, ACTIVITY_FILE_DEQUEUE_CAP_S } from "./activity/file-state.js";
+
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -195,12 +195,6 @@ export function register(server: McpServer) {
       // Gate: reject timeout values above the session default unless force is set
       const sessionDefault = getDequeueDefault(sid);
       let effectiveTimeout = timeout ?? sessionDefault;
-      // Activity-file override: when no explicit timeout is given and the session has
-      // an active activity/file registration, cap the wait to 5 s so the agent checks
-      // in frequently (the file-touch is the real wakeup signal).
-      if (timeout === undefined && isActivityFileActive(sid)) {
-        effectiveTimeout = Math.min(effectiveTimeout, ACTIVITY_FILE_DEQUEUE_CAP_S);
-      }
       if (timeout !== undefined && timeout > sessionDefault && !force) {
         const firstOccurrence = !_timeoutHintShownForSession.has(sid);
         _timeoutHintShownForSession.add(sid);
