@@ -363,14 +363,14 @@ describe("animation-state", () => {
 
     it("prepends session name tag when buildHeader returns a header", async () => {
       const { buildHeader } = await import("./outbound-proxy.js");
-      vi.mocked(buildHeader).mockReturnValueOnce({ plain: "🤖 Bot\n", formatted: "🤖 `Bot`\n" });
+      vi.mocked(buildHeader).mockReturnValueOnce({ plain: "Bot\n", formatted: "`Bot`\n" });
 
       await startAnimation(1);
       await cancelAnimation(1, "Done", "Markdown");
 
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123, 42,
-        "🤖 `Bot`\nDone",
+        "`Bot`\nDone",
         expect.objectContaining({ parse_mode: expect.any(String) }),
       );
     });

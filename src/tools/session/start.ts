@@ -73,7 +73,7 @@ async function requestApproval(
 ): Promise<{ approved: boolean; color?: string; forceColor?: boolean }> {
   const label = reconnect ? "Session reconnecting:" : "New session requesting access:";
   const reconnectHint = reconnect ? `\nThe agent may have a saved token — approve only if token recovery failed\\.` : "";
-  const text = `🤖 *${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:${reconnectHint}`;
+  const text = `*${label}* ${markdownToV2(name)}\nPick a color to approve, or deny:${reconnectHint}`;
   const availableColors = getAvailableColors(colorHint);
   if (checkAndConsumeAutoApprove()) {
     return { approved: true, color: colorHint ?? availableColors[0], forceColor: true };
@@ -151,7 +151,7 @@ async function requestApproval(
     await getApi().editMessageText(
       chatId,
       msgId,
-      `🤖 *Session denied:* ${markdownToV2(name)} ✗`,
+      `*Session denied:* ${markdownToV2(name)} ✗`,
       { parse_mode: "MarkdownV2" },
     ).catch(() => {});
   }
@@ -165,7 +165,7 @@ async function requestApproval(
  */
 async function requestReconnectApproval(chatId: number, name: string, sid: number): Promise<boolean> {
   if (checkAndConsumeAutoApprove()) return true;
-  const text = `🤖 *Session reconnecting:* ${markdownToV2(name)}`;
+  const text = `*Session reconnecting:* ${markdownToV2(name)}`;
   const sent = await getApi().sendMessage(chatId, text, {
     parse_mode: "MarkdownV2",
     reply_markup: {
@@ -203,7 +203,7 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
       .editMessageText(
         chatId,
         msgId,
-        `🤖 *Session reconnect denied:* ${markdownToV2(name)} ✗`,
+        `*Session reconnect denied:* ${markdownToV2(name)} ✗`,
         { parse_mode: "MarkdownV2", reply_markup: { inline_keyboard: [] } },
       )
       .catch(() => {});
@@ -312,7 +312,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           // buildHeader() intentionally skips single-session mode; compose inline.
           const _announcement = await Promise.resolve(
             runInSessionContext(session.sid, () =>
-              getApi().sendMessage(chatId, `${session.color} 🤖 \`${markdownToV2(effectiveName)}\`\nSession ${session.sid} — 🟢 Online`, { parse_mode: "MarkdownV2" }),
+              getApi().sendMessage(chatId, `${session.color} \`${markdownToV2(effectiveName)}\`\nSession ${session.sid} — 🟢 Online`, { parse_mode: "MarkdownV2" }),
             ),
           ).catch(() => undefined);
           const announcementMsgId = _announcement?.message_id;
@@ -344,7 +344,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           // Broadcast a visible announcement via the outbound proxy so the
           // operator (and other sessions) can reply-to-address this session.
           // runInSessionContext sets the ALS SID so the proxy prepends the
-          // correct name tag ("🟨 🤖 Worker 1\nSession 2 — 🟢 Online").
+          // correct name tag ("🟨 Worker 1\nSession 2 — 🟢 Online").
           const _announcement = await Promise.resolve(
             runInSessionContext(session.sid, () =>
               getApi().sendMessage(chatId, `Session ${session.sid} — 🟢 Online`),

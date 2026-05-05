@@ -243,7 +243,7 @@ export function createOutboundProxy(realApi: Api): Api {
           const skipHeader = cleanOpts?._skipHeader === true;
           if (cleanOpts) delete cleanOpts._skipHeader;
 
-          // Session header — prepend "🤖 Name\n" in multi-session mode
+          // Session header — prepend "Name\n" in multi-session mode
           let parseMode = cleanOpts?.parse_mode as string | undefined;
           const { plain: headerPlain, formatted: headerFormatted } = buildHeader(parseMode);
           const finalText = headerFormatted && !skipHeader ? headerFormatted + text : text;
