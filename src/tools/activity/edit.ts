@@ -51,6 +51,8 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
       debounceTimer: null,
       absorbedCount: 0,
       lastActivityAt: 0,
+      inflightDequeue: false,
+      nudgeArmed: true,
     });
 
     return toResult({ ok: true, file_path: filePath, tmcp_owned: false, previous_path: previousPath });
@@ -74,6 +76,8 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
     debounceTimer: null,
     absorbedCount: 0,
     lastActivityAt: 0,
+    inflightDequeue: false,
+    nudgeArmed: true,
   });
 
   return toResult({ ok: true, file_path: generatedPath, tmcp_owned: true, previous_path: previousPath });

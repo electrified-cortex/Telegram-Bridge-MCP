@@ -44,6 +44,8 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       debounceTimer: null,
       absorbedCount: 0,
       lastActivityAt: 0,
+      inflightDequeue: false,
+      nudgeArmed: true,
     });
 
     return toResult({ file_path: filePath, hint: "Configure your watcher to call dequeue() when this file changes" });
@@ -69,6 +71,8 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
     debounceTimer: null,
     absorbedCount: 0,
     lastActivityAt: 0,
+    inflightDequeue: false,
+    nudgeArmed: true,
   });
 
   return toResult({ file_path: generatedPath, hint: "Configure your watcher to call dequeue() when this file changes" });

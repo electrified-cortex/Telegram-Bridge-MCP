@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-
+import { setDequeueActive } from "./activity/file-state.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -210,6 +210,10 @@ export function register(server: McpServer) {
 
       const sessionQueue = getSessionQueue(sid);
 
+      // Mark this session as having an in-flight dequeue — suppresses activity-file kicks
+      // while the agent is actively waiting for messages.
+      setDequeueActive(sid, true);
+
       if (!sessionQueue) {
         return toResult({
           error: "session_closed",
@@ -406,6 +410,8 @@ export function register(server: McpServer) {
         // is still waiting. This is acceptable — the session is not fully idle in
         // that case. A refcount would be needed to handle it precisely.
         setDequeueIdle(sid, false);
+        // Re-arm activity-file nudge cycle and update lastActivityAt.
+        setDequeueActive(sid, false);
       }
     },
   );

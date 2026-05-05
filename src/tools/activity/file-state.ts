@@ -30,6 +30,7 @@ import { appendFile, unlink, mkdir, open } from "fs/promises";
 import { dirname, isAbsolute, resolve } from "path";
 import { randomBytes } from "crypto";
 import { fileURLToPath } from "url";
+import { getKickDebounceMs } from "../../session-manager.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** data/activity/ lives at repo_root/data/activity/ */
@@ -42,14 +43,14 @@ const ACTIVITY_DIR = resolve(__dirname, "../../../", "data", "activity");
 /** Minimum debounce floor (hard constraint per spec). */
 const DEBOUNCE_FLOOR_MS = 1_000;
 
-/** Default debounce window. */
-const DEBOUNCE_WINDOW_MS = 5_000;
+/** Default kick debounce window (ms). Per-session override via profile/kick-debounce. */
+export const KICK_DEBOUNCE_DEFAULT_MS = 60_000;
 
-/** Activity-aware suppression: if agent had a tool call within this window, skip touch. */
-const ACTIVITY_SUPPRESS_MS = 10_000;
+/** Minimum allowed kick debounce (ms). */
+export const KICK_DEBOUNCE_MIN_MS = 30_000;
 
-/** Max interval ceiling: force a touch after this many ms without one (if messages are pending). */
-const MAX_INTERVAL_MS = 30_000;
+/** Maximum allowed kick debounce (ms). */
+export const KICK_DEBOUNCE_MAX_MS = 600_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,12 +63,19 @@ export interface ActivityFileState {
   tmcpOwned: boolean;
   /** Timestamp (ms) of the last successful touch, or null if never. */
   lastTouchAt: number | null;
-  /** Active debounce timer handle, or null if none. */
+  /** Active kick-delay timer handle, or null if none. */
   debounceTimer: ReturnType<typeof setTimeout> | null;
-  /** Number of messages absorbed during the current debounce window. */
+  /** Unused legacy field — kept for interface compatibility. Remove in next major. */
   absorbedCount: number;
-  /** Timestamp (ms) of the last agent tool call (for activity suppression). */
+  /** Timestamp (ms) of the last agent tool call (for kick suppression). */
   lastActivityAt: number;
+  /** True while a dequeue call is being processed for this session. */
+  inflightDequeue: boolean;
+  /**
+   * True when the nudge cycle is armed — the session is eligible to receive
+   * an mtime kick. Flipped to false when a kick fires; re-armed on dequeue.
+   */
+  nudgeArmed: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,61 +181,93 @@ export async function clearActivityFile(sid: number): Promise<void> {
 
 /**
  * Notify the activity file system that the agent made a tool call.
- * Resets the activity suppression window so we don't kick an awake agent.
+ * Resets the kick suppression window and cancels any pending kick timer.
+ * Called from dispatchBehaviorTracking (server.ts) for every completed tool call.
  */
 export function recordActivityTouch(sid: number): void {
   const entry = _state.get(sid);
   if (entry) {
     entry.lastActivityAt = Date.now();
+    // Cancel any pending kick timer — agent is active, no nudge needed
+    if (entry.debounceTimer !== null) {
+      clearTimeout(entry.debounceTimer);
+      entry.debounceTimer = null;
+    }
+  }
+}
+
+/**
+ * Set the in-flight dequeue flag for a session.
+ *
+ * Call with active=true when a dequeue call begins processing.
+ * Call with active=false when dequeue returns (any path — use finally block).
+ *
+ * On dequeue completion (active=false):
+ * - Re-arms the nudge cycle (nudgeArmed = true)
+ * - Updates lastActivityAt
+ * - Clears any pending kick timer (fresh start)
+ */
+export function setDequeueActive(sid: number, active: boolean): void {
+  const entry = _state.get(sid);
+  if (!entry) return;
+  entry.inflightDequeue = active;
+  if (!active) {
+    // Dequeue completed — re-arm the nudge cycle
+    entry.nudgeArmed = true;
+    entry.lastActivityAt = Date.now();
+    if (entry.debounceTimer !== null) {
+      clearTimeout(entry.debounceTimer);
+      entry.debounceTimer = null;
+    }
   }
 }
 
 /**
  * Called after every inbound message is enqueued to a session.
- * Implements the debounce + activity-aware suppression + max-interval logic.
+ *
+ * Implements the idle-kick state machine:
+ *   ARMED + (not in-flight dequeue) + (silent >= kickDebounce) → nudge, disarm
+ *   ARMED + (not in-flight dequeue) + (silent < kickDebounce) → schedule timer
+ *   NUDGE_FIRED → no further nudges until dequeue re-arms (setDequeueActive)
+ *   Any tool call → recordActivityTouch resets window + clears timer
  */
 export function touchActivityFile(sid: number): void {
   const entry = _state.get(sid);
   if (!entry) return;
 
+  // One-nudge-per-cycle: only fire if armed
+  if (!entry.nudgeArmed) return;
+
+  // Never kick while agent is actively dequeuing (they'll get the event on return)
+  if (entry.inflightDequeue) return;
+
   const now = Date.now();
+  const debounceMs = Math.max(DEBOUNCE_FLOOR_MS, getKickDebounceMs(sid));
+  const timeSinceActivity = now - entry.lastActivityAt;
 
-  // Max-interval ceiling: if it's been too long since the last touch, force one now
-  const sinceLastTouch = entry.lastTouchAt !== null ? now - entry.lastTouchAt : Infinity;
-  const forceByInterval = sinceLastTouch >= MAX_INTERVAL_MS;
-
-  // Activity suppression: skip if agent was active recently
-  const agentRecentlyActive = (now - entry.lastActivityAt) < ACTIVITY_SUPPRESS_MS;
-
-  if (agentRecentlyActive && !forceByInterval) {
-    // Agent is awake; absorb this message into the debounce window if one is running
-    if (entry.debounceTimer !== null) {
-      entry.absorbedCount++;
+  if (timeSinceActivity < debounceMs) {
+    // Still in suppression window — schedule a single timer for when window expires.
+    // Don't reschedule if a timer is already pending (avoid timer storm on message bursts).
+    if (entry.debounceTimer === null) {
+      const delay = debounceMs - timeSinceActivity;
+      entry.debounceTimer = setTimeout(() => {
+        const current = _state.get(sid);
+        if (!current) return;
+        current.debounceTimer = null;
+        // Re-evaluate on timer fire — conditions may have changed
+        touchActivityFile(sid);
+      }, delay);
     }
     return;
   }
 
-  // If a debounce window is already running, absorb this message
+  // Agent has been silent for >= debounce window — fire the kick
+  entry.nudgeArmed = false;
   if (entry.debounceTimer !== null) {
-    entry.absorbedCount++;
-    return;
+    clearTimeout(entry.debounceTimer);
+    entry.debounceTimer = null;
   }
-
-  // Leading edge: fire immediately
   doTouch(sid);
-
-  // Start the debounce window
-  entry.absorbedCount = 0;
-  entry.debounceTimer = setTimeout(() => {
-    const current = _state.get(sid);
-    if (!current) return;
-    current.debounceTimer = null;
-    // Trailing touch if any messages were absorbed during the window
-    if (current.absorbedCount > 0) {
-      current.absorbedCount = 0;
-      doTouch(sid);
-    }
-  }, Math.max(DEBOUNCE_FLOOR_MS, DEBOUNCE_WINDOW_MS));
 }
 
 /**
