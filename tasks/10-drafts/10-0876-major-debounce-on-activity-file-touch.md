@@ -31,10 +31,24 @@ const ACTIVITY_SUPPRESS_MS = 10_000;
 The mtime bump is an **idle kick**, not a per-message notification. The nudge fires when ALL of:
 
 1. There is something pending in the session queue (no point kicking if the queue is empty).
-2. The session has been silent (zero session-token tool calls) for at least the debounce window.
+2. The session has been **completely silent** for at least the debounce window — see "What counts as activity" below.
 3. The session is NOT currently inside a `dequeue` call (active long-poll = agent will see the event when dequeue returns; no kick needed).
 
-Any session-token tool call resets the debounce timer — including the dequeue call itself, send/react/etc.
+Any session activity resets the debounce timer.
+
+### What counts as activity (operator 2026-05-05)
+
+> "It can only happen if the agent hasn't been doing any animations. It can't be doing anything, right? It has to be completely inactive. No typing, no in the middle of messages, no asynchronous messaging going on. It has to be silent for 60 seconds for that timeout."
+
+Activity is defined broadly — ANY of these resets the debounce timer:
+
+- Any session-token tool call (`dequeue`, `send`, `react`, `action/*`, etc.).
+- An active animation on the session (animation in progress, even if started earlier).
+- A `show-typing` indicator currently in flight.
+- An async send still rendering (e.g. TTS in progress, message_id_pending not yet resolved).
+- Any in-flight tool call that hasn't returned yet (mid-multi-step turn).
+
+The state machine treats "no detectable session-token activity from any source" as the precondition for a nudge. If TMCP can't observe a quiet session for the full debounce window, no nudge.
 
 **One-nudge-per-cycle rule (operator 2026-05-05):** once a nudge fires (mtime bumped), no further nudges happen for that session until a `dequeue` call from that session is observed. Subsequent inbound messages may queue up but do NOT trigger additional bumps. The cycle re-arms when dequeue is called — even if dequeue returns empty, that's the reset signal. This prevents nudge-storms when an agent is unresponsive (rare-but-possible failure case) and keeps the wake notification meaningful.
 
@@ -81,7 +95,15 @@ on dequeue call (any return path) for session S:
 
 Schedule a timer at `lastActivityAt + DEBOUNCE_MS` so a queued message that arrived during suppression gets a kick when the window finally elapses. Reset/clear on any new tool call.
 
-**`DEBOUNCE_MS = 60_000` (60 seconds)** as default — operator stated twice this session. Operator also mentioned 2 minutes in passing; treat 60s as the lock-in default and add a constant comment that it can dial up to 120_000 if observed behavior wants it. Configurable per-session is out of scope for first pass.
+**`DEBOUNCE_MS = 60_000` (60 seconds)** as default. **Configurable per session** — operator (2026-05-05): "that timeout should be configurable, just like max_wait is. In the same way that we're able to configure max_wait, you should be able to configure max_kick or something like that."
+
+Add a sibling action to `profile/dequeue-default`:
+
+- `action(type: 'profile/kick-debounce', token, ms: <60_000..600_000>)` — get-or-set the per-session debounce window. Get when `ms` is omitted; set when present. Validate range (e.g. min 30s, max 10min — bail outside).
+
+Server fallback default: `60_000`. Per-session override: stored on the session record alongside `dequeueDefault`.
+
+Naming: `kick-debounce` is descriptive; `max-kick` (operator's suggestion) is shorter. Either works; pick the one that reads cleaner against `dequeue-default` in the action catalog. Recommend `kick-debounce` because the value IS a debounce window, not a maximum.
 
 ## Acceptance criteria
 
@@ -98,7 +120,6 @@ Schedule a timer at `lastActivityAt + DEBOUNCE_MS` so a queued message that arri
 - Removing `ACTIVITY_FILE_DEQUEUE_CAP_S` (that's 10-0875).
 - Changes to dequeue tool itself.
 - Activity file existence / cleanup behavior (unchanged).
-- Per-session configurable debounce window.
 
 ## Related
 
