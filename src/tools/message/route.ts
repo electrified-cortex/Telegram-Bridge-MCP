@@ -54,7 +54,7 @@ export function handleRouteMessage({ token, message_id, target_sid }: { token: n
     deliverServiceMessage(_sid, SERVICE_MESSAGES.COMPRESSION_HINT_FIRST_ROUTE);
   }
 
-  return toResult({ routed: true, target_sid });
+  return toResult({ target_sid });
 }
 
 export function register(server: McpServer) {

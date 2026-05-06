@@ -1,7 +1,6 @@
 Telegram Bridge MCP — Skill Index
 
-Categorized routing menu. Call help(topic: '<name>') to navigate.
-Call help() for tool index. Call help(topic: 'index') to return here.
+Topic menu. Call help(topic: '<name>') to open a topic.
 
 GETTING STARTED
   help(topic: 'startup')     — Post-session-start checklist (token, profile, loop entry)

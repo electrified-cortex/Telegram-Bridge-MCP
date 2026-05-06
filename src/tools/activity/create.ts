@@ -47,7 +47,7 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       nudgeArmed: true,
     });
 
-    return toResult({ file_path: filePath, hint: "When this file changes, call GET /dequeue?token=<your-token> from your watcher — see help('dequeue-http') for curl/PowerShell/Node examples." });
+    return toResult({ file_path: filePath, hint: "On file change, call /dequeue with your token. help('dequeue-http')." });
   }
 
   // TMCP-generated path

@@ -84,7 +84,6 @@ describe("route_message tool", () => {
     });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.routed).toBe(true);
     expect(data.target_sid).toBe(2);
     expect(mocks.routeMessage).toHaveBeenCalledWith(100, 2, 1);
   });
@@ -101,7 +100,6 @@ describe("route_message tool", () => {
     const result = parseResult(
       await call({ token: 1123456, message_id: 100, target_sid: "2" }),
     );
-    expect(result.routed).toBe(true);
     expect(result.target_sid).toBe(2);
     expect(mocks.routeMessage).toHaveBeenCalledWith(100, 2, 1);
   });

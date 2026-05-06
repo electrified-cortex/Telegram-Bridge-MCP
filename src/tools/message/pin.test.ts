@@ -68,7 +68,6 @@ describe("pin_message tool", () => {
     mocks.unpinChatMessage.mockResolvedValue(true);
     const result = await call({ message_id: 5, unpin: true, token: 1123456});
     expect(isError(result)).toBe(false);
-    expect(parseResult<{ unpinned: boolean }>(result).unpinned).toBe(true);
     expect(mocks.unpinChatMessage).toHaveBeenCalledWith(1, 5);
   });
 

@@ -273,7 +273,7 @@ export function register(server: McpServer) {
       switch (resolvedType) {
         case "text": {
           if (!text && !audio) {
-            return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Call help(topic: 'send') for usage. Both text and audio are optional individually but at least one is required." });
+            return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Pass text, audio, or both. help('send')." });
           }
           const { parse_mode, disable_notification } = args;
           const reply_to_message_id = args.reply_to;
@@ -398,7 +398,7 @@ export function register(server: McpServer) {
                   return toResult({
                     message_id: message_ids[0],
                     text_message_id: textMsg.message_id,
-                    ...(compact ? {} : { split: true }),
+
                     audio: true,
                     _hint: `Caption exceeded limit; audio sent as msg ${message_ids[0]}, text sent separately as msg ${textMsg.message_id}.`,
                     ...(leakWarning ? { warning: leakWarning } : {}),
@@ -407,7 +407,6 @@ export function register(server: McpServer) {
                 return toResult({
                   message_ids,
                   text_message_id: textMsg.message_id,
-                  ...(compact ? {} : { split: true }),
                   audio: true,
                   _hint: `Caption exceeded limit; audio sent as msgs ${message_ids.join(", ")}, text sent separately as msg ${textMsg.message_id}.`,
                   ...(leakWarning ? { warning: leakWarning } : {}),
@@ -421,7 +420,7 @@ export function register(server: McpServer) {
               if (message_ids.length === 1) {
                 return toResult({ message_id: message_ids[0], ...(leakWarning ? { warning: leakWarning } : {}) });
               }
-              return toResult({ message_ids, ...(compact ? {} : { split_count: message_ids.length, split: true }), audio: true, ...(leakWarning ? { warning: leakWarning } : {}) });
+              return toResult({ message_ids, ...(compact ? {} : { split_count: message_ids.length }), audio: true, ...(leakWarning ? { warning: leakWarning } : {}) });
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes("user restricted receiving of voice note messages")) {
@@ -478,11 +477,11 @@ export function register(server: McpServer) {
             const hasTable = containsMarkdownTable(text ?? "");
             warnUnrenderableChars(_sid, finalText);
             if (message_ids.length === 1) {
-              return toResult(hasTable ? { message_id: message_ids[0], info: TABLE_WARNING } : { message_id: message_ids[0] });
+              return toResult(hasTable ? { message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }), info: TABLE_WARNING } : { message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }) });
             }
             return toResult(hasTable
-              ? { message_ids, ...(compact ? {} : { split_count: message_ids.length, split: true }), info: TABLE_WARNING }
-              : { message_ids, ...(compact ? {} : { split_count: message_ids.length, split: true }) });
+              ? { message_ids, ...(compact ? {} : { split_count: message_ids.length }), info: TABLE_WARNING }
+              : { message_ids, ...(compact ? {} : { split_count: message_ids.length }) });
           } catch (err) {
             return toError(err);
           }

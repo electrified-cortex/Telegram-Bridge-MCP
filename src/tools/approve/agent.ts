@@ -70,7 +70,7 @@ export function handleApproveAgent({ token, ticket, color }: { token: number; ti
     `[agent-approval] approved name=${safeName} by_sid=${sid} color=${resolvedColor} at=${new Date().toISOString()}\n`,
   );
 
-  return toResult({ approved: true, name: pending.name, color: resolvedColor });
+  return toResult({ name: pending.name, color: resolvedColor });
 }
 
 export function register(server: McpServer): RegisteredTool {

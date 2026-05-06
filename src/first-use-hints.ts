@@ -14,9 +14,7 @@ import { dlog } from "./debug-log.js";
 
 const HINTS: Record<string, string> = {
   "send:choice":
-    'First use — non-blocking buttons: send(type: "choice") sends an inline keyboard but does NOT wait for a reply. ' +
-    'If you need to block and get the response in the same call, use send(type: "question", choose: [...]) instead. ' +
-    'See help("send") → choice/question comparison.',
+    'Non-blocking buttons only. To wait for a selection, use send(type: "question", choose: [...]). help(\'send\').',
 
   "send:question:choose":
     'First use — blocking button prompt: send(type: "question", choose: [...]) blocks until the operator selects a button (or timeout). ' +
@@ -35,9 +33,7 @@ const HINTS: Record<string, string> = {
     'See help("checklist").',
 
   "send:animation":
-    'First use — ephemeral animation placeholder: Replaces itself when you send the real message. ' +
-    'Do NOT leave an animation running indefinitely — always resolve it with action(type: "animation/cancel"). ' +
-    'See help("animation").',
+    'Animation is temporary. Cancel it when work ends. help(\'animation\').',
 
   "send:append":
     'First use — in-place message growth: Appends text to an existing message without creating a new one. ' +

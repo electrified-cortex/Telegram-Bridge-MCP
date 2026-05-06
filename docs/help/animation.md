@@ -44,4 +44,4 @@ into the first dequeue response if an animation is still active:
 This is informational — no auto-cancel. Either cancel the animation or keep it if work is ongoing.
 
 REST trigger (HTTP mode only):
-The dedicated `POST /hook/animation` endpoint was removed in 7.2. Animations are now a side-effect of the agent-event system: when the governor session emits a `compacting` event via `POST /event`, the bridge automatically triggers the `compacting` preset animation on the governor's session and cancels it on the matching `compacted` event. See `help('events')` for the event surface (kinds, body shape, auth) and `tasks/40-queued/10-0831-event-system-rest-endpoint.md` for the full design.
+HTTP-triggered animations now flow through POST /event. help('events').

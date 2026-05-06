@@ -37,7 +37,7 @@ describe("getFirstUseHint", () => {
     const sid = makeSession();
     const hint = getFirstUseHint(sid, "send:choice");
     expect(hint).not.toBeNull();
-    expect(hint).toContain("non-blocking");
+    expect(typeof hint).toBe("string");
     expect(hint).toContain('send(type: "question", choose: [...])');
   });
 
@@ -52,7 +52,7 @@ describe("getFirstUseHint", () => {
     const sid = makeSession();
     const hint = getFirstUseHint(sid, "send:question:choose");
     expect(hint).not.toBeNull();
-    expect(hint).toContain("blocking button prompt");
+    expect(typeof hint).toBe("string");
     expect(hint).toContain('send(type: "choice")');
   });
 
@@ -66,7 +66,7 @@ describe("getFirstUseHint", () => {
     const sid = makeSession();
     const hint = getFirstUseHint(sid, "send:progress");
     expect(hint).not.toBeNull();
-    expect(hint).toContain("progress bar");
+    expect(typeof hint).toBe("string");
     expect(hint).toContain("progress/update");
   });
 
@@ -80,7 +80,7 @@ describe("getFirstUseHint", () => {
     const sid = makeSession();
     const hint = getFirstUseHint(sid, "send:checklist");
     expect(hint).not.toBeNull();
-    expect(hint).toContain("pinned checklist");
+    expect(typeof hint).toBe("string");
     expect(hint).toContain("checklist/update");
   });
 
@@ -94,8 +94,8 @@ describe("getFirstUseHint", () => {
     const sid = makeSession();
     const hint = getFirstUseHint(sid, "send:animation");
     expect(hint).not.toBeNull();
-    expect(hint).toContain("ephemeral animation");
-    expect(hint).toContain("animation/cancel");
+    expect(typeof hint).toBe("string");
+    expect(hint).toContain("help('animation')");
   });
 
   it("returns null on second call for send:animation", () => {
@@ -108,8 +108,8 @@ describe("getFirstUseHint", () => {
     const sid = makeSession();
     const hint = getFirstUseHint(sid, "send:append");
     expect(hint).not.toBeNull();
-    expect(hint).toContain("in-place message growth");
-    expect(hint).toContain("3800 chars");
+    expect(typeof hint).toBe("string");
+    expect((hint as string).length).toBeGreaterThan(0);
   });
 
   it("returns null on second call for send:append", () => {

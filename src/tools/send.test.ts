@@ -320,8 +320,7 @@ describe("send tool", () => {
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     // Text message was sent separately
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
-    // Result has split + both IDs
-    expect(data.split).toBe(true);
+    // Result has both IDs
     expect(data.message_id).toBe(43);
     expect(data.text_message_id).toBe(99);
     // Voice note sent with no caption
@@ -823,7 +822,7 @@ describe("hybrid auto-split on caption overflow", () => {
     call = server.getHandler("send");
   });
 
-  it("sends two messages when text exceeds 1024-char limit with audio, response has split:true, both IDs, and _hint", async () => {
+  it("sends two messages when text exceeds 1024-char limit with audio, both IDs, and _hint", async () => {
     const longText = "X".repeat(970); // > MAX_CAPTION (964)
     const result = await call({ text: longText, audio: "hello", async: false, token: TOKEN });
     expect(isError(result)).toBe(false);
@@ -834,7 +833,6 @@ describe("hybrid auto-split on caption overflow", () => {
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
 
     // Response shape
-    expect(data.split).toBe(true);
     expect(data.message_id).toBe(43);
     expect(data.text_message_id).toBe(99);
 
@@ -971,7 +969,6 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
     // captionOverflow triggered: voice sent + separate text message
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
-    expect(data.split).toBe(true);
     // Warning fired for the overflow text
     expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
     const warningMsg = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[1] as string;
@@ -1139,7 +1136,7 @@ describe("send — first-use hint injection and happy-path routing", () => {
 // =============================================================================
 // response_format: "compact" — split/split_count omitted
 // =============================================================================
-describe("send — response_format: compact (split/split_count omitted)", () => {
+describe("send — response_format: compact (split_count omitted)", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
 
   beforeEach(() => {
@@ -1176,7 +1173,7 @@ describe("send — response_format: compact (split/split_count omitted)", () => 
     expect(data.split_count).toBeUndefined();
   });
 
-  it("default: text split includes split:true and split_count when multiple chunks", async () => {
+  it("default: text split includes split_count when multiple chunks", async () => {
     mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 10 })
@@ -1184,11 +1181,10 @@ describe("send — response_format: compact (split/split_count omitted)", () => 
     const result = await call({ text: "long text", response_format: "default", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.split).toBe(true);
     expect(data.split_count).toBe(2);
   });
 
-  it("omitted response_format: text split includes split:true and split_count (backward compat)", async () => {
+  it("omitted response_format: text split includes split_count (backward compat)", async () => {
     mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 10 })
@@ -1196,7 +1192,6 @@ describe("send — response_format: compact (split/split_count omitted)", () => 
     const result = await call({ text: "long text", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.split).toBe(true);
     expect(data.split_count).toBe(2);
   });
 
@@ -1214,7 +1209,7 @@ describe("send — response_format: compact (split/split_count omitted)", () => 
     expect(data.audio).toBe(true);
   });
 
-  it("default: audio multi-chunk includes split:true and split_count", async () => {
+  it("default: audio multi-chunk includes split_count", async () => {
     mocks.splitMessage.mockReturnValue(["audio1", "audio2"]);
     mocks.sendVoiceDirect
       .mockResolvedValueOnce({ message_id: 43 })
@@ -1222,7 +1217,6 @@ describe("send — response_format: compact (split/split_count omitted)", () => 
     const result = await call({ audio: "hello", async: false, response_format: "default", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.split).toBe(true);
     expect(data.split_count).toBe(2);
     expect(data.audio).toBe(true);
   });
@@ -1239,13 +1233,12 @@ describe("send — response_format: compact (split/split_count omitted)", () => 
     expect(data.text_message_id).toBe(99);
   });
 
-  it("default: caption-overflow path includes split:true (single audio chunk)", async () => {
+  it("default: caption-overflow path includes split_count", async () => {
     const longText = "X".repeat(970);
     mocks.sendMessage.mockResolvedValue({ message_id: 99 });
     const result = await call({ text: longText, audio: "hello", async: false, response_format: "default", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.split).toBe(true);
     expect(data.audio).toBe(true);
   });
 });

@@ -159,7 +159,6 @@ describe("multi-session tool integration", () => {
 
       const r2 = await dequeue({ timeout: 0, token: sid2 * 1_000_000 + suffix2 });
       expect(isError(r2)).toBe(false);
-      expect(parseTool(r2).empty).toBe(true);
     });
 
     it("dequeue from SID 1 returns the event enqueued for SID 1", async () => {
@@ -435,9 +434,6 @@ describe("multi-session tool integration", () => {
         dequeue({ timeout: 0, token: sid1 * 1_000_000 + suffix1 }),
         dequeue({ timeout: 0, token: sid2 * 1_000_000 + suffix2 }),
       ]);
-
-      expect(parseTool(r1).empty).toBe(true);
-      expect(parseTool(r2).empty).toBe(true);
     });
 
     it("only the session with a pending message gets it on concurrent polls", async () => {
@@ -455,7 +451,7 @@ describe("multi-session tool integration", () => {
       ]);
 
       expect(Array.isArray(parseTool(r1).updates)).toBe(true);
-      expect(parseTool(r2).empty).toBe(true);
+      expect(isError(r2)).toBe(false);
     });
   });
 

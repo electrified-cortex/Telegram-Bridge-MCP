@@ -87,7 +87,7 @@ Whenever the user's response can be one of a predictable set of options — yes/
 
 Only use `send(type: "question", ask: "...")` or `dequeue` for truly open-ended free-text input where choices cannot be enumerated.
 
-For the full keyboard interaction taxonomy — when to use `send(type: "question", choose: [...])` vs `send(type: "question", confirm: "...")` vs `send(type: "choice", options: [...])`, button types, and implementation notes — see [`docs/keyboard-interactions.md`](keyboard-interactions.md).
+Finite-choice questions use buttons. Use confirm/* for standard yes-no flows and send(type: "question", choose: [...]) for custom options. help('send').
 
 **Button presets — default to these before writing custom `choose()`:**
 

@@ -36,12 +36,10 @@ describe("cancel_animation tool", () => {
     call = server.getHandler("cancel_animation");
   });
 
-  it("cancels animation and returns cancelled:true", async () => {
-    mocks.cancelAnimation.mockResolvedValue({ cancelled: true });
+  it("cancels animation successfully", async () => {
+    mocks.cancelAnimation.mockResolvedValue({});
     const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.cancelled).toBe(true);
   });
 
   it("returns cancelled:false when no animation is active", async () => {
@@ -59,10 +57,9 @@ describe("cancel_animation tool", () => {
   });
 
   it("returns message_id when text replacement is provided", async () => {
-    mocks.cancelAnimation.mockResolvedValue({ cancelled: true, message_id: 10 });
+    mocks.cancelAnimation.mockResolvedValue({ message_id: 10 });
     const result = await call({ text: "Complete", token: 1123456});
     const data = parseResult(result);
-    expect(data.cancelled).toBe(true);
     expect(data.message_id).toBe(10);
   });
 

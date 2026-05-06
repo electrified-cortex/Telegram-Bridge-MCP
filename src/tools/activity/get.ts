@@ -17,11 +17,10 @@ export function handleActivityFileGet(args: Record<string, unknown>) {
 
   const entry = getActivityFile(sid);
   if (!entry) {
-    return toResult({ registered: false });
+    return toResult({});
   }
 
   return toResult({
-    registered: true,
     file_path: entry.filePath,
     tmcp_owned: entry.tmcpOwned,
     last_touch_at: entry.lastTouchAt !== null ? new Date(entry.lastTouchAt).toISOString() : null,

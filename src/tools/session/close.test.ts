@@ -685,7 +685,6 @@ describe("close_session tool", () => {
     const result = parseResult(await call({ token: 1123456, target_sid: 2 }));
 
     expect(result.closed).toBe(false);
-    expect(result.reason).toBe("cancelled");
     expect(mocks.closeSession).not.toHaveBeenCalled();
   });
 
@@ -697,7 +696,6 @@ describe("close_session tool", () => {
     const result = parseResult(await call({ token: 1123456, target_sid: 2 }));
 
     expect(result.closed).toBe(false);
-    expect(result.reason).toBe("cancelled");
     expect(mocks.closeSession).not.toHaveBeenCalled();
   });
 

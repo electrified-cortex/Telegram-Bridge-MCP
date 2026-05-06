@@ -214,10 +214,7 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 }
 
 const DESCRIPTION =
-  "Call once at the start of every session. Creates a fresh session " +
-  "with a unique ID and token. Fresh sessions auto-drain pending messages. " +
-  "If you lost your token (context loss, crash), use action(type: 'session/reconnect', ...) instead. " +
-  "Returns { token, sid, hint } — call dequeue(token) next to enter the loop.";
+  "Start a named session and return its token. If you lost the token, use action(type: 'session/reconnect'). No args are reused.";
 
 export async function handleSessionStart({ name, color }: { name: string; color?: string }) {
       const chatId = resolveChat();
@@ -452,7 +449,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     return toError({
       code: "SESSION_DENIED",
       message: `Session reconnect for "${existing.name}" was denied by the operator. Check memory for a previously saved token — if found, use that token directly without calling action(type: 'session/reconnect', ...) again.`,
-      hint: "Wipe your stored session token before exiting. If your loop guard re-prompts, do NOT call session/start -- wipe the token, then exit.",
+      hint: "Wipe the stored token, then exit. Do not call session/start again.",
     });
   }
 

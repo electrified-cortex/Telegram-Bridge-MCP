@@ -47,31 +47,7 @@ function loadTopic(topic: string): string | null {
 }
 
 const DESCRIPTION =
-  "Returns discovery information about this MCP server. " +
-  "Call with no arguments for an overview and full tool index. " +
-  "Pass topic: 'index' for a categorized skill index and navigation menu. " +
-  "Pass topic: 'guide' for the full agent communication guide. " +
-  "Pass topic: 'start' for the post-session-start checklist (aliases: 'startup', 'quick_start'). " +
-  "Pass topic: 'compression' for the compression cheat sheet. " +
-  "Pass topic: 'compacted' for post-compaction recovery steps. " +
-  "Pass topic: 'dequeue' for dequeue loop rules and flow. " +
-  "Pass topic: 'shutdown' for graceful shutdown procedure. " +
-  "Pass topic: 'forced-stop' for forced-stop detection and recovery. " +
-  "Pass topic: 'reminders' for reminder-driven delegation pattern. " +
-  "Pass topic: 'dump' for session dump filing procedure. " +
-  "Pass topic: 'orphaned' for closing an orphaned session. " +
-  "Pass topic: 'stop-hook' for VS Code stop hook recovery. " +
-  "Pass topic: 'send' for full send tool reference including append mode. " +
-  "Pass topic: 'append_text' for append_text tool reference (params, edge cases, examples). " +
-  "Pass topic: 'reactions' for the full reaction protocol (priority queue, voice auto-salute, temporary vs permanent, DM rules). " +
-  "Pass topic: 'presence' for presence signal hierarchy and silent-work detector thresholds. " +
-  "Pass topic: 'behavior' for the behavioral-shaping rule registry and severity tier guidance. " +
-  "Pass topic: 'modality' for the priority axis (buttons > text > audio) and modality-matching rules. " +
-  "Pass topic: 'events' for the external event system docs (POST /event endpoint, kinds, metrics). " +
-  "Pass topic: 'dequeue-http' for the REST /dequeue endpoint docs (curl-callable from watcher subprocesses). " +
-  "Pass topic: 'guidance' for the guidance delivery reference (what fires when and why). " +
-  "Pass topic: 'activity/file' for the activity-file wake-nudge integration guide (watcher patterns, lifecycle, error modes). " +
-  "Pass topic: '<tool_name>' for detailed docs on a specific tool.";
+  "Discovery for this MCP server. No args -> overview. topic: 'index' -> topic menu. topic: 'guide' -> comms guide. topic: '<tool/topic>' -> detailed help.";
 
 /**
  * Static tool index: name → one-line description.

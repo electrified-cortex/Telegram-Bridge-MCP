@@ -19,11 +19,11 @@ export async function handleActivityFileDelete(args: Record<string, unknown>) {
 
   const existing = getActivityFile(sid);
   if (!existing) {
-    return toResult({ ok: true, deleted_file: false });
+    return toResult({ deleted_file: false });
   }
 
   const wasOwned = existing.tmcpOwned;
   await clearActivityFile(sid);
 
-  return toResult({ ok: true, deleted_file: wasOwned });
+  return toResult({ deleted_file: wasOwned });
 }

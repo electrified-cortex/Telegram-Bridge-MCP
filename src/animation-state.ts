@@ -592,7 +592,7 @@ export async function cancelAnimation(
   sid: number,
   text?: string,
   parseMode?: "Markdown" | "HTML" | "MarkdownV2",
-): Promise<{ cancelled: boolean; message_id?: number }> {
+): Promise<{ cancelled: false } | { message_id?: number }> {
   const inStack = _stack.some(e => e.sid === sid);
   const inGap = _savedForResumes.has(sid);
   if (!inStack && !inGap) return { cancelled: false };
@@ -609,12 +609,12 @@ export async function cancelAnimation(
 
   if (!inStack) {
     // File-send gap — no displayed message (already deleted in beforeFileSend)
-    return { cancelled: true };
+    return {};
   }
 
   if (!wasTop) {
     // Buried entry — remove silently, display is unaffected
-    return { cancelled: true };
+    return {};
   }
 
   // Was the displayed top — handle the animation message
@@ -657,8 +657,8 @@ export async function cancelAnimation(
   await cascade();
 
   return replacedMsgId !== undefined
-    ? { cancelled: true, message_id: replacedMsgId }
-    : { cancelled: true };
+    ? { message_id: replacedMsgId }
+    : {};
 }
 
 /**

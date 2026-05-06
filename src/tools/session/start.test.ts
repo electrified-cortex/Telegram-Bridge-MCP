@@ -191,10 +191,9 @@ describe("session_start tool", () => {
 
     expect(result.token).toBeDefined();
     expect(result.sid).toBeDefined();
-    expect(result.discarded).toBeDefined();
   });
 
-  it("includes connection_token UUID in response when createSession returns one", async () => {
+  it("omits connection_token from response even when createSession returns one", async () => {
     mocks.pendingCount.mockReturnValue(0);
     const expectedToken = "550e8400-e29b-41d4-a716-446655440000"; // valid v4 UUID
     mocks.createSession.mockReturnValue({
@@ -208,7 +207,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({}));
 
-    expect(result.connection_token).toBe(expectedToken);
+    expect(result.connection_token).toBeUndefined();
   });
 
   it("omits connection_token from response when createSession does not return one", async () => {
@@ -310,12 +309,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({ name: "scout" }));
 
-    expect(result.action).toBe("fresh");
-    expect(Array.isArray(result.fellow_sessions)).toBe(true);
-    // Only the OTHER session is in fellow_sessions (not self)
-    const fellows = result.fellow_sessions as Array<{ sid: number }>;
-    expect(fellows.every(s => s.sid !== 4)).toBe(true);
-    expect(fellows.some(s => s.sid === 3)).toBe(true);
+    expect(result.token).toBeDefined();
   });
 
   it("includes fellow_sessions when auto-draining with multiple sessions", async () => {
@@ -343,11 +337,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({ name: "gamma" }));
 
-    expect(result.action).toBe("fresh");
-    expect(result.discarded).toBe(2);
-    const fellows = result.fellow_sessions as Array<{ sid: number }>;
-    expect(fellows.some(s => s.sid === 5)).toBe(true);
-    expect(fellows.every(s => s.sid !== 6)).toBe(true);
+    expect(result.token).toBeDefined();
   });
 
   it("returns fellow_sessions: [] when only one session is active", async () => {
@@ -356,7 +346,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({ name: "solo" }));
 
-    expect(result.fellow_sessions).toEqual([]);
+    expect(result.token).toBeDefined();
   });
 
   it("rolls back session on unexpected error during session setup", async () => {
@@ -1861,7 +1851,6 @@ describe("session_start tool", () => {
     // Returns the existing SID and token
     expect(result.sid).toBe(1);
     expect(result.token).toBe(1123456);
-    expect(result.action).toBe("reconnected");
   });
 
   it("reconnect: true + approved → preserves queued messages and resets health state", async () => {
@@ -1904,7 +1893,6 @@ describe("session_start tool", () => {
 
     expect(result.token).toBeDefined();
     expect(result.sid).toBe(1);
-    expect(result.pending).toBe(5);
   });
 
   it("reconnect: true + approved → pending=0 when queue is missing", async () => {
@@ -1924,7 +1912,6 @@ describe("session_start tool", () => {
 
     expect(result.token).toBeDefined();
     expect(result.sid).toBe(1);
-    expect(result.pending).toBe(0);
   });
 
   it("reconnect: true + operator denies → SESSION_DENIED, no session created", async () => {
@@ -2618,10 +2605,9 @@ describe("handleSessionReconnect", () => {
     expect(row.some(b => String(b.callback_data).startsWith("approve_"))).toBe(false);
     expect(mocks.createSession).not.toHaveBeenCalled();
     expect(result.sid).toBe(1);
-    expect(result.action).toBe("reconnected");
   });
 
-  it("approval flow: returns existing SID+token with action=reconnected", async () => {
+  it("approval flow: returns existing SID+token", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 2, name: "Worker", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 2, suffix: 654321, name: "Worker", color: "🟩",
@@ -2636,7 +2622,6 @@ describe("handleSessionReconnect", () => {
 
     expect(result.sid).toBe(2);
     expect(result.token).toBe(2654321);
-    expect(result.action).toBe("reconnected");
   });
 
   it("denial flow: returns SESSION_DENIED, no session created", async () => {

@@ -287,10 +287,10 @@ describe("animation-state", () => {
       expect(result).toEqual({ cancelled: false });
     });
 
-    it("returns { cancelled: true } after stopping active animation", async () => {
+    it("returns {} after stopping active animation", async () => {
       await startAnimation(1);
       const result = await cancelAnimation(1);
-      expect(result).toEqual({ cancelled: true });
+      expect(result).toEqual({});
     });
 
     it("deletes the animation message when no replacement text", async () => {
@@ -309,7 +309,7 @@ describe("animation-state", () => {
         "Done\\!",
         expect.objectContaining({ parse_mode: "MarkdownV2" }),
       );
-      expect(result).toEqual({ cancelled: true, message_id: 42 });
+      expect(result).toEqual({ message_id: 42 });
     });
 
     it("calls clearSendInterceptor", async () => {
@@ -348,7 +348,7 @@ describe("animation-state", () => {
       await startAnimation(1);
       const result = await cancelAnimation(1, "text", "Markdown");
 
-      expect(result).toEqual({ cancelled: true });
+      expect(result).toEqual({});
       expect(result.message_id).toBeUndefined();
     });
 
@@ -358,7 +358,7 @@ describe("animation-state", () => {
 
       // Should not throw
       const result = await cancelAnimation(1);
-      expect(result).toEqual({ cancelled: true });
+      expect(result).toEqual({});
     });
 
     it("prepends session name tag when buildHeader returns a header", async () => {
@@ -1051,7 +1051,7 @@ describe("animation-state", () => {
 
       const result = await cancelAnimation(2);
 
-      expect(result).toEqual({ cancelled: true });
+      expect(result).toEqual({});
       expect(isAnimationActive(2)).toBe(false);
       expect(isAnimationActive(1)).toBe(true);
       expect(getAnimationMessageId(1)).toBe(42);    // still displayed
@@ -1214,7 +1214,7 @@ describe("animation-state", () => {
       mocks.deleteMessage.mockClear();
       const cancelResult = await cancelAnimation(2);
 
-      expect(cancelResult).toEqual({ cancelled: true });
+      expect(cancelResult).toEqual({});
       expect(isAnimationActive(2)).toBe(false);
       expect(mocks.deleteMessage).toHaveBeenCalledWith(123, 99);
     });

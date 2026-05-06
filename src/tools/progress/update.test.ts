@@ -46,12 +46,11 @@ describe("update_progress tool", () => {
     call = server.getHandler("update_progress");
   });
 
-  it("edits message in-place and returns updated: true", async () => {
+  it("edits message in-place and returns message_id", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 10 });
     const result = await call({ message_id: 10, percent: 75, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.updated).toBe(true);
     expect(data.message_id).toBe(10);
     expect(mocks.editMessageText).toHaveBeenCalledOnce();
   });
@@ -85,7 +84,6 @@ describe("update_progress tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(10);
-    expect(data.updated).toBe(true);
   });
 
   it("returns error when resolveChat fails", async () => {

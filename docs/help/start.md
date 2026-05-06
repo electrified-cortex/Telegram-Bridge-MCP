@@ -10,13 +10,7 @@ dequeue(token) IS the loop. Long-poll every cycle.
 Default timeout: 5 min. timed_out → call again. empty → block again.
 Pattern: drain (max_wait: 0) until empty → block (max_wait: 300) → handle → repeat.
 To increase default: action(type: 'profile/dequeue-default', timeout: N, token)
-**If you are Claude Code** (or have a file-watcher harness), you should also wire up the activity-file watcher:
-  action(type: 'activity/file/create', token) → {path}
-  Bash: while inotifywait -qq -e close_write <path>; do <dequeue>; done
-  PS: Register-ObjectEvent (New-Object IO.FileSystemWatcher '<dir>') Changed -Action { <dequeue> }
-  On watcher fire: dequeue(max_wait: 0). TMCP bumps mtime on every inbound.
-  Watcher is additive — long-poll dequeue still runs alongside it.
-No-Monitor runtimes (VS Code Copilot, etc.): skip watcher; long-poll works fine.
+If your runtime supports file watching, create an activity file and watch it. On change, call dequeue(max_wait: 0). help('activity/file') and help('dequeue-http').
 
 ## Send Basics
 send(type: 'text', token, text: 'Hello') → text message

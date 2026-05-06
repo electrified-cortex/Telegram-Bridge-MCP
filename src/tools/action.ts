@@ -630,7 +630,7 @@ export function register(server: McpServer): void {
         const categories = listCategories();
         return toResult({
           categories,
-          hint: "Use help(topic: 'action') for full documentation. Pass a category to list sub-paths.",
+          hint: "Pass a category to list its paths. help('action').",
         });
       }
 

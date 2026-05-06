@@ -117,17 +117,7 @@ send(type: "append", token: <token>, message_id, text: "…", separator: " ")
 
 **text** — Reply threading: pass `reply_to: <message_id>`.
 
-**Audio + Text (`"text"` type):** `send(type: "text", text: "...", audio: "...")` → voice note + text caption in one msg.
-Use for urgent updates where operator may be away from phone.
-Two valid patterns: (1) long fluid audio + brief caption — audio carries the explanation, caption is a topic label only; (2) short orienting audio + long structured text — audio frames the payload, text carries it.
-**Hard rule:** never restate audio content in the caption, even paraphrased — Telegram may transcribe voice notes automatically — caption restatement adds noise. Caption must add something audio cannot (topic label, structured payload, link). See help('audio') for full guide.
-Good: audio = "Diagnosis. TMCP help send hybrid guidance is underspecified…" | caption = "TMCP bug located. See help('send') hybrid section."
-Bad:  audio = "TMCP's help send guidance is underspecified…"               | caption = "TMCP's help send guidance is underspecified."
-In `type: "text"` mode, buttons can't be added to that same msg — send a
-`send(type: "question", confirm: "...")`/yes-no prompt immediately after if response is needed.
-If you need audio + caption + inline buttons in one message, use interactive
-modes such as `send(type: "question", choose: [...], audio: "...")`,
-`send(type: "choice", options: [...], audio: "...")`, or `send(type: "question", confirm: "...")`.
+**Audio + Text (`"text"` type):** Audio + text supports two patterns: long audio + short label, or short audio + structured text. Never restate audio in the caption. If you need details, call help('audio').
 
 **Async default for audio:** When `audio` is present, the send is async by default — returns `{ message_id_pending, status: "queued" }` immediately; result delivered via `dequeue` as a `send_callback` event. Pass `async: false` to force synchronous execution (blocks until TTS completes, returns real `message_id`). Non-audio sends are always synchronous.
 

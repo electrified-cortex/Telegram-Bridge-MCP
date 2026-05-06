@@ -105,7 +105,7 @@ describe("approve_agent tool", () => {
     it("allows approval when governor SID is 0 (no governor set)", async () => {
       mocks.getGovernorSid.mockReturnValue(0);
       const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" }));
-      expect(result.approved).toBe(true);
+      expect(result.name).toBe("Worker");
     });
 
     it("returns UNAUTHORIZED_SENDER when caller is not the governor", async () => {
@@ -120,7 +120,7 @@ describe("approve_agent tool", () => {
     it("allows approval when caller IS the governor", async () => {
       mocks.getGovernorSid.mockReturnValue(1); // caller SID is 1 == governor
       const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" }));
-      expect(result.approved).toBe(true);
+      expect(result.name).toBe("Worker");
     });
   });
   // -------------------------------------------------------------------------
@@ -181,9 +181,8 @@ describe("approve_agent tool", () => {
       expect(mocks.clearPendingApproval).toHaveBeenCalledWith(VALID_TICKET);
     });
 
-    it("returns approved: true with the assigned color and name from the pending entry", async () => {
+    it("returns approved color and name from the pending entry", async () => {
       const result = parseResult(await call({ token: VALID_TOKEN, ticket: VALID_TICKET, color: "🟩" }));
-      expect(result.approved).toBe(true);
       expect(result.color).toBe("🟩");
       expect(result.name).toBe("Worker");
     });
