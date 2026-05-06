@@ -45,7 +45,7 @@ export const SERVICE_MESSAGES = deepFreeze({
 
   ONBOARDING_LOOP_PATTERN: {
     eventType: "onboarding_loop_pattern" as const,
-    text: "Loop pattern: dequeue(max_wait: 300) is the standard heartbeat — long-poll, re-call on timed_out. Optional augment: if your harness has a filesystem watcher, register an activity file via action(type: 'activity/file/create'); TMCP bumps its mtime on inbound messages so your watcher can trigger dequeue without keeping a blocking poll open. Activity file is an augment, not a replacement for dequeue.",
+    text: "Loop pattern is runtime-conditional. **All runtimes** — dequeue(max_wait: 300) is the standard heartbeat; long-poll, re-call on timed_out. **Monitor-capable runtimes (Claude Code, file-watcher harnesses)** — upgrade to activity-file mode: (1) action(type: 'activity/file/create') returns {path}; (2) start background watcher: bash: while inotifywait -qq -e close_write <path>; do <call-dequeue>; done | PS: $w=New-Object IO.FileSystemWatcher '<dir>'; $w.Filter='<file>'; Register-ObjectEvent $w Changed -Action { <call-dequeue> }; (3) on watcher fire call dequeue(max_wait: 0) to drain immediately; keep dequeue(max_wait: 300) as fallback. TMCP bumps file mtime on every inbound message. **No-Monitor runtimes (VS Code Copilot, etc.)** — skip activity file entirely; standard long-poll only.",
   },
 
   ONBOARDING_ROLE_GOVERNOR: {
