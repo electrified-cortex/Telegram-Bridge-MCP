@@ -6,21 +6,17 @@ If you have a saved profile: action(type: 'profile/load', key: 'YourProfileKey',
 Restores voice, animation presets, reminders. Skip if no profile exists.
 
 ## Dequeue Loop
-Call dequeue(token) to enter the loop. Default timeout
-is 5 minutes. This is intentional — blocking reduces
-token use.
-Returns { timed_out: true } on timeout → call again. Returns { empty: true } on instant poll.
-Pattern: drain → block → handle → drain again.
-When pending > 0: dequeue(max_wait: 0, token) until
-pending == 0, then block.
-Claude Code sessions (long-lived):
-action(type: 'profile/dequeue-default', timeout: N,
-token) to increase default.
-Optional: if your harness has a filesystem watcher,
-action(type: 'activity/file/create', token) registers
-an activity file — TMCP bumps its mtime on inbound
-messages so your watcher can trigger dequeue without
-keeping a blocking poll open. Augment only.
+dequeue(token) IS the loop. Long-poll every cycle.
+Default timeout: 5 min. timed_out → call again. empty → block again.
+Pattern: drain (max_wait: 0) until empty → block (max_wait: 300) → handle → repeat.
+To increase default: action(type: 'profile/dequeue-default', timeout: N, token)
+**If you are Claude Code** (or have a file-watcher harness), you should also wire up the activity-file watcher:
+  action(type: 'activity/file/create', token) → {path}
+  Bash: while inotifywait -qq -e close_write <path>; do <dequeue>; done
+  PS: Register-ObjectEvent (New-Object IO.FileSystemWatcher '<dir>') Changed -Action { <dequeue> }
+  On watcher fire: dequeue(max_wait: 0). TMCP bumps mtime on every inbound.
+  Watcher is additive — long-poll dequeue still runs alongside it.
+No-Monitor runtimes (VS Code Copilot, etc.): skip watcher; long-poll works fine.
 
 ## Send Basics
 send(type: 'text', token, text: 'Hello') → text message

@@ -156,7 +156,7 @@ describe("help tool", () => {
     const { content } = parseResult<{ content: string }>(result);
     expect(content).toContain("profile/load");
     expect(content).toContain("dequeue(token)");
-    expect(content).toContain("5 minutes");
+    expect(content).toContain("5 min");
     expect(content).toContain("help('guide')");
     expect(content).toContain("Quick reference");
     expect(content).toContain("help('send')");
