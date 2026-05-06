@@ -38,8 +38,10 @@ within a hard timeout. On timeout:
 
 1. Find the TTS render path in the bridge (likely in `tts/` or
    wherever audio-rendering lives).
-2. Wrap the render call in a timeout (proposal: 30s default,
-   configurable).
+2. Wrap the render call in a timeout. **Default: 60 seconds minimum**
+   (operator-directed, msg 50761 — cancelling too early on legitimate
+   long renders is the bigger risk). Configurable; consider 90-120s
+   ceiling. Don't go below 60.
 3. On timeout: return a `tts_timeout` structured error response.
 4. Update `send` tool docs (and `help('send')`) to document the new
    error case + recovery pattern.
