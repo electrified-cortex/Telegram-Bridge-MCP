@@ -15,9 +15,13 @@ const mocks = vi.hoisted(() => ({
   registerPreset: vi.fn(),
   addReminder: vi.fn(),
   listReminders: vi.fn((): Array<Record<string, unknown>> => []),
+  getSession: vi.fn(),
 }));
 
-vi.mock("../../session-manager.js", () => ({ validateSession: mocks.validateSession }));
+vi.mock("../../session-manager.js", () => ({
+  validateSession: mocks.validateSession,
+  getSession: mocks.getSession,
+}));
 vi.mock("../../profile-store.js", () => ({ readProfile: mocks.readProfile }));
 vi.mock("../../voice-state.js", () => ({
   setSessionVoice: mocks.setSessionVoice,
@@ -42,6 +46,7 @@ describe("load_profile tool", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     mocks.listReminders.mockReturnValue([]);
+    mocks.getSession.mockReturnValue(undefined);
     const server = createMockServer();
     register(server);
     call = server.getHandler("load_profile");
@@ -249,6 +254,27 @@ describe("load_profile tool", () => {
       const result = await call({ key: "Test", token: 1000000 });
       expect(isError(result)).toBe(true);
       expect(parseResult(result).code).toBe("AUTH_FAILED");
+    });
+  });
+
+  describe("name_tag loading", () => {
+    it("load profile containing name_tag applies it to session", async () => {
+      const session = { name_tag: undefined as string | undefined };
+      mocks.getSession.mockReturnValue(session);
+      mocks.readProfile.mockReturnValue({ name_tag: "🟢 Curator" });
+      const result = await call({ key: "Curator", token: 1123456 });
+      expect(isError(result)).toBe(false);
+      expect(session.name_tag).toBe("🟢 Curator");
+    });
+
+    it("load profile without name_tag does not touch session name_tag", async () => {
+      const session = { name_tag: "existing" as string | undefined };
+      mocks.getSession.mockReturnValue(session);
+      mocks.readProfile.mockReturnValue({ voice: "alloy" });
+      const result = await call({ key: "Test", token: 1123456 });
+      expect(isError(result)).toBe(false);
+      expect(mocks.getSession).not.toHaveBeenCalled();
+      expect(session.name_tag).toBe("existing");
     });
   });
 });
