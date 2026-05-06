@@ -45,9 +45,10 @@ export const SERVICE_MESSAGES = deepFreeze({
 
   ONBOARDING_LOOP_PATTERN: {
     eventType: "onboarding_loop_pattern" as const,
-    text: `Loop pattern:
-1. Stay in the loop — call dequeue every turn.
-2. If your runtime has a file watcher (Monitor): call action(type: 'activity/file/create') and watch the returned file. On change, call dequeue.
+    text: `Welcome to the loop. Stay in it.
+
+1. Call dequeue(token) every turn.
+2. Check your tools for an option to monitor a file. If you have one, call action(type: 'activity/file/create') and watch the returned file. On change, call dequeue.
 
 Details: help('start'), help('dequeue'), help('activity/file').`,
   },
