@@ -95,6 +95,40 @@ Sequential where dependent; mark which can parallelize. Each subtask is small en
 - [ ] Curator dogfood passes end-to-end.
 - [ ] **Merge target: 7.4 release branch.**
 
+## Completion
+
+**Verdict: NEEDS_REVISION** — 2026-05-05
+Verified by: Overseer dispatch (Sonnet verifier)
+
+### Passing (5/7 subtasks)
+- AC1/ST1 ✅ Storage refactor — `Session.name_tag?` field, `defaultNameTag()` helper, round-trip tests
+- AC1/ST2 ✅ Robot emoji dropped — `defaultNameTag` returns `<color> <name>`, test asserts no `🤖`
+- AC1/ST3 ✅ `name-tag` action (get/set) — `src/tools/name-tag.ts`, 145-line test suite
+- AC1/ST4 ✅ Monospace wrap — `buildHeader` backtick/`<code>` wrapping, outbound-proxy tests
+- AC1/ST5 ✅ Profile save conditional — `if (session.name_tag !== undefined)` guard, both branches tested
+- AC2 ✅ Outbound uses current name tag, monospace-wrapped
+- AC3 ✅ New sessions default to `<color> <name>`, no robot emoji
+- AC4 ✅ Profile save serializes only custom-set `name_tag`
+- AC6 ✅ Legacy sessions fall back to `defaultNameTag`, no migration
+
+### Gaps (blocking)
+
+**Gap 1 — AC5 / ST6: Profile load tests missing**
+`apply.test.ts` has no mock for `getSession` and zero tests for the `name_tag` branch.
+`load.test.ts` has no test that loads a profile containing `name_tag` and verifies the session field is updated.
+Spec TDD mandate: "Tests: load profile with name_tag → session uses it; load without → default holds."
+Implementation (`apply.ts`) is correct; test coverage is absent.
+
+**Gap 2 — AC7 / ST7: Curator dogfood not documented**
+Merge commit `e1917141` into `release/7.4` has only a subject line.
+No end-to-end walkthrough (set tag → verify outbound → save profile → close → restart → verify reload) appears in the commit history or PR body.
+Spec requires: "Documented in PR description."
+
+### Required fixes
+1. Add tests to `apply.test.ts`: mock `getSession`, assert `session.name_tag` is set from profile; assert no `name_tag` when profile omits it.
+2. Add tests to `load.test.ts`: load with `name_tag` → session updated; load without → default holds.
+3. Document the dogfood walkthrough — either append to the PR description or add as a `docs/dogfood/10-0869-name-tags.md` file and commit.
+
 ## Out of scope
 
 - Selective profile save (skip name tag opt-out at save time) — defer.
