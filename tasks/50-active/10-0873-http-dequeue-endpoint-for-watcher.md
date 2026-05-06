@@ -91,3 +91,37 @@ Worker time-cap: 4 hours including tests. Checkpoint with Curator if exceeded.
 - `10-0872` (watcher pre-drain consumes this endpoint).
 - `10-0871` (activity/file help topic — references this URL after merge).
 - `00-ideas/spike-monitor-vs-dequeue-tmcp-2026-05-04.md` (prior architecture survey).
+
+## Completion
+
+- Branch: `10-0873`
+- Commit: `493ea987ca668c58ad641119180c48aca9c64f7d`
+- New files: `src/dequeue-endpoint.ts`, `src/dequeue-endpoint.test.ts`
+- Modified: `src/tools/dequeue.ts` (extracted `runDrainLoop`; fixed session_closed/setDequeueActive bug), `src/index.ts`
+- Build: pnpm build GREEN
+- Tests: pnpm test GREEN (2972 tests, 0 failures — 17 new endpoint tests)
+- Code review: PASSED (1 Critical + 2 Majors fixed; 2 iterations)
+- Worker: Worker 2
+
+## Verification
+
+**Verdict: NEEDS_REVISION** — 2026-05-05
+Verified by: Overseer dispatch (Sonnet verifier)
+
+### Passing (6/7 AC)
+- AC1 ✅ `GET /dequeue?token=<num>` — `attachDequeueRoute` registers handler, delegates to `runDrainLoop`, response shape from `runDrainLoop` directly
+- AC2 ✅ `POST /dequeue` with JSON body — registered at line 101, body merged into args
+- AC3 ✅ Invalid token → 401 with clear error body (3 paths: missing, non-numeric, validateSession failure)
+- AC4 ✅ `max_wait: 0` instant poll — parsed and passed as `effectiveTimeout=0` to `runDrainLoop`; test confirms
+- AC5 ✅ Same `pending`/`empty`/`timed_out`/`error:session_closed` semantics — structural parity (both paths call same `runDrainLoop`)
+- AC7 ✅ MCP `dequeue` tool unchanged — `runDrainLoop` exported from `src/tools/dequeue.ts:121`, `register()` untouched
+- setDequeueActive bug ✅ Confirmed fixed: `session_closed` check fires before `setDequeueActive(sid, true)` (line 140); `finally` block unconditionally calls `setDequeueActive(sid, false)` covering all paths
+
+### Gap (blocking)
+
+**AC6 — Help topic not updated**
+`src/tools/activity/create.ts` hint text at lines 51 and 78 still reads:
+`"Configure your watcher to call dequeue() when this file changes"` — no HTTP URL, no curl/PS/Node examples.
+`docs/help/dequeue.md` is unchanged and has no HTTP endpoint reference.
+
+**Required fix:** Update the `activity/file/create` response hint to reference the `/dequeue` HTTP URL with platform-agnostic intent. Add examples for curl, PowerShell `Invoke-RestMethod`, and Node `fetch`. Pattern: follow `docs/help/events.md` (endpoint shape, auth, request/response table). Can be new `docs/help/dequeue-http.md` or update existing `docs/help/dequeue.md`.
