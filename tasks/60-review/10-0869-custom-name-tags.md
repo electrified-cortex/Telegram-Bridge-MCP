@@ -100,6 +100,13 @@ Sequential where dependent; mark which can parallelize. Each subtask is small en
 **Verdict: NEEDS_REVISION** — 2026-05-05
 Verified by: Overseer dispatch (Sonnet verifier)
 
+**Verdict: APPROVED** — 2026-05-06 (round 2)
+Verified by: Overseer dispatch (Sonnet verifier)
+Both gaps resolved:
+- Gap 1: apply.test.ts (3 tests) + load.test.ts (2 tests) — name_tag branch fully covered
+- Gap 2: docs/dogfood/10-0869-name-tags.md — complete end-to-end walkthrough, 104 lines
+All 8 ACs satisfied. Ready to seal.
+
 ### Passing (5/7 subtasks)
 - AC1/ST1 ✅ Storage refactor — `Session.name_tag?` field, `defaultNameTag()` helper, round-trip tests
 - AC1/ST2 ✅ Robot emoji dropped — `defaultNameTag` returns `<color> <name>`, test asserts no `🤖`
