@@ -217,8 +217,7 @@ const DESCRIPTION =
   "Call once at the start of every session. Creates a fresh session " +
   "with a unique ID and token. Fresh sessions auto-drain pending messages. " +
   "If you lost your token (context loss, crash), use action(type: 'session/reconnect', ...) instead. " +
-  "Returns { token, sid, suffix, sessions_active, action, pending }. " +
-  "Call help() first to load the API guide, then call action(type: 'session/start', ...) to join.";
+  "Returns { token, sid, hint } — call dequeue(token) next to enter the loop.";
 
 export async function handleSessionStart({ name, color }: { name: string; color?: string }) {
       const chatId = resolveChat();
@@ -293,17 +292,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
         const res: Record<string, unknown> = {
           token: sessionToken,
           sid: session.sid,
-          suffix: session.suffix,
-          sessions_active: session.sessionsActive,
-          action: "fresh",
-          pending: 0,
-          discarded,
-          fellow_sessions: [] as unknown[],
-          // connection_token: UUID assigned to this session start instance.
-          // Pass it on every dequeue call to enable duplicate-session detection.
-          // The bridge alerts the governor (without rejecting) if two callers
-          // share the same SID/suffix but present different connection tokens.
-          connection_token: session.connectionToken,
+          hint: "Call dequeue(token) to get your first message.",
         };
         if (isFirstSession) {
           // First session is the governor by default
@@ -334,7 +323,6 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           if (discarded === 0) deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_NO_PENDING_YET);
         } else if (session.sessionsActive > 1) {
           const allSessions = listSessions();
-          res.fellow_sessions = allSessions.filter(s => s.sid !== session.sid);
           if (session.sessionsActive === 2) {
             // Fresh joiners use lowest-SID heuristic (original session is the anchor).
             const governorSid = Math.min(...allSessions.map(s => s.sid));
@@ -537,9 +525,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   return toResult({
     token: reconToken,
     sid: fullSession.sid,
-    sessions_active: reconSessActive,
-    action: "reconnected",
-    pending,
+    hint: "Call dequeue(token) to get your first message.",
   });
 }
 

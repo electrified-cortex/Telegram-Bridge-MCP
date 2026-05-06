@@ -168,13 +168,7 @@ describe("session_start tool", () => {
     expect(result).toEqual({
       token: 1123456,
       sid: 1,
-      suffix: 123456,
-      sessions_active: 1,
-      action: "fresh",
-      pending: 0,
-      discarded: 3,
-      fellow_sessions: [],
-      connection_token: "test-connection-token-uuid",
+      hint: "Call dequeue(token) to get your first message.",
     });
   });
 
@@ -186,13 +180,7 @@ describe("session_start tool", () => {
     expect(result).toEqual({
       token: 1123456,
       sid: 1,
-      suffix: 123456,
-      sessions_active: 1,
-      action: "fresh",
-      pending: 0,
-      discarded: 0,
-      fellow_sessions: [],
-      connection_token: "test-connection-token-uuid",
+      hint: "Call dequeue(token) to get your first message.",
     });
   });
 
