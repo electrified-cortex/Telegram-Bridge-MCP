@@ -60,3 +60,17 @@ Worker-shippable. Sonnet-class — wording needs care to land "optional augment"
 ## Bailout
 
 90 min. If the onboarding-message catalog is broader than expected (more than ~6 messages to revise), file a continuation task and surface the partial list.
+
+## Completion
+
+- Branch: `10-0877` merged to `release/7.4`, back-merged to `dev`
+- Commit: `82d56dfe` — added ONBOARDING_LOOP_PATTERN service message, wired into start.ts both paths, appended help/start.md Dequeue Loop section
+- Framing: dequeue is primary heartbeat; activity-file is "Optional augment"
+- Worker: Worker
+
+## Verification Stamp
+
+**Verdict:** APPROVED
+**Date:** 2026-05-05
+**Criteria:** 5/5 passed
+**Evidence:** New `ONBOARDING_LOOP_PATTERN` message leads with dequeue as heartbeat, explicitly labels activity-file as "Optional augment, not a replacement for dequeue." Fired in both single-session and multi-session paths in start.ts. `docs/help/start.md` Dequeue Loop section appended with opt-in callout. No Monitor-as-primary framing found anywhere. `docs/help/dequeue.md` unchanged.

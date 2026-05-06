@@ -59,3 +59,18 @@ Worker-shippable. Haiku-class — small, mechanical removal. Tests: existing cap
 ## Bailout
 
 If removing the cap surfaces a hidden dependency (e.g. some integration test silently relied on the 5s cap to make tests fast), escalate to Curator. 90 min cap.
+
+## Completion
+
+- Branch: `10-0875` merged to `release/7.4`, back-merged to `dev`
+- Commit: `ed55f066` — removed `ACTIVITY_FILE_DEQUEUE_CAP_S` constant and its import+application block in dequeue.ts
+- `dequeue` now honors session's `dequeueDefault` (300s fallback) regardless of activity-file registration
+- Tests: cap test removed; no residual source references
+- Worker: Worker (SID 2, Copilot)
+
+## Verification Stamp
+
+**Verdict:** APPROVED
+**Date:** 2026-05-05
+**Criteria:** 4/4 passed
+**Evidence:** `ACTIVITY_FILE_DEQUEUE_CAP_S` fully removed from `file-state.ts` and `dequeue.ts`. No residual `src/` references. `effectiveTimeout` resolves purely from explicit param or `getDequeueDefault`. No cap test remains. Help docs contain no mention of 5s cap.

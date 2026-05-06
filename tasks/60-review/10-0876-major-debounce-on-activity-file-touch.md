@@ -134,3 +134,26 @@ Worker-shippable. Sonnet-class — touches state machine + timer logic + tests. 
 ## Bailout
 
 Worker time-cap: 4 hours. If the `inflightDequeue` flag turns out to be hard to wire (dequeue's blocking semantics make it tricky), escalate — may need a Curator design pass.
+
+## Completion (partial)
+
+- Branch: `10-0876` merged to `release/7.4`, back-merged to `dev`
+- Commit: `6e1455a7` — idle-kick state machine, KICK_DEBOUNCE_DEFAULT_MS, profile/kick-debounce action
+- 8 unit tests added; ACTIVITY_SUPPRESS_MS/DEBOUNCE_WINDOW_MS removed
+- Worker: Worker
+
+## Verification Stamp
+
+**Verdict:** NEEDS_REVISION
+**Date:** 2026-05-05
+**Criteria:** 6/7 passed
+**Evidence:** State machine, debounce timer, profile action, test coverage all correct. One-nudge-per-cycle (NUDGE_FIRED) correct. Existing suppress test replaced.
+**Gap — inflightDequeue leak on early returns (dequeue.ts):**
+`setDequeueActive(sid, true)` is called at line 215 of `dequeue.ts` BEFORE the `try` block. Three early-return paths exit without reaching the `finally` that calls `setDequeueActive(sid, false)`:
+1. Lines 218-221 — `session_closed` return
+2. Lines 285-290 — immediate batch (messages already pending)
+3. Lines 293-295 — `effectiveTimeout === 0` (non-blocking dequeue)
+
+Paths 2 and 3 are common code paths. After a fast dequeue, `inflightDequeue` is permanently stuck `true` — no further mtime kicks will ever fire for that session. Violates AC 1 (over-suppression) and AC 4 (cycle never re-arms).
+
+**Fix:** Call `setDequeueActive(sid, false)` before each of the three early return statements, OR move `setDequeueActive(sid, true)` inside the `try` block.
