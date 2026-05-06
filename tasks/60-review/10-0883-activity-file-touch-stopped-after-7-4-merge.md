@@ -3,9 +3,8 @@ id: "10-0883"
 title: "BUG: TMCP stopped touching activity file after 10-0876+10-0880 merges (regression in release/7.4)"
 type: bug
 priority: 10
-status: closed
+status: review
 created: 2026-05-05
-closed: 2026-05-05
 filed-by: Curator
 delegation: Worker
 target_repo: telegram-bridge-mcp
