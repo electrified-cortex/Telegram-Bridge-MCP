@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   listReminders: vi.fn((): Array<Record<string, unknown>> => []),
   disableReminder: vi.fn(),
   enableReminder: vi.fn(),
+  getSession: vi.fn(),
 }));
 
 vi.mock("../../voice-state.js", () => ({
@@ -32,6 +33,7 @@ vi.mock("../../reminder-state.js", () => ({
   reminderContentHash: (text: string, recurring: boolean, trigger: "time" | "startup" = "time") =>
     contentHash(text, recurring, trigger),
 }));
+vi.mock("../../session-manager.js", () => ({ getSession: mocks.getSession }));
 
 import { applyProfile } from "./apply.js";
 
@@ -210,5 +212,43 @@ describe("applyProfile — reminder guard behavior", () => {
     expect("applied" in result).toBe(true);
     expect(mocks.disableReminder).not.toHaveBeenCalled();
     expect(mocks.enableReminder).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyProfile — name_tag application", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listReminders.mockReturnValue([]);
+    mocks.addReminder.mockImplementation(
+      (r: { id: string; text: string; delay_seconds: number; recurring: boolean }) => ({
+        ...r,
+        state: "active",
+        created_at: Date.now(),
+        activated_at: Date.now(),
+      }),
+    );
+  });
+
+  it("profile with name_tag applies it to session", () => {
+    const session = { name_tag: undefined as string | undefined };
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { name_tag: "🤖 Worker" });
+    expect("applied" in result).toBe(true);
+    expect(session.name_tag).toBe("🤖 Worker");
+    expect((result as { applied: Record<string, unknown> }).applied.name_tag).toBe("🤖 Worker");
+  });
+
+  it("profile without name_tag does not call getSession", () => {
+    const result = applyProfile(42, { voice: "alloy" });
+    expect("applied" in result).toBe(true);
+    expect(mocks.getSession).not.toHaveBeenCalled();
+  });
+
+  it("profile with name_tag when getSession returns undefined skips silently", () => {
+    mocks.getSession.mockReturnValue(undefined);
+    const result = applyProfile(42, { name_tag: "Ghost" });
+    expect("applied" in result).toBe(true);
+    expect(mocks.getSession).toHaveBeenCalledWith(42);
+    expect((result as { applied: Record<string, unknown> }).applied.name_tag).toBeUndefined();
   });
 });
