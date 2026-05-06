@@ -39,10 +39,11 @@ Most likely regression site: the b13c025f review batch's changes to `src/tools/a
 
 ## Acceptance criteria
 
-- Repro: send message to TMCP from Telegram, observe activity file mtime should bump within <2 seconds. Currently does NOT.
-- Diagnose: identify the commit that introduced the regression (bisect or code review of the 7.4 absorbed changes).
-- Fix: restore touch-on-inbound-message behavior. Cover with regression test.
-- Verify: 10-message manual test, all 10 should bump mtime.
+1. **First check: is TMCP running latest code?** Operator observed the regression at the same time as recent release/7.4 merges. The running TMCP server may be on a stale build that hasn't restarted. Step one: confirm running TMCP is at `release/7.4@HEAD` (current `b13c025f` or later). If NOT, restart with latest, re-test. If file-touch works post-restart, close as stale-process — not a regression.
+2. Repro (post-restart-confirmed): send message to TMCP from Telegram, observe activity file mtime should bump within <2 seconds. Currently does NOT.
+3. Diagnose (only if step 1 confirms latest is running): identify the commit that introduced the regression (bisect or code review).
+4. Fix: restore touch-on-inbound-message behavior. Cover with regression test.
+5. Verify: 10-message manual test, all 10 should bump mtime.
 
 ## Out of scope
 
