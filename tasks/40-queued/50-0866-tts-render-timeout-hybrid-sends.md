@@ -36,14 +36,41 @@ within a hard timeout. On timeout:
 
 ## Procedure
 
-1. Find the TTS render path in the bridge (likely in `tts/` or
+1. **Research the timeout cause first** (operator-directed, msg 50768).
+   Before adding a timeout wrapper, distinguish:
+   - **Server-side timeout** — TTS provider / model times out and
+     returns an error. Errors bubble; we just need to surface them.
+   - **Client-side hang** — request never returns; no error, no
+     response. This is what we're trying to catch.
+
+   These are different failure modes with different fixes. Inspect
+   the wedge postmortem (`agents/curator/memory/projects/2026-05-03-overseer-wedge-postmortem.md`)
+   and any relevant TTS render logs / network traces. If it's
+   server-side erroring already, we may need very little; if it's
+   genuine client hang, the timeout is the right fix.
+
+2. Find the TTS render path in the bridge (likely in `tts/` or
    wherever audio-rendering lives).
-2. Wrap the render call in a timeout. **Default: 60 seconds minimum**
-   (operator-directed, msg 50761 — cancelling too early on legitimate
-   long renders is the bigger risk). Configurable; consider 90-120s
-   ceiling. Don't go below 60.
-3. On timeout: return a `tts_timeout` structured error response.
-4. Update `send` tool docs (and `help('send')`) to document the new
+
+3. Wrap the render call in a timeout (only if step 1 confirms client
+   hang as a real failure mode).
+
+   **Default: 60 seconds minimum** (operator-directed, msg 50761 —
+   cancelling too early on legitimate long renders is the bigger risk).
+
+   **Scale dynamically by word count** (operator-directed, msg 50766).
+   Proposed formula: `timeout_seconds = max(60, words / 100 * 60)` —
+   ~60s per 100 words of audio content. Liberal. Examples:
+   - 50 words → 60s (floor)
+   - 100 words → 60s (floor)
+   - 200 words → 120s
+   - 500 words → 300s
+
+   Configurable per-100-word factor. Don't go below 60.
+
+4. On timeout: return a `tts_timeout` structured error response.
+
+5. Update `send` tool docs (and `help('send')`) to document the new
    error case + recovery pattern.
 
 ## Acceptance criteria
