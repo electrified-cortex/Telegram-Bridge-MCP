@@ -16,7 +16,6 @@ interface DequeueResult {
   updates: CompactEvent[];
   pending?: number;
   timed_out?: boolean;
-  empty?: boolean;
   hint?: string;
 }
 
@@ -240,12 +239,11 @@ describe("dequeue tool", () => {
     expect(data.pending).toBeUndefined();
   });
 
-  it("returns empty when queue is empty and timeout is 0 (instant poll)", async () => {
+  it("returns pending on instant poll when queue is empty", async () => {
     mocks.dequeueBatch.mockReturnValue([]);
     const result = await call({ timeout: 0, token: 1_123_456 });
     expect(isError(result)).toBe(false);
     const data = parseResult<DequeueResult>(result);
-    expect(data.empty).toBe(true);
     expect(data.timed_out).toBeUndefined();
     expect(data.pending).toBe(0);
   });
@@ -307,7 +305,6 @@ describe("dequeue tool", () => {
     mocks.pendingCount.mockReturnValue(0);
     const result = await call({ timeout: 0, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
-    expect(data.empty).toBe(true);
     expect(data.timed_out).toBeUndefined();
     expect(data.pending).toBe(0);
   });
@@ -966,7 +963,7 @@ describe("dequeue tool", () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ max_wait: 0, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
-      expect(data.empty).toBe(true);
+      expect(data.pending).toBe(0);
     });
 
     it("accepts max_wait for blocking poll", async () => {
@@ -983,7 +980,7 @@ describe("dequeue tool", () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ timeout: 0, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
-      expect(data.empty).toBe(true);
+      expect(data.pending).toBe(0);
     });
 
     it("max_wait takes precedence over timeout alias when both provided", async () => {
@@ -991,7 +988,7 @@ describe("dequeue tool", () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ max_wait: 0, timeout: 300, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
-      expect(data.empty).toBe(true);
+      expect(data.pending).toBe(0);
     });
 
     it("force gate uses max_wait value when set via max_wait", async () => {
@@ -1055,7 +1052,6 @@ describe("dequeue tool", () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ timeout: 0, token: 1_123_456 });
       const data = parseResult(result);
-      expect(data.empty).toBe(true);
       expect(data.hint).toBeUndefined();
     });
 
@@ -1393,16 +1389,16 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // response_format: "compact" — omits empty/timed_out fields
+  // response_format: "compact" — omits timed_out fields
   // =========================================================================
 
   describe("response_format: compact", () => {
-    it("compact: omits empty:true on instant poll (timeout:0, empty queue)", async () => {
+    it("compact: instant poll returns pending only (no empty field in any mode)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ timeout: 0, token: 1_123_456, response_format: "compact" });
       expect(isError(result)).toBe(false);
       const data = parseResult<DequeueResult>(result);
-      expect(data.empty).toBeUndefined();
+      expect((data as Record<string, unknown>).empty).toBeUndefined();
       // pending is still present
       expect(data.pending).toBe(0);
     });
@@ -1418,11 +1414,12 @@ describe("dequeue tool", () => {
       expect(data.timed_out).toBe(true);
     });
 
-    it("default: empty:true is present on instant poll (response_format: default)", async () => {
+    it("default: pending-only on instant poll (response_format: default)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ timeout: 0, token: 1_123_456, response_format: "default" });
       const data = parseResult<DequeueResult>(result);
-      expect(data.empty).toBe(true);
+      expect((data as Record<string, unknown>).empty).toBeUndefined();
+      expect(data.pending).toBe(0);
     });
 
     it("default: timed_out:true is present when blocking wait expires (response_format: default)", async () => {
@@ -1435,11 +1432,12 @@ describe("dequeue tool", () => {
       expect(data.timed_out).toBe(true);
     });
 
-    it("omitted response_format: empty:true is present (backward compat)", async () => {
+    it("omitted response_format: pending-only on instant poll (backward compat)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ timeout: 0, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
-      expect(data.empty).toBe(true);
+      expect((data as Record<string, unknown>).empty).toBeUndefined();
+      expect(data.pending).toBe(0);
     });
 
     it("omitted response_format: timed_out:true is present (backward compat)", async () => {

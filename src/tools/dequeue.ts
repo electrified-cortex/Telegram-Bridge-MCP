@@ -76,7 +76,7 @@ function buildVoiceBacklogHint(batch: TimelineEvent[], sid: number): string | un
 const DESCRIPTION =
   "Consume queued updates. Non-content events drain first, then up to one content event (text, media, voice) is appended. " +
   "Returns: `{ updates, pending? }` with data; `{ timed_out: true }` on blocking-wait expiry (call again immediately); " +
-  "`{ empty: true }` for instant polls (max_wait: 0); " +
+  "`{ pending? }` for instant polls (max_wait: 0); " +
   "`{ error: \"session_closed\", message }` (isError: false) when the session queue is gone — stop looping. " +
   "pending > 0 → call again. Omit max_wait to use session default (action(type: 'profile/dequeue-default'), fallback 300 s); max explicit: 300 s. " +
   "Pass connection_token (from session/start) to enable duplicate-session detection — the bridge alerts the governor if two callers share the same identity. " +
@@ -209,8 +209,7 @@ export async function runDrainLoop(
   }
 
   if (timeout === 0) {
-    const compact = responseFormat === "compact";
-    return { ...(compact ? {} : { empty: true }), pending: pendingCountAny() };
+    return { pending: pendingCountAny() };
   }
 
   // Block until something arrives or timeout expires.

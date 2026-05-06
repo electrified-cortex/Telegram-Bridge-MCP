@@ -84,10 +84,9 @@ describe("roll_log tool", () => {
   // Roll on empty buffer
   // -------------------------------------------------------------------------
 
-  it("returns rolled: false when buffer is empty", async () => {
+  it("returns message when buffer is empty", async () => {
     mocks.rollLog.mockReturnValue(null);
     const result = parseResult(await call({ token: 1123456 }));
-    expect(result.rolled).toBe(false);
     expect(result.message).toBeDefined();
   });
 
@@ -102,10 +101,9 @@ describe("roll_log tool", () => {
   // Roll with events
   // -------------------------------------------------------------------------
 
-  it("returns rolled: true and filename when events exist", async () => {
+  it("returns filename when events exist", async () => {
     mocks.rollLog.mockReturnValue("2025-04-05T143022.json");
     const result = parseResult(await call({ token: 1123456 }));
-    expect(result.rolled).toBe(true);
     expect(result.filename).toBe("2025-04-05T143022.json");
   });
 

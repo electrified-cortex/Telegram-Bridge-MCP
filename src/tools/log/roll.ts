@@ -22,12 +22,10 @@ export async function handleRollLog({ token }: { token: number }) {
       // Notify chat with filename only — no content
       void sendServiceMessage(`📋 Log file created: \`${archivedFilename}\``).catch(() => {});
       return toResult({
-        rolled: true,
         filename: archivedFilename,
       });
     } else {
       return toResult({
-        rolled: false,
         message: "No events in current log — nothing to roll.",
       });
     }

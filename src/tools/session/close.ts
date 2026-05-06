@@ -36,7 +36,7 @@ export async function handleCloseSession({ token, target_sid, force }: { token?:
     const CLOSE_HINT =
       "Wipe your stored session token before exiting. " +
       "If your loop guard re-prompts, do NOT call session/start -- wipe the token, then exit.";
-    return toResult({ ...result, reason: result.closed ? "closed" : "not_found", hint: CLOSE_HINT });
+    return toResult({ ...result, hint: CLOSE_HINT });
   }
 
   // ── Governor-close path (target_sid provided) ─────────────────────────
@@ -75,7 +75,7 @@ export async function handleCloseSession({ token, target_sid, force }: { token?:
   );
 
   if (decision !== "approved") {
-    return toResult({ closed: false, sid: target_sid, reason: "cancelled" });
+    return toResult({ closed: false, sid: target_sid });
   }
 
   // 5. Re-check governor role — could have changed during the approval wait
@@ -89,7 +89,7 @@ export async function handleCloseSession({ token, target_sid, force }: { token?:
   // 6. Execute close
   const result = closeSessionById(target_sid);
   void refreshGovernorCommand();
-  return toResult({ ...result, reason: result.closed ? "closed" : "not_found" });
+  return toResult({ ...result });
 }
 
 export function register(server: McpServer) {

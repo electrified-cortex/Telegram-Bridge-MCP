@@ -44,12 +44,10 @@ describe("show_typing tool", () => {
     call = server.getHandler("show_typing");
   });
 
-  it("returns ok:true with default timeout of 20", async () => {
+  it("calls showTyping with default timeout of 20", async () => {
     mocks.showTyping.mockResolvedValue(true);
     const result = await call({ token: 1123456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.timeout_seconds).toBe(20);
     expect(mocks.showTyping).toHaveBeenCalledWith(20);
   });
 
@@ -57,23 +55,19 @@ describe("show_typing tool", () => {
     mocks.showTyping.mockResolvedValue(true);
     const result = await call({ timeout_seconds: 60, token: 1123456});
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
-    expect(data.timeout_seconds).toBe(60);
     expect(mocks.showTyping).toHaveBeenCalledWith(60);
   });
 
-  it("returns started:true when newly started", async () => {
+  it("succeeds when newly started", async () => {
     mocks.showTyping.mockResolvedValue(true);
     const result = await call({ timeout_seconds: 30, token: 1123456});
-    const data = parseResult(result);
-    expect(data.started).toBe(true);
+    expect(isError(result)).toBe(false);
   });
 
-  it("returns started:false when extending an existing indicator", async () => {
+  it("succeeds when extending an existing indicator", async () => {
     mocks.showTyping.mockResolvedValue(false);
     const result = await call({ timeout_seconds: 30, token: 1123456});
-    const data = parseResult(result);
-    expect(data.started).toBe(false);
+    expect(isError(result)).toBe(false);
   });
 
   it("cancels the indicator when cancel:true and returns cancelled:true if was active", async () => {

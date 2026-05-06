@@ -57,7 +57,7 @@ export async function handleUpdateProgress({ message_id, percent, title, subtext
         } as Record<string, unknown>).catch(() => {});
       }
     }
-    return toResult({ message_id: edited.message_id, updated: true });
+    return toResult({ message_id: edited.message_id });
   } catch (err) {
     return toError(err);
   }

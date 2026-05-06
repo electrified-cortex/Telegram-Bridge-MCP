@@ -29,8 +29,8 @@ export async function handleShowTyping({ timeout_seconds = 20, cancel, token }: 
     return toResult({ cancelled: wasActive });
   }
   await maybeReplaceRecoveringAnimation(_sid);
-  const started = await showTyping(timeout_seconds);
-  return toResult({ timeout_seconds, started });
+  await showTyping(timeout_seconds);
+  return toResult({});
 }
 
 export function register(server: McpServer) {

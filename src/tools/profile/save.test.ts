@@ -51,7 +51,6 @@ describe("save_profile tool", () => {
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
-    expect(data.saved).toBe(true);
     expect(data.key).toBe("Test");
   });
 

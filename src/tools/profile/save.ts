@@ -85,7 +85,7 @@ export function handleSaveProfile({ key, token }: { key: string; token: number }
     return toError({ code: "WRITE_FAILED", message: `Failed to write profile "${key}": ${(err as Error).message}. Check that the profiles directory is writable.` });
   }
 
-  return toResult({ saved: true, key, path, sections });
+  return toResult({ key, path, sections });
 }
 
 export function register(server: McpServer) {
