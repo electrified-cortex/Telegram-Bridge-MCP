@@ -5,7 +5,7 @@
  *   - With file_path: agent supplies the path; TMCP just records it.
  *   - Without file_path: TMCP generates a random file in data/activity/ and creates it.
  *
- * Response: { file_path: string, hint: string }
+ * Response: { file_path: string, hint: "Call help('activity/file') now" }
  */
 
 import { toResult, toError } from "../../telegram.js";
@@ -48,7 +48,7 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       nudgeArmed: true,
     });
 
-    return toResult({ file_path: filePath, hint: "Configure your watcher to call dequeue() when this file changes" });
+    return toResult({ file_path: filePath, hint: "Call help('activity/file') now" });
   }
 
   // TMCP-generated path
@@ -75,5 +75,5 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
     nudgeArmed: true,
   });
 
-  return toResult({ file_path: generatedPath, hint: "Configure your watcher to call dequeue() when this file changes" });
+  return toResult({ file_path: generatedPath, hint: "Call help('activity/file') now" });
 }

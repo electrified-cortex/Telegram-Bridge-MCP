@@ -93,6 +93,8 @@ vi.mock("fs", async (importActual) => {
           "If a participant fails to close cleanly, the governor may need",
           "action(type: \"session/close\", force: true, target_sid: N) before invoking shutdown.",
         ].join("\n");
+      if (p.includes("docs") && p.includes("help") && p.includes("activity") && p.includes("file.md"))
+        return "# activity/file — Wake-Nudge Integration Guide\n\noptional augment. dequeue is primary.\n\nContent stays empty/stable — mtime is the signal.\n\nwatcher patterns: bash poll, PowerShell FileSystemWatcher, inotifywait.";
       // Fall through to actual for anything else
       return (actual.readFileSync as (...a: unknown[]) => unknown)(path, _encoding);
     },
@@ -215,6 +217,15 @@ describe("help tool", () => {
     // Finding 3: governor section must NOT instruct agents to call session/close
     const governorSection = content.slice(content.indexOf("## Governor Shutdown"));
     expect(governorSection).not.toContain("action(type: \"session/close\")");
+  });
+
+  it("help(topic: 'activity/file') returns the activity-file integration guide", async () => {
+    const result = await call({ topic: "activity/file" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("dequeue");
+    expect(content).toContain("watcher");
+    expect(content).toContain("mtime");
   });
 
   describe("topic: 'identity'", () => {

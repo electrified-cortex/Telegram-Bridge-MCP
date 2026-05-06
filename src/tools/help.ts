@@ -69,6 +69,7 @@ const DESCRIPTION =
   "Pass topic: 'modality' for the priority axis (buttons > text > audio) and modality-matching rules. " +
   "Pass topic: 'events' for the external event system docs (POST /event endpoint, kinds, metrics). " +
   "Pass topic: 'guidance' for the guidance delivery reference (what fires when and why). " +
+  "Pass topic: 'activity/file' for the activity-file wake-nudge integration guide (watcher patterns, lifecycle, error modes). " +
   "Pass topic: '<tool_name>' for detailed docs on a specific tool.";
 
 /**
@@ -199,7 +200,7 @@ export function register(server: McpServer) {
       }
 
       // Topics with rich file-based content — skip TOOL_INDEX even if present
-      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions", "presence", "behavior", "audio", "modality", "events", "guidance"]);
+      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions", "presence", "behavior", "audio", "modality", "events", "guidance", "activity/file"]);
 
       // topic: "<tool_name>" → per-tool description (checked before file lookup)
       // Skip for rich topics that have dedicated file-based content

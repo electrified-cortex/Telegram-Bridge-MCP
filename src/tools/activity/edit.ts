@@ -4,7 +4,7 @@
  * New file_path replaces the old one. Ownership rules apply per-call
  * (same semantics as create). If the old file was TMCP-owned, it is deleted.
  *
- * Response: { ok: true, file_path: string, tmcp_owned: boolean, previous_path: string }
+ * Response: { file_path: string, hint: string, previous_path: string }
  * Error: NOT_REGISTERED if no file is currently registered.
  */
 
@@ -55,7 +55,7 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
       nudgeArmed: true,
     });
 
-    return toResult({ ok: true, file_path: filePath, tmcp_owned: false, previous_path: previousPath });
+    return toResult({ file_path: filePath, hint: "Call help('activity/file') now", previous_path: previousPath });
   }
 
   // TMCP-generated path
@@ -80,5 +80,5 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
     nudgeArmed: true,
   });
 
-  return toResult({ ok: true, file_path: generatedPath, tmcp_owned: true, previous_path: previousPath });
+  return toResult({ file_path: generatedPath, hint: "Call help('activity/file') now", previous_path: previousPath });
 }
