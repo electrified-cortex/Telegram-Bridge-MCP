@@ -1,4 +1,4 @@
-﻿import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { toResult, toError, ackVoiceMessage } from "../telegram.js";
 import { dlog } from "../debug-log.js";
@@ -109,6 +109,230 @@ export function _resetFirstDequeueHintForTest(): void {
   // No-op: first-dequeue hint removed.
 }
 
+/**
+ * Core dequeue drain loop — shared by the MCP tool and the HTTP /dequeue endpoint.
+ *
+ * @param sid          Validated session ID (caller must auth before calling this).
+ * @param timeout      Effective timeout in seconds (0 = instant poll, 1–300 = long-poll).
+ * @param signal       AbortSignal — abort to cut the long-poll early (e.g. HTTP disconnect).
+ * @param responseFormat  "compact" suppresses `empty: true` on instant polls.
+ * @returns Plain data object — caller wraps with toResult() for MCP or returns as JSON for HTTP.
+ */
+export async function runDrainLoop(
+  sid: number,
+  timeout: number,
+  signal: AbortSignal,
+  responseFormat: "default" | "compact" = "default",
+): Promise<Record<string, unknown>> {
+  const sessionQueue = getSessionQueue(sid);
+
+  if (!sessionQueue) {
+    return {
+      error: "session_closed",
+      message: `Session ${sid} has ended. Call action(type: 'session/start', ...) to open a new session if needed.`,
+    };
+  }
+
+  // Mark this session as having an in-flight dequeue — suppresses activity-file kicks
+  // while the agent is actively waiting for messages.
+  // Only set after confirming the session exists so every path through the
+  // try/finally below is guaranteed to call setDequeueActive(sid, false).
+  setDequeueActive(sid, true);
+
+  const sq = sessionQueue;
+
+  // Keep active session in sync — set at the start AND re-set before
+  // each return so the global is correct when the next tool call dispatches.
+  // (Concurrent tool calls from other sessions can overwrite the global
+  // during the long wait; re-syncing here restores it.)
+  function resyncActiveSession(): void {
+    setActiveSession(sid);
+  }
+
+  resyncActiveSession();
+
+  // Record a heartbeat so the health-check can detect unresponsive sessions.
+  if (sid > 0) touchSession(sid);
+
+  function dequeueBatchAny(): TimelineEvent[] {
+    return sq.dequeueBatch();
+  }
+
+  function pendingCountAny(): number {
+    return sq.pendingCount();
+  }
+
+  function waitForEnqueueAny(): Promise<void> {
+    return sq.waitForEnqueue();
+  }
+
+  function hasVersionedWaitAny(q: unknown): q is { getWakeVersion(): number; waitForEnqueueSince(v: number): Promise<void> } {
+    return typeof (q as Record<string, unknown>)["getWakeVersion"] === "function" &&
+           typeof (q as Record<string, unknown>)["waitForEnqueueSince"] === "function";
+  }
+
+  function getWakeVersionAny(q: unknown): number {
+    return (q as { getWakeVersion(): number }).getWakeVersion();
+  }
+
+  function waitForEnqueueSinceAny(q: unknown, v: number): Promise<void> {
+    return (q as { waitForEnqueueSince(v: number): Promise<void> }).waitForEnqueueSince(v);
+  }
+
+  /** Build a content batch result, attaching any pending hints. */
+  function buildBatchResult(events: TimelineEvent[]): Record<string, unknown> {
+    const pending = pendingCountAny();
+    const result: Record<string, unknown> = { updates: compactBatch(events, sid) };
+    if (pending > 0) result.pending = pending;
+    const hints: string[] = [];
+    const silenceHint = takeSilenceHint(sid);
+    if (silenceHint !== undefined) hints.push(silenceHint);
+    const voiceHint = buildVoiceBacklogHint(events, sid);
+    if (voiceHint !== undefined) hints.push(voiceHint);
+    // Pending-queue nudge: when more messages are waiting, suggest the
+    // processing preset so the operator knows the agent sees the backlog.
+    // TODO: honor a profile flag (e.g. ProfileData.suppress_pending_hint)
+    // to let agents opt out once that flag is introduced in profile-store.ts.
+    if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
+    if (hints.length > 0) result.hint = hints.join(" ");
+    return result;
+  }
+
+  // Try immediate batch dequeue
+  let batch = dequeueBatchAny();
+  if (batch.length > 0) {
+    for (const evt of batch) ackVoice(evt);
+    const result = buildBatchResult(batch);
+    resyncActiveSession();
+    dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
+    return result;
+  }
+
+  if (timeout === 0) {
+    const compact = responseFormat === "compact";
+    return { ...(compact ? {} : { empty: true }), pending: pendingCountAny() };
+  }
+
+  // Block until something arrives or timeout expires.
+  // Mark session as idle for fleet visibility (session/idle action).
+  const deadline = Date.now() + timeout * 1000;
+  const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
+  const reminderIdleStart = Date.now();
+  let _staleWarnSent = false;
+  setDequeueIdle(sid, true);
+  try {
+    while (Date.now() < deadline) {
+      if (signal.aborted) break;
+
+      // On first idle iteration, warn once (rate-limited) if an animation has been
+      // running long enough and we haven't warned this session recently.
+      if (!_staleWarnSent) {
+        _staleWarnSent = true;
+        const _animStatus = getAnimationStatus(sid);
+        if (_animStatus.active) {
+          const ageMs = Date.now() - _animStatus.started_at;
+          const lastWarn = _lastStaleWarningSentAt.get(sid) ?? 0;
+          if (ageMs >= STALE_ANIM_MIN_AGE_MS && Date.now() - lastWarn >= STALE_ANIM_COOLDOWN_MS) {
+            _lastStaleWarningSentAt.set(sid, Date.now());
+            resyncActiveSession();
+            dlog("queue", `dequeue stale animation warning sid=${sid} message_id=${_animStatus.message_id}`);
+            return {
+              updates: [{
+                event: "animation_stale_warning",
+                message_id: _animStatus.message_id,
+                age_seconds: Math.floor(ageMs / 1000),
+              }],
+            };
+          }
+        }
+      }
+
+      // Promote any deferred reminders whose delay has elapsed.
+      promoteDeferred(sid);
+
+      const now = Date.now();
+      const idleDuration = now - reminderIdleStart;
+      const activeReminders = getActiveReminders(sid);
+
+      // Fire active reminders after 60 s of idle (no real messages).
+      if (idleDuration >= REMINDER_IDLE_THRESHOLD_MS && activeReminders.length > 0) {
+        const fired = popActiveReminders(sid);
+        const sessionName = getSession(sid)?.name ?? "";
+        for (const reminder of fired) {
+          recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
+        }
+        resyncActiveSession();
+        const reminderPending = pendingCountAny();
+        const reminderResult: Record<string, unknown> = {
+          updates: fired.map(buildReminderEvent),
+          ...(reminderPending > 0 ? { pending: reminderPending } : {}),
+        };
+        dlog("queue", `dequeue returning sid=${sid} batch=${fired.length} payloadLen=${JSON.stringify(reminderResult).length}`);
+        // responseFormat is not applied here: the reminder response only contains
+        // `updates` (real event data) and optionally `pending` (when > 0), neither
+        // of which are compact-suppressible fields.
+        return reminderResult;
+      }
+
+      const remaining = deadline - now;
+      if (remaining <= 0) break;
+
+      // Wake up as soon as the earliest of: reminder idle threshold, next deferred promotion, or timeout.
+      const timeToFireMs = activeReminders.length > 0
+        ? Math.max(0, REMINDER_IDLE_THRESHOLD_MS - idleDuration)
+        : Infinity;
+      const deferredMs = getSoonestDeferredMs(sid);
+      const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
+      const useVersionedWait = hasVersionedWaitAny(sq);
+      const wakeVersion = useVersionedWait ? getWakeVersionAny(sq) : 0;
+
+      if (useVersionedWait) {
+        // Re-check after capturing wakeVersion to avoid a lost wakeup if an
+        // event arrives between an "empty" check and waiter registration.
+        batch = dequeueBatchAny();
+        if (batch.length > 0) {
+          for (const evt of batch) ackVoice(evt);
+          const result = buildBatchResult(batch);
+          resyncActiveSession();
+          dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
+          return result;
+        }
+      }
+
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      dlog("queue", `dequeue wait sid=${sid} wakeVersion=${wakeVersion} waitMs=${waitMs}`);
+      await Promise.race([
+        useVersionedWait ? waitForEnqueueSinceAny(sq, wakeVersion) : waitForEnqueueAny(),
+        new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(Math.max(0, waitMs), MAX_SET_TIMEOUT_MS)); }),
+        abortPromise,
+      ]);
+      clearTimeout(timeoutHandle);
+      dlog("queue", `dequeue woke sid=${sid} aborted=${signal.aborted}`);
+
+      batch = dequeueBatchAny();
+      if (batch.length > 0) {
+        for (const evt of batch) ackVoice(evt);
+        const result = buildBatchResult(batch);
+        resyncActiveSession();
+        dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
+        return result;
+      }
+    }
+
+    resyncActiveSession();
+    const pending = pendingCountAny();
+    return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
+  } finally {
+    // Note: if two concurrent dequeue calls share the same sid (unusual but
+    // possible), the second finally will clear the idle flag while the first
+    // is still waiting. This is acceptable — the session is not fully idle in
+    // that case. A refcount would be needed to handle it precisely.
+    setDequeueIdle(sid, false);
+    // Re-arm activity-file nudge cycle and update lastActivityAt.
+    setDequeueActive(sid, false);
+  }
+}
+
 export function register(server: McpServer) {
   server.registerTool(
     "dequeue",
@@ -118,8 +342,8 @@ export function register(server: McpServer) {
         max_wait: z
           .number()
           .int({ message: "max_wait must be an integer number of seconds." })
-          .min(0, { message: "max_wait must be \u2265 0. Call help(topic: 'dequeue') for usage." })
-          .max(300, { message: "max_wait must be \u2264 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
+          .min(0, { message: "max_wait must be ≥ 0. Call help(topic: 'dequeue') for usage." })
+          .max(300, { message: "max_wait must be ≤ 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
           .optional()
           .describe("Seconds to block when queue is empty. Omit to use your session default (fallback 300 s). Pass 0 for an instant non-blocking poll (drain loops). Values above the session default require force: true. Use action(type: 'profile/dequeue-default') to raise your default."),
         timeout: z
@@ -194,7 +418,7 @@ export function register(server: McpServer) {
 
       // Gate: reject timeout values above the session default unless force is set
       const sessionDefault = getDequeueDefault(sid);
-      let effectiveTimeout = timeout ?? sessionDefault;
+      const effectiveTimeout = timeout ?? sessionDefault;
       if (timeout !== undefined && timeout > sessionDefault && !force) {
         const firstOccurrence = !_timeoutHintShownForSession.has(sid);
         _timeoutHintShownForSession.add(sid);
@@ -208,211 +432,8 @@ export function register(server: McpServer) {
         return toResult(response);
       }
 
-      const sessionQueue = getSessionQueue(sid);
-
-      // Mark this session as having an in-flight dequeue — suppresses activity-file kicks
-      // while the agent is actively waiting for messages.
-      setDequeueActive(sid, true);
-
-      if (!sessionQueue) {
-        return toResult({
-          error: "session_closed",
-          message: `Session ${sid} has ended. Call action(type: 'session/start', ...) to open a new session if needed.`,
-        });
-      }
-
-      const sq = sessionQueue;
-
-      // Keep active session in sync — set at the start AND re-set before
-      // each return so the global is correct when the next tool call dispatches.
-      // (Concurrent tool calls from other sessions can overwrite the global
-      // during the long wait; re-syncing here restores it.)
-      function resyncActiveSession(): void {
-        setActiveSession(sid);
-      }
-
-      resyncActiveSession();
-
-      // Record a heartbeat so the health-check can detect unresponsive sessions.
-      if (sid > 0) touchSession(sid);
-
-      function dequeueBatchAny(): TimelineEvent[] {
-        return sq.dequeueBatch();
-      }
-
-      function pendingCountAny(): number {
-        return sq.pendingCount();
-      }
-
-      function waitForEnqueueAny(): Promise<void> {
-        return sq.waitForEnqueue();
-      }
-
-      function hasVersionedWaitAny(q: unknown): q is { getWakeVersion(): number; waitForEnqueueSince(v: number): Promise<void> } {
-        return typeof (q as Record<string, unknown>)["getWakeVersion"] === "function" &&
-               typeof (q as Record<string, unknown>)["waitForEnqueueSince"] === "function";
-      }
-
-      function getWakeVersionAny(q: unknown): number {
-        return (q as { getWakeVersion(): number }).getWakeVersion();
-      }
-
-      function waitForEnqueueSinceAny(q: unknown, v: number): Promise<void> {
-        return (q as { waitForEnqueueSince(v: number): Promise<void> }).waitForEnqueueSince(v);
-      }
-
-      /** Build a content batch result, attaching any pending hints. */
-      function buildBatchResult(events: TimelineEvent[]): Record<string, unknown> {
-        const pending = pendingCountAny();
-        const result: Record<string, unknown> = { updates: compactBatch(events, sid) };
-        if (pending > 0) result.pending = pending;
-        const hints: string[] = [];
-        const silenceHint = takeSilenceHint(sid);
-        if (silenceHint !== undefined) hints.push(silenceHint);
-        const voiceHint = buildVoiceBacklogHint(events, sid);
-        if (voiceHint !== undefined) hints.push(voiceHint);
-        // Pending-queue nudge: when more messages are waiting, suggest the
-        // processing preset so the operator knows the agent sees the backlog.
-        // TODO: honor a profile flag (e.g. ProfileData.suppress_pending_hint)
-        // to let agents opt out once that flag is introduced in profile-store.ts.
-        if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
-        if (hints.length > 0) result.hint = hints.join(" ");
-        return result;
-      }
-
-      // Try immediate batch dequeue
-      let batch = dequeueBatchAny();
-      if (batch.length > 0) {
-        for (const evt of batch) ackVoice(evt);
-        const result = buildBatchResult(batch);
-        resyncActiveSession();
-        dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-        return toResult(result);
-      }
-
-      if (effectiveTimeout === 0) {
-        const compact = response_format === "compact";
-        return toResult({ ...(compact ? {} : { empty: true }), pending: pendingCountAny() });
-      }
-
-      // Block until something arrives or timeout expires.
-      // Mark session as idle for fleet visibility (session/idle action).
-      const deadline = Date.now() + effectiveTimeout * 1000;
-      const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
-      const reminderIdleStart = Date.now();
-      let _staleWarnSent = false;
-      setDequeueIdle(sid, true);
-      try {
-        while (Date.now() < deadline) {
-          if (signal.aborted) break;
-
-          // On first idle iteration, warn once (rate-limited) if an animation has been
-          // running long enough and we haven't warned this session recently.
-          if (!_staleWarnSent) {
-            _staleWarnSent = true;
-            const _animStatus = getAnimationStatus(sid);
-            if (_animStatus.active) {
-              const ageMs = Date.now() - _animStatus.started_at;
-              const lastWarn = _lastStaleWarningSentAt.get(sid) ?? 0;
-              if (ageMs >= STALE_ANIM_MIN_AGE_MS && Date.now() - lastWarn >= STALE_ANIM_COOLDOWN_MS) {
-                _lastStaleWarningSentAt.set(sid, Date.now());
-                resyncActiveSession();
-                dlog("queue", `dequeue stale animation warning sid=${sid} message_id=${_animStatus.message_id}`);
-                return toResult({
-                  updates: [{
-                    event: "animation_stale_warning",
-                    message_id: _animStatus.message_id,
-                    age_seconds: Math.floor(ageMs / 1000),
-                  }],
-                });
-              }
-            }
-          }
-
-          // Promote any deferred reminders whose delay has elapsed.
-          promoteDeferred(sid);
-
-          const now = Date.now();
-          const idleDuration = now - reminderIdleStart;
-          const activeReminders = getActiveReminders(sid);
-
-          // Fire active reminders after 60 s of idle (no real messages).
-          if (idleDuration >= REMINDER_IDLE_THRESHOLD_MS && activeReminders.length > 0) {
-            const fired = popActiveReminders(sid);
-            const sessionName = getSession(sid)?.name ?? "";
-            for (const reminder of fired) {
-              recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
-            }
-            resyncActiveSession();
-            const reminderPending = pendingCountAny();
-            const reminderResult: Record<string, unknown> = {
-              updates: fired.map(buildReminderEvent),
-              ...(reminderPending > 0 ? { pending: reminderPending } : {}),
-            };
-            dlog("queue", `dequeue returning sid=${sid} batch=${fired.length} payloadLen=${JSON.stringify(reminderResult).length}`);
-            // response_format is not applied here: the reminder response only contains
-            // `updates` (real event data) and optionally `pending` (when > 0), neither
-            // of which are compact-suppressible fields.
-            return toResult(reminderResult);
-          }
-
-          const remaining = deadline - now;
-          if (remaining <= 0) break;
-
-          // Wake up as soon as the earliest of: reminder idle threshold, next deferred promotion, or timeout.
-          const timeToFireMs = activeReminders.length > 0
-            ? Math.max(0, REMINDER_IDLE_THRESHOLD_MS - idleDuration)
-            : Infinity;
-          const deferredMs = getSoonestDeferredMs(sid);
-          const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
-          const useVersionedWait = hasVersionedWaitAny(sq);
-          const wakeVersion = useVersionedWait ? getWakeVersionAny(sq) : 0;
-
-          if (useVersionedWait) {
-            // Re-check after capturing wakeVersion to avoid a lost wakeup if an
-            // event arrives between an "empty" check and waiter registration.
-            batch = dequeueBatchAny();
-            if (batch.length > 0) {
-              for (const evt of batch) ackVoice(evt);
-              const result = buildBatchResult(batch);
-              resyncActiveSession();
-              dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-              return toResult(result);
-            }
-          }
-
-          let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-          dlog("queue", `dequeue wait sid=${sid} wakeVersion=${wakeVersion} waitMs=${waitMs}`);
-          await Promise.race([
-            useVersionedWait ? waitForEnqueueSinceAny(sq, wakeVersion) : waitForEnqueueAny(),
-            new Promise<void>((r) => { timeoutHandle = setTimeout(r, Math.min(Math.max(0, waitMs), MAX_SET_TIMEOUT_MS)); }),
-            abortPromise,
-          ]);
-          clearTimeout(timeoutHandle);
-          dlog("queue", `dequeue woke sid=${sid} aborted=${signal.aborted}`);
-
-          batch = dequeueBatchAny();
-          if (batch.length > 0) {
-            for (const evt of batch) ackVoice(evt);
-            const result = buildBatchResult(batch);
-            resyncActiveSession();
-            dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-            return toResult(result);
-          }
-        }
-
-        resyncActiveSession();
-        const pending = pendingCountAny();
-        return toResult({ timed_out: true, ...(pending > 0 ? { pending } : {}) });
-      } finally {
-        // Note: if two concurrent dequeue calls share the same sid (unusual but
-        // possible), the second finally will clear the idle flag while the first
-        // is still waiting. This is acceptable — the session is not fully idle in
-        // that case. A refcount would be needed to handle it precisely.
-        setDequeueIdle(sid, false);
-        // Re-arm activity-file nudge cycle and update lastActivityAt.
-        setDequeueActive(sid, false);
-      }
+      const result = await runDrainLoop(sid, effectiveTimeout, signal, response_format);
+      return toResult(result);
     },
   );
 }

@@ -48,7 +48,7 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       nudgeArmed: true,
     });
 
-    return toResult({ file_path: filePath, hint: "Call help('activity/file') now" });
+    return toResult({ file_path: filePath, hint: "When this file changes, call GET /dequeue?token=<your-token> from your watcher — see help('dequeue-http') for curl/PowerShell/Node examples." });
   }
 
   // TMCP-generated path
@@ -75,5 +75,5 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
     nudgeArmed: true,
   });
 
-  return toResult({ file_path: generatedPath, hint: "Call help('activity/file') now" });
+  return toResult({ file_path: generatedPath, hint: "When this file changes, call GET /dequeue?token=<your-token> from your watcher — see help('dequeue-http') for curl/PowerShell/Node examples." });
 }
