@@ -62,3 +62,12 @@ Worker. Sonnet for the queue design + integration; Haiku for the test fixtures.
 
 - Friction surfaced 2026-05-04 during skill-auditing remediation; operator explicitly flagged it as a bug ("if it was being sent over audio, this message should have queued behind it. That's a bug.").
 - Memory entry: `feedback_telegram_session_lifecycle.md` may need updating after fix lands.
+
+## Completion
+
+- Branch: `10-0867`
+- Commit: `85e7f79d`
+- Worktree: `D:\Users\essence\Development\cortex.lan\Telegram MCP\.worktrees\10-0867`
+- Approach: Per-session text queuing via `tailPromise` chain in `async-send-queue.ts`. `enqueueTextSend` chains text sends behind in-flight audio when `hasInflightAudio(sid)` is true. Text dispatch returns `message_id_pending` immediately (non-blocking); send_callback delivered on completion or failure. Two-argument `.then()` pattern ensures chain resilience if sendMessage throws.
+- Tests: 7 new tests (FIFO ordering, queued delivery, cancellation, chain resilience on failure, send.ts gating). All 2986 tests pass.
+- Code review: 2 passes — Major finding (chain-breaking single-arg `.then()`) found and fixed in second iteration. Final verdict: SAFE TO MERGE.
