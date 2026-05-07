@@ -46,7 +46,7 @@ const DEBOUNCE_FLOOR_MS = 1_000;
 export const KICK_DEBOUNCE_DEFAULT_MS = 60_000;
 
 /** Minimum allowed kick debounce (ms). */
-export const KICK_DEBOUNCE_MIN_MS = 30_000;
+export const KICK_DEBOUNCE_MIN_MS = 1_000;
 
 /** Maximum allowed kick debounce (ms). */
 export const KICK_DEBOUNCE_MAX_MS = 600_000;

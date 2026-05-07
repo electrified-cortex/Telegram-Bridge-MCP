@@ -453,10 +453,10 @@ export function register(server: McpServer): void {
         ms: z
           .number()
           .int()
-          .min(30_000)
+          .min(1_000)
           .max(600_000)
           .optional()
-          .describe("profile/kick-debounce: Activity-file kick debounce window in milliseconds (30_000–600_000). Omit to get current value."),
+          .describe("profile/kick-debounce: Activity-file kick debounce window in milliseconds (1_000–600_000). Omit to get current value."),
         // animation/default params
         frames: z
           .array(z.string())
