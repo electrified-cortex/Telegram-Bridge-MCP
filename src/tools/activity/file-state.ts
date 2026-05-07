@@ -46,7 +46,7 @@ const DEBOUNCE_FLOOR_MS = 1_000;
 export const KICK_DEBOUNCE_DEFAULT_MS = 60_000;
 
 /** Minimum allowed kick debounce (ms). */
-export const KICK_DEBOUNCE_MIN_MS = 30_000;
+export const KICK_DEBOUNCE_MIN_MS = 1_000;
 
 /** Maximum allowed kick debounce (ms). */
 export const KICK_DEBOUNCE_MAX_MS = 600_000;
@@ -177,6 +177,57 @@ export async function clearActivityFile(sid: number): Promise<void> {
 }
 
 /**
+ * Atomically replace the activity file registration for a session.
+ *
+ * Unlike the clear-then-set pattern (`clearActivityFile` + `setActivityFile`),
+ * this function updates `_state` with the new entry BEFORE doing any async
+ * cleanup of the old registration. This eliminates the window between the
+ * delete and the re-set where an inbound message could call `touchActivityFile`
+ * and find no entry — causing the touch (and `lastTouchAt` update) to be
+ * silently dropped.
+ *
+ * After setting the new entry, it cancels the old debounce timer (if any) and
+ * asynchronously deletes the old TMCP-owned file (if applicable).
+ */
+export async function replaceActivityFile(
+  sid: number,
+  newState: ActivityFileState,
+): Promise<void> {
+  const oldEntry = _state.get(sid);
+
+  // Carry over runtime suppression state from the old entry so that a file
+  // swap does not reset the nudge cycle or expose a spurious "silent since
+  // epoch 0" window that would cause an immediate kick.
+  if (oldEntry) {
+    newState.lastActivityAt = oldEntry.lastActivityAt;
+    newState.inflightDequeue = oldEntry.inflightDequeue;
+    newState.nudgeArmed = oldEntry.nudgeArmed;
+  }
+
+  // Write new entry first — touch logic reads this immediately.
+  _state.set(sid, newState);
+
+  if (!oldEntry) return;
+
+  // Cancel any pending debounce timer on the old entry.
+  if (oldEntry.debounceTimer !== null) {
+    clearTimeout(oldEntry.debounceTimer);
+    oldEntry.debounceTimer = null;
+  }
+
+  // Delete old TMCP-owned file (best-effort, after new path is registered).
+  // Guard: skip unlink if the new registration reuses the same path — we would
+  // otherwise delete the file we just registered.
+  if (oldEntry.tmcpOwned && oldEntry.filePath !== newState.filePath) {
+    try {
+      await unlink(oldEntry.filePath);
+    } catch {
+      // best-effort — file may already be gone
+    }
+  }
+}
+
+/**
  * Notify the activity file system that the agent made a tool call.
  * Resets the kick suppression window and cancels any pending kick timer.
  * Called from dispatchBehaviorTracking (server.ts) for every completed tool call.
@@ -247,10 +298,14 @@ export function touchActivityFile(sid: number): void {
     // Don't reschedule if a timer is already pending (avoid timer storm on message bursts).
     if (entry.debounceTimer === null) {
       const delay = debounceMs - timeSinceActivity;
+      // Capture identity of the entry that scheduled this timer.
+      // If replaceActivityFile swaps the entry before the callback fires, bail out.
+      const schedulingEntry = entry;
       entry.debounceTimer = setTimeout(() => {
-        const current = _state.get(sid);
-        if (!current) return;
-        current.debounceTimer = null;
+        // Generation check: if _state no longer holds the same entry object,
+        // this timer was orphaned by a file replacement — do not proceed.
+        if (_state.get(sid) !== schedulingEntry) return;
+        schedulingEntry.debounceTimer = null;
         // Re-evaluate on timer fire — conditions may have changed
         touchActivityFile(sid);
       }, delay);

@@ -12,10 +12,8 @@ import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
 import {
   validateFilePath,
-  setActivityFile,
   createTmcpOwnedFile,
-  clearActivityFile,
-  getActivityFile,
+  replaceActivityFile,
 } from "./file-state.js";
 
 export async function handleActivityFileCreate(args: Record<string, unknown>) {
@@ -32,12 +30,9 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       return toError({ code: "INVALID_PATH" as const, message: validationError });
     }
 
-    // If a previous registration exists, clear it (including TMCP-owned file deletion)
-    if (getActivityFile(sid)) {
-      await clearActivityFile(sid);
-    }
-
-    setActivityFile(sid, {
+    // Replace any previous registration, updating _state atomically so that
+    // inbound messages during async cleanup always find a valid entry.
+    await replaceActivityFile(sid, {
       filePath,
       tmcpOwned: false,
       lastTouchAt: null,
@@ -58,12 +53,9 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
     return toError({ code: "UNKNOWN" as const, message: `Failed to create activity file: ${(err as Error).message}` });
   }
 
-  // If a previous registration exists, clear it first
-  if (getActivityFile(sid)) {
-    await clearActivityFile(sid);
-  }
-
-  setActivityFile(sid, {
+  // Replace any previous registration, updating _state atomically so that
+  // inbound messages during async cleanup always find a valid entry.
+  await replaceActivityFile(sid, {
     filePath: generatedPath,
     tmcpOwned: true,
     lastTouchAt: null,
