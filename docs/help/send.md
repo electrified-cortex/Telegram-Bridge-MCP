@@ -151,4 +151,17 @@ Optional: `title`, `subtext`, `width` (default 10).
 of: `ask` (string, free-text reply), `choose` (options array, button select),
 `confirm` (string, yes/no). Default `timeout_seconds: 60`.
 
+**stream/start** — Begin a streaming message. Sends an initial placeholder message (`⏳ ...` if no `text` given). Returns `{ message_id, stream_id }`. Use `stream_id` in subsequent `stream/chunk` calls. Optional: `text` (initial content), `parse_mode`.
+
+**stream/chunk** — Append a chunk to an active stream. Required: `stream_id`, `text`. Calls `editMessageText` on the stream's message — rate-limited to ~1 edit/second by Telegram. Optional: `separator` (default: `""`), `parse_mode`. Returns `{ message_id, length }`. Note: each chunk is one round-trip MCP tool call; streaming a long response costs ~2.5x more tokens than sending it complete.
+
+**stream/flush** — Finalize a stream. Required: `stream_id`. Clears the stream from server state. Returns `{ message_id, final_length, status: "flushed" }`. The message content is unchanged — this just marks the stream as complete.
+
+Example flow:
+```
+{ stream_id, message_id } = send(type: "stream/start", text: "📝 Analyzing...")
+send(type: "stream/chunk", stream_id, text: "\n✅ Structure: good")
+send(type: "stream/chunk", stream_id, text: "\n⚠️ Performance: cache line 42")
+send(type: "stream/flush", stream_id)
+```
 Related: send(type: "append"), action(type: "message/edit"), send(type: "notification"), send(type: "file"), send(type: "checklist"), send(type: "progress")

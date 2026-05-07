@@ -28,6 +28,7 @@ import { handleAsk } from "./send/ask.js";
 import { handleChoose } from "./send/choose.js";
 import { handleConfirm } from "./confirm/handler.js";
 import { detectCaptionDuplication, type DuplicationResult } from "../hybrid-duplication-detector.js";
+import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/stream.js";
 
 const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
 
@@ -112,7 +113,7 @@ function levenshtein(a: string, b: string): number {
 const _parsedTimeout = Number(process.env.ASYNC_SEND_TIMEOUT_MS);
 const _timeoutMs = Number.isFinite(_parsedTimeout) && _parsedTimeout > 0 ? _parsedTimeout : 300_000;
 
-const SEND_TYPES = ["text", "file", "notification", "choice", "dm", "append", "animation", "checklist", "progress", "question"] as const;
+const SEND_TYPES = ["text", "file", "notification", "choice", "dm", "append", "animation", "checklist", "progress", "question", "stream/start", "stream/chunk", "stream/flush"] as const;
 type SendType = (typeof SEND_TYPES)[number];
 
 /** Backward-compat aliases — accepted but not advertised in discovery or error messages. */
@@ -188,6 +189,8 @@ export function register(server: McpServer) {
         // ── append ─────────────────────────────────────────────────────────
         message_id: z.number().int().optional().describe("Message ID to append to (for type: \"append\")"),
         separator: z.string().default("\n").describe("Separator for append mode"),
+        // ── stream ─────────────────────────────────────────────────────────
+        stream_id: z.string().optional().describe("Active stream ID (for type: \"stream/chunk\" and \"stream/flush\")"),
         // ── choice / question.choose ────────────────────────────────────────
         options: z.array(OPTION_SCHEMA).optional().describe("Button options (for type: \"choice\"; also accepted as alias for \"choose\" in type: \"question\")"),
         choose: z.array(OPTION_SCHEMA).optional().describe("Button options for type: \"question\" choose mode (alias: \"options\")"),
@@ -649,6 +652,33 @@ export function register(server: McpServer) {
             }, signal);
           }
           return toError({ code: "MISSING_QUESTION_TYPE" as const, message: 'For type "question", provide one of: ask (string), choose (ChoiceOption[]), or confirm (string).', hint: "Pass one of: ask (string), choose (array), or confirm (string) with type: \"question\"." });
+        }
+
+        case "stream/start":
+          return handleStreamStart({
+            text,
+            parse_mode: args.parse_mode,
+            token: args.token,
+          });
+
+        case "stream/chunk": {
+          if (!args.stream_id) return toError({ code: "MISSING_PARAM" as const, message: 'type: "stream/chunk" requires a "stream_id" param.', hint: 'Call send(type: "stream/start") first to get a stream_id.' });
+          if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "stream/chunk" requires a "text" param.', hint: "Pass the text chunk to append to the stream." });
+          return handleStreamChunk({
+            stream_id: args.stream_id,
+            text,
+            separator: args.separator,
+            parse_mode: args.parse_mode,
+            token: args.token,
+          });
+        }
+
+        case "stream/flush": {
+          if (!args.stream_id) return toError({ code: "MISSING_PARAM" as const, message: 'type: "stream/flush" requires a "stream_id" param.', hint: 'Provide the stream_id returned from stream/start.' });
+          return handleStreamFlush({
+            stream_id: args.stream_id,
+            token: args.token,
+          });
         }
 
         default:
