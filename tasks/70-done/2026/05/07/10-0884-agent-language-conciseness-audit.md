@@ -77,3 +77,8 @@ Implementation of changes is a separate follow-up task.
 ## Rollback
 
 No code changes in this task — audit only. Nothing to roll back.
+
+## Closure
+
+**Closed:** 2026-05-07
+**Status:** Superseded — findings applied in 10-0885 (squash-merged to master as PR #168, TMCP v7.4.1). Formal audit report not produced; implementation proceeded ahead of gate.

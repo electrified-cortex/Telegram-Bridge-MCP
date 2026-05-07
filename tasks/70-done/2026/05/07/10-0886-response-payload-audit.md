@@ -79,3 +79,8 @@ See `audit/response-payload.md` for full findings.
 ## Rollback
 
 Audit only — no code changes. Nothing to roll back.
+
+## Closure
+
+**Closed:** 2026-05-07
+**Status:** Superseded — findings applied in 10-0887 (squash-merged to master as PR #168, TMCP v7.4.1). Findings summary preserved in task frontmatter above.
