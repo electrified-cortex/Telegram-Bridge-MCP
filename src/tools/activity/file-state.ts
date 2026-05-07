@@ -177,6 +177,46 @@ export async function clearActivityFile(sid: number): Promise<void> {
 }
 
 /**
+ * Atomically replace the activity file registration for a session.
+ *
+ * Unlike the clear-then-set pattern (`clearActivityFile` + `setActivityFile`),
+ * this function updates `_state` with the new entry BEFORE doing any async
+ * cleanup of the old registration. This eliminates the window between the
+ * delete and the re-set where an inbound message could call `touchActivityFile`
+ * and find no entry — causing the touch (and `lastTouchAt` update) to be
+ * silently dropped.
+ *
+ * After setting the new entry, it cancels the old debounce timer (if any) and
+ * asynchronously deletes the old TMCP-owned file (if applicable).
+ */
+export async function replaceActivityFile(
+  sid: number,
+  newState: ActivityFileState,
+): Promise<void> {
+  const oldEntry = _state.get(sid);
+
+  // Write new entry first — touch logic reads this immediately.
+  _state.set(sid, newState);
+
+  if (!oldEntry) return;
+
+  // Cancel any pending debounce timer on the old entry.
+  if (oldEntry.debounceTimer !== null) {
+    clearTimeout(oldEntry.debounceTimer);
+    oldEntry.debounceTimer = null;
+  }
+
+  // Delete old TMCP-owned file (best-effort, after new path is registered).
+  if (oldEntry.tmcpOwned) {
+    try {
+      await unlink(oldEntry.filePath);
+    } catch {
+      // best-effort — file may already be gone
+    }
+  }
+}
+
+/**
  * Notify the activity file system that the agent made a tool call.
  * Resets the kick suppression window and cancels any pending kick timer.
  * Called from dispatchBehaviorTracking (server.ts) for every completed tool call.
