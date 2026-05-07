@@ -195,6 +195,15 @@ export async function replaceActivityFile(
 ): Promise<void> {
   const oldEntry = _state.get(sid);
 
+  // Carry over runtime suppression state from the old entry so that a file
+  // swap does not reset the nudge cycle or expose a spurious "silent since
+  // epoch 0" window that would cause an immediate kick.
+  if (oldEntry) {
+    newState.lastActivityAt = oldEntry.lastActivityAt;
+    newState.inflightDequeue = oldEntry.inflightDequeue;
+    newState.nudgeArmed = oldEntry.nudgeArmed;
+  }
+
   // Write new entry first — touch logic reads this immediately.
   _state.set(sid, newState);
 
@@ -287,10 +296,14 @@ export function touchActivityFile(sid: number): void {
     // Don't reschedule if a timer is already pending (avoid timer storm on message bursts).
     if (entry.debounceTimer === null) {
       const delay = debounceMs - timeSinceActivity;
+      // Capture identity of the entry that scheduled this timer.
+      // If replaceActivityFile swaps the entry before the callback fires, bail out.
+      const schedulingEntry = entry;
       entry.debounceTimer = setTimeout(() => {
-        const current = _state.get(sid);
-        if (!current) return;
-        current.debounceTimer = null;
+        // Generation check: if _state no longer holds the same entry object,
+        // this timer was orphaned by a file replacement — do not proceed.
+        if (_state.get(sid) !== schedulingEntry) return;
+        schedulingEntry.debounceTimer = null;
         // Re-evaluate on timer fire — conditions may have changed
         touchActivityFile(sid);
       }, delay);
