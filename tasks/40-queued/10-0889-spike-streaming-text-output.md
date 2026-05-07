@@ -8,15 +8,36 @@ created: 2026-05-07
 filed-by: Overseer (operator-approved)
 delegation: Worker
 target_repo: telegram-bridge-mcp
-target_branch: release/7.4
+target_branch: release/7.5
 ---
 
 # Spike: streaming text output from agents to Telegram
 
 ## Operator priority
 
-Highest-priority new feature (msg 51226, 2026-05-07). "I would love to see streaming
-text actually working."
+Highest-priority new feature (msgs 51226, 51234, 2026-05-07). "I would love to see streaming
+text actually working." Targeted for v7.5 or v8 — not a 7.4.x backport.
+
+This has been attempted 3–4 times before. The `append` tool exists but is inadequate:
+it requires deliberate per-chunk tool calls, not real streaming from the LLM output.
+
+## Core problem (operator framing, msg 51234)
+
+"Claude is getting a stream of text coming into it. But can it route the stream of text
+coming from the LLM into another stream?"
+
+The LLM generates tokens internally. The Claude Code agent sees complete tool results —
+it does NOT have access to its own token-generation stream. So the spike must answer:
+
+**Is there ANY mechanism by which Claude Code's token generation can be routed to
+an external stream (HTTP, pipe, stdout) before the tool call completes?**
+
+Candidate answers to investigate:
+- Claude Code hooks (PreToolUse / PostToolUse / Notification) — do any expose partial output?
+- Claude Code `--output-format stream-json` flag — does it emit tokens during tool generation?
+- Subprocess / `stdout` dump — agent writes to stdout; a parent process relays to Telegram
+- MCP protocol `notifications/message` — does the MCP spec allow server-push during a tool call?
+- HTTP chunked endpoint — TMCP exposes streaming endpoint; agent POSTs via Bash `curl --no-buffer`
 
 ## Problem
 
