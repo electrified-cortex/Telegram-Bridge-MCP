@@ -197,6 +197,24 @@ async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
 // HTTP provider (TTS_HOST or OPENAI_API_KEY)
 // ---------------------------------------------------------------------------
 
+/**
+ * Compute TTS synthesis timeout in milliseconds.
+ * Scale by word count: max(60s, ceil(words/100) * 60s).
+ * Floor of 60 seconds for all inputs.
+ * Configurable via TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS (default 60000).
+ * Configurable via TTS_SYNTHESIS_TIMEOUT_MIN_MS (default 60000).
+ */
+function wordCountForTimeout(text: string): number {
+  return text.trim().split(/\s+/).length;
+}
+
+function computeTtsSynthesisTimeoutMs(text: string): number {
+  const perHundredWords = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS ?? "", 10)) || 60000);
+  const minMs = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS ?? "", 10)) || 60000);
+  const wordCount = wordCountForTimeout(text);
+  return Math.max(minMs, Math.ceil(wordCount / 100) * perHundredWords);
+}
+
 async function synthesizeHttpToOgg(
   text: string,
   host: string,
@@ -223,11 +241,25 @@ async function synthesizeHttpToOgg(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const res = await fetch(`${host}/v1/audio/speech`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  const timeoutMs = computeTtsSynthesisTimeoutMs(text);
+  let res: Response;
+  try {
+    res = await fetch(`${host}/v1/audio/speech`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      const wordCount = wordCountForTimeout(text);
+      throw Object.assign(
+        new Error(`tts_timeout: TTS synthesis timed out after ${timeoutMs}ms (~${wordCount} words). Server not responding.`),
+        { code: "tts_timeout", timeoutMs, wordCount }
+      );
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     const errorBody = await res.text().catch(() => "(no body)");
