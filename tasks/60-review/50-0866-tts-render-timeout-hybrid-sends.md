@@ -118,3 +118,5 @@ surface — don't double-timeout.
 - 2 new tests in `src/tts.test.ts` — 73/73 passing
 
 **Status:** In 60-review. Awaiting Curator verification pass.
+
+- Rev2 commit \833c751c\: TimeoutError catch fix + AbortError test + send.md tts_timeout docs. 74/74 tests pass.
