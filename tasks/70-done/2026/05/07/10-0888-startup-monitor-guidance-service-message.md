@@ -63,3 +63,11 @@ as covered-by-10-0880.
 
 Msgs 51118–51122, 2026-05-07: "The monitor should just say 'call dequeue(token)'. That's it.
 Whether bash or PowerShell, it doesn't have to be fancy. Be explicit about how simple it is."
+
+## Completion
+
+**Sealed:** 2026-05-07
+**Shipped:** PR #168 — TMCP v7.4.1 (squash-merged to master `ab1d4139`)
+**Squash commit:** `04271505` (on release/7.4)
+**Verdict:** APPROVED
+**Sealed by:** Overseer (Worker dispatch)

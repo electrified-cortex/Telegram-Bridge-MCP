@@ -59,3 +59,11 @@ Direct on `release/7.4`.
 ## Priority
 
 P10 — release/7.4 ship gate.
+
+## Completion
+
+**Sealed:** 2026-05-07
+**Shipped:** PR #168 — TMCP v7.4.1 (squash-merged to master `ab1d4139`)
+**Squash commit:** shipped in PR #168 batch alongside 10-0867/0880/0881/0888
+**Verdict:** APPROVED
+**Sealed by:** Overseer (Worker dispatch)

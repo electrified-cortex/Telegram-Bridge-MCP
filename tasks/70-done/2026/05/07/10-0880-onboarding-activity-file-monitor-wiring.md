@@ -29,3 +29,11 @@ Update onboarding language to be runtime-conditional:
 
 ## Notes
 Filed 2026-05-05 based on operator feedback session.
+
+## Completion
+
+**Sealed:** 2026-05-07
+**Shipped:** PR #168 — TMCP v7.4.1 (squash-merged to master `ab1d4139`)
+**Squash commit:** `d6e52d7f` (on release/7.4)
+**Verdict:** APPROVED
+**Sealed by:** Overseer (Worker dispatch)

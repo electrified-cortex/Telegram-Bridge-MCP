@@ -70,3 +70,11 @@ Work directly on local `dev`. Stage feature branch, run `pnpm test`, DM Curator 
 - 10-0880 (onboarding-monitor-wiring landed; this audit may revise its copy).
 - 10-0882 (test-content audit).
 - Memory `feedback_telegram_formatting_rules.md`.
+
+## Completion
+
+**Sealed:** 2026-05-07
+**Shipped:** PR #168 — TMCP v7.4.1 (squash-merged to master `ab1d4139`)
+**Squash commit:** `50607541` (on release/7.4)
+**Verdict:** APPROVED
+**Sealed by:** Overseer (Worker dispatch)

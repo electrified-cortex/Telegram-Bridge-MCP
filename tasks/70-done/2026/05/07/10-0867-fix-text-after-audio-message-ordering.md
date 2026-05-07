@@ -71,3 +71,11 @@ Worker. Sonnet for the queue design + integration; Haiku for the test fixtures.
 - Approach: Per-session text queuing via `tailPromise` chain in `async-send-queue.ts`. `enqueueTextSend` chains text sends behind in-flight audio when `hasInflightAudio(sid)` is true. Text dispatch returns `message_id_pending` immediately (non-blocking); send_callback delivered on completion or failure. Two-argument `.then()` pattern ensures chain resilience if sendMessage throws.
 - Tests: 7 new tests (FIFO ordering, queued delivery, cancellation, chain resilience on failure, send.ts gating). All 2986 tests pass.
 - Code review: 2 passes — Major finding (chain-breaking single-arg `.then()`) found and fixed in second iteration. Final verdict: SAFE TO MERGE.
+
+## Completion
+
+**Sealed:** 2026-05-07
+**Shipped:** PR #168 — TMCP v7.4.1 (squash-merged to master `ab1d4139`)
+**Squash commit:** `3cd66a2b` (on release/7.4)
+**Verdict:** APPROVED
+**Sealed by:** Overseer (Worker dispatch)
