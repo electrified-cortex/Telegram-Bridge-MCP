@@ -96,3 +96,26 @@ Partial improvement but not true streaming.
 
 4 hours. If neither Option A nor B is feasible in TMCP without major refactoring,
 document why and propose an alternative path.
+
+## Completion
+
+**Branch:** `feat/10-0889-streaming-spike`
+**Commits:**
+- `908bd327` — Option A prototype: stream/start, stream/chunk, stream/flush (11/11 tests)
+- `346b07e5` — docs: stream type docs in send.md, spike findings doc
+
+**Architecture decision:** Real LLM token streaming NOT POSSIBLE (confirmed by prior spike 10-560). Option A (MCP-native deliberate streaming) prototyped and working.
+
+**Rate limit characterized:** ~1 edit/second per message (Telegram API). 2.5x token cost vs. buffered send.
+
+**Findings doc:** `docs/spikes/10-0889-streaming-findings.md`
+
+**Follow-on task:** `20-1047` filed in `.agents/tasks/10-drafts/` — production hardening (rate limit guard, stream timeout, overflow guard, agent guide).
+
+**AC status:**
+- [x] Architecture decision documented with rationale.
+- [x] At least Option A prototyped end-to-end (start → chunk → flush).
+- [x] Telegram rate limit behavior characterized.
+- [x] Recommendation filed as follow-on task(s).
+
+**Status:** In 60-review. Awaiting Curator/Overseer verification.
