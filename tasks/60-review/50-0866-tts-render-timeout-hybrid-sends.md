@@ -101,3 +101,20 @@ surface — don't double-timeout.
 
 - `agents/curator/memory/projects/2026-05-03-overseer-wedge-postmortem.md`
 - 50-0865 (auto-terminate) — sibling task.
+
+## Completion
+
+**Branch:** `feat/50-0866-tts-render-timeout`
+**Commits:**
+- `44603a18` — add dynamic timeout to TTS HTTP synthesis
+- `2f033fbb` — guard NaN in env var parsing, extract wordCountForTimeout helper
+
+**Implementation:**
+- Added `wordCountForTimeout()` and `computeTtsSynthesisTimeoutMs()` helpers to `src/tts.ts`
+- Added `AbortSignal.timeout(timeoutMs)` to `synthesizeHttpToOgg()` fetch call
+- Dynamic timeout formula: `max(60s, ceil(words/100) * 60s)` — configurable via `TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS` and `TTS_SYNTHESIS_TIMEOUT_MIN_MS`
+- AbortError caught and re-thrown as `{ code: "tts_timeout", timeoutMs, wordCount }`
+- NaN env var guard: `|| 60000` fallback if parseInt returns NaN
+- 2 new tests in `src/tts.test.ts` — 73/73 passing
+
+**Status:** In 60-review. Awaiting Curator verification pass.
