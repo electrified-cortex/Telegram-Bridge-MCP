@@ -216,7 +216,9 @@ export async function replaceActivityFile(
   }
 
   // Delete old TMCP-owned file (best-effort, after new path is registered).
-  if (oldEntry.tmcpOwned) {
+  // Guard: skip unlink if the new registration reuses the same path — we would
+  // otherwise delete the file we just registered.
+  if (oldEntry.tmcpOwned && oldEntry.filePath !== newState.filePath) {
     try {
       await unlink(oldEntry.filePath);
     } catch {
