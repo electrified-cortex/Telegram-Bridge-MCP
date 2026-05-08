@@ -106,9 +106,9 @@ describe("load_profile tool", () => {
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const data = parseResult<{ summary: string }>(result);
-    // 1 startup reminder, 1 recurring
-    expect(data.summary).toContain("1 startup reminder");
-    expect(data.summary).toContain("1 recurring");
+    // 1 startup reminder registered, 1 recurring time-based reminder registered
+    expect(mocks.addReminder).toHaveBeenCalledWith(expect.objectContaining({ trigger: "startup" }));
+    expect(mocks.addReminder).toHaveBeenCalledWith(expect.objectContaining({ trigger: "time", recurring: true }));
   });
 
   it("summary omits hex reminder IDs", async () => {
@@ -166,7 +166,8 @@ describe("load_profile tool", () => {
     expect(isError(r1)).toBe(false);
     const d1 = parseResult<{ summary: string; applied?: unknown }>(r1);
     expect(typeof d1.summary).toBe("string");
-    expect(d1.summary).toContain("0 startup reminder");
+    // No startup trigger in this profile — only a time-based reminder
+    expect(mocks.addReminder).not.toHaveBeenCalledWith(expect.objectContaining({ trigger: "startup" }));
     expect(d1.applied).toBeUndefined();
 
     // Second load — existing reminder already present; summary still valid
@@ -200,9 +201,9 @@ describe("load_profile tool", () => {
     const data = parseResult<{ summary: string; applied?: unknown }>(result);
     // summary is a string describing reminder counts
     expect(typeof data.summary).toBe("string");
-    // 2 total reminders: 0 startup, 1 recurring
-    expect(data.summary).toContain("0 startup reminder");
-    expect(data.summary).toContain("1 recurring");
+    // 2 total reminders: no startup triggers, 1 recurring time-based
+    expect(mocks.addReminder).not.toHaveBeenCalledWith(expect.objectContaining({ trigger: "startup" }));
+    expect(mocks.addReminder).toHaveBeenCalledWith(expect.objectContaining({ trigger: "time", recurring: true }));
     // no raw hex IDs
     expect(data.summary).not.toMatch(/\b[0-9a-f]{16}\b/);
     // applied not exposed

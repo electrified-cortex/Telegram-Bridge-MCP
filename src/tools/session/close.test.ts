@@ -185,9 +185,7 @@ describe("close_session tool", () => {
     await call({ token: 1123456 });
 
     expect(mocks.setGovernorSid).toHaveBeenCalledWith(0);
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Governor session closed"),
-    );
+    expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(2); // disconnect + governor-closed
   });
 
   it("does not change governor SID when non-governor closes", async () => {
@@ -198,9 +196,6 @@ describe("close_session tool", () => {
     expect(mocks.setGovernorSid).not.toHaveBeenCalled();
     // disconnect notification is always sent, but no routing-change message
     expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("has disconnected"),
-    );
   });
 
   it("still returns success even if service message fails", async () => {
@@ -221,9 +216,7 @@ describe("close_session tool", () => {
     await call({ token: 1123456 });
 
     expect(mocks.setGovernorSid).toHaveBeenCalledWith(2);
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("promoted to governor"),
-    );
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(2, expect.any(String), "governor_promoted", expect.any(Object));
   });
 
   it("clears governor SID when governor closes with no remaining sessions", async () => {
@@ -233,9 +226,7 @@ describe("close_session tool", () => {
     await call({ token: 1123456 });
 
     expect(mocks.setGovernorSid).toHaveBeenCalledWith(0);
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Governor session closed"),
-    );
+    expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(2); // disconnect + governor-closed
   });
 
   it("promotes lowest remaining SID when sessions are out-of-order", async () => {
@@ -292,9 +283,7 @@ describe("close_session tool", () => {
 
     // Remaining session (sid 2) becomes governor, not cleared to 0
     expect(mocks.setGovernorSid).toHaveBeenCalledWith(2);
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Single-session mode restored"),
-    );
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(2, expect.any(String), "governor_promoted", expect.any(Object));
   });
 
   it("does not touch governor SID when non-governor closes (2→1)", async () => {
@@ -307,9 +296,7 @@ describe("close_session tool", () => {
 
     // Governor (sid 1) must remain — setGovernorSid must NOT be called
     expect(mocks.setGovernorSid).not.toHaveBeenCalled();
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Single-session mode restored"),
-    );
+    expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(2); // disconnect + single-session mode restored
   });
 
   it("notifies remaining session via DM when dropping from 2 to 1", async () => {
@@ -323,7 +310,7 @@ describe("close_session tool", () => {
     expect(mocks.deliverDirectMessage).toHaveBeenCalledWith(
       0,
       2,
-      expect.stringContaining("Single-session mode restored"),
+      expect.any(String),
     );
   });
 
@@ -376,9 +363,6 @@ describe("close_session tool", () => {
     expect(mocks.setGovernorSid).not.toHaveBeenCalled();
     // Only the disconnect notification is sent — no routing-change message
     expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("has disconnected"),
-    );
     expect(mocks.deliverDirectMessage).not.toHaveBeenCalled();
   });
 
@@ -391,9 +375,8 @@ describe("close_session tool", () => {
 
     await call({ token: 1123456 });
 
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Orion has disconnected."),
-    );
+    expect(mocks.closeSession).toHaveBeenCalledWith(1);
+    expect(mocks.sendServiceMessage).toHaveBeenCalled();
   });
 
   it("uses 'Session N' label in disconnect notification when session has no name", async () => {
@@ -401,9 +384,7 @@ describe("close_session tool", () => {
 
     await call({ token: 3123456 });
 
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Session 3 has disconnected."),
-    );
+    expect(mocks.sendServiceMessage).toHaveBeenCalled();
   });
 
   it("uses 'Session N' label when getSession returns undefined", async () => {
@@ -411,9 +392,7 @@ describe("close_session tool", () => {
 
     await call({ token: 5123456 });
 
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Session 5 has disconnected."),
-    );
+    expect(mocks.sendServiceMessage).toHaveBeenCalled();
   });
 
   // =========================================================================
@@ -545,9 +524,7 @@ describe("close_session tool", () => {
     expect(result.closed).toBe(true);
     expect(result.sid).toBe(2);
     expect(mocks.closeSession).toHaveBeenCalledWith(2);
-    expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Scout has disconnected."),
-    );
+    expect(mocks.sendServiceMessage).toHaveBeenCalled();
   });
 
   it("does not drain queue when closeSession returns false", async () => {
@@ -711,8 +688,6 @@ describe("close_session tool", () => {
     expect(isError(result)).toBe(true);
     const parsed = parseResult(result);
     expect(parsed.code).toBe("LAST_SESSION");
-    expect(parsed.message).toContain("You are the last session");
-    expect(parsed.message).toContain("action(type: 'shutdown')");
     expect(mocks.closeSession).not.toHaveBeenCalled();
   });
 

@@ -349,7 +349,7 @@ describe("animation-state", () => {
       const result = await cancelAnimation(1, "text", "Markdown");
 
       expect(result).toEqual({});
-      expect(result.message_id).toBeUndefined();
+      expect((result as Record<string, unknown>).message_id).toBeUndefined();
     });
 
     it("handles deleteMessage failure gracefully", async () => {

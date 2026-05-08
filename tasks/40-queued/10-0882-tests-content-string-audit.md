@@ -9,7 +9,8 @@ updated: 2026-05-06
 filed-by: Curator
 delegation: Worker
 target_repo: telegram-bridge-mcp
-target_branch: release/7.4
+target_branch: dev
+updated: 2026-05-07
 ---
 
 ## Update 2026-05-06 — release/7.4 CI blocker
@@ -58,9 +59,45 @@ Survey `src/**/*.test.ts` (and any other test directories) for content-string as
 - Refactoring test infrastructure.
 - Changing test runner config.
 
+## Update 2026-05-07 — NEEDS_REVISION (Opus audit)
+
+PR #167 scrub only touched 10 files. ~30+ clear copy-content violations remain across 12 additional test files. Fix these then DM Overseer "10-0882 revision complete".
+
+### Required fixes
+
+**`src/tools/session/close.test.ts`** (~10 violations):
+- L189, L237: `stringContaining("Governor session closed")` → assert on `event_type: "session_closed"` or `closed_name` field
+- L202, L380: `stringContaining("has disconnected")` → assert on `event_type`
+- L225: `stringContaining("promoted to governor")` → assert on `eventType: "session_joined"` or governor SID field
+- L296, L311, L326: `stringContaining("Single-session mode restored")` → structural check
+- L395, L405, L415, L549: `stringContaining("X has disconnected.")` → assert on closed SID
+- L714-715: `toContain("You are the last session")`, `toContain("action(type: 'shutdown')")` → structural shutdown check
+
+**`src/tools/session/start.test.ts`** (~7 violations):
+- L835: `toContain("Save your token")` → assert token field present
+- L850: `not.toContain("You are a participant session")` → assert role field
+- L1259-1260: `toContain("New session requesting access")` → assert pending_count or event_type
+- L1820: `toContain("already online")` → assert error code
+- L1965, L1995: `toContain("Reconnect authorized")` → assert status field
+- L1285-1286: `toContain("joined")` / `toContain("reconnected")` → assert event_type
+
+**`src/tools/session/close-signal.test.ts`**: L171 `toContain("Governor")`, L232 `toContain("changed during wait")` → structural
+
+**`src/tools/shutdown/warn.test.ts`**: L43, L55-56, L118 → assert event_type and payload fields, not prose
+
+**`src/tools/built-in-commands.test.ts`** (~5 violations): L503 "Voice Selection", L519 "No voices found", L544 "config override", L585 "American", L1067 "🟡 Auto-approve..." → assert on button callbacks/types not label text
+
+**`src/tools/profile/load.test.ts`** (~4 violations): L110-111, L169, L204-242 → assert on reminder count numbers, not summary phrase wording
+
+**`src/tools/dequeue.test.ts`**: L1292 `stringContaining("Duplicate session detected")` → assert `event_type: "duplicate_session"` or code field
+
+**`src/tools/send/notify.test.ts`**: L84 `toContain("ℹ️")` → assert severity field
+
+After fixing: run full test suite (must stay green), commit to TMCP dev, DM Overseer.
+
 ## Branch flow
 
-Work directly on `release/7.4`. Stage, run `pnpm test`, DM Curator. Push when green.
+Work on `dev`. Stage, run `pnpm test`, DM Overseer "10-0882 revision complete" when green.
 
 ## Bailout / presence
 

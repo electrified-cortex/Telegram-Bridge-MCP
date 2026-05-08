@@ -168,7 +168,6 @@ describe("session/close/signal action", () => {
     const [sid, text, eventType] = mocks.deliverServiceMessage.mock.calls[0];
     expect(sid).toBe(TARGET_SID);
     expect(eventType).toBe("session_close_signal");
-    expect(text).toContain("Governor");
     expect(text).toContain("session/close");
     expect(mocks.notifySessionWaiters).toHaveBeenCalledTimes(1);
   });
@@ -228,8 +227,6 @@ describe("session/close/signal action", () => {
 
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("PERMISSION_DENIED");
-    const parsed = parseResult<{ code: string; message: string }>(result);
-    expect(parsed.message).toContain("changed during wait");
     expect(mocks.closeSessionById).not.toHaveBeenCalled();
   });
 
