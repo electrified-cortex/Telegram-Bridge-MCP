@@ -71,6 +71,7 @@ import { handleActivityFileCreate } from "./activity/create.js";
 import { handleActivityFileEdit } from "./activity/edit.js";
 import { handleActivityFileDelete } from "./activity/delete.js";
 import { handleActivityFileGet } from "./activity/get.js";
+import { KICK_DEBOUNCE_MIN_MS, KICK_DEBOUNCE_MAX_MS } from "./activity/file-state.js";
 import { handleNameTag } from "./name-tag.js";
 type ToolResult = ReturnType<typeof toResult>;
 
@@ -453,10 +454,10 @@ export function register(server: McpServer): void {
         ms: z
           .number()
           .int()
-          .min(1_000)
-          .max(600_000)
+          .min(KICK_DEBOUNCE_MIN_MS)
+          .max(KICK_DEBOUNCE_MAX_MS)
           .optional()
-          .describe("profile/kick-debounce: Activity-file kick debounce window in milliseconds (1_000–600_000). Omit to get current value."),
+          .describe(`profile/kick-debounce: Activity-file kick debounce window in milliseconds (${KICK_DEBOUNCE_MIN_MS}–${KICK_DEBOUNCE_MAX_MS}). Omit to get current value.`),
         // animation/default params
         frames: z
           .array(z.string())

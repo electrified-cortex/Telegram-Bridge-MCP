@@ -1,5 +1,18 @@
 # [Unreleased]
 
+## v7.4.1
+
+### Fixed
+
+- `replaceActivityFile` (`file-state.ts`): added same-path guard — when the new registration reuses the same file path as the old entry, the old TMCP-owned file is no longer unlinked (would have deleted the currently-registered file)
+- `replaceActivityFile` (`file-state.ts`): old debounce timer is cancelled before async cleanup, preventing a stale callback from firing a kick against the replacement entry (timer generation check)
+- Kick debounce minimum lowered to 1 s (was 30 s) — allows fast-cycling agents to set sub-30 s debounce windows via `profile/kick-debounce`
+
+### Tests
+
+- Added test 9: `replaceActivityFile` atomic swap — concurrent `touchActivityFile` call during replace reaches the new entry, not `undefined`
+- Added test 10: `replaceActivityFile` timer generation check — old debounce timer cancelled by replace does not fire a stale kick against the new entry
+
 ## v7.4.0-review-fixes — in-branch
 
 ### Fixed

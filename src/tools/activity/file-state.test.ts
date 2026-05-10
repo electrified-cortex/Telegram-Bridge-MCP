@@ -10,6 +10,8 @@
  *   6. Multiple messages in one cycle produce exactly one nudge (one-nudge-per-cycle)
  *   7. setDequeueActive(false) re-arms cycle; subsequent message can nudge again
  *   8. Per-session debounce override is respected (getKickDebounceMs)
+ *   9. replaceActivityFile atomic swap: concurrent touchActivityFile reaches new entry
+ *  10. replaceActivityFile timer generation check: old debounce timer does not kick after replacement
  */
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -37,6 +39,7 @@ import {
   touchActivityFile,
   recordActivityTouch,
   setDequeueActive,
+  replaceActivityFile,
   resetActivityFileStateForTest,
 } from "./file-state.js";
 
@@ -203,5 +206,75 @@ describe("activity-file idle-kick state machine", () => {
     expect(entry.nudgeArmed).toBe(true);
     expect(entry.lastTouchAt).toBeNull();
     expect(entry.debounceTimer).not.toBeNull();    // timer set for remaining 240s
+  });
+
+  it("9: replaceActivityFile atomic swap — concurrent touchActivityFile reaches new entry", async () => {
+    // Simulate a touch that arrives while replaceActivityFile is mid-flight.
+    // Because _state is updated before any async cleanup, the touch must land
+    // on the new entry (newState), not be silently dropped.
+    const oldState = makeState({ lastActivityAt: Date.now() - 120_000 }); // long idle
+    setActivityFile(SID, oldState);
+
+    const newState = {
+      filePath: "/tmp/test-activity-file-new",
+      tmcpOwned: false,
+      lastTouchAt: null,
+      debounceTimer: null,
+      lastActivityAt: Date.now() - 120_000,
+      inflightDequeue: false,
+      nudgeArmed: true,
+    };
+
+    // replaceActivityFile writes newState to _state synchronously before awaiting
+    // any cleanup, so a touch fired immediately after the call sees newState.
+    const replacePromise = replaceActivityFile(SID, newState);
+
+    // Touch fires while replace is still awaiting cleanup
+    touchActivityFile(SID);
+
+    await replacePromise;
+
+    // The entry in _state must be newState (not undefined, not oldState)
+    const entry = getActivityFile(SID)!;
+    expect(entry).toBe(newState);
+    // Touch reached the new entry — lastTouchAt was updated on newState
+    expect(entry.lastTouchAt).not.toBeNull();
+  });
+
+  it("10: replaceActivityFile timer generation check — old debounce timer does not kick after replacement", async () => {
+    // Schedule a debounce timer on the old entry. After replacement, the old
+    // timer fires but finds the current _state entry is no longer the old
+    // object — the generation guard (checking _state.get(sid) identity) must
+    // prevent a stale kick from landing.
+    sessionMocks.getKickDebounceMs.mockReturnValue(5_000); // 5 s debounce
+    const oldState = makeState({ lastActivityAt: Date.now() - 3_000 }); // 3 s ago
+    setActivityFile(SID, oldState);
+
+    // Trigger a touch so that a debounce timer is scheduled on oldState
+    touchActivityFile(SID);
+    expect(oldState.debounceTimer).not.toBeNull(); // timer is set
+
+    // Replace with a new entry (replaceActivityFile cancels the old timer)
+    const newState = {
+      filePath: "/tmp/test-activity-file-gen",
+      tmcpOwned: false,
+      lastTouchAt: null,
+      debounceTimer: null,
+      lastActivityAt: Date.now(), // freshly active — suppress any new kick
+      inflightDequeue: false,
+      nudgeArmed: true,
+    };
+
+    await replaceActivityFile(SID, newState);
+
+    // Old timer must have been cancelled by replaceActivityFile
+    expect(oldState.debounceTimer).toBeNull();
+
+    // Advance past the original debounce window — no stale kick should fire
+    vi.advanceTimersByTime(10_000);
+
+    // newState.lastTouchAt should remain null — the cancelled timer never fired
+    // and newState.lastActivityAt is fresh so no immediate kick either
+    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
   });
 });
