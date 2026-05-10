@@ -17,7 +17,7 @@
 # - Monitor nodejs-sec mailing list: https://groups.google.com/forum/#!forum/nodejs-sec
 
 # ── Stage 1: production dependencies (native modules compiled here) ───────────
-FROM node:24-slim AS deps
+FROM node:26-slim AS deps
 
 # Build tools needed for native modules (onnxruntime-node, opusscript, sharp)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,7 +31,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 
 # ── Stage 2: TypeScript build ─────────────────────────────────────────────────
-FROM node:24-slim AS build
+FROM node:26-slim AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ \
@@ -49,7 +49,7 @@ COPY scripts/ ./scripts/
 RUN pnpm build
 
 # ── Stage 3: runtime (no build tools, no dev deps, non-root) ─────────────────
-FROM node:24-slim AS runtime
+FROM node:26-slim AS runtime
 
 # Patch all OS packages to eliminate known CVEs
 RUN apt-get update && apt-get upgrade -y --no-install-recommends \
