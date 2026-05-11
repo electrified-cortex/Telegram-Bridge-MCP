@@ -353,7 +353,7 @@ describe("activity-file idle-kick state machine", () => {
 
   // --- AC4: Queue-conditional kick (task 10-0896) ---
 
-  it("AC4-1: stop + empty queue → no kick", () => {
+  it("AC4-1/AC6-1: stop + empty queue → no poke", () => {
     queueMocks.hasPendingUserContent.mockReturnValue(false); // empty queue
     const state = makeState({ lastActivityAt: Date.now() - 5_000 });
     setActivityFile(SID, state);
@@ -367,7 +367,7 @@ describe("activity-file idle-kick state machine", () => {
     expect(entry.lastTouchAt).toBeNull();  // no kick — empty queue
   });
 
-  it("AC4-2: stop + pending message → kick fires", () => {
+  it("AC4-2/AC6-2: stop + pending message → poke fires", () => {
     // default mock returns true
     const state = makeState({ lastActivityAt: Date.now() - 5_000 });
     setActivityFile(SID, state);
@@ -490,7 +490,7 @@ describe("activity-file idle-kick state machine", () => {
     expect(entry.lastTouchAt).not.toBeNull(); // poke fired — no poke-debounce wait
   });
 
-  it("AC4-5: stop resets lastActivityAt so next touch with pending kicks immediately", () => {
+  it("AC4-5/AC6-9: stop resets lastActivityAt so next touch with pending kicks immediately", () => {
     sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
     const state = makeState({ lastActivityAt: Date.now() - 5_000 }); // recently active
     setActivityFile(SID, state);
