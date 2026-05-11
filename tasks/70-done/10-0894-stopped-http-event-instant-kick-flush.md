@@ -99,3 +99,10 @@ effect (kick flush + debounce cancel) on the firing session itself.
 - v7.2.0 changelog: existing POST /event implementation
 - `src/event-endpoint.ts` (or equivalent)
 - `src/tools/activity/file-state.ts` — `doTouch`, `touchActivityFile`
+
+## Verification
+
+**Verdict:** APPROVED
+**Date:** 2026-05-10
+**Criteria:** 5/5 passed
+**Evidence:** Commit d92c4d93 adds `stopped` to VALID_KINDS, implements `handleSessionStopped` (cancel timer + nudgeArmed=true + doTouch + lastTouchAt via doTouch), places TODO wiring comment in both handler and file-state.ts, adds 4 test cases covering active-file kick, no-op, invalid token, and unknown-session-via-401, and updates docs/help/events.md with stopped row and detailed state-effect section.
