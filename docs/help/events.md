@@ -36,13 +36,31 @@ Session token via `?token=<int>` query param **or** JSON body field `"token"`. (
 
 ## Event Kinds
 
-| Kind | Description | Animation |
-| --- | --- | --- |
-| `compacting` | Agent is compacting context | `working` |
-| `compacted` | Compaction finished | cancel active animation (governor only) |
-| `startup` | Agent starting up | `bounce` |
-| `shutdown_warn` | Agent about to shut down | — |
-| `shutdown_complete` | Agent shut down | — |
+| Kind | Description | Animation | Side effect on firing session |
+| --- | --- | --- | --- |
+| `compacting` | Agent is compacting context | `working` | — |
+| `compacted` | Compaction finished | cancel active animation (governor only) | — |
+| `startup` | Agent starting up | `bounce` | — |
+| `shutdown_warn` | Agent about to shut down | — | — |
+| `shutdown_complete` | Agent shut down | — | — |
+| `stopped` | Agent session stopped (drop-exit-resume) | — | Cancels pending debounce timer; re-arms nudge cycle; issues immediate activity-file kick |
+
+### `stopped` — state-mutating side effect
+
+Unlike the other kinds, `stopped` mutates state on the **firing session** itself:
+
+1. Any pending debounce kick-timer for the session is cancelled.
+2. The nudge cycle is re-armed (`nudgeArmed = true`).
+3. An immediate `doTouch` is issued to the activity file, signaling the external watcher
+   that the session is "available again."
+
+The intent: the next inbound message (arriving when the resumed agent re-enters its loop)
+will be picked up instantly because the file Monitor will already have fired.
+
+If the session has no activity file registered, the response is `200 { "ok": true, "fanout": N, "hint": "no-op" }`.
+
+**Agent-side wiring**: TBD — likely a Stop hook analogous to PreCompact. POSTing `stopped`
+must be done explicitly by a hook or script for now.
 
 ## Metrics
 

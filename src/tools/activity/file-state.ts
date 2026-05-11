@@ -326,6 +326,31 @@ export function touchActivityFile(sid: number): void {
 }
 
 /**
+ * Handle the "stopped" HTTP event for a session.
+ *
+ * When an agent signals it has stopped:
+ *  1. Cancel any pending debounce timer (eliminates stale scheduled kick)
+ *  2. Re-arm the nudge cycle (nudgeArmed = true) so the next inbound fires promptly
+ *  3. Issue an immediate doTouch so the file-watcher fires before the next session starts
+ *
+ * Returns { noOp: true } if no activity file is registered for the session.
+ *
+ * Agent-side wiring: TBD — likely a Stop hook analogous to PreCompact.
+ */
+export function handleSessionStopped(sid: number): { noOp: boolean } {
+  const entry = _state.get(sid);
+  if (!entry) return { noOp: true };
+
+  if (entry.debounceTimer !== null) {
+    clearTimeout(entry.debounceTimer);
+    entry.debounceTimer = null;
+  }
+  entry.nudgeArmed = true;
+  doTouch(sid);
+  return { noOp: false };
+}
+
+/**
  * Create a TMCP-owned activity file in data/activity/.
  * Returns the absolute path of the created file.
  */
