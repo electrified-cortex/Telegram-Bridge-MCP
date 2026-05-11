@@ -5,13 +5,14 @@
  *   1. Nudge fires immediately when agent has been silent >= debounce window
  *   2. Nudge is suppressed when agent was recently active (< debounce window)
  *   3. Timer schedules and fires after remaining suppression window
- *   4. recordActivityTouch clears pending timer and resets suppression window
+ *   4. recordActivityTouch updates lastActivityAt but does NOT cancel pending kick timer
  *   5. Nudge does not fire while dequeue is in-flight (inflightDequeue)
  *   6. Multiple messages in one cycle produce exactly one nudge (one-nudge-per-cycle)
  *   7. setDequeueActive(false) re-arms cycle; subsequent message can nudge again
  *   8. Per-session debounce override is respected (getKickDebounceMs)
  *   9. replaceActivityFile atomic swap: concurrent touchActivityFile reaches new entry
  *  10. replaceActivityFile timer generation check: old debounce timer does not kick after replacement
+ *  11. recordActivityTouch during pending timer does not cancel kick (fix for 10-0893)
  */
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -115,7 +116,7 @@ describe("activity-file idle-kick state machine", () => {
     expect(entryAfter.lastTouchAt).not.toBeNull(); // touch issued
   });
 
-  it("4: recordActivityTouch clears pending timer and resets suppression window", () => {
+  it("4: recordActivityTouch updates lastActivityAt but does NOT cancel pending kick timer", () => {
     sessionMocks.getKickDebounceMs.mockReturnValue(10_000);
     const state = makeState({ lastActivityAt: Date.now() - 3_000 });
     setActivityFile(SID, state);
@@ -125,15 +126,16 @@ describe("activity-file idle-kick state machine", () => {
     const entryBefore = getActivityFile(SID)!;
     expect(entryBefore.debounceTimer).not.toBeNull();
 
-    recordActivityTouch(SID); // agent is active — cancel timer
+    const prevActivityAt = entryBefore.lastActivityAt;
+    recordActivityTouch(SID); // agent makes a tool call — must NOT cancel timer
 
     const entryAfter = getActivityFile(SID)!;
-    expect(entryAfter.debounceTimer).toBeNull();       // timer cancelled
-    expect(entryAfter.lastActivityAt).toBeGreaterThan(0);
+    expect(entryAfter.debounceTimer).not.toBeNull();       // timer still pending
+    expect(entryAfter.lastActivityAt).toBeGreaterThan(prevActivityAt); // window extended
 
-    // Advance past the original window — no nudge should fire
+    // Timer fires after the remaining window — nudge DOES land
     vi.advanceTimersByTime(15_000);
-    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
+    expect(getActivityFile(SID)!.lastTouchAt).not.toBeNull(); // kick fired
   });
 
   it("5: nudge does not fire while dequeue is in-flight (inflightDequeue=true)", () => {
@@ -239,6 +241,32 @@ describe("activity-file idle-kick state machine", () => {
     expect(entry).toBe(newState);
     // Touch reached the new entry — lastTouchAt was updated on newState
     expect(entry.lastTouchAt).not.toBeNull();
+  });
+
+  it("11: recordActivityTouch during pending timer does not cancel kick (fix for 10-0893)", () => {
+    // Regression test: prior to the fix, recordActivityTouch cancelled the pending
+    // debounce timer on every tool call. An active agent making tool calls would
+    // never see a kick, even after receiving an inbound message.
+    sessionMocks.getKickDebounceMs.mockReturnValue(10_000);
+    const state = makeState({ lastActivityAt: Date.now() - 5_000 }); // 5s ago
+    setActivityFile(SID, state);
+
+    // Inbound arrives → within debounce window → timer scheduled
+    touchActivityFile(SID);
+    expect(getActivityFile(SID)!.debounceTimer).not.toBeNull();
+
+    // Agent makes several tool calls — must NOT cancel the timer
+    recordActivityTouch(SID);
+    recordActivityTouch(SID);
+    recordActivityTouch(SID);
+
+    // Timer must still be pending after tool calls
+    expect(getActivityFile(SID)!.debounceTimer).not.toBeNull();
+
+    // Advance past debounce window — kick must still fire
+    vi.advanceTimersByTime(15_000);
+    expect(getActivityFile(SID)!.lastTouchAt).not.toBeNull(); // kick landed
+    expect(getActivityFile(SID)!.nudgeArmed).toBe(false);    // cycle disarmed
   });
 
   it("10: replaceActivityFile timer generation check — old debounce timer does not kick after replacement", async () => {
