@@ -9,20 +9,39 @@
  *   tmcpOwned = true  → TMCP created the file; it will delete it on clear/close.
  *   tmcpOwned = false → agent supplied the path; TMCP never touches lifecycle.
  *
+ * Session activity states:
+ *   active   — at least one of: inflight dequeue, blocking interactive call, or
+ *              a tool call within the kick-debounce window.
+ *              Flags: inflightDequeue=true OR lastActivityAt within debounce window.
+ *   inactive — none of the above. Reached when:
+ *              • Stop hook fires (handleSessionStopped) → immediate transition
+ *              • Idle timer expires (debounce window elapsed with no tool calls)
+ *
+ * Queue-gated kick rule:
+ *   On transition to inactive, peek the session queue (hasPendingUserContent).
+ *   Pending messages exist  → call doTouch (kick the activity file).
+ *   No pending messages     → no kick. The session has nothing to consume.
+ *   Kicks are always queue-driven; unconditional touches are a bug.
+ *
  * State machine (nudge cycle):
- *   Armed (nudgeArmed=true) → message arrives → kick fires (disarms) or is
- *   deferred by the debounce window (schedules trailing timer). Dequeue
- *   completion re-arms the cycle. Any tool call cancels the pending timer and
- *   resets the activity timestamp, extending the suppression window.
+ *   Armed (nudgeArmed=true) → message arrives → kick fires if queue pending (disarms)
+ *   or is deferred by the debounce window (schedules trailing timer). Dequeue
+ *   completion re-arms the cycle. Any tool call resets the activity timestamp,
+ *   extending the suppression window.
  *
  * Debounce window (kickDebounceMs, per-session via profile/kick-debounce):
  *   Suppresses an immediate kick if the agent called a tool within the window.
  *   Schedules a trailing timer instead; tool calls extend lastActivityAt but
- *   do NOT cancel the pending timer. On window expiry: one trailing touch fires.
+ *   do NOT cancel the pending timer. On window expiry: queue-gated touch fires.
  *
  * Inflight dequeue suppression:
  *   Kicks are skipped while a dequeue call is being processed — the agent
  *   will receive the event directly on dequeue return.
+ *
+ * lastActivityAt semantics:
+ *   Tracks the last tool call time for debounce suppression. Reset to 0 by
+ *   handleSessionStopped so the next inbound after a stop kicks immediately
+ *   (no 60 s wait) if the queue is non-empty.
  */
 
 import { appendFile, unlink, mkdir, open } from "fs/promises";
@@ -30,6 +49,7 @@ import { dirname, isAbsolute, resolve } from "path";
 import { randomBytes } from "crypto";
 import { fileURLToPath } from "url";
 import { getKickDebounceMs } from "../../session-manager.js";
+import { hasPendingUserContent } from "../../session-queue.js";
 import { dlog } from "../../debug-log.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -316,12 +336,14 @@ export function touchActivityFile(sid: number): void {
     return;
   }
 
-  // Agent has been silent for >= debounce window — fire the kick
+  // Agent has been silent for >= debounce window — transition to inactive
   entry.nudgeArmed = false;
   if (entry.debounceTimer !== null) {
     clearTimeout(entry.debounceTimer);
     entry.debounceTimer = null;
   }
+  // Only kick if there is a pending message to consume (queue-gated kick rule).
+  if (!hasPendingUserContent(sid)) return;
   doTouch(sid);
 }
 
@@ -345,7 +367,11 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
     clearTimeout(entry.debounceTimer);
     entry.debounceTimer = null;
   }
+  // Reset so the next inbound after stop kicks immediately (no debounce wait).
+  entry.lastActivityAt = 0;
   entry.nudgeArmed = true;
+  // Only kick if there is a pending message to consume (queue-gated kick rule).
+  if (!hasPendingUserContent(sid)) return { noOp: false };
   doTouch(sid);
   return { noOp: false };
 }

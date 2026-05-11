@@ -1,5 +1,5 @@
 /**
- * Tests for the activity-file idle-kick state machine (task 10-0876).
+ * Tests for the activity-file idle-kick state machine (task 10-0876, 10-0896).
  *
  * Covers:
  *   1. Nudge fires immediately when agent has been silent >= debounce window
@@ -13,6 +13,13 @@
  *   9. replaceActivityFile atomic swap: concurrent touchActivityFile reaches new entry
  *  10. replaceActivityFile timer generation check: old debounce timer does not kick after replacement
  *  11. recordActivityTouch during pending timer does not cancel kick (fix for 10-0893)
+ *  12. handleSessionStopped cancels timer, re-arms nudge, fires touch when queue has pending
+ *  13. handleSessionStopped returns noOp: true when no activity file registered
+ * AC4-1. Stop + empty queue → no kick (10-0896)
+ * AC4-2. Stop + pending message → kick fires (10-0896)
+ * AC4-3. Debounce expiry + empty queue → no kick (10-0896)
+ * AC4-4. Debounce expiry + pending message → kick fires (10-0896)
+ * AC4-5. Stop resets lastActivityAt so next touch with pending kicks immediately (10-0896)
  */
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -24,6 +31,15 @@ const sessionMocks = vi.hoisted(() => ({
 
 vi.mock("../../session-manager.js", () => ({
   getKickDebounceMs: (sid: number) => sessionMocks.getKickDebounceMs(sid),
+}));
+
+// Mock session-queue to control hasPendingUserContent per-test (10-0896)
+const queueMocks = vi.hoisted(() => ({
+  hasPendingUserContent: vi.fn((_sid: number): boolean => true),
+}));
+
+vi.mock("../../session-queue.js", () => ({
+  hasPendingUserContent: (sid: number) => queueMocks.hasPendingUserContent(sid),
 }));
 
 // Mock fs/promises to avoid real file I/O
@@ -68,6 +84,9 @@ describe("activity-file idle-kick state machine", () => {
     vi.useFakeTimers();
     resetActivityFileStateForTest();
     sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
+    // Default: queue has pending content so existing kick tests pass unchanged.
+    // AC4 "no kick" tests override this to false.
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -329,5 +348,88 @@ describe("activity-file idle-kick state machine", () => {
   it("13: handleSessionStopped returns noOp: true when no activity file registered", () => {
     const result = handleSessionStopped(SID);
     expect(result.noOp).toBe(true);
+  });
+
+  // --- AC4: Queue-conditional kick (task 10-0896) ---
+
+  it("AC4-1: stop + empty queue → no kick", () => {
+    queueMocks.hasPendingUserContent.mockReturnValue(false); // empty queue
+    const state = makeState({ lastActivityAt: Date.now() - 5_000 });
+    setActivityFile(SID, state);
+
+    const result = handleSessionStopped(SID);
+
+    expect(result.noOp).toBe(false);
+    const entry = getActivityFile(SID)!;
+    expect(entry.nudgeArmed).toBe(true);   // re-armed
+    expect(entry.lastActivityAt).toBe(0);  // reset
+    expect(entry.lastTouchAt).toBeNull();  // no kick — empty queue
+  });
+
+  it("AC4-2: stop + pending message → kick fires", () => {
+    // default mock returns true
+    const state = makeState({ lastActivityAt: Date.now() - 5_000 });
+    setActivityFile(SID, state);
+
+    const result = handleSessionStopped(SID);
+
+    expect(result.noOp).toBe(false);
+    const entry = getActivityFile(SID)!;
+    expect(entry.nudgeArmed).toBe(true);          // re-armed
+    expect(entry.lastActivityAt).toBe(0);         // reset
+    expect(entry.lastTouchAt).not.toBeNull();     // kick fired
+  });
+
+  it("AC4-3: debounce expiry + empty queue → no kick", () => {
+    queueMocks.hasPendingUserContent.mockReturnValue(false); // empty queue
+    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
+    const state = makeState({ lastActivityAt: Date.now() - 2_000 }); // 2s of 5s elapsed
+    setActivityFile(SID, state);
+
+    touchActivityFile(SID); // schedules timer for remaining 3s
+    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
+
+    vi.advanceTimersByTime(4_000); // timer fires → re-evaluates touchActivityFile
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.nudgeArmed).toBe(false);  // disarmed (transitioned to inactive)
+    expect(entry.lastTouchAt).toBeNull();  // no kick — empty queue
+  });
+
+  it("AC4-4: debounce expiry + pending message → kick fires", () => {
+    // default mock returns true
+    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
+    const state = makeState({ lastActivityAt: Date.now() - 2_000 }); // 2s of 5s elapsed
+    setActivityFile(SID, state);
+
+    touchActivityFile(SID); // schedules timer
+    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
+
+    vi.advanceTimersByTime(4_000); // timer fires → kick
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.nudgeArmed).toBe(false);
+    expect(entry.lastTouchAt).not.toBeNull(); // kick fired
+  });
+
+  it("AC4-5: stop resets lastActivityAt so next touch with pending kicks immediately", () => {
+    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
+    const state = makeState({ lastActivityAt: Date.now() - 5_000 }); // recently active
+    setActivityFile(SID, state);
+
+    // Stop with empty queue — no kick, but lastActivityAt is reset to 0
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+    handleSessionStopped(SID);
+
+    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
+    expect(getActivityFile(SID)!.lastActivityAt).toBe(0); // confirmed reset
+
+    // New message arrives: queue now has pending content
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    touchActivityFile(SID); // lastActivityAt=0 → timeSinceActivity >> debounce → immediate kick
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.lastTouchAt).not.toBeNull(); // kicked immediately, no 60s wait
+    expect(entry.nudgeArmed).toBe(false);     // disarmed after kick
   });
 });
