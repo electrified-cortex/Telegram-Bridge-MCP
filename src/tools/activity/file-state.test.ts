@@ -511,6 +511,29 @@ describe("activity-file idle-kick state machine", () => {
     expect(entry.nudgeArmed).toBe(false);     // disarmed after kick
   });
 
+  it("AC6-4: inbound while inactive + empty queue → no poke", () => {
+    queueMocks.hasPendingUserContent.mockReturnValue(false); // empty queue
+    const state = makeState({ lastActivityAt: 0, nudgeArmed: true }); // long idle = inactive
+    setActivityFile(SID, state);
+
+    touchActivityFile(SID);
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.lastTouchAt).toBeNull();   // no poke fired
+    expect(entry.nudgeArmed).toBe(true);    // re-armed because no poke resulted
+  });
+
+  it("AC6-5: inbound while inactive + pending + cold debounce → poke fires", () => {
+    // default mock returns true (pending content)
+    const state = makeState({ lastActivityAt: 0, lastTouchAt: null }); // long idle + cold debounce
+    setActivityFile(SID, state);
+
+    touchActivityFile(SID);
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.lastTouchAt).not.toBeNull(); // poke fired
+  });
+
   it("AC6-10: trailing-timer with empty queue → re-arms nudgeArmed", () => {
     // A timer is scheduled because an inbound arrived while the session was active.
     // If the queue is drained before the timer fires, the timer should:
