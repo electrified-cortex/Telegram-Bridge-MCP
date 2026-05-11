@@ -29,6 +29,7 @@ import { getGovernorSid } from "./routing-mode.js";
 import { handleShowAnimation } from "./tools/animation/show.js";
 import { handleCancelAnimation } from "./tools/animation/cancel.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
+import { handleSessionStopped } from "./tools/activity/file-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -41,7 +42,7 @@ interface PostEventBody {
   details?: unknown;
 }
 
-const VALID_KINDS = new Set(["compacting", "compacted", "startup", "shutdown_warn", "shutdown_complete"]);
+const VALID_KINDS = new Set(["compacting", "compacted", "startup", "shutdown_warn", "shutdown_complete", "stopped"]);
 
 // ── Internal handler (exported for testing) ──────────────────────────────────
 
@@ -167,8 +168,17 @@ export function handlePostEvent(
         void handleShowAnimation({ token: tokenNum, preset: "recovering", timeout: 60 });
       });
       setHasCompacted(governorSid);
-    } else {
+    } else if (kind !== "stopped") {
       void handleShowAnimation({ token: tokenNum, preset: kind });
+    }
+  }
+
+  // ── 5. "stopped" side-effect ─────────────────────────────────────────────
+  // Agent-side wiring: TBD — likely a Stop hook analogous to PreCompact.
+  if (kind === "stopped") {
+    const { noOp } = handleSessionStopped(sid);
+    if (noOp) {
+      return [200, { ok: true, fanout, hint: "no-op" }];
     }
   }
 
