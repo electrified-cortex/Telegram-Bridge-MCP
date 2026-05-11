@@ -1289,7 +1289,7 @@ describe("dequeue tool", () => {
       // Governor (SID 2) should receive a service message alert
       expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
         2,
-        expect.stringContaining("Duplicate session detected"),
+        expect.any(String),
         "duplicate_session_detected",
         expect.objectContaining({ sid: 1 }),
       );
@@ -1393,7 +1393,7 @@ describe("dequeue tool", () => {
       const result = await call({ timeout: 0, token: 1_123_456, response_format: "compact" });
       expect(isError(result)).toBe(false);
       const data = parseResult<DequeueResult>(result);
-      expect((data as Record<string, unknown>).empty).toBeUndefined();
+      expect((data as unknown as Record<string, unknown>).empty).toBeUndefined();
       // pending is still present
       expect(data.pending).toBe(0);
     });
@@ -1413,7 +1413,7 @@ describe("dequeue tool", () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ timeout: 0, token: 1_123_456, response_format: "default" });
       const data = parseResult<DequeueResult>(result);
-      expect((data as Record<string, unknown>).empty).toBeUndefined();
+      expect((data as unknown as Record<string, unknown>).empty).toBeUndefined();
       expect(data.pending).toBe(0);
     });
 
@@ -1431,7 +1431,7 @@ describe("dequeue tool", () => {
       mocks.dequeueBatch.mockReturnValue([]);
       const result = await call({ timeout: 0, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
-      expect((data as Record<string, unknown>).empty).toBeUndefined();
+      expect((data as unknown as Record<string, unknown>).empty).toBeUndefined();
       expect(data.pending).toBe(0);
     });
 

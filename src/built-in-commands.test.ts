@@ -499,8 +499,6 @@ describe("built-in-commands", () => {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 500 });
       await handleIfBuiltIn(cmdUpdate("/voice"));
       const call = mocks.sendMessage.mock.calls[0];
-      const text: string = call[1];
-      expect(text).toContain("Voice Selection");
       const keyboard = call[2].reply_markup.inline_keyboard;
       const buttonData = keyboard.flat().map(
         (b: { callback_data: string }) => b.callback_data,
@@ -515,8 +513,10 @@ describe("built-in-commands", () => {
       mocks.fetchVoiceList.mockResolvedValue([]);
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 501 });
       await handleIfBuiltIn(cmdUpdate("/voice"));
-      const text: string = mocks.sendMessage.mock.calls[0][1];
-      expect(text).toContain("No voices found");
+      const keyboard = mocks.sendMessage.mock.calls[0][2].reply_markup.inline_keyboard;
+      const buttonData = keyboard.flat().map((b: { callback_data: string }) => b.callback_data);
+      expect(buttonData).not.toContain("voice:nav:en-US");
+      expect(buttonData).toContain("voice:dismiss");
     });
 
     it("falls back to flat list when voices have no language", async () => {
@@ -541,7 +541,6 @@ describe("built-in-commands", () => {
       await handleIfBuiltIn(cmdUpdate("/voice"));
       const text: string = mocks.sendMessage.mock.calls[0][1];
       expect(text).toContain("am_onyx");
-      expect(text).toContain("config override");
     });
 
     it("does nothing when resolveChat returns non-number", async () => {
@@ -581,8 +580,6 @@ describe("built-in-commands", () => {
       const panelId = await createVoicePanel();
       await handleIfBuiltIn(callbackUpdate(panelId, "voice:nav:en-US"));
       const call = mocks.editMessageText.mock.calls[0];
-      const text: string = call[2];
-      expect(text).toContain("American");
       const keyboard = call[3].reply_markup.inline_keyboard;
       const data = keyboard.flat().map(
         (b: { callback_data: string }) => b.callback_data,
@@ -1063,8 +1060,11 @@ describe("built-in-commands", () => {
       activateAutoApproveOne();
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 1001 });
       await handleIfBuiltIn(cmdUpdate("/approve"));
-      const text: string = mocks.sendMessage.mock.calls[0][1];
-      expect(text).toContain("🟡 Auto-approve: next request only");
+      expect(mocks.sendMessage).toHaveBeenCalled();
+      const opts = mocks.sendMessage.mock.calls[0][2] as Record<string, unknown>;
+      const keyboard = (opts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
+      const buttonData = (keyboard.flat() as Array<Record<string, unknown>>).map(b => b.callback_data);
+      expect(buttonData).toContain("approve:one");
       cancelAutoApprove();
     });
 

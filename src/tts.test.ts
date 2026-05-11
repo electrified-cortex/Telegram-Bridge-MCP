@@ -752,3 +752,59 @@ describe("fetchVoiceList", () => {
     expect(mockFetch.mock.calls[0][0]).toBe("http://kokoro.local/v1/audio/voices");
   });
 });
+
+// ---------------------------------------------------------------------------
+// synthesizeToOgg — TTS synthesis timeout
+// ---------------------------------------------------------------------------
+
+describe("synthesizeToOgg (TTS synthesis timeout)", () => {
+  afterEach(() => {
+    delete process.env.TTS_HOST;
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS;
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS;
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("throws tts_timeout error with correct code when AbortSignal.timeout fires (TimeoutError)", async () => {
+    process.env.TTS_HOST = "http://myserver.local";
+    // Set a very short timeout so AbortSignal fires immediately
+    process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS = "1";
+    process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS = "1";
+
+    // AbortSignal.timeout() fires DOMException with name "TimeoutError"
+    const timeoutError = Object.assign(new Error("The operation timed out."), { name: "TimeoutError" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeoutError));
+
+    const err = await synthesizeToOgg("hello world").catch(e => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error & { code?: string }).code).toBe("tts_timeout");
+    expect((err as Error).message).toMatch(/tts_timeout/);
+    expect((err as Error).message).toMatch(/Server not responding/);
+  });
+
+  it("throws tts_timeout error with correct code when AbortError is thrown", async () => {
+    process.env.TTS_HOST = "http://myserver.local";
+    process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS = "1";
+    process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS = "1";
+
+    // Legacy AbortError (e.g. from manual AbortController abort)
+    const abortError = Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
+
+    const err = await synthesizeToOgg("hello world").catch(e => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error & { code?: string }).code).toBe("tts_timeout");
+    expect((err as Error).message).toMatch(/tts_timeout/);
+    expect((err as Error).message).toMatch(/Server not responding/);
+  });
+
+  it("re-throws non-abort errors from fetch unchanged", async () => {
+    process.env.TTS_HOST = "http://myserver.local";
+
+    const networkError = new Error("network failure");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(networkError));
+
+    await expect(synthesizeToOgg("hello")).rejects.toThrow("network failure");
+  });
+});

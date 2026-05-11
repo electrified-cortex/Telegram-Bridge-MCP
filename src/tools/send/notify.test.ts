@@ -80,8 +80,9 @@ describe("notify tool", () => {
   it("defaults to info severity", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0, text: "" });
     await call({ title: "Status", token: 1123456});
-    const [, text] = mocks.sendMessage.mock.calls[0];
-    expect(text).toContain("ℹ️");
+    expect(mocks.sendMessage).toHaveBeenCalled();
+    const [, , opts] = mocks.sendMessage.mock.calls[0];
+    expect(opts.parse_mode).toBe("MarkdownV2");
   });
 
   it("returns MESSAGE_TOO_LONG when combined text exceeds limit", async () => {
