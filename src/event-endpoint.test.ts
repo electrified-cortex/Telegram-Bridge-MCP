@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   handleShowAnimation: vi.fn(),
   handleCancelAnimation: vi.fn(),
   setHasCompacted: vi.fn((_sid: number): void => {}),
+  handleSessionStopped: vi.fn((_sid: number): { noOp: boolean } => ({ noOp: false })),
 }));
 
 vi.mock("./session-manager.js", () => ({
@@ -43,6 +44,10 @@ vi.mock("./tools/animation/show.js", () => ({
 
 vi.mock("./tools/animation/cancel.js", () => ({
   handleCancelAnimation: (...args: unknown[]) => mocks.handleCancelAnimation(...args),
+}));
+
+vi.mock("./tools/activity/file-state.js", () => ({
+  handleSessionStopped: (sid: number) => mocks.handleSessionStopped(sid),
 }));
 
 // Silence the NDJSON write — we don't test fire-and-forget I/O
@@ -77,6 +82,7 @@ describe("POST /event handler", () => {
     mocks.getGovernorSid.mockReturnValue(0);
     mocks.handleShowAnimation.mockResolvedValue({ content: [{ type: "text", text: "{}" }] });
     mocks.handleCancelAnimation.mockResolvedValue({ content: [{ type: "text", text: "{}" }] });
+    mocks.handleSessionStopped.mockReturnValue({ noOp: false });
   });
 
   // ── 401: missing / invalid token ──────────────────────────────────────────
@@ -242,5 +248,37 @@ describe("POST /event handler", () => {
 
     handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
     expect(mocks.setHasCompacted).not.toHaveBeenCalled();
+  });
+
+  // ── stopped kind ─────────────────────────────────────────────────────────
+
+  it("returns 200 and calls handleSessionStopped with caller SID when kind is stopped and file is active", () => {
+    mocks.handleSessionStopped.mockReturnValue({ noOp: false });
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });
+    expect(status).toBe(200);
+    expect((body as { ok: boolean }).ok).toBe(true);
+    // VALID_TOKEN decodes to sid=1
+    expect(mocks.handleSessionStopped).toHaveBeenCalledWith(1);
+  });
+
+  it("returns 200 with hint: no-op when kind is stopped and no activity file is registered", () => {
+    mocks.handleSessionStopped.mockReturnValue({ noOp: true });
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });
+    expect(status).toBe(200);
+    expect((body as { ok: boolean; hint?: string }).ok).toBe(true);
+    expect((body as { hint?: string }).hint).toBe("no-op");
+  });
+
+  it("returns 401 for invalid token on stopped kind", () => {
+    mocks.validateSession.mockReturnValue(false);
+    const [status] = handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });
+    expect(status).toBe(401);
+    expect(mocks.handleSessionStopped).not.toHaveBeenCalled();
+  });
+
+  it("does not trigger governor animation when kind is stopped", () => {
+    mocks.getGovernorSid.mockReturnValue(1); // caller is governor
+    handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });
+    expect(mocks.handleShowAnimation).not.toHaveBeenCalled();
   });
 });
