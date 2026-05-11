@@ -205,10 +205,21 @@ export async function runDrainLoop(
     const result = buildBatchResult(batch);
     resyncActiveSession();
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
+    // Regression fix for 10-0895 (post-7.4.2 kick-still-broken): the
+    // immediate-batch return path is outside the try/finally below, so we
+    // must clear inflightDequeue here. Without this, the flag stays stuck
+    // at true and every subsequent inbound message hits the
+    // entry.inflightDequeue gate in touchActivityFile and is silently
+    // suppressed — no kicks ever fire.
+    setDequeueActive(sid, false);
     return result;
   }
 
   if (timeout === 0) {
+    // Regression fix for 10-0895 (post-7.4.2 kick-still-broken): see comment
+    // above on the batch-return path. The timeout=0 empty-poll return also
+    // bypasses the try/finally below.
+    setDequeueActive(sid, false);
     return { pending: pendingCountAny() };
   }
 

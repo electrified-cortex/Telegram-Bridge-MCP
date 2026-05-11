@@ -41,6 +41,7 @@ import {
   recordActivityTouch,
   setDequeueActive,
   replaceActivityFile,
+  handleSessionStopped,
   resetActivityFileStateForTest,
 } from "./file-state.js";
 
@@ -304,5 +305,29 @@ describe("activity-file idle-kick state machine", () => {
     // newState.lastTouchAt should remain null — the cancelled timer never fired
     // and newState.lastActivityAt is fresh so no immediate kick either
     expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
+  });
+
+  it("12: handleSessionStopped cancels pending timer, re-arms nudge, and fires immediate touch", () => {
+    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
+    const state = makeState({ lastActivityAt: Date.now() - 5_000 }); // recently active
+    setActivityFile(SID, state);
+
+    // Schedule a pending timer (5 s elapsed of 60 s window)
+    touchActivityFile(SID);
+    expect(getActivityFile(SID)!.debounceTimer).not.toBeNull();
+    expect(getActivityFile(SID)!.nudgeArmed).toBe(true); // armed, timer pending
+
+    const result = handleSessionStopped(SID);
+
+    expect(result.noOp).toBe(false);
+    const entry = getActivityFile(SID)!;
+    expect(entry.debounceTimer).toBeNull();       // timer cancelled
+    expect(entry.nudgeArmed).toBe(true);           // re-armed
+    expect(entry.lastTouchAt).not.toBeNull();      // immediate touch fired
+  });
+
+  it("13: handleSessionStopped returns noOp: true when no activity file registered", () => {
+    const result = handleSessionStopped(SID);
+    expect(result.noOp).toBe(true);
   });
 });
