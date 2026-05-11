@@ -15,33 +15,49 @@
  *              Flags: inflightDequeue=true OR lastActivityAt within debounce window.
  *   inactive — none of the above. Reached when:
  *              • Stop hook fires (handleSessionStopped) → immediate transition
- *              • Idle timer expires (debounce window elapsed with no tool calls)
+ *              • Idle timer expires (kick-debounce window elapsed with no tool calls)
  *
- * Queue-gated kick rule:
- *   On transition to inactive, peek the session queue (hasPendingUserContent).
- *   Pending messages exist  → call doTouch (kick the activity file).
- *   No pending messages     → no kick. The session has nothing to consume.
- *   Kicks are always queue-driven; unconditional touches are a bug.
+ * Open-gate kick rule:
+ *   The kick is gated — it only fires while the session is inactive AND only when
+ *   the session queue has pending messages (hasPendingUserContent). This kills the
+ *   self-kick loop: Stop hook with no pending messages → no poke.
+ *   Gate is OPEN while inactive; inbound messages walk through and poke the file.
+ *   Gate is CLOSED while active; the active session will consume messages itself.
+ *
+ * Poke-debounce (spam prevention within an inactive window):
+ *   Even with the gate open, pokes are debounced. Default window = kickDebounceMs.
+ *   If we just poked, we don't poke again within the window — the agent already knows.
+ *   Tracked via lastTouchAt. lastTouchAt=null means "first poke after reset is free."
+ *
+ * Stop-hook exception to poke-debounce:
+ *   A Stop hook is an active→inactive transition that resets the poke-debounce.
+ *   If the queue has pending messages after stop, the poke fires immediately even
+ *   if a poke was recent. Operator intent: "if you go inactive and there's still
+ *   messages, hey dude, you still got a message."
+ *
+ * Poke-debounce reset points (lastTouchAt = null → next poke is free):
+ *   • setDequeueActive(sid, false) — dequeue cycle complete, re-arm for next message.
+ *   • handleSessionStopped(sid)   — Stop hook, active→inactive transition.
+ *   • Trailing-timer fires with empty queue — no poke issued; re-arm for next inbound.
  *
  * State machine (nudge cycle):
- *   Armed (nudgeArmed=true) → message arrives → kick fires if queue pending (disarms)
- *   or is deferred by the debounce window (schedules trailing timer). Dequeue
- *   completion re-arms the cycle. Any tool call resets the activity timestamp,
- *   extending the suppression window.
+ *   Armed (nudgeArmed=true) → message arrives → inactive check → poke or schedule timer.
+ *   Poke fires → disarm. Timer fires → inactive check → poke or re-arm (empty queue).
+ *   Dequeue completion re-arms the cycle. Stop hook re-arms the cycle.
  *
- * Debounce window (kickDebounceMs, per-session via profile/kick-debounce):
- *   Suppresses an immediate kick if the agent called a tool within the window.
- *   Schedules a trailing timer instead; tool calls extend lastActivityAt but
- *   do NOT cancel the pending timer. On window expiry: queue-gated touch fires.
+ * Kick-debounce window (kickDebounceMs, per-session via profile/kick-debounce):
+ *   Determines when a session is classified inactive. If the last tool call was within
+ *   this window, the session is still active and a trailing timer is scheduled.
+ *   Tool calls extend lastActivityAt but do NOT cancel a pending timer.
  *
  * Inflight dequeue suppression:
  *   Kicks are skipped while a dequeue call is being processed — the agent
  *   will receive the event directly on dequeue return.
  *
  * lastActivityAt semantics:
- *   Tracks the last tool call time for debounce suppression. Reset to 0 by
- *   handleSessionStopped so the next inbound after a stop kicks immediately
- *   (no 60 s wait) if the queue is non-empty.
+ *   Tracks the last tool call time for kick-debounce classification. Reset to 0 by
+ *   handleSessionStopped so the next inbound after stop is immediately classified
+ *   inactive (no 60 s wait).
  */
 
 import { appendFile, unlink, mkdir, open } from "fs/promises";
@@ -151,6 +167,24 @@ function doTouch(sid: number): void {
   if (!entry) return;
   entry.lastTouchAt = Date.now();
   void appendNewline(entry.filePath);
+}
+
+/**
+ * Centralised poke gate. Returns true if the activity file should be touched now.
+ *
+ * Universal pre-condition: hasPendingUserContent(sid) must be true.
+ * forceReset=true: bypasses the poke-debounce (Stop-hook path — the transition itself
+ *   resets the debounce, so even a recent poke must not block a stop-triggered poke).
+ * forceReset=false: applies the poke-debounce. lastTouchAt=null → first poke is free.
+ */
+function shouldPoke(sid: number, opts: { forceReset: boolean }): boolean {
+  const entry = _state.get(sid);
+  if (!entry) return false;
+  if (!hasPendingUserContent(sid)) return false;
+  if (opts.forceReset) return true;
+  if (entry.lastTouchAt === null) return true;
+  const debounceMs = Math.max(DEBOUNCE_FLOOR_MS, getKickDebounceMs(sid));
+  return (Date.now() - entry.lastTouchAt) >= debounceMs;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,9 +317,10 @@ export function setDequeueActive(sid: number, active: boolean): void {
   if (!entry) return;
   entry.inflightDequeue = active;
   if (!active) {
-    // Dequeue completed — re-arm the nudge cycle
+    // Dequeue completed — re-arm the nudge cycle and reset poke-debounce
     entry.nudgeArmed = true;
     entry.lastActivityAt = Date.now();
+    entry.lastTouchAt = null; // AC2: poke-debounce reset — next poke after dequeue is free
     if (entry.debounceTimer !== null) {
       clearTimeout(entry.debounceTimer);
       entry.debounceTimer = null;
@@ -342,8 +377,17 @@ export function touchActivityFile(sid: number): void {
     clearTimeout(entry.debounceTimer);
     entry.debounceTimer = null;
   }
-  // Only kick if there is a pending message to consume (queue-gated kick rule).
-  if (!hasPendingUserContent(sid)) return;
+  // Open-gate kick: only poke if queue-gated AND poke-debounce allows.
+  if (!shouldPoke(sid, { forceReset: false })) {
+    // No poke this cycle — re-arm so the next inbound can check again.
+    entry.nudgeArmed = true;
+    // If the queue was empty (not a debounce-skip), reset the poke-debounce window
+    // so the first message that arrives after this timer-fire is free to poke.
+    if (!hasPendingUserContent(sid)) {
+      entry.lastTouchAt = null; // AC2: trailing-timer empty-queue reset point
+    }
+    return;
+  }
   doTouch(sid);
 }
 
@@ -367,11 +411,12 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
     clearTimeout(entry.debounceTimer);
     entry.debounceTimer = null;
   }
-  // Reset so the next inbound after stop kicks immediately (no debounce wait).
+  // Transition to inactive: reset activity clock and poke-debounce, re-arm nudge.
   entry.lastActivityAt = 0;
   entry.nudgeArmed = true;
-  // Only kick if there is a pending message to consume (queue-gated kick rule).
-  if (!hasPendingUserContent(sid)) return { noOp: false };
+  entry.lastTouchAt = null; // AC2: Stop is a reset point — next poke after stop is free
+  // Stop-hook exception: forceReset=true bypasses poke-debounce (AC1/AC6-3).
+  if (!shouldPoke(sid, { forceReset: true })) return { noOp: false };
   doTouch(sid);
   return { noOp: false };
 }

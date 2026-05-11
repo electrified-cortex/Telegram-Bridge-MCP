@@ -67,12 +67,13 @@ function makeState(overrides: Partial<{
   lastActivityAt: number;
   inflightDequeue: boolean;
   nudgeArmed: boolean;
+  lastTouchAt: number | null;
 }> = {}) {
   return {
     filePath: "/tmp/test-activity-file",
     tmcpOwned: false,
-    lastTouchAt: null,
-    debounceTimer: null,
+    lastTouchAt: (overrides.lastTouchAt !== undefined ? overrides.lastTouchAt : null) as number | null,
+    debounceTimer: null as ReturnType<typeof setTimeout> | null,
     lastActivityAt: overrides.lastActivityAt ?? 0,
     inflightDequeue: overrides.inflightDequeue ?? false,
     nudgeArmed: overrides.nudgeArmed ?? true,
@@ -380,7 +381,7 @@ describe("activity-file idle-kick state machine", () => {
     expect(entry.lastTouchAt).not.toBeNull();     // kick fired
   });
 
-  it("AC4-3: debounce expiry + empty queue → no kick", () => {
+  it("AC4-3: debounce expiry + empty queue → no kick, re-arms nudge", () => {
     queueMocks.hasPendingUserContent.mockReturnValue(false); // empty queue
     sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
     const state = makeState({ lastActivityAt: Date.now() - 2_000 }); // 2s of 5s elapsed
@@ -392,7 +393,8 @@ describe("activity-file idle-kick state machine", () => {
     vi.advanceTimersByTime(4_000); // timer fires → re-evaluates touchActivityFile
 
     const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(false);  // disarmed (transitioned to inactive)
+    // AC4 refined: trailing-timer with empty queue re-arms nudge (no permanent un-arm)
+    expect(entry.nudgeArmed).toBe(true);
     expect(entry.lastTouchAt).toBeNull();  // no kick — empty queue
   });
 
@@ -410,6 +412,82 @@ describe("activity-file idle-kick state machine", () => {
     const entry = getActivityFile(SID)!;
     expect(entry.nudgeArmed).toBe(false);
     expect(entry.lastTouchAt).not.toBeNull(); // kick fired
+  });
+
+  // --- AC6 (refined): poke-debounce tests (task 10-0896 refined spec) ---
+
+  it("AC6-3: stop + pending + recent poke → poke fires (Stop overrides debounce)", () => {
+    // Stop hook is an active→inactive transition that resets the poke-debounce.
+    // A poke that was very recent must NOT suppress the stop-triggered poke.
+    // (In fake-timer mode two consecutive Date.now() calls return the same value,
+    //  so we verify only that a poke happened, not that the timestamp changed.)
+    const state = makeState({
+      lastActivityAt: Date.now() - 5_000,
+      lastTouchAt: Date.now(), // simulate a very recent poke
+    });
+    setActivityFile(SID, state);
+
+    // Queue has pending content (default mock = true)
+    const result = handleSessionStopped(SID);
+
+    expect(result.noOp).toBe(false);
+    const entry = getActivityFile(SID)!;
+    // Stop resets lastTouchAt=null then fires shouldPoke(forceReset=true) → poke lands
+    expect(entry.lastTouchAt).not.toBeNull(); // kick happened despite recent prior poke
+    // Verify the reset happened: lastActivityAt must be 0 (stop transition)
+    expect(entry.lastActivityAt).toBe(0);
+  });
+
+  it("AC6-6: inbound inactive + pending + recent poke (< debounce) → no poke", () => {
+    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
+    const recentPokeAt = Date.now();
+    // clearly inactive: lastActivityAt=0 → timeSinceActivity >> 60s → inactive check passes
+    const state = makeState({ lastActivityAt: 0, lastTouchAt: recentPokeAt });
+    setActivityFile(SID, state);
+
+    // Queue has pending content (default mock = true)
+    touchActivityFile(SID);
+
+    const entry = getActivityFile(SID)!;
+    // Poke-debounce prevents a second poke so soon after the first
+    expect(entry.lastTouchAt).toBe(recentPokeAt); // unchanged — no new poke
+  });
+
+  it("AC6-7: inbound inactive + pending + stale poke (>= debounce) → poke fires", () => {
+    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
+    const stalePokeAt = Date.now() - 60_000; // exactly at debounce boundary
+    const state = makeState({ lastActivityAt: 0, lastTouchAt: stalePokeAt });
+    setActivityFile(SID, state);
+
+    // Queue has pending content (default mock = true)
+    touchActivityFile(SID);
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.lastTouchAt).not.toBe(stalePokeAt); // new poke timestamp
+    expect(entry.lastTouchAt).not.toBeNull();
+  });
+
+  it("AC6-8: active→inactive transition (dequeue complete) resets poke-debounce", () => {
+    // Use a short kick-debounce so we can advance past it in the test
+    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
+    // Session starts with a recent poke (lastTouchAt within debounce window)
+    const state = makeState({ lastActivityAt: Date.now() - 2_000, lastTouchAt: Date.now() });
+    setActivityFile(SID, state);
+
+    // Simulate dequeue complete — must reset poke-debounce (lastTouchAt=null)
+    setDequeueActive(SID, false);
+
+    const afterDequeue = getActivityFile(SID)!;
+    expect(afterDequeue.lastTouchAt).toBeNull(); // poke-debounce reset by dequeue
+
+    // Advance past the kick-debounce window so the session is classified inactive
+    vi.advanceTimersByTime(6_000);
+
+    // Queue has pending content (default mock = true); first poke after reset is free
+    touchActivityFile(SID);
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.lastTouchAt).not.toBeNull(); // poke fired — no poke-debounce wait
   });
 
   it("AC4-5: stop resets lastActivityAt so next touch with pending kicks immediately", () => {
@@ -431,5 +509,33 @@ describe("activity-file idle-kick state machine", () => {
     const entry = getActivityFile(SID)!;
     expect(entry.lastTouchAt).not.toBeNull(); // kicked immediately, no 60s wait
     expect(entry.nudgeArmed).toBe(false);     // disarmed after kick
+  });
+
+  it("AC6-10: trailing-timer with empty queue → re-arms nudgeArmed", () => {
+    // A timer is scheduled because an inbound arrived while the session was active.
+    // If the queue is drained before the timer fires, the timer should:
+    //   - not poke (empty queue)
+    //   - re-arm nudgeArmed so the next actual inbound can kick
+    //   - clear lastTouchAt so that next inbound gets a fresh poke window
+    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
+    // Session was recently active: 2s into 5s window → timer will be scheduled
+    const state = makeState({ lastActivityAt: Date.now() - 2_000, lastTouchAt: Date.now() });
+    setActivityFile(SID, state);
+
+    // Inbound arrives → still active → schedules trailing timer
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    touchActivityFile(SID);
+    expect(getActivityFile(SID)!.debounceTimer).not.toBeNull(); // timer scheduled
+
+    // Queue is drained before timer fires
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+
+    // Timer fires
+    vi.advanceTimersByTime(4_000);
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.nudgeArmed).toBe(true);    // re-armed (AC4 refined)
+    expect(entry.lastTouchAt).toBeNull();   // poke-debounce reset (AC2 trailing-timer reset)
+    expect(entry.debounceTimer).toBeNull(); // no pending timer
   });
 });
