@@ -16,8 +16,9 @@
  *   resets the activity timestamp, extending the suppression window.
  *
  * Debounce window (kickDebounceMs, per-session via profile/kick-debounce):
- *   Suppresses repeated kicks if the agent called a tool within the window.
- *   On window expiry: one trailing touch fires and disarms.
+ *   Suppresses an immediate kick if the agent called a tool within the window.
+ *   Schedules a trailing timer instead; tool calls extend lastActivityAt but
+ *   do NOT cancel the pending timer. On window expiry: one trailing touch fires.
  *
  * Inflight dequeue suppression:
  *   Kicks are skipped while a dequeue call is being processed — the agent
@@ -229,18 +230,20 @@ export async function replaceActivityFile(
 
 /**
  * Notify the activity file system that the agent made a tool call.
- * Resets the kick suppression window and cancels any pending kick timer.
+ * Resets the kick suppression window (lastActivityAt). Does NOT cancel a
+ * pending kick timer — that timer was scheduled because an inbound message
+ * arrived and must be allowed to fire.
  * Called from dispatchBehaviorTracking (server.ts) for every completed tool call.
  */
 export function recordActivityTouch(sid: number): void {
   const entry = _state.get(sid);
   if (entry) {
     entry.lastActivityAt = Date.now();
-    // Cancel any pending kick timer — agent is active, no nudge needed
-    if (entry.debounceTimer !== null) {
-      clearTimeout(entry.debounceTimer);
-      entry.debounceTimer = null;
-    }
+    // Intentionally NOT cancelling entry.debounceTimer here.
+    // A pending kick timer was scheduled because an inbound message arrived while
+    // the agent was within the debounce window. Cancelling it here (on every tool
+    // call) means kicks never fire for active agents — that is the bug this fixes.
+    // The timer's re-evaluation in touchActivityFile handles all gating correctly.
   }
 }
 
