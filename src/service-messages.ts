@@ -48,7 +48,8 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: `Welcome to the loop. Stay in it.
 
 1. Call dequeue(token) every turn.
-2. Check your tools for an option to monitor a file. If you have one, call action(type: 'activity/file/create') and watch the returned file. On change, call dequeue.
+2. If you have a Monitor tool: call action(type: 'activity/file/create') and watch the file. One-liner: \`echo "call dequeue(TOKEN)"\` — bake in your token, that's the entire monitor.
+3. Do NOT call activity/file/edit to test — it rotates the path.
 
 Details: help('start'), help('dequeue'), help('activity/file').`,
   },
