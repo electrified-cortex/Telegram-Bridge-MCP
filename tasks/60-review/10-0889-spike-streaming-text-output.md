@@ -110,7 +110,7 @@ document why and propose an alternative path.
 
 **Findings doc:** `docs/spikes/10-0889-streaming-findings.md`
 
-**Follow-on task:** `20-1047` filed in `.agents/tasks/10-drafts/` — production hardening (rate limit guard, stream timeout, overflow guard, agent guide).
+**Follow-on task:** `10-0901` filed in `tasks/10-drafts/10-0901-streaming-option-a-production-hardening.md` — production hardening (rate limit guard, stream timeout, overflow guard, agent guide). (Note: originally claimed as `20-1047` in `.agents/tasks/10-drafts/` — that path does not exist; task was re-filed as `10-0901` by Foreman on 2026-05-14.)
 
 **AC status:**
 - [x] Architecture decision documented with rationale.
