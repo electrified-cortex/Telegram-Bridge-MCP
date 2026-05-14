@@ -71,3 +71,18 @@ Whether bash or PowerShell, it doesn't have to be fancy. Be explicit about how s
 **Squash commit:** `04271505` (on release/7.4)
 **Verdict:** APPROVED
 **Sealed by:** Overseer (Worker dispatch)
+
+## Verification
+
+**Verified:** 2026-05-14
+**Verdict:** NEEDS_REVISION
+**Verifier:** Foreman (task-verification sub-agent, fresh-eyes pass)
+
+**Gaps (2 of 5 AC unmet):**
+
+- **AC2 UNMET:** `ONBOARDING_LOOP_PATTERN` (`service-messages.ts:48-53`) contains no literal one-liner (`echo "call dequeue(TOKEN)"` or equivalent). Commit `c3327fb6` briefly included bash/PS watcher patterns but they were stripped in `b3bc598f` (v8 rewrite under 10-0880). No other startup service message provides the explicit one-liner command.
+- **AC3 UNMET:** No startup service message (and no help topic) contains the "don't call `activity/file/edit` to test" warning. The warning is absent from all delivered surfaces.
+
+AC1 (service message reaches Monitor-capable sessions), AC4 (message ≤ 5 bullets), and AC5 (delivered before first dequeue) are all CONFIRMED.
+
+The task's own escape clause — close as covered-by-10-0880 "if its concrete examples are explicit enough" — was applied prematurely; 10-0880's final delivery removed the one-liners to be runtime-agnostic, leaving AC2 and AC3 open.
