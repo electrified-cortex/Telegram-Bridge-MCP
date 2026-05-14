@@ -75,6 +75,25 @@ Your harness's watcher tool (Monitor or equivalent) must be in your agent's allo
 
 ## Error modes
 
+- **`ALREADY_REGISTERED`** — `activity/file/create` was called when a registration already exists for this session. No mutation was made; the existing registration is preserved.
+
+  Response shape:
+  ```json
+  {
+    "code": "ALREADY_REGISTERED",
+    "message": "...",
+    "details": {
+      "file_path": "<currently registered path>",
+      "tmcp_owned": true
+    }
+  }
+  ```
+
+  Follow-up actions:
+  - `activity/file/get` — inspect the existing registration without changing anything.
+  - `activity/file/edit` — swap to a new path (canonical replace path; keeps the session registered).
+  - `activity/file/delete` — remove the current registration, then call `activity/file/create` again.
+
 - **File deleted out from under TMCP**: re-register with `activity/file/create`.
 - **mtime not bumping**: check the debounce window; mtime only updates after the window expires.
 - **Permission denied on stat**: check that the agent has filesystem read access to the file path.

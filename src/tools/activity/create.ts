@@ -14,12 +14,29 @@ import {
   validateFilePath,
   createTmcpOwnedFile,
   replaceActivityFile,
+  getActivityFile,
 } from "./file-state.js";
 
 export async function handleActivityFileCreate(args: Record<string, unknown>) {
   const _sid = requireAuth(args.token as number | undefined);
   if (typeof _sid !== "number") return toError(_sid);
   const sid = _sid;
+
+  const existing = getActivityFile(sid);
+  if (existing) {
+    return toError({
+      code: "ALREADY_REGISTERED",
+      message:
+        "An activity file is already registered for this session. " +
+        "Options: call activity/file/get to inspect the existing registration, " +
+        "activity/file/edit to swap to a different path, or " +
+        "activity/file/delete to remove it before calling create again.",
+      details: {
+        file_path: existing.filePath,
+        tmcp_owned: existing.tmcpOwned,
+      },
+    });
+  }
 
   const filePath = args.file_path as string | undefined;
 

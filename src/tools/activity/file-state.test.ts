@@ -24,6 +24,15 @@
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
+// Mock session-gate to control requireAuth per-test
+const gateMocks = vi.hoisted(() => ({
+  requireAuth: vi.fn((_token: number | undefined): number | { code: string; message: string } => 42),
+}));
+
+vi.mock("../../session-gate.js", () => ({
+  requireAuth: (token: number | undefined) => gateMocks.requireAuth(token),
+}));
+
 // Mock session-manager to control getKickDebounceMs per-test
 const sessionMocks = vi.hoisted(() => ({
   getKickDebounceMs: vi.fn((_sid: number): number => 60_000),
@@ -60,6 +69,9 @@ import {
   handleSessionStopped,
   resetActivityFileStateForTest,
 } from "./file-state.js";
+
+import { handleActivityFileCreate } from "./create.js";
+import { handleActivityFileEdit } from "./edit.js";
 
 const SID = 42;
 
@@ -560,5 +572,63 @@ describe("activity-file idle-kick state machine", () => {
     expect(entry.nudgeArmed).toBe(true);    // re-armed (AC4 refined)
     expect(entry.lastTouchAt).toBeNull();   // poke-debounce reset (AC2 trailing-timer reset)
     expect(entry.debounceTimer).toBeNull(); // no pending timer
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC7: activity/file/create — ALREADY_REGISTERED guard (task 10-0900)
+// ---------------------------------------------------------------------------
+
+describe("activity/file/create — ALREADY_REGISTERED guard", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetActivityFileStateForTest();
+    gateMocks.requireAuth.mockReturnValue(SID);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("AC7a: first create succeeds and returns file_path", async () => {
+    const result = await handleActivityFileCreate({ token: 99 });
+    expect((result as { isError?: true }).isError).toBeUndefined();
+    const data = JSON.parse(result.content[0].text);
+    expect(typeof data.file_path).toBe("string");
+  });
+
+  it("AC7b: second create returns ALREADY_REGISTERED with details", async () => {
+    await handleActivityFileCreate({ token: 99 });
+    const result = await handleActivityFileCreate({ token: 99 });
+    expect((result as { isError?: true }).isError).toBe(true);
+    const err = JSON.parse(result.content[0].text);
+    expect(err.code).toBe("ALREADY_REGISTERED");
+    expect(typeof err.details.file_path).toBe("string");
+    expect(typeof err.details.tmcp_owned).toBe("boolean");
+  });
+
+  it("AC7c: existing registration unchanged after failed create", async () => {
+    const firstResult = await handleActivityFileCreate({ token: 99 });
+    const firstPath = JSON.parse(firstResult.content[0].text).file_path;
+
+    await handleActivityFileCreate({ token: 99 }); // second call — must fail
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.filePath).toBe(firstPath); // original path preserved
+    expect(entry.tmcpOwned).toBe(true);     // original ownership preserved
+  });
+
+  it("AC7d: edit works after failed create", async () => {
+    await handleActivityFileCreate({ token: 99 }); // first create — succeeds
+    await handleActivityFileCreate({ token: 99 }); // second create — fails
+
+    // Edit (TMCP-generated path) must succeed despite the prior failed create
+    const editResult = await handleActivityFileEdit({ token: 99 });
+    expect((editResult as { isError?: true }).isError).toBeUndefined();
+    const data = JSON.parse(editResult.content[0].text);
+    expect(typeof data.file_path).toBe("string");
+    expect(typeof data.previous_path).toBe("string");
   });
 });
