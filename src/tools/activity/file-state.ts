@@ -147,14 +147,27 @@ export function validateFilePath(filePath: string): string | null {
   return null;
 }
 
-/** Append a single newline to the file. Logs a warning if the file is missing. */
+/**
+ * Append a single newline to the file.
+ * On ENOENT, emits a warning, recreates the file at the same registered path,
+ * and retries the touch. The registered path in getActivityFile(sid) is never
+ * changed — only the file on disk is recreated.
+ */
 async function appendNewline(filePath: string): Promise<void> {
   try {
     await appendFile(filePath, "\n", "utf-8");
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      dlog("tool", `activity/file: touch skipped — file not found: ${filePath}`);
+      console.warn(`[activity/file] file missing — recreating at registered path: ${filePath}`);
+      try {
+        await mkdir(dirname(filePath), { recursive: true });
+        const fh = await open(filePath, "a", 0o600);
+        await fh.close();
+        await appendFile(filePath, "\n", "utf-8");
+      } catch (recreateErr: unknown) {
+        console.warn(`[activity/file] recreation failed for ${filePath}: ${String(recreateErr)}`);
+      }
     } else {
       dlog("tool", `activity/file: touch failed for ${filePath}`, { err: String(err) });
     }
