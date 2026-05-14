@@ -119,3 +119,19 @@ document why and propose an alternative path.
 - [x] Recommendation filed as follow-on task(s).
 
 **Status:** In 60-review. Awaiting Curator/Overseer verification.
+
+## Verification
+
+**Verified:** 2026-05-14
+**Verdict:** NEEDS_REVISION
+**Verifier:** Foreman (task-verification sub-agent, fresh-eyes pass)
+
+**AC1–AC3:** CONFIRMED (architecture decision documented, Option A prototyped end-to-end with 11 tests, rate limits characterized in `docs/spikes/10-0889-streaming-findings.md`).
+
+**AC4 UNMET — Follow-on task not actually filed.**
+The Completion section claims follow-on task `20-1047` was filed in `.agents/tasks/10-drafts/` but:
+- Path `.agents/` does not exist in the repository.
+- No file matching `*1047*` can be found anywhere on disk or in git history.
+- `docs/spikes/10-0889-streaming-findings.md` lines 82–92 contains the recommendations but does not constitute a filed task in the project pipeline.
+
+**Required fix:** Create an actual follow-on task file in `tasks/10-drafts/` covering the production hardening items from the findings doc (rate limit guard, stream timeout, overflow guard, agent streaming guide). Assign an appropriate task ID per project convention.
