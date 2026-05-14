@@ -222,6 +222,10 @@ export function register(server: McpServer) {
         no_data: z.string().default("confirm_no").describe("Negative callback data"),
         yes_style: BUTTON_STYLE_SCHEMA.default("primary").describe("Affirmative button color"),
         no_style: BUTTON_STYLE_SCHEMA.optional().describe("Negative button color"),
+        topic: z
+          .string()
+          .optional()
+          .describe("Per-message topic override. When provided, uses this string as the topic header for THIS message only — overrides the profile-level topic without mutating it. Pass an empty string to suppress the topic for this one message."),
         token: TOKEN_SCHEMA.describe(
           "Session token from action(type: 'session/start') (sid * 1_000_000 + suffix). Required for all send paths.",
         ),
@@ -310,7 +314,7 @@ export function register(server: McpServer) {
             let finalTextForSplit: string | undefined;
             if (effectiveText) {
               const MAX_CAPTION = 1024 - 60;
-              const converted = markdownToV2(applyTopicToText(effectiveText, "Markdown"));
+              const converted = markdownToV2(applyTopicToText(effectiveText, "Markdown", args.topic));
               captionOverflow = converted.length > MAX_CAPTION;
               if (captionOverflow) {
                 resolvedCaption = undefined;
@@ -320,9 +324,9 @@ export function register(server: McpServer) {
                 captionParseMode = "MarkdownV2";
               }
             } else {
-              const topic = getTopic();
-              if (topic) {
-                resolvedCaption = markdownToV2(`**[${topic}]**`);
+              const effectiveTopic = args.topic !== undefined ? args.topic.trim() || null : getTopic();
+              if (effectiveTopic) {
+                resolvedCaption = markdownToV2(`**[${effectiveTopic}]**`);
                 captionParseMode = "MarkdownV2";
               }
             }
@@ -451,7 +455,7 @@ export function register(server: McpServer) {
           }
 
           // ── Text-only mode ───────────────────────────────────────────────
-          const textWithTopic = applyTopicToText(text ?? "", parse_mode);
+          const textWithTopic = applyTopicToText(text ?? "", parse_mode, args.topic);
           const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;
           const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
           if (!finalText || finalText.trim().length === 0) {
@@ -512,6 +516,7 @@ export function register(server: McpServer) {
             parse_mode: args.parse_mode,
             disable_notification: args.disable_notification,
             reply_to: args.reply_to,
+            topic: args.topic,
             token: args.token,
           });
 
@@ -527,6 +532,7 @@ export function register(server: McpServer) {
               disable_notification: args.disable_notification,
               reply_to: args.reply_to,
               ignore_parity: args.ignore_parity,
+              topic: args.topic,
               token: args.token,
             }),
             getFirstUseHint(_sid, "send:choice"),
@@ -610,6 +616,7 @@ export function register(server: McpServer) {
               timeout_seconds: args.timeout_seconds,
               reply_to: args.reply_to,
               ignore_pending: args.ignore_pending,
+              topic: args.topic,
               token: args.token,
               response_format: args.response_format,
             }, signal);

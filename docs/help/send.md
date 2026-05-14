@@ -113,9 +113,33 @@ send(type: "append", token: <token>, message_id, text: "All done.")
 send(type: "append", token: <token>, message_id, text: "…", separator: " ")
 ```
 
+## Per-Message Topic Override
+
+All modes that render a topic header (`text`, `notification`, `choice`, `ask`) accept an optional `topic` parameter:
+
+| Value | Effect |
+| --- | --- |
+| Omitted | Profile-level topic applies (existing behaviour, no change) |
+| `"Label"` | Uses `"Label"` as the topic for this message only |
+| `""` (empty string) | Suppresses topic for this message, even if profile topic is set |
+
+This does **not** mutate the profile-level topic set via `action(type: 'profile/topic')`.
+
+**Examples:**
+```
+// Override topic for one message
+send(token, text: "Done.", topic: "Background Worker")
+
+// Suppress topic for a one-off message
+send(token, text: "Starting up…", topic: "")
+
+// Notify with a per-message topic
+send(token, type: "notification", title: "Build Result", topic: "CI Runner")
+```
+
 ## Other Modes (brief)
 
-**text** — Reply threading: pass `reply_to: <message_id>`.
+**text** — Reply threading: pass `reply_to: <message_id>`. Per-message topic: pass `topic: "<label>"` to override the profile-level topic for this one message (or `topic: ""` to suppress it).
 
 **Audio + Text (`"text"` type):** Audio + text supports two patterns: long audio + short label, or short audio + structured text. Never restate audio in the caption. If you need details, call help('audio').
 

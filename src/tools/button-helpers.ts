@@ -418,6 +418,8 @@ export interface SendChoiceMessageOptions {
   parseMode: "Markdown" | "HTML" | "MarkdownV2";
   disableNotification?: boolean;
   replyToMessageId?: number;
+  /** Per-message topic override — passed to applyTopicToText. Undefined = use profile topic. */
+  topicOverride?: string;
 }
 
 /**
@@ -429,7 +431,7 @@ export async function sendChoiceMessage(
   opts: SendChoiceMessageOptions,
 ): Promise<number> {
   const rows = buildKeyboardRows(opts.options, opts.columns);
-  const textWithTopic = applyTopicToText(opts.text, opts.parseMode);
+  const textWithTopic = applyTopicToText(opts.text, opts.parseMode, opts.topicOverride);
   const { text: finalText, parse_mode: finalMode } = resolveParseMode(textWithTopic, opts.parseMode);
   const sent = await getApi().sendMessage(chatId, finalText, {
     parse_mode: finalMode,

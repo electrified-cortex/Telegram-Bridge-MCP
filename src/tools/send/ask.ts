@@ -26,12 +26,13 @@ const DESCRIPTION =
  * it is not inferrable from any other response field.
  */
 export async function handleAsk({
-  question, timeout_seconds, reply_to, ignore_pending, token, response_format,
+  question, timeout_seconds, reply_to, ignore_pending, topic, token, response_format,
 }: {
   question: string;
   timeout_seconds?: number;
   reply_to?: number;
   ignore_pending?: boolean;
+  topic?: string;
   token: number;
   response_format?: "default" | "compact";
 }, signal: AbortSignal) {
@@ -68,7 +69,7 @@ export async function handleAsk({
 
   try {
     // Send the question
-    const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown")), {
+    const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown", topic)), {
       parse_mode: "MarkdownV2",
       reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
       _rawText: question,
@@ -173,6 +174,10 @@ export function register(server: McpServer) {
         .boolean()
         .optional()
         .describe("Set true to skip the pending-updates check and block immediately"),
+      topic: z
+        .string()
+        .optional()
+        .describe("Per-message topic override. When provided, uses this string as the topic header for THIS question only — overrides the profile-level topic without mutating it. Pass an empty string to suppress the topic for this one message."),
               token: TOKEN_SCHEMA,
       response_format: z
         .enum(["default", "compact"])
