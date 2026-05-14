@@ -135,3 +135,10 @@ The Completion section claims follow-on task `20-1047` was filed in `.agents/tas
 - `docs/spikes/10-0889-streaming-findings.md` lines 82–92 contains the recommendations but does not constitute a filed task in the project pipeline.
 
 **Required fix:** Create an actual follow-on task file in `tasks/10-drafts/` covering the production hardening items from the findings doc (rate limit guard, stream timeout, overflow guard, agent streaming guide). Assign an appropriate task ID per project convention.
+
+## Verification (pass 2 — APPROVED)
+
+**Verified:** 2026-05-14
+**Verdict:** APPROVED
+**Verifier:** Foreman (task-verification sub-agent, fresh-eyes pass)
+**Evidence:** AC1 confirmed — `docs/spikes/10-0889-streaming-findings.md` architecture decision + rules-out table. AC2 confirmed — `src/tools/send/stream.ts` (11 tests, all 3 handlers wired in `send.ts`). AC3 confirmed — rate limits characterized (findings doc lines 57-61). AC4 confirmed — `tasks/10-drafts/10-0901-streaming-option-a-production-hardening.md` exists with all 4 hardening items as AC.
