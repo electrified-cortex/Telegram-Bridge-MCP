@@ -11,8 +11,8 @@ import { getDefaultVoice } from "../config.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { findUnrenderableChars } from "../unrenderable-chars.js";
-import { deliverServiceMessage } from "../session-queue.js";
-import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator } from "../async-send-queue.js";
+import { deliverServiceMessage, deliverAsyncSendCallback } from "../session-queue.js";
+import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator, hasInflightAudio, enqueueTextSend } from "../async-send-queue.js";
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
 // Type-routing handlers (v6 Phase 2)
@@ -458,6 +458,40 @@ export function register(server: McpServer) {
             return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text must not be empty. Provide a non-empty string in the text field." });
           }
           const chunks = splitMessage(finalText);
+
+          // If audio is still rendering for this session, queue text after it so
+          // the operator always receives audio before the follow-up text message.
+          if (hasInflightAudio(_sid)) {
+            const queuedSid = _sid;
+            const queuedChatId = chatId;
+            const pendingId = enqueueTextSend(queuedSid, async (pid) => {
+              try {
+                const ids: number[] = [];
+                for (let i = 0; i < chunks.length; i++) {
+                  const msg = await callApi(() =>
+                    getApi().sendMessage(queuedChatId, chunks[i], {
+                      parse_mode: finalMode,
+                      disable_notification,
+                      reply_parameters:
+                        i === 0 && reply_to_message_id !== undefined
+                          ? { message_id: reply_to_message_id }
+                          : undefined,
+                    } as Record<string, unknown>),
+                  );
+                  ids.push(msg.message_id);
+                }
+                const payload = ids.length === 1
+                  ? { pendingId: pid, status: "ok" as const, messageId: ids[0] }
+                  : { pendingId: pid, status: "ok" as const, messageIds: ids };
+                deliverAsyncSendCallback(queuedSid, payload);
+              } catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                deliverAsyncSendCallback(queuedSid, { pendingId: pid, status: "failed", error: errMsg });
+              }
+            });
+            return toResult({ ok: true, message_id_pending: pendingId, status: "queued_after_audio" });
+          }
+
           try {
             const message_ids: number[] = [];
             for (let i = 0; i < chunks.length; i++) {

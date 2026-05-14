@@ -440,6 +440,54 @@ export function enqueueAsyncSend(
   return pendingId;
 }
 
+// ---------------------------------------------------------------------------
+// Text-after-audio ordering
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true if the session has at least one audio job that is queued or
+ * currently executing. Used by send.ts to decide whether to gate an outbound
+ * text-only message behind the current audio tail.
+ */
+export function hasInflightAudio(sid: number): boolean {
+  const state = _sessions.get(sid);
+  return state !== undefined && state.jobs.size > 0;
+}
+
+/**
+ * Enqueue a text send function after the session's current audio tail.
+ * The caller's `fn` receives the assigned negative pending ID and is
+ * responsible for delivering an `AsyncSendCallbackPayload` via
+ * `deliverAsyncSendCallback` on both success and failure.
+ * Any error thrown by `fn` is swallowed so the chain remains viable.
+ * Returns the negative pending ID assigned to this text slot.
+ */
+export function enqueueTextSend(
+  sid: number,
+  fn: (pendingId: number) => Promise<void>,
+): number {
+  const state = _sessions.get(sid);
+  if (!state) {
+    // Session was torn down between hasInflightAudio check and here.
+    // Execute immediately (best-effort) so the text is not silently lost.
+    const fallbackId = -(Date.now());
+    fn(fallbackId).catch(() => {});
+    return fallbackId;
+  }
+
+  const pendingId = state.nextPendingId--;
+  state.allAllocatedIds.add(pendingId);
+
+  const capturedState = state;
+  capturedState.tailPromise = capturedState.tailPromise.then(
+    () => fn(pendingId).catch(() => {}),
+    () => fn(pendingId).catch(() => {}),
+  );
+
+  dlog("async-send", `enqueueTextSend pendingId=${pendingId} sid=${sid}`);
+  return pendingId;
+}
+
 /**
  * Signal teardown for a session's async send queue.
  * In-flight jobs will still complete and attempt callback delivery, but may
