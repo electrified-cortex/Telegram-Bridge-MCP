@@ -27,6 +27,8 @@ import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
 import { hasActiveAnimation } from "./animation-state.js";
 import { registerOnceOnSend, clearOnceOnSend } from "./outbound-proxy.js";
+import { existsSync } from "fs";
+import { getActivityFile } from "./tools/activity/file-state.js";
 
 // ── Constants ──────────────────────────────────────────────
 
@@ -232,6 +234,8 @@ async function runHealthCheck(thresholdMs: number): Promise<void> {
     for (const session of unhealthy) {
       if (_flaggedSids.has(session.sid)) continue; // already handled
       if (hasActiveAnimation(session.sid)) continue; // animation = proof of life
+      const activityEntry = getActivityFile(session.sid);
+      if (activityEntry !== undefined && existsSync(activityEntry.filePath)) continue; // file-watcher is alive
       _flaggedSids.add(session.sid);
       markUnhealthy(session.sid);
       dlog("health", `session unhealthy sid=${session.sid} name=${session.name}`);
