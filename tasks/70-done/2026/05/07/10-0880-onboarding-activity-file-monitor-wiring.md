@@ -37,3 +37,10 @@ Filed 2026-05-05 based on operator feedback session.
 **Squash commit:** `d6e52d7f` (on release/7.4)
 **Verdict:** APPROVED
 **Sealed by:** Overseer (Worker dispatch)
+
+## Verification
+
+**Verified:** 2026-05-14
+**Verdict:** APPROVED
+**Verifier:** Foreman (task-verification sub-agent, fresh-eyes pass)
+**Evidence:** AC1 confirmed — `ONBOARDING_LOOP_PATTERN` runtime-conditional text in `service-messages.ts:46-53`. AC2 confirmed — concrete bash/PS/inotifywait examples in `docs/help/activity/file.md:40-68`. AC3 confirmed — "If you have one" guard + explicit fallback in `activity/file.md:9`. AC4 — runtime integration test, deferred to operator validation per task note; Overseer APPROVED seal accepted.
