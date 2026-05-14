@@ -31,3 +31,9 @@ Two layers of defense:
 
 - Overseer DM 2026-05-14T20:33:xx UTC: "activity file path changed during session (TMCP issued new hash), my watcher was on the stale path"
 - Curator confirmation 2026-05-14T20:36 UTC: file the recovery gap to TMCP tasks
+
+## Completion
+
+**Part 1 (TMCP server-side) — IMPLEMENTED.** `appendNewline()` in `src/tools/activity/file-state.ts` now recovers from ENOENT: emits `console.warn`, recreates the file in-place via `mkdir({ recursive: true })` + `open(filePath, "a", 0o600)`, retries the touch. A second `console.warn` is emitted if recreation fails. Registered path is NOT mutated. Commit: `58952834` on branch `30-0891`. Three new tests cover: recovery success, recreation failure, and happy-path no-warn. All 136 test files / 3019 tests pass.
+
+**Part 2 (telegram-participation skill re-arm) — DEFERRED.** Criterion 2 requires changes to the `electrified-cortex/skills` repo, which is outside this worker's scope. Foreman dispatched Part 1 only per the assignment (`01-activity-file-monitor-recovery-tmcp.md`). A follow-on task must be filed against the skills repo to implement startup + compaction-recovery re-arm of the activity-file monitor when the path changes. Escalated to Overseer via foreman outbox.
