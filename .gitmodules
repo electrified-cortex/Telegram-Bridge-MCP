@@ -1,3 +1,0 @@
-[submodule "tasks/.engine"]
-	path = tasks/.engine
-	url = https://github.com/electrified-cortex/task-engine
