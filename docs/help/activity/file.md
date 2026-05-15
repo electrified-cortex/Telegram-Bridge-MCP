@@ -118,3 +118,9 @@ Your harness's watcher tool (Monitor or equivalent) must be in your agent's allo
 - **mtime not bumping**: check the debounce window; mtime only updates after the window expires.
 - **Permission denied on stat**: check that the agent has filesystem read access to the file path.
 - **No dequeue in-flight guard**: if a dequeue call is already blocking, TMCP skips the mtime touch to avoid duplicate wakes.
+
+## Compaction recovery
+
+After a context compaction, your Monitor task is dead and the file path is no longer in your conversation context. Do **not** call `activity/file/create` — that creates a second registration. Instead, use `activity/file/get` to retrieve the existing path from TMCP and re-arm a fresh Monitor on it.
+
+See `help('compaction-recovery')` for the full recovery sequence.

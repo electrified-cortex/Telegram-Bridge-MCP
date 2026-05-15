@@ -177,7 +177,7 @@ export function register(server: McpServer) {
       }
 
       // Topics with rich file-based content — skip TOOL_INDEX even if present
-      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions", "presence", "behavior", "audio", "modality", "events", "guidance", "activity/file", "dequeue-http"]);
+      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "compaction-recovery", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions", "presence", "behavior", "audio", "modality", "events", "guidance", "activity/file", "dequeue-http"]);
 
 
       // topic: "<tool_name>" → per-tool description (checked before file lookup)
