@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { TimelineEvent } from "./message-store.js";
+import type { TelegramError } from "./telegram.js";
 
 // ── Hoisted mocks ─────────────────────────────────────────
 
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   deliverDirectMessage: vi.fn(() => true),
   deliverServiceMessage: vi.fn(() => true),
   sendServiceMessage: vi.fn().mockResolvedValue(undefined as number | undefined),
-  resolveChat: vi.fn(() => 12345),
+  resolveChat: vi.fn<() => number | TelegramError>(() => 12345),
   getApi: vi.fn(),
   listSessions: vi.fn(() => [] as { sid: number; name: string; createdAt: string }[]),
   registerCallbackHook: vi.fn(),
@@ -232,7 +233,7 @@ describe("health-check", () => {
       mocks.getUnhealthySessions.mockReturnValue([gov]);
       mocks.getGovernorSid.mockReturnValue(1);
       mocks.listSessions.mockReturnValue([gov, next]);
-      mocks.resolveChat.mockReturnValue({ code: "NO_CHAT", message: "not configured" });
+      mocks.resolveChat.mockReturnValue({ code: "CHAT_NOT_FOUND", message: "not configured" });
       await _runHealthCheckNow();
       expect(mocks.sendMessage).not.toHaveBeenCalled();
     });

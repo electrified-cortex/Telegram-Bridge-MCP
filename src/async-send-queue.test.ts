@@ -841,17 +841,18 @@ describe("text-after-audio queue ordering", () => {
     mocks.synthesizeToOgg.mockImplementationOnce(
       () => new Promise<Buffer>((resolve) => { resolveAudio = resolve; }),
     );
-    mocks.sendVoiceDirect.mockImplementation(async () => {
+    mocks.sendVoiceDirect.mockImplementation(() => {
       callOrder.push("audio-delivered");
-      return { message_id: 100 };
+      return Promise.resolve({ message_id: 100 });
     });
 
     enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
 
     // Audio is in-flight — queue text behind it
     expect(hasInflightAudio(1)).toBe(true);
-    enqueueTextSend(1, async (_pid) => {
+    enqueueTextSend(1, (_pid) => {
       callOrder.push("text-delivered");
+      return Promise.resolve();
     });
 
     // Nothing delivered yet
@@ -889,7 +890,7 @@ describe("text-after-audio queue ordering", () => {
     await flushJobs(); // extra flush: audio → text fn chain
 
     expect(fnSpy).toHaveBeenCalledOnce();
-    const pid = fnSpy.mock.calls[0][0] as number;
+    const pid = fnSpy.mock.calls[0][0];
     expect(pid).toBeLessThan(0);
   });
 
@@ -916,8 +917,8 @@ describe("text-after-audio queue ordering", () => {
 
     enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
 
-    const fn1 = vi.fn(async (_pid: number) => { throw new Error("sendMessage fail"); });
-    const fn2 = vi.fn(async (_pid: number) => {});
+    const fn1 = vi.fn((_pid: number) => { throw new Error("sendMessage fail"); });
+    const fn2 = vi.fn((_pid: number): Promise<void> => Promise.resolve());
 
     enqueueTextSend(1, fn1);
     enqueueTextSend(1, fn2);

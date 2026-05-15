@@ -484,7 +484,7 @@ export function register(server: McpServer) {
                         i === 0 && reply_to_message_id !== undefined
                           ? { message_id: reply_to_message_id }
                           : undefined,
-                    } as Record<string, unknown>),
+                    }),
                   );
                   ids.push(msg.message_id);
                 }

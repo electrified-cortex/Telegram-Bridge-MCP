@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach, type Mock } from "vitest";
+import type { AudioData } from "audio-decode";
 import { isTtsEnabled, stripForTts, normalizeCapsForTts, synthesizeToOgg, fetchVoiceList, TTS_LIMIT, _resetLocalPipeline } from "./tts.js";
 
 // Mock @huggingface/transformers so no model is downloaded during tests
@@ -269,7 +270,7 @@ describe("synthesizeToOgg (openai provider)", () => {
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
       channelData: [fakePcm],
-    });
+    } as unknown as AsyncGenerator<AudioData>);
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
 
@@ -333,7 +334,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
       channelData: [fakePcm],
-    });
+    } as unknown as AsyncGenerator<AudioData>);
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
 
@@ -364,7 +365,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
       channelData: [new Float32Array(1)],
-    });
+    } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const mockFetch = vi.fn().mockResolvedValue({
@@ -385,7 +386,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
 
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
@@ -495,7 +496,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.stubGlobal("fetch", mockFetch);
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("hello", undefined, 1.5);
@@ -515,7 +516,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.stubGlobal("fetch", mockFetch);
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("hello");
@@ -535,7 +536,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.stubGlobal("fetch", mockFetch);
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("hello", undefined, 1.0);
