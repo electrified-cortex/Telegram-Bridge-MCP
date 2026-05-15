@@ -158,10 +158,4 @@ designed to eliminate).
 
 ## Verification
 
-NEEDS_REVISION — Criterion 9 unmet (x2 passes). `docs/help/activity/file.md` hardcodes the recipe string as a literal in markdown (line ~78). `help.ts` does NOT import or inject `CANONICAL_MONITOR_RECIPE` from `src/tools/activity/canonical-recipe.ts`. `help.test.ts` uses only `.toContain("stat -c%Y")` etc. and does not import the constant and assert equality. Two strings are textually identical today but can drift without detection.
-
-Fix required (pick one):
-1. In `help.ts`, when loading the `activity/file` topic, substitute a placeholder (e.g. `{{CANONICAL_MONITOR_RECIPE}}`) in the markdown content with the imported constant.
-2. In `help.test.ts`, add a test that imports `CANONICAL_MONITOR_RECIPE` directly and asserts `help('activity/file')` response `.toContain(CANONICAL_MONITOR_RECIPE)`.
-
-All other 9 criteria are confirmed. Task stays in 60-review pending this fix.
+APPROVED — All 10 criteria confirmed. Pass 3 added `src/tools/activity/canonical-recipe.test.ts`: a real-fs test (no mocked `readFileSync`) that reads `docs/help/activity/file.md` from disk and asserts it contains the exact `CANONICAL_MONITOR_RECIPE` value. This is the drift guard that satisfies criterion 9 — if either the constant or the markdown file is updated independently, this test fails. 3029 tests pass. Squash-merged as `e641e596`.
