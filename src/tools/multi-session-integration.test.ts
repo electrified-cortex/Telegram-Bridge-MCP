@@ -430,7 +430,7 @@ describe("multi-session tool integration", () => {
       registerDequeue(server);
       const dequeue = server.getHandler("dequeue");
 
-      const [r1, r2] = await Promise.all([
+      const [_r1, _r2] = await Promise.all([
         dequeue({ timeout: 0, token: sid1 * 1_000_000 + suffix1 }),
         dequeue({ timeout: 0, token: sid2 * 1_000_000 + suffix2 }),
       ]);

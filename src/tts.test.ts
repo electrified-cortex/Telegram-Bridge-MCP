@@ -776,7 +776,7 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     const timeoutError = Object.assign(new Error("The operation timed out."), { name: "TimeoutError" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeoutError));
 
-    const err = await synthesizeToOgg("hello world").catch(e => e);
+    const err = await synthesizeToOgg("hello world").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error & { code?: string }).code).toBe("tts_timeout");
     expect((err as Error).message).toMatch(/tts_timeout/);
@@ -792,7 +792,7 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     const abortError = Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
 
-    const err = await synthesizeToOgg("hello world").catch(e => e);
+    const err = await synthesizeToOgg("hello world").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error & { code?: string }).code).toBe("tts_timeout");
     expect((err as Error).message).toMatch(/tts_timeout/);

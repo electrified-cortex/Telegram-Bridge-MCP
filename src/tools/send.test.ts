@@ -965,7 +965,7 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
     const result = await call({ text: longTextWithBadChar, audio: "hello", async: false, token: TOKEN });
 
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
+    const _data = parseResult(result);
     // captionOverflow triggered: voice sent + separate text message
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
