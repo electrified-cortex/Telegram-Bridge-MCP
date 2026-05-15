@@ -7,7 +7,6 @@ import { registerCallbackHook, registerPersistentCallbackHook } from "../../mess
 import { requireAuth } from "../../session-gate.js";
 import {
   sendChoiceMessage, ackAndEditSelection, buildHighlightedRows, highlightThenCollapse,
-  type KeyboardOption,
 } from "../button-helpers.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { validateButtonSymbolParity } from "../../button-validation.js";

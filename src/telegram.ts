@@ -1,5 +1,5 @@
 import { Api, GrammyError, HttpError, InputFile } from "grammy";
-import type { ApiError, ReactionTypeEmoji, Update } from "grammy/types";
+import type { ReactionTypeEmoji, Update } from "grammy/types";
 import { readFileSync, existsSync, realpathSync } from "fs";
 import path, { resolve } from "path";
 import { tmpdir } from "os";

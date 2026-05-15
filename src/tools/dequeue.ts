@@ -122,7 +122,7 @@ export async function runDrainLoop(
   sid: number,
   timeout: number,
   signal: AbortSignal,
-  responseFormat: "default" | "compact" = "default",
+  _responseFormat: "default" | "compact" = "default",
 ): Promise<Record<string, unknown>> {
   const sessionQueue = getSessionQueue(sid);
 

@@ -133,7 +133,7 @@ describe("shutdown announcement helpers", () => {
 
   it("postShutdownAnnouncement mentions no active sessions when count is 0", async () => {
     await postShutdownAnnouncement("operator", 0);
-    const text = (mocks.sendServiceMessage.mock.calls[0] as unknown as [string])[0];
+    const _text = (mocks.sendServiceMessage.mock.calls[0] as unknown as [string])[0];
     expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(1);
   });
 
@@ -162,7 +162,7 @@ describe("shutdown announcement helpers", () => {
 
   it("postGravestone sends the offline marker", async () => {
     await postGravestone();
-    const text = (mocks.sendServiceMessage.mock.calls[0] as unknown as [string])[0];
+    const _text = (mocks.sendServiceMessage.mock.calls[0] as unknown as [string])[0];
     expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(1);
   });
 

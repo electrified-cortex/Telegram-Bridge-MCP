@@ -10,7 +10,7 @@ import { getCallerSid, runInSessionContext } from "../../session-context.js";
 import { requireAuth } from "../../session-gate.js";
 import {
   pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithReplied, editWithTimedOut,
-  sendChoiceMessage, buildKeyboardRows, type KeyboardOption,
+  sendChoiceMessage, buildKeyboardRows,
 } from "../button-helpers.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { validateButtonSymbolParity } from "../../button-validation.js";

@@ -89,7 +89,7 @@ export async function handleStreamChunk({
   }
 }
 
-export async function handleStreamFlush({
+export function handleStreamFlush({
   stream_id,
   token,
 }: {

@@ -458,12 +458,12 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   // Reset health markers; preserve queued messages for the reconnecting session
   fullSession.lastPollAt = undefined;
   fullSession.healthy = true;
-  const pending = getSessionQueue(existing.sid)?.pendingCount() ?? 0;
+  const _pending = getSessionQueue(existing.sid)?.pendingCount() ?? 0;
   setActiveSession(existing.sid);
 
   // Deliver service messages
   const allSessions = listSessions();
-  const reconSessActive = activeSessionCount();
+  const _reconSessActive = activeSessionCount();
   if (allSessions.length === 1) {
     deliverServiceMessage(
       existing.sid,

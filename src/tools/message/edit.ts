@@ -6,7 +6,6 @@ import {
 } from "../../telegram.js";
 import { resolveParseMode } from "../../markdown.js";
 import { recordOutgoingEdit } from "../../message-store.js";
-import type { ButtonStyle } from "../button-helpers.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 
