@@ -1,5 +1,11 @@
 #!/usr/bin/env pwsh
-# monitor.ps1 — watch a TMCP activity file for mtime changes; emit a kick line on each change.
+# monitor.ps1 — watch a TMCP activity file for changes; emit kick / heartbeat / timeout.
+#
+# Detection:
+#   [System.IO.FileSystemWatcher] with NotifyFilter = LastWriteTime.
+#   Built-in on all .NET platforms (Windows, Linux, macOS). On Windows this
+#   uses ReadDirectoryChangesW (~100 ms event latency); on Linux it uses
+#   inotify; on macOS it uses FSEvents. No external dependencies required.
 #
 # Usage: monitor.ps1 <activity_file_path> [-Heartbeat <seconds>] [-Timeout <seconds>]
 #
@@ -62,10 +68,6 @@ if ($Timeout -lt 0) {
     exit 1
 }
 
-# Use FileSystemWatcher for event-driven detection on Windows; poll loop as fallback.
-# We use a poll loop here for cross-platform consistency (Git-Bash, WSL, Linux pwsh).
-# The poll interval is 1 second — same as monitor.sh.
-
 function Get-MTime {
     param([string]$Path)
     try {
@@ -76,25 +78,32 @@ function Get-MTime {
     }
 }
 
+# Resolve to absolute path so GetDirectoryName/GetFileName work reliably.
+$fullPath = [System.IO.Path]::GetFullPath($ActivityFile)
+$fileDir  = [System.IO.Path]::GetDirectoryName($fullPath)
+$fileName = [System.IO.Path]::GetFileName($fullPath)
+
 # Establish baseline so startup does not produce a spurious kick.
 $lastMTime = 0
-if (Test-Path $ActivityFile) {
-    $lastMTime = Get-MTime $ActivityFile
+if (Test-Path $fullPath) {
+    $lastMTime = Get-MTime $fullPath
 }
 
-$lastEventTime    = [DateTimeOffset]::UtcNow
+$lastEventTime     = [DateTimeOffset]::UtcNow
 $lastHeartbeatTime = $lastEventTime
 
 while ($true) {
     $now = [DateTimeOffset]::UtcNow
 
-    if (Test-Path $ActivityFile) {
-        $currentMTime = Get-MTime $ActivityFile
+    # Mtime check — handles races on watcher startup and detects pre-existing changes.
+    if (Test-Path $fullPath) {
+        $currentMTime = Get-MTime $fullPath
         if ($currentMTime -ne $lastMTime) {
             Write-Output "kick"
             $lastMTime         = $currentMTime
             $lastEventTime     = $now
             $lastHeartbeatTime = $now
+            continue
         }
     }
 
@@ -107,14 +116,43 @@ while ($true) {
         }
     }
 
-    # Heartbeat check.
+    # Heartbeat check (emit if overdue, reset timer).
     if ($Heartbeat -gt 0) {
-        $idleSinceBeat = ($now - $lastHeartbeatTime).TotalSeconds
-        if ($idleSinceBeat -ge $Heartbeat) {
+        $sinceBeat = ($now - $lastHeartbeatTime).TotalSeconds
+        if ($sinceBeat -ge $Heartbeat) {
             Write-Output "heartbeat"
-            $lastHeartbeatTime = $now
+            $lastHeartbeatTime = [DateTimeOffset]::UtcNow
         }
     }
 
-    Start-Sleep -Seconds 1
+    # Calculate maximum wait (ms) for this iteration.
+    $waitMs = 30000
+    if ($Timeout -gt 0) {
+        $idleSecs  = ([DateTimeOffset]::UtcNow - $lastEventTime).TotalSeconds
+        $remaining = [int](($Timeout - $idleSecs) * 1000)
+        if ($remaining -lt 100) { $remaining = 100 }
+        if ($remaining -lt $waitMs) { $waitMs = $remaining }
+    }
+    if ($Heartbeat -gt 0) {
+        $sinceBeat     = ([DateTimeOffset]::UtcNow - $lastHeartbeatTime).TotalSeconds
+        $remainingBeat = [int](($Heartbeat - $sinceBeat) * 1000)
+        if ($remainingBeat -lt 100) { $remainingBeat = 100 }
+        if ($remainingBeat -lt $waitMs) { $waitMs = $remainingBeat }
+    }
+
+    # Block using FileSystemWatcher (NotifyFilter = LastWriteTime).
+    if (Test-Path $fullPath) {
+        $watcher = [System.IO.FileSystemWatcher]::new($fileDir, $fileName)
+        $watcher.NotifyFilter = [System.IO.NotifyFilters]::LastWriteTime
+        $watcher.EnableRaisingEvents = $true
+        try {
+            $null = $watcher.WaitForChanged([System.IO.WatcherChangeTypes]::Changed, $waitMs)
+        }
+        finally {
+            $watcher.Dispose()
+        }
+    }
+    else {
+        Start-Sleep -Milliseconds $waitMs
+    }
 }

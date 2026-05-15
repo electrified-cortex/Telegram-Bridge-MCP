@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# monitor.sh — watch a TMCP activity file for mtime changes; emit a kick line on each change.
+# monitor.sh — watch a TMCP activity file for changes; emit kick / heartbeat / timeout.
+#
+# Detection order (per OS):
+#   1. inotifywait  (Linux, inotify-tools)  — event-driven, zero idle CPU
+#   2. fswatch      (macOS, via Homebrew)   — event-driven, optional install
+#   3. sleep-loop   (fallback, all OSes)    — 1-second polling, always available
 #
 # Usage: monitor.sh <activity_file_path> [options]
 #
@@ -85,9 +90,50 @@ if [[ -z "$ACTIVITY_FILE" ]]; then
     exit 1
 fi
 
+# Detect best available watch mechanism.
+if command -v inotifywait &>/dev/null; then
+    _WATCH_MODE=inotifywait
+elif command -v fswatch &>/dev/null; then
+    _WATCH_MODE=fswatch
+else
+    _WATCH_MODE=poll
+fi
+
 # Cross-platform mtime: GNU stat (Linux/Git-Bash) then BSD stat (macOS).
 get_mtime() {
     stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
+}
+
+# wait_for_change FILE SECS KNOWN_MTIME
+# Blocks up to SECS seconds waiting for the file to be modified.
+# Returns 0 if a change was detected, 1 if timed out with no change.
+wait_for_change() {
+    local file="$1" secs="$2" known_mtime="$3"
+    local changed=0
+    case "$_WATCH_MODE" in
+        inotifywait)
+            local rc=0
+            inotifywait -q -e close_write,modify --timeout "$secs" "$file" >/dev/null 2>&1 || rc=$?
+            if [[ $rc -eq 0 ]]; then changed=1; fi
+            ;;
+        fswatch)
+            local rc=0
+            timeout "$secs" fswatch -1 "$file" >/dev/null 2>&1 || rc=$?
+            if [[ $rc -eq 0 ]]; then changed=1; fi
+            ;;
+        poll)
+            local deadline=$(( $(date +%s) + secs ))
+            while [[ $(date +%s) -lt $deadline ]]; do
+                local cur; cur=$(get_mtime "$file")
+                if [[ "$cur" != "$known_mtime" ]]; then
+                    changed=1
+                    break
+                fi
+                sleep 1
+            done
+            ;;
+    esac
+    if [[ $changed -eq 1 ]]; then return 0; else return 1; fi
 }
 
 # Establish baseline so startup does not produce a spurious kick.
@@ -100,33 +146,55 @@ last_heartbeat_ts=$last_event_ts
 while true; do
     now=$(date +%s)
 
+    # Mtime check — handles races on watcher startup and poll-mode detections.
     if [[ -f "$ACTIVITY_FILE" ]]; then
         current_mtime=$(get_mtime "$ACTIVITY_FILE")
         if [[ "$current_mtime" != "$last_mtime" ]]; then
             echo "kick"
-            last_mtime="$current_mtime"
+            last_mtime=$current_mtime
             last_event_ts=$now
             last_heartbeat_ts=$now
+            continue
         fi
     fi
 
     # Timeout check.
-    if [[ "$TIMEOUT" -gt 0 ]]; then
+    if [[ $TIMEOUT -gt 0 ]]; then
         idle=$(( now - last_event_ts ))
-        if [[ "$idle" -ge "$TIMEOUT" ]]; then
+        if [[ $idle -ge $TIMEOUT ]]; then
             echo "timeout"
             exit 0
         fi
     fi
 
-    # Heartbeat check.
-    if [[ "$HEARTBEAT" -gt 0 ]]; then
-        idle_since_beat=$(( now - last_heartbeat_ts ))
-        if [[ "$idle_since_beat" -ge "$HEARTBEAT" ]]; then
+    # Heartbeat check (emit if overdue, reset timer).
+    if [[ $HEARTBEAT -gt 0 ]]; then
+        since_beat=$(( now - last_heartbeat_ts ))
+        if [[ $since_beat -ge $HEARTBEAT ]]; then
             echo "heartbeat"
             last_heartbeat_ts=$now
         fi
     fi
 
-    sleep 1
+    # Calculate maximum wait duration for this iteration.
+    wait_secs=30
+    if [[ $TIMEOUT -gt 0 ]]; then
+        idle=$(( now - last_event_ts ))
+        remaining=$(( TIMEOUT - idle ))
+        [[ $remaining -lt 1 ]] && remaining=1
+        [[ $remaining -lt $wait_secs ]] && wait_secs=$remaining
+    fi
+    if [[ $HEARTBEAT -gt 0 ]]; then
+        since_beat=$(( now - last_heartbeat_ts ))
+        remaining_beat=$(( HEARTBEAT - since_beat ))
+        [[ $remaining_beat -lt 1 ]] && remaining_beat=1
+        [[ $remaining_beat -lt $wait_secs ]] && wait_secs=$remaining_beat
+    fi
+
+    # Block until a change event or wait_secs elapses.
+    if [[ -f "$ACTIVITY_FILE" ]]; then
+        wait_for_change "$ACTIVITY_FILE" "$wait_secs" "$last_mtime" || true
+    else
+        sleep "$wait_secs"
+    fi
 done
