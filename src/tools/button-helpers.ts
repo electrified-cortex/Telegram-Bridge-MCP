@@ -26,12 +26,16 @@ export interface TextResult {
   kind: "text";
   message_id: number;
   text: string;
+  /** Set when the operator used Telegram's reply feature to target a specific message. */
+  reply_to?: number;
 }
 
 export interface VoiceResult {
   kind: "voice";
   message_id: number;
   text?: string;
+  /** Set when the operator used Telegram's reply feature to target a specific message. */
+  reply_to?: number;
 }
 
 export interface CommandResult {
@@ -166,7 +170,7 @@ export async function pollButtonOrTextOrVoice(
         if (event.content.type === "text") {
           const text = event.content.text;
           if (!text) return undefined;
-          return { kind: "text" as const, message_id: event.id, text };
+          return { kind: "text" as const, message_id: event.id, text, reply_to: event.content.reply_to };
         }
         if (event.content.type === "voice") {
           // Don't consume until transcription is complete (two-phase recording)
@@ -180,6 +184,7 @@ export async function pollButtonOrTextOrVoice(
             kind: "voice" as const,
             message_id: event.id,
             text: event.content.text,
+            reply_to: event.content.reply_to,
           };
         }
         if (event.content.type === "command") {
@@ -354,6 +359,19 @@ export async function editWithSkipped(
   isVoice?: boolean,
 ): Promise<void> {
   await appendSuffixAndEdit(chatId, messageId, originalText, "⏭ _Skipped_", isVoice);
+}
+
+/**
+ * Edits the host message to show ↩ Replied with all buttons removed.
+ * Used by choose/confirm when the operator replied directly to the question message.
+ */
+export async function editWithReplied(
+  chatId: number,
+  messageId: number,
+  originalText: string,
+  isVoice?: boolean,
+): Promise<void> {
+  await appendSuffixAndEdit(chatId, messageId, originalText, "↩ _Replied_", isVoice);
 }
 
 // ---------------------------------------------------------------------------

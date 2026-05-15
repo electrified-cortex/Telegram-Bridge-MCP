@@ -108,8 +108,12 @@ export async function handleAsk({
 
       if (match) {
         const compact = response_format === "compact";
+        const isDirectReply = match.content.reply_to === sent.message_id;
         if (match.content.type === "voice") {
           ackVoiceMessage(match.id);
+          if (isDirectReply) {
+            return toResult({ resolution: "replied", text: match.content.text ?? "", message_id: match.id });
+          }
           return toResult({
             ...(compact ? {} : { timed_out: false }),
             text: match.content.text ?? "",
@@ -124,6 +128,9 @@ export async function handleAsk({
             args: match.content.data ?? null,
             message_id: match.id,
           });
+        }
+        if (isDirectReply) {
+          return toResult({ resolution: "replied", text: match.content.text, message_id: match.id });
         }
         return toResult({
           ...(compact ? {} : { timed_out: false }),

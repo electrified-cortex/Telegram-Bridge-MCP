@@ -175,6 +175,17 @@ Optional: `title`, `subtext`, `width` (default 10).
 of: `ask` (string, free-text reply), `choose` (options array, button select),
 `confirm` (string, yes/no). Default `timeout_seconds: 60`.
 
+**Question resolution values:**
+
+| Resolution | Condition | Shape |
+| --- | --- | --- |
+| `replied` | Operator used Telegram's reply feature targeting the question message | `{ resolution: "replied", text, message_id }` |
+| `skipped` | Operator typed/spoke without targeting the question (choose/confirm only) | `{ skipped: true, text_response, ... }` |
+| `timed_out` | No response within the timeout | `{ timed_out: true }` |
+| button press | Operator pressed a button (choose/confirm only) | `{ label, value, message_id }` / `{ confirmed, ... }` |
+
+For `ask`: any text/voice message resolves the question. When `reply_to` matches the question's `message_id`, the resolution is `"replied"` (distinct from a plain text response that happens after the question).
+
 **stream/start** — Begin a streaming message. Sends an initial placeholder message (`⏳ ...` if no `text` given). Returns `{ message_id, stream_id }`. Use `stream_id` in subsequent `stream/chunk` calls. Optional: `text` (initial content), `parse_mode`.
 
 **stream/chunk** — Append a chunk to an active stream. Required: `stream_id`, `text`. Calls `editMessageText` on the stream's message — rate-limited to ~1 edit/second by Telegram. Optional: `separator` (default: `""`), `parse_mode`. Returns `{ message_id, length }`. Note: each chunk is one round-trip MCP tool call; streaming a long response costs ~2.5x more tokens than sending it complete.

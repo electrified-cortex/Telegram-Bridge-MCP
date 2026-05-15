@@ -9,7 +9,7 @@ import { getSessionQueue, peekSessionCategories } from "../../session-queue.js";
 import { getCallerSid, runInSessionContext } from "../../session-context.js";
 import { requireAuth } from "../../session-gate.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithReplied, editWithTimedOut,
   sendChoiceMessage, buildKeyboardRows, type KeyboardOption,
 } from "../button-helpers.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
@@ -233,6 +233,10 @@ export async function handleChoose(
 
     if (match.kind === "text") {
       clearCallbackHook(messageId);
+      if (match.reply_to === messageId) {
+        await editWithReplied(chatId, messageId, text, !!audio);
+        return toResult({ resolution: "replied", text: match.text, message_id: match.message_id });
+      }
       await editWithSkipped(chatId, messageId, text, !!audio);
       return toResult({
         skipped: true,
@@ -244,6 +248,11 @@ export async function handleChoose(
 
     if (match.kind === "voice") {
       clearCallbackHook(messageId);
+      if (match.reply_to === messageId) {
+        // Override any early "Skipped" edit that onVoiceDetected may have applied
+        await editWithReplied(chatId, messageId, text, !!audio);
+        return toResult({ resolution: "replied", text: match.text ?? "[no transcription]", message_id: match.message_id });
+      }
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
       if (!skippedEditDone) await editWithSkipped(chatId, messageId, text, !!audio);
       return toResult({
