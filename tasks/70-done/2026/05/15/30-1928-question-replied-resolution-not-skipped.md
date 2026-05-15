@@ -40,4 +40,4 @@ Path (2) currently resolves as `skipped` — same bucket as the timeout path. Th
 
 ## Verification
 
-NEEDS_REVISION — Criterion 5 partial: `docs/help/send.md` correctly documents the `replied` resolution (new table at lines 178–187), but `docs/help/guide.md` was not updated. The acceptance criterion explicitly names `help('guide')` as required. Add a note or section to `docs/help/guide.md` describing the `replied` resolution kind (condition: operator sends a `reply_to` the question message; payload: `{ resolution: "replied", text }`). All other 4 criteria are confirmed. Task stays in 60-review pending this fix.
+APPROVED — All 5 criteria confirmed. Pass 2 added `### Question resolution kinds` table to `docs/help/guide.md` covering `replied`, `chosen`/`confirmed`, `skipped`, and `timeout` with conditions and payload shapes. Core implementation: `reply_to === question message_id` guard in ask/choose/confirm handlers returns `{ resolution: "replied", text, message_id }`. 3033 tests pass. Squash-merged as `16d27c72`.
