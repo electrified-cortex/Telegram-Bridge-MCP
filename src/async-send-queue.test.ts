@@ -63,6 +63,7 @@ function makeJobParams(overrides: Partial<JobInput> = {}): JobInput {
     chatId: 100,
     audioText: "hello world",
     captionText: undefined,
+    rawCaptionText: undefined,
     captionOverflow: false,
     resolvedVoice: undefined,
     resolvedSpeed: undefined,
@@ -328,23 +329,46 @@ describe("async-send-queue", () => {
   // 6. Text fallback — captionText present and job fails
   // -------------------------------------------------------------------------
   describe("text fallback on failure", () => {
-    it("sends plain-text fallback message when captionText is present and job fails", async () => {
+    it("sends plain-text fallback (legacy) when only captionText is present and job fails", async () => {
       mocks.synthesizeToOgg.mockRejectedValue(new Error("TTS error"));
       mocks.sendMessage.mockResolvedValue({ message_id: 999 });
 
       enqueueAsyncSend(1, makeJobParams({
         sid: 1,
         captionText: "caption content",
+        // rawCaptionText is absent — legacy path: plain text, no parse_mode
       }));
       await flushJobs();
 
       // sendMessage should have been called for the fallback
       expect(mocks.sendMessage).toHaveBeenCalledOnce();
       const sendArgs = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
-      // Fallback is plain text — no parse_mode
+      // Legacy fallback is plain text — no parse_mode
       expect(sendArgs[1]).toContain("⚠ [async failed]");
       expect(sendArgs[1]).toContain("caption content");
       expect(sendArgs[2].parse_mode).toBeUndefined();
+    });
+
+    it("sends MarkdownV2 fallback with fresh conversion when rawCaptionText is present", async () => {
+      mocks.synthesizeToOgg.mockRejectedValue(new Error("TTS error"));
+      mocks.sendMessage.mockResolvedValue({ message_id: 999 });
+
+      enqueueAsyncSend(1, makeJobParams({
+        sid: 1,
+        captionText: "Step \\(1\\) and step \\(2\\)\\.",  // already-escaped V2 version (not used for fallback)
+        rawCaptionText: "Step (1) and step (2).",          // raw text — used for fallback
+      }));
+      await flushJobs();
+
+      expect(mocks.sendMessage).toHaveBeenCalledOnce();
+      const sendArgs = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+      // Banner must be V2-escaped: \[async failed\]
+      expect(sendArgs[1]).toContain("⚠ \\[async failed\\]");
+      // Body must be freshly converted to MarkdownV2 (parentheses and dot escaped)
+      expect(sendArgs[1]).toContain("Step \\(1\\) and step \\(2\\)\\.");
+      // Must NOT contain unescaped literal parens from the raw text
+      expect(sendArgs[1]).not.toMatch(/⚠ \[async failed\]/);
+      expect(sendArgs[2].parse_mode).toBe("MarkdownV2");
     });
 
     it("callback has text_fallback: true and textMessageId when fallback send succeeds", async () => {

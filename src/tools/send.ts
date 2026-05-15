@@ -312,9 +312,12 @@ export function register(server: McpServer) {
             let captionParseMode: "MarkdownV2" | undefined;
             let captionOverflow = false;
             let finalTextForSplit: string | undefined;
+            let rawCaptionText: string | undefined;
             if (effectiveText) {
               const MAX_CAPTION = 1024 - 60;
-              const converted = markdownToV2(applyTopicToText(effectiveText, "Markdown", args.topic));
+              const withTopic = applyTopicToText(effectiveText, "Markdown", args.topic);
+              const converted = markdownToV2(withTopic);
+              rawCaptionText = withTopic;
               captionOverflow = converted.length > MAX_CAPTION;
               if (captionOverflow) {
                 resolvedCaption = undefined;
@@ -342,6 +345,7 @@ export function register(server: McpServer) {
                 chatId,
                 audioText: plainText,
                 captionText: captionOverflow ? finalTextForSplit : resolvedCaption,
+                rawCaptionText,
                 captionOverflow,
                 resolvedVoice,
                 resolvedSpeed,
