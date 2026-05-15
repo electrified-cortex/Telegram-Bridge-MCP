@@ -194,7 +194,7 @@ describe("stream/flush handler", () => {
     expect(errorCode(result2)).toBe("STREAM_NOT_FOUND");
   });
 
-  it("returns STREAM_NOT_FOUND for unknown stream_id", async () => {
+  it("returns STREAM_NOT_FOUND for unknown stream_id", () => {
     const result = handleStreamFlush({
       stream_id: "nonexistent-id",
       token: 1_123_456,
