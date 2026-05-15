@@ -55,7 +55,7 @@ describe("temp-reaction", () => {
   });
 
   it("restore fires restore_emoji on next outbound", async () => {
-    await setTempReaction(100, "👀", "🫡" as never);
+    await setTempReaction(100, "👀", "🫡");
     await fireTempReactionRestore();
     expect(mocks.trySetMessageReaction).toHaveBeenLastCalledWith(42, 100, "🫡");
     expect(hasTempReaction()).toBe(false);
@@ -76,7 +76,7 @@ describe("temp-reaction", () => {
   });
 
   it("auto-reverts after timeout_seconds", async () => {
-    await setTempReaction(100, "👀", "🫡" as never, 30);
+    await setTempReaction(100, "👀", "🫡", 30);
     expect(hasTempReaction()).toBe(true);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(mocks.trySetMessageReaction).toHaveBeenLastCalledWith(42, 100, "🫡");
@@ -84,7 +84,7 @@ describe("temp-reaction", () => {
   });
 
   it("replacing slot cancels previous without restoring", async () => {
-    await setTempReaction(100, "👀", "🫡" as never);
+    await setTempReaction(100, "👀", "🫡");
     vi.clearAllMocks();
     await setTempReaction(200, "🤔", "✅" as never);
     // Should NOT have fired the 🫡 restore for the first slot
@@ -98,14 +98,14 @@ describe("temp-reaction", () => {
     mocks.getBotReaction.mockReturnValue("👍");
 
     // First temp 👀 — restore target captured from getBotReaction → 👍
-    await setTempReaction(100, "👀" as never);
+    await setTempReaction(100, "👀");
 
     // Simulate handleSetReaction recording 👀 as the new bot reaction
     mocks.getBotReaction.mockReturnValue("👀");
     vi.clearAllMocks();
 
     // Second temp 🤔 on the same message — should inherit restore target 👍 from outgoing slot
-    await setTempReaction(100, "🤔" as never);
+    await setTempReaction(100, "🤔");
 
     // Restore must resolve to 👍, not 👀
     await fireTempReactionRestore();
@@ -115,12 +115,12 @@ describe("temp-reaction", () => {
   it("replacing temp on a different message does not inherit restore from old slot", async () => {
     // Slot on message 100 with restore 🫡
     mocks.getBotReaction.mockReturnValue("🫡");
-    await setTempReaction(100, "👀" as never);
+    await setTempReaction(100, "👀");
 
     // New temp on message 200 — different message, restore comes from getBotReaction(200)
-    mocks.getBotReaction.mockReturnValue("❤" as never);
+    mocks.getBotReaction.mockReturnValue("❤");
     vi.clearAllMocks();
-    await setTempReaction(200, "🤔" as never);
+    await setTempReaction(200, "🤔");
 
     await fireTempReactionRestore();
     expect(mocks.trySetMessageReaction).toHaveBeenLastCalledWith(42, 200, "❤");
@@ -144,7 +144,7 @@ describe("temp-reaction", () => {
 
   it("timeout restore uses set-time SID even when ALS context is lost in callback", async () => {
     // setTempReaction runs inside ALS context for SID 7
-    await runInSessionContext(7, () => setTempReaction(100, "👀", "🫡" as never, 5));
+    await runInSessionContext(7, () => setTempReaction(100, "👀", "🫡", 5));
 
     // Verify slot is active for SID 7
     expect(runInSessionContext(7, () => hasTempReaction())).toBe(true);
@@ -166,7 +166,7 @@ describe("temp-reaction", () => {
     mocks.getBotReaction.mockReturnValue(null);
     mocks.hasBaseReaction.mockReturnValue(true);
 
-    await setTempReaction(100, "🤔" as never, undefined, 30);
+    await setTempReaction(100, "🤔", undefined, 30);
 
     // Temp is visible — no restore should have fired yet
     expect(mocks.trySetMessageReaction).toHaveBeenCalledTimes(1);
@@ -185,7 +185,7 @@ describe("temp-reaction", () => {
     mocks.getBotReaction.mockReturnValue(null);
     mocks.hasBaseReaction.mockReturnValue(true);
 
-    await setTempReaction(100, "🤔" as never);
+    await setTempReaction(100, "🤔");
     await fireTempReactionRestore();
 
     // Must use trySetMessageReaction with 👌, not setMessageReaction([])
@@ -199,7 +199,7 @@ describe("temp-reaction", () => {
     mocks.getBotReaction.mockReturnValue(null);
     mocks.hasBaseReaction.mockReturnValue(true);
 
-    await setTempReaction(100, "🤔" as never, "🫡" as never, 10);
+    await setTempReaction(100, "🤔", "🫡", 10);
     await vi.advanceTimersByTimeAsync(10_000);
 
     // Must use explicit 🫡, not 👌
@@ -210,7 +210,7 @@ describe("temp-reaction", () => {
     mocks.getBotReaction.mockReturnValue(null);
     mocks.hasBaseReaction.mockReturnValue(false);
 
-    await setTempReaction(100, "🤔" as never);
+    await setTempReaction(100, "🤔");
     await fireTempReactionRestore();
 
     expect(mocks.setMessageReaction).toHaveBeenCalledWith(42, 100, []);
@@ -219,7 +219,7 @@ describe("temp-reaction", () => {
 
   it("restores to 👌 when no restore_emoji but base is registered", async () => {
     mocks.hasBaseReaction.mockReturnValue(true);
-    await setTempReaction(100, "🤔" as never);
+    await setTempReaction(100, "🤔");
     await fireTempReactionRestore();
     expect(mocks.trySetMessageReaction).toHaveBeenLastCalledWith(42, 100, "👌");
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();
@@ -228,7 +228,7 @@ describe("temp-reaction", () => {
 
   it("auto-reverts to 👌 base when timeout fires and base is registered", async () => {
     mocks.hasBaseReaction.mockReturnValue(true);
-    await setTempReaction(100, "👀" as never, undefined, 30);
+    await setTempReaction(100, "👀", undefined, 30);
     expect(hasTempReaction()).toBe(true);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(mocks.trySetMessageReaction).toHaveBeenLastCalledWith(42, 100, "👌");

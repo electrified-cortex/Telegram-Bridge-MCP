@@ -40,9 +40,9 @@ vi.mock("../../session-manager.js", () => ({
 
 import { handleStreamStart, handleStreamChunk, handleStreamFlush, _resetStreamsForTest } from "./stream.js";
 
-function parseResult<T = Record<string, unknown>>(result: unknown): T {
+function parseResult(result: unknown): Record<string, unknown> {
   const r = result as { content: Array<{ text: string }> };
-  return JSON.parse(r.content[0].text) as T;
+  return JSON.parse(r.content[0].text) as Record<string, unknown>;
 }
 
 function isError(result: unknown): boolean {
@@ -50,7 +50,7 @@ function isError(result: unknown): boolean {
 }
 
 function errorCode(result: unknown): string {
-  return parseResult<{ code: string }>(result).code;
+  return (parseResult(result) as { code: string }).code;
 }
 
 describe("stream/start handler", () => {
@@ -64,7 +64,7 @@ describe("stream/start handler", () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 101 });
     const result = await handleStreamStart({ token: 1_123_456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult<{ message_id: number; stream_id: string }>(result);
+    const data = parseResult(result) as { message_id: number; stream_id: string };
     expect(data.message_id).toBe(101);
     expect(typeof data.stream_id).toBe("string");
     expect(data.stream_id.length).toBeGreaterThan(0);
@@ -109,14 +109,14 @@ describe("stream/chunk handler", () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 200 });
     // start a stream
     const startResult = await handleStreamStart({ token: 1_123_456 });
-    const { stream_id } = parseResult<{ message_id: number; stream_id: string }>(startResult);
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
 
     // stub current message text to placeholder
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "⏳ ..." } });
 
     const result = await handleStreamChunk({ stream_id, text: "Hello world", token: 1_123_456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult<{ message_id: number; length: number }>(result);
+    const data = parseResult(result) as { message_id: number; length: number };
     expect(data.message_id).toBe(200);
     expect(data.length).toBe("Hello world".length);
     // chunk replaces placeholder, so accumulated = "Hello world"
@@ -127,12 +127,12 @@ describe("stream/chunk handler", () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 201 });
     mocks.editMessageText.mockResolvedValue({ message_id: 201 });
     const startResult = await handleStreamStart({ token: 1_123_456 });
-    const { stream_id } = parseResult<{ message_id: number; stream_id: string }>(startResult);
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
 
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Hello" } });
     const result = await handleStreamChunk({ stream_id, text: " world", separator: "", token: 1_123_456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult<{ message_id: number; length: number }>(result);
+    const data = parseResult(result) as { message_id: number; length: number };
     expect(data.length).toBe("Hello world".length);
   });
 
@@ -150,7 +150,7 @@ describe("stream/chunk handler", () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 202 });
     // start with sid 1
     const startResult = await handleStreamStart({ token: 1_123_456 });
-    const { stream_id } = parseResult<{ message_id: number; stream_id: string }>(startResult);
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
 
     // attempt chunk with different sid (token encodes sid 2)
     const result = await handleStreamChunk({ stream_id, text: "hack", token: 2_123_456 });
@@ -169,12 +169,12 @@ describe("stream/flush handler", () => {
   it("removes stream from state and returns final_length", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 300 });
     const startResult = await handleStreamStart({ token: 1_123_456 });
-    const { stream_id } = parseResult<{ message_id: number; stream_id: string }>(startResult);
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
 
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Final content here" } });
-    const result = await handleStreamFlush({ stream_id, token: 1_123_456 });
+    const result = handleStreamFlush({ stream_id, token: 1_123_456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult<{ message_id: number; final_length: number; status: string }>(result);
+    const data = parseResult(result) as { message_id: number; final_length: number; status: string };
     expect(data.message_id).toBe(300);
     expect(data.final_length).toBe("Final content here".length);
     expect(data.status).toBe("flushed");
@@ -183,19 +183,19 @@ describe("stream/flush handler", () => {
   it("returns STREAM_NOT_FOUND after stream is already flushed", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 301 });
     const startResult = await handleStreamStart({ token: 1_123_456 });
-    const { stream_id } = parseResult<{ message_id: number; stream_id: string }>(startResult);
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
 
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "done" } });
-    await handleStreamFlush({ stream_id, token: 1_123_456 });
+    handleStreamFlush({ stream_id, token: 1_123_456 });
 
     // second flush should fail
-    const result2 = await handleStreamFlush({ stream_id, token: 1_123_456 });
+    const result2 = handleStreamFlush({ stream_id, token: 1_123_456 });
     expect(isError(result2)).toBe(true);
     expect(errorCode(result2)).toBe("STREAM_NOT_FOUND");
   });
 
-  it("returns STREAM_NOT_FOUND for unknown stream_id", async () => {
-    const result = await handleStreamFlush({
+  it("returns STREAM_NOT_FOUND for unknown stream_id", () => {
+    const result = handleStreamFlush({
       stream_id: "nonexistent-id",
       token: 1_123_456,
     });

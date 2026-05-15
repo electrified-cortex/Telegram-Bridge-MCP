@@ -71,3 +71,27 @@ Whether bash or PowerShell, it doesn't have to be fancy. Be explicit about how s
 **Squash commit:** `04271505` (on release/7.4)
 **Verdict:** APPROVED
 **Sealed by:** Overseer (Worker dispatch)
+
+## Verification (pass 1 — NEEDS_REVISION)
+
+**Verified:** 2026-05-14
+**Verdict:** NEEDS_REVISION
+**Verifier:** Foreman (task-verification sub-agent, fresh-eyes pass)
+**Gaps:** AC2 (no literal one-liner in service message) and AC3 (no activity/file/edit warning) were unmet.
+
+---
+
+**Revision:** 2026-05-14
+**Branch:** `feat/10-0888-monitor-oneliner-fix`
+**Commit:** `c37b305e`
+**Addressed:**
+- AC2: Added literal `` `echo "call dequeue(TOKEN)"` `` one-liner to `ONBOARDING_LOOP_PATTERN` bullet 2 with note to bake in token at start time.
+- AC3: Added bullet 3 — "Do NOT call activity/file/edit to test — it rotates the path."
+**Tests:** 3013/3013 passed (`pnpm test`)
+
+## Verification (pass 2 — APPROVED)
+
+**Verified:** 2026-05-14
+**Verdict:** APPROVED
+**Verifier:** Foreman (task-verification sub-agent, fresh-eyes pass)
+**Evidence:** All 5 AC confirmed. AC2 — `service-messages.ts:51`: `` `echo "call dequeue(TOKEN)"` — bake in your token, that's the entire monitor. `` AC3 — `service-messages.ts:52`: `Do NOT call activity/file/edit to test — it rotates the path.` AC1/AC4/AC5 confirmed via prior pass. 3013 tests pass.

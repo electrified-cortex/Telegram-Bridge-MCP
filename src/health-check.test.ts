@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   deliverDirectMessage: vi.fn(() => true),
   deliverServiceMessage: vi.fn(() => true),
   sendServiceMessage: vi.fn().mockResolvedValue(undefined as number | undefined),
-  resolveChat: vi.fn(() => 12345 as number | { code: string; message: string }),
+  resolveChat: vi.fn(() => 12345),
   getApi: vi.fn(),
   listSessions: vi.fn(() => [] as { sid: number; name: string; createdAt: string }[]),
   registerCallbackHook: vi.fn(),
@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   getCallerSid: vi.fn(() => 1),
   registerOnceOnSend: vi.fn(),
   clearOnceOnSend: vi.fn(),
+  getActivityFile: vi.fn((_sid: number) => undefined as { filePath: string } | undefined),
+  existsSync: vi.fn((_path: string) => false),
 }));
 
 vi.mock("./session-manager.js", () => ({
@@ -67,6 +69,14 @@ vi.mock("./telegram.js", async (importActual) => {
 vi.mock("./outbound-proxy.js", () => ({
   registerOnceOnSend: mocks.registerOnceOnSend,
   clearOnceOnSend: mocks.clearOnceOnSend,
+}));
+
+vi.mock("./tools/activity/file-state.js", () => ({
+  getActivityFile: (sid: number) => mocks.getActivityFile(sid),
+}));
+
+vi.mock("fs", () => ({
+  existsSync: (path: string) => mocks.existsSync(path),
 }));
 
 vi.mock("./message-store.js", () => ({
@@ -122,6 +132,8 @@ describe("health-check", () => {
     mocks.getGovernorSid.mockReturnValue(0);
     mocks.getUnhealthySessions.mockReturnValue([]);
     mocks.listSessions.mockReturnValue([]);
+    mocks.getActivityFile.mockReturnValue(undefined);
+    mocks.existsSync.mockReturnValue(false);
   });
 
   describe("no-op when all sessions healthy", () => {
@@ -667,6 +679,42 @@ describe("health-check", () => {
     });
   });
 
+  describe("activity-file guard", () => {
+    it("skips health-check for a session with an active activity file that exists on disk", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/activity-abc" });
+      mocks.existsSync.mockReturnValue(true);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
+    });
+
+    it("sends health-check for a session with no activity file registration", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue(undefined);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+    });
+
+    it("sends health-check for a session whose activity file no longer exists on disk", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/deleted-file" });
+      mocks.existsSync.mockReturnValue(false);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+    });
+  });
+
   describe("overlapping tick guard", () => {
     it("skips a concurrent tick if one is already running", async () => {
       const s = makeSession(2, "Worker");
@@ -680,7 +728,7 @@ describe("health-check", () => {
 
       mocks.getUnhealthySessions.mockReturnValue([s]);
       // First tick will await this slow sendServiceMessage
-      mocks.sendServiceMessage.mockReturnValueOnce(firstCallPromise as Promise<number | undefined>);
+      mocks.sendServiceMessage.mockReturnValueOnce(firstCallPromise);
 
       // Start the first tick but do not await it yet
       const firstTick = _runHealthCheckNow();

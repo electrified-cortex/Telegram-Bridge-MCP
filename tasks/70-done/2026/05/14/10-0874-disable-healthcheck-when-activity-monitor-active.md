@@ -7,6 +7,12 @@ status: draft
 created: 2026-05-05
 repo: Telegram MCP
 delegation: Worker
+target_branch: dev
+status: completed
+claimant: foreman
+claimed_at: 2026-05-14T23:16:00Z
+worktree: .foreman-pod/.worktrees/10-0874
+spawn_task: bse5gq7hc
 ---
 
 # Disable health-check while activity-monitor is active
@@ -52,3 +58,17 @@ If the activity-file registry doesn't currently track active state in a way the 
 - 10-0872 (watcher pre-drains dequeue)
 - 10-0873 (HTTP dequeue endpoint)
 - Prior session: activity-file create / cleanup behavior (50-0868 c203b9f3 on dev)
+
+## Verification
+
+**Verdict:** APPROVED
+**Date:** 2026-05-14
+**Verifier:** Dispatch sub-agent (fresh-eyes, read-only)
+**Cherry-pick commit:** `ad886399` on `dev`
+
+All 3 acceptance criteria CONFIRMED:
+- AC1: Session with active activity-file skips health-check — guard at `health-check.ts:237-238` uses `getActivityFile(sid)` + `existsSync(filePath)`, continuing past `_flaggedSids.add`. Test: `health-check.test.ts:683-692`.
+- AC2: Session without activity-file receives health-checks unchanged — `getActivityFile` returns `undefined`, guard not taken. Test: `health-check.test.ts:694-703`.
+- AC3: Deleted file re-enables health-check — `existsSync` returns false → guard not taken. Test: `health-check.test.ts:705-715`.
+
+38/38 tests pass. Cherry-pick avoided incidental create.ts regression (branch was cut before 10-0897 hint-fix landed on dev).

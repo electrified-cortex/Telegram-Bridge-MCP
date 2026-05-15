@@ -15,6 +15,7 @@ import { startPoller, isPollerRunning } from "../../poller.js";
 import { fireStartupReminders, buildReminderEvent } from "../../reminder-state.js";
 import { registerPendingApproval, clearPendingApproval, isDelegationEnabled, setDelegationEnabled } from "../../agent-approval.js";
 import type { ApprovalDecision } from "../../agent-approval.js";
+import { CANONICAL_MONITOR_RECIPE } from "../activity/canonical-recipe.js";
 
 const APPROVAL_TIMEOUT_MS = 120_000;
 const APPROVAL_NO = "approve_no";
@@ -48,7 +49,7 @@ function buildApprovalKeyboard(
       text: c,
       callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
       ...(isPrimary ? { style: "primary" } : {}),
-    } as Record<string, unknown>;
+    };
   });
   const row1 = colorButtons.slice(0, 3);
   const row2 = colorButtons.slice(3);
@@ -290,6 +291,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           token: sessionToken,
           sid: session.sid,
           hint: "Call dequeue(token) to get your first message.",
+          monitor_recipe: CANONICAL_MONITOR_RECIPE,
         };
         if (isFirstSession) {
           // First session is the governor by default
@@ -456,12 +458,12 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   // Reset health markers; preserve queued messages for the reconnecting session
   fullSession.lastPollAt = undefined;
   fullSession.healthy = true;
-  const pending = getSessionQueue(existing.sid)?.pendingCount() ?? 0;
+  const _pending = getSessionQueue(existing.sid)?.pendingCount() ?? 0;
   setActiveSession(existing.sid);
 
   // Deliver service messages
   const allSessions = listSessions();
-  const reconSessActive = activeSessionCount();
+  const _reconSessActive = activeSessionCount();
   if (allSessions.length === 1) {
     deliverServiceMessage(
       existing.sid,
@@ -523,6 +525,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     token: reconToken,
     sid: fullSession.sid,
     hint: "Call dequeue(token) to get your first message.",
+    monitor_recipe: CANONICAL_MONITOR_RECIPE,
   });
 }
 

@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
   getSessionAnnouncementMessage: vi.fn().mockReturnValue(undefined),
   setSessionReauthDialogMsgId: vi.fn(),
   clearSessionReauthDialogMsgId: vi.fn(),
-  resolveChat: vi.fn(() => 42 as number),
+  resolveChat: vi.fn(() => 42),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
   startPoller: vi.fn(),
@@ -165,7 +165,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({}));
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
       hint: "Call dequeue(token) to get your first message.",
@@ -177,7 +177,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({}));
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
       hint: "Call dequeue(token) to get your first message.",
@@ -2052,6 +2052,18 @@ describe("session_start tool", () => {
   // =========================================================================
 
 
+  // monitor_recipe field — regression test (criterion 8)
+  it("session/start response includes monitor_recipe equal to shared constant", async () => {
+    const { CANONICAL_MONITOR_RECIPE } = await import("../activity/canonical-recipe.js");
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.dequeue.mockReturnValue(undefined);
+
+    const result = parseResult(await call({}));
+
+    expect((result).monitor_recipe).toBeDefined();
+    expect((result).monitor_recipe).toBe(CANONICAL_MONITOR_RECIPE);
+  });
+
   // =========================================================================
   // Startup reminder integration (task 260)
   // =========================================================================
@@ -2668,5 +2680,19 @@ describe("handleSessionReconnect", () => {
     expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
     expect(result.token).toBeDefined();
     expect(result.sid).toBe(3);
+  });
+
+  // monitor_recipe field — regression test (criterion 8)
+  it("session/reconnect response includes monitor_recipe equal to shared constant", async () => {
+    const { CANONICAL_MONITOR_RECIPE } = await import("../activity/canonical-recipe.js");
+    mocks.listSessions.mockReturnValue([{ sid: 4, name: "Agent", color: "🟩", createdAt: "2026-05-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 4, suffix: 400001, name: "Agent", color: "🟩", healthy: true });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+    mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
+
+    const result = parseResult(await handleSessionReconnect({ name: "Agent" }));
+
+    expect((result).monitor_recipe).toBeDefined();
+    expect((result).monitor_recipe).toBe(CANONICAL_MONITOR_RECIPE);
   });
 });

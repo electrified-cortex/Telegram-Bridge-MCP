@@ -113,9 +113,33 @@ send(type: "append", token: <token>, message_id, text: "All done.")
 send(type: "append", token: <token>, message_id, text: "…", separator: " ")
 ```
 
+## Per-Message Topic Override
+
+All modes that render a topic header (`text`, `notification`, `choice`, `ask`) accept an optional `topic` parameter:
+
+| Value | Effect |
+| --- | --- |
+| Omitted | Profile-level topic applies (existing behaviour, no change) |
+| `"Label"` | Uses `"Label"` as the topic for this message only |
+| `""` (empty string) | Suppresses topic for this message, even if profile topic is set |
+
+This does **not** mutate the profile-level topic set via `action(type: 'profile/topic')`.
+
+**Examples:**
+```
+// Override topic for one message
+send(token, text: "Done.", topic: "Background Worker")
+
+// Suppress topic for a one-off message
+send(token, text: "Starting up…", topic: "")
+
+// Notify with a per-message topic
+send(token, type: "notification", title: "Build Result", topic: "CI Runner")
+```
+
 ## Other Modes (brief)
 
-**text** — Reply threading: pass `reply_to: <message_id>`.
+**text** — Reply threading: pass `reply_to: <message_id>`. Per-message topic: pass `topic: "<label>"` to override the profile-level topic for this one message (or `topic: ""` to suppress it).
 
 **Audio + Text (`"text"` type):** Audio + text supports two patterns: long audio + short label, or short audio + structured text. Never restate audio in the caption. If you need details, call help('audio').
 
@@ -150,6 +174,17 @@ Optional: `title`, `subtext`, `width` (default 10).
 **question** — Interactive prompt, blocks until user responds or timeout. Pass one
 of: `ask` (string, free-text reply), `choose` (options array, button select),
 `confirm` (string, yes/no). Default `timeout_seconds: 60`.
+
+**Question resolution values:**
+
+| Resolution | Condition | Shape |
+| --- | --- | --- |
+| `replied` | Operator used Telegram's reply feature targeting the question message | `{ resolution: "replied", text, message_id }` |
+| `skipped` | Operator typed/spoke without targeting the question (choose/confirm only) | `{ skipped: true, text_response, ... }` |
+| `timed_out` | No response within the timeout | `{ timed_out: true }` |
+| button press | Operator pressed a button (choose/confirm only) | `{ label, value, message_id }` / `{ confirmed, ... }` |
+
+For `ask`: any text/voice message resolves the question. When `reply_to` matches the question's `message_id`, the resolution is `"replied"` (distinct from a plain text response that happens after the question).
 
 **stream/start** — Begin a streaming message. Sends an initial placeholder message (`⏳ ...` if no `text` given). Returns `{ message_id, stream_id }`. Use `stream_id` in subsequent `stream/chunk` calls. Optional: `text` (initial content), `parse_mode`.
 

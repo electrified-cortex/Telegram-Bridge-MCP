@@ -16,3 +16,9 @@ Update onboarding language to be runtime-conditional:
 
 ## Notes
 Filed 2026-05-05 based on operator feedback session.
+
+## Related / partially superseded
+
+Task **15-0899** (merged) published the canonical `Monitor` recipe as a shared constant and surfaced it from `session/start`, `session/reconnect`, and `help('activity/file')`. The concrete bash mtime-poll watcher example and `Monitor` parameter guidance are now in `docs/help/activity/file.md` (§ "Canonical Monitor recipe (Claude Code)").
+
+Remaining scope here: runtime-conditional onboarding language in `ONBOARDING_LOOP_PATTERN` and Claude Code–specific auto-wiring guidance. The recipe constant (`src/tools/activity/canonical-recipe.ts`) can be reused.

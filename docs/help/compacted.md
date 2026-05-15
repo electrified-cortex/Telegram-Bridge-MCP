@@ -7,6 +7,8 @@ You just lost conversational context. This help topic covers Telegram/MCP recove
 3. If token is missing or `dequeue` returns `session_closed`: `action(type: 'session/reconnect', name: '<your_name>')` to rejoin, or `action(type: 'session/start', name: '<your_name>')` for a fresh session.
 4. Resume your dequeue loop or last task.
 
+If you use an activity-file watcher, the canonical `Monitor` recipe is in `help('activity/file')` under "Canonical Monitor recipe (Claude Code)", and also returned as `monitor_recipe` in `session/start` and `session/reconnect` responses.
+
 For a richer refresher, call:
 
 - `help('guide')` — full communication/routing protocol

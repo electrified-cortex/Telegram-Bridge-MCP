@@ -9,8 +9,8 @@ import { getSessionQueue, peekSessionCategories } from "../../session-queue.js";
 import { getCallerSid, runInSessionContext } from "../../session-context.js";
 import { requireAuth } from "../../session-gate.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
-  sendChoiceMessage, buildKeyboardRows, type KeyboardOption,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithReplied, editWithTimedOut,
+  sendChoiceMessage, buildKeyboardRows,
 } from "../button-helpers.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { validateButtonSymbolParity } from "../../button-validation.js";
@@ -151,7 +151,7 @@ export async function handleChoose(
           caption = caption.slice(0, MAX_CAPTION);
           if (caption.endsWith("\\")) caption = caption.slice(0, -1);
         }
-        const rows = buildKeyboardRows(options as KeyboardOption[], columns);
+        const rows = buildKeyboardRows(options, columns);
         const msg = await sendVoiceDirect(chatId, ogg, {
           caption,
           parse_mode: "MarkdownV2",
@@ -170,7 +170,7 @@ export async function handleChoose(
     } else {
       messageId = await sendChoiceMessage(chatId, {
         text: text,
-        options: options as KeyboardOption[],
+        options: options,
         columns,
         parseMode: "Markdown",
         replyToMessageId: reply_to_message_id,
@@ -233,6 +233,10 @@ export async function handleChoose(
 
     if (match.kind === "text") {
       clearCallbackHook(messageId);
+      if (match.reply_to === messageId) {
+        await editWithReplied(chatId, messageId, text, !!audio);
+        return toResult({ resolution: "replied", text: match.text, message_id: match.message_id });
+      }
       await editWithSkipped(chatId, messageId, text, !!audio);
       return toResult({
         skipped: true,
@@ -244,6 +248,11 @@ export async function handleChoose(
 
     if (match.kind === "voice") {
       clearCallbackHook(messageId);
+      if (match.reply_to === messageId) {
+        // Override any early "Skipped" edit that onVoiceDetected may have applied
+        await editWithReplied(chatId, messageId, text, !!audio);
+        return toResult({ resolution: "replied", text: match.text ?? "[no transcription]", message_id: match.message_id });
+      }
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
       if (!skippedEditDone) await editWithSkipped(chatId, messageId, text, !!audio);
       return toResult({

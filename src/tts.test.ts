@@ -568,7 +568,7 @@ describe("synthesizeToOgg (local provider)", () => {
     const fakePcm = new Float32Array([0.1, -0.1, 0.0]);
     const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: fakePcm, sampling_rate: 16000 });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer as unknown);
 
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
@@ -590,7 +590,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 22050,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("test");
@@ -607,7 +607,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 16000,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("first call");
@@ -628,7 +628,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 16000,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const result = await synthesizeToOgg("hello");
@@ -776,7 +776,7 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     const timeoutError = Object.assign(new Error("The operation timed out."), { name: "TimeoutError" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeoutError));
 
-    const err = await synthesizeToOgg("hello world").catch(e => e);
+    const err = await synthesizeToOgg("hello world").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error & { code?: string }).code).toBe("tts_timeout");
     expect((err as Error).message).toMatch(/tts_timeout/);
@@ -792,7 +792,7 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     const abortError = Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
 
-    const err = await synthesizeToOgg("hello world").catch(e => e);
+    const err = await synthesizeToOgg("hello world").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error & { code?: string }).code).toBe("tts_timeout");
     expect((err as Error).message).toMatch(/tts_timeout/);

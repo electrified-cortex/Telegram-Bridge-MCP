@@ -78,6 +78,17 @@ If the agent sent a `send(type: "question", choose: [...])` or `send(type: "ques
 
 Never treat a pre-existing message as an answer to a question you just asked.
 
+### Question resolution kinds
+
+| Resolution | Condition | Payload |
+| --- | --- | --- |
+| `chosen` / `confirmed` | Operator clicked an inline button | `{ resolution: "chosen" \| "confirmed", value, message_id }` |
+| `replied` | Operator sent a Telegram reply **directly to the question message** (reply_to === question message_id) without clicking a button | `{ resolution: "replied", text, message_id }` |
+| `skipped` | Operator dismissed without text or button choice (e.g. skip button) | `{ resolution: "skipped" }` |
+| `timeout` | No operator action within `timeout_seconds` | `{ resolution: "timeout" }` |
+
+`replied` is distinct from `skipped` — it means the operator engaged with text even though they bypassed the buttons. Caller decides how to interpret the free-text reply.
+
 ---
 
 ## Tool usage: `send(type: "question")` for confirmations

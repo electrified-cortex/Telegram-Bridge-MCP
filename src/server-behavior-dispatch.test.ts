@@ -148,7 +148,7 @@ vi.mock("./session-queue.js", async (importOriginal) => {
 
 vi.mock("./first-use-hints.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("./first-use-hints.js")>();
-  return { ...original, markFirstUseHintSeen: vi.fn(((_sid: number, _key: string) => true) as typeof original.markFirstUseHintSeen) };
+  return { ...original, markFirstUseHintSeen: vi.fn(((_sid: number, _key: string) => true)) };
 });
 
 describe("lazy onboarding — Trigger A: first dequeue with user content", () => {

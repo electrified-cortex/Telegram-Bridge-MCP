@@ -107,7 +107,7 @@ async function _fireRestoreForSlot(sid: number, messageId: number): Promise<void
   const { chatId, restoreEmoji } = slot;
   const baseActive = hasBaseReaction(chatId, messageId);
   const effectiveRestore: ReactionEmoji | null =
-    restoreEmoji ?? (baseActive ? "👌" as ReactionEmoji : null);
+    restoreEmoji ?? (baseActive ? "👌" : null);
   if (effectiveRestore) {
     // Consume the base registration (one-shot) before firing, so a concurrent
     // clearAllTempReactions on remaining slots does not fire a duplicate 👌 (Fix 3).
@@ -153,7 +153,7 @@ export async function clearAllTempReactions(sid: number): Promise<void> {
     const { chatId, messageId, restoreEmoji } = slot;
     const baseActive = hasBaseReaction(chatId, messageId);
     const effectiveRestore: ReactionEmoji | null =
-      restoreEmoji ?? (baseActive ? "👌" as ReactionEmoji : null);
+      restoreEmoji ?? (baseActive ? "👌" : null);
     if (effectiveRestore) {
       // Consume the base registration (one-shot) so _fireRestoreForSlot (timeout
       // path) for any remaining slot on the same message does not fire a duplicate

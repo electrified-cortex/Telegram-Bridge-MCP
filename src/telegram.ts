@@ -1,5 +1,5 @@
 import { Api, GrammyError, HttpError, InputFile } from "grammy";
-import type { ApiError, ReactionTypeEmoji, Update } from "grammy/types";
+import type { ReactionTypeEmoji, Update } from "grammy/types";
 import { readFileSync, existsSync, realpathSync } from "fs";
 import path, { resolve } from "path";
 import { tmpdir } from "os";
@@ -616,7 +616,7 @@ export async function sendVoiceDirect(
     // Throw as GrammyError so classifyGrammyError in toError() can classify it
     throw new GrammyError(
       desc,
-      { ok: false, error_code: json.error_code ?? 0, description: desc } as ApiError,
+      { ok: false, error_code: json.error_code ?? 0, description: desc },
       "sendVoice",
       {}
     );

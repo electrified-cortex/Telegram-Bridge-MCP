@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   handleCancelAnimation: vi.fn(),
   setHasCompacted: vi.fn((_sid: number): void => {}),
   handleSessionStopped: vi.fn((_sid: number): { noOp: boolean } => ({ noOp: false })),
+  getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => undefined),
 }));
 
 vi.mock("./session-manager.js", () => ({
@@ -48,6 +49,7 @@ vi.mock("./tools/animation/cancel.js", () => ({
 
 vi.mock("./tools/activity/file-state.js", () => ({
   handleSessionStopped: (sid: number) => mocks.handleSessionStopped(sid),
+  getActivityFile: (sid: number) => mocks.getActivityFile(sid),
 }));
 
 // Silence the NDJSON write — we don't test fire-and-forget I/O
@@ -83,6 +85,7 @@ describe("POST /event handler", () => {
     mocks.handleShowAnimation.mockResolvedValue({ content: [{ type: "text", text: "{}" }] });
     mocks.handleCancelAnimation.mockResolvedValue({ content: [{ type: "text", text: "{}" }] });
     mocks.handleSessionStopped.mockReturnValue({ noOp: false });
+    mocks.getActivityFile.mockReturnValue(undefined);
   });
 
   // ── 401: missing / invalid token ──────────────────────────────────────────
@@ -280,5 +283,97 @@ describe("POST /event handler", () => {
     mocks.getGovernorSid.mockReturnValue(1); // caller is governor
     handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });
     expect(mocks.handleShowAnimation).not.toHaveBeenCalled();
+  });
+});
+
+// ── post_compact_monitor_recovery tests ───────────────────────────────────────
+
+// VALID_TOKEN decodes to sid=1; helper for filtering recovery-specific calls
+function recoveryDeliveryCalls() {
+  return mocks.deliverServiceMessage.mock.calls.filter(
+    (call) => call[2] === "post_compact_monitor_recovery",
+  );
+}
+
+describe("POST /event handler — post_compact_monitor_recovery hint", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.getSession.mockReturnValue(makeSession(1));
+    mocks.deliverServiceMessage.mockReturnValue(true);
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.handleShowAnimation.mockResolvedValue({ content: [{ type: "text", text: "{}" }] });
+    mocks.handleCancelAnimation.mockResolvedValue({ content: [{ type: "text", text: "{}" }] });
+    mocks.handleSessionStopped.mockReturnValue({ noOp: false });
+    mocks.getActivityFile.mockReturnValue(undefined);
+  });
+
+  it("delivers post_compact_monitor_recovery to the actor session when compacting and activity file is registered", () => {
+    const filePath = "/tmp/agent-activity.txt";
+    mocks.getActivityFile.mockReturnValue({ filePath });
+
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+
+    expect(status).toBe(200);
+    expect((body as { ok: boolean }).ok).toBe(true);
+
+    const calls = recoveryDeliveryCalls();
+    expect(calls).toHaveLength(1);
+    // VALID_TOKEN decodes to sid=1 — that is the target
+    expect(calls[0][0]).toBe(1);
+    expect(calls[0][2]).toBe("post_compact_monitor_recovery");
+    expect(String(calls[0][1])).toContain(filePath);
+  });
+
+  it("does not deliver post_compact_monitor_recovery when no activity file is registered", () => {
+    mocks.getActivityFile.mockReturnValue(undefined);
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+
+    expect(recoveryDeliveryCalls()).toHaveLength(0);
+  });
+
+  it("delivers the recovery message exactly once per compacting event", () => {
+    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/once.txt" });
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+
+    expect(recoveryDeliveryCalls()).toHaveLength(1);
+  });
+
+  it("delivers once even when multiple sessions are in the fan-out", () => {
+    mocks.listSessions.mockReturnValue([makeSession(1), makeSession(2), makeSession(3)]);
+    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/multi.txt" });
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+
+    // Fan-out delivers "agent_event" to all sessions; recovery goes only to the actor
+    expect(recoveryDeliveryCalls()).toHaveLength(1);
+  });
+
+  it("does not deliver post_compact_monitor_recovery for 'compacted' events", () => {
+    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/activity.txt" });
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
+
+    expect(recoveryDeliveryCalls()).toHaveLength(0);
+  });
+
+  it("does not deliver post_compact_monitor_recovery for 'startup' events", () => {
+    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/activity.txt" });
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "startup" });
+
+    expect(recoveryDeliveryCalls()).toHaveLength(0);
+  });
+
+  it("does not deliver post_compact_monitor_recovery for 'stopped' events", () => {
+    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/activity.txt" });
+    mocks.handleSessionStopped.mockReturnValue({ noOp: false });
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });
+
+    expect(recoveryDeliveryCalls()).toHaveLength(0);
   });
 });

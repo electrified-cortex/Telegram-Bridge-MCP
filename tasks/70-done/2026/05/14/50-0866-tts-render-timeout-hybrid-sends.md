@@ -118,3 +118,11 @@ surface — don't double-timeout.
 - 2 new tests in `src/tts.test.ts` — 73/73 passing
 
 **Status:** In 60-review. Awaiting Curator verification pass.
+**Note:** Squash commit `ffe4eb3f` (seal(50-0866): TTS render timeout — squash 119d852 on TMCP dev) is on `dev`. Original branch `feat/50-0866-tts-render-timeout` deleted post-merge.
+
+## Verification
+
+**Verified:** 2026-05-14
+**Verdict:** APPROVED
+**Verifier:** Foreman (task-verification sub-agent, fresh-eyes pass)
+**Evidence:** AC1 confirmed — `src/tts.ts:244-261`: `AbortSignal.timeout(timeoutMs)` wraps fetch; catches TimeoutError/AbortError and throws `{ code: "tts_timeout", timeoutMs, wordCount }`. Two tests confirm (tts.test.ts:769-800). AC2 confirmed — `computeTtsSynthesisTimeoutMs()` reads `TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS` / `TTS_SYNTHESIS_TIMEOUT_MIN_MS` env vars with NaN guard. AC3 confirmed — `docs/help/send.md:124-127` documents `tts_timeout` payload and recovery. AC4 confirmed — 74 existing tests unchanged; 2 new tests are additive.

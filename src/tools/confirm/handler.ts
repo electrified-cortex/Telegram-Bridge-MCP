@@ -7,7 +7,7 @@ import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMess
 import { getSessionQueue, peekSessionCategories } from "../../session-queue.js";
 import { requireAuth } from "../../session-gate.js";
 import {
-  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithTimedOut,
+  pollButtonOrTextOrVoice, ackAndEditSelection, editWithSkipped, editWithReplied, editWithTimedOut,
   type ButtonStyle,
 } from "../button-helpers.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
@@ -226,9 +226,14 @@ export async function confirmHandler(
       return toResult({ timed_out: true, message_id: sent.message_id });
     }
 
-    // User typed or spoke instead of pressing a button — mark as skipped
+    // User typed or spoke instead of pressing a button
     if (result.kind === "text" || result.kind === "voice") {
       clearCallbackHook(sent.message_id);
+      if (result.reply_to === sent.message_id) {
+        // Operator explicitly replied to this question — resolved as "replied", not "skipped"
+        await editWithReplied(chatId, sent.message_id, text, !!audio);
+        return toResult({ resolution: "replied", text: result.text ?? "", message_id: result.message_id });
+      }
       if (!editState.done) await editWithSkipped(chatId, sent.message_id, text, !!audio);
       return toResult({
         skipped: true,

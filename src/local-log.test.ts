@@ -373,7 +373,7 @@ describe("listLogs", () => {
       "2025-04-04T100000.json",
       "2025-04-05T090000.json",
       "README.txt", // should be filtered out
-    ] as unknown as string[]);
+    ]);
 
     const result = listLogs();
     expect(result).toEqual([

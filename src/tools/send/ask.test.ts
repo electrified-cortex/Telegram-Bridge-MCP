@@ -74,23 +74,23 @@ import { register } from "./ask.js";
 
 const BASE_MSG = { message_id: 10, chat: { id: 42 }, date: 1000 };
 
-function makeTextEvent(messageId: number, text: string): TimelineEvent {
+function makeTextEvent(messageId: number, text: string, replyTo?: number): TimelineEvent {
   return {
     id: messageId,
     timestamp: new Date().toISOString(),
     event: "message",
     from: "user",
-    content: { type: "text", text },
+    content: { type: "text", text, ...(replyTo !== undefined ? { reply_to: replyTo } : {}) },
   };
 }
 
-function makeVoiceEvent(messageId: number, text: string): TimelineEvent {
+function makeVoiceEvent(messageId: number, text: string, replyTo?: number): TimelineEvent {
   return {
     id: messageId,
     timestamp: new Date().toISOString(),
     event: "message",
     from: "user",
-    content: { type: "voice", text },
+    content: { type: "voice", text, ...(replyTo !== undefined ? { reply_to: replyTo } : {}) },
   };
 }
 
@@ -163,6 +163,53 @@ describe("ask tool", () => {
     mocks._storeQueue.push(makeVoiceEvent(11, "hello"));
     await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(11);
+  });
+
+  it("returns { resolution: 'replied' } when reply_to matches the question message_id", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    // reply_to: 10 = directly replying to the question
+    mocks._storeQueue.push(makeTextEvent(11, "yes I agree", 10));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.resolution).toBe("replied");
+    expect(data.text).toBe("yes I agree");
+    expect(data.message_id).toBe(11);
+    expect(data.timed_out).toBeUndefined();
+  });
+
+  it("returns { resolution: 'replied' } for voice reply_to matching question message_id", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    mocks._storeQueue.push(makeVoiceEvent(11, "spoken reply", 10));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.resolution).toBe("replied");
+    expect(data.text).toBe("spoken reply");
+    expect(data.timed_out).toBeUndefined();
+  });
+
+  it("returns normal text response (not replied) when reply_to does not match", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    // reply_to: 99 = replying to a different message, not the question
+    mocks._storeQueue.push(makeTextEvent(11, "some text", 99));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.resolution).toBeUndefined();
+    expect(data.timed_out).toBe(false);
+    expect(data.text).toBe("some text");
+  });
+
+  it("returns normal text response (not replied) when reply_to is absent", async () => {
+    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    mocks._storeQueue.push(makeTextEvent(11, "plain message"));
+    const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.resolution).toBeUndefined();
+    expect(data.timed_out).toBe(false);
+    expect(data.text).toBe("plain message");
   });
 
   it("validates question text before sending", async () => {

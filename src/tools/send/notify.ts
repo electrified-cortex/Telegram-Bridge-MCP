@@ -24,7 +24,7 @@ const DESCRIPTION =
 
 export async function handleNotify({
   title, text, message, severity = "info", parse_mode = "Markdown",
-  disable_notification, reply_to, token,
+  disable_notification, reply_to, topic, token,
 }: {
   title: string;
   text?: string;
@@ -33,6 +33,7 @@ export async function handleNotify({
   parse_mode?: "Markdown" | "HTML" | "MarkdownV2";
   disable_notification?: boolean;
   reply_to?: number;
+  topic?: string;
   token: number;
 }) {
   const reply_to_message_id = reply_to;
@@ -43,7 +44,7 @@ export async function handleNotify({
   try {
     const prefix = SEVERITY_PREFIX[severity];
     const useV2 = parse_mode === "Markdown" || parse_mode === "MarkdownV2";
-    const topicTitle = applyTopicToTitle(title);
+    const topicTitle = applyTopicToTitle(title, topic);
     const titleFormatted = useV2
       ? `*${escapeV2(topicTitle)}*`
       : `<b>${escapeHtml(topicTitle)}</b>`;
@@ -100,6 +101,10 @@ export function register(server: McpServer) {
           .min(1)
           .optional()
           .describe("Reply to this message ID — shows quoted message above the notification"),
+        topic: z
+          .string()
+          .optional()
+          .describe("Per-message topic override. When provided, uses this string as the topic header for THIS notification only — overrides the profile-level topic without mutating it. Pass an empty string to suppress the topic for this one notification."),
         token: TOKEN_SCHEMA,
       },
     },

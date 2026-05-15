@@ -6,7 +6,6 @@ import {
 } from "../../telegram.js";
 import { resolveParseMode } from "../../markdown.js";
 import { recordOutgoingEdit } from "../../message-store.js";
-import type { ButtonStyle } from "../button-helpers.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 
@@ -70,7 +69,7 @@ export async function handleEditMessage({ message_id, text, keyboard, parse_mode
             row.map((btn) => ({
               text: btn.label,
               callback_data: btn.value,
-              ...(btn.style ? { style: btn.style as ButtonStyle } : {}),
+              ...(btn.style ? { style: btn.style } : {}),
             })),
           ),
     };

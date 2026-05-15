@@ -86,7 +86,7 @@ function makeState(overrides: Partial<{
   return {
     filePath: "/tmp/test-activity-file",
     tmcpOwned: false,
-    lastTouchAt: (overrides.lastTouchAt !== undefined ? overrides.lastTouchAt : null) as number | null,
+    lastTouchAt: (overrides.lastTouchAt !== undefined ? overrides.lastTouchAt : null),
     debounceTimer: null as ReturnType<typeof setTimeout> | null,
     lastActivityAt: overrides.lastActivityAt ?? 0,
     inflightDequeue: overrides.inflightDequeue ?? false,
