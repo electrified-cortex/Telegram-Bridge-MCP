@@ -9,6 +9,7 @@ filed-by: Overseer
 delegation: Worker
 target_repo: Telegram MCP
 needs-curator-review: true
+target_branch: dev
 ---
 
 # Spike: @mention agent-to-agent messaging in Telegram

@@ -8,6 +8,7 @@ created: 2026-05-04
 repo: Telegram MCP
 delegation: Worker
 depends_on: []
+target_branch: release/7.5
 ---
 
 # TTS render timeout for hybrid sends
