@@ -172,7 +172,7 @@ describe("stream/flush handler", () => {
     const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
 
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "Final content here" } });
-    const result = await handleStreamFlush({ stream_id, token: 1_123_456 });
+    const result = handleStreamFlush({ stream_id, token: 1_123_456 });
     expect(isError(result)).toBe(false);
     const data = parseResult(result) as { message_id: number; final_length: number; status: string };
     expect(data.message_id).toBe(300);
@@ -186,16 +186,16 @@ describe("stream/flush handler", () => {
     const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
 
     mocks.getMessage.mockReturnValue({ content: { type: "text", text: "done" } });
-    await handleStreamFlush({ stream_id, token: 1_123_456 });
+    handleStreamFlush({ stream_id, token: 1_123_456 });
 
     // second flush should fail
-    const result2 = await handleStreamFlush({ stream_id, token: 1_123_456 });
+    const result2 = handleStreamFlush({ stream_id, token: 1_123_456 });
     expect(isError(result2)).toBe(true);
     expect(errorCode(result2)).toBe("STREAM_NOT_FOUND");
   });
 
   it("returns STREAM_NOT_FOUND for unknown stream_id", async () => {
-    const result = await handleStreamFlush({
+    const result = handleStreamFlush({
       stream_id: "nonexistent-id",
       token: 1_123_456,
     });
