@@ -29,7 +29,8 @@ import { getGovernorSid } from "./routing-mode.js";
 import { handleShowAnimation } from "./tools/animation/show.js";
 import { handleCancelAnimation } from "./tools/animation/cancel.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
-import { handleSessionStopped } from "./tools/activity/file-state.js";
+import { handleSessionStopped, getActivityFile } from "./tools/activity/file-state.js";
+import { SERVICE_MESSAGES } from "./service-messages.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -179,6 +180,18 @@ export function handlePostEvent(
     const { noOp } = handleSessionStopped(sid);
     if (noOp) {
       return [200, { ok: true, fanout, hint: "no-op" }];
+    }
+  }
+
+  // ── 6. "compacting" side-effect — post-compact monitor recovery hint ──────
+  if (kind === "compacting") {
+    const activityState = getActivityFile(resolvedActorSid);
+    if (activityState) {
+      deliverServiceMessage(
+        resolvedActorSid,
+        SERVICE_MESSAGES.POST_COMPACT_MONITOR_RECOVERY.text(activityState.filePath),
+        SERVICE_MESSAGES.POST_COMPACT_MONITOR_RECOVERY.eventType,
+      );
     }
   }
 

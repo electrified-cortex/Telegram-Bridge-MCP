@@ -164,6 +164,16 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
     text: "⛔ Server shutting down. Your session will be invalidated on restart.",
   },
 
+  // ── Compaction recovery ───────────────────────────────────────────────────
+
+  /** @param filePath The registered activity file path to re-arm */
+  POST_COMPACT_MONITOR_RECOVERY: {
+    eventType: "post_compact_monitor_recovery" as const,
+    /** @param filePath The registered activity file path to re-arm */
+    text: (filePath: string) =>
+      `Looks like you compacted. Re-arm your activity-file monitor on this path.\n**Path:** ${filePath}`,
+  },
+
   // ── Inter-agent hints ─────────────────────────────────────────────────────
 
   COMPRESSION_HINT_FIRST_DM: {
