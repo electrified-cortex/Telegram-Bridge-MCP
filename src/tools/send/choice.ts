@@ -108,7 +108,7 @@ export async function handleSendChoice({
   try {
     const messageId = await sendChoiceMessage(chatId, {
       text,
-      options: options as KeyboardOption[],
+      options: options,
       columns,
       parseMode: parse_mode,
       disableNotification: disable_notification,
@@ -136,7 +136,7 @@ export async function handleSendChoice({
       const clickedValue = evt.content.data ?? "";
       const matched = options.find((o) => o.value === clickedValue);
       const label = (matched?.label ?? clickedValue) || "?";
-      const highlighted = buildHighlightedRows(options as KeyboardOption[], columns, clickedValue);
+      const highlighted = buildHighlightedRows(options, columns, clickedValue);
 
       if (persistent) {
         // Persistent / multi-tap: keep keyboard visible with highlight after each press.

@@ -70,7 +70,7 @@ export async function handleEditMessage({ message_id, text, keyboard, parse_mode
             row.map((btn) => ({
               text: btn.label,
               callback_data: btn.value,
-              ...(btn.style ? { style: btn.style as ButtonStyle } : {}),
+              ...(btn.style ? { style: btn.style } : {}),
             })),
           ),
     };

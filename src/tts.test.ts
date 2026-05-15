@@ -568,7 +568,7 @@ describe("synthesizeToOgg (local provider)", () => {
     const fakePcm = new Float32Array([0.1, -0.1, 0.0]);
     const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: fakePcm, sampling_rate: 16000 });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer as unknown);
 
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
@@ -590,7 +590,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 22050,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("test");
@@ -607,7 +607,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 16000,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("first call");
@@ -628,7 +628,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 16000,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const result = await synthesizeToOgg("hello");

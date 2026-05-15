@@ -195,7 +195,7 @@ async function executeJob(job: AsyncSendJob): Promise<void> {
           getApi().sendMessage(chatId, fallbackText, {
             ...(fallbackParseMode ? { parse_mode: fallbackParseMode } : {}),
             disable_notification: disableNotification,
-          } as Record<string, unknown>),
+          }),
         );
         textMessageId = fallbackMsg.message_id;
         textFallback = true;

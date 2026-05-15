@@ -146,7 +146,7 @@ function makeEvent(id: number, text: string, event = "message" as string): Timel
     event,
     from: "user",
     content: { type: "text", text },
-    _update: { update_id: id } as never,
+    _update: { update_id: id },
   };
 }
 
@@ -157,7 +157,7 @@ function makeReaction(id: number, target: number): TimelineEvent {
     event: "reaction",
     from: "user",
     content: { type: "reaction", target, added: ["👍"], removed: [] },
-    _update: { update_id: id } as never,
+    _update: { update_id: id },
   };
 }
 
@@ -168,7 +168,7 @@ function makeVoiceEvent(id: number): TimelineEvent {
     event: "message",
     from: "user",
     content: { type: "voice", text: "hello", file_id: "f1", duration: 2 } as never,
-    _update: { update_id: id } as never,
+    _update: { update_id: id },
   };
 }
 
@@ -692,7 +692,7 @@ describe("dequeue tool", () => {
         event: "message",
         from: "user",
         content: { type: "text", text: "reply", reply_to: replyTo },
-        _update: { update_id: id } as never,
+        _update: { update_id: id },
       };
     }
 
@@ -722,7 +722,7 @@ describe("dequeue tool", () => {
         event: "callback",
         from: "user",
         content: { type: "cb", data: "yes", target: 60 },
-        _update: { update_id: 11 } as never,
+        _update: { update_id: 11 },
       };
       mocks.dequeueBatch.mockReturnValueOnce([cbEvt]);
       const result = await call({ timeout: 0, token: 1_123_456 });

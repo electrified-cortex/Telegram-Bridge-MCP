@@ -395,7 +395,7 @@ export function buildKeyboardRows(
       options.slice(i, i + columns).map((o) => ({
         text: o.label,
         callback_data: o.value,
-        ...(o.style ? { style: o.style as ButtonStyle } : {}),
+        ...(o.style ? { style: o.style } : {}),
       })),
     );
   }
@@ -419,7 +419,7 @@ export function buildHighlightedRows(
     options.map((o) => {
       if (o.value === clickedValue) {
         // Keep original style if set; fall back to primary as highlight indicator.
-        return { ...o, style: (o.style ?? "primary") as ButtonStyle };
+        return { ...o, style: (o.style ?? "primary") };
       }
       // Strip style from all non-clicked buttons so they appear plain.
       const { style: _dropped, ...rest } = o;

@@ -49,7 +49,7 @@ function buildApprovalKeyboard(
       text: c,
       callback_data: `${APPROVE_PREFIX}${COLOR_PALETTE.indexOf(c as (typeof COLOR_PALETTE)[number])}`,
       ...(isPrimary ? { style: "primary" } : {}),
-    } as Record<string, unknown>;
+    };
   });
   const row1 = colorButtons.slice(0, 3);
   const row2 = colorButtons.slice(3);

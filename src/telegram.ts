@@ -616,7 +616,7 @@ export async function sendVoiceDirect(
     // Throw as GrammyError so classifyGrammyError in toError() can classify it
     throw new GrammyError(
       desc,
-      { ok: false, error_code: json.error_code ?? 0, description: desc } as ApiError,
+      { ok: false, error_code: json.error_code ?? 0, description: desc },
       "sendVoice",
       {}
     );

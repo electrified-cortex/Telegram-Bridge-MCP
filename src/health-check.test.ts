@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   deliverDirectMessage: vi.fn(() => true),
   deliverServiceMessage: vi.fn(() => true),
   sendServiceMessage: vi.fn().mockResolvedValue(undefined as number | undefined),
-  resolveChat: vi.fn(() => 12345 as number | { code: string; message: string }),
+  resolveChat: vi.fn(() => 12345),
   getApi: vi.fn(),
   listSessions: vi.fn(() => [] as { sid: number; name: string; createdAt: string }[]),
   registerCallbackHook: vi.fn(),
@@ -728,7 +728,7 @@ describe("health-check", () => {
 
       mocks.getUnhealthySessions.mockReturnValue([s]);
       // First tick will await this slow sendServiceMessage
-      mocks.sendServiceMessage.mockReturnValueOnce(firstCallPromise as Promise<number | undefined>);
+      mocks.sendServiceMessage.mockReturnValueOnce(firstCallPromise);
 
       // Start the first tick but do not await it yet
       const firstTick = _runHealthCheckNow();

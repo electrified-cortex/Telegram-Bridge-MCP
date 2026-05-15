@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
   getSessionAnnouncementMessage: vi.fn().mockReturnValue(undefined),
   setSessionReauthDialogMsgId: vi.fn(),
   clearSessionReauthDialogMsgId: vi.fn(),
-  resolveChat: vi.fn(() => 42 as number),
+  resolveChat: vi.fn(() => 42),
   registerCallbackHook: vi.fn(),
   clearCallbackHook: vi.fn(),
   startPoller: vi.fn(),
@@ -2060,8 +2060,8 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({}));
 
-    expect((result as Record<string, unknown>).monitor_recipe).toBeDefined();
-    expect((result as Record<string, unknown>).monitor_recipe).toBe(CANONICAL_MONITOR_RECIPE);
+    expect((result).monitor_recipe).toBeDefined();
+    expect((result).monitor_recipe).toBe(CANONICAL_MONITOR_RECIPE);
   });
 
   // =========================================================================
@@ -2692,7 +2692,7 @@ describe("handleSessionReconnect", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Agent" }));
 
-    expect((result as Record<string, unknown>).monitor_recipe).toBeDefined();
-    expect((result as Record<string, unknown>).monitor_recipe).toBe(CANONICAL_MONITOR_RECIPE);
+    expect((result).monitor_recipe).toBeDefined();
+    expect((result).monitor_recipe).toBe(CANONICAL_MONITOR_RECIPE);
   });
 });

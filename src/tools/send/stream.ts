@@ -34,7 +34,7 @@ export async function handleStreamStart({
   if (textErr) return toError(textErr);
 
   try {
-    const msg = await getApi().sendMessage(chatId, resolved.text, { parse_mode: resolved.parse_mode } as Record<string, unknown>);
+    const msg = await getApi().sendMessage(chatId, resolved.text, { parse_mode: resolved.parse_mode });
     recordOutgoing(msg.message_id, "text", initialText);
     const streamId = randomUUID();
     activeStreams.set(streamId, { messageId: msg.message_id, sid: _sid });

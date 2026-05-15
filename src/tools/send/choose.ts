@@ -151,7 +151,7 @@ export async function handleChoose(
           caption = caption.slice(0, MAX_CAPTION);
           if (caption.endsWith("\\")) caption = caption.slice(0, -1);
         }
-        const rows = buildKeyboardRows(options as KeyboardOption[], columns);
+        const rows = buildKeyboardRows(options, columns);
         const msg = await sendVoiceDirect(chatId, ogg, {
           caption,
           parse_mode: "MarkdownV2",
@@ -170,7 +170,7 @@ export async function handleChoose(
     } else {
       messageId = await sendChoiceMessage(chatId, {
         text: text,
-        options: options as KeyboardOption[],
+        options: options,
         columns,
         parseMode: "Markdown",
         replyToMessageId: reply_to_message_id,

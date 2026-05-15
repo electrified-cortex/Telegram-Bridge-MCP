@@ -168,7 +168,7 @@ export function pcmToOggOpus(float32: Float32Array, inputSampleRate: number): Bu
 
     let frameData: Buffer;
     if (byteEnd - byteStart === FRAME_SAMPLES * 2) {
-      frameData = pcmBytes.subarray(byteStart, byteEnd) as Buffer;
+      frameData = pcmBytes.subarray(byteStart, byteEnd);
     } else {
       // Pad the last partial frame with silence
       frameData = Buffer.alloc(FRAME_SAMPLES * 2, 0);
