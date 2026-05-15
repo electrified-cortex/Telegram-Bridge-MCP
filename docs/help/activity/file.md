@@ -70,6 +70,41 @@ pwsh tools/monitor.ps1 $activityFilePath -Timeout 300
 
 ---
 
+## Canonical Monitor recipe (Claude Code)
+
+Use this recipe with the Claude Code `Monitor` tool to watch the activity file. Substitute `<ACTIVITY_FILE>` with the path returned by `action(type: "activity/file/get")`.
+
+```bash
+f="<ACTIVITY_FILE>"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(stat -c%Y "$f" 2>/dev/null); if [ "$cur" != "$prev" ]; then echo "kick @ $cur"; prev=$cur; fi; sleep 1; done
+```
+
+**Monitor parameters:**
+
+| Parameter | Value |
+| --- | --- |
+| `persistent` | `true` — required so the monitor survives across dequeue calls |
+| `description` | e.g. `"activity-file mtime watcher for session <sid>"` |
+| `timeout_ms` | ignored when `persistent: true` — omit or set to any value |
+
+**How to use:** pass the command above as the `command` parameter to `Monitor`. On each `kick @ <unix-seconds>` line, call `dequeue(token)` and re-enter your loop.
+
+**Failure modes this recipe avoids:**
+
+- `tail -F` — follows appended bytes, not mtime changes; useless here.
+- `jq` missing — the recipe uses only `stat` and POSIX shell; no external JSON tools required.
+- Content-vs-mtime confusion — the recipe reads mtime only (`stat -c%Y`); never reads file content.
+- `persistent`-vs-`timeout_ms` confusion — when `persistent: true`, `timeout_ms` is ignored; the monitor runs until you call `TaskStop` or the session ends.
+
+**Path substitution:** replace `<ACTIVITY_FILE>` with the literal file path. Example:
+
+```bash
+f="/tmp/tmcp-activity-abc123.txt"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(stat -c%Y "$f" 2>/dev/null); if [ "$cur" != "$prev" ]; then echo "kick @ $cur"; prev=$cur; fi; sleep 1; done
+```
+
+The recipe is also returned as `monitor_recipe` in the `session/start` and `session/reconnect` responses — no need to copy it manually.
+
+---
+
 ## Watcher patterns (inline, no script)
 
 For environments where you cannot run a separate script, use these inline patterns directly.

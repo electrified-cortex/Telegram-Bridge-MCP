@@ -15,6 +15,7 @@ import { startPoller, isPollerRunning } from "../../poller.js";
 import { fireStartupReminders, buildReminderEvent } from "../../reminder-state.js";
 import { registerPendingApproval, clearPendingApproval, isDelegationEnabled, setDelegationEnabled } from "../../agent-approval.js";
 import type { ApprovalDecision } from "../../agent-approval.js";
+import { CANONICAL_MONITOR_RECIPE } from "../activity/canonical-recipe.js";
 
 const APPROVAL_TIMEOUT_MS = 120_000;
 const APPROVAL_NO = "approve_no";
@@ -290,6 +291,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           token: sessionToken,
           sid: session.sid,
           hint: "Call dequeue(token) to get your first message.",
+          monitor_recipe: CANONICAL_MONITOR_RECIPE,
         };
         if (isFirstSession) {
           // First session is the governor by default
@@ -523,6 +525,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     token: reconToken,
     sid: fullSession.sid,
     hint: "Call dequeue(token) to get your first message.",
+    monitor_recipe: CANONICAL_MONITOR_RECIPE,
   });
 }
 

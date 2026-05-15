@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
+import { CANONICAL_MONITOR_RECIPE } from "./activity/canonical-recipe.js";
 
 const MOCK_GUIDE = "# Behavior Guide\n\nThis is the mock guide content.";
 
@@ -94,7 +95,23 @@ vi.mock("fs", async (importActual) => {
           "action(type: \"session/close\", force: true, target_sid: N) before invoking shutdown.",
         ].join("\n");
       if (p.includes("docs") && p.includes("help") && p.includes("activity") && p.includes("file.md"))
-        return "# activity/file — Wake-Nudge Integration Guide\n\noptional augment. dequeue is primary.\n\nContent stays empty/stable — mtime is the signal.\n\nwatcher patterns: bash poll, PowerShell FileSystemWatcher, inotifywait.\n\nSee help('compaction-recovery') for the full recovery sequence.";
+        return [
+          "# activity/file — Wake-Nudge Integration Guide",
+          "",
+          "optional augment. dequeue is primary.",
+          "",
+          "Content stays empty/stable — mtime is the signal.",
+          "",
+          "watcher patterns: bash poll, PowerShell FileSystemWatcher, inotifywait.",
+          "",
+          "## Canonical Monitor recipe (Claude Code)",
+          "",
+          CANONICAL_MONITOR_RECIPE,
+          "",
+          "Monitor parameters: persistent: true, description. timeout_ms is ignored when persistent: true.",
+          "",
+          "See help('compaction-recovery') for the full recovery sequence.",
+        ].join("\n");
       if (p.includes("docs") && p.includes("help") && p.includes("compaction-recovery.md"))
         return "# compaction-recovery — Activity File Monitor Recovery\n\nMonitors do not survive compaction. Use activity/file/get to retrieve the existing path, then re-arm a fresh monitor. Do not call activity/file/create.";
       // Fall through to actual for anything else
@@ -235,6 +252,15 @@ describe("help tool", () => {
     expect(content.length).toBeGreaterThan(0);
     expect(content).toContain("activity/file/get");
     expect(content).toContain("monitor");
+  });
+
+  it("help(topic: 'activity/file') includes the canonical Monitor recipe section", async () => {
+    const result = await call({ topic: "activity/file" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("## Canonical Monitor recipe (Claude Code)");
+    expect(content).toContain(CANONICAL_MONITOR_RECIPE);
+    expect(content).toContain("persistent");
   });
 
   describe("topic: 'identity'", () => {
