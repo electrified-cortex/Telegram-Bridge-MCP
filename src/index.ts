@@ -11,6 +11,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "./server.js";
 import { getSecurityConfig, getApi, resolveChat, installOutboundProxy, sendServiceMessage } from "./telegram.js";
 import { clearCommandsOnShutdown } from "./shutdown.js";
+import { clearAllActivityFiles } from "./tools/activity/file-state.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
 import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startSilenceDetector } from "./silence-detector.js";
@@ -84,6 +85,8 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
       // Drain any updates received since the last poll iteration
       const drained = await drainPendingUpdates();
       if (drained > 0) process.stderr.write(`[shutdown] drained ${drained} pending update(s)\n`);
+      // Delete all TMCP-owned activity files so file-watcher agents exit cleanly.
+      try { await clearAllActivityFiles(); } catch { /* best effort */ }
       // Roll the active log on shutdown so the current session log is cleanly archived.
       // Flush before timeline dump to prevent double-roll (doTimelineDump also calls rollLog).
       if (isLoggingEnabled()) {
