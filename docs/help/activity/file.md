@@ -78,15 +78,15 @@ pwsh tools/monitor.ps1 $activityFilePath -Prefix MySession
 
 ---
 
-## Canonical Monitor recipe (Claude Code)
+## How to monitor the activity file
 
-Use this recipe with the Claude Code `Monitor` tool to watch the activity file. Substitute `<ACTIVITY_FILE>` with the path returned by `action(type: "activity/file/get")`.
+When you call `activity/file/create`, the response includes a `monitor` field with ready-to-run instructions for your platform:
 
-```bash
-if [ -f tools/monitor.sh ]; then bash tools/monitor.sh "<ACTIVITY_FILE>"; else echo "WARNING: tools/monitor.sh not found; using fallback poll" >&2; f="<ACTIVITY_FILE>"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(stat -c%Y "$f" 2>/dev/null); if [ "$cur" != "$prev" ]; then echo "kick"; prev=$cur; fi; sleep 1; done; fi
+```
+Run tools/monitor.ps1 <path> (preferred on Windows) or tools/monitor.sh <path> from your repo root to watch for kicks.
 ```
 
-This recipe runs the bundled `tools/monitor.sh` script when available (preferred — delegates to native file-watching, zero idle CPU on Windows). If the script is not found, it falls back to a 1-second stat-poll loop and logs a warning to stderr.
+Pass the command to the Claude Code `Monitor` tool with `persistent: true` so it survives across dequeue calls.
 
 **Monitor parameters:**
 
@@ -96,22 +96,7 @@ This recipe runs the bundled `tools/monitor.sh` script when available (preferred
 | `description` | e.g. `"activity-file mtime watcher for session <sid>"` |
 | `timeout_ms` | ignored when `persistent: true` — omit or set to any value |
 
-**How to use:** pass the command above as the `command` parameter to `Monitor`. On each `kick` line, call `dequeue(token)` and re-enter your loop.
-
-**Failure modes this recipe avoids:**
-
-- `tail -F` — follows appended bytes, not mtime changes; useless here.
-- `jq` missing — the recipe uses only POSIX shell utilities; no external JSON tools required.
-- Content-vs-mtime confusion — the recipe watches mtime only; never reads file content.
-- `persistent`-vs-`timeout_ms` confusion — when `persistent: true`, `timeout_ms` is ignored; the monitor runs until you call `TaskStop` or the session ends.
-
-**Path substitution:** replace `<ACTIVITY_FILE>` with the literal file path. Example:
-
-```bash
-if [ -f tools/monitor.sh ]; then bash tools/monitor.sh "/tmp/tmcp-activity-abc123.txt"; else echo "WARNING: tools/monitor.sh not found; using fallback poll" >&2; f="/tmp/tmcp-activity-abc123.txt"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(stat -c%Y "$f" 2>/dev/null); if [ "$cur" != "$prev" ]; then echo "kick"; prev=$cur; fi; sleep 1; done; fi
-```
-
-The recipe is also returned as `monitor_recipe` in the `session/start` and `session/reconnect` responses — no need to copy it manually.
+**How to use:** pass the command from the `monitor` field as the `command` parameter to `Monitor`. On each `kick` line, call `dequeue(token)` and re-enter your loop.
 
 ---
 

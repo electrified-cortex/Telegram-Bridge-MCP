@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive } from "./activity/file-state.js";
+import { setDequeueActive, getActivityFile } from "./activity/file-state.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -94,6 +94,12 @@ const _timeoutHintShownForSession = new Set<number>();
  */
 const _lastStaleWarningSentAt = new Map<number, number>();
 
+/**
+ * Tracks which sessions have already received the ONBOARDING_ACTIVITY_FILE_HINT.
+ * The hint fires once per session on first dequeue when no activity file is registered.
+ */
+const _activityFileHintShownForSession = new Set<number>();
+
 /** Exported for test reset only — do not call in production code. */
 export function _resetStaleWarningMapForTest(): void {
   _lastStaleWarningSentAt.clear();
@@ -107,6 +113,11 @@ export function _resetTimeoutHintForTest(): void {
 /** Exported for test reset only — kept for backward compat with tests. */
 export function _resetFirstDequeueHintForTest(): void {
   // No-op: first-dequeue hint removed.
+}
+
+/** Exported for test reset only — do not call in production code. */
+export function _resetActivityFileHintForTest(): void {
+  _activityFileHintShownForSession.clear();
 }
 
 /**
@@ -138,6 +149,14 @@ export async function runDrainLoop(
   // Only set after confirming the session exists so every path through the
   // try/finally below is guaranteed to call setDequeueActive(sid, false).
   setDequeueActive(sid, true);
+
+  // On the first dequeue call for a session with no activity file registered, surface
+  // a service message nudging the agent to set one up. The message lands in the queue
+  // before the drain so it appears early in the dequeue stream.
+  if (!_activityFileHintShownForSession.has(sid) && !getActivityFile(sid)) {
+    _activityFileHintShownForSession.add(sid);
+    deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_ACTIVITY_FILE_HINT);
+  }
 
   const sq = sessionQueue;
 
