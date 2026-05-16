@@ -168,7 +168,7 @@ describe("session_start tool", () => {
     expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
-      hint: "Call dequeue(token) to get your first message.",
+      hint: "Call dequeue(token) NOW — do not proceed without draining",
     });
   });
 
@@ -180,7 +180,7 @@ describe("session_start tool", () => {
     expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
-      hint: "Call dequeue(token) to get your first message.",
+      hint: "Call dequeue(token) NOW — do not proceed without draining",
     });
   });
 
@@ -2052,16 +2052,14 @@ describe("session_start tool", () => {
   // =========================================================================
 
 
-  // monitor_recipe field — regression test (criterion 8)
-  it("session/start response includes monitor_recipe equal to shared constant", async () => {
-    const { CANONICAL_MONITOR_RECIPE } = await import("../activity/canonical-recipe.js");
+  // monitor_recipe removed — regression test (criterion 1)
+  it("session/start response does not include monitor_recipe", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.dequeue.mockReturnValue(undefined);
 
     const result = parseResult(await call({}));
 
-    expect((result).monitor_recipe).toBeDefined();
-    expect((result).monitor_recipe).toBe(CANONICAL_MONITOR_RECIPE);
+    expect((result as Record<string, unknown>).monitor_recipe).toBeUndefined();
   });
 
   // =========================================================================
@@ -2682,9 +2680,8 @@ describe("handleSessionReconnect", () => {
     expect(result.sid).toBe(3);
   });
 
-  // monitor_recipe field — regression test (criterion 8)
-  it("session/reconnect response includes monitor_recipe equal to shared constant", async () => {
-    const { CANONICAL_MONITOR_RECIPE } = await import("../activity/canonical-recipe.js");
+  // monitor_recipe removed — regression test (criterion 1)
+  it("session/reconnect response does not include monitor_recipe", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 4, name: "Agent", color: "🟩", createdAt: "2026-05-01" }]);
     mocks.getSession.mockReturnValue({ sid: 4, suffix: 400001, name: "Agent", color: "🟩", healthy: true });
     mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
@@ -2692,7 +2689,6 @@ describe("handleSessionReconnect", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Agent" }));
 
-    expect((result).monitor_recipe).toBeDefined();
-    expect((result).monitor_recipe).toBe(CANONICAL_MONITOR_RECIPE);
+    expect((result as Record<string, unknown>).monitor_recipe).toBeUndefined();
   });
 });

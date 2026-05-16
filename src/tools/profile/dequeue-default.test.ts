@@ -43,6 +43,26 @@ vi.mock("../../telegram.js", async (importActual) => {
 vi.mock("../../session-queue.js", () => ({
   getSessionQueue: (sid: number) => mocks.getSessionQueue(sid),
   getMessageOwner: (msgId: number) => mocks.getMessageOwner(msgId),
+  deliverServiceMessage: vi.fn(),
+  peekSessionCategories: vi.fn(),
+}));
+
+vi.mock("../activity/file-state.js", () => ({
+  setDequeueActive: vi.fn(),
+  getActivityFile: vi.fn((_sid: number) => ({ filePath: "/mock/activity.txt" })),
+}));
+
+vi.mock("../../service-messages.js", () => ({
+  SERVICE_MESSAGES: {
+    ONBOARDING_ACTIVITY_FILE_HINT: {
+      eventType: "onboarding_activity_file_hint",
+      text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
+    },
+    DUPLICATE_SESSION_DETECTED: {
+      eventType: "duplicate_session_detected",
+      text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
+    },
+  },
 }));
 
 import { register } from "./dequeue-default.js";

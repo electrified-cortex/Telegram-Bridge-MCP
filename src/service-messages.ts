@@ -89,6 +89,11 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
     text: "No operator messages were pending at session start. Call dequeue to wait for operator input.",
   },
 
+  ONBOARDING_ACTIVITY_FILE_HINT: {
+    eventType: "onboarding_activity_file_hint" as const,
+    text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
+  },
+
   // ── Governor change notifications ─────────────────────────────────────────
 
   /** @param sid SID of the new governor, @param name name of the new governor */

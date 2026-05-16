@@ -59,7 +59,11 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       nudgeArmed: true,
     });
 
-    return toResult({ hint: `call dequeue(token: ${sid}) NOW — do not proceed without draining`, file_path: filePath });
+    return toResult({
+      hint: `call dequeue(token: ${sid}) NOW — do not proceed without draining`,
+      file_path: filePath,
+      monitor: `Run tools/monitor.ps1 "${filePath}" (preferred on Windows) or tools/monitor.sh "${filePath}" from your repo root to watch for kicks.`,
+    });
   }
 
   // TMCP-generated path
@@ -82,5 +86,9 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
     nudgeArmed: true,
   });
 
-  return toResult({ hint: `call dequeue(token: ${sid}) NOW — do not proceed without draining`, file_path: generatedPath });
+  return toResult({
+    hint: `call dequeue(token: ${sid}) NOW — do not proceed without draining`,
+    file_path: generatedPath,
+    monitor: `Run tools/monitor.ps1 "${generatedPath}" (preferred on Windows) or tools/monitor.sh "${generatedPath}" from your repo root to watch for kicks.`,
+  });
 }

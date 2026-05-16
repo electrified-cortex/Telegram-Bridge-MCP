@@ -1,6 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
-import { CANONICAL_MONITOR_RECIPE } from "./activity/canonical-recipe.js";
 
 const MOCK_GUIDE = "# Behavior Guide\n\nThis is the mock guide content.";
 
@@ -104,9 +103,9 @@ vi.mock("fs", async (importActual) => {
           "",
           "watcher patterns: bash poll, PowerShell FileSystemWatcher, inotifywait.",
           "",
-          "## Canonical Monitor recipe (Claude Code)",
+          "## How to monitor the activity file",
           "",
-          CANONICAL_MONITOR_RECIPE,
+          "Run tools/monitor.ps1 <path> (preferred on Windows) or tools/monitor.sh <path> from your repo root to watch for kicks.",
           "",
           "Monitor parameters: persistent: true, description. timeout_ms is ignored when persistent: true.",
           "",
@@ -254,12 +253,12 @@ describe("help tool", () => {
     expect(content).toContain("monitor");
   });
 
-  it("help(topic: 'activity/file') includes the canonical Monitor recipe section", async () => {
+  it("help(topic: 'activity/file') includes the monitor instructions section", async () => {
     const result = await call({ topic: "activity/file" });
     expect(isError(result)).toBe(false);
     const { content } = parseResult<{ content: string }>(result);
-    expect(content).toContain("## Canonical Monitor recipe (Claude Code)");
-    expect(content).toContain(CANONICAL_MONITOR_RECIPE);
+    expect(content).toContain("## How to monitor the activity file");
+    expect(content).toContain("tools/monitor.ps1");
     expect(content).toContain("persistent");
   });
 
