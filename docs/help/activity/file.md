@@ -45,6 +45,10 @@ TMCP ships ready-to-run watcher scripts in `tools/`. Use these instead of rollin
 
 Both scripts take the activity file path as the first argument. On each mtime change they emit `kick` to stdout — your Monitor tool picks this up and you call `dequeue()`.
 
+Both scripts delegate to the shared file-watching skill (`skills/file-watching/`):
+- `tools/monitor.ps1` calls `watch.ps1` (event-driven via `FileSystemWatcher`, zero idle CPU). Falls back to an inline `FileSystemWatcher` loop if the skill script is not found.
+- `tools/monitor.sh` routes to `pwsh watch.ps1` when available, otherwise to `watch.sh` (inotifywait → fswatch → 2-second sleep-poll). Falls back to an inline sleep-poll loop if the skill scripts are not found.
+
 **Bash:**
 ```bash
 bash tools/monitor.sh "$ACTIVITY_FILE_PATH"
@@ -52,6 +56,8 @@ bash tools/monitor.sh "$ACTIVITY_FILE_PATH"
 bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --heartbeat 60
 # Optional: exit after 5 minutes of inactivity
 bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --timeout 300
+# Optional: prefix every output line
+bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --prefix MySession
 ```
 
 **PowerShell:**
@@ -61,6 +67,8 @@ pwsh tools/monitor.ps1 $activityFilePath
 pwsh tools/monitor.ps1 $activityFilePath -Heartbeat 60
 # Optional: exit after 5 minutes of inactivity
 pwsh tools/monitor.ps1 $activityFilePath -Timeout 300
+# Optional: prefix every output line
+pwsh tools/monitor.ps1 $activityFilePath -Prefix MySession
 ```
 
 **Output lines:**

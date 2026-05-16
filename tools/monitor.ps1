@@ -1,26 +1,22 @@
 #!/usr/bin/env pwsh
 # monitor.ps1 — watch a TMCP activity file for changes; emit kick / heartbeat / timeout.
 #
-# Detection:
-#   [System.IO.FileSystemWatcher] with NotifyFilter = LastWriteTime.
-#   Built-in on all .NET platforms (Windows, Linux, macOS). On Windows this
-#   uses ReadDirectoryChangesW (~100 ms event latency); on Linux it uses
-#   inotify; on macOS it uses FSEvents. No external dependencies required.
+# Delegates to the file-watching skill (../skills/file-watching/watch.ps1) when available.
+# Falls back to an inline FileSystemWatcher loop if the skill script is not present.
 #
-# Usage: monitor.ps1 <activity_file_path> [-Heartbeat <seconds>] [-Timeout <seconds>]
+# Usage: monitor.ps1 <activity_file_path> [-Heartbeat <seconds>] [-Timeout <seconds>] [-Prefix <string>] [-Help]
 #
 # Parameters:
-#   activity_file_path   Absolute path to the activity file (from action(type: "activity/file/create")).
+#   activity_file_path   Path to the activity file (from action(type: "activity/file/create")).
 #   -Heartbeat <s>       Emit a `heartbeat` line every <s> idle seconds. Default: off (0 = disabled).
 #   -Timeout <s>         Exit after <s> consecutive idle seconds with no kick. Default: never (0 = disabled).
+#   -Prefix <string>     Insert "<prefix>: " before each token. Default: empty.
 #   -Help                Print usage and exit.
 #
 # Output:
 #   kick          — activity file mtime changed; call dequeue().
 #   heartbeat     — no change in the last -Heartbeat seconds (monitor is alive).
 #   timeout       — -Timeout elapsed with no kick; exits with code 0.
-#
-# Exit code: 0 on timeout or normal termination; 1 on argument error.
 
 param(
     [Parameter(Position = 0)]
@@ -28,17 +24,19 @@ param(
 
     [int]$Heartbeat = 0,
     [int]$Timeout   = 0,
+    [string]$Prefix = "",
     [switch]$Help
 )
 
 $usage = @'
-Usage: monitor.ps1 <activity_file_path> [-Heartbeat <seconds>] [-Timeout <seconds>] [-Help]
+Usage: monitor.ps1 <activity_file_path> [-Heartbeat <seconds>] [-Timeout <seconds>] [-Prefix <string>] [-Help]
 
 Watches a TMCP activity file for mtime changes and emits one kick line per change.
 
   <activity_file_path>   Path returned by action(type: "activity/file/create").
   -Heartbeat <s>         Emit `heartbeat` every <s> idle seconds (monitor liveness signal).
   -Timeout <s>           Exit with `timeout` after <s> consecutive idle seconds. Default: never.
+  -Prefix <string>       Insert "<prefix>: " before each token.
   -Help                  Print this help and exit.
 
 Output lines:
@@ -68,6 +66,39 @@ if ($Timeout -lt 0) {
     exit 1
 }
 
+# Resolve to absolute path so GetDirectoryName/GetFileName work reliably.
+$fullPath = [System.IO.Path]::GetFullPath($ActivityFile)
+
+# ── Delegate to skill ─────────────────────────────────────────────────────────
+$scriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
+$watchScript = [System.IO.Path]::GetFullPath((Join-Path $scriptDir '../skills/file-watching/watch.ps1'))
+
+if (Test-Path -LiteralPath $watchScript) {
+    $watchArgs = @($fullPath, '-Timeout', $Timeout, '-Heartbeat', $Heartbeat, '-Debounce', 0)
+    if ($Prefix) { $watchArgs += @('-Prefix', $Prefix) }
+    & $watchScript @watchArgs | ForEach-Object {
+        # Strip ISO8601 timestamp (first word), then map changed → kick.
+        $token = ($_ -split ' ', 2)[1]
+        if ([string]::IsNullOrEmpty($token)) { return }
+        if ($token -match '^(.+: )changed$') { "$($Matches[1])kick" }
+        elseif ($token -eq 'changed') { 'kick' }
+        else { $token }
+    }
+    exit $LASTEXITCODE
+}
+
+# ── Inline fallback ───────────────────────────────────────────────────────────
+# Used only when skills/file-watching/watch.ps1 is not present at the expected path.
+
+function Write-Token {
+    param([string]$Token)
+    if ($Prefix) {
+        Write-Output "${Prefix}: $Token"
+    } else {
+        Write-Output $Token
+    }
+}
+
 function Get-MTime {
     param([string]$Path)
     try {
@@ -78,8 +109,6 @@ function Get-MTime {
     }
 }
 
-# Resolve to absolute path so GetDirectoryName/GetFileName work reliably.
-$fullPath = [System.IO.Path]::GetFullPath($ActivityFile)
 $fileDir  = [System.IO.Path]::GetDirectoryName($fullPath)
 $fileName = [System.IO.Path]::GetFileName($fullPath)
 
@@ -99,7 +128,7 @@ while ($true) {
     if (Test-Path $fullPath) {
         $currentMTime = Get-MTime $fullPath
         if ($currentMTime -ne $lastMTime) {
-            Write-Output "kick"
+            Write-Token "kick"
             $lastMTime         = $currentMTime
             $lastEventTime     = $now
             $lastHeartbeatTime = $now
@@ -111,7 +140,7 @@ while ($true) {
     if ($Timeout -gt 0) {
         $idleSecs = ($now - $lastEventTime).TotalSeconds
         if ($idleSecs -ge $Timeout) {
-            Write-Output "timeout"
+            Write-Token "timeout"
             exit 0
         }
     }
@@ -120,7 +149,7 @@ while ($true) {
     if ($Heartbeat -gt 0) {
         $sinceBeat = ($now - $lastHeartbeatTime).TotalSeconds
         if ($sinceBeat -ge $Heartbeat) {
-            Write-Output "heartbeat"
+            Write-Token "heartbeat"
             $lastHeartbeatTime = [DateTimeOffset]::UtcNow
         }
     }
