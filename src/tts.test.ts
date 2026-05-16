@@ -809,3 +809,46 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     await expect(synthesizeToOgg("hello")).rejects.toThrow("network failure");
   });
 });
+
+// ---------------------------------------------------------------------------
+// synthesizeToOgg — local provider timeout
+// ---------------------------------------------------------------------------
+
+describe("synthesizeToOgg (local provider timeout)", () => {
+  beforeEach(() => {
+    delete process.env.TTS_HOST;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS;
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS;
+    _resetLocalPipeline();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS;
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS;
+    _resetLocalPipeline();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("throws tts_timeout with correct code when local synthesizer hangs beyond timeout", async () => {
+    process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS = "50";
+    process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS = "50";
+
+    const { pipeline } = await import("@huggingface/transformers");
+    // Synthesizer never resolves — simulates a hung local model
+    const hangingSynthesizer = vi.fn(() => new Promise<never>(() => {}));
+    (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
+      .mockResolvedValue(hangingSynthesizer as unknown);
+
+    const errPromise = synthesizeToOgg("hello world").catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+
+    const err = await errPromise;
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error & { code?: string }).code).toBe("tts_timeout");
+    expect((err as Error).message).toMatch(/tts_timeout/);
+    expect((err as Error).message).toMatch(/Local model not responding/);
+  });
+});
