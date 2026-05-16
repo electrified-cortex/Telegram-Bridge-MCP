@@ -18,8 +18,9 @@ import { flushCurrentLog, isLoggingEnabled, rollLog } from "./local-log.js";
  * - `"agent"`    — MCP `shutdown` tool was called by an agent
  *
  * Note: `"signal"` (OS SIGTERM/SIGINT) and `"crash"` (uncaught exception recovery)
- * are reserved for future wiring — the SIGINT/SIGTERM handler in `index.ts` currently
- * uses its own inline sequence and does not call `elegantShutdown`.
+ * use their own inline sequence in `index.ts` rather than calling `elegantShutdown`.
+ * The SIGTERM handler calls `clearAllActivityFiles()` directly so activity files are
+ * still cleaned up on OS-level shutdown.
  */
 export type ShutdownCause = "operator" | "agent";
 

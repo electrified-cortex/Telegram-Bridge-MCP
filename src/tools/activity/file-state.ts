@@ -448,6 +448,16 @@ export async function createTmcpOwnedFile(): Promise<string> {
   return filePath;
 }
 
+/**
+ * Clear ALL registered activity files (for use on full TMCP shutdown / SIGTERM).
+ * Calls clearActivityFile for every registered session in parallel.
+ * Best-effort: individual failures do not block others.
+ */
+export async function clearAllActivityFiles(): Promise<void> {
+  const sids = [..._state.keys()];
+  await Promise.allSettled(sids.map((sid) => clearActivityFile(sid)));
+}
+
 /** Reset all state. For tests only. */
 export function resetActivityFileStateForTest(): void {
   for (const entry of _state.values()) {
