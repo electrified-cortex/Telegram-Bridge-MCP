@@ -207,7 +207,7 @@ async function executeJob(job: AsyncSendJob): Promise<void> {
     }
 
     const errorCode = (err && typeof err === "object" && "code" in err)
-      ? String((err as { code: unknown }).code)
+      ? String((err).code)
       : undefined;
     const payload: AsyncSendCallbackPayload = {
       pendingId,

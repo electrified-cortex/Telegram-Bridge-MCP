@@ -149,16 +149,19 @@ export function handlePostEvent(
   });
 
   // ── 3. Fan out ───────────────────────────────────────────────────────────
+  // kind=stopped is suppressed from broadcast — high-frequency noise, no actionable signal.
   const sessions = listSessions();
   let fanout = 0;
-  for (const session of sessions) {
-    const delivered = deliverServiceMessage(
-      session.sid,
-      `[event] ${actorName}: ${kind}`,
-      "agent_event",
-      { kind, actor: actorName, actor_sid: resolvedActorSid, ...(details && { details }) },
-    );
-    if (delivered) fanout++;
+  if (kind !== "stopped") {
+    for (const session of sessions) {
+      const delivered = deliverServiceMessage(
+        session.sid,
+        `[event] ${actorName}: ${kind}`,
+        "agent_event",
+        { kind, actor: actorName, actor_sid: resolvedActorSid, ...(details && { details }) },
+      );
+      if (delivered) fanout++;
+    }
   }
 
   // ── 4. Governor side-effect ──────────────────────────────────────────────

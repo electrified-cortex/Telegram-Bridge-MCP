@@ -196,7 +196,7 @@ async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
         { code: "tts_timeout", timeoutMs, wordCount }
       ));
     }, timeoutMs);
-    ttsPromise.then(() => clearTimeout(handle), () => clearTimeout(handle));
+    ttsPromise.then(() => { clearTimeout(handle); }, () => { clearTimeout(handle); });
   });
   return Promise.race([ttsPromise, timeoutPromise]);
 }

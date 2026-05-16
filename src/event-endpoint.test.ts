@@ -284,6 +284,20 @@ describe("POST /event handler", () => {
     handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });
     expect(mocks.handleShowAnimation).not.toHaveBeenCalled();
   });
+
+  it("does not fan out agent_event service message when kind is stopped", () => {
+    mocks.listSessions.mockReturnValue([makeSession(1), makeSession(2)]);
+    mocks.handleSessionStopped.mockReturnValue({ noOp: false });
+
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });
+    expect(status).toBe(200);
+    // deliverServiceMessage should never be called for stopped events
+    const agentEventCalls = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "agent_event",
+    );
+    expect(agentEventCalls).toHaveLength(0);
+    expect((body as { fanout: number }).fanout).toBe(0);
+  });
 });
 
 // ── post_compact_monitor_recovery tests ───────────────────────────────────────
