@@ -182,9 +182,23 @@ function getLocalPipeline(): Promise<TTSSynthesizer> {
 
 async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
   const synthesizer = await getLocalPipeline();
-  const result = await synthesizer(text);
-  const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-  return pcmToOggOpus(result.audio, result.sampling_rate);
+  const timeoutMs = computeTtsSynthesisTimeoutMs(text);
+  const wordCount = wordCountForTimeout(text);
+  const ttsPromise = (async () => {
+    const result = await synthesizer(text);
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+    return pcmToOggOpus(result.audio, result.sampling_rate);
+  })();
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const handle = setTimeout(() => {
+      reject(Object.assign(
+        new Error(`tts_timeout: TTS synthesis timed out after ${timeoutMs}ms (~${wordCount} words). Local model not responding.`),
+        { code: "tts_timeout", timeoutMs, wordCount }
+      ));
+    }, timeoutMs);
+    ttsPromise.then(() => clearTimeout(handle), () => clearTimeout(handle));
+  });
+  return Promise.race([ttsPromise, timeoutPromise]);
 }
 
 // ---------------------------------------------------------------------------
