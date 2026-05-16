@@ -201,16 +201,16 @@ async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
  * Compute TTS synthesis timeout in milliseconds.
  * Scale by word count: max(60s, ceil(words/100) * 60s).
  * Floor of 60 seconds for all inputs.
- * Configurable via TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS (default 60000).
- * Configurable via TTS_SYNTHESIS_TIMEOUT_MIN_MS (default 60000).
+ * Configurable via TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS (default 45000).
+ * Configurable via TTS_SYNTHESIS_TIMEOUT_MIN_MS (default 45000).
  */
 function wordCountForTimeout(text: string): number {
   return text.trim().split(/\s+/).length;
 }
 
 function computeTtsSynthesisTimeoutMs(text: string): number {
-  const perHundredWords = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS ?? "", 10)) || 60000);
-  const minMs = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS ?? "", 10)) || 60000);
+  const perHundredWords = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS ?? "", 10)) || 45000);
+  const minMs = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS ?? "", 10)) || 45000);
   const wordCount = wordCountForTimeout(text);
   return Math.max(minMs, Math.ceil(wordCount / 100) * perHundredWords);
 }
