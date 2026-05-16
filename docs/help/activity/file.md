@@ -45,6 +45,10 @@ TMCP ships ready-to-run watcher scripts in `tools/`. Use these instead of rollin
 
 Both scripts take the activity file path as the first argument. On each mtime change they emit `kick` to stdout — your Monitor tool picks this up and you call `dequeue()`.
 
+Both scripts delegate to the shared file-watching skill (`skills/file-watching/`):
+- `tools/monitor.ps1` calls `watch.ps1` (event-driven via `FileSystemWatcher`, zero idle CPU). Falls back to an inline `FileSystemWatcher` loop if the skill script is not found.
+- `tools/monitor.sh` routes to `pwsh watch.ps1` when available, otherwise to `watch.sh` (inotifywait → fswatch → 2-second sleep-poll). Falls back to an inline sleep-poll loop if the skill scripts are not found.
+
 **Bash:**
 ```bash
 bash tools/monitor.sh "$ACTIVITY_FILE_PATH"
@@ -52,6 +56,8 @@ bash tools/monitor.sh "$ACTIVITY_FILE_PATH"
 bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --heartbeat 60
 # Optional: exit after 5 minutes of inactivity
 bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --timeout 300
+# Optional: prefix every output line
+bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --prefix MySession
 ```
 
 **PowerShell:**
@@ -61,6 +67,8 @@ pwsh tools/monitor.ps1 $activityFilePath
 pwsh tools/monitor.ps1 $activityFilePath -Heartbeat 60
 # Optional: exit after 5 minutes of inactivity
 pwsh tools/monitor.ps1 $activityFilePath -Timeout 300
+# Optional: prefix every output line
+pwsh tools/monitor.ps1 $activityFilePath -Prefix MySession
 ```
 
 **Output lines:**
@@ -75,8 +83,10 @@ pwsh tools/monitor.ps1 $activityFilePath -Timeout 300
 Use this recipe with the Claude Code `Monitor` tool to watch the activity file. Substitute `<ACTIVITY_FILE>` with the path returned by `action(type: "activity/file/get")`.
 
 ```bash
-f="<ACTIVITY_FILE>"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(stat -c%Y "$f" 2>/dev/null); if [ "$cur" != "$prev" ]; then echo "kick @ $cur"; prev=$cur; fi; sleep 1; done
+if [ -f tools/monitor.sh ]; then bash tools/monitor.sh "<ACTIVITY_FILE>"; else echo "WARNING: tools/monitor.sh not found; using fallback poll" >&2; f="<ACTIVITY_FILE>"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(stat -c%Y "$f" 2>/dev/null); if [ "$cur" != "$prev" ]; then echo "kick"; prev=$cur; fi; sleep 1; done; fi
 ```
+
+This recipe runs the bundled `tools/monitor.sh` script when available (preferred — delegates to native file-watching, zero idle CPU on Windows). If the script is not found, it falls back to a 1-second stat-poll loop and logs a warning to stderr.
 
 **Monitor parameters:**
 
@@ -86,19 +96,19 @@ f="<ACTIVITY_FILE>"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(st
 | `description` | e.g. `"activity-file mtime watcher for session <sid>"` |
 | `timeout_ms` | ignored when `persistent: true` — omit or set to any value |
 
-**How to use:** pass the command above as the `command` parameter to `Monitor`. On each `kick @ <unix-seconds>` line, call `dequeue(token)` and re-enter your loop.
+**How to use:** pass the command above as the `command` parameter to `Monitor`. On each `kick` line, call `dequeue(token)` and re-enter your loop.
 
 **Failure modes this recipe avoids:**
 
 - `tail -F` — follows appended bytes, not mtime changes; useless here.
-- `jq` missing — the recipe uses only `stat` and POSIX shell; no external JSON tools required.
-- Content-vs-mtime confusion — the recipe reads mtime only (`stat -c%Y`); never reads file content.
+- `jq` missing — the recipe uses only POSIX shell utilities; no external JSON tools required.
+- Content-vs-mtime confusion — the recipe watches mtime only; never reads file content.
 - `persistent`-vs-`timeout_ms` confusion — when `persistent: true`, `timeout_ms` is ignored; the monitor runs until you call `TaskStop` or the session ends.
 
 **Path substitution:** replace `<ACTIVITY_FILE>` with the literal file path. Example:
 
 ```bash
-f="/tmp/tmcp-activity-abc123.txt"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(stat -c%Y "$f" 2>/dev/null); if [ "$cur" != "$prev" ]; then echo "kick @ $cur"; prev=$cur; fi; sleep 1; done
+if [ -f tools/monitor.sh ]; then bash tools/monitor.sh "/tmp/tmcp-activity-abc123.txt"; else echo "WARNING: tools/monitor.sh not found; using fallback poll" >&2; f="/tmp/tmcp-activity-abc123.txt"; prev=$(stat -c%Y "$f" 2>/dev/null); while true; do cur=$(stat -c%Y "$f" 2>/dev/null); if [ "$cur" != "$prev" ]; then echo "kick"; prev=$cur; fi; sleep 1; done; fi
 ```
 
 The recipe is also returned as `monitor_recipe` in the `session/start` and `session/reconnect` responses — no need to copy it manually.
