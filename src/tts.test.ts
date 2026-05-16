@@ -781,7 +781,7 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error & { code?: string }).code).toBe("tts_timeout");
     expect((err as Error).message).toMatch(/tts_timeout/);
-    expect((err as Error).message).toMatch(/Server not responding/);
+    expect((err as Error).message).toMatch(/Local model not responding/);
   });
 
   it("throws tts_timeout error with correct code when AbortError is thrown", async () => {
@@ -797,7 +797,7 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error & { code?: string }).code).toBe("tts_timeout");
     expect((err as Error).message).toMatch(/tts_timeout/);
-    expect((err as Error).message).toMatch(/Server not responding/);
+    expect((err as Error).message).toMatch(/Local model not responding/);
   });
 
   it("re-throws non-abort errors from fetch unchanged", async () => {
