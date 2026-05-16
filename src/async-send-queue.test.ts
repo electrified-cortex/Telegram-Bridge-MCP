@@ -272,6 +272,25 @@ describe("async-send-queue", () => {
 
       expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
     });
+
+    it("surfaces error_code: tts_timeout when TTS throws a tts_timeout error", async () => {
+      const ttsTimeoutErr = Object.assign(
+        new Error("tts_timeout: TTS synthesis timed out after 30000ms (~2 words). Local model not responding."),
+        { code: "tts_timeout", timeoutMs: 30000, wordCount: 2 },
+      );
+      mocks.synthesizeToOgg.mockRejectedValue(ttsTimeoutErr);
+
+      enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+      await flushJobs();
+
+      expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
+      const [, payload] = mocks.deliverAsyncSendCallback.mock.calls[0] as unknown as [
+        number,
+        { status: string; error: string; error_code?: string },
+      ];
+      expect(payload.status).toBe("failed");
+      expect(payload.error_code).toBe("tts_timeout");
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -146,7 +146,7 @@ send(token, type: "notification", title: "Build Result", topic: "CI Runner")
 **Async default for audio:** When `audio` is present, the send is async by default — returns `{ message_id_pending, status: "queued" }` immediately; result delivered via `dequeue` as a `send_callback` event. Pass `async: false` to force synchronous execution (blocks until TTS completes, returns real `message_id`). Non-audio sends are always synchronous.
 
 **TTS error codes:** Audio sends can return structured errors:
-- `tts_timeout` — TTS server did not respond in time. Carries `{ code: "tts_timeout", timeoutMs, wordCount }`. Timeout is dynamic: `max(60s, ceil(wordCount / 100) * 60s)`. Configurable via `TTS_SYNTHESIS_TIMEOUT_MIN_MS` and `TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS`. Retry with shorter audio or check TTS server health.
+- `tts_timeout` — TTS render did not complete in time. Carries `{ code: "tts_timeout", timeoutMs, wordCount }`. Applies to both HTTP and local providers. Timeout is dynamic: `max(30s, ceil(wordCount / 100) * 30s)`. Configurable via `TTS_SYNTHESIS_TIMEOUT_MIN_MS` and `TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS`. Recovery: retry with `async: false` and shorter audio, or check TTS provider health. In async sends, surfaces as `error_code: "tts_timeout"` in the `send_callback` event.
 - `TTS_NOT_CONFIGURED` — TTS is not set up (no `TTS_HOST` or `OPENAI_API_KEY`).
 - `EMPTY_MESSAGE` — Audio text was empty after stripping formatting.
 

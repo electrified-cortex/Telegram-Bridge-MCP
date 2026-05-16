@@ -331,6 +331,8 @@ export interface AsyncSendCallbackPayload {
   messageIds?: number[];
   /** Error description (status: "failed"). */
   error?: string;
+  /** Structured error code (status: "failed"). E.g. "tts_timeout". */
+  error_code?: string;
   /** True when a plain-text fallback was sent instead of voice. */
   textFallback?: boolean;
   /** Message ID of the caption overflow follow-up text message. */
