@@ -840,7 +840,7 @@ describe("synthesizeToOgg (local provider timeout)", () => {
     // Synthesizer never resolves — simulates a hung local model
     const hangingSynthesizer = vi.fn(() => new Promise<never>(() => {}));
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(hangingSynthesizer as unknown);
+      .mockResolvedValue(hangingSynthesizer);
 
     const errPromise = synthesizeToOgg("hello world").catch((e: unknown) => e);
     await vi.runAllTimersAsync();

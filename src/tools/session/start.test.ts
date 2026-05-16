@@ -2059,7 +2059,7 @@ describe("session_start tool", () => {
 
     const result = parseResult(await call({}));
 
-    expect((result as Record<string, unknown>).monitor_recipe).toBeUndefined();
+    expect((result).monitor_recipe).toBeUndefined();
   });
 
   // =========================================================================
@@ -2689,6 +2689,6 @@ describe("handleSessionReconnect", () => {
 
     const result = parseResult(await handleSessionReconnect({ name: "Agent" }));
 
-    expect((result as Record<string, unknown>).monitor_recipe).toBeUndefined();
+    expect((result).monitor_recipe).toBeUndefined();
   });
 });
