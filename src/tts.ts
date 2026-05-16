@@ -254,7 +254,7 @@ async function synthesizeHttpToOgg(
     if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
       const wordCount = wordCountForTimeout(text);
       throw Object.assign(
-        new Error(`tts_timeout: TTS synthesis timed out after ${timeoutMs}ms (~${wordCount} words). Server not responding.`),
+        new Error(`tts_timeout: TTS synthesis timed out after ${timeoutMs}ms (~${wordCount} words). Local model not responding.`),
         { code: "tts_timeout", timeoutMs, wordCount }
       );
     }
