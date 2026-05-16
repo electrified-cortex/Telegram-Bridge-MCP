@@ -8,6 +8,7 @@ created: 2026-05-04
 repo: Telegram MCP
 delegation: Worker
 depends_on: []
+target_branch: release/7.5
 ---
 
 # TTS render timeout for hybrid sends
@@ -72,3 +73,14 @@ surface — don't double-timeout.
 
 - `agents/curator/memory/projects/2026-05-03-overseer-wedge-postmortem.md`
 - 50-0865 (auto-terminate) — sibling task.
+
+## Verification
+
+APPROVED 2026-05-16 — all 4 ACs confirmed.
+
+- AC1 (structured error within timeout, not hang): `src/tts.ts:183-201` — `Promise.race` timeout + `tts.test.ts` local-provider timeout test + `async-send-queue.test.ts` error_code propagation test.
+- AC2 (timeout configurable): `src/tts.ts:225-230` reads `TTS_SYNTHESIS_TIMEOUT_MIN_MS` / `TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS`; both env vars documented in `docs/help/send.md:149`.
+- AC3 (documented + caller-actionable): `docs/help/send.md:149` + `src/session-queue.ts:334-335` `error_code?: string` on `AsyncSendCallbackPayload`.
+- AC4 (no regression): 3055/3055 tests pass; pre-existing TTS suites all green.
+
+Squash commit: 084bc0c (release/7.5). Sealed-By: Foreman 2026-05-16.

@@ -26,12 +26,16 @@ export interface TextResult {
   kind: "text";
   message_id: number;
   text: string;
+  /** Set when the operator used Telegram's reply feature to target a specific message. */
+  reply_to?: number;
 }
 
 export interface VoiceResult {
   kind: "voice";
   message_id: number;
   text?: string;
+  /** Set when the operator used Telegram's reply feature to target a specific message. */
+  reply_to?: number;
 }
 
 export interface CommandResult {
@@ -166,7 +170,7 @@ export async function pollButtonOrTextOrVoice(
         if (event.content.type === "text") {
           const text = event.content.text;
           if (!text) return undefined;
-          return { kind: "text" as const, message_id: event.id, text };
+          return { kind: "text" as const, message_id: event.id, text, reply_to: event.content.reply_to };
         }
         if (event.content.type === "voice") {
           // Don't consume until transcription is complete (two-phase recording)
@@ -180,6 +184,7 @@ export async function pollButtonOrTextOrVoice(
             kind: "voice" as const,
             message_id: event.id,
             text: event.content.text,
+            reply_to: event.content.reply_to,
           };
         }
         if (event.content.type === "command") {
@@ -356,6 +361,19 @@ export async function editWithSkipped(
   await appendSuffixAndEdit(chatId, messageId, originalText, "⏭ _Skipped_", isVoice);
 }
 
+/**
+ * Edits the host message to show ↩ Replied with all buttons removed.
+ * Used by choose/confirm when the operator replied directly to the question message.
+ */
+export async function editWithReplied(
+  chatId: number,
+  messageId: number,
+  originalText: string,
+  isVoice?: boolean,
+): Promise<void> {
+  await appendSuffixAndEdit(chatId, messageId, originalText, "↩ _Replied_", isVoice);
+}
+
 // ---------------------------------------------------------------------------
 // Shared keyboard-send helpers (used by choose + send_choice)
 // ---------------------------------------------------------------------------
@@ -377,7 +395,7 @@ export function buildKeyboardRows(
       options.slice(i, i + columns).map((o) => ({
         text: o.label,
         callback_data: o.value,
-        ...(o.style ? { style: o.style as ButtonStyle } : {}),
+        ...(o.style ? { style: o.style } : {}),
       })),
     );
   }
@@ -401,7 +419,7 @@ export function buildHighlightedRows(
     options.map((o) => {
       if (o.value === clickedValue) {
         // Keep original style if set; fall back to primary as highlight indicator.
-        return { ...o, style: (o.style ?? "primary") as ButtonStyle };
+        return { ...o, style: (o.style ?? "primary") };
       }
       // Strip style from all non-clicked buttons so they appear plain.
       const { style: _dropped, ...rest } = o;
@@ -418,6 +436,8 @@ export interface SendChoiceMessageOptions {
   parseMode: "Markdown" | "HTML" | "MarkdownV2";
   disableNotification?: boolean;
   replyToMessageId?: number;
+  /** Per-message topic override — passed to applyTopicToText. Undefined = use profile topic. */
+  topicOverride?: string;
 }
 
 /**
@@ -429,7 +449,7 @@ export async function sendChoiceMessage(
   opts: SendChoiceMessageOptions,
 ): Promise<number> {
   const rows = buildKeyboardRows(opts.options, opts.columns);
-  const textWithTopic = applyTopicToText(opts.text, opts.parseMode);
+  const textWithTopic = applyTopicToText(opts.text, opts.parseMode, opts.topicOverride);
   const { text: finalText, parse_mode: finalMode } = resolveParseMode(textWithTopic, opts.parseMode);
   const sent = await getApi().sendMessage(chatId, finalText, {
     parse_mode: finalMode,

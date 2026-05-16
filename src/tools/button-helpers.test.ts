@@ -590,7 +590,7 @@ describe("button-helpers", () => {
         });
       });
       const result = await pollButtonOrTextOrVoice(123, 10, 1);
-      expect(result).toEqual({ kind: "text", message_id: 11, text: "direct reply" });
+      expect(result).toEqual({ kind: "text", message_id: 11, text: "direct reply", reply_to: 10 });
     });
 
     it("resolves normally when incoming message has no reply_to (ambiguous — existing behaviour preserved)", async () => {

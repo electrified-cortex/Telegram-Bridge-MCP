@@ -558,7 +558,7 @@ describe("close_session tool", () => {
 
   it("does not unpin when resolveChat returns a non-number", async () => {
     mocks.getSessionAnnouncementMessage.mockReturnValue(77);
-    mocks.resolveChat.mockReturnValue({ code: "UNAUTHORIZED_CHAT", message: "no chat" } as never);
+    mocks.resolveChat.mockReturnValue({ code: "UNAUTHORIZED_CHAT", message: "no chat" });
 
     await call({ token: 1123456 });
 

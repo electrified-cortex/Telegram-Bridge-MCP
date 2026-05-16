@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach, type Mock } from "vitest";
+import type { AudioData } from "audio-decode";
 import { isTtsEnabled, stripForTts, normalizeCapsForTts, synthesizeToOgg, fetchVoiceList, TTS_LIMIT, _resetLocalPipeline } from "./tts.js";
 
 // Mock @huggingface/transformers so no model is downloaded during tests
@@ -269,7 +270,7 @@ describe("synthesizeToOgg (openai provider)", () => {
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
       channelData: [fakePcm],
-    });
+    } as unknown as AsyncGenerator<AudioData>);
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
 
@@ -333,7 +334,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
       channelData: [fakePcm],
-    });
+    } as unknown as AsyncGenerator<AudioData>);
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
 
@@ -364,7 +365,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.mocked(decode).mockResolvedValue({
       sampleRate: 24000,
       channelData: [new Float32Array(1)],
-    });
+    } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const mockFetch = vi.fn().mockResolvedValue({
@@ -385,7 +386,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
 
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
@@ -495,7 +496,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.stubGlobal("fetch", mockFetch);
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("hello", undefined, 1.5);
@@ -515,7 +516,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.stubGlobal("fetch", mockFetch);
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("hello");
@@ -535,7 +536,7 @@ describe("synthesizeToOgg (TTS_HOST provider)", () => {
     vi.stubGlobal("fetch", mockFetch);
     const { default: decode } = await import("audio-decode");
     const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] });
+    vi.mocked(decode).mockResolvedValue({ sampleRate: 24000, channelData: [new Float32Array(1)] } as unknown as AsyncGenerator<AudioData>);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("hello", undefined, 1.0);
@@ -568,7 +569,7 @@ describe("synthesizeToOgg (local provider)", () => {
     const fakePcm = new Float32Array([0.1, -0.1, 0.0]);
     const fakeSynthesizer = vi.fn().mockResolvedValue({ audio: fakePcm, sampling_rate: 16000 });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer as unknown);
 
     const fakeOgg = Buffer.from("fake-ogg");
     vi.mocked(pcmToOggOpus).mockResolvedValue(fakeOgg);
@@ -590,7 +591,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 22050,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("test");
@@ -607,7 +608,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 16000,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     await synthesizeToOgg("first call");
@@ -628,7 +629,7 @@ describe("synthesizeToOgg (local provider)", () => {
       sampling_rate: 16000,
     });
     (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
-      .mockResolvedValue(fakeSynthesizer as unknown as LocalSynthesizer);
+      .mockResolvedValue(fakeSynthesizer);
     vi.mocked(pcmToOggOpus).mockResolvedValue(Buffer.alloc(4));
 
     const result = await synthesizeToOgg("hello");
@@ -776,11 +777,11 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     const timeoutError = Object.assign(new Error("The operation timed out."), { name: "TimeoutError" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeoutError));
 
-    const err = await synthesizeToOgg("hello world").catch(e => e);
+    const err = await synthesizeToOgg("hello world").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error & { code?: string }).code).toBe("tts_timeout");
     expect((err as Error).message).toMatch(/tts_timeout/);
-    expect((err as Error).message).toMatch(/Server not responding/);
+    expect((err as Error).message).toMatch(/Local model not responding/);
   });
 
   it("throws tts_timeout error with correct code when AbortError is thrown", async () => {
@@ -792,11 +793,11 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     const abortError = Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
 
-    const err = await synthesizeToOgg("hello world").catch(e => e);
+    const err = await synthesizeToOgg("hello world").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error & { code?: string }).code).toBe("tts_timeout");
     expect((err as Error).message).toMatch(/tts_timeout/);
-    expect((err as Error).message).toMatch(/Server not responding/);
+    expect((err as Error).message).toMatch(/Local model not responding/);
   });
 
   it("re-throws non-abort errors from fetch unchanged", async () => {
@@ -806,5 +807,48 @@ describe("synthesizeToOgg (TTS synthesis timeout)", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(networkError));
 
     await expect(synthesizeToOgg("hello")).rejects.toThrow("network failure");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// synthesizeToOgg — local provider timeout
+// ---------------------------------------------------------------------------
+
+describe("synthesizeToOgg (local provider timeout)", () => {
+  beforeEach(() => {
+    delete process.env.TTS_HOST;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS;
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS;
+    _resetLocalPipeline();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS;
+    delete process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS;
+    _resetLocalPipeline();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("throws tts_timeout with correct code when local synthesizer hangs beyond timeout", async () => {
+    process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS = "50";
+    process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS = "50";
+
+    const { pipeline } = await import("@huggingface/transformers");
+    // Synthesizer never resolves — simulates a hung local model
+    const hangingSynthesizer = vi.fn(() => new Promise<never>(() => {}));
+    (vi.mocked(pipeline) as unknown as Mock<(...args: unknown[]) => Promise<unknown>>)
+      .mockResolvedValue(hangingSynthesizer as unknown);
+
+    const errPromise = synthesizeToOgg("hello world").catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+
+    const err = await errPromise;
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error & { code?: string }).code).toBe("tts_timeout");
+    expect((err as Error).message).toMatch(/tts_timeout/);
+    expect((err as Error).message).toMatch(/Local model not responding/);
   });
 });

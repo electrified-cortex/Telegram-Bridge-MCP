@@ -24,6 +24,15 @@
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
+// Mock session-gate to control requireAuth per-test
+const gateMocks = vi.hoisted(() => ({
+  requireAuth: vi.fn((_token: number | undefined): number | { code: string; message: string } => 42),
+}));
+
+vi.mock("../../session-gate.js", () => ({
+  requireAuth: (token: number | undefined) => gateMocks.requireAuth(token),
+}));
+
 // Mock session-manager to control getKickDebounceMs per-test
 const sessionMocks = vi.hoisted(() => ({
   getKickDebounceMs: vi.fn((_sid: number): number => 60_000),
@@ -50,6 +59,8 @@ vi.mock("fs/promises", () => ({
   open: vi.fn(() => Promise.resolve({ close: vi.fn() })),
 }));
 
+import { appendFile, mkdir, open } from "fs/promises";
+
 import {
   setActivityFile,
   getActivityFile,
@@ -60,6 +71,9 @@ import {
   handleSessionStopped,
   resetActivityFileStateForTest,
 } from "./file-state.js";
+
+import { handleActivityFileCreate } from "./create.js";
+import { handleActivityFileEdit } from "./edit.js";
 
 const SID = 42;
 
@@ -72,7 +86,7 @@ function makeState(overrides: Partial<{
   return {
     filePath: "/tmp/test-activity-file",
     tmcpOwned: false,
-    lastTouchAt: (overrides.lastTouchAt !== undefined ? overrides.lastTouchAt : null) as number | null,
+    lastTouchAt: (overrides.lastTouchAt !== undefined ? overrides.lastTouchAt : null),
     debounceTimer: null as ReturnType<typeof setTimeout> | null,
     lastActivityAt: overrides.lastActivityAt ?? 0,
     inflightDequeue: overrides.inflightDequeue ?? false,
@@ -560,5 +574,133 @@ describe("activity-file idle-kick state machine", () => {
     expect(entry.nudgeArmed).toBe(true);    // re-armed (AC4 refined)
     expect(entry.lastTouchAt).toBeNull();   // poke-debounce reset (AC2 trailing-timer reset)
     expect(entry.debounceTimer).toBeNull(); // no pending timer
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC7: activity/file/create — ALREADY_REGISTERED guard (task 10-0900)
+// ---------------------------------------------------------------------------
+
+describe("activity/file/create — ALREADY_REGISTERED guard", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetActivityFileStateForTest();
+    gateMocks.requireAuth.mockReturnValue(SID);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("AC7a: first create succeeds and returns file_path", async () => {
+    const result = await handleActivityFileCreate({ token: 99 });
+    expect((result as { isError?: true }).isError).toBeUndefined();
+    const data = JSON.parse(result.content[0].text);
+    expect(typeof data.file_path).toBe("string");
+  });
+
+  it("AC7b: second create returns ALREADY_REGISTERED with details", async () => {
+    await handleActivityFileCreate({ token: 99 });
+    const result = await handleActivityFileCreate({ token: 99 });
+    expect((result as { isError?: true }).isError).toBe(true);
+    const err = JSON.parse(result.content[0].text);
+    expect(err.code).toBe("ALREADY_REGISTERED");
+    expect(typeof err.details.file_path).toBe("string");
+    expect(typeof err.details.tmcp_owned).toBe("boolean");
+  });
+
+  it("AC7c: existing registration unchanged after failed create", async () => {
+    const firstResult = await handleActivityFileCreate({ token: 99 });
+    const firstPath = JSON.parse(firstResult.content[0].text).file_path;
+
+    await handleActivityFileCreate({ token: 99 }); // second call — must fail
+
+    const entry = getActivityFile(SID)!;
+    expect(entry.filePath).toBe(firstPath); // original path preserved
+    expect(entry.tmcpOwned).toBe(true);     // original ownership preserved
+  });
+
+  it("AC7d: edit works after failed create", async () => {
+    await handleActivityFileCreate({ token: 99 }); // first create — succeeds
+    await handleActivityFileCreate({ token: 99 }); // second create — fails
+
+    // Edit (TMCP-generated path) must succeed despite the prior failed create
+    const editResult = await handleActivityFileEdit({ token: 99 });
+    expect((editResult as { isError?: true }).isError).toBeUndefined();
+    const data = JSON.parse(editResult.content[0].text);
+    expect(typeof data.file_path).toBe("string");
+    expect(typeof data.previous_path).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ENOENT recovery tests (task 30-0891)
+// Isolated in their own describe so mock call counts start clean for each test.
+// ---------------------------------------------------------------------------
+
+describe("appendNewline ENOENT recovery", () => {
+  beforeEach(async () => {
+    // Drain all pending microtasks from prior tests (fire-and-forget appendNewline chains).
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    // Reset ALL mock call histories including the console.warn spy.
+    // (clearAllMocks resets call counts but preserves mock implementations.)
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+  });
+
+  afterEach(async () => {
+    // Flush microtasks generated by this test so the next test's spy starts clean.
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
+
+  it("emits console.warn and recreates the file when activity file is missing (ENOENT)", async () => {
+    const enoentErr = Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
+    vi.mocked(appendFile).mockRejectedValueOnce(enoentErr);
+
+    const state = makeState({ lastActivityAt: Date.now() - 120_000 });
+    setActivityFile(SID, state);
+    touchActivityFile(SID); // fires doTouch → void appendNewline(...)
+
+    // Flush the five-level async chain (appendFile→catch→mkdir→open→close→appendFile)
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(console.warn).toHaveBeenCalledOnce();
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("file missing — recreating at registered path"),
+    );
+    expect(vi.mocked(mkdir)).toHaveBeenCalledWith(expect.any(String), { recursive: true });
+    expect(vi.mocked(open)).toHaveBeenCalledWith(state.filePath, "a", 0o600);
+    // appendFile: 1st call (ENOENT) + 1 retry after recreation = 2
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+  });
+
+  it("emits a second console.warn when file recreation itself fails", async () => {
+    const enoentErr = Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
+    vi.mocked(appendFile).mockRejectedValueOnce(enoentErr);
+    vi.mocked(mkdir).mockRejectedValueOnce(new Error("EPERM: permission denied"));
+
+    const state = makeState({ lastActivityAt: Date.now() - 120_000 });
+    setActivityFile(SID, state);
+    touchActivityFile(SID);
+
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(console.warn).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(console.warn).mock.calls[0][0]).toMatch(/file missing — recreating/);
+    expect(vi.mocked(console.warn).mock.calls[1][0]).toMatch(/recreation failed/);
+  });
+
+  it("does not warn and uses a single appendFile call when the file exists (normal touch)", async () => {
+    const state = makeState({ lastActivityAt: Date.now() - 120_000 });
+    setActivityFile(SID, state);
+    touchActivityFile(SID);
+
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(console.warn).not.toHaveBeenCalled();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
   });
 });

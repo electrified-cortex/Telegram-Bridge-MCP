@@ -75,7 +75,7 @@ export function attachDequeueRoute(app: Express): void {
   const handler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const controller = new AbortController();
-      req.on("close", () => controller.abort());
+      req.on("close", () => { controller.abort(); });
 
       const rawToken = typeof req.query["token"] === "string" ? req.query["token"] : undefined;
       const rawBody = (req.body ?? {}) as DequeueBody;

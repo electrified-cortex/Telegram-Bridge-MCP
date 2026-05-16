@@ -125,7 +125,7 @@ describe("get_message tool", () => {
 
   it("excludes _update from the response", async () => {
     const event = makeEvent(10, "Test", {
-      _update: { update_id: 1 } as never,
+      _update: { update_id: 1 },
     });
     mocks.getMessage.mockReturnValue(event);
     mocks.getVersions.mockReturnValue([-1]);

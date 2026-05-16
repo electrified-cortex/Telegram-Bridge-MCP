@@ -640,7 +640,7 @@ export function register(server: McpServer): void {
       if (entry) {
         // Governor-only gate
         if (entry.meta.governor) {
-          const _sid = requireAuth(args.token as number);
+          const _sid = requireAuth(args.token);
           if (typeof _sid !== "number") return toError(_sid);
           if (_sid !== getGovernorSid()) {
             return toError({

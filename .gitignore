@@ -21,3 +21,5 @@ mcp-config.json
 notes/
 # Code review eval artefacts — local-only (contain absolute paths)
 .code-reviews/
+
+.foreman-pod/

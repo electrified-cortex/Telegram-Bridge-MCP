@@ -2,6 +2,11 @@
 
 ## v7.4.1
 
+### Changed
+
+- `tools/monitor.sh`: rewritten to use OS-native file-event APIs — detects `inotifywait` (Linux, inotify-tools) first, then `fswatch` (macOS, Homebrew), falling back to the original 1-second sleep-loop on any platform that lacks both; output contract (`kick` / `heartbeat` / `timeout`) unchanged.
+- `tools/monitor.ps1`: rewritten to use `[System.IO.FileSystemWatcher]` with `NotifyFilter = LastWriteTime`; `WaitForChanged` replaces the 1-second poll loop; output contract unchanged; sleep-loop fallback retained in the `.sh` script for non-.NET environments.
+
 ### Fixed
 
 - `replaceActivityFile` (`file-state.ts`): added same-path guard — when the new registration reuses the same file path as the old entry, the old TMCP-owned file is no longer unlinked (would have deleted the currently-registered file)

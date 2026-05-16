@@ -105,7 +105,7 @@ describe("load_profile tool", () => {
     }));
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
-    const data = parseResult<{ summary: string }>(result);
+    const _data = parseResult<{ summary: string }>(result);
     // 1 startup reminder registered, 1 recurring time-based reminder registered
     expect(mocks.addReminder).toHaveBeenCalledWith(expect.objectContaining({ trigger: "startup" }));
     expect(mocks.addReminder).toHaveBeenCalledWith(expect.objectContaining({ trigger: "time", recurring: true }));

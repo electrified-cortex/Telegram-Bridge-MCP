@@ -48,7 +48,8 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: `Welcome to the loop. Stay in it.
 
 1. Call dequeue(token) every turn.
-2. Check your tools for an option to monitor a file. If you have one, call action(type: 'activity/file/create') and watch the returned file. On change, call dequeue.
+2. If you have a Monitor tool: call action(type: 'activity/file/create') and watch the file. One-liner: \`echo "call dequeue(TOKEN)"\` — bake in your token, that's the entire monitor.
+3. Do NOT call activity/file/edit to test — it rotates the path.
 
 Details: help('start'), help('dequeue'), help('activity/file').`,
   },
@@ -86,6 +87,11 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
   ONBOARDING_NO_PENDING_YET: {
     eventType: "onboarding_no_pending_yet" as const,
     text: "No operator messages were pending at session start. Call dequeue to wait for operator input.",
+  },
+
+  ONBOARDING_ACTIVITY_FILE_HINT: {
+    eventType: "onboarding_activity_file_hint" as const,
+    text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
   },
 
   // ── Governor change notifications ─────────────────────────────────────────
@@ -161,6 +167,16 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
   SHUTDOWN: {
     eventType: "shutdown" as const,
     text: "⛔ Server shutting down. Your session will be invalidated on restart.",
+  },
+
+  // ── Compaction recovery ───────────────────────────────────────────────────
+
+  /** @param filePath The registered activity file path to re-arm */
+  POST_COMPACT_MONITOR_RECOVERY: {
+    eventType: "post_compact_monitor_recovery" as const,
+    /** @param filePath The registered activity file path to re-arm */
+    text: (filePath: string) =>
+      `Looks like you compacted. Re-arm your activity-file monitor on this path.\n**Path:** ${filePath}`,
   },
 
   // ── Inter-agent hints ─────────────────────────────────────────────────────

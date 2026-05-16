@@ -182,9 +182,23 @@ function getLocalPipeline(): Promise<TTSSynthesizer> {
 
 async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
   const synthesizer = await getLocalPipeline();
-  const result = await synthesizer(text);
-  const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
-  return pcmToOggOpus(result.audio, result.sampling_rate);
+  const timeoutMs = computeTtsSynthesisTimeoutMs(text);
+  const wordCount = wordCountForTimeout(text);
+  const ttsPromise = (async () => {
+    const result = await synthesizer(text);
+    const { pcmToOggOpus } = await import("./ogg-opus-encoder.js");
+    return pcmToOggOpus(result.audio, result.sampling_rate);
+  })();
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const handle = setTimeout(() => {
+      reject(Object.assign(
+        new Error(`tts_timeout: TTS synthesis timed out after ${timeoutMs}ms (~${wordCount} words). Local model not responding.`),
+        { code: "tts_timeout", timeoutMs, wordCount }
+      ));
+    }, timeoutMs);
+    ttsPromise.then(() => clearTimeout(handle), () => clearTimeout(handle));
+  });
+  return Promise.race([ttsPromise, timeoutPromise]);
 }
 
 // ---------------------------------------------------------------------------
@@ -201,16 +215,16 @@ async function synthesizeLocalToOgg(text: string): Promise<Buffer> {
  * Compute TTS synthesis timeout in milliseconds.
  * Scale by word count: max(60s, ceil(words/100) * 60s).
  * Floor of 60 seconds for all inputs.
- * Configurable via TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS (default 60000).
- * Configurable via TTS_SYNTHESIS_TIMEOUT_MIN_MS (default 60000).
+ * Configurable via TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS (default 45000).
+ * Configurable via TTS_SYNTHESIS_TIMEOUT_MIN_MS (default 45000).
  */
 function wordCountForTimeout(text: string): number {
   return text.trim().split(/\s+/).length;
 }
 
 function computeTtsSynthesisTimeoutMs(text: string): number {
-  const perHundredWords = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS ?? "", 10)) || 60000);
-  const minMs = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS ?? "", 10)) || 60000);
+  const perHundredWords = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS ?? "", 10)) || 45000);
+  const minMs = (Math.max(0, parseInt(process.env.TTS_SYNTHESIS_TIMEOUT_MIN_MS ?? "", 10)) || 45000);
   const wordCount = wordCountForTimeout(text);
   return Math.max(minMs, Math.ceil(wordCount / 100) * perHundredWords);
 }
@@ -254,7 +268,7 @@ async function synthesizeHttpToOgg(
     if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
       const wordCount = wordCountForTimeout(text);
       throw Object.assign(
-        new Error(`tts_timeout: TTS synthesis timed out after ${timeoutMs}ms (~${wordCount} words). Server not responding.`),
+        new Error(`tts_timeout: TTS synthesis timed out after ${timeoutMs}ms (~${wordCount} words). Local model not responding.`),
         { code: "tts_timeout", timeoutMs, wordCount }
       );
     }

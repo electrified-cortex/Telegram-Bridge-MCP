@@ -3,12 +3,27 @@ id: "10-0867"
 title: "Fix text-after-audio message ordering — text must queue behind in-flight audio"
 type: bug
 priority: 30
-status: draft
+status: completed
 created: 2026-05-04
 repo: Telegram MCP
 delegation: Worker
 depends_on: []
+target_branch: release/7.5
+claimant: foreman
+claimed_at: 2026-05-14T23:14:00Z
+worktree: .foreman-pod/.worktrees/10-0867
+spawn_task: bjlbse1in
+completed_at: 2026-05-14T23:31:00Z
+worker_commit: e15b25cb
 ---
+
+> **REJECTED — 2026-05-14 — Foreman (task-verification sub-agent)**
+>
+> All 3 acceptance criteria UNMET. The worker's deliverables (`enqueueTextSend`, `hasInflightAudio`,
+> `send.ts` guard, 7 new tests) exist only in dangling commits `85e7f79d` and `3cd66a2b` that are
+> unreachable from any branch. PR #168 squash commit `ab1d4139` does NOT include these changes.
+> The bug remains **unfixed in production**. Task has been returned to drafts for re-dispatch.
+> Prior completion history is preserved below for reference.
 
 # Fix text-after-audio message ordering
 
@@ -67,7 +82,7 @@ Worker. Sonnet for the queue design + integration; Haiku for the test fixtures.
 
 - Branch: `10-0867`
 - Commit: `85e7f79d`
-- Worktree: `D:\Users\essence\Development\cortex.lan\Telegram MCP\.worktrees\10-0867`
+- Worktree: `.worktrees/10-0867` (dangling — not reachable from any branch)
 - Approach: Per-session text queuing via `tailPromise` chain in `async-send-queue.ts`. `enqueueTextSend` chains text sends behind in-flight audio when `hasInflightAudio(sid)` is true. Text dispatch returns `message_id_pending` immediately (non-blocking); send_callback delivered on completion or failure. Two-argument `.then()` pattern ensures chain resilience if sendMessage throws.
 - Tests: 7 new tests (FIFO ordering, queued delivery, cancellation, chain resilience on failure, send.ts gating). All 2986 tests pass.
 - Code review: 2 passes — Major finding (chain-breaking single-arg `.then()`) found and fixed in second iteration. Final verdict: SAFE TO MERGE.
@@ -79,3 +94,19 @@ Worker. Sonnet for the queue design + integration; Haiku for the test fixtures.
 **Squash commit:** `3cd66a2b` (on release/7.4)
 **Verdict:** APPROVED
 **Sealed by:** Overseer (Worker dispatch)
+
+## Verification (Re-dispatch — 2026-05-14)
+
+**Verdict:** APPROVED
+**Date:** 2026-05-14
+**Verifier:** Dispatch sub-agent (fresh-eyes, read-only)
+**Cherry-pick commit:** `539da4c5` on `release/7.5`
+
+All 3 acceptance criteria CONFIRMED:
+- AC1: FIFO ordering enforced — text queues behind in-flight audio. `async-send-queue.test.ts:813-843` confirms audio-delivered before text-delivered.
+- AC2: Non-blocking — `send.ts:464-493` returns `message_id_pending` immediately via `enqueueTextSend`; agent does not wait.
+- AC3: Per-session isolation — queue state keyed by SID (`_sessions Map`); cross-session races unaffected. `async-send-queue.test.ts:794-808`.
+
+3026/3026 tests pass. Implementation: `hasInflightAudio(sid)` + `enqueueTextSend(sid, fn)` in `async-send-queue.ts`; gating guard in `send.ts`. 15 new tests across both test files.
+
+Prior REJECTED verdict was due to dangling commits in the original attempt (PR #168 squash missed the implementation). This re-dispatch is reachable from branch `10-0867`.

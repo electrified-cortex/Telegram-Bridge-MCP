@@ -11,8 +11,8 @@ import { getDefaultVoice } from "../config.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { findUnrenderableChars } from "../unrenderable-chars.js";
-import { deliverServiceMessage } from "../session-queue.js";
-import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator } from "../async-send-queue.js";
+import { deliverServiceMessage, deliverAsyncSendCallback } from "../session-queue.js";
+import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator, hasInflightAudio, enqueueTextSend } from "../async-send-queue.js";
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
 // Type-routing handlers (v6 Phase 2)
@@ -222,6 +222,10 @@ export function register(server: McpServer) {
         no_data: z.string().default("confirm_no").describe("Negative callback data"),
         yes_style: BUTTON_STYLE_SCHEMA.default("primary").describe("Affirmative button color"),
         no_style: BUTTON_STYLE_SCHEMA.optional().describe("Negative button color"),
+        topic: z
+          .string()
+          .optional()
+          .describe("Per-message topic override. When provided, uses this string as the topic header for THIS message only — overrides the profile-level topic without mutating it. Pass an empty string to suppress the topic for this one message."),
         token: TOKEN_SCHEMA.describe(
           "Session token from action(type: 'session/start') (sid * 1_000_000 + suffix). Required for all send paths.",
         ),
@@ -308,9 +312,12 @@ export function register(server: McpServer) {
             let captionParseMode: "MarkdownV2" | undefined;
             let captionOverflow = false;
             let finalTextForSplit: string | undefined;
+            let rawCaptionText: string | undefined;
             if (effectiveText) {
               const MAX_CAPTION = 1024 - 60;
-              const converted = markdownToV2(applyTopicToText(effectiveText, "Markdown"));
+              const withTopic = applyTopicToText(effectiveText, "Markdown", args.topic);
+              const converted = markdownToV2(withTopic);
+              rawCaptionText = withTopic;
               captionOverflow = converted.length > MAX_CAPTION;
               if (captionOverflow) {
                 resolvedCaption = undefined;
@@ -320,9 +327,9 @@ export function register(server: McpServer) {
                 captionParseMode = "MarkdownV2";
               }
             } else {
-              const topic = getTopic();
-              if (topic) {
-                resolvedCaption = markdownToV2(`**[${topic}]**`);
+              const effectiveTopic = args.topic !== undefined ? args.topic.trim() || null : getTopic();
+              if (effectiveTopic) {
+                resolvedCaption = markdownToV2(`**[${effectiveTopic}]**`);
                 captionParseMode = "MarkdownV2";
               }
             }
@@ -338,6 +345,7 @@ export function register(server: McpServer) {
                 chatId,
                 audioText: plainText,
                 captionText: captionOverflow ? finalTextForSplit : resolvedCaption,
+                rawCaptionText,
                 captionOverflow,
                 resolvedVoice,
                 resolvedSpeed,
@@ -451,13 +459,47 @@ export function register(server: McpServer) {
           }
 
           // ── Text-only mode ───────────────────────────────────────────────
-          const textWithTopic = applyTopicToText(text ?? "", parse_mode);
+          const textWithTopic = applyTopicToText(text ?? "", parse_mode, args.topic);
           const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;
           const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
           if (!finalText || finalText.trim().length === 0) {
             return toError({ code: "EMPTY_MESSAGE" as const, message: "Message text must not be empty. Provide a non-empty string in the text field." });
           }
           const chunks = splitMessage(finalText);
+
+          // If audio is still rendering for this session, queue text after it so
+          // the operator always receives audio before the follow-up text message.
+          if (hasInflightAudio(_sid)) {
+            const queuedSid = _sid;
+            const queuedChatId = chatId;
+            const pendingId = enqueueTextSend(queuedSid, async (pid) => {
+              try {
+                const ids: number[] = [];
+                for (let i = 0; i < chunks.length; i++) {
+                  const msg = await callApi(() =>
+                    getApi().sendMessage(queuedChatId, chunks[i], {
+                      parse_mode: finalMode,
+                      disable_notification,
+                      reply_parameters:
+                        i === 0 && reply_to_message_id !== undefined
+                          ? { message_id: reply_to_message_id }
+                          : undefined,
+                    }),
+                  );
+                  ids.push(msg.message_id);
+                }
+                const payload = ids.length === 1
+                  ? { pendingId: pid, status: "ok" as const, messageId: ids[0] }
+                  : { pendingId: pid, status: "ok" as const, messageIds: ids };
+                deliverAsyncSendCallback(queuedSid, payload);
+              } catch (err) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                deliverAsyncSendCallback(queuedSid, { pendingId: pid, status: "failed", error: errMsg });
+              }
+            });
+            return toResult({ ok: true, message_id_pending: pendingId, status: "queued_after_audio" });
+          }
+
           try {
             const message_ids: number[] = [];
             for (let i = 0; i < chunks.length; i++) {
@@ -512,6 +554,7 @@ export function register(server: McpServer) {
             parse_mode: args.parse_mode,
             disable_notification: args.disable_notification,
             reply_to: args.reply_to,
+            topic: args.topic,
             token: args.token,
           });
 
@@ -527,6 +570,7 @@ export function register(server: McpServer) {
               disable_notification: args.disable_notification,
               reply_to: args.reply_to,
               ignore_parity: args.ignore_parity,
+              topic: args.topic,
               token: args.token,
             }),
             getFirstUseHint(_sid, "send:choice"),
@@ -610,6 +654,7 @@ export function register(server: McpServer) {
               timeout_seconds: args.timeout_seconds,
               reply_to: args.reply_to,
               ignore_pending: args.ignore_pending,
+              topic: args.topic,
               token: args.token,
               response_format: args.response_format,
             }, signal);

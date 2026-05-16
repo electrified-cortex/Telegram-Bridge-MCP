@@ -78,3 +78,10 @@ Work directly on local `dev`. Stage feature branch, run `pnpm test`, DM Curator 
 **Squash commit:** `50607541` (on release/7.4)
 **Verdict:** APPROVED
 **Sealed by:** Overseer (Worker dispatch)
+
+## Verification
+
+**Verified:** 2026-05-14
+**Verdict:** APPROVED
+**Verifier:** Foreman (task-verification sub-agent, fresh-eyes pass)
+**Evidence:** AC1 confirmed — `docs/help/start.md` Dequeue Loop section is 6 lines, under 10-line cap, delegates to `help('activity/file')` and `help('dequeue-http')`. AC2 confirmed — `ONBOARDING_LOOP_PATTERN` is 4 non-blank lines, says "dequeue every turn," covers monitor wiring, references `help('start')`. AC3 confirmed — 5 help topics (reactions, presence, modality, dequeue, send) surveyed; all tight, no anti-patterns found. AC4 confirmed — `help.test.ts` uses structural assertions (markers, not verbatim copy).

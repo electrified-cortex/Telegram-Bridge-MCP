@@ -5,7 +5,7 @@
  *   - With file_path: agent supplies the path; TMCP just records it.
  *   - Without file_path: TMCP generates a random file in data/activity/ and creates it.
  *
- * Response: { file_path: string, hint: "Call help('activity/file') now" }
+ * Response: { hint: "call dequeue(token: <TOKEN>) NOW — do not proceed without draining", file_path: string }
  */
 
 import { toResult, toError } from "../../telegram.js";
@@ -14,12 +14,29 @@ import {
   validateFilePath,
   createTmcpOwnedFile,
   replaceActivityFile,
+  getActivityFile,
 } from "./file-state.js";
 
 export async function handleActivityFileCreate(args: Record<string, unknown>) {
   const _sid = requireAuth(args.token as number | undefined);
   if (typeof _sid !== "number") return toError(_sid);
   const sid = _sid;
+
+  const existing = getActivityFile(sid);
+  if (existing) {
+    return toError({
+      code: "ALREADY_REGISTERED",
+      message:
+        "An activity file is already registered for this session. " +
+        "Options: call activity/file/get to inspect the existing registration, " +
+        "activity/file/edit to swap to a different path, or " +
+        "activity/file/delete to remove it before calling create again.",
+      details: {
+        file_path: existing.filePath,
+        tmcp_owned: existing.tmcpOwned,
+      },
+    });
+  }
 
   const filePath = args.file_path as string | undefined;
 
@@ -42,7 +59,11 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       nudgeArmed: true,
     });
 
-    return toResult({ file_path: filePath, hint: "On file change, call /dequeue with your token. help('dequeue-http')." });
+    return toResult({
+      hint: `call dequeue(token: ${sid}) NOW — do not proceed without draining`,
+      file_path: filePath,
+      monitor: `Run tools/monitor.ps1 "${filePath}" (preferred on Windows) or tools/monitor.sh "${filePath}" from your repo root to watch for kicks.`,
+    });
   }
 
   // TMCP-generated path
@@ -65,5 +86,9 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
     nudgeArmed: true,
   });
 
-  return toResult({ file_path: generatedPath, hint: "When this file changes, call GET /dequeue?token=<your-token> from your watcher — see help('dequeue-http') for curl/PowerShell/Node examples." });
+  return toResult({
+    hint: `call dequeue(token: ${sid}) NOW — do not proceed without draining`,
+    file_path: generatedPath,
+    monitor: `Run tools/monitor.ps1 "${generatedPath}" (preferred on Windows) or tools/monitor.sh "${generatedPath}" from your repo root to watch for kicks.`,
+  });
 }

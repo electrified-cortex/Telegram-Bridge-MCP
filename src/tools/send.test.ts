@@ -38,12 +38,15 @@ const mocks = vi.hoisted(() => ({
   handleAsk: vi.fn(),
   handleChoose: vi.fn(),
   deliverServiceMessage: vi.fn(),
+  deliverAsyncSendCallback: vi.fn((..._args: unknown[]) => true),
   getFirstUseHint: vi.fn((..._args: unknown[]): string | null => null),
   markFirstUseHintSeen: vi.fn((..._args: unknown[]): boolean => false),
   enqueueAsyncSend: vi.fn((..._args: unknown[]) => -1_000_000_001),
   resetAsyncSendQueueForTest: vi.fn(),
   acquireRecordingIndicator: vi.fn(),
   releaseRecordingIndicator: vi.fn(),
+  hasInflightAudio: vi.fn((_sid: number): boolean => false),
+  enqueueTextSend: vi.fn((_sid: number, _fn: (pid: number) => Promise<void>): number => -2_000_000_001),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -120,6 +123,7 @@ vi.mock("./send/append.js", () => ({
 
 vi.mock("../session-queue.js", () => ({
   deliverServiceMessage: (...args: unknown[]) => mocks.deliverServiceMessage(...args),
+  deliverAsyncSendCallback: (...args: unknown[]) => mocks.deliverAsyncSendCallback(...args),
 }));
 
 vi.mock("../async-send-queue.js", () => ({
@@ -127,6 +131,8 @@ vi.mock("../async-send-queue.js", () => ({
   resetAsyncSendQueueForTest: () => mocks.resetAsyncSendQueueForTest(),
   acquireRecordingIndicator: (...args: unknown[]) => mocks.acquireRecordingIndicator(...args),
   releaseRecordingIndicator: (...args: unknown[]) => mocks.releaseRecordingIndicator(...args),
+  hasInflightAudio: (sid: number) => mocks.hasInflightAudio(sid),
+  enqueueTextSend: (sid: number, fn: (pid: number) => Promise<void>) => mocks.enqueueTextSend(sid, fn),
 }));
 
 vi.mock("../first-use-hints.js", () => ({
@@ -965,7 +971,7 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
     const result = await call({ text: longTextWithBadChar, audio: "hello", async: false, token: TOKEN });
 
     expect(isError(result)).toBe(false);
-    const data = parseResult(result);
+    const _data = parseResult(result);
     // captionOverflow triggered: voice sent + separate text message
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
@@ -1451,5 +1457,95 @@ describe("caption duplication detector", () => {
     expect(details.jaccard).toBe(0.75);
     expect(details.audioWords).toBe(11);
     expect(details.captionWords).toBe(9);
+  });
+});
+
+// =============================================================================
+// send.ts gating — text-after-audio guard
+// =============================================================================
+describe("send — text-after-audio gating", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.sendMessage.mockResolvedValue({ message_id: 42 });
+    mocks.hasInflightAudio.mockReturnValue(false);
+    mocks.enqueueTextSend.mockReturnValue(-2_000_000_001);
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("sends directly and returns message_id when no audio is in-flight", async () => {
+    mocks.hasInflightAudio.mockReturnValue(false);
+    const result = await call({ text: "hello", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_id).toBe(42);
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(mocks.enqueueTextSend).not.toHaveBeenCalled();
+  });
+
+  it("returns queued_after_audio with pending ID when audio is in-flight", async () => {
+    mocks.hasInflightAudio.mockReturnValue(true);
+    mocks.enqueueTextSend.mockReturnValue(-2_000_000_001);
+
+    const result = await call({ text: "follow-up text", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.ok).toBe(true);
+    expect(data.status).toBe("queued_after_audio");
+    expect(data.message_id_pending).toBe(-2_000_000_001);
+    expect(mocks.enqueueTextSend).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("passes a fn to enqueueTextSend that calls sendMessage and deliverAsyncSendCallback on success", async () => {
+    mocks.hasInflightAudio.mockReturnValue(true);
+    let capturedFn: ((pid: number) => Promise<void>) | undefined;
+    mocks.enqueueTextSend.mockImplementation((_sid: number, fn: (pid: number) => Promise<void>) => {
+      capturedFn = fn;
+      return -2_000_000_001;
+    });
+    mocks.sendMessage.mockResolvedValue({ message_id: 77 });
+
+    await call({ text: "text after audio", token: TOKEN });
+
+    expect(capturedFn).toBeDefined();
+    await capturedFn!(-2_000_000_001);
+
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
+    const [sid, payload] = mocks.deliverAsyncSendCallback.mock.calls[0] as [number, { pendingId: number; status: string; messageId: number }];
+    expect(sid).toBe(1);
+    expect(payload.status).toBe("ok");
+    expect(payload.messageId).toBe(77);
+    expect(payload.pendingId).toBe(-2_000_000_001);
+  });
+
+  it("fn delivers failed callback when sendMessage throws", async () => {
+    mocks.hasInflightAudio.mockReturnValue(true);
+    let capturedFn: ((pid: number) => Promise<void>) | undefined;
+    mocks.enqueueTextSend.mockImplementation((_sid: number, fn: (pid: number) => Promise<void>) => {
+      capturedFn = fn;
+      return -2_000_000_002;
+    });
+    mocks.sendMessage.mockRejectedValue(new Error("Telegram API down"));
+
+    await call({ text: "text after audio", token: TOKEN });
+
+    await capturedFn!(-2_000_000_002);
+
+    expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
+    const [, payload] = mocks.deliverAsyncSendCallback.mock.calls[0] as [number, { status: string; error: string }];
+    expect(payload.status).toBe("failed");
+    expect(payload.error).toContain("Telegram API down");
   });
 });

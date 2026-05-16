@@ -29,3 +29,11 @@ Invariant: wipe token BEFORE calling shutdown.
 Note: handoff doc is optional. It may be written before or after shutdown — your process continues running. Curator's habit of writing it before shutdown is a preference, not a TMCP requirement.
 
 If a participant fails to close cleanly, the governor may need action(type: "session/close", force: true, target_sid: N) before invoking shutdown.
+
+## Activity File Cleanup
+
+TMCP automatically deletes all TMCP-owned activity files (`data/activity/<hash>`) on shutdown. This applies to:
+- action(type: "shutdown") — MCP graceful shutdown
+- OS SIGTERM / SIGINT — process-level shutdown
+
+If you registered an activity file that TMCP created for you (via activity/file/create with no path), it will be gone when shutdown completes. File-watching agents (using the file-watching skill) receive a `gone` event and exit cleanly. No manual cleanup is required.

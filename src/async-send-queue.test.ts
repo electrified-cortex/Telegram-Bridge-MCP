@@ -7,6 +7,8 @@ import {
   recordingIndicatorEpochForTest,
   acquireRecordingIndicator,
   releaseRecordingIndicator,
+  hasInflightAudio,
+  enqueueTextSend,
   type AsyncSendJob,
 } from "./async-send-queue.js";
 
@@ -63,6 +65,7 @@ function makeJobParams(overrides: Partial<JobInput> = {}): JobInput {
     chatId: 100,
     audioText: "hello world",
     captionText: undefined,
+    rawCaptionText: undefined,
     captionOverflow: false,
     resolvedVoice: undefined,
     resolvedSpeed: undefined,
@@ -269,6 +272,25 @@ describe("async-send-queue", () => {
 
       expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
     });
+
+    it("surfaces error_code: tts_timeout when TTS throws a tts_timeout error", async () => {
+      const ttsTimeoutErr = Object.assign(
+        new Error("tts_timeout: TTS synthesis timed out after 30000ms (~2 words). Local model not responding."),
+        { code: "tts_timeout", timeoutMs: 30000, wordCount: 2 },
+      );
+      mocks.synthesizeToOgg.mockRejectedValue(ttsTimeoutErr);
+
+      enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+      await flushJobs();
+
+      expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
+      const [, payload] = mocks.deliverAsyncSendCallback.mock.calls[0] as unknown as [
+        number,
+        { status: string; error: string; error_code?: string },
+      ];
+      expect(payload.status).toBe("failed");
+      expect(payload.error_code).toBe("tts_timeout");
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -328,23 +350,46 @@ describe("async-send-queue", () => {
   // 6. Text fallback — captionText present and job fails
   // -------------------------------------------------------------------------
   describe("text fallback on failure", () => {
-    it("sends plain-text fallback message when captionText is present and job fails", async () => {
+    it("sends plain-text fallback (legacy) when only captionText is present and job fails", async () => {
       mocks.synthesizeToOgg.mockRejectedValue(new Error("TTS error"));
       mocks.sendMessage.mockResolvedValue({ message_id: 999 });
 
       enqueueAsyncSend(1, makeJobParams({
         sid: 1,
         captionText: "caption content",
+        // rawCaptionText is absent — legacy path: plain text, no parse_mode
       }));
       await flushJobs();
 
       // sendMessage should have been called for the fallback
       expect(mocks.sendMessage).toHaveBeenCalledOnce();
       const sendArgs = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
-      // Fallback is plain text — no parse_mode
+      // Legacy fallback is plain text — no parse_mode
       expect(sendArgs[1]).toContain("⚠ [async failed]");
       expect(sendArgs[1]).toContain("caption content");
       expect(sendArgs[2].parse_mode).toBeUndefined();
+    });
+
+    it("sends MarkdownV2 fallback with fresh conversion when rawCaptionText is present", async () => {
+      mocks.synthesizeToOgg.mockRejectedValue(new Error("TTS error"));
+      mocks.sendMessage.mockResolvedValue({ message_id: 999 });
+
+      enqueueAsyncSend(1, makeJobParams({
+        sid: 1,
+        captionText: "Step \\(1\\) and step \\(2\\)\\.",  // already-escaped V2 version (not used for fallback)
+        rawCaptionText: "Step (1) and step (2).",          // raw text — used for fallback
+      }));
+      await flushJobs();
+
+      expect(mocks.sendMessage).toHaveBeenCalledOnce();
+      const sendArgs = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
+      // Banner must be V2-escaped: \[async failed\]
+      expect(sendArgs[1]).toContain("⚠ \\[async failed\\]");
+      // Body must be freshly converted to MarkdownV2 (parentheses and dot escaped)
+      expect(sendArgs[1]).toContain("Step \\(1\\) and step \\(2\\)\\.");
+      // Must NOT contain unescaped literal parens from the raw text
+      expect(sendArgs[1]).not.toMatch(/⚠ \[async failed\]/);
+      expect(sendArgs[2].parse_mode).toBe("MarkdownV2");
     });
 
     it("callback has text_fallback: true and textMessageId when fallback send succeeds", async () => {
@@ -763,5 +808,173 @@ describe("async-send-queue", () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+// =============================================================================
+// Text-after-audio ordering (hasInflightAudio + enqueueTextSend)
+// =============================================================================
+
+describe("text-after-audio queue ordering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAsyncSendQueueForTest();
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg-data"));
+    mocks.sendVoiceDirect.mockResolvedValue({ message_id: 200 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 201 });
+    mocks.sendChatAction.mockResolvedValue(undefined);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.deliverAsyncSendCallback.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    resetAsyncSendQueueForTest();
+  });
+
+  // ---------------------------------------------------------------------------
+  // 1. hasInflightAudio — basic cases
+  // ---------------------------------------------------------------------------
+  it("hasInflightAudio returns false for unknown session", () => {
+    expect(hasInflightAudio(999)).toBe(false);
+  });
+
+  it("hasInflightAudio returns true when an audio job is queued", () => {
+    mocks.synthesizeToOgg.mockImplementation(() => new Promise(() => {}));
+    enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+    expect(hasInflightAudio(1)).toBe(true);
+  });
+
+  it("hasInflightAudio returns false after audio job completes", async () => {
+    enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+    await flushJobs();
+    expect(hasInflightAudio(1)).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 2. FIFO ordering — text queues behind in-flight audio
+  // ---------------------------------------------------------------------------
+  it("text send fn runs AFTER in-flight audio completes (FIFO)", async () => {
+    const callOrder: string[] = [];
+    let resolveAudio!: (buf: Buffer) => void;
+
+    mocks.synthesizeToOgg.mockImplementationOnce(
+      () => new Promise<Buffer>((resolve) => { resolveAudio = resolve; }),
+    );
+    mocks.sendVoiceDirect.mockImplementation(() => {
+      callOrder.push("audio-delivered");
+      return Promise.resolve({ message_id: 100 });
+    });
+
+    enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+
+    // Audio is in-flight — queue text behind it
+    expect(hasInflightAudio(1)).toBe(true);
+    enqueueTextSend(1, (_pid) => {
+      callOrder.push("text-delivered");
+      return Promise.resolve();
+    });
+
+    // Nothing delivered yet
+    await flushJobs();
+    expect(callOrder).toEqual([]);
+
+    // Resolve audio — triggers audio delivery, then text delivery
+    resolveAudio(Buffer.from("ogg"));
+    await flushJobs();
+    await flushJobs(); // extra flush: audio → fn chain needs more microtask rounds
+
+    expect(callOrder[0]).toBe("audio-delivered");
+    expect(callOrder[1]).toBe("text-delivered");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 3. Queued delivery — text sendMessage called after audio finishes
+  // ---------------------------------------------------------------------------
+  it("text fn receives its assigned pendingId and runs after audio completes", async () => {
+    let resolveAudio!: (buf: Buffer) => void;
+    mocks.synthesizeToOgg.mockImplementationOnce(
+      () => new Promise<Buffer>((resolve) => { resolveAudio = resolve; }),
+    );
+
+    enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+
+    const fnSpy = vi.fn(async (_pid: number) => {});
+    enqueueTextSend(1, fnSpy);
+
+    await flushJobs();
+    expect(fnSpy).not.toHaveBeenCalled();
+
+    resolveAudio(Buffer.from("ogg"));
+    await flushJobs();
+    await flushJobs(); // extra flush: audio → text fn chain
+
+    expect(fnSpy).toHaveBeenCalledOnce();
+    const pid = fnSpy.mock.calls[0][0];
+    expect(pid).toBeLessThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 4. Chain resilience — text fn runs even when audio job fails
+  // ---------------------------------------------------------------------------
+  it("text fn still runs when the preceding audio job fails", async () => {
+    mocks.synthesizeToOgg.mockRejectedValue(new Error("TTS upstream fail"));
+
+    enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+
+    const textFn = vi.fn(async (_pid: number) => {});
+    enqueueTextSend(1, textFn);
+
+    await flushJobs();
+    expect(textFn).toHaveBeenCalledOnce();
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. Chain resilience — throw in fn does not break subsequent sends
+  // ---------------------------------------------------------------------------
+  it("subsequent text fn runs even if a prior text fn throws", async () => {
+    mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
+
+    enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+
+    const fn1 = vi.fn((_pid: number) => { throw new Error("sendMessage fail"); });
+    const fn2 = vi.fn((_pid: number): Promise<void> => Promise.resolve());
+
+    enqueueTextSend(1, fn1);
+    enqueueTextSend(1, fn2);
+
+    // Two flushes needed: audio → fn1 (flush 1), fn1 catch → fn2 (flush 2)
+    await flushJobs();
+    await flushJobs();
+
+    expect(fn1).toHaveBeenCalledOnce();
+    expect(fn2).toHaveBeenCalledOnce();
+  });
+
+  // ---------------------------------------------------------------------------
+  // 6. Cancellation — cancelSessionJobs removes session, hasInflightAudio→false
+  // ---------------------------------------------------------------------------
+  it("cancelSessionJobs cleans up session state; hasInflightAudio returns false after cancel", () => {
+    mocks.synthesizeToOgg.mockImplementation(() => new Promise(() => {}));
+    enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+    enqueueTextSend(1, async () => {});
+
+    expect(hasInflightAudio(1)).toBe(true);
+    cancelSessionJobs(1);
+    expect(hasInflightAudio(1)).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 7. enqueueTextSend allocates a unique negative pendingId per slot
+  // ---------------------------------------------------------------------------
+  it("each enqueueTextSend call returns a distinct negative pendingId", () => {
+    mocks.synthesizeToOgg.mockImplementation(() => new Promise(() => {}));
+    enqueueAsyncSend(1, makeJobParams({ sid: 1 }));
+
+    const pid1 = enqueueTextSend(1, async () => {});
+    const pid2 = enqueueTextSend(1, async () => {});
+
+    expect(pid1).toBeLessThan(0);
+    expect(pid2).toBeLessThan(0);
+    expect(pid1).not.toBe(pid2);
   });
 });

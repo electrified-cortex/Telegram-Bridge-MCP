@@ -7,7 +7,6 @@ import { registerCallbackHook, registerPersistentCallbackHook } from "../../mess
 import { requireAuth } from "../../session-gate.js";
 import {
   sendChoiceMessage, ackAndEditSelection, buildHighlightedRows, highlightThenCollapse,
-  type KeyboardOption,
 } from "../button-helpers.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { validateButtonSymbolParity } from "../../button-validation.js";
@@ -44,7 +43,7 @@ export type ChoiceOption = { label: string; value: string; style?: "success" | "
 
 export async function handleSendChoice({
   text, options, columns = 2, parse_mode = "Markdown", disable_notification,
-  reply_to, ignore_parity, persistent, token,
+  reply_to, ignore_parity, persistent, topic, token,
 }: {
   text: string;
   options: ChoiceOption[];
@@ -56,6 +55,7 @@ export async function handleSendChoice({
   /** When true, keyboard stays after each press (multi-tap control-panel mode).
    *  Default false = one-shot highlight-then-collapse. */
   persistent?: boolean;
+  topic?: string;
   token: number;
 }) {
   const _sid = requireAuth(token);
@@ -107,11 +107,12 @@ export async function handleSendChoice({
   try {
     const messageId = await sendChoiceMessage(chatId, {
       text,
-      options: options as KeyboardOption[],
+      options: options,
       columns,
       parseMode: parse_mode,
       disableNotification: disable_notification,
       replyToMessageId: replyTo,
+      topicOverride: topic,
     });
 
     // Register callback hook. Behaviour depends on persistent mode:
@@ -134,7 +135,7 @@ export async function handleSendChoice({
       const clickedValue = evt.content.data ?? "";
       const matched = options.find((o) => o.value === clickedValue);
       const label = (matched?.label ?? clickedValue) || "?";
-      const highlighted = buildHighlightedRows(options as KeyboardOption[], columns, clickedValue);
+      const highlighted = buildHighlightedRows(options, columns, clickedValue);
 
       if (persistent) {
         // Persistent / multi-tap: keep keyboard visible with highlight after each press.
@@ -203,6 +204,10 @@ export function register(server: McpServer) {
             "after each press, the chosen button is highlighted, and every tap is handled. " +
             "Default false = one-shot highlight-then-collapse (~250 ms).",
           ),
+        topic: z
+          .string()
+          .optional()
+          .describe("Per-message topic override. When provided, uses this string as the topic header for THIS message only — overrides the profile-level topic without mutating it. Pass an empty string to suppress the topic for this one message."),
               token: TOKEN_SCHEMA,
 },
     },

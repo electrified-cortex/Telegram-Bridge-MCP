@@ -37,9 +37,12 @@ export function clearTopic(): void {
  * Prepend `[Topic] ` to a title string (used in notify, send_new_checklist).
  * The caller's tool is responsible for bold-formatting the title — this
  * just injects the label inline so it appears inside the bold heading.
+ *
+ * Pass `overrideTopic` to use a per-message topic instead of the profile-level
+ * one. An empty string clears the topic for this message only.
  */
-export function applyTopicToTitle(title: string): string {
-  const topic = _current();
+export function applyTopicToTitle(title: string, overrideTopic?: string): string {
+  const topic = overrideTopic !== undefined ? (overrideTopic.trim() || null) : _current();
   return topic ? `[${topic}] ${title}` : title;
 }
 
@@ -50,12 +53,16 @@ export function applyTopicToTitle(title: string): string {
  * - Markdown (default): `**[Topic]**\n` — converted to V2 by markdownToV2()
  * - HTML: `<b>[Topic]</b>\n`
  * - MarkdownV2: not injected — caller is managing all escaping manually
+ *
+ * Pass `overrideTopic` to use a per-message topic instead of the profile-level
+ * one. An empty string clears the topic for this message only.
  */
 export function applyTopicToText(
   text: string,
   mode: "Markdown" | "MarkdownV2" | "HTML" = "Markdown",
+  overrideTopic?: string,
 ): string {
-  const topic = _current();
+  const topic = overrideTopic !== undefined ? (overrideTopic.trim() || null) : _current();
   if (!topic) return text;
   if (mode === "HTML") return `<b>[${topic}]</b>\n${text}`;
   if (mode === "MarkdownV2") return text; // raw V2 — don't inject

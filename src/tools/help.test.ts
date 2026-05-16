@@ -94,7 +94,25 @@ vi.mock("fs", async (importActual) => {
           "action(type: \"session/close\", force: true, target_sid: N) before invoking shutdown.",
         ].join("\n");
       if (p.includes("docs") && p.includes("help") && p.includes("activity") && p.includes("file.md"))
-        return "# activity/file — Wake-Nudge Integration Guide\n\noptional augment. dequeue is primary.\n\nContent stays empty/stable — mtime is the signal.\n\nwatcher patterns: bash poll, PowerShell FileSystemWatcher, inotifywait.";
+        return [
+          "# activity/file — Wake-Nudge Integration Guide",
+          "",
+          "optional augment. dequeue is primary.",
+          "",
+          "Content stays empty/stable — mtime is the signal.",
+          "",
+          "watcher patterns: bash poll, PowerShell FileSystemWatcher, inotifywait.",
+          "",
+          "## How to monitor the activity file",
+          "",
+          "Run tools/monitor.ps1 <path> (preferred on Windows) or tools/monitor.sh <path> from your repo root to watch for kicks.",
+          "",
+          "Monitor parameters: persistent: true, description. timeout_ms is ignored when persistent: true.",
+          "",
+          "See help('compaction-recovery') for the full recovery sequence.",
+        ].join("\n");
+      if (p.includes("docs") && p.includes("help") && p.includes("compaction-recovery.md"))
+        return "# compaction-recovery — Activity File Monitor Recovery\n\nMonitors do not survive compaction. Use activity/file/get to retrieve the existing path, then re-arm a fresh monitor. Do not call activity/file/create.";
       // Fall through to actual for anything else
       return (actual.readFileSync as (...a: unknown[]) => unknown)(path, _encoding);
     },
@@ -222,6 +240,26 @@ describe("help tool", () => {
     expect(content).toContain("dequeue");
     expect(content).toContain("watcher");
     expect(content).toContain("mtime");
+    expect(content).toContain("compaction-recovery");
+  });
+
+  it("help(topic: 'compaction-recovery') returns the compaction recovery guide", async () => {
+    const result = await call({ topic: "compaction-recovery" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(typeof content).toBe("string");
+    expect(content.length).toBeGreaterThan(0);
+    expect(content).toContain("activity/file/get");
+    expect(content).toContain("monitor");
+  });
+
+  it("help(topic: 'activity/file') includes the monitor instructions section", async () => {
+    const result = await call({ topic: "activity/file" });
+    expect(isError(result)).toBe(false);
+    const { content } = parseResult<{ content: string }>(result);
+    expect(content).toContain("## How to monitor the activity file");
+    expect(content).toContain("tools/monitor.ps1");
+    expect(content).toContain("persistent");
   });
 
   describe("topic: 'identity'", () => {

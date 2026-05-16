@@ -48,7 +48,7 @@ function load(): McpConfig {
     const raw = readFileSync(CONFIG_PATH, "utf-8");
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return {};
-    return parsed as McpConfig;
+    return parsed;
   } catch {
     return {};
   }

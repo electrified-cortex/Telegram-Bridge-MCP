@@ -15,6 +15,7 @@ import { synthesizeToOgg } from "./tts.js";
 import { sendVoiceDirect, callApi, getApi, splitMessage } from "./telegram.js";
 import { deliverAsyncSendCallback, type AsyncSendCallbackPayload } from "./session-queue.js";
 import { pauseTypingEmission, resumeTypingEmission } from "./typing-state.js";
+import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +34,11 @@ export interface AsyncSendJob {
   audioText: string;
   /** Caption text (already converted to MarkdownV2 if provided). */
   captionText: string | undefined;
+  /**
+   * Original caption text before MarkdownV2 conversion (topic-applied but not yet escaped).
+   * Used by the async-fail fallback to render correctly — avoids literal backslash escapes.
+   */
+  rawCaptionText: string | undefined;
   /** Whether the caption overflowed and must be sent as a follow-up text message. */
   captionOverflow: boolean;
   /** Resolved TTS voice setting for this session. */
@@ -125,6 +131,7 @@ async function executeJob(job: AsyncSendJob): Promise<void> {
     sid,
     chatId,
     captionText,
+    rawCaptionText,
     disableNotification,
     timeoutMs,
   } = job;
@@ -170,17 +177,25 @@ async function executeJob(job: AsyncSendJob): Promise<void> {
     let textMessageId: number | undefined;
     let textFallback = false;
 
-    if (captionText) {
-      // Send the caption text as plain text (no parse_mode) — captionText may
-      // be MarkdownV2-encoded and prepending a raw prefix to encoded MarkdownV2
-      // would produce invalid markup. Omitting parse_mode makes Telegram treat
-      // the message as plain text, which is safe regardless of encoding.
+    if (rawCaptionText ?? captionText) {
       try {
-        const fallbackText = `⚠ [async failed] ${captionText}`;
+        let fallbackText: string;
+        let fallbackParseMode: "MarkdownV2" | undefined;
+        if (rawCaptionText) {
+          // Convert raw text fresh to MarkdownV2 so Telegram renders it correctly.
+          // The banner brackets must also be V2-escaped (\[ and \]).
+          fallbackText = `⚠ \\[async failed\\] ${markdownToV2(rawCaptionText)}`;
+          fallbackParseMode = "MarkdownV2";
+        } else {
+          // rawCaptionText unavailable — send without parse_mode (plain text).
+          fallbackText = `⚠ [async failed] ${captionText}`;
+          fallbackParseMode = undefined;
+        }
         const fallbackMsg = await callApi(() =>
           getApi().sendMessage(chatId, fallbackText, {
+            ...(fallbackParseMode ? { parse_mode: fallbackParseMode } : {}),
             disable_notification: disableNotification,
-          } as Record<string, unknown>),
+          }),
         );
         textMessageId = fallbackMsg.message_id;
         textFallback = true;
@@ -191,10 +206,14 @@ async function executeJob(job: AsyncSendJob): Promise<void> {
       }
     }
 
+    const errorCode = (err && typeof err === "object" && "code" in err)
+      ? String((err as { code: unknown }).code)
+      : undefined;
     const payload: AsyncSendCallbackPayload = {
       pendingId,
       status: "failed",
       error: msg,
+      error_code: errorCode,
       textFallback: textFallback || undefined,
       textMessageId,
     };
@@ -437,6 +456,54 @@ export function enqueueAsyncSend(
   );
 
   dlog("async-send", `enqueued pendingId=${pendingId} sid=${sid} queue=${capturedState.jobs.size}`);
+  return pendingId;
+}
+
+// ---------------------------------------------------------------------------
+// Text-after-audio ordering
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true if the session has at least one audio job that is queued or
+ * currently executing. Used by send.ts to decide whether to gate an outbound
+ * text-only message behind the current audio tail.
+ */
+export function hasInflightAudio(sid: number): boolean {
+  const state = _sessions.get(sid);
+  return state !== undefined && state.jobs.size > 0;
+}
+
+/**
+ * Enqueue a text send function after the session's current audio tail.
+ * The caller's `fn` receives the assigned negative pending ID and is
+ * responsible for delivering an `AsyncSendCallbackPayload` via
+ * `deliverAsyncSendCallback` on both success and failure.
+ * Any error thrown by `fn` is swallowed so the chain remains viable.
+ * Returns the negative pending ID assigned to this text slot.
+ */
+export function enqueueTextSend(
+  sid: number,
+  fn: (pendingId: number) => Promise<void>,
+): number {
+  const state = _sessions.get(sid);
+  if (!state) {
+    // Session was torn down between hasInflightAudio check and here.
+    // Execute immediately (best-effort) so the text is not silently lost.
+    const fallbackId = -(Date.now());
+    fn(fallbackId).catch(() => {});
+    return fallbackId;
+  }
+
+  const pendingId = state.nextPendingId--;
+  state.allAllocatedIds.add(pendingId);
+
+  const capturedState = state;
+  capturedState.tailPromise = capturedState.tailPromise.then(
+    () => fn(pendingId).catch(() => {}),
+    () => fn(pendingId).catch(() => {}),
+  );
+
+  dlog("async-send", `enqueueTextSend pendingId=${pendingId} sid=${sid}`);
   return pendingId;
 }
 

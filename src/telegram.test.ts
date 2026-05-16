@@ -573,7 +573,7 @@ describe("offset management", () => {
   });
 
   it("advanceOffset sets offset to max update_id + 1", () => {
-    advanceOffset([{ update_id: 5 } as unknown as Update, { update_id: 3 } as unknown as Update]);
+    advanceOffset([{ update_id: 5 }, { update_id: 3 }]);
     expect(getOffset()).toBe(6);
   });
 
@@ -583,15 +583,15 @@ describe("offset management", () => {
   });
 
   it("resetOffset resets to 0", () => {
-    advanceOffset([{ update_id: 10 } as unknown as Update]);
+    advanceOffset([{ update_id: 10 }]);
     resetOffset();
     expect(getOffset()).toBe(0);
   });
 
   it("returns warning string when update_id gap is detected", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    advanceOffset([{ update_id: 10 } as unknown as Update]); // offset → 11
-    const result = advanceOffset([{ update_id: 15 } as unknown as Update]); // gap
+    advanceOffset([{ update_id: 10 }]); // offset → 11
+    const result = advanceOffset([{ update_id: 15 }]); // gap
     expect(result).not.toBeNull();
     expect(result).toContain("Update ID gap detected");
     expect(result).toContain("may have been consumed");
@@ -602,7 +602,7 @@ describe("offset management", () => {
 
   it("returns null on the first poll (offset = 0)", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const result = advanceOffset([{ update_id: 50 } as unknown as Update]);
+    const result = advanceOffset([{ update_id: 50 }]);
     expect(result).toBeNull();
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
@@ -610,8 +610,8 @@ describe("offset management", () => {
 
   it("returns null for a contiguous batch", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    advanceOffset([{ update_id: 10 } as unknown as Update]); // offset → 11
-    const result = advanceOffset([{ update_id: 11 } as unknown as Update]);
+    advanceOffset([{ update_id: 10 }]); // offset → 11
+    const result = advanceOffset([{ update_id: 11 }]);
     expect(result).toBeNull();
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
@@ -749,7 +749,7 @@ describe("ackVoiceMessage", () => {
     resetStoreForTest();
     setMessageReactionSpy = vi
       .spyOn(Api.prototype, "setMessageReaction")
-      .mockResolvedValue(true as unknown as never);
+      .mockResolvedValue(true);
   });
 
   afterEach(() => {

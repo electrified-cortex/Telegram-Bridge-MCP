@@ -25,6 +25,16 @@ interface SessionQueue {
   waitForEnqueue: (...args: unknown[]) => Promise<unknown>;
 }
 
+const fileStateMocks = vi.hoisted(() => ({
+  setDequeueActive: vi.fn(),
+  getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
+}));
+
+vi.mock("./activity/file-state.js", () => ({
+  setDequeueActive: (sid: number, active: boolean) => fileStateMocks.setDequeueActive(sid, active),
+  getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
+}));
+
 const mocks = vi.hoisted(() => ({
   dequeueBatch: vi.fn((): TimelineEvent[] => []),
   pendingCount: vi.fn((): number => 0),
@@ -103,6 +113,10 @@ vi.mock("../service-messages.js", () => ({
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
     },
+    ONBOARDING_ACTIVITY_FILE_HINT: {
+      eventType: "onboarding_activity_file_hint",
+      text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
+    },
   },
 }));
 
@@ -137,7 +151,7 @@ vi.mock("../reminder-state.js", () => ({
 
 
 
-import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest } from "./dequeue.js";
+import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest } from "./dequeue.js";
 
 function makeEvent(id: number, text: string, event = "message" as string): TimelineEvent {
   return {
@@ -146,7 +160,7 @@ function makeEvent(id: number, text: string, event = "message" as string): Timel
     event,
     from: "user",
     content: { type: "text", text },
-    _update: { update_id: id } as never,
+    _update: { update_id: id },
   };
 }
 
@@ -157,7 +171,7 @@ function makeReaction(id: number, target: number): TimelineEvent {
     event: "reaction",
     from: "user",
     content: { type: "reaction", target, added: ["👍"], removed: [] },
-    _update: { update_id: id } as never,
+    _update: { update_id: id },
   };
 }
 
@@ -168,7 +182,7 @@ function makeVoiceEvent(id: number): TimelineEvent {
     event: "message",
     from: "user",
     content: { type: "voice", text: "hello", file_id: "f1", duration: 2 } as never,
-    _update: { update_id: id } as never,
+    _update: { update_id: id },
   };
 }
 
@@ -178,6 +192,8 @@ describe("dequeue tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    fileStateMocks.getActivityFile.mockReturnValue({ filePath: "/mock/activity.txt" });
     mocks.validateSession.mockReturnValue(true);
     reminderMocks.getActiveReminders.mockReturnValue([]);
     reminderMocks.popActiveReminders.mockReturnValue([]);
@@ -692,7 +708,7 @@ describe("dequeue tool", () => {
         event: "message",
         from: "user",
         content: { type: "text", text: "reply", reply_to: replyTo },
-        _update: { update_id: id } as never,
+        _update: { update_id: id },
       };
     }
 
@@ -722,7 +738,7 @@ describe("dequeue tool", () => {
         event: "callback",
         from: "user",
         content: { type: "cb", data: "yes", target: 60 },
-        _update: { update_id: 11 } as never,
+        _update: { update_id: 11 },
       };
       mocks.dequeueBatch.mockReturnValueOnce([cbEvt]);
       const result = await call({ timeout: 0, token: 1_123_456 });
@@ -1465,6 +1481,53 @@ describe("dequeue tool", () => {
 
       // Compact and default batch shapes are identical
       expect(JSON.stringify(dataCompact)).toBe(JSON.stringify(dataDefault));
+    });
+  });
+
+  // =========================================================================
+  // Activity file onboarding hint (AC2)
+  // =========================================================================
+
+  describe("activity file onboarding hint", () => {
+    it("injects ONBOARDING_ACTIVITY_FILE_HINT on first dequeue when no activity file is registered", async () => {
+      fileStateMocks.getActivityFile.mockReturnValue(undefined);
+      mocks.dequeueBatch.mockReturnValue([]);
+
+      await call({ timeout: 0, token: 1_123_456 });
+
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ eventType: "onboarding_activity_file_hint" }),
+      );
+    });
+
+    it("does not inject hint on subsequent dequeue calls for the same session", async () => {
+      fileStateMocks.getActivityFile.mockReturnValue(undefined);
+      mocks.dequeueBatch.mockReturnValue([]);
+
+      await call({ timeout: 0, token: 1_123_456 });
+      mocks.deliverServiceMessage.mockClear();
+
+      await call({ timeout: 0, token: 1_123_456 });
+
+      const hintCalls = mocks.deliverServiceMessage.mock.calls.filter(
+        (args: unknown[]) => args[1] && typeof args[1] === "object" &&
+          (args[1] as Record<string, unknown>).eventType === "onboarding_activity_file_hint",
+      );
+      expect(hintCalls).toHaveLength(0);
+    });
+
+    it("does not inject hint when an activity file is already registered", async () => {
+      // fileStateMocks.getActivityFile returns non-null by default (set in beforeEach)
+      mocks.dequeueBatch.mockReturnValue([]);
+
+      await call({ timeout: 0, token: 1_123_456 });
+
+      const hintCalls = mocks.deliverServiceMessage.mock.calls.filter(
+        (args: unknown[]) => args[1] && typeof args[1] === "object" &&
+          (args[1] as Record<string, unknown>).eventType === "onboarding_activity_file_hint",
+      );
+      expect(hintCalls).toHaveLength(0);
     });
   });
 });
