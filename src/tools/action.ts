@@ -16,6 +16,9 @@ import { handleSetVoice } from "./profile/voice.js";
 import { handleListSessions } from "./session/list.js";
 import { handleCloseSession } from "./session/close.js";
 import { handleSessionStart, handleSessionReconnect } from "./session/start.js";
+import { handleSpawnChild } from "./session/spawn-child.js";
+import { handleRevokeChild } from "./session/revoke-child.js";
+import { handleChildForward } from "./session/forward-child.js";
 import { handleRenameSession } from "./session/rename.js";
 import { handleSessionIdle } from "./session/idle.js";
 import { handleSessionStatus } from "./session/status.js";
@@ -73,7 +76,25 @@ import { handleActivityFileDelete } from "./activity/delete.js";
 import { handleActivityFileGet } from "./activity/get.js";
 import { KICK_DEBOUNCE_MIN_MS, KICK_DEBOUNCE_MAX_MS } from "./activity/file-state.js";
 import { handleNameTag } from "./name-tag.js";
+import { decodeToken } from "./identity-schema.js";
+import { getSession } from "../session-manager.js";
 type ToolResult = ReturnType<typeof toResult>;
+
+/** Action paths that are blocked for `gather`-capability sessions. */
+const GATHER_BLOCKED = new Set([
+  "session/start",
+  "session/spawn-child",
+  "session/close",
+  "session/close/signal",
+  "message/edit",
+  "message/delete",
+  "message/pin",
+  "react",
+  "commands/set",
+  "approve",
+  "shutdown",
+  "shutdown/warn",
+]);
 
 /** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
 function findClosestMatch(input: string, candidates: readonly string[]): string | null {
@@ -108,6 +129,9 @@ export function setupActionRegistry(): void {
   registerAction("session/reconnect", toActionHandler(handleSessionReconnect));
   registerAction("session/close", toActionHandler(handleCloseSession));
   registerAction("session/close/signal", toActionHandler(handleCloseSessionSignal), { governor: true });
+  registerAction("session/spawn-child", toActionHandler(handleSpawnChild));
+  registerAction("session/revoke-child", toActionHandler(handleRevokeChild));
+  registerAction("child/forward", toActionHandler(handleChildForward));
   registerAction("session/list", toActionHandler(handleListSessions));
   registerAction("session/idle", toActionHandler(handleSessionIdle));
   registerAction("session/rename", toActionHandler(handleRenameSession));
@@ -621,6 +645,29 @@ export function register(server: McpServer): void {
           .string()
           .optional()
           .describe("activity/file/create, activity/file/edit: Absolute path to the activity file. Omit to let TMCP generate one in data/activity/."),
+        // session/revoke-child param
+        child_token: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("session/revoke-child: SID of the child session to revoke. Must have been created via session/spawn-child by the calling session."),
+        // child/forward params
+        child_sid: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("child/forward: SID of the target child session to forward a message to."),
+        message: z
+          .string()
+          .optional()
+          .describe("child/forward: Text message to inject into the child session's dequeue queue as an operator-forwarded message."),
+        // session/spawn-child capability param
+        child_capability: z
+          .enum(["read-only", "gather", "full"])
+          .optional()
+          .describe("session/spawn-child: Capability level for the spawned child session (default: 'gather')."),
       },
     },
     async (args) => {
@@ -647,6 +694,25 @@ export function register(server: McpServer): void {
               code: "NOT_GOVERNOR",
               message: "This action requires governor privileges. Only the governor session can call this path.",
               hint: "Only the governor session can call this action. Use action(token: <governor_token>, ...).",
+            });
+          }
+        }
+
+        // Capability gate — enforces child_capability restrictions before dispatch
+        const capToken = args.token;
+        if (typeof capToken === "number" && capToken > 0) {
+          const { sid: callerSid } = decodeToken(capToken);
+          const cap = getSession(callerSid)?.child_capability;
+          if (cap === "read-only") {
+            return toError({
+              code: "CAPABILITY_DENIED",
+              message: `Action '${type}' is not available to read-only sessions. Only dequeue is permitted.`,
+            });
+          }
+          if (cap === "gather" && GATHER_BLOCKED.has(type)) {
+            return toError({
+              code: "CAPABILITY_DENIED",
+              message: `Action '${type}' is not permitted for gather-capability sessions.`,
             });
           }
         }

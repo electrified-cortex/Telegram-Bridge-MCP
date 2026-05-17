@@ -2,13 +2,13 @@
 id: "10-0890"
 title: "Spike: @mention agent-to-agent messaging in Telegram"
 type: spike
-priority: 30
+priority: 10
 status: draft
 created: 2026-05-07
 filed-by: Overseer
 delegation: Worker
 target_repo: Telegram MCP
-needs-curator-review: true
+needs-curator-review: false
 target_branch: dev
 ---
 
@@ -59,3 +59,22 @@ Telegram" — that's a valid result; document it and close.
 - `10-0889` — streaming text output spike (separate operator P1 feature)
 - Operator session 2026-05-07, msg 51226
 - Telegram blog: https://telegram.org/blog/ai-bot-revolution-11-new-features
+
+## Overseer bounce
+
+- **Reviewer:** Overseer
+- **Date:** 2026-05-16
+- **Verdict:** BOUNCED — not ready for execution
+
+**Gaps:**
+1. **Status still "draft"** — frontmatter `status: draft` means Curator hasn't cleared it. Do not queue tasks still marked draft.
+2. **needs-curator-review: true** — this flag was never cleared, indicating Curator never completed their review pass.
+3. **ID/filename mismatch** — filename prefix is `90-0890` but frontmatter `id` is `"10-0890"`. Reconcile before routing — the priority bucket (10 vs 90) affects scheduling.
+
+Return to Curator for review clearance and ID fix before re-queuing.
+
+## Refinement notes (2026-05-16)
+
+- Filename renamed from `90-0890-spike-agent-at-mention-messaging.md` to `10-0890-spike-agent-at-mention-messaging.md` to match frontmatter `id: "10-0890"`. The `10` prefix is correct for this task's priority bucket.
+- `needs-curator-review` cleared (set to `false`) — Curator review pass complete.
+- `status` remains `draft` per convention for tasks in `10-drafts/needs-refinement/`; ready for re-queuing once Overseer approves.
