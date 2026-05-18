@@ -283,6 +283,15 @@ export function register(server: McpServer): void {
           .string()
           .optional()
           .describe("session/start: Preferred color square emoji hint. session/rename: Color to apply (must be a valid palette emoji)."),
+        refresh: z
+          .boolean()
+          .optional()
+          .describe(
+            "session/start: When true, collapses first-boot, reconnect-of-live, and re-establish-after-drop into a single call. " +
+            "Pass alongside token to reclaim a live session (returns reused: true). " +
+            "When no session exists for the name, creates a new one (returns reused: false). " +
+            "Omit or false for strict first-boot semantics (current default).",
+          ),
         // session/rename params
         new_name: z
           .string()

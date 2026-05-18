@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   checkAndConsumeAutoApprove: vi.fn().mockReturnValue(false),
   registerPendingApproval: vi.fn(),
   clearPendingApproval: vi.fn(),
+  validateSession: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../../telegram.js", async (importActual) => {
@@ -75,6 +76,7 @@ vi.mock("../../session-manager.js", () => ({
   getSessionAnnouncementMessage: mocks.getSessionAnnouncementMessage,
   setSessionReauthDialogMsgId: mocks.setSessionReauthDialogMsgId,
   clearSessionReauthDialogMsgId: mocks.clearSessionReauthDialogMsgId,
+  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
 }));
 
 vi.mock("../../routing-mode.js", () => ({
@@ -120,7 +122,7 @@ vi.mock("../../agent-approval.js", async (importActual) => {
   };
 });
 
-import { register, handleSessionReconnect } from "./start.js";
+import { register, handleSessionReconnect, handleSessionStart } from "./start.js";
 import {
   addReminder,
   resetReminderStateForTest,
@@ -2690,5 +2692,147 @@ describe("handleSessionReconnect", () => {
     const result = parseResult(await handleSessionReconnect({ name: "Agent" }));
 
     expect((result).monitor_recipe).toBeUndefined();
+  });
+});
+
+describe("session/start refresh flag", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReminderStateForTest();
+    mocks.editMessageText.mockResolvedValue(undefined);
+    mocks.deliverReminderEvent.mockReturnValue(true);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.isPollerRunning.mockReturnValue(false);
+    mocks.checkAndConsumeAutoApprove.mockReturnValue(false);
+    mocks.validateSession.mockReturnValue(false);
+    mocks.createSession.mockReturnValue({
+      sid: 2,
+      suffix: 500001,
+      name: "Agent",
+      color: "🟩",
+      sessionsActive: 2,
+      connectionToken: "test-connection-token-uuid",
+    });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+  });
+
+  // AC1: live session + matching token → reuse
+  it("AC1: reuse live session when token matches — no new session created, reused: true", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.validateSession.mockReturnValue(true);
+    // token = sid(1) * 1_000_000 + suffix(123456)
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: true, token: 1123456 }));
+
+    expect(result.reused).toBe(true);
+    expect(result.token).toBe(1123456);
+    expect(result.sid).toBe(1);
+    expect(result.hint).toBe("Call dequeue(token) NOW — do not proceed without draining");
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  // AC2: no session for name + refresh: true → creates new, reused: false
+  it("AC2: no session for name + refresh: true → creates new session, reused: false", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({
+      sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1, connectionToken: "tok",
+    });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: true }));
+
+    expect(result.reused).toBe(false);
+    expect(result.token).toBe(1111111);
+    expect(mocks.createSession).toHaveBeenCalled();
+  });
+
+  // AC3: session was dropped (not in session table) + refresh: true → creates new, reused: false
+  it("AC3: session dropped (not in table) + refresh: true → creates new session, reused: false", async () => {
+    // Simulates bridge restart: session table is empty
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({
+      sid: 1, suffix: 222222, name: "Worker", color: "🟩", sessionsActive: 1, connectionToken: "tok",
+    });
+
+    const result = parseResult(await handleSessionStart({ name: "Worker", refresh: true }));
+
+    expect(result.reused).toBe(false);
+    expect(mocks.createSession).toHaveBeenCalled();
+  });
+
+  // AC4: refresh omitted → byte-equivalent response, no reused field
+  it("AC4: refresh omitted → no reused field in response (regression)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({
+      sid: 1, suffix: 123456, name: "Primary", color: "🟦", sessionsActive: 1, connectionToken: "tok",
+    });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary" }));
+
+    expect(result.reused).toBeUndefined();
+    expect(result.token).toBe(1123456);
+  });
+
+  // AC4 variant: refresh: false → also no reused field
+  it("AC4: refresh: false → no reused field in response (regression)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({
+      sid: 1, suffix: 123456, name: "Primary", color: "🟦", sessionsActive: 1, connectionToken: "tok",
+    });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: false }));
+
+    expect(result.reused).toBeUndefined();
+  });
+
+  // AC5: live session + no token → NAME_IN_USE
+  it("AC5: live session + no token + refresh: true → NAME_IN_USE with sid_in_use", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+
+    const result = await handleSessionStart({ name: "Primary", refresh: true });
+
+    expect(isError(result)).toBe(true);
+    const body = parseResult(result);
+    expect(body.code).toBe("NAME_IN_USE");
+    expect((body as Record<string, unknown>).sid_in_use).toBe(1);
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  // AC5: live session + wrong token → NAME_IN_USE
+  it("AC5: live session + wrong token + refresh: true → NAME_IN_USE with sid_in_use", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.validateSession.mockReturnValue(false);
+
+    const result = await handleSessionStart({ name: "Primary", refresh: true, token: 9999999 });
+
+    expect(isError(result)).toBe(true);
+    const body = parseResult(result);
+    expect(body.code).toBe("NAME_IN_USE");
+    expect((body as Record<string, unknown>).sid_in_use).toBe(1);
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  // AC6: color passed during state-2 reuse → color ignored, warnings[] contains notice
+  it("AC6: color alongside state-2 reuse → reused: true, color ignored, warning in response", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.validateSession.mockReturnValue(true);
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: true, token: 1123456, color: "🟩" }));
+
+    expect(result.reused).toBe(true);
+    expect(Array.isArray(result.warnings)).toBe(true);
+    expect((result.warnings as string[]).some((w: string) => w.includes("color"))).toBe(true);
+    expect(mocks.createSession).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,7 @@ import { getApi, toResult, toError, resolveChat } from "../../telegram.js";
 import { markdownToV2 } from "../../markdown.js";
 import type { TimelineEvent } from "../../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "../../session-manager.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, validateSession } from "../../session-manager.js";
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, deliverReminderEvent, getSessionQueue } from "../../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../../routing-mode.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
@@ -13,6 +13,7 @@ import { runInSessionContext } from "../../session-context.js";
 import { refreshGovernorCommand } from "../../built-in-commands.js";
 import { checkAndConsumeAutoApprove } from "../../auto-approve.js";
 import { startPoller, isPollerRunning } from "../../poller.js";
+import { decodeToken } from "../identity-schema.js";
 import { fireStartupReminders, buildReminderEvent } from "../../reminder-state.js";
 import { registerPendingApproval, clearPendingApproval, isDelegationEnabled, setDelegationEnabled } from "../../agent-approval.js";
 import type { ApprovalDecision } from "../../agent-approval.js";
@@ -217,7 +218,7 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 const DESCRIPTION =
   "Start a named session and return its token. If you lost the token, use action(type: 'session/reconnect'). No args are reused.";
 
-export async function handleSessionStart({ name, color }: { name: string; color?: string }) {
+export async function handleSessionStart({ name, color, refresh, token }: { name: string; color?: string; refresh?: boolean; token?: number }) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -241,6 +242,51 @@ export async function handleSessionStart({ name, color }: { name: string; color?
           code: "INVALID_NAME",
           message: `Session name "${effectiveName}" contains invalid characters. Use letters, digits, and spaces only.`,
         });
+      }
+
+      // refresh: true — check for a live session with the same name before creating
+      if (refresh && effectiveName) {
+        const existingForRefresh = listSessions().find(
+          s => s.name.toLowerCase() === effectiveName.toLowerCase(),
+        );
+        if (existingForRefresh) {
+          const fullSession = getSession(existingForRefresh.sid);
+          if (fullSession) {
+            // Session is live — validate caller's token
+            const isValidToken =
+              token !== undefined &&
+              (() => {
+                const { sid: tSid, suffix: tSuffix } = decodeToken(token);
+                return tSid === existingForRefresh.sid && validateSession(tSid, tSuffix);
+              })();
+            if (isValidToken) {
+              // AC1: reuse existing live session
+              const sessionToken = fullSession.sid * 1_000_000 + fullSession.suffix;
+              const warnings: string[] = [];
+              if (color !== undefined) {
+                warnings.push("color ignored during session reuse; existing session color preserved");
+              }
+              const res: Record<string, unknown> = {
+                token: sessionToken,
+                sid: fullSession.sid,
+                reused: true,
+                hint: "Call dequeue(token) NOW — do not proceed without draining",
+                ...(warnings.length > 0 ? { warnings } : {}),
+              };
+              return toResult(res);
+            }
+            // AC5: live session but no/wrong token → NAME_IN_USE
+            return toError({
+              code: "NAME_IN_USE",
+              message:
+                `Session '${existingForRefresh.name}' is already active (SID ${existingForRefresh.sid}). ` +
+                `Pass the correct token with refresh: true to reclaim it, or use action(type: 'session/reconnect', ...) if token is lost.`,
+              sid_in_use: existingForRefresh.sid,
+            });
+          }
+          // fullSession not found (race) — fall through to name collision guard
+        }
+        // No live session found (AC2/AC3) — fall through to create a new one
       }
 
       // Name collision guard: reject if a session with the same name exists
@@ -290,6 +336,7 @@ export async function handleSessionStart({ name, color }: { name: string; color?
         const res: Record<string, unknown> = {
           token: sessionToken,
           sid: session.sid,
+          ...(refresh ? { reused: false } : {}),
           hint: "Call dequeue(token) NOW — do not proceed without draining",
         };
         if (isFirstSession) {
@@ -551,6 +598,15 @@ export function register(server: McpServer) {
             "🟧 Research/exploration · 🟥 Ops/deployment · 🟪 Specialist/one-off. " +
             "The operator makes the final choice via the approval dialog color buttons. " +
             "Your hint goes first in the button list as a suggestion.",
+          ),
+        refresh: z
+          .boolean()
+          .optional()
+          .describe(
+            "When true, collapses first-boot, reconnect-of-live, and re-establish-after-drop into a single call. " +
+            "Pass alongside token to reclaim a live session (returns reused: true). " +
+            "When no session exists for the name, creates a new one (returns reused: false). " +
+            "Omit or false for strict first-boot semantics (current default).",
           ),
       },
     },
