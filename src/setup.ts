@@ -103,7 +103,7 @@ async function main() {
   console.log(`    1. Open your bot in Telegram:  ${bold(botLink)}`);
   console.log(`    2. Send this exact message:    ${bold(code)}`);
   console.log("");
-  const TIMEOUT_SECONDS = 30;
+  const TIMEOUT_SECONDS = 300;
   const MAX_WRONG_ATTEMPTS = 3;
 
   console.log(dim(`  Waiting for you to send the code … (${TIMEOUT_SECONDS} s, ${MAX_WRONG_ATTEMPTS} wrong attempts allowed, Ctrl+C to abort)`));
@@ -218,7 +218,7 @@ async function main() {
 
   clearInterval(countdownInterval);
   process.stdout.write("\r" + " ".repeat(40) + "\r");
-  console.log(red("  ✗ Timed out — pairing code expired after 30 seconds."));
+  console.log(red("  ✗ Timed out — pairing code expired after 5 minutes."));
   console.log("    Run  pnpm pair  again to get a new code.");
   process.exit(1);
 }

@@ -141,7 +141,8 @@ try {
 
 if (mcpPort !== undefined) {
   // ── Streamable HTTP mode (shared server, multiple clients) ──
-  const app = createMcpExpressApp();
+  const bindHost = process.env.MCP_BIND ?? "127.0.0.1";
+  const app = createMcpExpressApp({ host: bindHost });
   attachEventRoute(app);
   attachDequeueRoute(app);
 
@@ -240,8 +241,8 @@ if (mcpPort !== undefined) {
     await transport.handleRequest(req, res);
   });
 
-  app.listen(mcpPort, "127.0.0.1", () => {
-    process.stderr.write(`[info] MCP Streamable HTTP server listening on http://127.0.0.1:${mcpPort}/mcp\n`);
+  app.listen(mcpPort, bindHost, () => {
+    process.stderr.write(`[info] MCP Streamable HTTP server listening on http://${bindHost}:${mcpPort}/mcp\n`);
   });
 } else {
   // ── stdio mode (original behavior) ──
