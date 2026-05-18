@@ -1,6 +1,6 @@
 ---
 type: task
-status: queued
+status: done
 filed-by: Overseer
 filed-date: 2026-05-17
 priority: P2
@@ -33,3 +33,12 @@ All 10 ACs in the spec must pass. See spec for exact definitions and timing tole
 
 - Persistence across bridge restarts
 - `lockout_exempt` flag on reminders (follow-up)
+
+## Verification
+
+- **Verdict:** APPROVED
+- **Date:** 2026-05-17
+- **Verifier:** task-verification dispatch (round 2)
+- **Commit:** `c66eaae0` (squash-merged onto `dev` from `worker/impl-kick-lockout`)
+- **Test results:** 3116/3116 passed, 141 test files, exit 0
+- **All 10 ACs confirmed** with citations to `file-state.test.ts` and source lines in `file-state.ts`, `dequeue.ts`, `session-queue.ts`, `kick-lockout.ts`, `session/start.ts`
