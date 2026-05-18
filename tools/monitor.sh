@@ -110,7 +110,7 @@ if command -v pwsh >/dev/null 2>&1 && [[ -n "$SKILL_DIR" && -f "$SKILL_DIR/watch
         "-Debounce"  "0")
     [[ -n "$PREFIX" ]] && PS_ARGS+=("-Prefix" "$PREFIX")
     pwsh "${PS_ARGS[@]}" | translate
-    exit "${PIPESTATUS[0]}"
+    exit 0
 fi
 
 # ── Layer 2: bash watch.sh (inotifywait → fswatch → sleep-poll) ───────────────
@@ -118,7 +118,7 @@ if [[ -n "$SKILL_DIR" && -f "$SKILL_DIR/watch.sh" ]]; then
     SH_ARGS=("$ACTIVITY_FILE" "--timeout" "$TIMEOUT" "--heartbeat" "$HEARTBEAT" "--debounce" "0")
     [[ -n "$PREFIX" ]] && SH_ARGS+=("--prefix" "$PREFIX")
     bash "$SKILL_DIR/watch.sh" "${SH_ARGS[@]}" | translate
-    exit "${PIPESTATUS[0]}"
+    exit 0
 fi
 
 # ── Layer 3: inline fallback ──────────────────────────────────────────────────
@@ -179,3 +179,6 @@ while true; do
 
     sleep 2
 done
+# Defensive: explicit zero exit so a failing last command doesn't bubble
+# up as a non-zero exit. Hook callers treat non-zero as "block this event".
+exit 0

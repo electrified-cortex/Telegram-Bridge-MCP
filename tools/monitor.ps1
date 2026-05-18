@@ -84,7 +84,7 @@ if (Test-Path -LiteralPath $watchScript) {
         elseif ($token -eq 'changed') { 'kick' }
         else { $token }
     }
-    exit $LASTEXITCODE
+    exit 0
 }
 
 # ── Inline fallback ───────────────────────────────────────────────────────────
@@ -185,3 +185,7 @@ while ($true) {
         Start-Sleep -Milliseconds $waitMs
     }
 }
+
+# Defensive: explicit zero exit so a failing last command doesn't bubble
+# up as a non-zero exit. Hook callers treat non-zero as "block this event".
+exit 0
