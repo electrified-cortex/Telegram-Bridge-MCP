@@ -19,6 +19,7 @@ import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
 import type { ReminderEvent } from "./reminder-state.js";
 import { kickIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
+import { notifyChannelSubscriber } from "./channel.js";
 
 // ---------------------------------------------------------------------------
 // Voice-ready predicate (shared with message-store's queue)
@@ -202,6 +203,7 @@ export function routeToSession(event: TimelineEvent): void {
   for (const [sid, q] of _queues.entries()) {
     q.enqueue(event);
     kickIfAllowed(sid, "operator", isDequeueActive(sid));
+    notifyChannelSubscriber(sid);
   }
 }
 
@@ -232,6 +234,7 @@ function enqueueToSession(
   if (!q) return;
   q.enqueue(event);
   kickIfAllowed(sid, "operator", isDequeueActive(sid));
+  notifyChannelSubscriber(sid);
 }
 
 // ---------------------------------------------------------------------------

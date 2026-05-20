@@ -8,6 +8,7 @@ import {
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
 import { setDequeueActive, getActivityFile, releaseKickLockout } from "./activity/file-state.js";
+import { resetChannelDebounce, isChannelActive } from "../channel.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -150,10 +151,12 @@ export async function runDrainLoop(
   // try/finally below is guaranteed to call setDequeueActive(sid, false).
   setDequeueActive(sid, true);
 
-  // On the first dequeue call for a session with no activity file registered, surface
-  // a service message nudging the agent to set one up. The message lands in the queue
-  // before the drain so it appears early in the dequeue stream.
-  if (!_activityFileHintShownForSession.has(sid) && !getActivityFile(sid)) {
+  // On the first dequeue call for a session with no wakeup mechanism registered,
+  // surface a service message nudging the agent to set one up. Suppressed if a
+  // channel subscription is active (preferred wakeup path) or an activity file
+  // is registered. The message lands in the queue before the drain so it appears
+  // early in the dequeue stream.
+  if (!_activityFileHintShownForSession.has(sid) && !getActivityFile(sid) && !isChannelActive(sid)) {
     _activityFileHintShownForSession.add(sid);
     deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_ACTIVITY_FILE_HINT);
   }
@@ -360,7 +363,10 @@ export async function runDrainLoop(
     setDequeueIdle(sid, false);
     setDequeueActive(sid, false);
     // Release kick lockout only on content-returning exits; timeout exits skip.
-    if (_lockoutRelease) releaseKickLockout(sid);
+    if (_lockoutRelease) {
+      releaseKickLockout(sid);
+      resetChannelDebounce(sid);
+    }
   }
 }
 

@@ -7,7 +7,7 @@ You just lost conversational context. This help topic covers Telegram/MCP recove
 3. If token is missing or `dequeue` returns `session_closed`: `action(type: 'session/reconnect', name: '<your_name>')` to rejoin, or `action(type: 'session/start', name: '<your_name>')` for a fresh session.
 4. Resume your dequeue loop or last task.
 
-If you use an activity-file watcher, call `activity/file/create` — the response includes the `monitor` field with the exact command to run from your repo root.
+If you use a channel subscription (`telegram://inbox/<token>`), simply re-subscribe — the server-side state is preserved. If you use an activity-file watcher, call `activity/file/get` to retrieve the registered path (do NOT call `activity/file/create` — see help('compaction-recovery')), then re-arm a fresh monitor on that path.
 
 For a richer refresher, call:
 

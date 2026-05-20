@@ -16,6 +16,7 @@ Return to VS Code chat only if the operator explicitly exits the loop or Telegra
 3. Call `help(topic: "identity")` to verify bot/build identity — if it fails, report the error to the user and stop
 4. `action(type: "session/start")` — intro + handles pending messages from previous session
 5. **Save your SID and PIN** — write them to your auto-memory directory immediately after `action(type: "session/start")`. After context compaction you will lose in-context state; the saved PIN lets you call `action(type: "session/reconnect", name: "<your name>")` to reclaim your session without operator re-approval.
+5b. **Subscribe to your inbox channel** — subscribe to `telegram://inbox/<TOKEN>` (use the integer token from step 4) via MCP resource subscriptions. TMCP will push `notifications/resources/updated` when messages arrive and will cap your `max_wait` to 90 s automatically. If your MCP client does not support resource subscriptions, call `activity/file/create` instead.
 6. `dequeue` — enter the loop
 
 ## Loop

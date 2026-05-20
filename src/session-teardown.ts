@@ -34,6 +34,7 @@ import { cancelAnimation } from "./animation-state.js";
 import { removeSession as removeBehaviorTrackerSession } from "./behavior-tracker.js";
 import { removeSilenceState } from "./silence-detector.js";
 import { clearActivityFile } from "./tools/activity/file-state.js";
+import { unregisterChannelSubscriber } from "./channel.js";
 
 /**
  * Perform the full teardown for a session identified by `sid`.
@@ -69,6 +70,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   cancelAnimation(sid).catch(() => {});
   // Clean up activity file registration; deletes file if TMCP-owned
   clearActivityFile(sid).catch(() => {});
+  // Cancel any pending channel subscription and debounce timers
+  unregisterChannelSubscriber(sid);
   revokeAllForSession(sid);
   if (getActiveSession() === sid) setActiveSession(0);
 
