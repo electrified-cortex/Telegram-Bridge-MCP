@@ -213,28 +213,30 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
     return;
   }
 
-  entry.pendingRetryHandle = setTimeout(async () => {
-    entry.pendingRetryHandle = null;
+  entry.pendingRetryHandle = setTimeout(() => {
+    void (async () => {
+      entry.pendingRetryHandle = null;
 
-    if (_state.get(sid) !== entry) return;
-    if (!hasPendingUserContent(sid)) return;
+      if (_state.get(sid) !== entry) return;
+      if (!hasPendingUserContent(sid)) return;
 
-    entry.touchInFlight = true;
-    const ok = await appendNewline(entry.filePath);
+      entry.touchInFlight = true;
+      const ok = await appendNewline(entry.filePath);
 
-    const recheck = _state.get(sid);
-    if (!recheck || recheck !== entry) {
-      entry.touchInFlight = false;
-      return;
-    }
+      const recheck = _state.get(sid);
+      if (!recheck || recheck !== entry) {
+        entry.touchInFlight = false;
+        return;
+      }
 
-    recheck.touchInFlight = false;
+      recheck.touchInFlight = false;
 
-    if (ok) {
-      recheck.kickLockedUntil = Date.now() + getKickLockoutMs(sid);
-    } else {
-      scheduleRetry(sid, recheck, attempt + 1);
-    }
+      if (ok) {
+        recheck.kickLockedUntil = Date.now() + getKickLockoutMs(sid);
+      } else {
+        scheduleRetry(sid, recheck, attempt + 1);
+      }
+    })();
   }, RETRY_DELAYS[attempt]);
 }
 

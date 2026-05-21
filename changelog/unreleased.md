@@ -19,6 +19,9 @@
 
 ### Fixed
 
+- `channel.ts` `_send`: corrected MCP SDK call from non-existent `sendNotification()` to `notification()` on the underlying `Server` instance — channel push notifications were silently failing before this fix
+- `scheduleRetry` (`file-state.ts`): wrapped `setTimeout(async () => {...})` in `void (async () => {...})()` to satisfy `no-misused-promises` lint rule
+- `handleChildForward`, `handleRevokeChild`: removed erroneous `async` keyword — both functions are synchronous; test callsites updated accordingly
 - `replaceActivityFile` (`file-state.ts`): added same-path guard — when the new registration reuses the same file path as the old entry, the old TMCP-owned file is no longer unlinked (would have deleted the currently-registered file)
 - `replaceActivityFile` (`file-state.ts`): old debounce timer is cancelled before async cleanup, preventing a stale callback from firing a kick against the replacement entry (timer generation check)
 - Kick debounce minimum lowered to 1 s (was 30 s) — allows fast-cycling agents to set sub-30 s debounce windows via `profile/kick-debounce`

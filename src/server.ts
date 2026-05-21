@@ -407,7 +407,7 @@ export function createServer(): McpServer {
   // polling.
   server.server.registerCapabilities({ resources: { subscribe: true } });
 
-  server.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+  server.server.setRequestHandler(SubscribeRequestSchema, (request) => {
     const { uri } = request.params;
     const match = INBOX_URI_RE.exec(uri);
     if (!match) return {};
@@ -418,7 +418,7 @@ export function createServer(): McpServer {
     return {};
   });
 
-  server.server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+  server.server.setRequestHandler(UnsubscribeRequestSchema, (request) => {
     const { uri } = request.params;
     const match = INBOX_URI_RE.exec(uri);
     if (!match) return {};

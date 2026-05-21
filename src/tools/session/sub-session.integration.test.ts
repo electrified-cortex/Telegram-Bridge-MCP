@@ -63,7 +63,7 @@ import { register } from "../action.js";
 
 let _nextChildId = 10;
 
-function makeStartSuccess(parentSid: number) {
+function makeStartSuccess(_parentSid: number) {
   _nextChildId++;
   const childSid = _nextChildId;
   const childToken = childSid * 1_000_000 + 654321;
@@ -126,7 +126,7 @@ describe("AC1: spawn-child response shape", () => {
 
 describe("AC1b: token/context mismatch → UNAUTHORIZED", () => {
   it("rejects spawn when token belongs to a different session than the caller context", async () => {
-    const { sid: pSid, suffix: pSuffix } = createSession("Parent");
+    const { sid: pSid, suffix: _pSuffix } = createSession("Parent");
     createSessionQueue(pSid);
     const { sid: qSid, suffix: qSuffix } = createSession("Other");
     createSessionQueue(qSid);
@@ -223,7 +223,7 @@ describe("AC2: revoke-child invalidates child session", () => {
     registerChild(pSid, cSid);
 
     // Revoke it
-    const revokeResult = parseResult(await handleRevokeChild({ token: pToken, child_token: cSid }));
+    const revokeResult = parseResult(handleRevokeChild({ token: pToken, child_token: cSid }));
     expect(revokeResult.closed).toBe(true);
 
     // Now child token is invalid
@@ -244,7 +244,7 @@ describe("AC2: revoke-child invalidates child session", () => {
     const { registerChild } = await import("./child-registry.js");
     registerChild(pSid, cSid);
 
-    const result = parseResult(await handleRevokeChild({ token: pToken, child_token: cSid }));
+    const result = parseResult(handleRevokeChild({ token: pToken, child_token: cSid }));
     expect(result.closed).toBe(true);
     expect(result.sid).toBe(cSid);
   });
@@ -269,7 +269,7 @@ describe("AC3b: child/forward injects into child queue", () => {
     const queueBefore = getSessionQueue(cSid)!.pendingCount();
 
     const result = parseResult(
-      await handleChildForward({ token: pToken, child_sid: cSid, message: "hello child" }),
+      handleChildForward({ token: pToken, child_sid: cSid, message: "hello child" }),
     );
 
     expect(result.forwarded).toBe(true);
@@ -286,7 +286,7 @@ describe("AC3b: child/forward injects into child queue", () => {
 
 describe("AC3c: child/forward rejects non-parent callers", () => {
   it("returns UNAUTHORIZED when caller is not the parent", async () => {
-    const { sid: pSid, suffix: pSuffix } = createSession("Parent");
+    const { sid: pSid, suffix: _pSuffix } = createSession("Parent");
     createSessionQueue(pSid);
 
     const { sid: qSid, suffix: qSuffix } = createSession("Other");
@@ -299,7 +299,7 @@ describe("AC3c: child/forward rejects non-parent callers", () => {
     const { registerChild } = await import("./child-registry.js");
     registerChild(pSid, cSid); // child belongs to P, not Q
 
-    const result = await handleChildForward({
+    const result = handleChildForward({
       token: qToken,
       child_sid: cSid,
       message: "sneaky",

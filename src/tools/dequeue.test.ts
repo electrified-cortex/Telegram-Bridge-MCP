@@ -34,7 +34,7 @@ const fileStateMocks = vi.hoisted(() => ({
 vi.mock("./activity/file-state.js", () => ({
   setDequeueActive: (sid: number, active: boolean) => fileStateMocks.setDequeueActive(sid, active),
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
-  releaseKickLockout: (sid: number) => fileStateMocks.releaseKickLockout(sid),
+  releaseKickLockout: (sid: number) => { fileStateMocks.releaseKickLockout(sid); },
 }));
 
 const mocks = vi.hoisted(() => ({

@@ -71,7 +71,7 @@ export function unregisterChannelSubscriber(sid: number): void {
 function _send(entry: ChannelEntry, sid: number): void {
   const uri = `telegram://inbox/${entry.token}`;
   entry.pendingNotify = false;
-  entry.server.server.sendNotification({
+  entry.server.server.notification({
     method: "notifications/resources/updated",
     params: { uri },
   }).then(() => {

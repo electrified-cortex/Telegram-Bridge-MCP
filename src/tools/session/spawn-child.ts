@@ -41,7 +41,7 @@ export async function handleSpawnChild({
   registerChild(parentSid, data.sid);
   setSessionParentSid(data.sid, parentSid);
   setSessionCapability(data.sid, cap);
-  runInSessionContext(data.sid, () => setTopic(name));
+  runInSessionContext(data.sid, () => { setTopic(name); });
 
   return {
     content: [

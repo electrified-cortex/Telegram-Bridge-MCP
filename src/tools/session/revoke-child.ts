@@ -6,7 +6,7 @@ import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { getParent, unregisterChild } from "./child-registry.js";
 import { closeSessionById } from "../../session-teardown.js";
 
-export async function handleRevokeChild({
+export function handleRevokeChild({
   token,
   child_token,
 }: {

@@ -4,7 +4,7 @@ import { getSession } from "../../session-manager.js";
 import { getParent } from "./child-registry.js";
 import { deliverServiceMessage } from "../../session-queue.js";
 
-export async function handleChildForward({
+export function handleChildForward({
   token,
   child_sid,
   message,

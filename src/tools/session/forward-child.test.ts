@@ -38,17 +38,17 @@ describe("child/forward", () => {
 
   // ── AC3b / AC3c: basic forward and UNAUTHORIZED ─────────────────────────
 
-  it("AC3b: returns { forwarded: true, child_sid } on success", async () => {
+  it("AC3b: returns { forwarded: true, child_sid } on success", () => {
     const result = parseResult(
-      await handleChildForward({ token: PARENT_TOKEN, child_sid: CHILD_SID, message: "hello" }),
+      handleChildForward({ token: PARENT_TOKEN, child_sid: CHILD_SID, message: "hello" }),
     );
 
     expect(result.forwarded).toBe(true);
     expect(result.child_sid).toBe(CHILD_SID);
   });
 
-  it("AC3b: calls deliverServiceMessage with 'parent_forward' event type", async () => {
-    await handleChildForward({ token: PARENT_TOKEN, child_sid: CHILD_SID, message: "hello" });
+  it("AC3b: calls deliverServiceMessage with 'parent_forward' event type", () => {
+    handleChildForward({ token: PARENT_TOKEN, child_sid: CHILD_SID, message: "hello" });
 
     expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
       CHILD_SID,
@@ -60,11 +60,11 @@ describe("child/forward", () => {
 
   // ── AC3c: non-parent caller returns UNAUTHORIZED ─────────────────────────
 
-  it("AC3c: returns UNAUTHORIZED when caller is not the parent", async () => {
+  it("AC3c: returns UNAUTHORIZED when caller is not the parent", () => {
     clearChildRegistry();
     registerChild(99, CHILD_SID); // child belongs to someone else
 
-    const result = await handleChildForward({
+    const result = handleChildForward({
       token: PARENT_TOKEN,
       child_sid: CHILD_SID,
       message: "sneaky",
@@ -75,10 +75,10 @@ describe("child/forward", () => {
     expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 
-  it("AC3c: returns UNAUTHORIZED when child has no registered parent", async () => {
+  it("AC3c: returns UNAUTHORIZED when child has no registered parent", () => {
     clearChildRegistry();
 
-    const result = await handleChildForward({
+    const result = handleChildForward({
       token: PARENT_TOKEN,
       child_sid: CHILD_SID,
       message: "sneaky",
@@ -89,14 +89,14 @@ describe("child/forward", () => {
     expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 
-  it("AC3c: uses parent_sid from session record when available", async () => {
+  it("AC3c: uses parent_sid from session record when available", () => {
     // Session has parent_sid pointing to a different parent
     mocks.getSession.mockReturnValue({
       sid: CHILD_SID, name: "Helper", color: "🟩", parent_sid: 99,
     });
     clearChildRegistry();
 
-    const result = await handleChildForward({
+    const result = handleChildForward({
       token: PARENT_TOKEN,
       child_sid: CHILD_SID,
       message: "sneaky",
@@ -108,10 +108,10 @@ describe("child/forward", () => {
 
   // ── Auth guard ───────────────────────────────────────────────────────────
 
-  it("returns SID_REQUIRED when token is missing", async () => {
+  it("returns SID_REQUIRED when token is missing", () => {
     mocks.requireAuth.mockReturnValue({ code: "SID_REQUIRED", message: "token is required" });
 
-    const result = await handleChildForward({
+    const result = handleChildForward({
       token: undefined,
       child_sid: CHILD_SID,
       message: "hello",
@@ -124,10 +124,10 @@ describe("child/forward", () => {
 
   // ── SESSION_NOT_FOUND guard ──────────────────────────────────────────────
 
-  it("returns SESSION_NOT_FOUND when child session does not exist", async () => {
+  it("returns SESSION_NOT_FOUND when child session does not exist", () => {
     mocks.getSession.mockReturnValue(undefined);
 
-    const result = await handleChildForward({
+    const result = handleChildForward({
       token: PARENT_TOKEN,
       child_sid: CHILD_SID,
       message: "hello",
@@ -138,10 +138,10 @@ describe("child/forward", () => {
     expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 
-  it("returns SESSION_NOT_FOUND when queue is not active (deliverServiceMessage returns false)", async () => {
+  it("returns SESSION_NOT_FOUND when queue is not active (deliverServiceMessage returns false)", () => {
     mocks.deliverServiceMessage.mockReturnValue(false);
 
-    const result = await handleChildForward({
+    const result = handleChildForward({
       token: PARENT_TOKEN,
       child_sid: CHILD_SID,
       message: "hello",

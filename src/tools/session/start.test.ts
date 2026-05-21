@@ -2801,7 +2801,7 @@ describe("session/start refresh flag", () => {
     expect(isError(result)).toBe(true);
     const body = parseResult(result);
     expect(body.code).toBe("NAME_IN_USE");
-    expect((body as Record<string, unknown>).sid_in_use).toBe(1);
+    expect(body.sid_in_use).toBe(1);
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -2817,7 +2817,7 @@ describe("session/start refresh flag", () => {
     expect(isError(result)).toBe(true);
     const body = parseResult(result);
     expect(body.code).toBe("NAME_IN_USE");
-    expect((body as Record<string, unknown>).sid_in_use).toBe(1);
+    expect(body.sid_in_use).toBe(1);
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
