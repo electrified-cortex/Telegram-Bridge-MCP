@@ -28,6 +28,7 @@
 
 ### Tests
 
+- `src/channel.test.ts`: 21 tests covering `INBOX_URI_RE`, `isChannelActive`, `registerChannelSubscriber` (cap/no-cap/exact boundary), `unregisterChannelSubscriber` (no-op, prior restoration), `notifyChannelSubscriber` (no subscriber, in-flight skip, immediate fire, cooldown suppression, retry on rejection, expired-cooldown re-fire), and `resetChannelCooldown`
 - Added test 9: `replaceActivityFile` atomic swap — concurrent `touchActivityFile` call during replace reaches the new entry, not `undefined`
 - Added test 10: `replaceActivityFile` timer generation check — old debounce timer cancelled by replace does not fire a stale kick against the new entry
 
