@@ -115,15 +115,16 @@ export function peekSessionCategories(sid: number): Record<string, number> | und
   return _queues.get(sid)?.peekCategories((evt) => evt.content.type);
 }
 
-/**
- * Returns true if the session queue has at least one pending heavyweight
- * user event (text or voice). Non-destructive — does not consume any items.
- * Returns false if no queue exists for this sid.
- */
+const OPERATOR_MESSAGE_TYPES = new Set([
+  "text", "voice", "command", "photo", "doc", "video",
+  "audio", "sticker", "animation", "contact", "location", "unknown",
+]);
+
+// If new operator-message types are added to buildMessageContent in message-store.ts, add them here too.
 export function hasPendingUserContent(sid: number): boolean {
   const cats = peekSessionCategories(sid);
   if (!cats) return false;
-  return (cats["text"] ?? 0) > 0 || (cats["voice"] ?? 0) > 0;
+  return [...OPERATOR_MESSAGE_TYPES].some(t => (cats[t] ?? 0) > 0);
 }
 
 /**

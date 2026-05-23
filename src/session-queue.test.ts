@@ -12,6 +12,7 @@ import {
   notifySessionWaiters,
   deliverDirectMessage,
   deliverReminderEvent,
+  hasPendingUserContent,
   resetSessionQueuesForTest,
 } from "./session-queue.js";
 import {
@@ -459,6 +460,45 @@ describe("session-queue", () => {
       const result = deliverReminderEvent(99, reminderEvent);
 
       expect(result).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // hasPendingUserContent
+  // -------------------------------------------------------------------------
+
+  describe("hasPendingUserContent", () => {
+    it("returns false when no queue exists", () => {
+      expect(hasPendingUserContent(999)).toBe(false);
+    });
+
+    it("returns false when queue is empty", () => {
+      createSessionQueue(1);
+      expect(hasPendingUserContent(1)).toBe(false);
+    });
+
+    it("returns true for a text-only queue", () => {
+      createSessionQueue(1);
+      routeToSession(makeEvent({ id: 10, content: { type: "text", text: "hi" } }));
+      expect(hasPendingUserContent(1)).toBe(true);
+    });
+
+    it("returns true for a voice-only queue", () => {
+      createSessionQueue(1);
+      routeToSession(makeEvent({ id: 10, content: { type: "voice" } }));
+      expect(hasPendingUserContent(1)).toBe(true);
+    });
+
+    it("returns true for a photo-only queue (AC5)", () => {
+      createSessionQueue(1);
+      routeToSession(makeEvent({ id: 10, content: { type: "photo" } }));
+      expect(hasPendingUserContent(1)).toBe(true);
+    });
+
+    it("returns true for a doc-only queue", () => {
+      createSessionQueue(1);
+      routeToSession(makeEvent({ id: 10, content: { type: "doc" } }));
+      expect(hasPendingUserContent(1)).toBe(true);
     });
   });
 
