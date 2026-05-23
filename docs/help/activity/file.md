@@ -12,6 +12,7 @@ Without a watcher: long-poll `dequeue(max_wait: 300)` is always sufficient on it
 | `action(type: "activity/file/edit")` | Swap the registered path. Returns `file_path` + `previous_path`. |
 | `action(type: "activity/file/delete")` | Unregister and optionally delete the file. |
 | `action(type: "activity/file/get")` | Introspect current registration state. |
+| `action(type: "activity/file/touch")` | Manually bump the file's mtime. Returns `{ touched, file_path, mtime }`. Useful after compaction recovery to force a watcher fire. |
 
 ## Wake mechanism
 

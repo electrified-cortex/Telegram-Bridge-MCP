@@ -74,6 +74,7 @@ import { handleActivityFileCreate } from "./activity/create.js";
 import { handleActivityFileEdit } from "./activity/edit.js";
 import { handleActivityFileDelete } from "./activity/delete.js";
 import { handleActivityFileGet } from "./activity/get.js";
+import { handleActivityFileTouch } from "./activity/touch.js";
 import { KICK_DEBOUNCE_MIN_MS, KICK_DEBOUNCE_MAX_MS, LOCKOUT_MIN_MS, LOCKOUT_MAX_MS } from "./activity/file-state.js";
 import { handleNameTag } from "./name-tag.js";
 import { decodeToken } from "./identity-schema.js";
@@ -239,6 +240,7 @@ export function setupActionRegistry(): void {
   registerAction("activity/file/edit", toActionHandler(handleActivityFileEdit));
   registerAction("activity/file/delete", toActionHandler(handleActivityFileDelete));
   registerAction("activity/file/get", toActionHandler(handleActivityFileGet));
+  registerAction("activity/file/touch", toActionHandler(handleActivityFileTouch));
 
   // name-tag — get or set session name tag
   registerAction("name-tag", toActionHandler(handleNameTag));
