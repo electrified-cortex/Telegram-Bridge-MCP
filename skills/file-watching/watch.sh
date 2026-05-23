@@ -143,14 +143,16 @@ if (( DEBOUNCE < 0 || DEBOUNCE > 60 )); then
 fi
 
 # ── Layer 1: route to watch.ps1 if pwsh is available ────────────────────────
-if command -v pwsh >/dev/null 2>&1; then
+if [[ "$OSTYPE" != linux* ]] && command -v pwsh >/dev/null 2>&1; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     PS1_PATH="$SCRIPT_DIR/watch.ps1"
     if [[ ! -f "$PS1_PATH" ]]; then
         echo "watch.sh: pwsh found but watch.ps1 missing at $PS1_PATH" >&2
         exit 2
     fi
-    PS_ARGS=("-File" "$PS1_PATH" "$PATH_ARG"
+    # Convert POSIX path to Windows path — pwsh Test-Path fails on /d/... form
+    WIN_PATH_ARG="$(cygpath -w "$PATH_ARG" 2>/dev/null || echo "$PATH_ARG")"
+    PS_ARGS=("-File" "$PS1_PATH" "$WIN_PATH_ARG"
         "-Timeout" "$TIMEOUT"
         "-Debounce" "$DEBOUNCE"
         "-Heartbeat" "$HEARTBEAT")
@@ -274,3 +276,6 @@ while true; do
         last_heartbeat_epoch="$now"
     fi
 done
+# Defensive: explicit zero exit so a failing last command doesn't bubble
+# up as a non-zero exit. Hook callers treat non-zero as "block this event".
+exit 0
