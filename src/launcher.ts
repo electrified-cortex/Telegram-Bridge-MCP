@@ -106,10 +106,44 @@ async function readSse(res: Response): Promise<void> {
   }
 }
 
+const SSE_RECONNECT_DELAY_MS = 1000;
+
+/**
+ * Opens a persistent GET /mcp SSE stream to receive server-initiated notifications
+ * (e.g. notifications/resources/updated for channel subscriptions).
+ * Reconnects automatically on failure. Runs for the lifetime of the bridge.
+ */
+async function listenServerEvents(baseUrl: string, getSessionId: () => string | undefined): Promise<void> {
+  for (;;) {
+    const sid = getSessionId();
+    if (sid === undefined) {
+      await new Promise<void>((r) => { setTimeout(r, SSE_RECONNECT_DELAY_MS); });
+      continue;
+    }
+    try {
+      const res = await fetch(baseUrl, {
+        method: "GET",
+        headers: { "Accept": "text/event-stream", "mcp-session-id": sid },
+      });
+      if (!res.ok) {
+        process.stderr.write(`[launcher] GET /mcp ${res.status}, retrying...\n`);
+        await new Promise<void>((r) => { setTimeout(r, SSE_RECONNECT_DELAY_MS); });
+        continue;
+      }
+      await readSse(res);
+      process.stderr.write("[launcher] GET /mcp SSE stream ended, reconnecting...\n");
+    } catch (err: unknown) {
+      process.stderr.write(`[launcher] GET /mcp error: ${String(err)}, retrying...\n`);
+      await new Promise<void>((r) => { setTimeout(r, SSE_RECONNECT_DELAY_MS); });
+    }
+  }
+}
+
 function bridge(port: number): void {
   const baseUrl = `http://127.0.0.1:${port}${MCP_PATH}`;
   const readBuffer = new ReadBuffer();
   let sessionId: string | undefined;
+  let sseListenerStarted = false;
 
   async function postMessage(message: JSONRPCMessage): Promise<void> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -122,7 +156,13 @@ function bridge(port: number): void {
     });
 
     const sid = res.headers.get("mcp-session-id");
-    if (sid !== null) sessionId = sid;
+    if (sid !== null) {
+      sessionId = sid;
+      if (!sseListenerStarted) {
+        sseListenerStarted = true;
+        void listenServerEvents(baseUrl, () => sessionId);
+      }
+    }
 
     // 202 Accepted means the notification was received — no body to relay
     if (res.status === 202) return;

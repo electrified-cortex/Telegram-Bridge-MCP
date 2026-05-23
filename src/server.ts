@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SubscribeRequestSchema, UnsubscribeRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { SubscribeRequestSchema, UnsubscribeRequestSchema, ReadResourceRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { runInSessionContext } from "./session-context.js";
 import { getActiveSession, getSession, validateSession } from "./session-manager.js";
 import { markFirstUseHintSeen } from "./first-use-hints.js";
@@ -172,6 +172,14 @@ export function createServer(): McpServer {
   const server = new McpServer({
     name: "telegram-bridge-mcp",
     version: PKG_VERSION,
+  }, {
+    capabilities: {
+      experimental: {
+        // CC-proprietary channel wake mechanism — delivers notifications/claude/channel
+        // which surfaces as <channel> tags in Claude's context and wakes the agent.
+        "claude/channel": {},
+      },
+    },
   });
 
   // ── Behavior tracker wiring ────────────────────────────────────────────
@@ -427,6 +435,32 @@ export function createServer(): McpServer {
     if (!validateSession(sid, suffix)) return {};
     unregisterChannelSubscriber(sid);
     return {};
+  });
+
+  // Reading the inbox resource acts as an implicit subscribe — clients that
+  // call resources/read (e.g. Claude Code's ReadMcpResourceTool) get wired
+  // up for push notifications without needing to send resources/subscribe.
+  server.server.setRequestHandler(ReadResourceRequestSchema, (request) => {
+    const { uri } = request.params;
+    const match = INBOX_URI_RE.exec(uri);
+    if (!match) {
+      throw new Error(`Resource not found: ${uri}`);
+    }
+    const token = Number(match[1]);
+    const { sid, suffix } = decodeToken(token);
+    if (!validateSession(sid, suffix)) {
+      throw new Error(`Invalid or expired token in resource URI: ${uri}`);
+    }
+    registerChannelSubscriber(sid, token, server);
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "text/plain",
+          text: `subscribed sid=${sid} token=${token}`,
+        },
+      ],
+    };
   });
 
   return server;

@@ -3,9 +3,10 @@
  *
  * Tracks which MCP server instances have an active inbox subscription for a
  * TMCP session. When the session queue receives a new message it calls
- * `notifyChannelSubscriber(sid)` which fires a
- * `notifications/resources/updated` over the SSE transport — no polling
- * or explicit `dequeue` call required on the client side.
+ * `notifyChannelSubscriber(sid, event)` which fires:
+ *   1. `notifications/claude/channel` — CC-proprietary wake mechanism that
+ *      delivers message content directly into Claude's context as a <channel> tag.
+ *   2. `notifications/resources/updated` — standard MCP for non-CC clients.
  *
  * URI scheme: `telegram://inbox/<token>`
  *
@@ -23,6 +24,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { TimelineEvent } from "./message-store.js";
 import { isDequeueActive } from "./tools/activity/file-state.js";
 import { getDequeueDefault, setDequeueDefault, getKickLockoutMs } from "./session-manager.js";
 
@@ -36,6 +38,8 @@ interface ChannelEntry {
   cooldownUntil: number | null;
   /** True when an inbound arrived during cooldown (will fire on next opportunity). */
   pendingNotify: boolean;
+  /** Latest event that triggered a pending notification (used for deferred delivery). */
+  pendingEvent: TimelineEvent | undefined;
   /** The session's dequeue default before we capped it to CHANNEL_MAX_WAIT_S. */
   priorDequeueDefault: number;
 }
@@ -46,7 +50,7 @@ const _subscribers = new Map<number, ChannelEntry>();
 /** Register an MCP server as the inbox channel subscriber for a session. */
 export function registerChannelSubscriber(sid: number, token: number, server: McpServer): void {
   const prior = getDequeueDefault(sid);
-  _subscribers.set(sid, { server, token, cooldownUntil: null, pendingNotify: false, priorDequeueDefault: prior });
+  _subscribers.set(sid, { server, token, cooldownUntil: null, pendingNotify: false, pendingEvent: undefined, priorDequeueDefault: prior });
   // Cap the session's dequeue default to 90 s — the channel provides wakeup,
   // so long polls beyond 90 s only delay reminder firing with no benefit.
   if (prior > CHANNEL_MAX_WAIT_S) {
@@ -63,14 +67,49 @@ export function unregisterChannelSubscriber(sid: number): void {
   _subscribers.delete(sid);
 }
 
+/** Extract human-readable content from an event for the channel notification payload. */
+function _extractContent(event: TimelineEvent): string {
+  const c = event.content;
+  if ((c.type === "text" || c.type === "voice") && c.text) return c.text;
+  if (c.type === "voice") return "[voice message — transcription pending]";
+  if (c.type === "photo") return c.caption ? `[photo] ${c.caption}` : "[photo]";
+  if (c.type === "document") return c.name ? `[file: ${c.name}]${c.caption ? ` ${c.caption}` : ""}` : `[file]${c.caption ? ` ${c.caption}` : ""}`;
+  if (c.caption) return c.caption;
+  return `[${c.type}]`;
+}
+
 /**
- * Send a `notifications/resources/updated` for a session's inbox URI.
- * Cooldown is armed only after the send resolves — a failed send leaves
- * cooldownUntil null so the next notify call retries immediately.
+ * Send channel notifications for a new inbound event.
+ * Fires both the CC-proprietary `notifications/claude/channel` (delivers content
+ * into Claude's context) and the standard `notifications/resources/updated`
+ * (for non-CC MCP clients). Cooldown is armed after the standard notification confirms.
  */
-function _send(entry: ChannelEntry, sid: number): void {
+function _send(entry: ChannelEntry, sid: number, event: TimelineEvent | undefined): void {
   const uri = `telegram://inbox/${entry.token}`;
   entry.pendingNotify = false;
+  entry.pendingEvent = undefined;
+
+  // CC-proprietary channel notification — wakes Claude and delivers content.
+  if (event !== undefined) {
+    void entry.server.server.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: _extractContent(event),
+        meta: {
+          source: "telegram-bridge-mcp",
+          message_id: String(event.id),
+          ts: event.timestamp,
+          from: event.from,
+          type: event.content.type,
+          inbox_uri: uri,
+        },
+      },
+    }).catch((e: unknown) => {
+      process.stderr.write(`[channel] claude/channel notify failed sid=${sid}: ${String(e)}\n`);
+    });
+  }
+
+  // Standard MCP notification for non-CC clients.
   entry.server.server.notification({
     method: "notifications/resources/updated",
     params: { uri },
@@ -84,23 +123,35 @@ function _send(entry: ChannelEntry, sid: number): void {
 }
 
 /**
- * Fire `notifications/resources/updated` for a session's inbox, if subscribed.
+ * Fire channel notifications for a session's inbox, if subscribed.
  * Called by the session-queue after every enqueue.
  *
  *   - In-flight dequeue → skip (agent is actively waiting, will see the event).
  *   - Not in cooldown → notify immediately.
  *   - In cooldown → set pending flag (fires on next opportunity).
  */
-export function notifyChannelSubscriber(sid: number): void {
+export function notifyChannelSubscriber(sid: number, event?: TimelineEvent): void {
   const entry = _subscribers.get(sid);
   if (!entry) return;
   if (isDequeueActive(sid)) return;
 
   if (entry.cooldownUntil === null || Date.now() >= entry.cooldownUntil) {
-    _send(entry, sid);
+    _send(entry, sid, event);
   } else {
     entry.pendingNotify = true;
+    if (event !== undefined) entry.pendingEvent = event;
   }
+}
+
+/**
+ * Fire a deferred pending notification if one is queued and cooldown has expired.
+ * Called when cooldown may have just expired (e.g. after a timeout dequeue).
+ */
+export function flushPendingChannelNotify(sid: number): void {
+  const entry = _subscribers.get(sid);
+  if (!entry || !entry.pendingNotify) return;
+  if (entry.cooldownUntil !== null && Date.now() < entry.cooldownUntil) return;
+  _send(entry, sid, entry.pendingEvent);
 }
 
 /**
@@ -113,6 +164,7 @@ export function resetChannelCooldown(sid: number): void {
   if (!entry) return;
   entry.cooldownUntil = null;
   entry.pendingNotify = false;
+  entry.pendingEvent = undefined;
 }
 
 /** Return true if a channel subscription is registered for the session. */

@@ -203,7 +203,7 @@ export function routeToSession(event: TimelineEvent): void {
   for (const [sid, q] of _queues.entries()) {
     q.enqueue(event);
     kickIfAllowed(sid, "operator", isDequeueActive(sid));
-    notifyChannelSubscriber(sid);
+    notifyChannelSubscriber(sid, event);
   }
 }
 
@@ -234,7 +234,7 @@ function enqueueToSession(
   if (!q) return;
   q.enqueue(event);
   kickIfAllowed(sid, "operator", isDequeueActive(sid));
-  notifyChannelSubscriber(sid);
+  notifyChannelSubscriber(sid, event);
 }
 
 // ---------------------------------------------------------------------------
@@ -400,7 +400,7 @@ export function deliverDirectMessage(
 
   q.enqueue(event);
   kickIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
-  notifyChannelSubscriber(targetSid);
+  notifyChannelSubscriber(targetSid, event);
   dlog("dm", `delivered DM from sid=${senderSid} → sid=${targetSid}`, { eventId: event.id });
   return true;
 }
@@ -475,7 +475,7 @@ export function deliverServiceMessage(
 
   q.enqueue(event);
   kickIfAllowed(targetSid, "service", isDequeueActive(targetSid));
-  notifyChannelSubscriber(targetSid);
+  notifyChannelSubscriber(targetSid, event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
@@ -514,7 +514,7 @@ export function deliverReminderEvent(
 
   q.enqueue(event);
   kickIfAllowed(targetSid, "reminder", isDequeueActive(targetSid));
-  notifyChannelSubscriber(targetSid);
+  notifyChannelSubscriber(targetSid, event);
   dlog("service", `startup reminder → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
 }
@@ -539,7 +539,7 @@ export function routeMessage(messageId: number, targetSid: number, routerSid: nu
   };
   q.enqueue(routed);
   kickIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
-  notifyChannelSubscriber(targetSid);
+  notifyChannelSubscriber(targetSid, routed);
   dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`, { routerSid });
   return true;
 }

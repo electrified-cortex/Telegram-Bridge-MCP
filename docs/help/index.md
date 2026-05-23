@@ -26,6 +26,7 @@ SESSION LIFECYCLE
 REFERENCE
   help(topic: 'compression') — Message brevity tiers (None/Lite/Full/Ultra)
   help(topic: 'identity')    — Bot info + MCP server version (requires token)
+  help(topic: 'channels')    — CC channel-wake feature status (not active in HTTP deployment)
 
 PER-TOOL DOCS
   help(topic: '<tool_name>') — Detailed docs for any registered tool (see tool index)
