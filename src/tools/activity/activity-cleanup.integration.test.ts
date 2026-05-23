@@ -16,6 +16,8 @@ import { join } from "path";
 
 vi.mock("../../session-manager.js", () => ({
   getKickDebounceMs: vi.fn((_sid: number): number => 60_000),
+  getDequeueDefault: vi.fn((_sid: number): number => 300),
+  setDequeueDefault: vi.fn((_sid: number, _v: number): void => {}),
 }));
 vi.mock("../../session-queue.js", () => ({
   hasPendingUserContent: vi.fn((_sid: number): boolean => false),

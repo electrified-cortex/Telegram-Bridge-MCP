@@ -1,10 +1,8 @@
 # activity/file — Wake-Nudge Integration Guide
 
-The activity-file feature is a **fallback wakeup mechanism** for runtimes that do not support MCP resource subscriptions. If your MCP client supports `resources/subscribe`, use the channel instead — subscribe to `telegram://inbox/<token>` and TMCP will push `notifications/resources/updated` when messages arrive, with no file system setup required.
+The activity-file feature is the **wakeup mechanism** for agents that have a filesystem watcher (e.g. Monitor tool, FileSystemWatcher, inotifywait). Register an activity file and watch it with a **persistent** Monitor. TMCP bumps the file's mtime when messages arrive AND the debounce window has passed AND no dequeue is in-flight. Your watcher fires, you call dequeue — done.
 
-If your runtime has a filesystem watcher (e.g. Monitor, FileSystemWatcher, inotifywait) but no resource subscription support, register an activity file and watch it. TMCP bumps the file's mtime when messages arrive AND the debounce window has passed AND no dequeue is in-flight. Your watcher fires, you call dequeue — done.
-
-Without either: long-poll `dequeue(max_wait: 300)` is always sufficient on its own.
+Without a watcher: long-poll `dequeue(max_wait: 300)` is always sufficient on its own.
 
 ## Lifecycle
 

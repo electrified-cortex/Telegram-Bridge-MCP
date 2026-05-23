@@ -54,10 +54,6 @@ vi.mock("../activity/file-state.js", () => ({
 
 vi.mock("../../service-messages.js", () => ({
   SERVICE_MESSAGES: {
-    ONBOARDING_ACTIVITY_FILE_HINT: {
-      eventType: "onboarding_activity_file_hint",
-      text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
-    },
     DUPLICATE_SESSION_DETECTED: {
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,

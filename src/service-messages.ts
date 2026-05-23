@@ -48,10 +48,14 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: `Welcome to the loop. Stay in it.
 
 1. Call dequeue(token) every turn.
-2. **Preferred wakeup:** Subscribe to \`telegram://inbox/<token>\` via MCP resource subscriptions. TMCP pushes \`notifications/resources/updated\` on new messages and caps your \`max_wait\` to 90 s.
-3. **Fallback wakeup (no subscription support):** call action(type: 'activity/file/create') and watch the file with a Monitor tool.
+2. If you have a Monitor tool, call action(type: 'activity/file/create') — it returns a file path. Watch it with a **persistent** Monitor.
 
 Details: help('start'), help('dequeue'), help('activity/file').`,
+  },
+
+  ONBOARDING_COMPACTION_HINT: {
+    eventType: "onboarding_compaction_hint" as const,
+    text: "If you compact (context reset), call `help('compacted')` to recover. Token, activity file, and dequeue loop can all be restored from there.",
   },
 
   ONBOARDING_ROLE_GOVERNOR: {
@@ -87,11 +91,6 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
   ONBOARDING_NO_PENDING_YET: {
     eventType: "onboarding_no_pending_yet" as const,
     text: "No operator messages were pending at session start. Call dequeue to wait for operator input.",
-  },
-
-  ONBOARDING_ACTIVITY_FILE_HINT: {
-    eventType: "onboarding_activity_file_hint" as const,
-    text: "**Preferred:** Subscribe to your inbox channel via MCP resource subscriptions — URI: `telegram://inbox/<token>`. TMCP will push `notifications/resources/updated` when messages arrive and cap your `max_wait` to 90 s.\n**Alternative:** If your MCP client does not support resource subscriptions, call `activity/file/create` to register an activity file instead.",
   },
 
   // ── Governor change notifications ─────────────────────────────────────────
@@ -177,6 +176,18 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
     /** @param filePath The registered activity file path to re-arm */
     text: (filePath: string) =>
       `Looks like you compacted. Re-arm your activity-file monitor on this path.\n**Path:** ${filePath}`,
+  },
+
+  // ── Activity file monitor instructions ────────────────────────────────────
+
+  /** Fired after activity/file/create succeeds. Concrete monitor invocation. */
+  ACTIVITY_FILE_MONITOR_INSTRUCTIONS: {
+    eventType: "activity_file_monitor_instructions" as const,
+    /** @param filePath The activity file path returned by activity/file/create */
+    text: (filePath: string) =>
+      `Use this to guarantee a high quality file watch — run inside your harness's Monitor tool with persistent: true. Name it "Telegram message notifier" so you can recognize it after a compaction.\n\n` +
+      `Windows:  \`tools/monitor.ps1 "${filePath}"\`\n` +
+      `Linux/macOS:  \`tools/monitor.sh "${filePath}"\``,
   },
 
   // ── Inter-agent hints ─────────────────────────────────────────────────────

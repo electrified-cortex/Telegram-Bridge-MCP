@@ -33,19 +33,25 @@ vi.mock("../../session-gate.js", () => ({
 // Mock session-manager
 const sessionMocks = vi.hoisted(() => ({
   getKickLockoutMs: vi.fn((_sid: number): number => 300_000),
+  getDequeueDefault: vi.fn((_sid: number): number => 300),
+  setDequeueDefault: vi.fn((_sid: number, _v: number): void => {}),
 }));
 
 vi.mock("../../session-manager.js", () => ({
   getKickLockoutMs: (sid: number) => sessionMocks.getKickLockoutMs(sid),
+  getDequeueDefault: (sid: number) => sessionMocks.getDequeueDefault(sid),
+  setDequeueDefault: (sid: number, v: number) => sessionMocks.setDequeueDefault(sid, v),
 }));
 
 // Mock session-queue
 const queueMocks = vi.hoisted(() => ({
   hasPendingUserContent: vi.fn((_sid: number): boolean => true),
+  deliverServiceMessage: vi.fn((..._args: unknown[]): boolean => true),
 }));
 
 vi.mock("../../session-queue.js", () => ({
   hasPendingUserContent: (sid: number) => queueMocks.hasPendingUserContent(sid),
+  deliverServiceMessage: (...args: unknown[]) => queueMocks.deliverServiceMessage(...args),
 }));
 
 // Mock fs/promises to avoid real file I/O

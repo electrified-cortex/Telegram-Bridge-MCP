@@ -115,10 +115,6 @@ vi.mock("../service-messages.js", () => ({
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
     },
-    ONBOARDING_ACTIVITY_FILE_HINT: {
-      eventType: "onboarding_activity_file_hint",
-      text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
-    },
   },
 }));
 
@@ -1487,49 +1483,8 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // Activity file onboarding hint (AC2)
+  // Activity file onboarding hint — REMOVED 2026-05-22
+  // ONBOARDING_LOOP_PATTERN at session start now covers the activity-file
+  // guidance once; the redundant hint on first dequeue was deleted.
   // =========================================================================
-
-  describe("activity file onboarding hint", () => {
-    it("injects ONBOARDING_ACTIVITY_FILE_HINT on first dequeue when no activity file is registered", async () => {
-      fileStateMocks.getActivityFile.mockReturnValue(undefined);
-      mocks.dequeueBatch.mockReturnValue([]);
-
-      await call({ timeout: 0, token: 1_123_456 });
-
-      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({ eventType: "onboarding_activity_file_hint" }),
-      );
-    });
-
-    it("does not inject hint on subsequent dequeue calls for the same session", async () => {
-      fileStateMocks.getActivityFile.mockReturnValue(undefined);
-      mocks.dequeueBatch.mockReturnValue([]);
-
-      await call({ timeout: 0, token: 1_123_456 });
-      mocks.deliverServiceMessage.mockClear();
-
-      await call({ timeout: 0, token: 1_123_456 });
-
-      const hintCalls = mocks.deliverServiceMessage.mock.calls.filter(
-        (args: unknown[]) => args[1] && typeof args[1] === "object" &&
-          (args[1] as Record<string, unknown>).eventType === "onboarding_activity_file_hint",
-      );
-      expect(hintCalls).toHaveLength(0);
-    });
-
-    it("does not inject hint when an activity file is already registered", async () => {
-      // fileStateMocks.getActivityFile returns non-null by default (set in beforeEach)
-      mocks.dequeueBatch.mockReturnValue([]);
-
-      await call({ timeout: 0, token: 1_123_456 });
-
-      const hintCalls = mocks.deliverServiceMessage.mock.calls.filter(
-        (args: unknown[]) => args[1] && typeof args[1] === "object" &&
-          (args[1] as Record<string, unknown>).eventType === "onboarding_activity_file_hint",
-      );
-      expect(hintCalls).toHaveLength(0);
-    });
-  });
 });

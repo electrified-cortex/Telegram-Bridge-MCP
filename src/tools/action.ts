@@ -290,7 +290,10 @@ export function register(server: McpServer): void {
             "session/start: When true, collapses first-boot, reconnect-of-live, and re-establish-after-drop into a single call. " +
             "Pass alongside token to reclaim a live session (returns reused: true). " +
             "When no session exists for the name, creates a new one (returns reused: false). " +
-            "Omit or false for strict first-boot semantics (current default).",
+            "Omit or false for strict first-boot semantics (current default). " +
+            "activity/file/create: When true, wipes any existing registration for this session (deletes file if TMCP-owned) " +
+            "then proceeds with a fresh create. Response includes replaced: true when a prior registration was wiped, " +
+            "replaced: false when there was none. Omit or false to preserve existing ALREADY_REGISTERED behavior.",
           ),
         // session/rename params
         new_name: z

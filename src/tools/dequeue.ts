@@ -7,8 +7,8 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, getActivityFile, releaseKickLockout } from "./activity/file-state.js";
-import { resetChannelCooldown, isChannelActive } from "../channel.js";
+import { setDequeueActive, releaseKickLockout } from "./activity/file-state.js";
+import { resetChannelCooldown } from "../channel.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -95,12 +95,6 @@ const _timeoutHintShownForSession = new Set<number>();
  */
 const _lastStaleWarningSentAt = new Map<number, number>();
 
-/**
- * Tracks which sessions have already received the ONBOARDING_ACTIVITY_FILE_HINT.
- * The hint fires once per session on first dequeue when no activity file is registered.
- */
-const _activityFileHintShownForSession = new Set<number>();
-
 /** Exported for test reset only — do not call in production code. */
 export function _resetStaleWarningMapForTest(): void {
   _lastStaleWarningSentAt.clear();
@@ -116,9 +110,9 @@ export function _resetFirstDequeueHintForTest(): void {
   // No-op: first-dequeue hint removed.
 }
 
-/** Exported for test reset only — do not call in production code. */
+/** Exported for test reset only — kept for backward compat with tests. */
 export function _resetActivityFileHintForTest(): void {
-  _activityFileHintShownForSession.clear();
+  // No-op: activity-file hint removed; LOOP_PATTERN now covers it.
 }
 
 /**
@@ -151,15 +145,11 @@ export async function runDrainLoop(
   // try/finally below is guaranteed to call setDequeueActive(sid, false).
   setDequeueActive(sid, true);
 
-  // On the first dequeue call for a session with no wakeup mechanism registered,
-  // surface a service message nudging the agent to set one up. Suppressed if a
-  // channel subscription is active (preferred wakeup path) or an activity file
-  // is registered. The message lands in the queue before the drain so it appears
-  // early in the dequeue stream.
-  if (!_activityFileHintShownForSession.has(sid) && !getActivityFile(sid) && !isChannelActive(sid)) {
-    _activityFileHintShownForSession.add(sid);
-    deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_ACTIVITY_FILE_HINT);
-  }
+  // ONBOARDING_LOOP_PATTERN already covers the activity-file guidance at session
+  // start. The redundant activity-file hint on first dequeue is intentionally
+  // removed — the loop-pattern message says steps 1 and 2 once; the follow-up
+  // ACTIVITY_FILE_MONITOR_INSTRUCTIONS message lands when the agent actually
+  // calls activity/file/create.
 
   const sq = sessionQueue;
 
