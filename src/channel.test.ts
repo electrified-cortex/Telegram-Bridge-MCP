@@ -12,10 +12,10 @@ import {
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 
 const mocks = vi.hoisted(() => ({
-  getDequeueDefault: vi.fn(() => 300),
-  setDequeueDefault: vi.fn(),
-  getKickLockoutMs: vi.fn(() => 500),
-  isDequeueActive: vi.fn(() => false),
+  getDequeueDefault: vi.fn((_sid: number) => 300),
+  setDequeueDefault: vi.fn((_sid: number, _val: number) => {}),
+  getKickLockoutMs: vi.fn((_sid: number) => 500),
+  isDequeueActive: vi.fn((_sid: number) => false),
 }));
 
 vi.mock("./session-manager.js", () => ({

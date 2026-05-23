@@ -190,6 +190,16 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
       `Linux/macOS:  \`tools/monitor.sh "${filePath}"\``,
   },
 
+  // ── Sub-session spawn hint ────────────────────────────────────────────────
+
+  /** Fired after session/spawn-child succeeds. Guides the host to dispatch a sub-agent. */
+  SPAWN_CHILD_SUBAGENT_HINT: {
+    eventType: "spawn_child_subagent_hint" as const,
+    /** @param childSid the spawned child's SID, @param childName the child session's name, @param childToken the new sub-session token */
+    text: (childSid: number, childName: string, childToken: number) =>
+      `You spawned a sub-session (sid=${childSid}, name=${childName}). Now dispatch a background sub-agent to drain its dequeue loop — pick a model class appropriate to the topic complexity. The sub-agent should call \`dequeue(token: ${childToken})\` continuously and reply via its own session token. When the topic is resolved, the sub-agent calls \`session/revoke-child\` itself.\n\nIf the sub-agent stops without giving you sufficient resolution, resume that same sub-agent with a follow-up prompt — provide the correction or demand the result.`,
+  },
+
   // ── Inter-agent hints ─────────────────────────────────────────────────────
 
   COMPRESSION_HINT_FIRST_DM: {

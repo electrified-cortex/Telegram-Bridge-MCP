@@ -40,7 +40,7 @@ const sessionMocks = vi.hoisted(() => ({
 vi.mock("../../session-manager.js", () => ({
   getKickLockoutMs: (sid: number) => sessionMocks.getKickLockoutMs(sid),
   getDequeueDefault: (sid: number) => sessionMocks.getDequeueDefault(sid),
-  setDequeueDefault: (sid: number, v: number) => sessionMocks.setDequeueDefault(sid, v),
+  setDequeueDefault: (sid: number, v: number) => { sessionMocks.setDequeueDefault(sid, v); },
 }));
 
 // Mock session-queue

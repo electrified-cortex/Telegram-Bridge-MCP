@@ -379,25 +379,25 @@ describe("AC8: refresh type validation — non-boolean values rejected", () => {
   });
 
   it('refresh:"true" (string) returns INVALID_ARG error', async () => {
-    const result = await handleActivityFileCreate({ token: SID, refresh: "true" as unknown as boolean });
+    const result = await handleActivityFileCreate({ token: SID, refresh: "true" });
     expect((result as { isError?: true }).isError).toBe(true);
     expect(parseResult(result).code).toBe("INVALID_ARG");
   });
 
   it("refresh:1 (number) returns INVALID_ARG error", async () => {
-    const result = await handleActivityFileCreate({ token: SID, refresh: 1 as unknown as boolean });
+    const result = await handleActivityFileCreate({ token: SID, refresh: 1 });
     expect((result as { isError?: true }).isError).toBe(true);
     expect(parseResult(result).code).toBe("INVALID_ARG");
   });
 
   it("refresh:0 (number) returns INVALID_ARG error", async () => {
-    const result = await handleActivityFileCreate({ token: SID, refresh: 0 as unknown as boolean });
+    const result = await handleActivityFileCreate({ token: SID, refresh: 0 });
     expect((result as { isError?: true }).isError).toBe(true);
     expect(parseResult(result).code).toBe("INVALID_ARG");
   });
 
   it("refresh:null returns INVALID_ARG error (present but not a boolean)", async () => {
-    const result = await handleActivityFileCreate({ token: SID, refresh: null as unknown as boolean });
+    const result = await handleActivityFileCreate({ token: SID, refresh: null });
     expect((result as { isError?: true }).isError).toBe(true);
     expect(parseResult(result).code).toBe("INVALID_ARG");
   });

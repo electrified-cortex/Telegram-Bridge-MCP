@@ -64,10 +64,11 @@ describe("session/spawn-child", () => {
     expect(result.parent_sid).toBe(PARENT_SID);
   });
 
-  it("AC1: result does not include 'hint' field", async () => {
+  it("AC1: result includes a 'hint' field pointing the host to dequeue", async () => {
     const result = parseResult(await handleSpawnChild({ token: 1123456, name: "Helper" }));
 
-    expect(result).not.toHaveProperty("hint");
+    expect(typeof result.hint).toBe("string");
+    expect((result.hint as string).length).toBeGreaterThan(0);
   });
 
   it("AC1: registers the child SID as owned by the parent SID", async () => {

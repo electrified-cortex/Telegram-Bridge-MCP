@@ -7,6 +7,8 @@ import { setSessionParentSid, setSessionCapability } from "../../session-manager
 import { setTopic } from "../../topic-state.js";
 import { handleSessionStart } from "./start.js";
 import { registerChild } from "./child-registry.js";
+import { deliverServiceMessage } from "../../session-queue.js";
+import { SERVICE_MESSAGES } from "../../service-messages.js";
 
 export async function handleSpawnChild({
   token,
@@ -43,11 +45,25 @@ export async function handleSpawnChild({
   setSessionCapability(data.sid, cap);
   runInSessionContext(data.sid, () => { setTopic(name); });
 
+  // Guide the parent (host) toward dispatching a background sub-agent for the
+  // new sub-session. Lands in the parent's next dequeue, not the child's.
+  deliverServiceMessage(
+    parentSid,
+    SERVICE_MESSAGES.SPAWN_CHILD_SUBAGENT_HINT.text(data.sid, name, data.token),
+    SERVICE_MESSAGES.SPAWN_CHILD_SUBAGENT_HINT.eventType,
+    { child_sid: data.sid, child_name: name },
+  );
+
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify({ token: data.token, sid: data.sid, parent_sid: parentSid }),
+        text: JSON.stringify({
+          token: data.token,
+          sid: data.sid,
+          parent_sid: parentSid,
+          hint: `call dequeue(token: ${token}) for next-step instructions`,
+        }),
       },
     ],
   };

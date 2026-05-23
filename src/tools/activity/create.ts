@@ -29,12 +29,13 @@ import {
 } from "./file-state.js";
 
 /**
- * Cap session dequeue max_wait to this value (seconds) once an activity file
- * is registered. Assumes a file watcher (monitor) provides external wake; long
- * dequeue holds beyond this delay reminder firing and cron interleaving for no
- * benefit. Matches CHANNEL_MAX_WAIT_S in channel.ts.
+ * One-time event: when an activity file is registered, set the session's
+ * dequeue default to this value (seconds) so the agent's loop interleaves
+ * with crons + parallel signals. Not an ongoing cap — after this set, the
+ * agent can change the default freely via profile/dequeue-default.
+ * Matches CHANNEL_MAX_WAIT_S in channel.ts.
  */
-const ACTIVITY_MAX_WAIT_S = 90;
+const ACTIVITY_DEFAULT_WAIT_S = 90;
 
 export async function handleActivityFileCreate(args: Record<string, unknown>) {
   const _sid = requireAuth(args.token as number | undefined);
@@ -108,11 +109,14 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       pendingRetryHandle: null,
     });
 
-    // Cap dequeue max_wait to 90 s once a file is registered. A monitor on
-    // the file provides the external wake; longer holds only delay reminder
-    // firing and parallel-signal interleaving. Only cap if currently higher.
-    if (getDequeueDefault(sid) > ACTIVITY_MAX_WAIT_S) {
-      setDequeueDefault(sid, ACTIVITY_MAX_WAIT_S);
+    // One-time event: when an activity file is registered, set the session's
+    // dequeue default to 90 s so the agent's loop interleaves with crons and
+    // parallel signals. A monitor on the file provides the external wake.
+    // Guard `> 90` so we never raise a value the agent has explicitly lowered.
+    // This is a one-shot at registration — not an ongoing cap. After this,
+    // the agent can re-set the default freely via profile/dequeue-default.
+    if (getDequeueDefault(sid) > ACTIVITY_DEFAULT_WAIT_S) {
+      setDequeueDefault(sid, ACTIVITY_DEFAULT_WAIT_S);
     }
 
     // Breadcrumb: queue the concrete monitor-invocation service message for
@@ -156,8 +160,8 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
   // Cap dequeue max_wait to 90 s once a file is registered. A monitor on
   // the file provides the external wake; longer holds only delay reminder
   // firing and parallel-signal interleaving. Only cap if currently higher.
-  if (getDequeueDefault(sid) > ACTIVITY_MAX_WAIT_S) {
-    setDequeueDefault(sid, ACTIVITY_MAX_WAIT_S);
+  if (getDequeueDefault(sid) > ACTIVITY_DEFAULT_WAIT_S) {
+    setDequeueDefault(sid, ACTIVITY_DEFAULT_WAIT_S);
   }
 
   // Breadcrumb: queue the concrete monitor-invocation service message for
