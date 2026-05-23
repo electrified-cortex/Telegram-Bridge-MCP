@@ -210,6 +210,12 @@ export async function runDrainLoop(
     return result;
   }
 
+  // Promote deferred reminders whose delay has elapsed before any early return.
+  // Without this, a busy session (always has immediate messages) or an agent
+  // using max_wait:0 exclusively would never call promoteDeferred, leaving a
+  // deferred reminder stuck in that state indefinitely even at fires_in_seconds=0.
+  promoteDeferred(sid);
+
   // Try immediate batch dequeue
   let batch = dequeueBatchAny();
   if (batch.length > 0) {

@@ -1216,6 +1216,35 @@ describe("dequeue tool", () => {
   // Reminder fire path — tokenHint propagation
   // =========================================================================
 
+  // =========================================================================
+  // promoteDeferred — called on every dequeue path (regression: bug-bridge-reminder-fire-failure)
+  // =========================================================================
+
+  describe("promoteDeferred called on all dequeue paths", () => {
+    it("calls promoteDeferred before returning immediate batch (busy-session bug fix)", async () => {
+      // Before the fix, promoteDeferred was only called inside the long-poll loop.
+      // A session with constant message activity always took the immediate-batch path,
+      // leaving deferred reminders stuck in deferred state indefinitely.
+      const evt = makeEvent(1, "immediate message");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      await call({ timeout: 300, token: 1_123_456 });
+      expect(reminderMocks.promoteDeferred).toHaveBeenCalledWith(1);
+    });
+
+    it("calls promoteDeferred on timeout=0 instant poll (empty queue)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      await call({ timeout: 0, token: 1_123_456 });
+      expect(reminderMocks.promoteDeferred).toHaveBeenCalledWith(1);
+    });
+
+    it("calls promoteDeferred on timeout=0 instant poll (immediate batch)", async () => {
+      const evt = makeEvent(2, "batch on instant poll");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      await call({ max_wait: 0, token: 1_123_456 });
+      expect(reminderMocks.promoteDeferred).toHaveBeenCalledWith(1);
+    });
+  });
+
   describe("reminder fire path", () => {
     it("fires reminder events and returns updates with no hint fields", async () => {
       // Strategy: mock Date.now so that idleDuration immediately exceeds

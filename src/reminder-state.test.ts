@@ -96,6 +96,67 @@ describe("reminder-state", () => {
     });
   });
 
+  describe("deferred → fire at fires_in_seconds=0 (regression: bug-bridge-reminder-fire-failure)", () => {
+    it("reminder stays deferred before promoteDeferred even at fires_in_seconds=0", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "pickup-test", text: "pickup", delay_seconds: 60, recurring: false });
+        // Simulate delay elapsed: created 2 minutes ago, delay=60s → overdue
+        r.created_at = Date.now() - 120_000;
+        // fires_in_seconds=0 — delay is elapsed, but state is still deferred
+        expect(getSoonestDeferredMs(1)).toBe(0);
+        expect(listReminders()[0].state).toBe("deferred");
+      });
+    });
+
+    it("promoteDeferred transitions a fires_in_seconds=0 reminder to active", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "pickup-test", text: "pickup", delay_seconds: 60, recurring: false });
+        r.created_at = Date.now() - 120_000; // overdue by 1 minute
+        promoteDeferred(1);
+        const list = listReminders();
+        expect(list[0].state).toBe("active");
+        expect(list[0].activated_at).not.toBeNull();
+      });
+    });
+
+    it("full deferred → fire path: elapsed reminder becomes active and fires via popActiveReminders", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "pickup-test", text: "pickup-lenora-230", delay_seconds: 9000, recurring: false });
+        // Simulate: 9000s have elapsed since creation (fires_in_seconds=0)
+        r.created_at = Date.now() - 9000_000;
+        expect(r.state).toBe("deferred");
+        expect(getSoonestDeferredMs(1)).toBe(0);
+        // After promoteDeferred (called by dequeue), reminder becomes active
+        promoteDeferred(1);
+        expect(listReminders()[0].state).toBe("active");
+        expect(getActiveReminders(1)).toHaveLength(1);
+        // Fires via popActiveReminders (triggered by dequeue idle threshold)
+        const fired = popActiveReminders(1);
+        expect(fired).toHaveLength(1);
+        expect(fired[0].id).toBe("pickup-test");
+        expect(fired[0].text).toBe("pickup-lenora-230");
+        // One-shot: removed after firing
+        expect(listReminders()).toHaveLength(0);
+      });
+    });
+
+    it("recurring elapsed reminder re-arms to deferred after firing", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "recurring-test", text: "recurring pickup", delay_seconds: 3600, recurring: true });
+        r.created_at = Date.now() - 7200_000; // 2 hours ago, delay=1hr → elapsed
+        promoteDeferred(1);
+        expect(listReminders()[0].state).toBe("active");
+        const fired = popActiveReminders(1);
+        expect(fired).toHaveLength(1);
+        // Re-armed as deferred with a fresh timer
+        const remaining = listReminders();
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0].state).toBe("deferred");
+        expect(remaining[0].delay_seconds).toBe(3600);
+      });
+    });
+  });
+
   describe("getActiveReminders", () => {
     it("returns only active reminders for the given sid", () => {
       runInSessionContext(1, () => {
