@@ -102,8 +102,13 @@ translate() {
     awk '{ sub(/^[^ ]+ /, ""); sub(/changed$/, "kick"); print; fflush() }'
 }
 
-# ── Layer 1: pwsh + watch.ps1 (event-driven, preferred) ──────────────────────
-if command -v pwsh >/dev/null 2>&1 && [[ -n "$SKILL_DIR" && -f "$SKILL_DIR/watch.ps1" ]]; then
+# ── Layer 1: pwsh + watch.ps1 (event-driven, preferred — Windows only) ──────
+# On Linux, pwsh's FileSystemWatcher fails to detect mtime-only bumps on the
+# activity file, leading to silent zero-kick failures. The OSTYPE guard
+# matches the same fix in the file-watching skill's watch.sh — on Linux we
+# fall through to Layer 2 (bash watch.sh / inotifywait) regardless of whether
+# pwsh happens to be installed in the container.
+if [[ "$OSTYPE" != linux* ]] && command -v pwsh >/dev/null 2>&1 && [[ -n "$SKILL_DIR" && -f "$SKILL_DIR/watch.ps1" ]]; then
     PS_ARGS=("-File" "$SKILL_DIR/watch.ps1" "$ACTIVITY_FILE"
         "-Timeout"   "$TIMEOUT"
         "-Heartbeat" "$HEARTBEAT"
