@@ -98,8 +98,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/../skills/file-watching" 2>/dev/null && pwd)" || SKILL_DIR=""
 
 # translate: strip ISO8601 timestamp (first word) and map changed → kick.
+# Pure-bash while-read loop: avoids the mawk input-buffering bug on Debian
+# (mawk buffers stdin in 4KB blocks even with fflush() on output, which
+# silently blocks every line under ~4KB from ever reaching the harness).
+# bash builtins (read, echo) are line-oriented and flush each line
+# immediately on pipe stdout.
 translate() {
-    awk '{ sub(/^[^ ]+ /, ""); sub(/changed$/, "kick"); print; fflush() }'
+    while IFS= read -r line; do
+        rest="${line#* }"
+        echo "${rest/changed/kick}"
+    done
 }
 
 # ── Layer 1: pwsh + watch.ps1 (event-driven, preferred — Windows only) ──────
