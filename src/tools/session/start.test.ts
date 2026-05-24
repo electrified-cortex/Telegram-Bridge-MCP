@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError, type ToolHandler } from "../test-utils.js";
+import { createMockServer, parseResult, isError, errorCode, type ToolHandler } from "../test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
@@ -385,8 +385,8 @@ describe("session_start tool", () => {
     const result = await call({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("NAME_CONFLICT");
     const text = JSON.stringify(result);
-    expect(text).toContain("NAME_CONFLICT");
     expect(text).toContain("Overseer");
     // Must NOT create a session
     expect(mocks.createSession).not.toHaveBeenCalled();
@@ -591,7 +591,7 @@ describe("session_start tool", () => {
     const result = await call({ name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -611,7 +611,7 @@ describe("session_start tool", () => {
     vi.useRealTimers();
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -640,7 +640,7 @@ describe("session_start tool", () => {
 
       // Session must be denied
       expect(isError(result)).toBe(true);
-      expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+      expect(errorCode(result)).toBe("SESSION_DENIED");
       // capturedMsgId must have been set — if not, registerCallbackHook was never called
       expect(capturedMsgId).toBeDefined();
       // The callback hook registered for the approval dialog must be cleared (cleanup)
@@ -661,7 +661,7 @@ describe("session_start tool", () => {
     const result = await call({});
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_REQUIRED");
+    expect(errorCode(result)).toBe("NAME_REQUIRED");
     expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
@@ -674,7 +674,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     const result = await call({ name: "Scout!" });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -682,7 +682,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     const result = await call({ name: "Scout_2" });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -690,7 +690,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     const result = await call({ name: "Scout🤖" });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -698,7 +698,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     const result = await call({ name: "スカウト" });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -1816,8 +1816,8 @@ describe("session_start tool", () => {
     const result = await call({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("NAME_CONFLICT");
     const text = JSON.stringify(result);
-    expect(text).toContain("NAME_CONFLICT");
     expect(text).toContain("dequeue");
     expect(text).not.toContain("reconnect: true");
     expect(text).toContain("session/reconnect");
@@ -1924,7 +1924,7 @@ describe("session_start tool", () => {
     const result = await handleSessionReconnect({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
     expect(mocks.drainQueue).not.toHaveBeenCalled();
   });
@@ -1941,7 +1941,7 @@ describe("session_start tool", () => {
     vi.useRealTimers();
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -2019,7 +2019,7 @@ describe("session_start tool", () => {
 
     // No session named "Overseer" → SESSION_NOT_FOUND error
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_NOT_FOUND");
+    expect(errorCode(result)).toBe("SESSION_NOT_FOUND");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -2576,7 +2576,7 @@ describe("handleSessionReconnect", () => {
     const result = await handleSessionReconnect({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_NOT_FOUND");
+    expect(errorCode(result)).toBe("SESSION_NOT_FOUND");
     expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
   });
 
@@ -2584,13 +2584,13 @@ describe("handleSessionReconnect", () => {
     const result = await handleSessionReconnect({ name: "" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_REQUIRED");
+    expect(errorCode(result)).toBe("NAME_REQUIRED");
   });
 
   it("returns NAME_REQUIRED for whitespace-only name", async () => {
     const result = await handleSessionReconnect({ name: "   " });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_REQUIRED");
+    expect(errorCode(result)).toBe("NAME_REQUIRED");
   });
 
   it("shows simple Approve/Deny dialog (reconnect_yes/reconnect_no), not color picker", async () => {
@@ -2643,7 +2643,7 @@ describe("handleSessionReconnect", () => {
     const result = await handleSessionReconnect({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 

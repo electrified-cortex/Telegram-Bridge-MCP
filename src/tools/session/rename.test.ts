@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError, type ToolHandler } from "../test-utils.js";
+import { createMockServer, parseResult, isError, errorCode, type ToolHandler } from "../test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   listSessions: vi.fn().mockReturnValue([]),
@@ -87,7 +87,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1999999, new_name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("AUTH_FAILED");
+    expect(errorCode(result)).toBe("AUTH_FAILED");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -99,7 +99,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -107,7 +107,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "   " });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -115,7 +115,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout!" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -123,14 +123,14 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout_2" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
   });
 
   it("rejects name with emoji → INVALID_NAME", async () => {
     const result = await call({ token: 1111111, new_name: "Scout🤖" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
   });
 
   it("accepts alphanumeric name with spaces", async () => {
@@ -155,7 +155,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_CONFLICT");
+    expect(errorCode(result)).toBe("NAME_CONFLICT");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -168,7 +168,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "SCOUT" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_CONFLICT");
+    expect(errorCode(result)).toBe("NAME_CONFLICT");
   });
 
   it("does not collide with own SID (rename to same name)", async () => {
@@ -190,7 +190,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "NewName" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_NOT_FOUND");
+    expect(errorCode(result)).toBe("SESSION_NOT_FOUND");
   });
 
   // =========================================================================
@@ -213,7 +213,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("APPROVAL_DENIED");
+    expect(errorCode(result)).toBe("APPROVAL_DENIED");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -224,7 +224,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("APPROVAL_TIMEOUT");
+    expect(errorCode(result)).toBe("APPROVAL_TIMEOUT");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -235,7 +235,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("APPROVAL_DENIED");
+    expect(errorCode(result)).toBe("APPROVAL_DENIED");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -264,7 +264,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_CONFLICT");
+    expect(errorCode(result)).toBe("NAME_CONFLICT");
     expect(mocks.requestOperatorApproval).not.toHaveBeenCalled();
   });
 
@@ -297,7 +297,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout", color: "🔴" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_COLOR");
+    expect(errorCode(result)).toBe("INVALID_COLOR");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 
@@ -305,7 +305,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout", color: "notacolor" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_COLOR");
+    expect(errorCode(result)).toBe("INVALID_COLOR");
     expect(mocks.requestOperatorApproval).not.toHaveBeenCalled();
   });
 
@@ -335,7 +335,7 @@ describe("rename_session tool", () => {
     const result = await call({ token: 1111111, new_name: "Scout", target_sid: 2 });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("PERMISSION_DENIED");
+    expect(errorCode(result)).toBe("PERMISSION_DENIED");
     expect(mocks.renameSession).not.toHaveBeenCalled();
   });
 });

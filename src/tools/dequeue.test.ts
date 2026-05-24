@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "./test-utils.js";
+import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 import type { TimelineEvent } from "../message-store.js";
 
 interface CompactEvent {
@@ -538,8 +538,7 @@ describe("dequeue tool", () => {
   it("returns SID_REQUIRED error when identity is omitted", async () => {
     const result = await call({ timeout: 0 });
     expect(isError(result)).toBe(true);
-    const text = JSON.stringify(result);
-    expect(text).toContain("SID_REQUIRED");
+    expect(errorCode(result)).toBe("SID_REQUIRED");
   });
 
   it("always re-syncs setActiveSession on return when explicit sid provided", async () => {
@@ -655,16 +654,14 @@ describe("dequeue tool", () => {
     it("returns SID_REQUIRED when identity is omitted", async () => {
       const result = await call({ timeout: 0 });
       expect(isError(result)).toBe(true);
-      const text = JSON.stringify(result);
-      expect(text).toContain("SID_REQUIRED");
+      expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
     it("returns AUTH_FAILED when suffix does not match", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({ token: 3_009_999, timeout: 0 });
       expect(isError(result)).toBe(true);
-      const text = JSON.stringify(result);
-      expect(text).toContain("AUTH_FAILED");
+      expect(errorCode(result)).toBe("AUTH_FAILED");
     });
 
     it("passes [sid, suffix] to validateSession when identity provided", async () => {

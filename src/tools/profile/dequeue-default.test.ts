@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "../test-utils.js";
+import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
 import type { TimelineEvent } from "../../message-store.js";
 
 // ---------------------------------------------------------------------------
@@ -138,16 +138,14 @@ describe("set_dequeue_default tool", () => {
   it("returns SID_REQUIRED when token is missing", async () => {
     const result = await call({});
     expect(isError(result)).toBe(true);
-    const text = JSON.stringify(result);
-    expect(text).toContain("SID_REQUIRED");
+    expect(errorCode(result)).toBe("SID_REQUIRED");
   });
 
   it("returns AUTH_FAILED when suffix does not match", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
     const result = await call({ token: 1_999_999, timeout: 300 });
     expect(isError(result)).toBe(true);
-    const text = JSON.stringify(result);
-    expect(text).toContain("AUTH_FAILED");
+    expect(errorCode(result)).toBe("AUTH_FAILED");
   });
 
   it("rejects non-integer timeout", async () => {
