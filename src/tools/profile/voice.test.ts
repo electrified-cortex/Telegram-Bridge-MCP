@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError } from "../test-utils.js";
+import { testIdentityGate } from "../test-helpers/identity-gate.js";
 
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
@@ -78,20 +79,5 @@ describe("set_voice tool", () => {
     expect(mocks.clearSessionVoice).toHaveBeenCalledOnce();
   });
 
-  describe("identity gate", () => {
-    it("returns SID_REQUIRED when no identity provided", async () => {
-      const result = await call({ voice: "alloy" });
-      expect(isError(result)).toBe(true);
-      const data = parseResult(result);
-      expect(data.code).toBe("SID_REQUIRED");
-    });
-
-    it("returns AUTH_FAILED when identity has wrong suffix", async () => {
-      mocks.validateSession.mockReturnValue(false);
-      const result = await call({ voice: "alloy", token: 1999999 });
-      expect(isError(result)).toBe(true);
-      const data = parseResult(result);
-      expect(data.code).toBe("AUTH_FAILED");
-    });
-  });
+  testIdentityGate((args) => call(args), mocks.validateSession, {"voice":"alloy"}, false);
 });

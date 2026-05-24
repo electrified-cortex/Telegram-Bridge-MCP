@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError } from "../test-utils.js";
+import { testIdentityGate } from "../test-helpers/identity-gate.js";
 
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn((): boolean => false),
@@ -177,18 +178,5 @@ describe("save_profile tool", () => {
     expect(written).not.toHaveProperty("name_tag");
   });
 
-  describe("identity gate", () => {
-    it("returns SID_REQUIRED when no identity provided", async () => {
-      const result = await call({ key: "Test" });
-      expect(isError(result)).toBe(true);
-      expect(parseResult(result).code).toBe("SID_REQUIRED");
-    });
-
-    it("returns AUTH_FAILED on invalid token", async () => {
-      mocks.validateSession.mockReturnValue(false);
-      const result = await call({ key: "Test", token: 1000000 });
-      expect(isError(result)).toBe(true);
-      expect(parseResult(result).code).toBe("AUTH_FAILED");
-    });
-  });
+  testIdentityGate((args) => call(args), mocks.validateSession, {"key":"Test"}, false);
 });
