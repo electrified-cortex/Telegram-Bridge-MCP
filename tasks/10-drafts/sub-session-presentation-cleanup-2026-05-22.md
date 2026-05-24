@@ -114,3 +114,79 @@ Live test 2026-05-22 (Curator session, sid=1, token=1601748):
 - Operator described experience: "I have two participants now. That is weird."
 
 Conversation context: telegram messages 59474 through 59488.
+
+## Overseer bounce
+
+Reviewer: Overseer
+Date: 2026-05-23
+Verdict: NEEDS REFINEMENT
+Review type: swarm (5 personalities — Devil's Advocate, Architect, Designer, Engineer, Security Auditor — + arbitrator)
+Confidence: High
+
+**v0.2 re-vet note (2026-05-23):** Curator submitted v0.2 claiming all 7 gaps addressed with "Curator defaults." Re-vet finds: Gap 3 genuinely closed by code; Gap 7 substantially closed pending one wording fix. Gaps 1, 2, 4, 5, 6 remain structurally identical to v0.1 — no new decision text exists for any of them. 6 new critical findings added (see below). Returning for v0.3.
+
+### What was checked
+- Requirements completeness and internal consistency
+- Acceptance criteria testability
+- Public API surface and backward compatibility
+- Structural soundness and evolvability
+- Practical correctness under edge cases
+- Authorization model and trust boundary
+
+### Not checked
+- Technical correctness of implementation (that's the worker's job post-spec-pass)
+
+### Gap status after v0.2
+
+| Gap | Status |
+|-----|--------|
+| 1 — Onboarding positive list | OPEN — "Exact wording TBD" still in R4; AC4 vacuous-truth bug unchanged |
+| 2 — Index allocation strategy | OPEN — "frees its index for re-use" with no gap-fill/next-available decision |
+| 3 — Parent token verification | **CLOSED** — `requireAuth` + `getCallerSid()` cross-check at `spawn-child.ts:24–35`, covered by integration tests |
+| 4 — Cascading revocation | OPEN — C2 "semantics unchanged" = no cascade; children survive parent ban |
+| 5 — SUB_SESSION_LIMIT error shape | OPEN — "placeholder" still in open questions; no namespace, no payload, no enforcement in code |
+| 6 — Name-tag display rule | OPEN — R3 "unchanged" + C4 "count toward active" = name tag fires for parent + one child; identity collapse |
+| 7 — setSessionAnnouncementMessage | SUBSTANTIALLY CLOSED — B2 prohibits announcement; "probably" wording should be hardened to "MUST NOT" |
+
+### Must resolve before passing (updated — all prior open items + new additions)
+
+**From v0.1 bounce, still open:**
+
+1. **Onboarding positive list.** Define exact key names for the four positive categories (token, role context, loop instruction, exit protocol). "Exact wording TBD" is not acceptable even if body text is deferred — the key identifiers must be pinned now so sub-agent authors can write deterministic startup code. Also: AC4 lists 7 suppressed keys but R4 lists 9 — add `onboarding_token_save` and `onboarding_no_pending_yet` to AC4.
+
+2. **Index allocation strategy.** Choose: gap-fill (lowest-free) or next-available (monotone). State explicitly in AC3a. Also specify whether the 9-child limit counts "currently alive" or "ever allocated this session" — the counter semantics determine when SUB_SESSION_LIMIT fires after revoke+respawn cycles.
+
+3. **~~Parent token verification.~~** Closed.
+
+4. **Cascading revocation.** When a parent session is closed (any path: `session/close`, health-check, crash), all registered child sessions must be revoked before or atomically with the parent teardown. Add an explicit requirement. Prerequisite: `getChildren(parentSid)` inverse query must be added to whichever store is designated authoritative (see new item 8 below).
+
+5. **SUB_SESSION_LIMIT error shape.** Define: error code string, namespace (consistent with existing TMCP error patterns), payload fields (`limit: 9`, `current: N`, `parent_sid`). The per-parent scope must be expressed in the payload so callers in multi-parent dispatch scenarios know which parent is saturated.
+
+6. **Name-tag display rule.** The `activeSessionCount() < 2` threshold in `outbound-proxy.ts:38` must be replaced with a `primarySessionCount() < 2` threshold (counting only sessions without `parent_sid`). C4 makes sub-sessions full session citizens for governance, but the display rule must operate on primary sessions only. Spec must require this distinction and name the new predicate.
+
+7. **`setSessionAnnouncementMessage` lifecycle.** Change "probably not needed since there's no announcement" to: "`setSessionAnnouncementMessage` MUST NOT be called for sub-sessions. `revoke-child` cleanup must handle the case where no announcement record exists (no-op, not error)."
+
+**New — found in v0.2 re-vet:**
+
+8. **Authoritative parent/child store.** `child-registry.ts` (flat `Map<childSid, parentSid>`) and `Session.parent_sid` in `session-manager.ts` coexist with a fallback chain in `revoke-child.ts:29`. Designate one canonical store. Add `getChildren(parentSid): number[]` inverse query to it. Required by items 4 and 5, and by the per-parent index counter.
+
+9. **Recursive spawn gate.** With the approval dialog removed, any `full`-capability child session can call `session/spawn-child` and create grandchildren without operator interaction. Add an explicit requirement: `session/spawn-child` is only callable by sessions with no `parent_sid` (root sessions). A session whose own `parent_sid` is set must receive `UNAUTHORIZED` regardless of `child_capability`.
+
+10. **SESSION_JOINED suppression.** B2 says `SPAWN_CHILD_SUBAGENT_HINT` is "the only signal the operator sees." But `handleSessionStart` unconditionally broadcasts `SESSION_JOINED` to all existing sessions at `start.ts:408–420`. Add a requirement: sub-session creation must NOT trigger `SESSION_JOINED` delivery to peer sessions. (This also suppresses the spurious governor re-election at `start.ts:373–376`.)
+
+11. **`profile/topic` restricted to root sessions.** A compromised sub-session can call `action(type: 'profile/topic', topic: "")` to clear its chip, making its messages visually identical to the parent's (no topic chip). Add `profile/topic` to `GATHER_BLOCKED` OR require that topic is set-once at spawn time and immutable thereafter for sessions with `parent_sid`.
+
+12. **Index counter persistence.** The per-parent child count must survive crash recovery (parent session reload from persistence). If the counter is not durable, a crash+reload cycle resets it to zero and allows more than 9 sub-sessions across the session lifecycle.
+
+13. **spawn-child return payload: add `display_index`.** Include the integer index (1–9) in the return payload alongside `token/sid/parent_sid`. Callers must not need to parse the chat topic chip to know which slot was assigned. (Repeated from v0.1 non-blocking — now escalated to blocking because the index allocation strategy and limit enforcement both require the caller to have this value.)
+
+### Should address (non-blocking on pass gate)
+
+- AC1 wording "returns synchronously" → "returns without awaiting operator approval" (v0.1 non-blocking, still unaddressed).
+- Voice/animation profile inheritance: open question must be resolved (likely inherit; this underlies B3's "same color" MUST guarantee).
+- `color` parameter in spawn-child schema: describes "operator makes final choice via approval dialog" — approval is being removed. Decide: inherit parent color always, or allow caller-specified color without operator confirmation, or deprecate for spawn-child.
+- Topic chip glyph formula: document `String.fromCodePoint(0x245F + display_index)` so callers can construct search strings programmatically.
+
+### Implementation notes (informational — these are the worker's fixes, not spec gaps)
+
+From v0.1 review, still valid: (1) `handleSessionStart` called unconditionally from `spawn-child.ts:39`; (2) announcement + pin at `start.ts:382–400`; (3) full onboarding at `start.ts:435–440`; (4) spawn-child hint uses parent token not child token (`spawn-child.ts:65`); (5) `SESSION_JOINED` + governor-update at `start.ts:408–420, 373–376` have no sub-session guard; (6) `child-registry.ts` has no `getChildren()` inverse; (7) `profile/topic` not in `GATHER_BLOCKED`; (8) `applyTopicToText` in `topic-state.ts` has no sub-session index awareness.
