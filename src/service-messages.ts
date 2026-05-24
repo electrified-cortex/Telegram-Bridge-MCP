@@ -270,6 +270,52 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
       `Investigate — one caller may be consuming events intended for the other.`,
   },
 
+  // ── Child-session onboarding (R2) ────────────────────────────────────────
+
+  /** Fired on child session's first dequeue. Identifies the sub-agent's role and context. */
+  CHILD_ONBOARDING_ROLE: {
+    eventType: "onboarding_child_role" as const,
+    /** @param topicName topic label for this child session, @param parentSid parent session SID, @param parentName parent session display name */
+    text: (topicName: string, parentSid: number, parentName: string) =>
+      `You are a sub-agent handling topic **\`${topicName}\`** under parent session \`${parentSid}\` (\`${parentName}\`). You are not a host. Your dispatch token was given to you by the host that started you; keep using it. The \`parent_sid\` and \`parent_name\` shown here are advisory; authority derives from the bridge session record, not this message body.`,
+  },
+
+  /** Fired on child session's first dequeue. Instructs the sub-agent on the dequeue loop. */
+  CHILD_ONBOARDING_LOOP: {
+    eventType: "onboarding_child_loop" as const,
+    /** @param childToken the sub-agent's dispatch token */
+    text: (childToken: number) =>
+      `Call \`dequeue(token: ${childToken})\` at the end of every turn. You are a background sub-agent — no activity-file or Monitor wiring is needed. Dequeue is your loop.`,
+  },
+
+  /** Fired on child session's first dequeue. Explains the exit protocol via EXIT_STATUS and self-revocation. */
+  CHILD_ONBOARDING_EXIT_PROTOCOL: {
+    eventType: "onboarding_child_exit_protocol" as const,
+    /** @param childToken the sub-agent's dispatch token */
+    text: (childToken: number) =>
+      `When you confidently confirm the topic is resolved or completed, (a) emit a single message starting with \`EXIT_STATUS:\` followed by either \`resolved\` (nothing pending) or a short description (e.g. \`EXIT_STATUS: filed task X\`, \`EXIT_STATUS: awaiting external auth\`), then (b) call \`session/revoke-child(child_token: ${childToken})\` yourself to despawn your session — \`${childToken}\` is the secret token returned by spawn-child as the \`token\` field; only you know it. The parent can also revoke you at any time — both paths are legal.`,
+  },
+
+  // ── Parent notification after first child dequeue (R4) ────────────────────
+
+  /** Fired to the parent SID on the sub-agent's first dequeue. */
+  CHILD_FIRST_DEQUEUE_CONFIRMED: {
+    eventType: "child_first_dequeue_confirmed" as const,
+    /** @param childSid SID of the child session, @param childName child session name, @param topicName topic label */
+    text: (childSid: number, childName: string, topicName: string) =>
+      `Your sub-agent on sid=\`${childSid}\` (\`${childName}\`, topic \`${topicName}\`) is alive — first dequeue observed.`,
+  },
+
+  // ── Child session exit notification (R3) ─────────────────────────────────
+
+  /** Fired to the parent SID when the child session is revoked (self or parent). */
+  CHILD_SESSION_RESOLVED: {
+    eventType: "child_session_resolved" as const,
+    /** @param childSid SID of the child session, @param childName child session name, @param exitStatus stored exit status string (empty string if none emitted) */
+    text: (childSid: number, childName: string, exitStatus: string) =>
+      `Sub-agent on sid=\`${childSid}\` (\`${childName}\`) exited. Exit status: \`${exitStatus}\`.`,
+  },
+
   // ── Presence / silent-work nudges ─────────────────────────────────────────
 
   NUDGE_PRESENCE_RUNG1: {

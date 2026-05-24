@@ -669,7 +669,7 @@ export function register(server: McpServer): void {
           .int()
           .positive()
           .optional()
-          .describe("session/revoke-child: SID of the child session to revoke. Must have been created via session/spawn-child by the calling session."),
+          .describe("session/revoke-child: Dispatch token of the child session to revoke (the `token` field returned by session/spawn-child). Either the spawning parent OR the child itself may call this. Self-revocation is the preferred exit path: sub-agent emits EXIT_STATUS: then calls this with its own dispatch token."),
         // child/forward params
         child_sid: z
           .number()

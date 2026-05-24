@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   handleSessionStart: vi.fn(),
   setSessionParentSid: vi.fn(),
   setSessionCapability: vi.fn(),
+  getSession: vi.fn(),
 }));
 
 vi.mock("../../session-gate.js", () => ({
@@ -23,6 +24,7 @@ vi.mock("../../session-manager.js", () => ({
   setSessionParentSid: mocks.setSessionParentSid,
   setSessionCapability: mocks.setSessionCapability,
   getActiveSession: () => 0,
+  getSession: mocks.getSession,
 }));
 
 // Keep toError real — we want actual MCP error shape in assertions
@@ -52,6 +54,8 @@ describe("session/spawn-child", () => {
     resetTopicStateForTest();
     mocks.requireAuth.mockReturnValue(PARENT_SID);
     mocks.handleSessionStart.mockResolvedValue(makeStartSuccess());
+    // Default: caller has no capability restriction (undefined = full)
+    mocks.getSession.mockReturnValue(undefined);
   });
 
   // ── AC1: returns { token, sid, parent_sid } ────────────────────────────────
@@ -208,6 +212,53 @@ describe("session/spawn-child", () => {
 
     expect(getParent(2)).toBe(PARENT_SID);
     expect(getParent(3)).toBe(PARENT_SID);
+  });
+
+  // ── AC7: capability gate — CAPABILITY_DENIED for non-full sessions ─────────
+
+  it("AC7: returns CAPABILITY_DENIED when caller has gather capability", async () => {
+    mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent", child_capability: "gather" });
+
+    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+
+    expect(isError(result)).toBe(true);
+    expect(parseResult(result).code).toBe("CAPABILITY_DENIED");
+    expect(mocks.handleSessionStart).not.toHaveBeenCalled();
+  });
+
+  it("AC7: returns CAPABILITY_DENIED when caller has read-only capability", async () => {
+    mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent", child_capability: "read-only" });
+
+    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+
+    expect(isError(result)).toBe(true);
+    expect(parseResult(result).code).toBe("CAPABILITY_DENIED");
+    expect(mocks.handleSessionStart).not.toHaveBeenCalled();
+  });
+
+  it("AC7: allows spawn when caller has full capability", async () => {
+    mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent", child_capability: "full" });
+
+    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+
+    expect(isError(result)).toBe(false);
+    expect(parseResult(result).token).toBe(CHILD_TOKEN);
+  });
+
+  it("AC7: allows spawn when caller has no explicit capability (undefined = full)", async () => {
+    mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent" }); // no child_capability
+
+    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+
+    expect(isError(result)).toBe(false);
+  });
+
+  it("AC7: allows spawn when session not found (no capability record)", async () => {
+    mocks.getSession.mockReturnValue(undefined);
+
+    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+
+    expect(isError(result)).toBe(false);
   });
 
   // ── AC3: sets topic label on child session ───────────────────────────────

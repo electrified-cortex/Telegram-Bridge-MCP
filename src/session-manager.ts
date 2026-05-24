@@ -25,6 +25,10 @@ export interface Session {
   pendingEnvelopeHint?: string;
   silenceThresholdS?: number;
   firstUseHintsSeen?: Set<string>;
+  /** Set to true after the first dequeue call on a child session. Gates onboarding injection. */
+  firstDequeueOccurred?: boolean;
+  /** Stores the EXIT_STATUS payload emitted by the sub-agent before self-revocation. */
+  exit_status?: string;
   /** Explicitly-set name tag string. When undefined, callers fall back to defaultNameTag(session). */
   name_tag?: string;
   /**

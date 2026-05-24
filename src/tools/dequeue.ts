@@ -139,6 +139,44 @@ export async function runDrainLoop(
     };
   }
 
+  // R5: First-dequeue detection for child sessions — inject onboarding before any content drain.
+  // Checked here: after session existence confirmed, before setDequeueActive or content reads.
+  const _childSession = getSession(sid);
+  if (_childSession?.parent_sid && !_childSession.firstDequeueOccurred) {
+    _childSession.firstDequeueOccurred = true;
+    const _childToken = _childSession.sid * 1_000_000 + _childSession.suffix;
+    const _topicName = _childSession.name;
+    const _parentSid = _childSession.parent_sid;
+    const _parentSession = getSession(_parentSid);
+    const _parentName = _parentSession?.name ?? "";
+
+    // R2: pre-enqueue three onboarding messages into the child SID's queue
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.CHILD_ONBOARDING_ROLE.text(_topicName, _parentSid, _parentName),
+      SERVICE_MESSAGES.CHILD_ONBOARDING_ROLE.eventType,
+    );
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.CHILD_ONBOARDING_LOOP.text(_childToken),
+      SERVICE_MESSAGES.CHILD_ONBOARDING_LOOP.eventType,
+    );
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.CHILD_ONBOARDING_EXIT_PROTOCOL.text(_childToken),
+      SERVICE_MESSAGES.CHILD_ONBOARDING_EXIT_PROTOCOL.eventType,
+    );
+
+    // R4: fire CHILD_FIRST_DEQUEUE_CONFIRMED to parent SID (skip silently if parent gone)
+    if (_parentSession) {
+      deliverServiceMessage(
+        _parentSid,
+        SERVICE_MESSAGES.CHILD_FIRST_DEQUEUE_CONFIRMED.text(sid, _childSession.name, _topicName),
+        SERVICE_MESSAGES.CHILD_FIRST_DEQUEUE_CONFIRMED.eventType,
+      );
+    }
+  }
+
   // Mark this session as having an in-flight dequeue — suppresses activity-file kicks
   // while the agent is actively waiting for messages.
   // Only set after confirming the session exists so every path through the

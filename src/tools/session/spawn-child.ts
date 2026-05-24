@@ -3,7 +3,7 @@ import { toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { getCallerSid, runInSessionContext } from "../../session-context.js";
-import { setSessionParentSid, setSessionCapability } from "../../session-manager.js";
+import { setSessionParentSid, setSessionCapability, getSession } from "../../session-manager.js";
 import { setTopic } from "../../topic-state.js";
 import { handleSessionStart } from "./start.js";
 import { registerChild } from "./child-registry.js";
@@ -31,6 +31,16 @@ export async function handleSpawnChild({
     return toError({
       code: "UNAUTHORIZED",
       message: "The supplied token does not match your current session. Use your own session token.",
+    });
+  }
+
+  // R8: Capability gate — spawn-child requires full capability.
+  // This guard lives here (not only in action.ts) to cover direct MCP tool calls.
+  const callerCap = getSession(parentSid)?.child_capability;
+  if (callerCap !== undefined && callerCap !== "full") {
+    return toError({
+      code: "CAPABILITY_DENIED",
+      message: `session/spawn-child is not permitted for ${callerCap} sessions. Full capability is required.`,
     });
   }
 

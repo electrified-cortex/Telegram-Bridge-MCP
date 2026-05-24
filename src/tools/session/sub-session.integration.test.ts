@@ -223,7 +223,7 @@ describe("AC2: revoke-child invalidates child session", () => {
     registerChild(pSid, cSid);
 
     // Revoke it
-    const revokeResult = parseResult(handleRevokeChild({ token: pToken, child_token: cSid }));
+    const revokeResult = parseResult(handleRevokeChild({ token: pToken, child_token: cSid * 1_000_000 + cSuffix }));
     expect(revokeResult.closed).toBe(true);
 
     // Now child token is invalid
@@ -237,14 +237,14 @@ describe("AC2: revoke-child invalidates child session", () => {
     createSessionQueue(pSid);
     const pToken = pSid * 1_000_000 + pSuffix;
 
-    const { sid: cSid } = createSession("Child");
+    const { sid: cSid, suffix: cSuffix } = createSession("Child");
     createSessionQueue(cSid);
 
     // Register parent-child relationship
     const { registerChild } = await import("./child-registry.js");
     registerChild(pSid, cSid);
 
-    const result = parseResult(handleRevokeChild({ token: pToken, child_token: cSid }));
+    const result = parseResult(handleRevokeChild({ token: pToken, child_token: cSid * 1_000_000 + cSuffix }));
     expect(result.closed).toBe(true);
     expect(result.sid).toBe(cSid);
   });

@@ -36,7 +36,7 @@ export function handleChildForward({
 
   const delivered = deliverServiceMessage(child_sid, message, "parent_forward", {
     from_sid: callerSid,
-  });
+  }, "child_forward");
   if (!delivered) {
     return toError({
       code: "SESSION_NOT_FOUND",

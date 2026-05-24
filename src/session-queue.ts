@@ -439,12 +439,14 @@ export function deliverServiceMessage(
   text: string,
   eventType: string,
   details?: Record<string, unknown>,
+  origin?: "bridge" | "child_forward",
 ): boolean;
 export function deliverServiceMessage(
   targetSid: number,
   textOrEntry: string | ServiceMessageSpec,
   eventTypeOrDetails?: string | Record<string, unknown>,
   details?: Record<string, unknown>,
+  origin?: "bridge" | "child_forward",
 ): boolean {
   const q = _queues.get(targetSid);
   if (!q) return false;
@@ -452,17 +454,20 @@ export function deliverServiceMessage(
   let text: string;
   let eventType: string;
   let resolvedDetails: Record<string, unknown> | undefined;
+  let resolvedOrigin: "bridge" | "child_forward";
 
   if (typeof textOrEntry === "object") {
     // Bundled entry form: deliverServiceMessage(sid, entry, details?)
     text = textOrEntry.text;
     eventType = textOrEntry.eventType;
     resolvedDetails = eventTypeOrDetails as Record<string, unknown> | undefined;
+    resolvedOrigin = "bridge"; // bundled form always bridges — R1 single converged path
   } else {
-    // Raw-string form: deliverServiceMessage(sid, text, eventType, details?)
+    // Raw-string form: deliverServiceMessage(sid, text, eventType, details?, origin?)
     text = textOrEntry;
     eventType = eventTypeOrDetails as string;
     resolvedDetails = details;
+    resolvedOrigin = origin ?? "bridge";
   }
 
   const event: TimelineEvent = {
@@ -470,7 +475,7 @@ export function deliverServiceMessage(
     timestamp: new Date().toISOString(),
     event: "service_message",
     from: "system",
-    content: { type: "service", text, event_type: eventType, ...(resolvedDetails && { details: resolvedDetails }) },
+    content: { type: "service", text, event_type: eventType, origin: resolvedOrigin, ...(resolvedDetails && { details: resolvedDetails }) },
     sid: 0,
   };
 

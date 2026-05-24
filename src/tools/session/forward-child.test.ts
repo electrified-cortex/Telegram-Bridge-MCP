@@ -47,7 +47,7 @@ describe("child/forward", () => {
     expect(result.child_sid).toBe(CHILD_SID);
   });
 
-  it("AC3b: calls deliverServiceMessage with 'parent_forward' event type", () => {
+  it("AC3b: calls deliverServiceMessage with 'parent_forward' event type and child_forward origin", () => {
     handleChildForward({ token: PARENT_TOKEN, child_sid: CHILD_SID, message: "hello" });
 
     expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
@@ -55,6 +55,7 @@ describe("child/forward", () => {
       "hello",
       "parent_forward",
       { from_sid: PARENT_SID },
+      "child_forward",
     );
   });
 
