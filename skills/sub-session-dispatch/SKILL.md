@@ -21,7 +21,7 @@ Returns: {
 
 Process:
 
-1. Parent calls `action(type: 'session/spawn-child', token: <parent-token>, name: <name>, color: <color>, child_capability: <capability>)` → gets `{token, sid, parent_sid}`.
+1. Parent calls `action(type: 'session/spawn-child', token: <parent-token>, name: <name>, color: <color>, child_capability: <capability>)` → gets `{child_token, child_sid, parent_sid}`.
 
 2. Parent dispatches a Sonnet sub-agent (via `dispatch` skill) with: child token, role-prompt, report schema, parent inbox path, timeout, and the prohibition list below.
 
@@ -93,7 +93,7 @@ action({
   color: '🟦',
   child_capability: 'gather'
 })
-// → { token: 123456, sid: 42, parent_sid: 7 }
+// → { child_token: "ct_abc123", child_sid: 42, parent_sid: 7 }
 ```
 
 **Step 2 — Dispatch sub-agent** (via `dispatch` skill, Sonnet tier):
@@ -105,7 +105,7 @@ Agent({
   description: "Intake-1 requirements gatherer",
   prompt: `
 You are a requirements gatherer for the invoice-recon feature.
-Your child session token is 123456. Use it for all Telegram interactions in this session.
+Your child session token is ct_abc123. Use it for all Telegram interactions in this session.
 Ask the operator clarifying questions until you have enough to draft a task spec.
 Timeout: 1800 seconds.
 Parent inbox path: inbox/
@@ -169,7 +169,7 @@ action({ type: 'child/forward', token: <parent-token>, child_sid: 42, message: "
 action({
   type: 'session/revoke-child',
   token: <parent-token>,
-  child_token: 42
+  child_token: "ct_abc123"
 })
 ```
 
