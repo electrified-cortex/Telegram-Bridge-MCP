@@ -65,8 +65,9 @@ export function handleSaveProfile({ key, token }: { key: string; token: number }
       ...(r.trigger !== "startup" ? { delay_seconds: r.delay_seconds } : {}),
       recurring: r.recurring,
       ...(r.trigger !== "time" ? { trigger: r.trigger } : {}),
+      ...(r.trigger === "last_received" ? { mode: r.mode ?? "all" } : {}),
       // Persist disabled flag — intentional permanent mute survives restart.
-      // sleep_until is NOT persisted — sleep is transient (memory-only).
+      // sleep_until and last_fired_for are NOT persisted — transient state.
       ...(r.disabled ? { disabled: true } : {}),
     }));
     sections.push("reminders");

@@ -23,6 +23,7 @@ import { getCallerSid, runInSessionContext } from "./session-context.js";
 import { TemporalQueue } from "./temporal-queue.js";
 import { routeToSession, trackMessageOwner, notifySessionWaiters, sessionQueueCount } from "./session-queue.js";
 import { dlog } from "./debug-log.js";
+import { getSession } from "./session-manager.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,6 +62,8 @@ export interface EventContent {
    * arrived naturally (not via governor delegation).
    */
   routed_by?: number;
+  /** Origin of bridge-injected events: "bridge" for service messages, "child_forward" for forwarded child content. */
+  origin?: "bridge" | "child_forward";
 }
 
 /**
@@ -496,6 +499,13 @@ export function recordOutgoing(
   if (caption !== undefined) content.caption = caption;
   if (fileId !== undefined) content.file_id = fileId;
   const activeSid = sid ?? getCallerSid();
+  // R3: detect EXIT_STATUS: prefix on outbound messages from child sessions
+  if (text && activeSid > 0) {
+    const exitSession = getSession(activeSid);
+    if (exitSession?.parent_sid && text.startsWith("EXIT_STATUS: ")) {
+      exitSession.exit_status = text.slice("EXIT_STATUS: ".length);
+    }
+  }
   const evt: TimelineEvent = {
     id: messageId,
     timestamp: now(),

@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "../test-utils.js";
+import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
 import type { TimelineEvent } from "../../message-store.js";
 
 // ---------------------------------------------------------------------------
@@ -30,6 +30,7 @@ vi.mock("../../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   touchSession: (sid: number) => { mocks.touchSession(sid); },
   setDequeueIdle: vi.fn(),
+  getSession: vi.fn(() => undefined),
 }));
 
 vi.mock("../../telegram.js", async (importActual) => {
@@ -54,10 +55,6 @@ vi.mock("../activity/file-state.js", () => ({
 
 vi.mock("../../service-messages.js", () => ({
   SERVICE_MESSAGES: {
-    ONBOARDING_ACTIVITY_FILE_HINT: {
-      eventType: "onboarding_activity_file_hint",
-      text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
-    },
     DUPLICATE_SESSION_DETECTED: {
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
@@ -141,16 +138,14 @@ describe("set_dequeue_default tool", () => {
   it("returns SID_REQUIRED when token is missing", async () => {
     const result = await call({});
     expect(isError(result)).toBe(true);
-    const text = JSON.stringify(result);
-    expect(text).toContain("SID_REQUIRED");
+    expect(errorCode(result)).toBe("SID_REQUIRED");
   });
 
   it("returns AUTH_FAILED when suffix does not match", async () => {
     mocks.validateSession.mockReturnValueOnce(false);
     const result = await call({ token: 1_999_999, timeout: 300 });
     expect(isError(result)).toBe(true);
-    const text = JSON.stringify(result);
-    expect(text).toContain("AUTH_FAILED");
+    expect(errorCode(result)).toBe("AUTH_FAILED");
   });
 
   it("rejects non-integer timeout", async () => {

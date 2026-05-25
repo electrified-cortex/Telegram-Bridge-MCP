@@ -16,6 +16,9 @@ import { handleSetVoice } from "./profile/voice.js";
 import { handleListSessions } from "./session/list.js";
 import { handleCloseSession } from "./session/close.js";
 import { handleSessionStart, handleSessionReconnect } from "./session/start.js";
+import { handleSpawnChild } from "./session/spawn-child.js";
+import { handleRevokeChild } from "./session/revoke-child.js";
+import { handleChildForward } from "./session/forward-child.js";
 import { handleRenameSession } from "./session/rename.js";
 import { handleSessionIdle } from "./session/idle.js";
 import { handleSessionStatus } from "./session/status.js";
@@ -39,7 +42,7 @@ import { handleDisableReminder } from "./reminder/disable.js";
 import { handleEnableReminder } from "./reminder/enable.js";
 import { handleSleepReminder } from "./reminder/sleep.js";
 import { handleSetDequeueDefault } from "./profile/dequeue-default.js";
-import { handleKickDebounce } from "./profile/kick-debounce.js";
+import { handleKickLockout, handleKickDebounce } from "./profile/kick-lockout.js";
 import { handleSetDefaultAnimation } from "./animation/default.js";
 import { handleToggleLogging } from "./logging/toggle.js";
 // Phase 2 imports — message/history, message/get
@@ -71,9 +74,28 @@ import { handleActivityFileCreate } from "./activity/create.js";
 import { handleActivityFileEdit } from "./activity/edit.js";
 import { handleActivityFileDelete } from "./activity/delete.js";
 import { handleActivityFileGet } from "./activity/get.js";
-import { KICK_DEBOUNCE_MIN_MS, KICK_DEBOUNCE_MAX_MS } from "./activity/file-state.js";
+import { handleActivityFileTouch } from "./activity/touch.js";
+import { KICK_DEBOUNCE_MIN_MS, KICK_DEBOUNCE_MAX_MS, LOCKOUT_MIN_MS, LOCKOUT_MAX_MS } from "./activity/file-state.js";
 import { handleNameTag } from "./name-tag.js";
+import { decodeToken } from "./identity-schema.js";
+import { getSession } from "../session-manager.js";
 type ToolResult = ReturnType<typeof toResult>;
+
+/** Action paths that are blocked for `gather`-capability sessions. */
+const GATHER_BLOCKED = new Set([
+  "session/start",
+  "session/spawn-child",
+  "session/close",
+  "session/close/signal",
+  "message/edit",
+  "message/delete",
+  "message/pin",
+  "react",
+  "commands/set",
+  "approve",
+  "shutdown",
+  "shutdown/warn",
+]);
 
 /** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
 function findClosestMatch(input: string, candidates: readonly string[]): string | null {
@@ -108,6 +130,9 @@ export function setupActionRegistry(): void {
   registerAction("session/reconnect", toActionHandler(handleSessionReconnect));
   registerAction("session/close", toActionHandler(handleCloseSession));
   registerAction("session/close/signal", toActionHandler(handleCloseSessionSignal), { governor: true });
+  registerAction("session/spawn-child", toActionHandler(handleSpawnChild));
+  registerAction("session/revoke-child", toActionHandler(handleRevokeChild));
+  registerAction("child/forward", toActionHandler(handleChildForward));
   registerAction("session/list", toActionHandler(handleListSessions));
   registerAction("session/idle", toActionHandler(handleSessionIdle));
   registerAction("session/rename", toActionHandler(handleRenameSession));
@@ -144,6 +169,7 @@ export function setupActionRegistry(): void {
   registerAction("reminder/enable", toActionHandler(handleEnableReminder));
   registerAction("reminder/sleep", toActionHandler(handleSleepReminder));
   registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
+  registerAction("profile/kick-lockout", toActionHandler(handleKickLockout));
   registerAction("profile/kick-debounce", toActionHandler(handleKickDebounce));
   registerAction("animation/default", toActionHandler(handleSetDefaultAnimation));
   registerAction("logging/toggle", toActionHandler(handleToggleLogging));
@@ -214,6 +240,7 @@ export function setupActionRegistry(): void {
   registerAction("activity/file/edit", toActionHandler(handleActivityFileEdit));
   registerAction("activity/file/delete", toActionHandler(handleActivityFileDelete));
   registerAction("activity/file/get", toActionHandler(handleActivityFileGet));
+  registerAction("activity/file/touch", toActionHandler(handleActivityFileTouch));
 
   // name-tag — get or set session name tag
   registerAction("name-tag", toActionHandler(handleNameTag));
@@ -258,6 +285,18 @@ export function register(server: McpServer): void {
           .string()
           .optional()
           .describe("session/start: Preferred color square emoji hint. session/rename: Color to apply (must be a valid palette emoji)."),
+        refresh: z
+          .boolean()
+          .optional()
+          .describe(
+            "session/start: When true, collapses first-boot, reconnect-of-live, and re-establish-after-drop into a single call. " +
+            "Pass alongside token to reclaim a live session (returns reused: true). " +
+            "When no session exists for the name, creates a new one (returns reused: false). " +
+            "Omit or false for strict first-boot semantics (current default). " +
+            "activity/file/create: When true, wipes any existing registration for this session (deletes file if TMCP-owned) " +
+            "then proceeds with a fresh create. Response includes replaced: true when a prior registration was wiped, " +
+            "replaced: false when there was none. Omit or false to preserve existing ALREADY_REGISTERED behavior.",
+          ),
         // session/rename params
         new_name: z
           .string()
@@ -407,7 +446,8 @@ export function register(server: McpServer): void {
               text: z.string(),
               delay_seconds: z.number(),
               recurring: z.boolean().default(false),
-              trigger: z.enum(["time", "startup"]).optional(),
+              trigger: z.enum(["time", "startup", "last_sent", "last_received"]).optional(),
+              mode: z.enum(["all", "operator"]).optional(),
               disabled: z.boolean().optional(),
             }),
           )
@@ -420,9 +460,13 @@ export function register(server: McpServer): void {
           .describe("name-tag/set or profile/import: Custom name tag string. Replaces the auto-default (<color> <name>). No newlines. Max 64 chars."),
         // reminder/set params
         trigger: z
-          .enum(["time", "startup"])
+          .enum(["time", "startup", "last_sent", "last_received"])
           .optional()
-          .describe("reminder/set: When to fire (default: 'time')."),
+          .describe("reminder/set: When to fire: 'time' (default), 'startup', 'last_sent' (fires after last send), or 'last_received' (fires after last inbound)."),
+        mode: z
+          .enum(["all", "operator"])
+          .optional()
+          .describe("reminder/set (last_received only): which inbound events reset the clock. \"all\" (default) = operator + DMs; \"operator\" = operator only."),
         delay_seconds: z
           .number()
           .int()
@@ -450,14 +494,17 @@ export function register(server: McpServer): void {
           .max(3600)
           .optional()
           .describe("profile/dequeue-default: Default dequeue timeout in seconds (0–3600)."),
-        // profile/kick-debounce params
+        // profile/kick-lockout and profile/kick-debounce (deprecated) params
         ms: z
           .number()
           .int()
-          .min(KICK_DEBOUNCE_MIN_MS)
-          .max(KICK_DEBOUNCE_MAX_MS)
+          .min(LOCKOUT_MIN_MS)
+          .max(LOCKOUT_MAX_MS)
           .optional()
-          .describe(`profile/kick-debounce: Activity-file kick debounce window in milliseconds (${KICK_DEBOUNCE_MIN_MS}–${KICK_DEBOUNCE_MAX_MS}). Omit to get current value.`),
+          .describe(
+            `profile/kick-lockout: Post-kick lockout window in milliseconds (${LOCKOUT_MIN_MS}–${LOCKOUT_MAX_MS}). Omit to get current value. ` +
+            `profile/kick-debounce (deprecated): Accepted range ${KICK_DEBOUNCE_MIN_MS}–${KICK_DEBOUNCE_MAX_MS}; use profile/kick-lockout instead.`,
+          ),
         // animation/default params
         frames: z
           .array(z.string())
@@ -621,6 +668,29 @@ export function register(server: McpServer): void {
           .string()
           .optional()
           .describe("activity/file/create, activity/file/edit: Absolute path to the activity file. Omit to let TMCP generate one in data/activity/."),
+        // session/revoke-child param
+        child_token: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("session/revoke-child: Dispatch token of the child session to revoke (the `token` field returned by session/spawn-child). Either the spawning parent OR the child itself may call this. Self-revocation is the preferred exit path: sub-agent emits EXIT_STATUS: then calls this with its own dispatch token."),
+        // child/forward params
+        child_sid: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("child/forward: SID of the target child session to forward a message to."),
+        message: z
+          .string()
+          .optional()
+          .describe("child/forward: Text message to inject into the child session's dequeue queue as an operator-forwarded message."),
+        // session/spawn-child capability param
+        child_capability: z
+          .enum(["read-only", "gather", "full"])
+          .optional()
+          .describe("session/spawn-child: Capability level for the spawned child session (default: 'gather')."),
       },
     },
     async (args) => {
@@ -647,6 +717,25 @@ export function register(server: McpServer): void {
               code: "NOT_GOVERNOR",
               message: "This action requires governor privileges. Only the governor session can call this path.",
               hint: "Only the governor session can call this action. Use action(token: <governor_token>, ...).",
+            });
+          }
+        }
+
+        // Capability gate — enforces child_capability restrictions before dispatch
+        const capToken = args.token;
+        if (typeof capToken === "number" && capToken > 0) {
+          const { sid: callerSid } = decodeToken(capToken);
+          const cap = getSession(callerSid)?.child_capability;
+          if (cap === "read-only") {
+            return toError({
+              code: "CAPABILITY_DENIED",
+              message: `Action '${type}' is not available to read-only sessions. Only dequeue is permitted.`,
+            });
+          }
+          if (cap === "gather" && GATHER_BLOCKED.has(type)) {
+            return toError({
+              code: "CAPABILITY_DENIED",
+              message: `Action '${type}' is not permitted for gather-capability sessions.`,
             });
           }
         }

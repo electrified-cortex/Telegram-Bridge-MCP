@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createHash } from "crypto";
 import { createMockServer, parseResult, isError } from "../test-utils.js";
+import { testIdentityGate } from "../test-helpers/identity-gate.js";
 
 function contentHash(text: string, recurring: boolean, trigger: "time" | "startup" = "time"): string {
   return createHash("sha256").update(`${text}\0${recurring}\0${trigger}`).digest("hex").slice(0, 16);
@@ -243,20 +244,7 @@ describe("load_profile tool", () => {
     expect(data.summary).toContain("0 recurring");
   });
 
-  describe("identity gate", () => {
-    it("returns SID_REQUIRED when no identity provided", async () => {
-      const result = await call({ key: "Test" });
-      expect(isError(result)).toBe(true);
-      expect(parseResult(result).code).toBe("SID_REQUIRED");
-    });
-
-    it("returns AUTH_FAILED on invalid token", async () => {
-      mocks.validateSession.mockReturnValue(false);
-      const result = await call({ key: "Test", token: 1000000 });
-      expect(isError(result)).toBe(true);
-      expect(parseResult(result).code).toBe("AUTH_FAILED");
-    });
-  });
+  testIdentityGate((args) => call(args), mocks.validateSession, {"key":"Test"}, false);
 
   describe("name_tag loading", () => {
     it("load profile containing name_tag applies it to session", async () => {

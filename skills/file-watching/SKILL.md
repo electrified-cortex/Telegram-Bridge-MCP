@@ -13,12 +13,14 @@ pwsh -File <skill-path>/watch.ps1 <file-path> [-Single] [-Prefix <s>] [-Timeout 
 bash <skill-path>/watch.sh <file-path> [--single] [--prefix <s>] [--timeout <s>] [--debounce <s>] [--heartbeat <s>]
 ```
 
-- `<file-path>` (required, positional) — absolute path to the file to watch
-- `-Single` / `--single` — exit 0 after the first `changed`. Combined with timeout, whichever fires first ends the script
-- `-Prefix <string>` / `--prefix <string>` — insert `"<prefix>: "` between the timestamp and the token on every emitted line. Default empty
-- `-Timeout <s>` / `--timeout <s>` — exit after N consecutive idle seconds. Prints `timeout` then exits 0. Default: never
-- `-Debounce <s>` / `--debounce <s>` — coalescing window: rapid changes collapse into one `changed` after N seconds of quiet. Range 0-60. Default: 2
-- `-Heartbeat <s>` / `--heartbeat <s>` — emit a `heartbeat` line every N idle seconds. Default: off
+**Only `<file-path>` is required. Every flag below is optional.** By default the watcher runs indefinitely, emits one `changed` per debounced burst, and stops only when you delete the watched file (or pass `-Single` to exit after one event).
+
+- `<file-path>` (**required**, positional) — absolute path to the file to watch
+- `-Single` / `--single` (optional) — exit 0 after the first `changed`. Combined with `-Timeout`, whichever fires first ends the script
+- `-Prefix <string>` / `--prefix <string>` (optional) — insert `"<prefix>: "` between the timestamp and the token on every emitted line. Default: empty
+- `-Timeout <s>` / `--timeout <s>` (**optional — omit for indefinite runs**) — exit after N consecutive idle seconds. Prints `timeout` then exits 0. Default: never
+- `-Debounce <s>` / `--debounce <s>` (optional) — coalescing window: rapid changes collapse into one `changed` after N seconds of quiet. Range 0-60. Default: 2
+- `-Heartbeat <s>` / `--heartbeat <s>` (optional) — emit a `heartbeat` line every N idle seconds. Default: off
 - `-Help` / `--help` — print usage and exit
 
 ## Output

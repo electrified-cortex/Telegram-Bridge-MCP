@@ -16,6 +16,8 @@ import { join } from "path";
 
 vi.mock("../../session-manager.js", () => ({
   getKickDebounceMs: vi.fn((_sid: number): number => 60_000),
+  getDequeueDefault: vi.fn((_sid: number): number => 300),
+  setDequeueDefault: vi.fn((_sid: number, _v: number): void => {}),
 }));
 vi.mock("../../session-queue.js", () => ({
   hasPendingUserContent: vi.fn((_sid: number): boolean => false),
@@ -50,11 +52,11 @@ function makeEntry(filePath: string, tmcpOwned: boolean) {
   return {
     filePath,
     tmcpOwned,
-    lastTouchAt: null as number | null,
-    debounceTimer: null as ReturnType<typeof setTimeout> | null,
-    lastActivityAt: 0,
     inflightDequeue: false,
-    nudgeArmed: true,
+    kickLockedUntil: null as number | null,
+    kickPendingBecauseLocked: false,
+    touchInFlight: false,
+    pendingRetryHandle: null as ReturnType<typeof setTimeout> | null,
   };
 }
 

@@ -45,11 +45,11 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
     await replaceActivityFile(sid, {
       filePath,
       tmcpOwned: false,
-      lastTouchAt: null,
-      debounceTimer: null,
-      lastActivityAt: 0,
       inflightDequeue: false,
-      nudgeArmed: true,
+      kickLockedUntil: null,
+      kickPendingBecauseLocked: false,
+      touchInFlight: false,
+      pendingRetryHandle: null,
     });
 
     return toResult({ file_path: filePath, hint: "Call help('activity/file') now", previous_path: previousPath });
@@ -68,11 +68,11 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
   await replaceActivityFile(sid, {
     filePath: generatedPath,
     tmcpOwned: true,
-    lastTouchAt: null,
-    debounceTimer: null,
-    lastActivityAt: 0,
     inflightDequeue: false,
-    nudgeArmed: true,
+    kickLockedUntil: null,
+    kickPendingBecauseLocked: false,
+    touchInFlight: false,
+    pendingRetryHandle: null,
   });
 
   return toResult({ file_path: generatedPath, hint: "Call help('activity/file') now", previous_path: previousPath });

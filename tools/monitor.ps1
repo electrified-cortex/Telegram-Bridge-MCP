@@ -74,8 +74,16 @@ $scriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $watchScript = [System.IO.Path]::GetFullPath((Join-Path $scriptDir '../skills/file-watching/watch.ps1'))
 
 if (Test-Path -LiteralPath $watchScript) {
-    $watchArgs = @($fullPath, '-Timeout', $Timeout, '-Heartbeat', $Heartbeat, '-Debounce', 0)
-    if ($Prefix) { $watchArgs += @('-Prefix', $Prefix) }
+    # Hashtable splat (named params). Array splat with @() passes everything
+    # positionally — -Timeout is interpreted as a value, not a switch, and
+    # binding fails. Hashtable preserves named binding.
+    $watchArgs = @{
+        Path      = $fullPath
+        Timeout   = $Timeout
+        Heartbeat = $Heartbeat
+        Debounce  = 0
+    }
+    if ($Prefix) { $watchArgs.Prefix = $Prefix }
     & $watchScript @watchArgs | ForEach-Object {
         # Strip ISO8601 timestamp (first word), then map changed → kick.
         $token = ($_ -split ' ', 2)[1]
@@ -84,7 +92,7 @@ if (Test-Path -LiteralPath $watchScript) {
         elseif ($token -eq 'changed') { 'kick' }
         else { $token }
     }
-    exit $LASTEXITCODE
+    exit 0
 }
 
 # ── Inline fallback ───────────────────────────────────────────────────────────
@@ -185,3 +193,7 @@ while ($true) {
         Start-Sleep -Milliseconds $waitMs
     }
 }
+
+# Defensive: explicit zero exit so a failing last command doesn't bubble
+# up as a non-zero exit. Hook callers treat non-zero as "block this event".
+exit 0

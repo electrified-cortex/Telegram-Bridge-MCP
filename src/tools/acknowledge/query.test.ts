@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, isError, errorCode } from "../test-utils.js";
+import { testIdentityGate } from "../test-helpers/identity-gate.js";
 
 const mocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),
@@ -130,27 +131,6 @@ describe("answer_callback_query tool", () => {
     });
   });
 
-  describe("identity gate", () => {
-    it("returns SID_REQUIRED when no identity provided", async () => {
-      const result = await call({"callback_query_id":"q1"});
-      expect(isError(result)).toBe(true);
-      expect(errorCode(result)).toBe("SID_REQUIRED");
-    });
-
-    it("returns AUTH_FAILED when identity has wrong suffix", async () => {
-      mocks.validateSession.mockReturnValueOnce(false);
-      const result = await call({"callback_query_id":"q1","token": 1_099_999});
-      expect(isError(result)).toBe(true);
-      expect(errorCode(result)).toBe("AUTH_FAILED");
-    });
-
-    it("proceeds when identity is valid", async () => {
-      mocks.validateSession.mockReturnValueOnce(true);
-      let code: string | undefined;
-      try { code = errorCode(await call({"callback_query_id":"q1","token": 1_099_999})); } catch { /* gate passed, other error ok */ }
-      expect(code).not.toBe("SID_REQUIRED");
-      expect(code).not.toBe("AUTH_FAILED");
-    });
-  });
+  testIdentityGate((args) => call(args), mocks.validateSession, {"callback_query_id":"q1"});
 
 });

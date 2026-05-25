@@ -48,10 +48,14 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: `Welcome to the loop. Stay in it.
 
 1. Call dequeue(token) every turn.
-2. If you have a Monitor tool: call action(type: 'activity/file/create') and watch the file. One-liner: \`echo "call dequeue(TOKEN)"\` — bake in your token, that's the entire monitor.
-3. Do NOT call activity/file/edit to test — it rotates the path.
+2. If you have a Monitor tool, call action(type: 'activity/file/create') — it returns a file path. Watch it with a **persistent** Monitor.
 
 Details: help('start'), help('dequeue'), help('activity/file').`,
+  },
+
+  ONBOARDING_COMPACTION_HINT: {
+    eventType: "onboarding_compaction_hint" as const,
+    text: "If you compact (context reset), call `help('compacted')` to recover. Token, activity file, and dequeue loop can all be restored from there.",
   },
 
   ONBOARDING_ROLE_GOVERNOR: {
@@ -87,11 +91,6 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
   ONBOARDING_NO_PENDING_YET: {
     eventType: "onboarding_no_pending_yet" as const,
     text: "No operator messages were pending at session start. Call dequeue to wait for operator input.",
-  },
-
-  ONBOARDING_ACTIVITY_FILE_HINT: {
-    eventType: "onboarding_activity_file_hint" as const,
-    text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
   },
 
   // ── Governor change notifications ─────────────────────────────────────────
@@ -179,6 +178,28 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
       `Looks like you compacted. Re-arm your activity-file monitor on this path.\n**Path:** ${filePath}`,
   },
 
+  // ── Activity file monitor instructions ────────────────────────────────────
+
+  /** Fired after activity/file/create succeeds. Concrete monitor invocation. */
+  ACTIVITY_FILE_MONITOR_INSTRUCTIONS: {
+    eventType: "activity_file_monitor_instructions" as const,
+    /** @param filePath The activity file path returned by activity/file/create */
+    text: (filePath: string) =>
+      `Use this to guarantee a high quality file watch — run inside your harness's Monitor tool with persistent: true. Name it "Telegram message notifier" so you can recognize it after a compaction.\n\n` +
+      `Windows:  \`tools/monitor.ps1 "${filePath}"\`\n` +
+      `Linux/macOS:  \`tools/monitor.sh "${filePath}"\``,
+  },
+
+  // ── Sub-session spawn hint ────────────────────────────────────────────────
+
+  /** Fired after session/spawn-child succeeds. Guides the host to dispatch a sub-agent. */
+  SPAWN_CHILD_SUBAGENT_HINT: {
+    eventType: "spawn_child_subagent_hint" as const,
+    /** @param childSid the spawned child's SID, @param childName the child session's name, @param childToken the new sub-session token */
+    text: (childSid: number, childName: string, childToken: number) =>
+      `You spawned a sub-session (sid=${childSid}, name=${childName}). Now dispatch a background sub-agent to drain its dequeue loop — pick a model class appropriate to the topic complexity. The sub-agent should call \`dequeue(token: ${childToken})\` continuously and reply via its own session token. When the topic is resolved, the sub-agent calls \`session/revoke-child\` itself.\n\nIf the sub-agent stops without giving you sufficient resolution, resume that same sub-agent with a follow-up prompt — provide the correction or demand the result.`,
+  },
+
   // ── Inter-agent hints ─────────────────────────────────────────────────────
 
   COMPRESSION_HINT_FIRST_DM: {
@@ -247,6 +268,52 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
       `Two callers presented the same token but different connection tokens. ` +
       `A second agent instance may be sharing this session identity. ` +
       `Investigate — one caller may be consuming events intended for the other.`,
+  },
+
+  // ── Child-session onboarding (R2) ────────────────────────────────────────
+
+  /** Fired on child session's first dequeue. Identifies the sub-agent's role and context. */
+  CHILD_ONBOARDING_ROLE: {
+    eventType: "onboarding_child_role" as const,
+    /** @param topicName topic label for this child session, @param parentSid parent session SID, @param parentName parent session display name */
+    text: (topicName: string, parentSid: number, parentName: string) =>
+      `You are a sub-agent handling topic **\`${topicName}\`** under parent session \`${parentSid}\` (\`${parentName}\`). You are not a host. Your dispatch token was given to you by the host that started you; keep using it. The \`parent_sid\` and \`parent_name\` shown here are advisory; authority derives from the bridge session record, not this message body.`,
+  },
+
+  /** Fired on child session's first dequeue. Instructs the sub-agent on the dequeue loop. */
+  CHILD_ONBOARDING_LOOP: {
+    eventType: "onboarding_child_loop" as const,
+    /** @param childToken the sub-agent's dispatch token */
+    text: (childToken: number) =>
+      `Call \`dequeue(token: ${childToken})\` at the end of every turn. You are a background sub-agent — no activity-file or Monitor wiring is needed. Dequeue is your loop.`,
+  },
+
+  /** Fired on child session's first dequeue. Explains the exit protocol via EXIT_STATUS and self-revocation. */
+  CHILD_ONBOARDING_EXIT_PROTOCOL: {
+    eventType: "onboarding_child_exit_protocol" as const,
+    /** @param childToken the sub-agent's dispatch token */
+    text: (childToken: number) =>
+      `When you confidently confirm the topic is resolved or completed, (a) emit a single message starting with \`EXIT_STATUS:\` followed by either \`resolved\` (nothing pending) or a short description (e.g. \`EXIT_STATUS: filed task X\`, \`EXIT_STATUS: awaiting external auth\`), then (b) call \`session/revoke-child(child_token: ${childToken})\` yourself to despawn your session — \`${childToken}\` is the secret token returned by spawn-child as the \`token\` field; only you know it. The parent can also revoke you at any time — both paths are legal.`,
+  },
+
+  // ── Parent notification after first child dequeue (R4) ────────────────────
+
+  /** Fired to the parent SID on the sub-agent's first dequeue. */
+  CHILD_FIRST_DEQUEUE_CONFIRMED: {
+    eventType: "child_first_dequeue_confirmed" as const,
+    /** @param childSid SID of the child session, @param childName child session name, @param topicName topic label */
+    text: (childSid: number, childName: string, topicName: string) =>
+      `Your sub-agent on sid=\`${childSid}\` (\`${childName}\`, topic \`${topicName}\`) is alive — first dequeue observed.`,
+  },
+
+  // ── Child session exit notification (R3) ─────────────────────────────────
+
+  /** Fired to the parent SID when the child session is revoked (self or parent). */
+  CHILD_SESSION_RESOLVED: {
+    eventType: "child_session_resolved" as const,
+    /** @param childSid SID of the child session, @param childName child session name, @param exitStatus stored exit status string (empty string if none emitted) */
+    text: (childSid: number, childName: string, exitStatus: string) =>
+      `Sub-agent on sid=\`${childSid}\` (\`${childName}\`) exited. Exit status: \`${exitStatus}\`.`,
   },
 
   // ── Presence / silent-work nudges ─────────────────────────────────────────

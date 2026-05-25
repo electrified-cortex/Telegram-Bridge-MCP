@@ -1,10 +1,6 @@
 # activity/file — Wake-Nudge Integration Guide
 
-The activity-file feature is an **optional augment** to the primary dequeue loop. It does NOT replace dequeue — it supplements it.
-
-## Purpose
-
-When your harness has a filesystem watcher (e.g. Monitor, FileSystemWatcher, inotifywait), register an activity file and watch it. TMCP bumps the file's mtime when messages arrive AND the debounce window has passed AND no dequeue is in-flight. Your watcher fires, you call dequeue — done.
+The activity-file feature is the **wakeup mechanism** for agents that have a filesystem watcher (e.g. Monitor tool, FileSystemWatcher, inotifywait). Register an activity file and watch it with a **persistent** Monitor. TMCP bumps the file's mtime when messages arrive AND the debounce window has passed AND no dequeue is in-flight. Your watcher fires, you call dequeue — done.
 
 Without a watcher: long-poll `dequeue(max_wait: 300)` is always sufficient on its own.
 
@@ -16,6 +12,7 @@ Without a watcher: long-poll `dequeue(max_wait: 300)` is always sufficient on it
 | `action(type: "activity/file/edit")` | Swap the registered path. Returns `file_path` + `previous_path`. |
 | `action(type: "activity/file/delete")` | Unregister and optionally delete the file. |
 | `action(type: "activity/file/get")` | Introspect current registration state. |
+| `action(type: "activity/file/touch")` | Manually bump the file's mtime. Returns `{ touched, file_path, mtime }`. Useful after compaction recovery to force a watcher fire. |
 
 ## Wake mechanism
 

@@ -328,3 +328,6 @@ try {
         $watcher.Dispose()
     }
 }
+# Defensive: explicit zero exit so a failing last command doesn't bubble
+# up as a non-zero exit. Hook callers treat non-zero as "block this event".
+exit 0

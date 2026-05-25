@@ -1,6 +1,16 @@
 # [Unreleased]
 
-## v7.4.1
+## v7.5.2
+
+### Added
+
+- **MCP resource subscription for inbox channel**: clients can subscribe to `telegram://inbox/<token>` via `resources/subscribe` to receive `notifications/resources/updated` push notifications when messages arrive, eliminating the need for activity-file polling
+- `src/channel.ts`: new channel subscription registry — cooldown model mirrors activity-file kick gate (leading-edge fire, cooldown window, pending flag); `registerChannelSubscriber`, `unregisterChannelSubscriber`, `notifyChannelSubscriber`, `resetChannelCooldown`, `isChannelActive`, `INBOX_URI_RE` exported
+- `server.ts`: `resources/subscribe` and `resources/unsubscribe` request handlers wired to the channel registry; `resources.subscribe: true` capability advertised
+- `dequeue.ts`: hint suppression when channel subscription is active (`ONBOARDING_ACTIVITY_FILE_HINT` skipped); `resetChannelCooldown` called on both content-returning exit paths (early-return batch and `finally` block)
+- `session-queue.ts`: `notifyChannelSubscriber` called after all enqueue paths (`enqueueToSession`, broadcast, `deliverDirectMessage`, `deliverServiceMessage`, `deliverReminderEvent`, `routeMessage`)
+- `session-teardown.ts`: `unregisterChannelSubscriber(sid)` called on session close
+- Onboarding messages and docs updated to prefer channel subscription over activity-file polling
 
 ### Changed
 
@@ -9,12 +19,16 @@
 
 ### Fixed
 
+- `channel.ts` `_send`: corrected MCP SDK call from non-existent `sendNotification()` to `notification()` on the underlying `Server` instance — channel push notifications were silently failing before this fix
+- `scheduleRetry` (`file-state.ts`): wrapped `setTimeout(async () => {...})` in `void (async () => {...})()` to satisfy `no-misused-promises` lint rule
+- `handleChildForward`, `handleRevokeChild`: removed erroneous `async` keyword — both functions are synchronous; test callsites updated accordingly
 - `replaceActivityFile` (`file-state.ts`): added same-path guard — when the new registration reuses the same file path as the old entry, the old TMCP-owned file is no longer unlinked (would have deleted the currently-registered file)
 - `replaceActivityFile` (`file-state.ts`): old debounce timer is cancelled before async cleanup, preventing a stale callback from firing a kick against the replacement entry (timer generation check)
 - Kick debounce minimum lowered to 1 s (was 30 s) — allows fast-cycling agents to set sub-30 s debounce windows via `profile/kick-debounce`
 
 ### Tests
 
+- `src/channel.test.ts`: 21 tests covering `INBOX_URI_RE`, `isChannelActive`, `registerChannelSubscriber` (cap/no-cap/exact boundary), `unregisterChannelSubscriber` (no-op, prior restoration), `notifyChannelSubscriber` (no subscriber, in-flight skip, immediate fire, cooldown suppression, retry on rejection, expired-cooldown re-fire), and `resetChannelCooldown`
 - Added test 9: `replaceActivityFile` atomic swap — concurrent `touchActivityFile` call during replace reaches the new entry, not `undefined`
 - Added test 10: `replaceActivityFile` timer generation check — old debounce timer cancelled by replace does not fire a stale kick against the new entry
 

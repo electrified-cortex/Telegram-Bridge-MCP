@@ -18,7 +18,9 @@ import { getMessage, CURRENT } from "./message-store.js";
 import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
 import type { ReminderEvent } from "./reminder-state.js";
-import { touchActivityFile } from "./tools/activity/file-state.js";
+import { recordLastSentAt, recordLastReceivedAt } from "./reminder-state.js";
+import { kickIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
+import { notifyChannelSubscriber } from "./channel.js";
 
 // ---------------------------------------------------------------------------
 // Voice-ready predicate (shared with message-store's queue)
@@ -114,15 +116,52 @@ export function peekSessionCategories(sid: number): Record<string, number> | und
   return _queues.get(sid)?.peekCategories((evt) => evt.content.type);
 }
 
+const OPERATOR_MESSAGE_TYPES = new Set([
+  "text", "voice", "command", "photo", "doc", "video",
+  "audio", "sticker", "animation", "contact", "location", "unknown",
+]);
+
 /**
- * Returns true if the session queue has at least one pending heavyweight
- * user event (text or voice). Non-destructive — does not consume any items.
- * Returns false if no queue exists for this sid.
+ * Determine whether an inbound event qualifies for last_received tracking.
+ * Returns qualifiesAll (for mode:"all") and qualifiesOperator (for mode:"operator").
+ *
+ * Exclusions per spec: service messages, reminder fires, reactions, ack/approve tickets.
  */
+function qualifyInbound(event: TimelineEvent): { all: boolean; operator: boolean } {
+  // Reminder fires are explicitly excluded (loop prevention)
+  if (event.event === "reminder") return { all: false, operator: false };
+  // Service messages and internal housekeeping are excluded
+  if (event.event === "service_message") return { all: false, operator: false };
+  if (event.event === "send_callback") return { all: false, operator: false };
+
+  // Direct messages (inter-session DMs) qualify for "all" mode only
+  if (event.event === "direct_message") return { all: true, operator: false };
+
+  // Inbound operator messages
+  if (event.event === "message" && event.from === "user") {
+    const t = event.content.type;
+    // Reactions and callbacks (ack/approve tickets) are excluded
+    if (t === "reaction" || t === "callback") return { all: false, operator: false };
+    if (OPERATOR_MESSAGE_TYPES.has(t)) return { all: true, operator: true };
+  }
+
+  return { all: false, operator: false };
+}
+
+/** Update last_received timestamps for a session based on a qualifying inbound event. */
+function notifyLastReceived(sid: number, event: TimelineEvent): void {
+  const { all, operator } = qualifyInbound(event);
+  if (!all && !operator) return;
+  const now = Date.now();
+  if (all) recordLastReceivedAt(sid, "all", now);
+  if (operator) recordLastReceivedAt(sid, "operator", now);
+}
+
+// If new operator-message types are added to buildMessageContent in message-store.ts, add them here too.
 export function hasPendingUserContent(sid: number): boolean {
   const cats = peekSessionCategories(sid);
   if (!cats) return false;
-  return (cats["text"] ?? 0) > 0 || (cats["voice"] ?? 0) > 0;
+  return [...OPERATOR_MESSAGE_TYPES].some(t => (cats[t] ?? 0) > 0);
 }
 
 /**
@@ -152,9 +191,13 @@ export function sessionQueueCount(): number {
 /**
  * Record that a bot message was sent by a specific session.
  * Called by outbound recording so inbound replies can route back.
+ * Also updates last_sent_at for last_sent reminder tracking.
  */
 export function trackMessageOwner(messageId: number, sid: number): void {
-  if (sid > 0) _messageOwnership.set(messageId, sid);
+  if (sid > 0) {
+    _messageOwnership.set(messageId, sid);
+    recordLastSentAt(sid, Date.now());
+  }
 }
 
 /** Look up which session sent a given bot message. Returns 0 if unknown. */
@@ -186,6 +229,7 @@ export function routeToSession(event: TimelineEvent): void {
     // Targeted: deliver only to the owning session
     dlog("route", `targeted event=${event.id} → sid=${targetSid}`, { type: event.content.type });
     enqueueToSession(targetSid, event);
+    notifyLastReceived(targetSid, event);
     return;
   }
 
@@ -194,6 +238,7 @@ export function routeToSession(event: TimelineEvent): void {
   if (gSid > 0 && _queues.has(gSid)) {
     dlog("route", `governor event=${event.id} → sid=${gSid}`, { type: event.content.type });
     enqueueToSession(gSid, event);
+    notifyLastReceived(gSid, event);
     return;
   }
 
@@ -201,7 +246,9 @@ export function routeToSession(event: TimelineEvent): void {
   dlog("route", `broadcast event=${event.id} → ${_queues.size} sessions`);
   for (const [sid, q] of _queues.entries()) {
     q.enqueue(event);
-    touchActivityFile(sid);
+    kickIfAllowed(sid, "operator", isDequeueActive(sid));
+    notifyChannelSubscriber(sid, event);
+    notifyLastReceived(sid, event);
   }
 }
 
@@ -231,8 +278,8 @@ function enqueueToSession(
   const q = _queues.get(sid);
   if (!q) return;
   q.enqueue(event);
-  // Touch the activity file (if registered) after the event is fully enqueued.
-  touchActivityFile(sid);
+  kickIfAllowed(sid, "operator", isDequeueActive(sid));
+  notifyChannelSubscriber(sid, event);
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +416,12 @@ export function deliverAsyncSendCallback(
   };
 
   q.enqueue(event);
+  // send_callback is bridge-internal housekeeping — no kick
   dlog("async-send", `callback → sid=${targetSid}`, { pendingId: payload.pendingId, status: payload.status });
+  // Update last_sent_at on confirmed async TTS delivery (message_id returned).
+  if (payload.status === "ok" && (payload.messageId !== undefined || (payload.messageIds?.length ?? 0) > 0)) {
+    recordLastSentAt(targetSid, Date.now());
+  }
   return true;
 }
 
@@ -396,6 +448,8 @@ export function deliverDirectMessage(
   };
 
   q.enqueue(event);
+  kickIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
+  notifyChannelSubscriber(targetSid, event);
   dlog("dm", `delivered DM from sid=${senderSid} → sid=${targetSid}`, { eventId: event.id });
   return true;
 }
@@ -433,12 +487,14 @@ export function deliverServiceMessage(
   text: string,
   eventType: string,
   details?: Record<string, unknown>,
+  origin?: "bridge" | "child_forward",
 ): boolean;
 export function deliverServiceMessage(
   targetSid: number,
   textOrEntry: string | ServiceMessageSpec,
   eventTypeOrDetails?: string | Record<string, unknown>,
   details?: Record<string, unknown>,
+  origin?: "bridge" | "child_forward",
 ): boolean {
   const q = _queues.get(targetSid);
   if (!q) return false;
@@ -446,17 +502,20 @@ export function deliverServiceMessage(
   let text: string;
   let eventType: string;
   let resolvedDetails: Record<string, unknown> | undefined;
+  let resolvedOrigin: "bridge" | "child_forward";
 
   if (typeof textOrEntry === "object") {
     // Bundled entry form: deliverServiceMessage(sid, entry, details?)
     text = textOrEntry.text;
     eventType = textOrEntry.eventType;
     resolvedDetails = eventTypeOrDetails as Record<string, unknown> | undefined;
+    resolvedOrigin = "bridge"; // bundled form always bridges — R1 single converged path
   } else {
-    // Raw-string form: deliverServiceMessage(sid, text, eventType, details?)
+    // Raw-string form: deliverServiceMessage(sid, text, eventType, details?, origin?)
     text = textOrEntry;
     eventType = eventTypeOrDetails as string;
     resolvedDetails = details;
+    resolvedOrigin = origin ?? "bridge";
   }
 
   const event: TimelineEvent = {
@@ -464,11 +523,13 @@ export function deliverServiceMessage(
     timestamp: new Date().toISOString(),
     event: "service_message",
     from: "system",
-    content: { type: "service", text, event_type: eventType, ...(resolvedDetails && { details: resolvedDetails }) },
+    content: { type: "service", text, event_type: eventType, origin: resolvedOrigin, ...(resolvedDetails && { details: resolvedDetails }) },
     sid: 0,
   };
 
   q.enqueue(event);
+  kickIfAllowed(targetSid, "service", isDequeueActive(targetSid));
+  notifyChannelSubscriber(targetSid, event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
@@ -506,6 +567,8 @@ export function deliverReminderEvent(
   });
 
   q.enqueue(event);
+  kickIfAllowed(targetSid, "reminder", isDequeueActive(targetSid));
+  notifyChannelSubscriber(targetSid, event);
   dlog("service", `startup reminder → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
 }
@@ -529,6 +592,8 @@ export function routeMessage(messageId: number, targetSid: number, routerSid: nu
     content: { ...event.content, routed_by: routerSid },
   };
   q.enqueue(routed);
+  kickIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
+  notifyChannelSubscriber(targetSid, routed);
   dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`, { routerSid });
   return true;
 }
@@ -573,4 +638,9 @@ export function resetSessionQueuesForTest(): void {
   _nextDmId = -1;
   _nextServiceId = -100_000;
   _nextAsyncCallbackId = -10_000_000;
+}
+
+/** Exported for testing: returns whether an event qualifies as a last_received trigger. */
+export function qualifyInboundForTest(event: TimelineEvent): { all: boolean; operator: boolean } {
+  return qualifyInbound(event);
 }

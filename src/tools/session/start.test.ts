@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError, type ToolHandler } from "../test-utils.js";
+import { createMockServer, parseResult, isError, errorCode, type ToolHandler } from "../test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   checkAndConsumeAutoApprove: vi.fn().mockReturnValue(false),
   registerPendingApproval: vi.fn(),
   clearPendingApproval: vi.fn(),
+  validateSession: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../../telegram.js", async (importActual) => {
@@ -75,6 +76,7 @@ vi.mock("../../session-manager.js", () => ({
   getSessionAnnouncementMessage: mocks.getSessionAnnouncementMessage,
   setSessionReauthDialogMsgId: mocks.setSessionReauthDialogMsgId,
   clearSessionReauthDialogMsgId: mocks.clearSessionReauthDialogMsgId,
+  validateSession: (...args: unknown[]) => mocks.validateSession(...args),
 }));
 
 vi.mock("../../routing-mode.js", () => ({
@@ -120,7 +122,7 @@ vi.mock("../../agent-approval.js", async (importActual) => {
   };
 });
 
-import { register, handleSessionReconnect } from "./start.js";
+import { register, handleSessionReconnect, handleSessionStart } from "./start.js";
 import {
   addReminder,
   resetReminderStateForTest,
@@ -383,8 +385,8 @@ describe("session_start tool", () => {
     const result = await call({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("NAME_CONFLICT");
     const text = JSON.stringify(result);
-    expect(text).toContain("NAME_CONFLICT");
     expect(text).toContain("Overseer");
     // Must NOT create a session
     expect(mocks.createSession).not.toHaveBeenCalled();
@@ -589,7 +591,7 @@ describe("session_start tool", () => {
     const result = await call({ name: "Scout" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -609,7 +611,7 @@ describe("session_start tool", () => {
     vi.useRealTimers();
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -638,7 +640,7 @@ describe("session_start tool", () => {
 
       // Session must be denied
       expect(isError(result)).toBe(true);
-      expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+      expect(errorCode(result)).toBe("SESSION_DENIED");
       // capturedMsgId must have been set — if not, registerCallbackHook was never called
       expect(capturedMsgId).toBeDefined();
       // The callback hook registered for the approval dialog must be cleared (cleanup)
@@ -659,7 +661,7 @@ describe("session_start tool", () => {
     const result = await call({});
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_REQUIRED");
+    expect(errorCode(result)).toBe("NAME_REQUIRED");
     expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
@@ -672,7 +674,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     const result = await call({ name: "Scout!" });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -680,7 +682,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     const result = await call({ name: "Scout_2" });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -688,7 +690,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     const result = await call({ name: "Scout🤖" });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -696,7 +698,7 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     const result = await call({ name: "スカウト" });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("INVALID_NAME");
+    expect(errorCode(result)).toBe("INVALID_NAME");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -1814,8 +1816,8 @@ describe("session_start tool", () => {
     const result = await call({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("NAME_CONFLICT");
     const text = JSON.stringify(result);
-    expect(text).toContain("NAME_CONFLICT");
     expect(text).toContain("dequeue");
     expect(text).not.toContain("reconnect: true");
     expect(text).toContain("session/reconnect");
@@ -1922,7 +1924,7 @@ describe("session_start tool", () => {
     const result = await handleSessionReconnect({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
     expect(mocks.drainQueue).not.toHaveBeenCalled();
   });
@@ -1939,7 +1941,7 @@ describe("session_start tool", () => {
     vi.useRealTimers();
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -2017,7 +2019,7 @@ describe("session_start tool", () => {
 
     // No session named "Overseer" → SESSION_NOT_FOUND error
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_NOT_FOUND");
+    expect(errorCode(result)).toBe("SESSION_NOT_FOUND");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -2574,7 +2576,7 @@ describe("handleSessionReconnect", () => {
     const result = await handleSessionReconnect({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_NOT_FOUND");
+    expect(errorCode(result)).toBe("SESSION_NOT_FOUND");
     expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
   });
 
@@ -2582,13 +2584,13 @@ describe("handleSessionReconnect", () => {
     const result = await handleSessionReconnect({ name: "" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_REQUIRED");
+    expect(errorCode(result)).toBe("NAME_REQUIRED");
   });
 
   it("returns NAME_REQUIRED for whitespace-only name", async () => {
     const result = await handleSessionReconnect({ name: "   " });
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("NAME_REQUIRED");
+    expect(errorCode(result)).toBe("NAME_REQUIRED");
   });
 
   it("shows simple Approve/Deny dialog (reconnect_yes/reconnect_no), not color picker", async () => {
@@ -2641,7 +2643,7 @@ describe("handleSessionReconnect", () => {
     const result = await handleSessionReconnect({ name: "Overseer" });
 
     expect(isError(result)).toBe(true);
-    expect(JSON.stringify(result)).toContain("SESSION_DENIED");
+    expect(errorCode(result)).toBe("SESSION_DENIED");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -2690,5 +2692,147 @@ describe("handleSessionReconnect", () => {
     const result = parseResult(await handleSessionReconnect({ name: "Agent" }));
 
     expect((result).monitor_recipe).toBeUndefined();
+  });
+});
+
+describe("session/start refresh flag", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReminderStateForTest();
+    mocks.editMessageText.mockResolvedValue(undefined);
+    mocks.deliverReminderEvent.mockReturnValue(true);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.isPollerRunning.mockReturnValue(false);
+    mocks.checkAndConsumeAutoApprove.mockReturnValue(false);
+    mocks.validateSession.mockReturnValue(false);
+    mocks.createSession.mockReturnValue({
+      sid: 2,
+      suffix: 500001,
+      name: "Agent",
+      color: "🟩",
+      sessionsActive: 2,
+      connectionToken: "test-connection-token-uuid",
+    });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+  });
+
+  // AC1: live session + matching token → reuse
+  it("AC1: reuse live session when token matches — no new session created, reused: true", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.validateSession.mockReturnValue(true);
+    // token = sid(1) * 1_000_000 + suffix(123456)
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: true, token: 1123456 }));
+
+    expect(result.reused).toBe(true);
+    expect(result.token).toBe(1123456);
+    expect(result.sid).toBe(1);
+    expect(result.hint).toBe("Call dequeue(token) NOW — do not proceed without draining");
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  // AC2: no session for name + refresh: true → creates new, reused: false
+  it("AC2: no session for name + refresh: true → creates new session, reused: false", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({
+      sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1, connectionToken: "tok",
+    });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: true }));
+
+    expect(result.reused).toBe(false);
+    expect(result.token).toBe(1111111);
+    expect(mocks.createSession).toHaveBeenCalled();
+  });
+
+  // AC3: session was dropped (not in session table) + refresh: true → creates new, reused: false
+  it("AC3: session dropped (not in table) + refresh: true → creates new session, reused: false", async () => {
+    // Simulates bridge restart: session table is empty
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({
+      sid: 1, suffix: 222222, name: "Worker", color: "🟩", sessionsActive: 1, connectionToken: "tok",
+    });
+
+    const result = parseResult(await handleSessionStart({ name: "Worker", refresh: true }));
+
+    expect(result.reused).toBe(false);
+    expect(mocks.createSession).toHaveBeenCalled();
+  });
+
+  // AC4: refresh omitted → byte-equivalent response, no reused field
+  it("AC4: refresh omitted → no reused field in response (regression)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({
+      sid: 1, suffix: 123456, name: "Primary", color: "🟦", sessionsActive: 1, connectionToken: "tok",
+    });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary" }));
+
+    expect(result.reused).toBeUndefined();
+    expect(result.token).toBe(1123456);
+  });
+
+  // AC4 variant: refresh: false → also no reused field
+  it("AC4: refresh: false → no reused field in response (regression)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({
+      sid: 1, suffix: 123456, name: "Primary", color: "🟦", sessionsActive: 1, connectionToken: "tok",
+    });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: false }));
+
+    expect(result.reused).toBeUndefined();
+  });
+
+  // AC5: live session + no token → NAME_IN_USE
+  it("AC5: live session + no token + refresh: true → NAME_IN_USE with sid_in_use", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+
+    const result = await handleSessionStart({ name: "Primary", refresh: true });
+
+    expect(isError(result)).toBe(true);
+    const body = parseResult(result);
+    expect(body.code).toBe("NAME_IN_USE");
+    expect(body.sid_in_use).toBe(1);
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  // AC5: live session + wrong token → NAME_IN_USE
+  it("AC5: live session + wrong token + refresh: true → NAME_IN_USE with sid_in_use", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.validateSession.mockReturnValue(false);
+
+    const result = await handleSessionStart({ name: "Primary", refresh: true, token: 9999999 });
+
+    expect(isError(result)).toBe(true);
+    const body = parseResult(result);
+    expect(body.code).toBe("NAME_IN_USE");
+    expect(body.sid_in_use).toBe(1);
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  // AC6: color passed during state-2 reuse → color ignored, warnings[] contains notice
+  it("AC6: color alongside state-2 reuse → reused: true, color ignored, warning in response", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.validateSession.mockReturnValue(true);
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: true, token: 1123456, color: "🟩" }));
+
+    expect(result.reused).toBe(true);
+    expect(Array.isArray(result.warnings)).toBe(true);
+    expect((result.warnings as string[]).some((w: string) => w.includes("color"))).toBe(true);
+    expect(mocks.createSession).not.toHaveBeenCalled();
   });
 });

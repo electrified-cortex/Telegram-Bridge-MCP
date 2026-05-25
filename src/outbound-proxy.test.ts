@@ -53,6 +53,7 @@ import {
   resetOutboundProxyForTest,
   type SendInterceptor,
 } from "./outbound-proxy.js";
+import { setTopic, resetTopicStateForTest } from "./topic-state.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -101,6 +102,7 @@ describe("outbound-proxy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetOutboundProxyForTest();
+    resetTopicStateForTest();
     // Default: single-session (no header)
     mocks.activeSessionCount.mockReturnValue(1);
     mocks.getCallerSid.mockReturnValue(0);
@@ -823,6 +825,21 @@ describe("outbound-proxy", () => {
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
       expect(sentText).toBe("`🟦 Scout`\nHello");
+    });
+
+    it("suppresses name_tag header when the session has a topic set (no double prefix)", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Helper", color: "🟩" });
+      setTopic("Helper"); // topic-state keyed by mocked getCallerSid()=1
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).sendMessage(42, "**[Helper]**\nHello from Helper");
+
+      const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
+      // name_tag header suppressed — only the topic prefix injected by send.ts appears
+      expect(sentText).toBe("**[Helper]**\nHello from Helper");
     });
 
     it("_skipHeader suppresses nametag injection in editMessageText", async () => {

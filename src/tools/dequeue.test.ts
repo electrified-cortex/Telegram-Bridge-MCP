@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError } from "./test-utils.js";
+import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 import type { TimelineEvent } from "../message-store.js";
 
 interface CompactEvent {
@@ -28,11 +28,13 @@ interface SessionQueue {
 const fileStateMocks = vi.hoisted(() => ({
   setDequeueActive: vi.fn(),
   getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
+  releaseKickLockout: vi.fn((_sid: number) => {}),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
   setDequeueActive: (sid: number, active: boolean) => fileStateMocks.setDequeueActive(sid, active),
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
+  releaseKickLockout: (sid: number) => { fileStateMocks.releaseKickLockout(sid); },
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -113,10 +115,6 @@ vi.mock("../service-messages.js", () => ({
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
     },
-    ONBOARDING_ACTIVITY_FILE_HINT: {
-      eventType: "onboarding_activity_file_hint",
-      text: "Optional: register an activity file so TMCP can kick you when new messages arrive.\nCall activity/file/create to set one up — TMCP will tell you how to monitor it.",
-    },
   },
 }));
 
@@ -130,6 +128,8 @@ const reminderMocks = vi.hoisted(() => ({
   getActiveReminders: vi.fn((_sid: number): unknown[] => []),
   popActiveReminders: vi.fn((_sid: number): unknown[] => []),
   getSoonestDeferredMs: vi.fn((_sid: number): number | null => null),
+  popFireableEventReminders: vi.fn((_sid: number): unknown[] => []),
+  getSoonestEventReminderMs: vi.fn((_sid: number): number | null => null),
   buildReminderEvent: vi.fn((r: unknown) => ({
     id: -1,
     event: "reminder",
@@ -144,6 +144,8 @@ vi.mock("../reminder-state.js", () => ({
   getActiveReminders: (sid: number) => reminderMocks.getActiveReminders(sid),
   popActiveReminders: (sid: number) => reminderMocks.popActiveReminders(sid),
   getSoonestDeferredMs: (sid: number) => reminderMocks.getSoonestDeferredMs(sid),
+  popFireableEventReminders: (sid: number) => reminderMocks.popFireableEventReminders(sid),
+  getSoonestEventReminderMs: (sid: number) => reminderMocks.getSoonestEventReminderMs(sid),
   buildReminderEvent: (r: unknown) => reminderMocks.buildReminderEvent(r),
 }));
 
@@ -198,6 +200,8 @@ describe("dequeue tool", () => {
     reminderMocks.getActiveReminders.mockReturnValue([]);
     reminderMocks.popActiveReminders.mockReturnValue([]);
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     mocks.peekSessionCategories.mockReturnValue(undefined);
@@ -540,8 +544,7 @@ describe("dequeue tool", () => {
   it("returns SID_REQUIRED error when identity is omitted", async () => {
     const result = await call({ timeout: 0 });
     expect(isError(result)).toBe(true);
-    const text = JSON.stringify(result);
-    expect(text).toContain("SID_REQUIRED");
+    expect(errorCode(result)).toBe("SID_REQUIRED");
   });
 
   it("always re-syncs setActiveSession on return when explicit sid provided", async () => {
@@ -657,16 +660,14 @@ describe("dequeue tool", () => {
     it("returns SID_REQUIRED when identity is omitted", async () => {
       const result = await call({ timeout: 0 });
       expect(isError(result)).toBe(true);
-      const text = JSON.stringify(result);
-      expect(text).toContain("SID_REQUIRED");
+      expect(errorCode(result)).toBe("SID_REQUIRED");
     });
 
     it("returns AUTH_FAILED when suffix does not match", async () => {
       mocks.validateSession.mockReturnValueOnce(false);
       const result = await call({ token: 3_009_999, timeout: 0 });
       expect(isError(result)).toBe(true);
-      const text = JSON.stringify(result);
-      expect(text).toContain("AUTH_FAILED");
+      expect(errorCode(result)).toBe("AUTH_FAILED");
     });
 
     it("passes [sid, suffix] to validateSession when identity provided", async () => {
@@ -1218,6 +1219,35 @@ describe("dequeue tool", () => {
   // Reminder fire path — tokenHint propagation
   // =========================================================================
 
+  // =========================================================================
+  // promoteDeferred — called on every dequeue path (regression: bug-bridge-reminder-fire-failure)
+  // =========================================================================
+
+  describe("promoteDeferred called on all dequeue paths", () => {
+    it("calls promoteDeferred before returning immediate batch (busy-session bug fix)", async () => {
+      // Before the fix, promoteDeferred was only called inside the long-poll loop.
+      // A session with constant message activity always took the immediate-batch path,
+      // leaving deferred reminders stuck in deferred state indefinitely.
+      const evt = makeEvent(1, "immediate message");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      await call({ timeout: 300, token: 1_123_456 });
+      expect(reminderMocks.promoteDeferred).toHaveBeenCalledWith(1);
+    });
+
+    it("calls promoteDeferred on timeout=0 instant poll (empty queue)", async () => {
+      mocks.dequeueBatch.mockReturnValue([]);
+      await call({ timeout: 0, token: 1_123_456 });
+      expect(reminderMocks.promoteDeferred).toHaveBeenCalledWith(1);
+    });
+
+    it("calls promoteDeferred on timeout=0 instant poll (immediate batch)", async () => {
+      const evt = makeEvent(2, "batch on instant poll");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      await call({ max_wait: 0, token: 1_123_456 });
+      expect(reminderMocks.promoteDeferred).toHaveBeenCalledWith(1);
+    });
+  });
+
   describe("reminder fire path", () => {
     it("fires reminder events and returns updates with no hint fields", async () => {
       // Strategy: mock Date.now so that idleDuration immediately exceeds
@@ -1485,49 +1515,8 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // Activity file onboarding hint (AC2)
+  // Activity file onboarding hint — REMOVED 2026-05-22
+  // ONBOARDING_LOOP_PATTERN at session start now covers the activity-file
+  // guidance once; the redundant hint on first dequeue was deleted.
   // =========================================================================
-
-  describe("activity file onboarding hint", () => {
-    it("injects ONBOARDING_ACTIVITY_FILE_HINT on first dequeue when no activity file is registered", async () => {
-      fileStateMocks.getActivityFile.mockReturnValue(undefined);
-      mocks.dequeueBatch.mockReturnValue([]);
-
-      await call({ timeout: 0, token: 1_123_456 });
-
-      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({ eventType: "onboarding_activity_file_hint" }),
-      );
-    });
-
-    it("does not inject hint on subsequent dequeue calls for the same session", async () => {
-      fileStateMocks.getActivityFile.mockReturnValue(undefined);
-      mocks.dequeueBatch.mockReturnValue([]);
-
-      await call({ timeout: 0, token: 1_123_456 });
-      mocks.deliverServiceMessage.mockClear();
-
-      await call({ timeout: 0, token: 1_123_456 });
-
-      const hintCalls = mocks.deliverServiceMessage.mock.calls.filter(
-        (args: unknown[]) => args[1] && typeof args[1] === "object" &&
-          (args[1] as Record<string, unknown>).eventType === "onboarding_activity_file_hint",
-      );
-      expect(hintCalls).toHaveLength(0);
-    });
-
-    it("does not inject hint when an activity file is already registered", async () => {
-      // fileStateMocks.getActivityFile returns non-null by default (set in beforeEach)
-      mocks.dequeueBatch.mockReturnValue([]);
-
-      await call({ timeout: 0, token: 1_123_456 });
-
-      const hintCalls = mocks.deliverServiceMessage.mock.calls.filter(
-        (args: unknown[]) => args[1] && typeof args[1] === "object" &&
-          (args[1] as Record<string, unknown>).eventType === "onboarding_activity_file_hint",
-      );
-      expect(hintCalls).toHaveLength(0);
-    });
-  });
 });

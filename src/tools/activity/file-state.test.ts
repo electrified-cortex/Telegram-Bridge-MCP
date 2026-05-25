@@ -1,30 +1,27 @@
 /**
- * Tests for the activity-file idle-kick state machine (task 10-0876, 10-0896).
+ * Tests for the kick-lockout gate (task impl-kick-lockout-2026-05-17).
  *
- * Covers:
- *   1. Nudge fires immediately when agent has been silent >= debounce window
- *   2. Nudge is suppressed when agent was recently active (< debounce window)
- *   3. Timer schedules and fires after remaining suppression window
- *   4. recordActivityTouch updates lastActivityAt but does NOT cancel pending kick timer
- *   5. Nudge does not fire while dequeue is in-flight (inflightDequeue)
- *   6. Multiple messages in one cycle produce exactly one nudge (one-nudge-per-cycle)
- *   7. setDequeueActive(false) re-arms cycle; subsequent message can nudge again
- *   8. Per-session debounce override is respected (getKickDebounceMs)
- *   9. replaceActivityFile atomic swap: concurrent touchActivityFile reaches new entry
- *  10. replaceActivityFile timer generation check: old debounce timer does not kick after replacement
- *  11. recordActivityTouch during pending timer does not cancel kick (fix for 10-0893)
- *  12. handleSessionStopped cancels timer, re-arms nudge, fires touch when queue has pending
- *  13. handleSessionStopped returns noOp: true when no activity file registered
- * AC4-1. Stop + empty queue → no kick (10-0896)
- * AC4-2. Stop + pending message → kick fires (10-0896)
- * AC4-3. Debounce expiry + empty queue → no kick (10-0896)
- * AC4-4. Debounce expiry + pending message → kick fires (10-0896)
- * AC4-5. Stop resets lastActivityAt so next touch with pending kicks immediately (10-0896)
+ * Covers ACs 1-10 from the spec:
+ *  AC1. Cold-start kick fires immediately (no lockout)
+ *  AC2. Burst single-kick: N messages in lockout window → exactly one mtime change
+ *  AC3. Stale-lockout safety net: after LOCKOUT_MS expiry, next inbound fires again
+ *  AC4. Post-content-DQ snap: releaseKickLockout clears lockout → next inbound fires
+ *  AC5. Suppressed-during-lockout re-evaluation fires after lockout release
+ *  AC6. Polling agent (timeout dequeue) does NOT release kick lockout
+ *  AC7. In-flight dequeue suppresses kicks (agent reads inline)
+ *  AC8. Touch failure rollback: lockout NOT set when touch fails
+ *  AC9. Source classification: service during inflight=no-kick; reminder=kick
+ * AC10. Reconnect resets kick gate; next inbound fires immediately
+ *
+ * Also keeps:
+ *  - activity/file/create ALREADY_REGISTERED guard (AC7 from prior task)
+ *  - appendNewline ENOENT recovery
+ *  - replaceActivityFile atomic swap and generation check
  */
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
-// Mock session-gate to control requireAuth per-test
+// Mock session-gate
 const gateMocks = vi.hoisted(() => ({
   requireAuth: vi.fn((_token: number | undefined): number | { code: string; message: string } => 42),
 }));
@@ -33,22 +30,28 @@ vi.mock("../../session-gate.js", () => ({
   requireAuth: (token: number | undefined) => gateMocks.requireAuth(token),
 }));
 
-// Mock session-manager to control getKickDebounceMs per-test
+// Mock session-manager
 const sessionMocks = vi.hoisted(() => ({
-  getKickDebounceMs: vi.fn((_sid: number): number => 60_000),
+  getKickLockoutMs: vi.fn((_sid: number): number => 300_000),
+  getDequeueDefault: vi.fn((_sid: number): number => 300),
+  setDequeueDefault: vi.fn((_sid: number, _v: number): void => {}),
 }));
 
 vi.mock("../../session-manager.js", () => ({
-  getKickDebounceMs: (sid: number) => sessionMocks.getKickDebounceMs(sid),
+  getKickLockoutMs: (sid: number) => sessionMocks.getKickLockoutMs(sid),
+  getDequeueDefault: (sid: number) => sessionMocks.getDequeueDefault(sid),
+  setDequeueDefault: (sid: number, v: number) => { sessionMocks.setDequeueDefault(sid, v); },
 }));
 
-// Mock session-queue to control hasPendingUserContent per-test (10-0896)
+// Mock session-queue
 const queueMocks = vi.hoisted(() => ({
   hasPendingUserContent: vi.fn((_sid: number): boolean => true),
+  deliverServiceMessage: vi.fn((..._args: unknown[]): boolean => true),
 }));
 
 vi.mock("../../session-queue.js", () => ({
   hasPendingUserContent: (sid: number) => queueMocks.hasPendingUserContent(sid),
+  deliverServiceMessage: (...args: unknown[]) => queueMocks.deliverServiceMessage(...args),
 }));
 
 // Mock fs/promises to avoid real file I/O
@@ -64,521 +67,403 @@ import { appendFile, mkdir, open } from "fs/promises";
 import {
   setActivityFile,
   getActivityFile,
-  touchActivityFile,
-  recordActivityTouch,
+  kickIfAllowed,
   setDequeueActive,
-  replaceActivityFile,
+  releaseKickLockout,
+  resetKickGateState,
   handleSessionStopped,
+  replaceActivityFile,
   resetActivityFileStateForTest,
+  type ActivityFileState,
 } from "./file-state.js";
 
 import { handleActivityFileCreate } from "./create.js";
 import { handleActivityFileEdit } from "./edit.js";
 
 const SID = 42;
+const LOCKOUT_MS = 300_000;
 
-function makeState(overrides: Partial<{
-  lastActivityAt: number;
-  inflightDequeue: boolean;
-  nudgeArmed: boolean;
-  lastTouchAt: number | null;
-}> = {}) {
+function makeState(overrides: Partial<ActivityFileState> = {}): ActivityFileState {
   return {
     filePath: "/tmp/test-activity-file",
     tmcpOwned: false,
-    lastTouchAt: (overrides.lastTouchAt !== undefined ? overrides.lastTouchAt : null),
-    debounceTimer: null as ReturnType<typeof setTimeout> | null,
-    lastActivityAt: overrides.lastActivityAt ?? 0,
-    inflightDequeue: overrides.inflightDequeue ?? false,
-    nudgeArmed: overrides.nudgeArmed ?? true,
+    inflightDequeue: false,
+    kickLockedUntil: null,
+    kickPendingBecauseLocked: false,
+    touchInFlight: false,
+    pendingRetryHandle: null,
+    ...overrides,
   };
 }
 
-describe("activity-file idle-kick state machine", () => {
+describe("kick-lockout gate — ACs 1-10", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.clearAllMocks();
     resetActivityFileStateForTest();
-    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
-    // Default: queue has pending content so existing kick tests pass unchanged.
-    // AC4 "no kick" tests override this to false.
+    sessionMocks.getKickLockoutMs.mockReturnValue(LOCKOUT_MS);
     queueMocks.hasPendingUserContent.mockReturnValue(true);
+    vi.mocked(appendFile).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("1: nudge fires immediately when agent has been silent >= debounce window", () => {
-    const state = makeState({ lastActivityAt: Date.now() - 120_000 }); // 2 min ago
-    setActivityFile(SID, state);
+  // ── AC 1: Cold-start kick ──────────────────────────────────────────────────
+  it("AC1: fresh session, operator message → kick fires immediately", () => {
+    setActivityFile(SID, makeState());
 
-    touchActivityFile(SID);
-
-    const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(false);          // disarmed after firing
-    expect(entry.debounceTimer).toBeNull();         // no pending timer
-    expect(entry.lastTouchAt).not.toBeNull();       // touch was recorded
-  });
-
-  it("2: nudge is suppressed when agent was recently active (< debounce window)", () => {
-    const state = makeState({ lastActivityAt: Date.now() - 5_000 }); // 5 s ago
-    setActivityFile(SID, state);
-
-    touchActivityFile(SID);
+    kickIfAllowed(SID, "operator", false);
 
     const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(true);           // still armed — not fired yet
-    expect(entry.lastTouchAt).toBeNull();           // no touch issued
-    expect(entry.debounceTimer).not.toBeNull();     // timer scheduled to fire later
+    expect(entry.touchInFlight).toBe(true);              // async touch in progress
+    expect(entry.kickLockedUntil).not.toBeNull();         // lockout set
+    expect(entry.kickPendingBecauseLocked).toBe(false);   // no suppression
   });
 
-  it("3: scheduled timer fires the nudge after the remaining suppression window", () => {
-    sessionMocks.getKickDebounceMs.mockReturnValue(10_000); // 10 s for test speed
-    const state = makeState({ lastActivityAt: Date.now() - 3_000 }); // 3 s ago
-    setActivityFile(SID, state);
+  it("AC1: appendFile is called on first kick", async () => {
+    setActivityFile(SID, makeState());
 
-    touchActivityFile(SID);
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
-    // Timer should be pending, no touch yet
-    const entryBefore = getActivityFile(SID)!;
-    expect(entryBefore.lastTouchAt).toBeNull();
-
-    // Advance time past the remaining window (10s - 3s = 7s remaining)
-    vi.advanceTimersByTime(8_000);
-
-    const entryAfter = getActivityFile(SID)!;
-    expect(entryAfter.nudgeArmed).toBe(false);     // fired after delay
-    expect(entryAfter.lastTouchAt).not.toBeNull(); // touch issued
+    expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
   });
 
-  it("4: recordActivityTouch updates lastActivityAt but does NOT cancel pending kick timer", () => {
-    sessionMocks.getKickDebounceMs.mockReturnValue(10_000);
-    const state = makeState({ lastActivityAt: Date.now() - 3_000 });
-    setActivityFile(SID, state);
+  // ── AC 2: Burst single-kick ────────────────────────────────────────────────
+  it("AC2: 10 messages during lockout → exactly one appendFile call", async () => {
+    setActivityFile(SID, makeState());
 
-    touchActivityFile(SID); // schedules timer (3s elapsed of 10s window)
+    // First kick sets lockout
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
-    const entryBefore = getActivityFile(SID)!;
-    expect(entryBefore.debounceTimer).not.toBeNull();
-
-    const prevActivityAt = entryBefore.lastActivityAt;
-    recordActivityTouch(SID); // agent makes a tool call — must NOT cancel timer
-
-    const entryAfter = getActivityFile(SID)!;
-    expect(entryAfter.debounceTimer).not.toBeNull();       // timer still pending
-    expect(entryAfter.lastActivityAt).toBeGreaterThan(prevActivityAt); // window extended
-
-    // Timer fires after the remaining window — nudge DOES land
-    vi.advanceTimersByTime(15_000);
-    expect(getActivityFile(SID)!.lastTouchAt).not.toBeNull(); // kick fired
-  });
-
-  it("5: nudge does not fire while dequeue is in-flight (inflightDequeue=true)", () => {
-    const state = makeState({
-      lastActivityAt: Date.now() - 120_000,
-      inflightDequeue: true,
-    });
-    setActivityFile(SID, state);
-
-    touchActivityFile(SID);
-
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
     const entry = getActivityFile(SID)!;
-    expect(entry.lastTouchAt).toBeNull();           // no touch while dequeue active
-    expect(entry.nudgeArmed).toBe(true);             // still armed, just blocked
+    expect(entry.kickLockedUntil).not.toBeNull(); // lockout active
+
+    // 9 more messages during lockout — all suppressed
+    for (let i = 0; i < 9; i++) {
+      kickIfAllowed(SID, "operator", false);
+    }
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1); // still just 1
+    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(true);
   });
 
-  it("6: multiple messages in one cycle produce exactly one nudge", () => {
-    const state = makeState({ lastActivityAt: Date.now() - 120_000 }); // long idle
-    setActivityFile(SID, state);
+  // ── AC 3: Stale-lockout safety net ────────────────────────────────────────
+  it("AC3: after LOCKOUT_MS expires, next inbound fires another kick", async () => {
+    sessionMocks.getKickLockoutMs.mockReturnValue(5_000); // short lockout for test
+    setActivityFile(SID, makeState());
 
-    // First call fires the nudge
-    touchActivityFile(SID);
-    const firstTouchAt = getActivityFile(SID)!.lastTouchAt;
-    expect(firstTouchAt).not.toBeNull();
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
 
-    // Subsequent calls in the same cycle (nudgeArmed=false) → no-op
-    touchActivityFile(SID);
-    touchActivityFile(SID);
+    // Advance past lockout
+    vi.advanceTimersByTime(6_000);
 
-    const entry = getActivityFile(SID)!;
-    expect(entry.lastTouchAt).toBe(firstTouchAt);  // unchanged — no additional touches
+    // Next inbound should fire a fresh kick (lockout expired)
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
   });
 
-  it("7: setDequeueActive(false) re-arms cycle; next message can nudge again", () => {
-    const state = makeState({ lastActivityAt: Date.now() - 120_000 });
-    setActivityFile(SID, state);
+  // ── AC 4: Post-content-DQ snap ────────────────────────────────────────────
+  it("AC4: releaseKickLockout clears lockout; next inbound kicks immediately", async () => {
+    sessionMocks.getKickLockoutMs.mockReturnValue(5_000);
+    setActivityFile(SID, makeState());
 
-    // Cycle 1: fire nudge
-    touchActivityFile(SID);
-    expect(getActivityFile(SID)!.nudgeArmed).toBe(false);
+    // Set lockout via first kick
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+    expect(getActivityFile(SID)!.kickLockedUntil).not.toBeNull();
 
-    // Simulate dequeue completion
+    // Content-returning dequeue releases lockout
+    releaseKickLockout(SID);
+    expect(getActivityFile(SID)!.kickLockedUntil).toBeNull();
+
+    // Next inbound should kick immediately (lockout cleared)
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+  });
+
+  // ── AC 5: Suppressed-during-lockout re-evaluation ─────────────────────────
+  it("AC5: kick fires for M1; M2 suppressed; after dequeue → re-eval kick fires", async () => {
+    setActivityFile(SID, makeState());
+
+    // M1 kick
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    // M2 suppressed during lockout
+    kickIfAllowed(SID, "operator", false);
+    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(true);
+
+    // Agent dequeues (content-returning) → lockout releases → re-eval kick fires
+    queueMocks.hasPendingUserContent.mockReturnValue(true); // M2 still in queue
+    releaseKickLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Re-evaluation kick should have fired
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(false);
+  });
+
+  it("AC5: if queue drained before lockout release → no spurious re-eval kick", async () => {
+    setActivityFile(SID, makeState());
+
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    kickIfAllowed(SID, "operator", false); // suppressed
+    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(true);
+
+    // Queue is now empty (agent dequeued everything)
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+    releaseKickLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // No re-eval kick — queue was empty
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+  });
+
+  // ── AC 6: Polling agent (timeout dequeue) doesn't release lockout ─────────
+  it("AC6: timeout-only dequeue exits do NOT release kick lockout", async () => {
+    setActivityFile(SID, makeState());
+
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    const lockedUntil = getActivityFile(SID)!.kickLockedUntil;
+    expect(lockedUntil).not.toBeNull();
+
+    // Simulate timeout dequeue (setDequeueActive without releaseKickLockout)
+    setDequeueActive(SID, true);
     setDequeueActive(SID, false);
-    expect(getActivityFile(SID)!.nudgeArmed).toBe(true); // re-armed
+    // releaseKickLockout NOT called (timeout path)
 
-    // Cycle 2: after re-arming, wait for debounce window and nudge again
-    // lastActivityAt was reset by setDequeueActive — advance past debounce window
-    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
-    vi.advanceTimersByTime(6_000); // advance past 5s default
+    // Lockout should still be active
+    expect(getActivityFile(SID)!.kickLockedUntil).toBe(lockedUntil);
+  });
 
-    const beforeSecondTouch = getActivityFile(SID)!.lastTouchAt;
+  it("AC6: message arriving during lockout while agent polls → no additional kick", async () => {
+    setActivityFile(SID, makeState());
 
-    touchActivityFile(SID);
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    // Operator sends during lockout
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Still exactly one kick
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(true);
+  });
+
+  // ── AC 7: In-flight dequeue suppresses kicks ───────────────────────────────
+  it("AC7: operator message during inflight dequeue → zero appendFile calls", async () => {
+    setActivityFile(SID, makeState({ inflightDequeue: true }));
+
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+    // Lockout should NOT be set (kick was suppressed by inflightDequeue check)
+    expect(getActivityFile(SID)!.kickLockedUntil).toBeNull();
+  });
+
+  it("AC7: after dequeue ends (setDequeueActive false), next inbound fires kick", async () => {
+    setActivityFile(SID, makeState({ inflightDequeue: true }));
+
+    kickIfAllowed(SID, "operator", false); // suppressed — inflight
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+
+    setDequeueActive(SID, false);
+
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
+  });
+
+  // ── AC 8: Touch failure rollback ──────────────────────────────────────────
+  it("AC8: appendFile fails → lockout NOT set; next inbound retries", async () => {
+    vi.mocked(appendFile).mockRejectedValueOnce(
+      Object.assign(new Error("EPERM"), { code: "EPERM" }),
+    );
+    setActivityFile(SID, makeState());
+
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(false);           // fired again
-    expect(entry.lastTouchAt).not.toBe(beforeSecondTouch); // new touch timestamp
+    // Lockout should be rolled back after failure
+    expect(entry.kickLockedUntil).toBeNull();
+    expect(entry.touchInFlight).toBe(false);
+    // pendingRetryHandle should be set (retry scheduled)
+    expect(entry.pendingRetryHandle).not.toBeNull();
   });
 
-  it("8: per-session debounce override is respected via getKickDebounceMs", () => {
-    // Use a very long debounce (300 s)
-    sessionMocks.getKickDebounceMs.mockReturnValue(300_000);
-    const state = makeState({ lastActivityAt: Date.now() - 60_000 }); // 60 s ago
-    setActivityFile(SID, state);
+  it("AC8: retry succeeds → lockout is set after successful retry", async () => {
+    vi.mocked(appendFile)
+      .mockRejectedValueOnce(Object.assign(new Error("EPERM"), { code: "EPERM" }))
+      .mockResolvedValue(undefined); // retry succeeds
 
-    touchActivityFile(SID);
+    setActivityFile(SID, makeState());
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve(); // first attempt fails, retry scheduled
 
-    // 60s < 300s → still suppressed, timer pending
+    const entryAfterFail = getActivityFile(SID)!;
+    expect(entryAfterFail.kickLockedUntil).toBeNull();
+    expect(entryAfterFail.pendingRetryHandle).not.toBeNull();
+
+    // Fire the retry timer (1s delay)
+    vi.advanceTimersByTime(1_100);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    const entryAfterRetry = getActivityFile(SID)!;
+    expect(entryAfterRetry.kickLockedUntil).not.toBeNull(); // set after retry success
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+  });
+
+  // ── AC 9: Source classification ───────────────────────────────────────────
+  it("AC9: service message during inflight dequeue (inflightAtEnqueue=true) → no kick", async () => {
+    setActivityFile(SID, makeState());
+
+    kickIfAllowed(SID, "service", true); // inflightAtEnqueue=true
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+    expect(getActivityFile(SID)!.kickLockedUntil).toBeNull();
+  });
+
+  it("AC9: service message to idle session (inflightAtEnqueue=false) → kick fires", async () => {
+    setActivityFile(SID, makeState());
+
+    kickIfAllowed(SID, "service", false); // inflightAtEnqueue=false → idle session
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
+  });
+
+  it("AC9: reminder to idle session → kick fires", async () => {
+    setActivityFile(SID, makeState());
+
+    kickIfAllowed(SID, "reminder", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
+  });
+
+  it("AC9: bridge-internal event → no kick regardless of inflightAtEnqueue", async () => {
+    setActivityFile(SID, makeState());
+
+    kickIfAllowed(SID, "bridge-internal", false);
+    kickIfAllowed(SID, "bridge-internal", true);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+  });
+
+  // ── AC 10: Reconnect resets state ─────────────────────────────────────────
+  it("AC10: resetKickGateState clears lockout mid-lockout", async () => {
+    setActivityFile(SID, makeState());
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(getActivityFile(SID)!.kickLockedUntil).not.toBeNull();
+
+    resetKickGateState(SID);
+
     const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(true);
-    expect(entry.lastTouchAt).toBeNull();
-    expect(entry.debounceTimer).not.toBeNull();    // timer set for remaining 240s
+    expect(entry.kickLockedUntil).toBeNull();
+    expect(entry.kickPendingBecauseLocked).toBe(false);
+    expect(entry.touchInFlight).toBe(false);
   });
 
-  it("9: replaceActivityFile atomic swap — concurrent touchActivityFile reaches new entry", async () => {
-    // Simulate a touch that arrives while replaceActivityFile is mid-flight.
-    // Because _state is updated before any async cleanup, the touch must land
-    // on the new entry (newState), not be silently dropped.
-    const oldState = makeState({ lastActivityAt: Date.now() - 120_000 }); // long idle
-    setActivityFile(SID, oldState);
+  it("AC10: next inbound after resetKickGateState triggers immediate kick", async () => {
+    setActivityFile(SID, makeState());
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    vi.mocked(appendFile).mockClear();
 
-    const newState = {
-      filePath: "/tmp/test-activity-file-new",
-      tmcpOwned: false,
-      lastTouchAt: null,
-      debounceTimer: null,
-      lastActivityAt: Date.now() - 120_000,
-      inflightDequeue: false,
-      nudgeArmed: true,
-    };
+    resetKickGateState(SID);
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
-    // replaceActivityFile writes newState to _state synchronously before awaiting
-    // any cleanup, so a touch fired immediately after the call sees newState.
-    const replacePromise = replaceActivityFile(SID, newState);
-
-    // Touch fires while replace is still awaiting cleanup
-    touchActivityFile(SID);
-
-    await replacePromise;
-
-    // The entry in _state must be newState (not undefined, not oldState)
-    const entry = getActivityFile(SID)!;
-    expect(entry).toBe(newState);
-    // Touch reached the new entry — lastTouchAt was updated on newState
-    expect(entry.lastTouchAt).not.toBeNull();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
   });
 
-  it("11: recordActivityTouch during pending timer does not cancel kick (fix for 10-0893)", () => {
-    // Regression test: prior to the fix, recordActivityTouch cancelled the pending
-    // debounce timer on every tool call. An active agent making tool calls would
-    // never see a kick, even after receiving an inbound message.
-    sessionMocks.getKickDebounceMs.mockReturnValue(10_000);
-    const state = makeState({ lastActivityAt: Date.now() - 5_000 }); // 5s ago
-    setActivityFile(SID, state);
-
-    // Inbound arrives → within debounce window → timer scheduled
-    touchActivityFile(SID);
-    expect(getActivityFile(SID)!.debounceTimer).not.toBeNull();
-
-    // Agent makes several tool calls — must NOT cancel the timer
-    recordActivityTouch(SID);
-    recordActivityTouch(SID);
-    recordActivityTouch(SID);
-
-    // Timer must still be pending after tool calls
-    expect(getActivityFile(SID)!.debounceTimer).not.toBeNull();
-
-    // Advance past debounce window — kick must still fire
-    vi.advanceTimersByTime(15_000);
-    expect(getActivityFile(SID)!.lastTouchAt).not.toBeNull(); // kick landed
-    expect(getActivityFile(SID)!.nudgeArmed).toBe(false);    // cycle disarmed
-  });
-
-  it("10: replaceActivityFile timer generation check — old debounce timer does not kick after replacement", async () => {
-    // Schedule a debounce timer on the old entry. After replacement, the old
-    // timer fires but finds the current _state entry is no longer the old
-    // object — the generation guard (checking _state.get(sid) identity) must
-    // prevent a stale kick from landing.
-    sessionMocks.getKickDebounceMs.mockReturnValue(5_000); // 5 s debounce
-    const oldState = makeState({ lastActivityAt: Date.now() - 3_000 }); // 3 s ago
-    setActivityFile(SID, oldState);
-
-    // Trigger a touch so that a debounce timer is scheduled on oldState
-    touchActivityFile(SID);
-    expect(oldState.debounceTimer).not.toBeNull(); // timer is set
-
-    // Replace with a new entry (replaceActivityFile cancels the old timer)
-    const newState = {
-      filePath: "/tmp/test-activity-file-gen",
-      tmcpOwned: false,
-      lastTouchAt: null,
-      debounceTimer: null,
-      lastActivityAt: Date.now(), // freshly active — suppress any new kick
-      inflightDequeue: false,
-      nudgeArmed: true,
-    };
-
-    await replaceActivityFile(SID, newState);
-
-    // Old timer must have been cancelled by replaceActivityFile
-    expect(oldState.debounceTimer).toBeNull();
-
-    // Advance past the original debounce window — no stale kick should fire
-    vi.advanceTimersByTime(10_000);
-
-    // newState.lastTouchAt should remain null — the cancelled timer never fired
-    // and newState.lastActivityAt is fresh so no immediate kick either
-    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
-  });
-
-  it("12: handleSessionStopped cancels pending timer, re-arms nudge, and fires immediate touch", () => {
-    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
-    const state = makeState({ lastActivityAt: Date.now() - 5_000 }); // recently active
-    setActivityFile(SID, state);
-
-    // Schedule a pending timer (5 s elapsed of 60 s window)
-    touchActivityFile(SID);
-    expect(getActivityFile(SID)!.debounceTimer).not.toBeNull();
-    expect(getActivityFile(SID)!.nudgeArmed).toBe(true); // armed, timer pending
-
-    const result = handleSessionStopped(SID);
-
-    expect(result.noOp).toBe(false);
-    const entry = getActivityFile(SID)!;
-    expect(entry.debounceTimer).toBeNull();       // timer cancelled
-    expect(entry.nudgeArmed).toBe(true);           // re-armed
-    expect(entry.lastTouchAt).not.toBeNull();      // immediate touch fired
-  });
-
-  it("13: handleSessionStopped returns noOp: true when no activity file registered", () => {
+  // ── handleSessionStopped ──────────────────────────────────────────────────
+  it("handleSessionStopped: returns noOp when no file registered", () => {
     const result = handleSessionStopped(SID);
     expect(result.noOp).toBe(true);
   });
 
-  // --- AC4: Queue-conditional kick (task 10-0896) ---
-
-  it("AC4-1/AC6-1: stop + empty queue → no poke", () => {
-    queueMocks.hasPendingUserContent.mockReturnValue(false); // empty queue
-    const state = makeState({ lastActivityAt: Date.now() - 5_000 });
-    setActivityFile(SID, state);
+  it("handleSessionStopped: resets gate and kicks if queue has pending", async () => {
+    setActivityFile(SID, makeState({ kickLockedUntil: Date.now() + 300_000 }));
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
 
     const result = handleSessionStopped(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(result.noOp).toBe(false);
-    const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(true);   // re-armed
-    expect(entry.lastActivityAt).toBe(0);  // reset
-    expect(entry.lastTouchAt).toBeNull();  // no kick — empty queue
+    expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
   });
 
-  it("AC4-2/AC6-2: stop + pending message → poke fires", () => {
-    // default mock returns true
-    const state = makeState({ lastActivityAt: Date.now() - 5_000 });
-    setActivityFile(SID, state);
-
-    const result = handleSessionStopped(SID);
-
-    expect(result.noOp).toBe(false);
-    const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(true);          // re-armed
-    expect(entry.lastActivityAt).toBe(0);         // reset
-    expect(entry.lastTouchAt).not.toBeNull();     // kick fired
-  });
-
-  it("AC4-3: debounce expiry + empty queue → no kick, re-arms nudge", () => {
-    queueMocks.hasPendingUserContent.mockReturnValue(false); // empty queue
-    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
-    const state = makeState({ lastActivityAt: Date.now() - 2_000 }); // 2s of 5s elapsed
-    setActivityFile(SID, state);
-
-    touchActivityFile(SID); // schedules timer for remaining 3s
-    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
-
-    vi.advanceTimersByTime(4_000); // timer fires → re-evaluates touchActivityFile
-
-    const entry = getActivityFile(SID)!;
-    // AC4 refined: trailing-timer with empty queue re-arms nudge (no permanent un-arm)
-    expect(entry.nudgeArmed).toBe(true);
-    expect(entry.lastTouchAt).toBeNull();  // no kick — empty queue
-  });
-
-  it("AC4-4: debounce expiry + pending message → kick fires", () => {
-    // default mock returns true
-    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
-    const state = makeState({ lastActivityAt: Date.now() - 2_000 }); // 2s of 5s elapsed
-    setActivityFile(SID, state);
-
-    touchActivityFile(SID); // schedules timer
-    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
-
-    vi.advanceTimersByTime(4_000); // timer fires → kick
-
-    const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(false);
-    expect(entry.lastTouchAt).not.toBeNull(); // kick fired
-  });
-
-  // --- AC6 (refined): poke-debounce tests (task 10-0896 refined spec) ---
-
-  it("AC6-3: stop + pending + recent poke → poke fires (Stop overrides debounce)", () => {
-    // Stop hook is an active→inactive transition that resets the poke-debounce.
-    // A poke that was very recent must NOT suppress the stop-triggered poke.
-    // (In fake-timer mode two consecutive Date.now() calls return the same value,
-    //  so we verify only that a poke happened, not that the timestamp changed.)
-    const state = makeState({
-      lastActivityAt: Date.now() - 5_000,
-      lastTouchAt: Date.now(), // simulate a very recent poke
-    });
-    setActivityFile(SID, state);
-
-    // Queue has pending content (default mock = true)
-    const result = handleSessionStopped(SID);
-
-    expect(result.noOp).toBe(false);
-    const entry = getActivityFile(SID)!;
-    // Stop resets lastTouchAt=null then fires shouldPoke(forceReset=true) → poke lands
-    expect(entry.lastTouchAt).not.toBeNull(); // kick happened despite recent prior poke
-    // Verify the reset happened: lastActivityAt must be 0 (stop transition)
-    expect(entry.lastActivityAt).toBe(0);
-  });
-
-  it("AC6-6: inbound inactive + pending + recent poke (< debounce) → no poke", () => {
-    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
-    const recentPokeAt = Date.now();
-    // clearly inactive: lastActivityAt=0 → timeSinceActivity >> 60s → inactive check passes
-    const state = makeState({ lastActivityAt: 0, lastTouchAt: recentPokeAt });
-    setActivityFile(SID, state);
-
-    // Queue has pending content (default mock = true)
-    touchActivityFile(SID);
-
-    const entry = getActivityFile(SID)!;
-    // Poke-debounce prevents a second poke so soon after the first
-    expect(entry.lastTouchAt).toBe(recentPokeAt); // unchanged — no new poke
-  });
-
-  it("AC6-7: inbound inactive + pending + stale poke (>= debounce) → poke fires", () => {
-    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
-    const stalePokeAt = Date.now() - 60_000; // exactly at debounce boundary
-    const state = makeState({ lastActivityAt: 0, lastTouchAt: stalePokeAt });
-    setActivityFile(SID, state);
-
-    // Queue has pending content (default mock = true)
-    touchActivityFile(SID);
-
-    const entry = getActivityFile(SID)!;
-    expect(entry.lastTouchAt).not.toBe(stalePokeAt); // new poke timestamp
-    expect(entry.lastTouchAt).not.toBeNull();
-  });
-
-  it("AC6-8: active→inactive transition (dequeue complete) resets poke-debounce", () => {
-    // Use a short kick-debounce so we can advance past it in the test
-    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
-    // Session starts with a recent poke (lastTouchAt within debounce window)
-    const state = makeState({ lastActivityAt: Date.now() - 2_000, lastTouchAt: Date.now() });
-    setActivityFile(SID, state);
-
-    // Simulate dequeue complete — must reset poke-debounce (lastTouchAt=null)
-    setDequeueActive(SID, false);
-
-    const afterDequeue = getActivityFile(SID)!;
-    expect(afterDequeue.lastTouchAt).toBeNull(); // poke-debounce reset by dequeue
-
-    // Advance past the kick-debounce window so the session is classified inactive
-    vi.advanceTimersByTime(6_000);
-
-    // Queue has pending content (default mock = true); first poke after reset is free
-    touchActivityFile(SID);
-
-    const entry = getActivityFile(SID)!;
-    expect(entry.lastTouchAt).not.toBeNull(); // poke fired — no poke-debounce wait
-  });
-
-  it("AC4-5/AC6-9: stop resets lastActivityAt so next touch with pending kicks immediately", () => {
-    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
-    const state = makeState({ lastActivityAt: Date.now() - 5_000 }); // recently active
-    setActivityFile(SID, state);
-
-    // Stop with empty queue — no kick, but lastActivityAt is reset to 0
+  it("handleSessionStopped: resets gate but does NOT kick if queue empty", async () => {
+    setActivityFile(SID, makeState({ kickLockedUntil: Date.now() + 300_000 }));
     queueMocks.hasPendingUserContent.mockReturnValue(false);
+
     handleSessionStopped(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
-    expect(getActivityFile(SID)!.lastTouchAt).toBeNull();
-    expect(getActivityFile(SID)!.lastActivityAt).toBe(0); // confirmed reset
-
-    // New message arrives: queue now has pending content
-    queueMocks.hasPendingUserContent.mockReturnValue(true);
-    touchActivityFile(SID); // lastActivityAt=0 → timeSinceActivity >> debounce → immediate kick
-
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
     const entry = getActivityFile(SID)!;
-    expect(entry.lastTouchAt).not.toBeNull(); // kicked immediately, no 60s wait
-    expect(entry.nudgeArmed).toBe(false);     // disarmed after kick
+    expect(entry.kickLockedUntil).toBeNull(); // reset, not kicked
   });
 
-  it("AC6-4: inbound while inactive + empty queue → no poke", () => {
-    queueMocks.hasPendingUserContent.mockReturnValue(false); // empty queue
-    const state = makeState({ lastActivityAt: 0, nudgeArmed: true }); // long idle = inactive
-    setActivityFile(SID, state);
+  // ── replaceActivityFile ────────────────────────────────────────────────────
+  it("replaceActivityFile: carries over gate state from old entry", async () => {
+    const oldState = makeState({ kickLockedUntil: Date.now() + 300_000 });
+    setActivityFile(SID, oldState);
 
-    touchActivityFile(SID);
+    const newState = makeState({ filePath: "/tmp/new-file" });
+    await replaceActivityFile(SID, newState);
 
     const entry = getActivityFile(SID)!;
-    expect(entry.lastTouchAt).toBeNull();   // no poke fired
-    expect(entry.nudgeArmed).toBe(true);    // re-armed because no poke resulted
+    expect(entry).toBe(newState);
+    expect(entry.kickLockedUntil).toBe(oldState.kickLockedUntil); // carried over
   });
 
-  it("AC6-5: inbound while inactive + pending + cold debounce → poke fires", () => {
-    // default mock returns true (pending content)
-    const state = makeState({ lastActivityAt: 0, lastTouchAt: null }); // long idle + cold debounce
-    setActivityFile(SID, state);
+  it("replaceActivityFile: concurrent kickIfAllowed reaches new entry", async () => {
+    const oldState = makeState({ kickLockedUntil: null }); // no lockout
+    setActivityFile(SID, oldState);
 
-    touchActivityFile(SID);
+    const newState = makeState({ filePath: "/tmp/new-file", kickLockedUntil: null });
+    const replacePromise = replaceActivityFile(SID, newState);
 
+    // Touch fires while replace is still awaiting cleanup
+    kickIfAllowed(SID, "operator", false);
+
+    await replacePromise;
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // newState should have been kicked
     const entry = getActivityFile(SID)!;
-    expect(entry.lastTouchAt).not.toBeNull(); // poke fired
-  });
-
-  it("AC6-10: trailing-timer with empty queue → re-arms nudgeArmed", () => {
-    // A timer is scheduled because an inbound arrived while the session was active.
-    // If the queue is drained before the timer fires, the timer should:
-    //   - not poke (empty queue)
-    //   - re-arm nudgeArmed so the next actual inbound can kick
-    //   - clear lastTouchAt so that next inbound gets a fresh poke window
-    sessionMocks.getKickDebounceMs.mockReturnValue(5_000);
-    // Session was recently active: 2s into 5s window → timer will be scheduled
-    const state = makeState({ lastActivityAt: Date.now() - 2_000, lastTouchAt: Date.now() });
-    setActivityFile(SID, state);
-
-    // Inbound arrives → still active → schedules trailing timer
-    queueMocks.hasPendingUserContent.mockReturnValue(true);
-    touchActivityFile(SID);
-    expect(getActivityFile(SID)!.debounceTimer).not.toBeNull(); // timer scheduled
-
-    // Queue is drained before timer fires
-    queueMocks.hasPendingUserContent.mockReturnValue(false);
-
-    // Timer fires
-    vi.advanceTimersByTime(4_000);
-
-    const entry = getActivityFile(SID)!;
-    expect(entry.nudgeArmed).toBe(true);    // re-armed (AC4 refined)
-    expect(entry.lastTouchAt).toBeNull();   // poke-debounce reset (AC2 trailing-timer reset)
-    expect(entry.debounceTimer).toBeNull(); // no pending timer
+    expect(entry).toBe(newState);
+    expect(entry.kickLockedUntil).not.toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// AC7: activity/file/create — ALREADY_REGISTERED guard (task 10-0900)
+// activity/file/create — ALREADY_REGISTERED guard (preserved from prior task)
 // ---------------------------------------------------------------------------
 
 describe("activity/file/create — ALREADY_REGISTERED guard", () => {
@@ -587,7 +472,7 @@ describe("activity/file/create — ALREADY_REGISTERED guard", () => {
     resetActivityFileStateForTest();
     gateMocks.requireAuth.mockReturnValue(SID);
     queueMocks.hasPendingUserContent.mockReturnValue(true);
-    sessionMocks.getKickDebounceMs.mockReturnValue(60_000);
+    sessionMocks.getKickLockoutMs.mockReturnValue(LOCKOUT_MS);
   });
 
   afterEach(() => {
@@ -618,15 +503,14 @@ describe("activity/file/create — ALREADY_REGISTERED guard", () => {
     await handleActivityFileCreate({ token: 99 }); // second call — must fail
 
     const entry = getActivityFile(SID)!;
-    expect(entry.filePath).toBe(firstPath); // original path preserved
-    expect(entry.tmcpOwned).toBe(true);     // original ownership preserved
+    expect(entry.filePath).toBe(firstPath);
+    expect(entry.tmcpOwned).toBe(true);
   });
 
   it("AC7d: edit works after failed create", async () => {
-    await handleActivityFileCreate({ token: 99 }); // first create — succeeds
-    await handleActivityFileCreate({ token: 99 }); // second create — fails
+    await handleActivityFileCreate({ token: 99 });
+    await handleActivityFileCreate({ token: 99 }); // fails
 
-    // Edit (TMCP-generated path) must succeed despite the prior failed create
     const editResult = await handleActivityFileEdit({ token: 99 });
     expect((editResult as { isError?: true }).isError).toBeUndefined();
     const data = JSON.parse(editResult.content[0].text);
@@ -636,35 +520,29 @@ describe("activity/file/create — ALREADY_REGISTERED guard", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ENOENT recovery tests (task 30-0891)
-// Isolated in their own describe so mock call counts start clean for each test.
+// appendNewline ENOENT recovery
 // ---------------------------------------------------------------------------
 
 describe("appendNewline ENOENT recovery", () => {
   beforeEach(async () => {
-    // Drain all pending microtasks from prior tests (fire-and-forget appendNewline chains).
     for (let i = 0; i < 50; i++) await Promise.resolve();
-    // Reset ALL mock call histories including the console.warn spy.
-    // (clearAllMocks resets call counts but preserves mock implementations.)
     vi.clearAllMocks();
     resetActivityFileStateForTest();
     queueMocks.hasPendingUserContent.mockReturnValue(true);
+    sessionMocks.getKickLockoutMs.mockReturnValue(LOCKOUT_MS);
   });
 
   afterEach(async () => {
-    // Flush microtasks generated by this test so the next test's spy starts clean.
     for (let i = 0; i < 20; i++) await Promise.resolve();
   });
 
-  it("emits console.warn and recreates the file when activity file is missing (ENOENT)", async () => {
+  it("emits console.warn and recreates the file on ENOENT", async () => {
     const enoentErr = Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
     vi.mocked(appendFile).mockRejectedValueOnce(enoentErr);
 
-    const state = makeState({ lastActivityAt: Date.now() - 120_000 });
-    setActivityFile(SID, state);
-    touchActivityFile(SID); // fires doTouch → void appendNewline(...)
+    setActivityFile(SID, makeState());
+    kickIfAllowed(SID, "operator", false);
 
-    // Flush the five-level async chain (appendFile→catch→mkdir→open→close→appendFile)
     for (let i = 0; i < 10; i++) await Promise.resolve();
 
     expect(console.warn).toHaveBeenCalledOnce();
@@ -672,19 +550,18 @@ describe("appendNewline ENOENT recovery", () => {
       expect.stringContaining("file missing — recreating at registered path"),
     );
     expect(vi.mocked(mkdir)).toHaveBeenCalledWith(expect.any(String), { recursive: true });
-    expect(vi.mocked(open)).toHaveBeenCalledWith(state.filePath, "a", 0o600);
-    // appendFile: 1st call (ENOENT) + 1 retry after recreation = 2
+    expect(vi.mocked(open)).toHaveBeenCalledWith(makeState().filePath, "a", 0o600);
+    // appendFile: 1 (ENOENT) + 1 retry after recreation = 2
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
   });
 
-  it("emits a second console.warn when file recreation itself fails", async () => {
+  it("emits second console.warn when recreation itself fails", async () => {
     const enoentErr = Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" });
     vi.mocked(appendFile).mockRejectedValueOnce(enoentErr);
     vi.mocked(mkdir).mockRejectedValueOnce(new Error("EPERM: permission denied"));
 
-    const state = makeState({ lastActivityAt: Date.now() - 120_000 });
-    setActivityFile(SID, state);
-    touchActivityFile(SID);
+    setActivityFile(SID, makeState());
+    kickIfAllowed(SID, "operator", false);
 
     for (let i = 0; i < 10; i++) await Promise.resolve();
 
@@ -693,14 +570,29 @@ describe("appendNewline ENOENT recovery", () => {
     expect(vi.mocked(console.warn).mock.calls[1][0]).toMatch(/recreation failed/);
   });
 
-  it("does not warn and uses a single appendFile call when the file exists (normal touch)", async () => {
-    const state = makeState({ lastActivityAt: Date.now() - 120_000 });
-    setActivityFile(SID, state);
-    touchActivityFile(SID);
+  it("no warn, single appendFile call when file exists (normal touch)", async () => {
+    setActivityFile(SID, makeState());
+    kickIfAllowed(SID, "operator", false);
 
     for (let i = 0; i < 10; i++) await Promise.resolve();
 
     expect(console.warn).not.toHaveBeenCalled();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+  });
+
+  it("ENOENT recovery: lockout is rolled back when recreation fails", async () => {
+    const enoentErr = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    vi.mocked(appendFile).mockRejectedValueOnce(enoentErr);
+    vi.mocked(mkdir).mockRejectedValueOnce(new Error("EPERM"));
+
+    setActivityFile(SID, makeState());
+    kickIfAllowed(SID, "operator", false);
+
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // Touch ultimately failed → lockout must be rolled back
+    const entry = getActivityFile(SID)!;
+    expect(entry.kickLockedUntil).toBeNull();
+    expect(entry.touchInFlight).toBe(false);
   });
 });

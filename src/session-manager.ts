@@ -19,11 +19,16 @@ export interface Session {
   announcementMsgId?: number;
   reauthDialogMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
-  kickDebounceMs?: number; // per-session activity-file kick debounce window (ms), undefined = use default (60_000)
+  kickDebounceMs?: number; // deprecated — translated to kickLockoutMs on use via profile/kick-debounce
+  kickLockoutMs?: number; // per-session post-kick lockout window (ms), undefined = use default (300_000)
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
   pendingEnvelopeHint?: string;
   silenceThresholdS?: number;
   firstUseHintsSeen?: Set<string>;
+  /** Set to true after the first dequeue call on a child session. Gates onboarding injection. */
+  firstDequeueOccurred?: boolean;
+  /** Stores the EXIT_STATUS payload emitted by the sub-agent before self-revocation. */
+  exit_status?: string;
   /** Explicitly-set name tag string. When undefined, callers fall back to defaultNameTag(session). */
   name_tag?: string;
   /**
@@ -38,6 +43,16 @@ export interface Session {
    * "compacted" notify (one-shot per compaction cycle).
    */
   hasCompacted?: boolean;
+  /** SID of the parent session that spawned this one. Undefined for root sessions. */
+  parent_sid?: number;
+  /**
+   * Capability level for this session.
+   * - `'full'` (default): no restrictions.
+   * - `'gather'`: may not call session/start, session/spawn-child, or commit-class actions.
+   * - `'read-only'`: may only call dequeue; all action paths are denied.
+   * Undefined is treated as `'full'`.
+   */
+  child_capability?: "read-only" | "gather" | "full";
 }
 
 /** Public view returned by `listSessions` — no token suffix. */
@@ -327,6 +342,23 @@ export function setKickDebounceMs(sid: number, ms: number): void {
   if (session) session.kickDebounceMs = ms;
 }
 
+/**
+ * Get the per-session post-kick lockout window (ms).
+ * Falls back to 300 000 ms (5 min) if not set.
+ */
+export function getKickLockoutMs(sid: number): number {
+  return _sessions.get(sid)?.kickLockoutMs ?? 300_000;
+}
+
+/**
+ * Set the per-session post-kick lockout window (ms).
+ * No-op if the session does not exist.
+ */
+export function setKickLockoutMs(sid: number, ms: number): void {
+  const session = _sessions.get(sid);
+  if (session) session.kickLockoutMs = ms;
+}
+
 /** Set a pending envelope hint to be included on the next dequeue response for this session. */
 export function setSilenceHint(sid: number, hint: string): void {
   const s = _sessions.get(sid);
@@ -506,6 +538,27 @@ export function clearHasCompacted(sid: number): void {
 /** Return true if a `compacted` event has fired and the notify hasn't fired yet. */
 export function getHasCompacted(sid: number): boolean {
   return !!_sessions.get(sid)?.hasCompacted;
+}
+
+// ── Sub-session fields ─────────────────────────────────────
+
+/** Set the parent SID on a child session. No-op if session does not exist. */
+export function setSessionParentSid(sid: number, parentSid: number): void {
+  const s = _sessions.get(sid);
+  if (s) s.parent_sid = parentSid;
+}
+
+/**
+ * Set the capability level on a session.
+ * Root sessions default to 'full'; child sessions default to 'gather'.
+ * No-op if session does not exist.
+ */
+export function setSessionCapability(
+  sid: number,
+  capability: "read-only" | "gather" | "full",
+): void {
+  const s = _sessions.get(sid);
+  if (s) s.child_capability = capability;
 }
 
 // ── Name Tag ───────────────────────────────────────────────

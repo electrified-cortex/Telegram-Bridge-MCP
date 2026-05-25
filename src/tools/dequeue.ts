@@ -7,7 +7,8 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, getActivityFile } from "./activity/file-state.js";
+import { setDequeueActive, releaseKickLockout } from "./activity/file-state.js";
+import { resetChannelCooldown } from "../channel.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -18,6 +19,8 @@ import {
   popActiveReminders,
   getSoonestDeferredMs,
   buildReminderEvent,
+  popFireableEventReminders,
+  getSoonestEventReminderMs,
 } from "../reminder-state.js";
 import { getGovernorSid } from "../routing-mode.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
@@ -94,12 +97,6 @@ const _timeoutHintShownForSession = new Set<number>();
  */
 const _lastStaleWarningSentAt = new Map<number, number>();
 
-/**
- * Tracks which sessions have already received the ONBOARDING_ACTIVITY_FILE_HINT.
- * The hint fires once per session on first dequeue when no activity file is registered.
- */
-const _activityFileHintShownForSession = new Set<number>();
-
 /** Exported for test reset only — do not call in production code. */
 export function _resetStaleWarningMapForTest(): void {
   _lastStaleWarningSentAt.clear();
@@ -115,9 +112,9 @@ export function _resetFirstDequeueHintForTest(): void {
   // No-op: first-dequeue hint removed.
 }
 
-/** Exported for test reset only — do not call in production code. */
+/** Exported for test reset only — kept for backward compat with tests. */
 export function _resetActivityFileHintForTest(): void {
-  _activityFileHintShownForSession.clear();
+  // No-op: activity-file hint removed; LOOP_PATTERN now covers it.
 }
 
 /**
@@ -144,19 +141,55 @@ export async function runDrainLoop(
     };
   }
 
+  // R5: First-dequeue detection for child sessions — inject onboarding before any content drain.
+  // Checked here: after session existence confirmed, before setDequeueActive or content reads.
+  const _childSession = getSession(sid);
+  if (_childSession?.parent_sid && !_childSession.firstDequeueOccurred) {
+    _childSession.firstDequeueOccurred = true;
+    const _childToken = _childSession.sid * 1_000_000 + _childSession.suffix;
+    const _topicName = _childSession.name;
+    const _parentSid = _childSession.parent_sid;
+    const _parentSession = getSession(_parentSid);
+    const _parentName = _parentSession?.name ?? "";
+
+    // R2: pre-enqueue three onboarding messages into the child SID's queue
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.CHILD_ONBOARDING_ROLE.text(_topicName, _parentSid, _parentName),
+      SERVICE_MESSAGES.CHILD_ONBOARDING_ROLE.eventType,
+    );
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.CHILD_ONBOARDING_LOOP.text(_childToken),
+      SERVICE_MESSAGES.CHILD_ONBOARDING_LOOP.eventType,
+    );
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.CHILD_ONBOARDING_EXIT_PROTOCOL.text(_childToken),
+      SERVICE_MESSAGES.CHILD_ONBOARDING_EXIT_PROTOCOL.eventType,
+    );
+
+    // R4: fire CHILD_FIRST_DEQUEUE_CONFIRMED to parent SID (skip silently if parent gone)
+    if (_parentSession) {
+      deliverServiceMessage(
+        _parentSid,
+        SERVICE_MESSAGES.CHILD_FIRST_DEQUEUE_CONFIRMED.text(sid, _childSession.name, _topicName),
+        SERVICE_MESSAGES.CHILD_FIRST_DEQUEUE_CONFIRMED.eventType,
+      );
+    }
+  }
+
   // Mark this session as having an in-flight dequeue — suppresses activity-file kicks
   // while the agent is actively waiting for messages.
   // Only set after confirming the session exists so every path through the
   // try/finally below is guaranteed to call setDequeueActive(sid, false).
   setDequeueActive(sid, true);
 
-  // On the first dequeue call for a session with no activity file registered, surface
-  // a service message nudging the agent to set one up. The message lands in the queue
-  // before the drain so it appears early in the dequeue stream.
-  if (!_activityFileHintShownForSession.has(sid) && !getActivityFile(sid)) {
-    _activityFileHintShownForSession.add(sid);
-    deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_ACTIVITY_FILE_HINT);
-  }
+  // ONBOARDING_LOOP_PATTERN already covers the activity-file guidance at session
+  // start. The redundant activity-file hint on first dequeue is intentionally
+  // removed — the loop-pattern message says steps 1 and 2 once; the follow-up
+  // ACTIVITY_FILE_MONITOR_INSTRUCTIONS message lands when the agent actually
+  // calls activity/file/create.
 
   const sq = sessionQueue;
 
@@ -217,6 +250,12 @@ export async function runDrainLoop(
     return result;
   }
 
+  // Promote deferred reminders whose delay has elapsed before any early return.
+  // Without this, a busy session (always has immediate messages) or an agent
+  // using max_wait:0 exclusively would never call promoteDeferred, leaving a
+  // deferred reminder stuck in that state indefinitely even at fires_in_seconds=0.
+  promoteDeferred(sid);
+
   // Try immediate batch dequeue
   let batch = dequeueBatchAny();
   if (batch.length > 0) {
@@ -224,20 +263,37 @@ export async function runDrainLoop(
     const result = buildBatchResult(batch);
     resyncActiveSession();
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-    // Regression fix for 10-0895 (post-7.4.2 kick-still-broken): the
-    // immediate-batch return path is outside the try/finally below, so we
-    // must clear inflightDequeue here. Without this, the flag stays stuck
-    // at true and every subsequent inbound message hits the
-    // entry.inflightDequeue gate in touchActivityFile and is silently
-    // suppressed — no kicks ever fire.
+    // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
+    releaseKickLockout(sid); // content-returning exit
+    resetChannelCooldown(sid);
     return result;
   }
 
+  // Check event-triggered reminders (last_sent / last_received) before timeout=0 return.
+  // These fire based on elapsed time since a qualifying event — no idle threshold required.
+  {
+    const eventFired = popFireableEventReminders(sid);
+    if (eventFired.length > 0) {
+      const sessionName = getSession(sid)?.name ?? "";
+      for (const reminder of eventFired) {
+        recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
+      }
+      resyncActiveSession();
+      const reminderPending = pendingCountAny();
+      const reminderResult: Record<string, unknown> = {
+        updates: eventFired.map(buildReminderEvent),
+        ...(reminderPending > 0 ? { pending: reminderPending } : {}),
+      };
+      setDequeueActive(sid, false);
+      releaseKickLockout(sid);
+      resetChannelCooldown(sid);
+      return reminderResult;
+    }
+  }
+
   if (timeout === 0) {
-    // Regression fix for 10-0895 (post-7.4.2 kick-still-broken): see comment
-    // above on the batch-return path. The timeout=0 empty-poll return also
-    // bypasses the try/finally below.
+    // Timeout=0 empty-poll: not content-returning — do NOT release kick lockout.
     setDequeueActive(sid, false);
     return { pending: pendingCountAny() };
   }
@@ -249,6 +305,9 @@ export async function runDrainLoop(
   const reminderIdleStart = Date.now();
   let _staleWarnSent = false;
   setDequeueIdle(sid, true);
+  // Tracks whether this dequeue call exits via a content-returning path.
+  // Only content-returning exits release the kick lockout; timeout exits skip.
+  let _lockoutRelease = false;
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) break;
@@ -265,6 +324,7 @@ export async function runDrainLoop(
             _lastStaleWarningSentAt.set(sid, Date.now());
             resyncActiveSession();
             dlog("queue", `dequeue stale animation warning sid=${sid} message_id=${_animStatus.message_id}`);
+            _lockoutRelease = true;
             return {
               updates: [{
                 event: "animation_stale_warning",
@@ -278,6 +338,26 @@ export async function runDrainLoop(
 
       // Promote any deferred reminders whose delay has elapsed.
       promoteDeferred(sid);
+
+      // Check event-triggered reminders (last_sent / last_received) — no idle threshold.
+      {
+        const eventFired = popFireableEventReminders(sid);
+        if (eventFired.length > 0) {
+          const sessionName = getSession(sid)?.name ?? "";
+          for (const reminder of eventFired) {
+            recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
+          }
+          resyncActiveSession();
+          const reminderPending = pendingCountAny();
+          const reminderResult: Record<string, unknown> = {
+            updates: eventFired.map(buildReminderEvent),
+            ...(reminderPending > 0 ? { pending: reminderPending } : {}),
+          };
+          dlog("queue", `dequeue returning sid=${sid} batch=${eventFired.length} event-reminder payloadLen=${JSON.stringify(reminderResult).length}`);
+          _lockoutRelease = true;
+          return reminderResult;
+        }
+      }
 
       const now = Date.now();
       const idleDuration = now - reminderIdleStart;
@@ -300,18 +380,20 @@ export async function runDrainLoop(
         // responseFormat is not applied here: the reminder response only contains
         // `updates` (real event data) and optionally `pending` (when > 0), neither
         // of which are compact-suppressible fields.
+        _lockoutRelease = true;
         return reminderResult;
       }
 
       const remaining = deadline - now;
       if (remaining <= 0) break;
 
-      // Wake up as soon as the earliest of: reminder idle threshold, next deferred promotion, or timeout.
+      // Wake up as soon as the earliest of: event reminder fire, idle threshold, next deferred promotion, or timeout.
       const timeToFireMs = activeReminders.length > 0
         ? Math.max(0, REMINDER_IDLE_THRESHOLD_MS - idleDuration)
         : Infinity;
       const deferredMs = getSoonestDeferredMs(sid);
-      const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
+      const eventReminderMs = getSoonestEventReminderMs(sid);
+      const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity, eventReminderMs ?? Infinity);
       const useVersionedWait = hasVersionedWaitAny(sq);
       const wakeVersion = useVersionedWait ? getWakeVersionAny(sq) : 0;
 
@@ -324,6 +406,7 @@ export async function runDrainLoop(
           const result = buildBatchResult(batch);
           resyncActiveSession();
           dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
+          _lockoutRelease = true;
           return result;
         }
       }
@@ -344,6 +427,7 @@ export async function runDrainLoop(
         const result = buildBatchResult(batch);
         resyncActiveSession();
         dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
+        _lockoutRelease = true;
         return result;
       }
     }
@@ -357,8 +441,12 @@ export async function runDrainLoop(
     // is still waiting. This is acceptable — the session is not fully idle in
     // that case. A refcount would be needed to handle it precisely.
     setDequeueIdle(sid, false);
-    // Re-arm activity-file nudge cycle and update lastActivityAt.
     setDequeueActive(sid, false);
+    // Release kick lockout only on content-returning exits; timeout exits skip.
+    if (_lockoutRelease) {
+      releaseKickLockout(sid);
+      resetChannelCooldown(sid);
+    }
   }
 }
 
