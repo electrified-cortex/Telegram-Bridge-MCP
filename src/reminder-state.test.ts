@@ -1086,6 +1086,165 @@ describe("reminder-state", () => {
     });
   });
 
+  // ── only_if_silent flag ───────────────────────────────────────────────────
+
+  describe("only_if_silent flag (last_received)", () => {
+    it("AC1: registers last_received reminder with only_if_silent: true", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "ois1", text: "Quiet?", delay_seconds: 180, recurring: true, trigger: "last_received", mode: "operator", only_if_silent: true });
+        expect(r.trigger).toBe("last_received");
+        expect(r.mode).toBe("operator");
+        expect(r.only_if_silent).toBe(true);
+        expect(r.state).toBe("event_pending");
+      });
+    });
+
+    it("AC2: default only_if_silent=false fires on elapsed time alone (existing behavior preserved)", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr1", text: "No flag", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all" });
+      });
+      const recvTime = Date.now() - 15_000;
+      recordLastReceivedAt(1, "all", recvTime);
+      // Send AFTER inbound — should NOT suppress because only_if_silent is false
+      recordLastSentAt(1, Date.now() - 5_000);
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+
+    it("AC3: only_if_silent=true fires when elapsed AND no reply since inbound", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois1", text: "Quiet?", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      const recvTime = Date.now() - 15_000;
+      recordLastReceivedAt(1, "all", recvTime);
+      // No send at all → lastSentAt is undefined → fire
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+
+    it("AC3: only_if_silent=true with send BEFORE inbound still fires (send predates inbound)", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois1", text: "Quiet?", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      const sendTime = Date.now() - 30_000;
+      const recvTime = Date.now() - 15_000; // inbound AFTER send
+      recordLastSentAt(1, sendTime);
+      recordLastReceivedAt(1, "all", recvTime);
+      // lastSentAt < lastReceivedAt → agent has NOT replied since inbound → fire
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+
+    it("AC4: outbound send AFTER last qualifying inbound suppresses the reminder", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois1", text: "Quiet?", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      const recvTime = Date.now() - 15_000;
+      recordLastReceivedAt(1, "all", recvTime);
+      // Send after inbound → suppress
+      recordLastSentAt(1, Date.now() - 5_000); // sent 5s ago, after inbound at 15s ago
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("AC4: suppression lifted by next qualifying inbound after the send", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois1", text: "Quiet?", delay_seconds: 10, recurring: true, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      // Inbound → sent after → new inbound → should be fireable again
+      const recv1 = Date.now() - 30_000;
+      recordLastReceivedAt(1, "all", recv1);
+      recordLastSentAt(1, Date.now() - 20_000); // replied
+      // Still suppressed for recv1 because send >= recv1
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+
+      // New inbound after the send
+      const recv2 = Date.now() - 15_000; // newer than send
+      recordLastReceivedAt(1, "all", recv2);
+      // Now lastSentAt (20s ago) < recv2 (15s ago) → fire
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+
+    it("AC5: two last_received reminders with different only_if_silent coexist independently", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois-t", text: "Time only", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all", only_if_silent: false });
+        addReminder({ id: "ois-s", text: "Silent only", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      const recvTime = Date.now() - 15_000;
+      recordLastReceivedAt(1, "all", recvTime);
+      // Send after inbound — suppresses only_if_silent=true, not the other
+      recordLastSentAt(1, Date.now() - 5_000);
+
+      const fired = getFireableEventReminders(1);
+      expect(fired).toHaveLength(1);
+      expect(fired[0].id).toBe("ois-t");
+    });
+
+    it("AC6: persistent re-arm — only_if_silent recurring reminder re-arms on next qualifying inbound", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois1", text: "Quiet?", delay_seconds: 10, recurring: true, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      // First qualifying inbound, no send → fires
+      const recv1 = Date.now() - 15_000;
+      recordLastReceivedAt(1, "all", recv1);
+      const fired1 = popFireableEventReminders(1);
+      expect(fired1).toHaveLength(1);
+
+      // Still in list (recurring), but won't re-fire for same event
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+
+      // New qualifying inbound (no send after it) → re-arms
+      const recv2 = Date.now() - 12_000;
+      recordLastReceivedAt(1, "all", recv2);
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+
+    it("AC7: recurring=false one-off only_if_silent reminder fires once then is removed", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois-once", text: "Once", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      recordLastReceivedAt(1, "all", Date.now() - 15_000);
+      const fired = popFireableEventReminders(1);
+      expect(fired).toHaveLength(1);
+      runInSessionContext(1, () => {
+        expect(listReminders()).toHaveLength(0);
+      });
+    });
+
+    it("AC8: reminder/list returns the only_if_silent flag value", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois1", text: "With flag", delay_seconds: 60, recurring: true, trigger: "last_received", mode: "all", only_if_silent: true });
+        addReminder({ id: "ois2", text: "Without flag", delay_seconds: 60, recurring: true, trigger: "last_received", mode: "all" });
+        const list = listReminders();
+        const withFlag = list.find(r => r.id === "ois1");
+        const withoutFlag = list.find(r => r.id === "ois2");
+        expect(withFlag?.only_if_silent).toBe(true);
+        expect(withoutFlag?.only_if_silent).toBeUndefined();
+      });
+    });
+
+    it("reminderContentHash — different only_if_silent produces different hash", () => {
+      const hFalse = reminderContentHash("Quiet?", true, "last_received", "all", false);
+      const hTrue = reminderContentHash("Quiet?", true, "last_received", "all", true);
+      expect(hFalse).not.toBe(hTrue);
+    });
+
+    it("only_if_silent=true with null lastSentAt (never sent) fires when elapsed", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois1", text: "Never sent", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      // Inbound elapsed, no send ever
+      recordLastReceivedAt(1, "all", Date.now() - 15_000);
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+
+    it("only_if_silent=true — send exactly at lastReceivedAt timestamp suppresses", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ois1", text: "Exact", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all", only_if_silent: true });
+      });
+      const ts = Date.now() - 15_000;
+      recordLastReceivedAt(1, "all", ts);
+      recordLastSentAt(1, ts); // same instant → >= → suppress
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+  });
+
   // ── AC14: reconnect catch-up ──────────────────────────────────────────────
 
   describe("AC14: reconnect catch-up — fires immediately if elapsed > delay_seconds", () => {
