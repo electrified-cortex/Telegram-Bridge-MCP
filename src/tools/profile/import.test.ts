@@ -157,6 +157,20 @@ describe("import_profile tool", () => {
     expect(data.applied).toEqual({});
   });
 
+  it("autoload flag is reflected in import result when provided as true", async () => {
+    const result = await call({ autoload: true, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ imported: boolean; autoload: boolean }>(result);
+    expect(data.autoload).toBe(true);
+  });
+
+  it("autoload defaults to false when not provided", async () => {
+    const result = await call({ token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ imported: boolean; autoload: boolean }>(result);
+    expect(data.autoload).toBe(false);
+  });
+
   it("recurring defaults to false when omitted from reminders", async () => {
     mocks.addReminder.mockImplementation((r: { id: string; text: string; delay_seconds: number; recurring: boolean }) => ({
       ...r, state: "active", created_at: Date.now(), activated_at: Date.now(),

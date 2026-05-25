@@ -146,6 +146,31 @@ describe("save_profile tool", () => {
     expect(reminders[0]).not.toHaveProperty("disabled");
   });
 
+  it("persists autoload: true when flag is provided", async () => {
+    mocks.writeProfile.mockReset();
+    const result = await call({ key: "Test", autoload: true, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).toHaveProperty("autoload", true);
+    const data = parseResult(result);
+    expect(data.autoload).toBe(true);
+    expect(data.sections).toContain("autoload");
+  });
+
+  it("does NOT persist autoload field when flag is false (default)", async () => {
+    mocks.writeProfile.mockReset();
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).not.toHaveProperty("autoload");
+  });
+
+  it("autoload defaults to false when omitted — result returns false", async () => {
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.autoload).toBe(false);
+  });
+
   it("rejects path keys (containing /)", async () => {
     const result = await call({ key: "profiles/Test", token: 1123456 });
     expect(isError(result)).toBe(true);

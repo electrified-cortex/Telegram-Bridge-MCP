@@ -11,13 +11,14 @@ const DESCRIPTION =
   "(sparse merge). Use this to load profiles from external sources or to apply ad-hoc " +
   "configuration without saving a profile to disk first.";
 
-export function handleImportProfile({ voice, voice_speed, animation_default, animation_presets, reminders, name_tag, token }: {
+export function handleImportProfile({ voice, voice_speed, animation_default, animation_presets, reminders, name_tag, autoload, token }: {
   voice?: string;
   voice_speed?: number;
   animation_default?: string[];
   animation_presets?: Record<string, string[]>;
   reminders?: Array<{ text: string; delay_seconds: number; recurring: boolean; trigger?: "time" | "startup"; disabled?: boolean }>;
   name_tag?: string;
+  autoload?: boolean;
   token: number;
 }) {
   const _sid = requireAuth(token);
@@ -35,7 +36,7 @@ export function handleImportProfile({ voice, voice_speed, animation_default, ani
   const applyResult = applyProfile(_sid, profile);
   if ("code" in applyResult) return toError(applyResult);
 
-  return toResult({ imported: true, applied: applyResult.applied });
+  return toResult({ imported: true, applied: applyResult.applied, autoload: autoload ?? false });
 }
 
 export function register(server: McpServer) {
@@ -72,6 +73,7 @@ export function register(server: McpServer) {
           .optional()
           .describe("Reminders to register for this session."),
         name_tag: z.string().max(64).regex(/^[^`\n]*$/, "name_tag must not contain backticks or newlines").optional().describe("Custom name tag string for this session. Replaces the auto-default (<color> <name>). No newlines or backticks. Max 64 chars."),
+        autoload: z.boolean().optional().describe("Autoload flag reflected in the import result. Not written to disk — use profile/save to persist autoload."),
         token: TOKEN_SCHEMA,
       },
     },

@@ -244,6 +244,22 @@ describe("load_profile tool", () => {
     expect(data.summary).toContain("0 recurring");
   });
 
+  it("returns autoload: true when profile has autoload flag set", async () => {
+    mocks.readProfile.mockReturnValue({ autoload: true });
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ autoload: boolean }>(result);
+    expect(data.autoload).toBe(true);
+  });
+
+  it("returns autoload: false when profile does not have autoload flag", async () => {
+    mocks.readProfile.mockReturnValue({ voice: "nova" });
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult<{ autoload: boolean }>(result);
+    expect(data.autoload).toBe(false);
+  });
+
   testIdentityGate((args) => call(args), mocks.validateSession, {"key":"Test"}, false);
 
   describe("name_tag loading", () => {

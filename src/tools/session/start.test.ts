@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => ({
   registerPendingApproval: vi.fn(),
   clearPendingApproval: vi.fn(),
   validateSession: vi.fn().mockReturnValue(false),
+  readProfile: vi.fn((_key: string): Record<string, unknown> | null => null),
+  applyProfile: vi.fn((_sid: number, _profile: unknown): { applied: Record<string, unknown> } => ({ applied: {} })),
 }));
 
 vi.mock("../../telegram.js", async (importActual) => {
@@ -122,6 +124,14 @@ vi.mock("../../agent-approval.js", async (importActual) => {
   };
 });
 
+vi.mock("../../profile-store.js", () => ({
+  readProfile: (key: string) => mocks.readProfile(key),
+}));
+
+vi.mock("../profile/apply.js", () => ({
+  applyProfile: (sid: number, profile: unknown) => mocks.applyProfile(sid, profile),
+}));
+
 import { register, handleSessionReconnect, handleSessionStart } from "./start.js";
 import {
   addReminder,
@@ -144,6 +154,8 @@ describe("session_start tool", () => {
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.listSessions.mockReturnValue([]);
     mocks.isPollerRunning.mockReturnValue(false);
+    mocks.readProfile.mockReturnValue(null);
+    mocks.applyProfile.mockReturnValue({ applied: {} });
     mocks.createSession.mockReturnValue({
       sid: 1,
       suffix: 123456,
@@ -2834,5 +2846,71 @@ describe("session/start refresh flag", () => {
     expect(Array.isArray(result.warnings)).toBe(true);
     expect((result.warnings as string[]).some((w: string) => w.includes("color"))).toBe(true);
     expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Auto-load profile on session start (AC1–AC5)
+  // =========================================================================
+
+  it("AC1: no autoload flag + no profile autoload → profile NOT applied (default behavior preserved)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ voice: "nova", autoload: false });
+
+    await handleSessionStart({ name: "Primary" });
+
+    expect(mocks.applyProfile).not.toHaveBeenCalled();
+  });
+
+  it("AC2: autoload_profile: true + profile exists → profile applied", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ voice: "nova" });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", autoload_profile: true }));
+
+    expect(mocks.readProfile).toHaveBeenCalledWith("Primary");
+    expect(mocks.applyProfile).toHaveBeenCalledWith(1, { voice: "nova" });
+    expect(result.profile_autoloaded).toBe("Primary");
+  });
+
+  it("AC3: autoload_profile: true + no matching profile → starts normally, no error", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue(null);
+
+    const result = await handleSessionStart({ name: "Primary", autoload_profile: true });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.applyProfile).not.toHaveBeenCalled();
+    const data = parseResult(result);
+    expect(data.profile_autoloaded).toBeUndefined();
+  });
+
+  it("AC5: profile.autoload: true + no session flag → profile applied (profile-level wins)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ voice: "onyx", autoload: true });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary" }));
+
+    expect(mocks.applyProfile).toHaveBeenCalledWith(1, { voice: "onyx", autoload: true });
+    expect(result.profile_autoloaded).toBe("Primary");
+  });
+
+  it("profile.autoload: true + autoload_profile: false → profile still applied (profile-level wins)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ voice: "shimmer", autoload: true });
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", autoload_profile: false }));
+
+    expect(mocks.applyProfile).toHaveBeenCalledWith(1, { voice: "shimmer", autoload: true });
+    expect(result.profile_autoloaded).toBe("Primary");
   });
 });
