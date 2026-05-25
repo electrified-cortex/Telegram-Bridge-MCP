@@ -448,6 +448,7 @@ export function register(server: McpServer): void {
               recurring: z.boolean().default(false),
               trigger: z.enum(["time", "startup", "last_sent", "last_received"]).optional(),
               mode: z.enum(["all", "operator"]).optional(),
+              only_if_silent: z.boolean().optional(),
               disabled: z.boolean().optional(),
             }),
           )
@@ -467,6 +468,10 @@ export function register(server: McpServer): void {
           .enum(["all", "operator"])
           .optional()
           .describe("reminder/set (last_received only): which inbound events reset the clock. \"all\" (default) = operator + DMs; \"operator\" = operator only."),
+        only_if_silent: z
+          .boolean()
+          .optional()
+          .describe("reminder/set (last_received only): when true, suppresses the reminder if the agent has already replied since the last qualifying inbound."),
         delay_seconds: z
           .number()
           .int()

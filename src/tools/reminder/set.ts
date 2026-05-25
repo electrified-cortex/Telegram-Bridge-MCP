@@ -15,23 +15,28 @@ const DESCRIPTION =
   "One-shot time reminders are deleted after firing; recurring time reminders re-arm automatically. " +
   `Maximum ${MAX_REMINDERS_PER_SESSION} reminders per session.`;
 
-export function handleSetReminder({ text, trigger = "time", delay_seconds = 0, recurring = false, id, mode, token }: {
+export function handleSetReminder({ text, trigger = "time", delay_seconds = 0, recurring = false, id, mode, only_if_silent, token }: {
   text: string;
   trigger?: "time" | "startup" | "last_sent" | "last_received";
   delay_seconds?: number;
   recurring?: boolean;
   id?: string;
   mode?: "all" | "operator";
+  only_if_silent?: boolean;
   token: number;
 }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
 
-  const reminderId = id ?? reminderContentHash(text, recurring, trigger, trigger === "last_received" ? mode : undefined);
+  const reminderId = id ?? reminderContentHash(
+    text, recurring, trigger,
+    trigger === "last_received" ? mode : undefined,
+    trigger === "last_received" ? only_if_silent : undefined,
+  );
 
   let reminder;
   try {
-    reminder = addReminder({ id: reminderId, text, delay_seconds, recurring, trigger, mode });
+    reminder = addReminder({ id: reminderId, text, delay_seconds, recurring, trigger, mode, only_if_silent });
   } catch (err) {
     return toError({
       code: "LIMIT_EXCEEDED" as const,
@@ -47,7 +52,10 @@ export function handleSetReminder({ text, trigger = "time", delay_seconds = 0, r
     trigger: reminder.trigger,
     state: reminder.state,
   };
-  if (reminder.trigger === "last_received") result.mode = reminder.mode ?? "all";
+  if (reminder.trigger === "last_received") {
+    result.mode = reminder.mode ?? "all";
+    result.only_if_silent = reminder.only_if_silent ?? false;
+  }
   if (reminder.state === "deferred") {
     result.fires_in_seconds = reminder.delay_seconds;
   }
@@ -90,6 +98,10 @@ export function register(server: McpServer) {
           .enum(["all", "operator"])
           .optional()
           .describe("last_received only: which inbound events reset the clock. \"all\" (default) = operator messages + inter-session DMs; \"operator\" = operator messages only."),
+        only_if_silent: z
+          .boolean()
+          .optional()
+          .describe("last_received only: when true, suppresses the reminder if the agent has already replied (sent) since the last qualifying inbound. Default false = fire on elapsed time alone."),
         token: TOKEN_SCHEMA,
       },
     },

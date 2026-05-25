@@ -14,7 +14,7 @@ const DESCRIPTION =
   "to a profile file for later restoration via load_profile. " +
   "Saves to data/profiles/{key}.json (gitignored). Use load_profile with a path key to load from a checked-in profile.";
 
-export function handleSaveProfile({ key, token }: { key: string; token: number }) {
+export function handleSaveProfile({ key, token, autoload = false }: { key: string; token: number; autoload?: boolean }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
 
@@ -78,6 +78,11 @@ export function handleSaveProfile({ key, token }: { key: string; token: number }
     sections.push("name_tag");
   }
 
+  if (autoload) {
+    data.autoload = true;
+    sections.push("autoload");
+  }
+
   let path: string;
   try {
     path = resolveProfilePath(key);
@@ -86,7 +91,7 @@ export function handleSaveProfile({ key, token }: { key: string; token: number }
     return toError({ code: "WRITE_FAILED", message: `Failed to write profile "${key}": ${(err as Error).message}. Check that the profiles directory is writable.` });
   }
 
-  return toResult({ key, path, sections });
+  return toResult({ key, path, sections, autoload });
 }
 
 export function register(server: McpServer) {
@@ -101,6 +106,14 @@ export function register(server: McpServer) {
           .max(200)
           .describe(
             "Profile key. Must be a bare name (e.g. \"Overseer\"). Saves to data/profiles/{key}.json (gitignored).",
+          ),
+        autoload: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "When true, marks this profile for automatic application whenever a session with the same name starts. " +
+            "Profile-level opt-in takes precedence over session-level autoload_profile: false.",
           ),
         token: TOKEN_SCHEMA,
       },

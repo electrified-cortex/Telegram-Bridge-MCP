@@ -32,6 +32,7 @@ export interface ProfileData {
   animation_presets?: Record<string, string[]>;
   reminders?: ReminderDef[];
   name_tag?: string;
+  autoload?: boolean;
 }
 
 // ---------------------------------------------------------------------------

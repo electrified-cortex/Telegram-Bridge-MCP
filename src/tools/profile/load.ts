@@ -61,7 +61,7 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   }
 
   const summary = parts.join(" ");
-  return toResult({ key, summary });
+  return toResult({ key, summary, autoload: profile.autoload ?? false });
 }
 
 export function register(server: McpServer) {
