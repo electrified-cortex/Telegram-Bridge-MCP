@@ -446,7 +446,8 @@ export function register(server: McpServer): void {
               text: z.string(),
               delay_seconds: z.number(),
               recurring: z.boolean().default(false),
-              trigger: z.enum(["time", "startup"]).optional(),
+              trigger: z.enum(["time", "startup", "last_sent", "last_received"]).optional(),
+              mode: z.enum(["all", "operator"]).optional(),
               disabled: z.boolean().optional(),
             }),
           )
@@ -459,9 +460,13 @@ export function register(server: McpServer): void {
           .describe("name-tag/set or profile/import: Custom name tag string. Replaces the auto-default (<color> <name>). No newlines. Max 64 chars."),
         // reminder/set params
         trigger: z
-          .enum(["time", "startup"])
+          .enum(["time", "startup", "last_sent", "last_received"])
           .optional()
-          .describe("reminder/set: When to fire (default: 'time')."),
+          .describe("reminder/set: When to fire: 'time' (default), 'startup', 'last_sent' (fires after last send), or 'last_received' (fires after last inbound)."),
+        mode: z
+          .enum(["all", "operator"])
+          .optional()
+          .describe("reminder/set (last_received only): which inbound events reset the clock. \"all\" (default) = operator + DMs; \"operator\" = operator only."),
         delay_seconds: z
           .number()
           .int()

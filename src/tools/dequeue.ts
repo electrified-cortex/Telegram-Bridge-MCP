@@ -19,6 +19,8 @@ import {
   popActiveReminders,
   getSoonestDeferredMs,
   buildReminderEvent,
+  popFireableEventReminders,
+  getSoonestEventReminderMs,
 } from "../reminder-state.js";
 import { getGovernorSid } from "../routing-mode.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
@@ -268,6 +270,28 @@ export async function runDrainLoop(
     return result;
   }
 
+  // Check event-triggered reminders (last_sent / last_received) before timeout=0 return.
+  // These fire based on elapsed time since a qualifying event — no idle threshold required.
+  {
+    const eventFired = popFireableEventReminders(sid);
+    if (eventFired.length > 0) {
+      const sessionName = getSession(sid)?.name ?? "";
+      for (const reminder of eventFired) {
+        recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
+      }
+      resyncActiveSession();
+      const reminderPending = pendingCountAny();
+      const reminderResult: Record<string, unknown> = {
+        updates: eventFired.map(buildReminderEvent),
+        ...(reminderPending > 0 ? { pending: reminderPending } : {}),
+      };
+      setDequeueActive(sid, false);
+      releaseKickLockout(sid);
+      resetChannelCooldown(sid);
+      return reminderResult;
+    }
+  }
+
   if (timeout === 0) {
     // Timeout=0 empty-poll: not content-returning — do NOT release kick lockout.
     setDequeueActive(sid, false);
@@ -315,6 +339,26 @@ export async function runDrainLoop(
       // Promote any deferred reminders whose delay has elapsed.
       promoteDeferred(sid);
 
+      // Check event-triggered reminders (last_sent / last_received) — no idle threshold.
+      {
+        const eventFired = popFireableEventReminders(sid);
+        if (eventFired.length > 0) {
+          const sessionName = getSession(sid)?.name ?? "";
+          for (const reminder of eventFired) {
+            recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
+          }
+          resyncActiveSession();
+          const reminderPending = pendingCountAny();
+          const reminderResult: Record<string, unknown> = {
+            updates: eventFired.map(buildReminderEvent),
+            ...(reminderPending > 0 ? { pending: reminderPending } : {}),
+          };
+          dlog("queue", `dequeue returning sid=${sid} batch=${eventFired.length} event-reminder payloadLen=${JSON.stringify(reminderResult).length}`);
+          _lockoutRelease = true;
+          return reminderResult;
+        }
+      }
+
       const now = Date.now();
       const idleDuration = now - reminderIdleStart;
       const activeReminders = getActiveReminders(sid);
@@ -343,12 +387,13 @@ export async function runDrainLoop(
       const remaining = deadline - now;
       if (remaining <= 0) break;
 
-      // Wake up as soon as the earliest of: reminder idle threshold, next deferred promotion, or timeout.
+      // Wake up as soon as the earliest of: event reminder fire, idle threshold, next deferred promotion, or timeout.
       const timeToFireMs = activeReminders.length > 0
         ? Math.max(0, REMINDER_IDLE_THRESHOLD_MS - idleDuration)
         : Infinity;
       const deferredMs = getSoonestDeferredMs(sid);
-      const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity);
+      const eventReminderMs = getSoonestEventReminderMs(sid);
+      const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity, eventReminderMs ?? Infinity);
       const useVersionedWait = hasVersionedWaitAny(sq);
       const wakeVersion = useVersionedWait ? getWakeVersionAny(sq) : 0;
 

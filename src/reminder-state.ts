@@ -14,12 +14,17 @@ import { getCallerSid } from "./session-context.js";
 
 /**
  * Deterministic reminder ID derived from content.
- * Same text+recurring+trigger always yields the same 16-char hex string.
- * Different `recurring` flag or `trigger` → different hash (they coexist).
+ * Same text+recurring+trigger+mode always yields the same 16-char hex string.
+ * Different `recurring` flag, `trigger`, or `mode` → different hash (they coexist).
  */
-export function reminderContentHash(text: string, recurring: boolean, trigger: "time" | "startup" = "time"): string {
+export function reminderContentHash(
+  text: string,
+  recurring: boolean,
+  trigger: "time" | "startup" | "last_sent" | "last_received" = "time",
+  mode?: "all" | "operator",
+): string {
   return createHash("sha256")
-    .update(`${text}\0${recurring}\0${trigger}`)
+    .update(`${text}\0${recurring}\0${trigger}\0${mode ?? ""}`)
     .digest("hex")
     .slice(0, 16);
 }
@@ -29,10 +34,12 @@ export interface Reminder {
   text: string;
   delay_seconds: number;
   recurring: boolean;
-  trigger: "time" | "startup";
+  trigger: "time" | "startup" | "last_sent" | "last_received";
+  /** Only set for `last_received` reminders. Defaults to "all" if omitted. */
+  mode?: "all" | "operator";
   created_at: number;      // Date.now() when added
   activated_at: number | null; // Date.now() when promoted to active (null if still deferred/startup)
-  state: "deferred" | "active" | "startup";
+  state: "deferred" | "active" | "startup" | "event_pending";
   /**
    * Persists across session restart / profile-save.
    * When true the reminder will not fire until re-enabled.
@@ -43,10 +50,22 @@ export interface Reminder {
    * NOT persisted to profile; lost on session end or profile/save.
    */
   sleep_until?: number;
+  /**
+   * For last_sent/last_received only: the last_event_at timestamp we last fired for.
+   * Prevents re-firing for the same event. Set to the event timestamp on each fire.
+   * Cleared implicitly when a new qualifying event arrives (new timestamp ≠ last_fired_for).
+   */
+  last_fired_for?: number;
 }
 
 const _reminders = new Map<number, Reminder[]>();
 let _nextEventId = -10_000;
+
+/** Per-session timestamp of the most recent confirmed outbound send (epoch ms). */
+const _lastSentAt = new Map<number, number>();
+
+/** Per-session per-mode timestamp of the most recent qualifying inbound (epoch ms). */
+const _lastReceivedAt = new Map<number, Map<"all" | "operator", number>>();
 
 /** Max reminders per session. */
 export const MAX_REMINDERS_PER_SESSION = 20;
@@ -62,7 +81,8 @@ export function addReminder(params: {
   text: string;
   delay_seconds: number;
   recurring: boolean;
-  trigger?: "time" | "startup";
+  trigger?: "time" | "startup" | "last_sent" | "last_received";
+  mode?: "all" | "operator";
 }): Reminder {
   const sid = getCallerSid();
   const list = _reminders.get(sid) ?? [];
@@ -81,6 +101,9 @@ export function addReminder(params: {
   if (trigger === "startup") {
     state = "startup";
     activated_at = null;
+  } else if (trigger === "last_sent" || trigger === "last_received") {
+    state = "event_pending";
+    activated_at = null;
   } else {
     const isActive = normalizedDelay === 0;
     state = isActive ? "active" : "deferred";
@@ -92,6 +115,7 @@ export function addReminder(params: {
     delay_seconds: normalizedDelay,
     recurring: params.recurring,
     trigger,
+    ...(trigger === "last_received" ? { mode: params.mode ?? "all" } : {}),
     created_at: now,
     activated_at,
     state,
@@ -317,7 +341,7 @@ export interface ReminderEvent {
     text: string;
     reminder_id: string;
     recurring: boolean;
-    trigger: "time" | "startup";
+    trigger: "time" | "startup" | "last_sent" | "last_received";
   };
   routing: string;
 }
@@ -342,10 +366,141 @@ export function buildReminderEvent(r: Reminder): ReminderEvent {
 /** Clear all reminders for a session (call on session close). */
 export function clearSessionReminders(sid: number): void {
   _reminders.delete(sid);
+  _lastSentAt.delete(sid);
+  _lastReceivedAt.delete(sid);
 }
 
 /** For testing only: reset all state. */
 export function resetReminderStateForTest(): void {
   _reminders.clear();
+  _lastSentAt.clear();
+  _lastReceivedAt.clear();
   _nextEventId = -10_000;
+}
+
+// ── Event-triggered reminder timestamps ────────────────────────────────────
+
+/**
+ * Record the timestamp of a confirmed outbound send for a session.
+ * Only updates on confirmed Telegram delivery (message_id returned).
+ */
+export function recordLastSentAt(sid: number, timestamp: number): void {
+  _lastSentAt.set(sid, timestamp);
+}
+
+/**
+ * Record the timestamp of a qualifying inbound event for a session.
+ * Uses max semantics: only updates when `timestamp` > the stored value.
+ * Call once with mode="all" for DMs; call twice (all + operator) for operator messages.
+ */
+export function recordLastReceivedAt(sid: number, mode: "all" | "operator", timestamp: number): void {
+  let modeMap = _lastReceivedAt.get(sid);
+  if (!modeMap) {
+    modeMap = new Map();
+    _lastReceivedAt.set(sid, modeMap);
+  }
+  const existing = modeMap.get(mode);
+  if (existing === undefined || timestamp > existing) {
+    modeMap.set(mode, timestamp);
+  }
+}
+
+/** Return the last confirmed send timestamp for a session, or undefined if no send yet. */
+export function getLastSentAt(sid: number): number | undefined {
+  return _lastSentAt.get(sid);
+}
+
+/** Return the last qualifying inbound timestamp for a session+mode, or undefined if none. */
+export function getLastReceivedAt(sid: number, mode: "all" | "operator"): number | undefined {
+  return _lastReceivedAt.get(sid)?.get(mode);
+}
+
+// ── Event-triggered reminder fire logic ────────────────────────────────────
+
+function isEventReminderFireable(r: Reminder, sid: number, now: number): boolean {
+  if (r.trigger !== "last_sent" && r.trigger !== "last_received") return false;
+  if (r.state !== "event_pending") return false;
+  if (r.disabled) return false;
+  if (r.sleep_until !== undefined && now < r.sleep_until) return false;
+
+  if (r.trigger === "last_sent") {
+    const lastSentAt = _lastSentAt.get(sid);
+    if (lastSentAt === undefined) return false;
+    if (lastSentAt === r.last_fired_for) return false;
+    return now - lastSentAt >= r.delay_seconds * 1000;
+  }
+
+  // last_received
+  const mode = r.mode ?? "all";
+  const lastReceivedAt = _lastReceivedAt.get(sid)?.get(mode);
+  if (lastReceivedAt === undefined) return false;
+  if (lastReceivedAt === r.last_fired_for) return false;
+  return now - lastReceivedAt >= r.delay_seconds * 1000;
+}
+
+/** Return all fireable event-triggered reminders for `sid` (non-destructive). */
+export function getFireableEventReminders(sid: number): Reminder[] {
+  const now = Date.now();
+  return (_reminders.get(sid) ?? []).filter(r => isEventReminderFireable(r, sid, now));
+}
+
+/**
+ * Fire all fireable event-triggered reminders for `sid`.
+ * One-shot reminders are deleted; recurring ones stay but record `last_fired_for`
+ * so they won't re-fire until a new qualifying event resets the clock.
+ */
+export function popFireableEventReminders(sid: number): Reminder[] {
+  const list = _reminders.get(sid);
+  if (!list) return [];
+  const now = Date.now();
+  const fireable = list.filter(r => isEventReminderFireable(r, sid, now));
+  if (fireable.length === 0) return [];
+
+  const fireableIds = new Set(fireable.map(r => r.id));
+  const remaining: Reminder[] = [];
+  for (const r of list) {
+    if (fireableIds.has(r.id)) {
+      if (r.recurring) {
+        const lastEventAt = r.trigger === "last_sent"
+          ? (_lastSentAt.get(sid) ?? 0)
+          : (_lastReceivedAt.get(sid)?.get(r.mode ?? "all") ?? 0);
+        remaining.push({ ...r, last_fired_for: lastEventAt, sleep_until: undefined });
+      }
+      // one-shot: discarded
+    } else {
+      remaining.push(r);
+    }
+  }
+  _reminders.set(sid, remaining);
+  return fireable;
+}
+
+/**
+ * Milliseconds until the soonest event-triggered reminder for `sid` becomes fireable.
+ * Returns null if no event-triggered reminders exist or none have a qualifying event yet.
+ */
+export function getSoonestEventReminderMs(sid: number): number | null {
+  const list = _reminders.get(sid) ?? [];
+  const now = Date.now();
+  let soonest: number | null = null;
+
+  for (const r of list) {
+    if (r.trigger !== "last_sent" && r.trigger !== "last_received") continue;
+    if (r.disabled) continue;
+    if (r.sleep_until !== undefined && now < r.sleep_until) continue;
+
+    let lastEventAt: number | undefined;
+    if (r.trigger === "last_sent") {
+      lastEventAt = _lastSentAt.get(sid);
+    } else {
+      lastEventAt = _lastReceivedAt.get(sid)?.get(r.mode ?? "all");
+    }
+    if (lastEventAt === undefined) continue;
+    if (lastEventAt === r.last_fired_for) continue;
+
+    const msUntilFire = Math.max(0, r.delay_seconds * 1000 - (now - lastEventAt));
+    if (soonest === null || msUntilFire < soonest) soonest = msUntilFire;
+  }
+
+  return soonest;
 }

@@ -128,6 +128,8 @@ const reminderMocks = vi.hoisted(() => ({
   getActiveReminders: vi.fn((_sid: number): unknown[] => []),
   popActiveReminders: vi.fn((_sid: number): unknown[] => []),
   getSoonestDeferredMs: vi.fn((_sid: number): number | null => null),
+  popFireableEventReminders: vi.fn((_sid: number): unknown[] => []),
+  getSoonestEventReminderMs: vi.fn((_sid: number): number | null => null),
   buildReminderEvent: vi.fn((r: unknown) => ({
     id: -1,
     event: "reminder",
@@ -142,6 +144,8 @@ vi.mock("../reminder-state.js", () => ({
   getActiveReminders: (sid: number) => reminderMocks.getActiveReminders(sid),
   popActiveReminders: (sid: number) => reminderMocks.popActiveReminders(sid),
   getSoonestDeferredMs: (sid: number) => reminderMocks.getSoonestDeferredMs(sid),
+  popFireableEventReminders: (sid: number) => reminderMocks.popFireableEventReminders(sid),
+  getSoonestEventReminderMs: (sid: number) => reminderMocks.getSoonestEventReminderMs(sid),
   buildReminderEvent: (r: unknown) => reminderMocks.buildReminderEvent(r),
 }));
 
@@ -196,6 +200,8 @@ describe("dequeue tool", () => {
     reminderMocks.getActiveReminders.mockReturnValue([]);
     reminderMocks.popActiveReminders.mockReturnValue([]);
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     mocks.peekSessionCategories.mockReturnValue(undefined);

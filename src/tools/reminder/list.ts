@@ -1,12 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toResult, toError } from "../../telegram.js";
-import { listReminders, computeReminderDisplayState } from "../../reminder-state.js";
+import { listReminders, computeReminderDisplayState, getLastSentAt, getLastReceivedAt } from "../../reminder-state.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 
 export function handleListReminders({ token }: { token: number }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
+  const sid = _sid;
 
   const now = Date.now();
   const reminders = listReminders().map(r => {
@@ -19,6 +20,7 @@ export function handleListReminders({ token }: { token: number }) {
       recurring: r.recurring,
       state: displayState,
     };
+    if (r.trigger === "last_received") entry.mode = r.mode ?? "all";
     if (displayState === "sleeping" && until !== undefined) {
       entry.until = new Date(until).toISOString();
     }
@@ -27,6 +29,20 @@ export function handleListReminders({ token }: { token: number }) {
         0,
         Math.ceil((r.created_at + r.delay_seconds * 1000 - now) / 1000),
       );
+    }
+    // AC16: surface time_since_last_*_seconds per trigger type
+    if (r.trigger === "last_sent") {
+      const lastSentAt = getLastSentAt(sid);
+      entry.time_since_last_sent_seconds = lastSentAt !== undefined
+        ? Math.floor((now - lastSentAt) / 1000)
+        : null;
+    }
+    if (r.trigger === "last_received") {
+      const mode = r.mode ?? "all";
+      const lastReceivedAt = getLastReceivedAt(sid, mode);
+      entry.time_since_last_received_seconds = lastReceivedAt !== undefined
+        ? Math.floor((now - lastReceivedAt) / 1000)
+        : null;
     }
     return entry;
   });

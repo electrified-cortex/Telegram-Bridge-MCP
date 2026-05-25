@@ -19,6 +19,13 @@ import {
   enableReminder,
   sleepReminder,
   computeReminderDisplayState,
+  recordLastSentAt,
+  recordLastReceivedAt,
+  getLastSentAt,
+  getLastReceivedAt,
+  getFireableEventReminders,
+  popFireableEventReminders,
+  getSoonestEventReminderMs,
 } from "./reminder-state.js";
 import { runInSessionContext } from "./session-context.js";
 
@@ -725,6 +732,415 @@ describe("reminder-state", () => {
         const list = listReminders();
         expect(list[0].disabled).toBe(true);
       });
+    });
+  });
+
+  // ── last_sent reminders ───────────────────────────────────────────────────
+
+  describe("last_sent reminders", () => {
+    it("AC1: registers a persistent last_sent reminder with event_pending state", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "ls1", text: "Did you follow up?", delay_seconds: 180, recurring: true, trigger: "last_sent" });
+        expect(r.trigger).toBe("last_sent");
+        expect(r.recurring).toBe(true);
+        expect(r.state).toBe("event_pending");
+        expect(r.activated_at).toBeNull();
+        expect(listReminders()).toHaveLength(1);
+      });
+    });
+
+    it("AC2: recordLastSentAt updates last_sent_at", () => {
+      const ts = Date.now();
+      recordLastSentAt(1, ts);
+      expect(getLastSentAt(1)).toBe(ts);
+    });
+
+    it("AC2: subsequent recordLastSentAt overwrites (most recent send wins)", () => {
+      recordLastSentAt(1, 1000);
+      recordLastSentAt(1, 2000);
+      expect(getLastSentAt(1)).toBe(2000);
+    });
+
+    it("AC3: persistent last_sent fires after delay_seconds elapsed, re-arms (no immediate re-fire)", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "Follow up", delay_seconds: 10, recurring: true, trigger: "last_sent" });
+      });
+      const sendTime = Date.now() - 15_000; // 15s ago, delay=10s → elapsed
+      recordLastSentAt(1, sendTime);
+
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+      const fired = popFireableEventReminders(1);
+      expect(fired).toHaveLength(1);
+      expect(fired[0].trigger).toBe("last_sent");
+
+      // Recurring: still in list, but won't re-fire for the same send
+      runInSessionContext(1, () => {
+        const remaining = listReminders();
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0].last_fired_for).toBe(sendTime);
+      });
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("AC3: persistent last_sent re-arms on next send after delay", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "Follow up", delay_seconds: 10, recurring: true, trigger: "last_sent" });
+      });
+      // First send + fire
+      const send1 = Date.now() - 15_000;
+      recordLastSentAt(1, send1);
+      popFireableEventReminders(1);
+
+      // New send → new clock
+      const send2 = Date.now() - 12_000; // 12s ago, delay=10s → elapsed
+      recordLastSentAt(1, send2);
+      const fired2 = popFireableEventReminders(1);
+      expect(fired2).toHaveLength(1);
+    });
+
+    it("AC4: one-shot last_sent fires exactly once then is removed", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls2", text: "Once", delay_seconds: 10, recurring: false, trigger: "last_sent" });
+      });
+      recordLastSentAt(1, Date.now() - 15_000);
+
+      const fired = popFireableEventReminders(1);
+      expect(fired).toHaveLength(1);
+
+      // One-shot: deleted
+      runInSessionContext(1, () => {
+        expect(listReminders()).toHaveLength(0);
+      });
+      // No re-fire even with same event
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("AC5: inbound messages do NOT reset last_sent_at", () => {
+      const sendTime = Date.now() - 15_000;
+      recordLastSentAt(1, sendTime);
+      recordLastReceivedAt(1, "all", Date.now()); // new inbound
+      expect(getLastSentAt(1)).toBe(sendTime); // unchanged
+    });
+
+    it("last_sent does not fire before delay_seconds has elapsed", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "Not yet", delay_seconds: 30, recurring: false, trigger: "last_sent" });
+      });
+      recordLastSentAt(1, Date.now() - 10_000); // only 10s ago, delay=30s
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("last_sent does not fire when no send has occurred yet", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "Waiting", delay_seconds: 10, recurring: false, trigger: "last_sent" });
+      });
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("last_sent is excluded from getActiveReminders and promoteDeferred", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "Event-based", delay_seconds: 0, recurring: false, trigger: "last_sent" });
+      });
+      promoteDeferred(1);
+      expect(getActiveReminders(1)).toHaveLength(0);
+    });
+
+    it("disabled last_sent reminder does not fire", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "Disabled", delay_seconds: 10, recurring: false, trigger: "last_sent" });
+        disableReminder("ls1");
+      });
+      recordLastSentAt(1, Date.now() - 15_000);
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("sleeping last_sent reminder does not fire while sleeping", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "Sleeping", delay_seconds: 10, recurring: false, trigger: "last_sent" });
+        sleepReminder("ls1", Date.now() + 60_000);
+      });
+      recordLastSentAt(1, Date.now() - 15_000);
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("getSoonestEventReminderMs returns null when no send has occurred", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "x", delay_seconds: 60, recurring: false, trigger: "last_sent" });
+      });
+      expect(getSoonestEventReminderMs(1)).toBeNull();
+    });
+
+    it("getSoonestEventReminderMs returns approximate ms to fire after send", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "x", delay_seconds: 30, recurring: false, trigger: "last_sent" });
+      });
+      recordLastSentAt(1, Date.now() - 10_000); // 10s elapsed, 20s remaining
+      const ms = getSoonestEventReminderMs(1);
+      expect(ms).not.toBeNull();
+      expect(ms!).toBeGreaterThan(0);
+      expect(ms!).toBeLessThanOrEqual(20_000);
+    });
+
+    it("getSoonestEventReminderMs returns 0 when already fireable", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "x", delay_seconds: 10, recurring: false, trigger: "last_sent" });
+      });
+      recordLastSentAt(1, Date.now() - 15_000);
+      expect(getSoonestEventReminderMs(1)).toBe(0);
+    });
+
+    it("reminderContentHash includes trigger — last_sent hash differs from time hash", () => {
+      const hTime = reminderContentHash("test", false, "time");
+      const hLastSent = reminderContentHash("test", false, "last_sent");
+      expect(hTime).not.toBe(hLastSent);
+    });
+
+    it("clearSessionReminders clears last_sent_at for the session", () => {
+      recordLastSentAt(1, Date.now());
+      clearSessionReminders(1);
+      expect(getLastSentAt(1)).toBeUndefined();
+    });
+  });
+
+  // ── last_received reminders ───────────────────────────────────────────────
+
+  describe("last_received reminders", () => {
+    it("AC6: registers a last_received reminder with mode", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "lr1", text: "Quiet?", delay_seconds: 300, recurring: true, trigger: "last_received", mode: "all" });
+        expect(r.trigger).toBe("last_received");
+        expect(r.mode).toBe("all");
+        expect(r.state).toBe("event_pending");
+      });
+    });
+
+    it("AC6: last_received defaults mode to 'all' when omitted", () => {
+      runInSessionContext(1, () => {
+        const r = addReminder({ id: "lr1", text: "Quiet?", delay_seconds: 300, recurring: true, trigger: "last_received" });
+        expect(r.mode).toBe("all");
+      });
+    });
+
+    it("AC7: mode='all' — recordLastReceivedAt updates 'all' for operator messages and DMs", () => {
+      recordLastReceivedAt(1, "all", 1000);
+      expect(getLastReceivedAt(1, "all")).toBe(1000);
+      recordLastReceivedAt(1, "all", 2000); // second event (DM)
+      expect(getLastReceivedAt(1, "all")).toBe(2000); // max wins
+    });
+
+    it("AC7/AC8: operator message updates both 'all' and 'operator'; DM updates only 'all'", () => {
+      // Operator message: update both
+      recordLastReceivedAt(1, "all", 1000);
+      recordLastReceivedAt(1, "operator", 1000);
+      expect(getLastReceivedAt(1, "all")).toBe(1000);
+      expect(getLastReceivedAt(1, "operator")).toBe(1000);
+
+      // DM: update only 'all'
+      recordLastReceivedAt(1, "all", 2000);
+      expect(getLastReceivedAt(1, "all")).toBe(2000);
+      expect(getLastReceivedAt(1, "operator")).toBe(1000); // unchanged
+    });
+
+    it("AC8: mode='operator' reminder only fires based on operator timestamp", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr-op", text: "Operator quiet", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "operator" });
+      });
+      // Only 'all' updated (DM), not 'operator'
+      recordLastReceivedAt(1, "all", Date.now() - 15_000);
+      expect(getFireableEventReminders(1)).toHaveLength(0); // operator mode, no operator event
+
+      // Now operator event
+      recordLastReceivedAt(1, "operator", Date.now() - 15_000);
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+
+    it("AC10: persistent last_received fires and re-arms, won't re-fire until next event", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr1", text: "Quiet?", delay_seconds: 10, recurring: true, trigger: "last_received", mode: "all" });
+      });
+      const recv1 = Date.now() - 15_000;
+      recordLastReceivedAt(1, "all", recv1);
+
+      const fired1 = popFireableEventReminders(1);
+      expect(fired1).toHaveLength(1);
+
+      // Won't re-fire for same event
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+
+      // New qualifying event → re-arms
+      const recv2 = Date.now() - 12_000; // newer than recv1 and delay elapsed
+      recordLastReceivedAt(1, "all", recv2);
+      const fired2 = popFireableEventReminders(1);
+      expect(fired2).toHaveLength(1);
+
+      // Still in list (recurring)
+      runInSessionContext(1, () => {
+        expect(listReminders()).toHaveLength(1);
+      });
+    });
+
+    it("AC11: one-shot last_received fires once then is removed", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr2", text: "Once", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all" });
+      });
+      recordLastReceivedAt(1, "all", Date.now() - 15_000);
+
+      const fired = popFireableEventReminders(1);
+      expect(fired).toHaveLength(1);
+      runInSessionContext(1, () => {
+        expect(listReminders()).toHaveLength(0);
+      });
+    });
+
+    it("AC12: outbound sends do NOT reset last_received_at", () => {
+      const receiveTime = Date.now() - 5_000;
+      recordLastReceivedAt(1, "all", receiveTime);
+      recordLastSentAt(1, Date.now()); // outbound send
+      expect(getLastReceivedAt(1, "all")).toBe(receiveTime); // unchanged
+    });
+
+    it("recordLastReceivedAt uses max semantics — older timestamp does not overwrite", () => {
+      recordLastReceivedAt(1, "all", 2000);
+      recordLastReceivedAt(1, "all", 1000); // older
+      expect(getLastReceivedAt(1, "all")).toBe(2000);
+    });
+
+    it("last_received does not fire before delay_seconds elapsed", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr1", text: "Not yet", delay_seconds: 30, recurring: false, trigger: "last_received", mode: "all" });
+      });
+      recordLastReceivedAt(1, "all", Date.now() - 10_000); // only 10s elapsed
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("last_received does not fire when no qualifying event yet", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr1", text: "Waiting", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all" });
+      });
+      expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+
+    it("reminderContentHash includes mode — different modes produce different hashes", () => {
+      const hAll = reminderContentHash("test", false, "last_received", "all");
+      const hOp = reminderContentHash("test", false, "last_received", "operator");
+      expect(hAll).not.toBe(hOp);
+    });
+
+    it("reminderContentHash — last_received hash differs from last_sent hash", () => {
+      const hSent = reminderContentHash("test", false, "last_sent");
+      const hRecv = reminderContentHash("test", false, "last_received");
+      expect(hSent).not.toBe(hRecv);
+    });
+
+    it("clearSessionReminders clears last_received_at for the session", () => {
+      recordLastReceivedAt(1, "all", Date.now());
+      clearSessionReminders(1);
+      expect(getLastReceivedAt(1, "all")).toBeUndefined();
+    });
+  });
+
+  // ── AC13: multiple reminders coexist independently ───────────────────────
+
+  describe("AC13: multiple last_sent / last_received reminders coexist independently", () => {
+    it("two last_sent reminders with different delays fire at the right time", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls-60", text: "1m", delay_seconds: 60, recurring: true, trigger: "last_sent" });
+        addReminder({ id: "ls-300", text: "5m", delay_seconds: 300, recurring: true, trigger: "last_sent" });
+      });
+      recordLastSentAt(1, Date.now() - 90_000); // 90s ago
+      // ls-60 should fire (90 > 60), ls-300 should not (90 < 300)
+      const fired = popFireableEventReminders(1);
+      expect(fired).toHaveLength(1);
+      expect(fired[0].id).toBe("ls-60");
+
+      // ls-300 still waiting
+      runInSessionContext(1, () => {
+        const remaining = listReminders();
+        expect(remaining).toHaveLength(2);
+        const ls300 = remaining.find(r => r.id === "ls-300");
+        expect(ls300?.last_fired_for).toBeUndefined();
+      });
+    });
+
+    it("last_sent and last_received reminders coexist without interfering", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "sent", delay_seconds: 10, recurring: false, trigger: "last_sent" });
+        addReminder({ id: "lr1", text: "recv", delay_seconds: 10, recurring: false, trigger: "last_received", mode: "all" });
+      });
+      recordLastSentAt(1, Date.now() - 15_000);
+      recordLastReceivedAt(1, "all", Date.now() - 15_000);
+
+      const fired = popFireableEventReminders(1);
+      expect(fired).toHaveLength(2);
+      const ids = fired.map(r => r.id).sort();
+      expect(ids).toEqual(["lr1", "ls1"]);
+    });
+
+    it("last_sent does not reset last_received and vice versa", () => {
+      const recvTime = Date.now() - 3_000;
+      const sentTime = Date.now() - 5_000;
+      recordLastReceivedAt(1, "all", recvTime);
+      recordLastSentAt(1, sentTime);
+      expect(getLastReceivedAt(1, "all")).toBe(recvTime);
+      expect(getLastSentAt(1)).toBe(sentTime);
+    });
+  });
+
+  // ── AC14: reconnect catch-up ──────────────────────────────────────────────
+
+  describe("AC14: reconnect catch-up — fires immediately if elapsed > delay_seconds", () => {
+    it("last_sent fires immediately if last_sent_at was set before reconnect and delay has elapsed", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "reconnect", delay_seconds: 60, recurring: false, trigger: "last_sent" });
+      });
+      // Simulate: send happened 5 minutes ago (before disconnect)
+      recordLastSentAt(1, Date.now() - 300_000);
+      // On reconnect, the check runs immediately — fires right away
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+
+    it("last_received fires immediately if last_received_at was set before reconnect", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr1", text: "reconnect", delay_seconds: 60, recurring: false, trigger: "last_received", mode: "all" });
+      });
+      recordLastReceivedAt(1, "all", Date.now() - 300_000);
+      expect(getFireableEventReminders(1)).toHaveLength(1);
+    });
+  });
+
+  // ── loop prevention ───────────────────────────────────────────────────────
+
+  describe("loop prevention — reminder fires do not reset event clocks", () => {
+    it("popFireableEventReminders does not update last_sent_at", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "x", delay_seconds: 10, recurring: true, trigger: "last_sent" });
+      });
+      const sentTime = Date.now() - 15_000;
+      recordLastSentAt(1, sentTime);
+      popFireableEventReminders(1);
+      // last_sent_at must remain unchanged (reminder fire is not a send)
+      expect(getLastSentAt(1)).toBe(sentTime);
+    });
+
+    it("popFireableEventReminders does not update last_received_at", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr1", text: "x", delay_seconds: 10, recurring: true, trigger: "last_received", mode: "all" });
+      });
+      const recvTime = Date.now() - 15_000;
+      recordLastReceivedAt(1, "all", recvTime);
+      popFireableEventReminders(1);
+      expect(getLastReceivedAt(1, "all")).toBe(recvTime);
+    });
+
+    it("recurring reminder's last_fired_for prevents immediate re-fire", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "x", delay_seconds: 10, recurring: true, trigger: "last_sent" });
+      });
+      const sent = Date.now() - 15_000;
+      recordLastSentAt(1, sent);
+      popFireableEventReminders(1);
+      // Should not be fireable again until a new send
+      expect(getFireableEventReminders(1)).toHaveLength(0);
     });
   });
 });

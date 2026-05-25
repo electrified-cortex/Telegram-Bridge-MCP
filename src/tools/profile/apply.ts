@@ -78,6 +78,36 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           } else {
             addedReminders.push(added.id);
           }
+        } else if (trigger === "last_sent") {
+          if (typeof r.delay_seconds !== "number" || isNaN(r.delay_seconds)) continue;
+          const reminderId = reminderContentHash(r.text, r.recurring, "last_sent");
+          const alreadyExists = existing.some(e => e.id === reminderId);
+          const added = addReminder({
+            id: reminderId,
+            text: r.text,
+            recurring: r.recurring,
+            trigger: "last_sent",
+            delay_seconds: r.delay_seconds,
+          });
+          if (r.disabled) disableReminder(added.id);
+          else if (r.disabled === false) enableReminder(added.id);
+          if (alreadyExists) { updatedReminders.push(added.id); } else { addedReminders.push(added.id); }
+        } else if (trigger === "last_received") {
+          if (typeof r.delay_seconds !== "number" || isNaN(r.delay_seconds)) continue;
+          const mode = (r as { mode?: "all" | "operator" }).mode ?? "all";
+          const reminderId = reminderContentHash(r.text, r.recurring, "last_received", mode);
+          const alreadyExists = existing.some(e => e.id === reminderId);
+          const added = addReminder({
+            id: reminderId,
+            text: r.text,
+            recurring: r.recurring,
+            trigger: "last_received",
+            delay_seconds: r.delay_seconds,
+            mode,
+          });
+          if (r.disabled) disableReminder(added.id);
+          else if (r.disabled === false) enableReminder(added.id);
+          if (alreadyExists) { updatedReminders.push(added.id); } else { addedReminders.push(added.id); }
         } else {
           // Time reminder — delay_seconds is required; skip if missing/invalid
           if (typeof r.delay_seconds !== "number" || isNaN(r.delay_seconds)) continue;

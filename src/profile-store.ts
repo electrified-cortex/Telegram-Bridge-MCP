@@ -21,7 +21,9 @@ const REPO_ROOT = resolve(__dirname, "..");
 
 export type ReminderDef =
   | { trigger?: "time"; text: string; recurring: boolean; delay_seconds: number; disabled?: boolean }
-  | { trigger: "startup"; text: string; recurring: boolean; delay_seconds?: number; disabled?: boolean };
+  | { trigger: "startup"; text: string; recurring: boolean; delay_seconds?: number; disabled?: boolean }
+  | { trigger: "last_sent"; text: string; recurring: boolean; delay_seconds: number; disabled?: boolean }
+  | { trigger: "last_received"; text: string; recurring: boolean; delay_seconds: number; mode?: "all" | "operator"; disabled?: boolean };
 
 export interface ProfileData {
   voice?: string;
