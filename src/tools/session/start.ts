@@ -17,6 +17,8 @@ import { decodeToken } from "../identity-schema.js";
 import { fireStartupReminders, buildReminderEvent } from "../../reminder-state.js";
 import { registerPendingApproval, clearPendingApproval, isDelegationEnabled, setDelegationEnabled } from "../../agent-approval.js";
 import type { ApprovalDecision } from "../../agent-approval.js";
+import { readProfile } from "../../profile-store.js";
+import { applyProfile } from "../profile/apply.js";
 
 const APPROVAL_TIMEOUT_MS = 120_000;
 const APPROVAL_NO = "approve_no";
@@ -218,7 +220,7 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 const DESCRIPTION =
   "Start a named session and return its token. If you lost the token, use action(type: 'session/reconnect'). No args are reused.";
 
-export async function handleSessionStart({ name, color, refresh, token }: { name: string; color?: string; refresh?: boolean; token?: number }) {
+export async function handleSessionStart({ name, color, refresh, token, autoload_profile }: { name: string; color?: string; refresh?: boolean; token?: number; autoload_profile?: boolean }) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -447,6 +449,15 @@ export async function handleSessionStart({ name, color, refresh, token }: { name
           deliverReminderEvent(session.sid, buildReminderEvent(r));
         }
 
+        // Auto-load profile matching session name (opt-in: session param or profile flag)
+        if (effectiveName) {
+          const profile = readProfile(effectiveName);
+          if (profile && (autoload_profile === true || profile.autoload === true)) {
+            applyProfile(session.sid, profile);
+            res.profile_autoloaded = effectiveName;
+          }
+        }
+
         return toResult(res);
       } catch (err) {
         // Rollback: clean up orphaned session on failure
@@ -609,6 +620,15 @@ export function register(server: McpServer) {
             "Pass alongside token to reclaim a live session (returns reused: true). " +
             "When no session exists for the name, creates a new one (returns reused: false). " +
             "Omit or false for strict first-boot semantics (current default).",
+          ),
+        autoload_profile: z
+          .boolean()
+          .optional()
+          .describe(
+            "When true, automatically applies the saved profile matching the session name (if one exists). " +
+            "Also applies if the matching profile has autoload: true, even when this flag is false or omitted. " +
+            "No error if no profile exists — session starts normally. " +
+            "session/reconnect never auto-loads.",
           ),
       },
     },
