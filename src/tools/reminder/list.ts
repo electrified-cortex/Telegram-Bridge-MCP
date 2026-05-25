@@ -43,6 +43,7 @@ export function handleListReminders({ token }: { token: number }) {
       entry.time_since_last_received_seconds = lastReceivedAt !== undefined
         ? Math.floor((now - lastReceivedAt) / 1000)
         : null;
+      entry.only_if_silent = r.only_if_silent ?? false;
     }
     return entry;
   });

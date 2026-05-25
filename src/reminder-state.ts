@@ -14,17 +14,18 @@ import { getCallerSid } from "./session-context.js";
 
 /**
  * Deterministic reminder ID derived from content.
- * Same text+recurring+trigger+mode always yields the same 16-char hex string.
- * Different `recurring` flag, `trigger`, or `mode` → different hash (they coexist).
+ * Same text+recurring+trigger+mode+only_if_silent always yields the same 16-char hex string.
+ * Different `recurring` flag, `trigger`, `mode`, or `only_if_silent` → different hash (they coexist).
  */
 export function reminderContentHash(
   text: string,
   recurring: boolean,
   trigger: "time" | "startup" | "last_sent" | "last_received" = "time",
   mode?: "all" | "operator",
+  only_if_silent?: boolean,
 ): string {
   return createHash("sha256")
-    .update(`${text}\0${recurring}\0${trigger}\0${mode ?? ""}`)
+    .update(`${text}\0${recurring}\0${trigger}\0${mode ?? ""}\0${only_if_silent ?? ""}`)
     .digest("hex")
     .slice(0, 16);
 }
@@ -37,6 +38,11 @@ export interface Reminder {
   trigger: "time" | "startup" | "last_sent" | "last_received";
   /** Only set for `last_received` reminders. Defaults to "all" if omitted. */
   mode?: "all" | "operator";
+  /**
+   * For `last_received` only: when true, suppresses the reminder if the agent has already
+   * replied (sent) since the last qualifying inbound. Default false preserves v7.6.0 behavior.
+   */
+  only_if_silent?: boolean;
   created_at: number;      // Date.now() when added
   activated_at: number | null; // Date.now() when promoted to active (null if still deferred/startup)
   state: "deferred" | "active" | "startup" | "event_pending";
@@ -83,6 +89,7 @@ export function addReminder(params: {
   recurring: boolean;
   trigger?: "time" | "startup" | "last_sent" | "last_received";
   mode?: "all" | "operator";
+  only_if_silent?: boolean;
 }): Reminder {
   const sid = getCallerSid();
   const list = _reminders.get(sid) ?? [];
@@ -116,6 +123,7 @@ export function addReminder(params: {
     recurring: params.recurring,
     trigger,
     ...(trigger === "last_received" ? { mode: params.mode ?? "all" } : {}),
+    ...(trigger === "last_received" && params.only_if_silent ? { only_if_silent: true } : {}),
     created_at: now,
     activated_at,
     state,
@@ -435,7 +443,17 @@ function isEventReminderFireable(r: Reminder, sid: number, now: number): boolean
   const lastReceivedAt = _lastReceivedAt.get(sid)?.get(mode);
   if (lastReceivedAt === undefined) return false;
   if (lastReceivedAt === r.last_fired_for) return false;
-  return now - lastReceivedAt >= r.delay_seconds * 1000;
+  if (now - lastReceivedAt < r.delay_seconds * 1000) return false;
+
+  // only_if_silent: suppress if agent has replied (sent) since last qualifying inbound
+  if (r.only_if_silent) {
+    const lastSentAt = _lastSentAt.get(sid);
+    // undefined lastSentAt → never replied → allow fire
+    // lastSentAt >= lastReceivedAt → replied after inbound → suppress
+    if (lastSentAt !== undefined && lastSentAt >= lastReceivedAt) return false;
+  }
+
+  return true;
 }
 
 /** Return all fireable event-triggered reminders for `sid` (non-destructive). */
