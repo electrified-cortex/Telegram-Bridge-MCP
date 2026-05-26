@@ -119,8 +119,8 @@ translate() {
 if [[ "$OSTYPE" != linux* ]] && command -v pwsh >/dev/null 2>&1 && [[ -n "$SKILL_DIR" && -f "$SKILL_DIR/watch.ps1" ]]; then
     PS_ARGS=("-File" "$SKILL_DIR/watch.ps1" "$ACTIVITY_FILE"
         "-Timeout"   "$TIMEOUT"
-        "-Heartbeat" "$HEARTBEAT"
         "-Debounce"  "0")
+    [[ $HEARTBEAT -gt 0 ]] && PS_ARGS+=("-Heartbeat" "$HEARTBEAT")
     [[ -n "$PREFIX" ]] && PS_ARGS+=("-Prefix" "$PREFIX")
     pwsh "${PS_ARGS[@]}" | translate
     exit 0
@@ -128,7 +128,8 @@ fi
 
 # ── Layer 2: bash watch.sh (inotifywait → fswatch → sleep-poll) ───────────────
 if [[ -n "$SKILL_DIR" && -f "$SKILL_DIR/watch.sh" ]]; then
-    SH_ARGS=("$ACTIVITY_FILE" "--timeout" "$TIMEOUT" "--heartbeat" "$HEARTBEAT" "--debounce" "0")
+    SH_ARGS=("$ACTIVITY_FILE" "--timeout" "$TIMEOUT" "--debounce" "0")
+    [[ $HEARTBEAT -gt 0 ]] && SH_ARGS+=("--heartbeat" "$HEARTBEAT")
     [[ -n "$PREFIX" ]] && SH_ARGS+=("--prefix" "$PREFIX")
     bash "$SKILL_DIR/watch.sh" "${SH_ARGS[@]}" | translate
     exit 0
