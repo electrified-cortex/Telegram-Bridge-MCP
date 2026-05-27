@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 # monitor.sh — watch a TMCP activity file for changes; emit kick / heartbeat / timeout.
 #
-# Delegates to the file-watching skill (../skills/file-watching/):
-#   1. pwsh watch.ps1   — event-driven, zero idle CPU (preferred)
-#   2. bash watch.sh    — inotifywait → fswatch → 2s sleep-poll fallback
-#   3. Inline poll loop — last resort if skill scripts are not found
-#
 # Usage: monitor.sh <activity_file_path> [options]
 #
 # Arguments:
@@ -94,50 +89,6 @@ if [[ -z "$ACTIVITY_FILE" ]]; then
     exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL_DIR="$(cd "$SCRIPT_DIR/../skills/file-watching" 2>/dev/null && pwd)" || SKILL_DIR=""
-
-# translate: strip ISO8601 timestamp (first word) and map changed → kick.
-# Pure-bash while-read loop: avoids the mawk input-buffering bug on Debian
-# (mawk buffers stdin in 4KB blocks even with fflush() on output, which
-# silently blocks every line under ~4KB from ever reaching the harness).
-# bash builtins (read, echo) are line-oriented and flush each line
-# immediately on pipe stdout.
-translate() {
-    while IFS= read -r line; do
-        rest="${line#* }"
-        echo "${rest/changed/kick}"
-    done
-}
-
-# ── Layer 1: pwsh + watch.ps1 (event-driven, preferred — Windows only) ──────
-# On Linux, pwsh's FileSystemWatcher fails to detect mtime-only bumps on the
-# activity file, leading to silent zero-kick failures. The OSTYPE guard
-# matches the same fix in the file-watching skill's watch.sh — on Linux we
-# fall through to Layer 2 (bash watch.sh / inotifywait) regardless of whether
-# pwsh happens to be installed in the container.
-if [[ "$OSTYPE" != linux* ]] && command -v pwsh >/dev/null 2>&1 && [[ -n "$SKILL_DIR" && -f "$SKILL_DIR/watch.ps1" ]]; then
-    PS_ARGS=("-File" "$SKILL_DIR/watch.ps1" "$ACTIVITY_FILE"
-        "-Timeout"   "$TIMEOUT"
-        "-Debounce"  "0")
-    [[ $HEARTBEAT -gt 0 ]] && PS_ARGS+=("-Heartbeat" "$HEARTBEAT")
-    [[ -n "$PREFIX" ]] && PS_ARGS+=("-Prefix" "$PREFIX")
-    pwsh "${PS_ARGS[@]}" | translate
-    exit 0
-fi
-
-# ── Layer 2: bash watch.sh (inotifywait → fswatch → sleep-poll) ───────────────
-if [[ -n "$SKILL_DIR" && -f "$SKILL_DIR/watch.sh" ]]; then
-    SH_ARGS=("$ACTIVITY_FILE" "--timeout" "$TIMEOUT" "--debounce" "0")
-    [[ $HEARTBEAT -gt 0 ]] && SH_ARGS+=("--heartbeat" "$HEARTBEAT")
-    [[ -n "$PREFIX" ]] && SH_ARGS+=("--prefix" "$PREFIX")
-    bash "$SKILL_DIR/watch.sh" "${SH_ARGS[@]}" | translate
-    exit 0
-fi
-
-# ── Layer 3: inline fallback ──────────────────────────────────────────────────
-# Used only when skills/file-watching/ scripts are not found at the expected path.
-
 # Cross-platform mtime: GNU stat (Linux/Git-Bash) then BSD stat (macOS).
 get_mtime() {
     stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
@@ -193,6 +144,5 @@ while true; do
 
     sleep 2
 done
-# Defensive: explicit zero exit so a failing last command doesn't bubble
-# up as a non-zero exit. Hook callers treat non-zero as "block this event".
+
 exit 0
