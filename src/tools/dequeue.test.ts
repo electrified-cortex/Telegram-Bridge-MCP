@@ -29,12 +29,14 @@ const fileStateMocks = vi.hoisted(() => ({
   setDequeueActive: vi.fn(),
   getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
   releaseKickLockout: vi.fn((_sid: number) => {}),
+  kickIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
   setDequeueActive: (sid: number, active: boolean) => fileStateMocks.setDequeueActive(sid, active),
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
   releaseKickLockout: (sid: number) => { fileStateMocks.releaseKickLockout(sid); },
+  kickIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.kickIfAllowed(sid, source, inflight); },
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -1283,6 +1285,60 @@ describe("dequeue tool", () => {
       } finally {
         Date.now = realDateNow;
       }
+    });
+  });
+
+  // =========================================================================
+  // Reminder kick — activity file monitor wakeup on reminder return
+  // =========================================================================
+
+  describe("reminder kick (activity monitor wakeup)", () => {
+    it("P1: pre-loop event reminder calls kickIfAllowed", async () => {
+      const fakeReminder = { text: "event reminder pre-loop" };
+      reminderMocks.popFireableEventReminders.mockReturnValueOnce([fakeReminder]);
+
+      await call({ timeout: 300, token: 1_123_456 });
+
+      expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
+    });
+
+    it("P2: in-loop event reminder calls kickIfAllowed via finally block", async () => {
+      const fakeReminder = { text: "event reminder in-loop" };
+      reminderMocks.popFireableEventReminders
+        .mockReturnValueOnce([]) // pre-loop check: skip P1
+        .mockReturnValueOnce([fakeReminder]); // first loop iteration: P2 fires
+
+      await call({ timeout: 300, token: 1_123_456 });
+
+      expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
+    });
+
+    it("P3: idle-threshold reminder calls kickIfAllowed via finally block", async () => {
+      const realDateNow = Date.now;
+      const fakeStart = realDateNow();
+      let dateNowCallCount = 0;
+      Date.now = () => {
+        const callIdx = dateNowCallCount++;
+        return callIdx < 3 ? fakeStart : fakeStart + 61_000;
+      };
+
+      try {
+        const fakeReminder = { id: "rem-1", text: "idle reminder", recurring: false, delay_seconds: 0, created_at: fakeStart, activated_at: fakeStart, state: "active" as const };
+        reminderMocks.getActiveReminders.mockReturnValue([fakeReminder]);
+        reminderMocks.popActiveReminders.mockReturnValue([fakeReminder]);
+
+        await call({ timeout: 300, token: 1_123_456 });
+
+        expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
+      } finally {
+        Date.now = realDateNow;
+      }
+    });
+
+    it("timeout=0 empty-poll does NOT call kickIfAllowed", async () => {
+      await call({ timeout: 0, token: 1_123_456 });
+
+      expect(fileStateMocks.kickIfAllowed).not.toHaveBeenCalled();
     });
   });
 

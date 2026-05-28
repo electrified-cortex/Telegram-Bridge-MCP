@@ -23,3 +23,5 @@ notes/
 .code-reviews/
 
 .foreman-pod/
+# Claude --bg session tracking artifact (written by spawn.sh when pod cwd is here)
+.session-id

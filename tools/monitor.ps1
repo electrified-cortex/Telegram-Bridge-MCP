@@ -1,9 +1,6 @@
 #!/usr/bin/env pwsh
 # monitor.ps1 — watch a TMCP activity file for changes; emit kick / heartbeat / timeout.
 #
-# Delegates to the file-watching skill (../skills/file-watching/watch.ps1) when available.
-# Falls back to an inline FileSystemWatcher loop if the skill script is not present.
-#
 # Usage: monitor.ps1 <activity_file_path> [-Heartbeat <seconds>] [-Timeout <seconds>] [-Prefix <string>] [-Help]
 #
 # Parameters:
@@ -68,35 +65,6 @@ if ($Timeout -lt 0) {
 
 # Resolve to absolute path so GetDirectoryName/GetFileName work reliably.
 $fullPath = [System.IO.Path]::GetFullPath($ActivityFile)
-
-# ── Delegate to skill ─────────────────────────────────────────────────────────
-$scriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$watchScript = [System.IO.Path]::GetFullPath((Join-Path $scriptDir '../skills/file-watching/watch.ps1'))
-
-if (Test-Path -LiteralPath $watchScript) {
-    # Hashtable splat (named params). Array splat with @() passes everything
-    # positionally — -Timeout is interpreted as a value, not a switch, and
-    # binding fails. Hashtable preserves named binding.
-    $watchArgs = @{
-        Path      = $fullPath
-        Timeout   = $Timeout
-        Heartbeat = $Heartbeat
-        Debounce  = 0
-    }
-    if ($Prefix) { $watchArgs.Prefix = $Prefix }
-    & $watchScript @watchArgs | ForEach-Object {
-        # Strip ISO8601 timestamp (first word), then map changed → kick.
-        $token = ($_ -split ' ', 2)[1]
-        if ([string]::IsNullOrEmpty($token)) { return }
-        if ($token -match '^(.+: )changed$') { "$($Matches[1])kick" }
-        elseif ($token -eq 'changed') { 'kick' }
-        else { $token }
-    }
-    exit 0
-}
-
-# ── Inline fallback ───────────────────────────────────────────────────────────
-# Used only when skills/file-watching/watch.ps1 is not present at the expected path.
 
 function Write-Token {
     param([string]$Token)
@@ -194,6 +162,4 @@ while ($true) {
     }
 }
 
-# Defensive: explicit zero exit so a failing last command doesn't bubble
-# up as a non-zero exit. Hook callers treat non-zero as "block this event".
 exit 0

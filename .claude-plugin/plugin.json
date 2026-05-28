@@ -1,0 +1,19 @@
+{
+  "name": "telegram-bridge-mcp",
+  "version": "7.7.0",
+  "description": "Telegram Bridge MCP skill library — bootstrap any TMCP-enabled agent into an active Telegram session.",
+  "author": {
+    "name": "electricessence",
+    "url": "https://github.com/electrified-cortex"
+  },
+  "repository": "https://github.com/electrified-cortex/Telegram-Bridge-MCP",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "telegram",
+    "mcp",
+    "skills",
+    "participation",
+    "electrified-cortex"
+  ],
+  "built": "2026-05-28"
+}

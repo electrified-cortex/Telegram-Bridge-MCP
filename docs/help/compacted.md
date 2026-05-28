@@ -1,11 +1,15 @@
-Post-Compaction Recovery (Telegram side)
+# Post-Compaction Recovery (Telegram side)
 
 You just lost conversational context. This help topic covers Telegram/MCP recovery only — your agent harness injects the agent-specific checklist on startup.
 
 1. **Session token**: read it from your memory file if previously saved.
 2. **If token present**: `dequeue(max_wait: 0, token)` to drain pending messages and confirm the bridge link.
 3. **If token missing or `dequeue` returns `session_closed`**: call `action(type: 'session/reconnect', name: '<your_name>')` to rejoin, or `action(type: 'session/start', name: '<your_name>')` for a fresh session.
-4. **Monitor (if you were using one)**: check your harness's task list for a monitor named "Telegram message notifier". If it's active, you're set — TMCP keeps your registered activity file intact across compaction; only the monitor task might have been lost. If the monitor is gone, call `action(type: 'activity/file/get')` for the registered path, then arm a fresh **persistent** monitor with the description "Telegram message notifier" (see `help('activity/file')`). If `activity/file/get` returns nothing, call `action(type: 'activity/file/create', refresh: true)` for a clean reset.
+4. **Monitor**: If your harness doesn't support file monitoring (e.g. VS Code), skip this step entirely — **keep dequeuing at the end of every turn, that's all you need.** For harnesses with an active file monitor, TMCP keeps your activity file registration intact across compaction — but your local watcher process may have died. Recovery:
+   - **A. Test**: `action(type: 'activity/file/touch')`. Error response → no registration → skip to D.
+   - **B. Arm verification**: set a 30-second harness-local timer (not a Telegram reminder), then end your turn and wait — whichever fires first wins.
+   - **C. Watcher kick fires first**: monitor is live — cancel the timer and resume your dequeue loop.
+   - **D. Timer fires first (or touch errored)**: `action(type: 'activity/file/create', refresh: true)` — wipes the old registration, creates a fresh file. Re-arm a persistent monitor on the returned path (see `help('activity/file')`). Resume loop.
 5. **Resume your dequeue loop**.
 
 For a richer refresher:

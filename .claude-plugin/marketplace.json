@@ -1,0 +1,13 @@
+{
+  "name": "telegram-bridge-mcp",
+  "owner": {
+    "name": "Electrified Cortex"
+  },
+  "plugins": [
+    {
+      "name": "telegram-bridge-mcp",
+      "source": "./",
+      "description": "Telegram Bridge MCP skill library by Electrified Cortex"
+    }
+  ]
+}
