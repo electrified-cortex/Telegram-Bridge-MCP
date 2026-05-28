@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseKickLockout } from "./activity/file-state.js";
+import { setDequeueActive, releaseKickLockout, kickIfAllowed } from "./activity/file-state.js";
 import { resetChannelCooldown } from "../channel.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
@@ -288,6 +288,7 @@ export async function runDrainLoop(
       setDequeueActive(sid, false);
       releaseKickLockout(sid);
       resetChannelCooldown(sid);
+      kickIfAllowed(sid, "reminder", false);
       return reminderResult;
     }
   }
@@ -308,6 +309,7 @@ export async function runDrainLoop(
   // Tracks whether this dequeue call exits via a content-returning path.
   // Only content-returning exits release the kick lockout; timeout exits skip.
   let _lockoutRelease = false;
+  let _reminderKickNeeded = false;
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) break;
@@ -355,6 +357,7 @@ export async function runDrainLoop(
           };
           dlog("queue", `dequeue returning sid=${sid} batch=${eventFired.length} event-reminder payloadLen=${JSON.stringify(reminderResult).length}`);
           _lockoutRelease = true;
+          _reminderKickNeeded = true;
           return reminderResult;
         }
       }
@@ -381,6 +384,7 @@ export async function runDrainLoop(
         // `updates` (real event data) and optionally `pending` (when > 0), neither
         // of which are compact-suppressible fields.
         _lockoutRelease = true;
+        _reminderKickNeeded = true;
         return reminderResult;
       }
 
@@ -446,6 +450,9 @@ export async function runDrainLoop(
     if (_lockoutRelease) {
       releaseKickLockout(sid);
       resetChannelCooldown(sid);
+    }
+    if (_reminderKickNeeded) {
+      kickIfAllowed(sid, "reminder", false);
     }
   }
 }
