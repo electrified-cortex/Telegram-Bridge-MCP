@@ -1,5 +1,5 @@
 {
-  "name": "telegram-mcp-skills",
+  "name": "telegram-bridge-mcp",
   "version": "7.7.0",
   "description": "Telegram Bridge MCP skill library — bootstrap any TMCP-enabled agent into an active Telegram session.",
   "author": {

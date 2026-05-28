@@ -5,7 +5,7 @@
   },
   "plugins": [
     {
-      "name": "telegram-mcp-skills",
+      "name": "telegram-bridge-mcp",
       "source": "./",
       "description": "Telegram Bridge MCP skill library by Electrified Cortex"
     }
