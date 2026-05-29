@@ -31,9 +31,11 @@ Operator approval dialog (up to 120s). Approved → store token; R3. Denied/time
 
 ## R4 — Post-connect setup
 
-`send(type: 'animation', preset: 'working', timeout: 60, token: <token>)` — fire first, before any further setup, so the operator sees a presence signal during the remainder of boot. 60s temp auto-clears.
+`action(type: 'profile/load', key: '<agent-name>')` — load own profile (voice, animation, reminders). Use the pod's own identifier (e.g. `bt`, `curator`, `zhuli`, `overseer`). Idempotent; safe after compaction.
 
-Then `help('startup')` — covers profile load, monitor arm, and dequeue defaults.
+`send(type: 'animation', preset: 'working', timeout: 60, token: <token>)` — fire next, before any further setup, so the operator sees a presence signal during the remainder of boot. 60s temp auto-clears.
+
+Then `help('startup')` — covers monitor arm and dequeue defaults.
 
 ## R5 — Dequeue loop
 
@@ -46,7 +48,7 @@ Before any shutdown: drain the queue with `dequeue(max_wait: 0)`, then `action(t
 
 ## Breadcrumbs
 
-- `help('startup')` — profile, monitor, dequeue defaults
+- `help('startup')` — monitor arm, dequeue defaults (profile/load now explicit in R4)
 - `help('compacted')` — post-compaction monitor recovery
 - `help('guide')` — communication patterns, etiquette, presence
 - `help('index')` — full topic menu

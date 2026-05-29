@@ -8,7 +8,7 @@ Bootstrap any TMCP-enabled agent from zero to operational Telegram participant. 
 
 **Covered:** Connection check, session anchor (fresh start and reconnect), startup drain, post-connect setup delegation, and dequeue loop entry.
 
-**Not covered:** Profile load, monitor arm/verify, graceful shutdown — all delegated to bridge `help()` topics invoked from this skill.
+**Not covered:** Monitor arm/verify, graceful shutdown — delegated to bridge `help()` topics. Profile load is covered explicitly in R4 Step 1 (not delegated).
 
 ## Definitions
 
@@ -55,9 +55,11 @@ flowchart TD
     R3C --> R4A
 
     subgraph R4["R4 — Post-Connect Setup"]
-        R4A["help('startup')"]
+        R4A["profile/load (own key)"]
+        R4B["send animation (working, 60s)"]
+        R4C["help('startup')"]
     end
-    R4A --> R5A
+    R4A --> R4B --> R4C --> R5A
 
     subgraph R5["R5 — Dequeue Loop"]
         R5A["dequeue (session default)"]
@@ -109,10 +111,11 @@ Single call: `dequeue(max_wait: 0)`. Do not loop. If a `post_compact_monitor_rec
 
 ### R4 — Post-connect setup
 
-1. **Boot animation (first):** `send(type: 'animation', preset: 'working', timeout: 60, token)`. Fires the earliest possible presence signal — operator sees activity within seconds of session anchor instead of waiting through silent setup. 60s temporary; auto-clears or is superseded by the first real send.
-2. **Setup delegation:** `help('startup')` — profile load, activity monitor arm, dequeue defaults.
+1. **Profile load (first):** `action(type: 'profile/load', key: '<agent-name>')`. Use the pod's own identifier (e.g. `bt`, `curator`, `zhuli`, `overseer`). MUST use the agent's own key — never another session's key. Idempotent; safe after compaction. Ensures voice, animation, and reminder settings are loaded before any further setup.
+2. **Boot animation:** `send(type: 'animation', preset: 'working', timeout: 60, token)`. Fires the earliest visible presence signal — operator sees activity within seconds of session anchor instead of waiting through silent setup. 60s temporary; auto-clears or is superseded by the first real send. MUST fire after Step 1 (profile/load provides the session's voice/animation settings).
+3. **Setup delegation:** `help('startup')` — activity monitor arm and dequeue defaults. Profile load is now handled in Step 1.
 
-Both MUST run after R2 (and after R3's compaction-recovery branch if taken). Step 1 MUST precede Step 2.
+All three MUST run after R2 (and after R3's compaction-recovery branch if taken). Steps MUST execute in order: 1 → 2 → 3.
 
 ### R5 — Dequeue loop
 
@@ -127,7 +130,7 @@ Before any shutdown path: drain the queue with `dequeue(max_wait: 0)`, then `act
 | Topic | What it covers |
 | --- | --- |
 | `help('index')` | Full topic menu |
-| `help('startup')` | Profile load, monitor arm, dequeue defaults |
+| `help('startup')` | Monitor arm, dequeue defaults (profile/load explicit in R4 Step 1) |
 | `help('compacted')` | Post-compaction monitor recovery |
 | `help('guide')` | Communication patterns, etiquette, presence, animations |
 | `help('dequeue')` | Dequeue loop rules, drain vs. block |
@@ -136,6 +139,7 @@ Before any shutdown path: drain the queue with `dequeue(max_wait: 0)`, then `act
 ## Constraints
 
 - Do not call `help('startup')` before R2 completes.
+- Do not call `profile/load` with another agent's key — always use the pod's own identifier.
 - R3 drain is a single call; do not loop it.
 - Do not override session dequeue default via `profile/dequeue-default`.
 - Every shutdown path must invoke `help('shutdown')`.
@@ -147,7 +151,8 @@ Before any shutdown path: drain the queue with `dequeue(max_wait: 0)`, then `act
 - [ ] No token, denied: stop after failed approval; no further bridge calls.
 - [ ] TMCP unreachable: notify operator; stop before any bridge calls.
 - [ ] Compaction: `POST_COMPACT_MONITOR_RECOVERY` detected in R3 drain; `help('compacted')` called before R4.
-- [ ] `help('startup')` called after every successful session anchor.
-- [ ] Boot animation (`send(type:'animation', preset:'working', timeout:60)`) fires immediately on entering R4, before `help('startup')`.
+- [ ] `profile/load` called with the pod's own key as first step of R4, after every successful session anchor.
+- [ ] Boot animation (`send(type:'animation', preset:'working', timeout:60)`) fires after `profile/load` and before `help('startup')`.
+- [ ] `help('startup')` called after `profile/load` and boot animation.
 - [ ] Every turn ends with dequeue.
 - [ ] `help('shutdown')` called on all shutdown paths.
