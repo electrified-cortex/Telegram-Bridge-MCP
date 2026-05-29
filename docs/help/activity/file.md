@@ -49,8 +49,6 @@ Both scripts delegate to the shared file-watching skill (`skills/file-watching/`
 **Bash:**
 ```bash
 bash tools/monitor.sh "$ACTIVITY_FILE_PATH"
-# Optional: heartbeat every 60 s so you can detect a dead monitor
-bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --heartbeat 60
 # Optional: exit after 5 minutes of inactivity
 bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --timeout 300
 # Optional: prefix every output line
@@ -60,8 +58,6 @@ bash tools/monitor.sh "$ACTIVITY_FILE_PATH" --prefix MySession
 **PowerShell:**
 ```powershell
 pwsh tools/monitor.ps1 $activityFilePath
-# Optional: heartbeat every 60 s
-pwsh tools/monitor.ps1 $activityFilePath -Heartbeat 60
 # Optional: exit after 5 minutes of inactivity
 pwsh tools/monitor.ps1 $activityFilePath -Timeout 300
 # Optional: prefix every output line
