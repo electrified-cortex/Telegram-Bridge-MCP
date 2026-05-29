@@ -109,7 +109,10 @@ Single call: `dequeue(max_wait: 0)`. Do not loop. If a `post_compact_monitor_rec
 
 ### R4 — Post-connect setup
 
-Call `help('startup')`. It covers profile load, activity monitor arm, and dequeue defaults. MUST run after R2.
+1. **Boot animation (first):** `send(type: 'animation', preset: 'working', timeout: 60, token)`. Fires the earliest possible presence signal — operator sees activity within seconds of session anchor instead of waiting through silent setup. 60s temporary; auto-clears or is superseded by the first real send.
+2. **Setup delegation:** `help('startup')` — profile load, activity monitor arm, dequeue defaults.
+
+Both MUST run after R2 (and after R3's compaction-recovery branch if taken). Step 1 MUST precede Step 2.
 
 ### R5 — Dequeue loop
 
@@ -145,5 +148,6 @@ Before any shutdown path: drain the queue with `dequeue(max_wait: 0)`, then `act
 - [ ] TMCP unreachable: notify operator; stop before any bridge calls.
 - [ ] Compaction: `POST_COMPACT_MONITOR_RECOVERY` detected in R3 drain; `help('compacted')` called before R4.
 - [ ] `help('startup')` called after every successful session anchor.
+- [ ] Boot animation (`send(type:'animation', preset:'working', timeout:60)`) fires immediately on entering R4, before `help('startup')`.
 - [ ] Every turn ends with dequeue.
 - [ ] `help('shutdown')` called on all shutdown paths.

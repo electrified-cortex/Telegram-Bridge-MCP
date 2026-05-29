@@ -65,11 +65,21 @@ This is a single non-blocking call — do not loop. If a `post_compact_monitor_r
 
 ## R4 — Post-connect setup
 
+**Step 1 — Boot animation (fire first):**
+
+```mcp
+send(type: 'animation', preset: 'working', timeout: 60, token: <token>)
+```
+
+The earliest possible presence signal once a session is anchored. Without it, the operator sees nothing for the several seconds it takes the agent to finish setup (profile load, monitor arm, defaults). 60-second temporary animation — auto-clears, or is naturally superseded by the agent's first real send.
+
+**Step 2 — Setup delegation:**
+
 ```mcp
 help('startup')
 ```
 
-This covers profile load, activity monitor arm, and dequeue defaults. Must run after the session is anchored (R2 complete).
+Covers profile load, activity monitor arm, and dequeue defaults. Must run after the session is anchored (R2 complete) and AFTER the boot animation fires.
 
 ## R5 — Dequeue loop
 

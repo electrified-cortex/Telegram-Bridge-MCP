@@ -31,7 +31,9 @@ Operator approval dialog (up to 120s). Approved → store token; R3. Denied/time
 
 ## R4 — Post-connect setup
 
-`help('startup')` — covers profile load, monitor arm, and dequeue defaults.
+`send(type: 'animation', preset: 'working', timeout: 60, token: <token>)` — fire first, before any further setup, so the operator sees a presence signal during the remainder of boot. 60s temp auto-clears.
+
+Then `help('startup')` — covers profile load, monitor arm, and dequeue defaults.
 
 ## R5 — Dequeue loop
 
