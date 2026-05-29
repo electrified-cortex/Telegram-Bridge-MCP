@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
+import { createMockServer, parseResult, isError } from "../test-utils.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
 import type { ButtonResult, TextResult, VoiceResult } from "../button-helpers.js";
 

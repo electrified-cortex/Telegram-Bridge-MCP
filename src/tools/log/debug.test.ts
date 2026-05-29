@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { createMockServer, parseResult, type ToolHandler, isError, errorCode } from "../test-utils.js";
+import { createMockServer, parseResult, type ToolHandler } from "../test-utils.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
 
 const mocks = vi.hoisted(() => ({
