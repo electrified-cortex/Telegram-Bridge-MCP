@@ -4,7 +4,8 @@ description: >-
   Bootstrap any TMCP-enabled agent into an active Telegram session — connection
   check, session anchor, startup drain, post-connect setup, and dequeue loop.
   Load on startup/resume; invoke on-demand to re-anchor. Triggers - join
-  Telegram, connect session, re-anchor session, telegram loop, session startup.
+  Telegram, telegram presence, sign on telegram, telegram loop, re-anchor
+  session.
 ---
 
 # telegram-participation — uncompressed

@@ -67,7 +67,7 @@ describe("TC1: no activity file registered", () => {
   it("returns NO_ACTIVITY_FILE error", async () => {
     const result = await handleActivityFileTouch({ token: SID });
     expect(isError(result as { isError?: boolean })).toBe(true);
-    const body = parseResult(result as { content: Array<{ text: string }> });
+    const body = parseResult(result);
     expect(body.code).toBe("NO_ACTIVITY_FILE");
     expect(typeof body.message).toBe("string");
   });
@@ -100,7 +100,7 @@ describe("TC2: file registered but missing from disk", () => {
   it("returns ACTIVITY_FILE_MISSING error", async () => {
     const result = await handleActivityFileTouch({ token: SID });
     expect(isError(result as { isError?: boolean })).toBe(true);
-    const body = parseResult(result as { content: Array<{ text: string }> });
+    const body = parseResult(result);
     expect(body.code).toBe("ACTIVITY_FILE_MISSING");
     expect(typeof body.message).toBe("string");
     expect(body.file_path).toBe("/nonexistent/path/activity-file-that-does-not-exist");
@@ -141,7 +141,7 @@ describe("TC3: success — file registered and present on disk", () => {
   it("returns touched:true with file_path and mtime", async () => {
     const result = await handleActivityFileTouch({ token: SID });
     expect(isError(result as { isError?: boolean })).toBe(false);
-    const body = parseResult(result as { content: Array<{ text: string }> });
+    const body = parseResult(result);
     expect(body.touched).toBe(true);
     expect(body.file_path).toBe(filePath);
     expect(typeof body.mtime).toBe("string");
@@ -176,7 +176,7 @@ describe("TC4: auth failure", () => {
   it("returns AUTH_FAILED error", async () => {
     const result = await handleActivityFileTouch({ token: 99999 });
     expect(isError(result as { isError?: boolean })).toBe(true);
-    const body = parseResult(result as { content: Array<{ text: string }> });
+    const body = parseResult(result);
     expect(body.code).toBe("AUTH_FAILED");
   });
 });
@@ -216,7 +216,7 @@ describe("TC5: idempotent — rapid repeated calls", () => {
     for (let i = 0; i < 5; i++) {
       const result = await handleActivityFileTouch({ token: SID });
       expect(isError(result as { isError?: boolean })).toBe(false);
-      const body = parseResult(result as { content: Array<{ text: string }> });
+      const body = parseResult(result);
       expect(body.touched).toBe(true);
     }
   });
@@ -256,7 +256,7 @@ describe("TC6: TMCP-owned file", () => {
   it("returns touched:true for TMCP-owned file", async () => {
     const result = await handleActivityFileTouch({ token: SID });
     expect(isError(result as { isError?: boolean })).toBe(false);
-    const body = parseResult(result as { content: Array<{ text: string }> });
+    const body = parseResult(result);
     expect(body.touched).toBe(true);
     expect(body.file_path).toBe(filePath);
   });
