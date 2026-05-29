@@ -87,7 +87,7 @@ flowchart TD
 ### R1 — Connection check
 
 | Condition | Action |
-|---|---|
+| --- | --- |
 | TMCP unreachable | Notify operator; report unavailable; stop |
 | TMCP reachable | Proceed to R2 |
 
@@ -98,7 +98,7 @@ flowchart TD
 **Token present:** Probe: `action(type: 'reminder/list', token: <token>)`.
 
 | Result | Action |
-|---|---|
+| --- | --- |
 | Success | Session live — proceed to R3 |
 | `AUTH_FAILED` or invalid token | `action(type: 'session/reconnect', name: '<AgentName>')` — same approval dialog; store new token; proceed to R3. Denied/timeout: notify; stop. |
 | Unexpected error | Notify operator; stop |
@@ -122,7 +122,7 @@ Before any shutdown path: drain the queue with `dequeue(max_wait: 0)`, then `act
 ## Help Breadcrumbs
 
 | Topic | What it covers |
-|---|---|
+| --- | --- |
 | `help('index')` | Full topic menu |
 | `help('startup')` | Profile load, monitor arm, dequeue defaults |
 | `help('compacted')` | Post-compaction monitor recovery |
