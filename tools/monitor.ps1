@@ -148,7 +148,7 @@ while ($true) {
     # Block using FileSystemWatcher (NotifyFilter = LastWriteTime).
     if (Test-Path $fullPath) {
         $watcher = [System.IO.FileSystemWatcher]::new($fileDir, $fileName)
-        $watcher.NotifyFilter = [System.IO.NotifyFilters]::LastWriteTime
+        $watcher.NotifyFilter = [System.IO.NotifyFilters]::LastWrite
         $watcher.EnableRaisingEvents = $true
         try {
             $null = $watcher.WaitForChanged([System.IO.WatcherChangeTypes]::Changed, $waitMs)
