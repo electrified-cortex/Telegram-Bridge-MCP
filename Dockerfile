@@ -24,7 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
+# corepack was removed from Node.js distributions in v25+; install pnpm directly.
+# Version pinned to match package.json "packageManager".
+RUN npm install -g pnpm@11.5.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
@@ -37,7 +39,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
+# corepack was removed from Node.js distributions in v25+; install pnpm directly.
+# Version pinned to match package.json "packageManager".
+RUN npm install -g pnpm@11.5.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
