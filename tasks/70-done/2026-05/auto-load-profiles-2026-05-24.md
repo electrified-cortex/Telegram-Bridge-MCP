@@ -7,9 +7,14 @@
 
 ---
 
-## Verbatim — msg 61048
+## Summary — msg 61048
 
-> Heads up, another feature that should have already been added, or at least somewhere is in tasks, is auto-loading profiles. Okay, if the, whatever the profile that, whatever the name that's used to start the session, you should be able to use an auto-load profile. If they're allowed in, then that's it. Okay, so let's add that feature. It'll be part of 7.6. It has to be opted in, though. It's a configuration setting. And the configuration setting can be set by the agent. Maybe even set per profile if it's auto-load.
+> Source: operator voice msg 61048, 2026-05-24 (distilled).
+
+Requested feature: auto-loading profiles. When a session starts under a given name, the bridge
+should be able to auto-load the profile matching that name. The feature targets the v7.6
+release. It must be opt-in via a configuration setting that the agent can set, optionally on a
+per-profile basis.
 
 ---
 

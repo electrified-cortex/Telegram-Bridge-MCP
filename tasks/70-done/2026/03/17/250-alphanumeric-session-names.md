@@ -6,8 +6,10 @@ Story
 
 ## Origin
 
-Operator voice message (2026-03-18):
-> "Names that are provided are only alphanumeric names. No other symbols. No other special characters. They can only be alphanumeric. And maybe a space. But that's it."
+Operator voice message (2026-03-18, distilled):
+> Source: operator voice, 2026-03-18 (distilled).
+
+Provided session names must be alphanumeric only — no symbols or special characters — with spaces allowed.
 
 ## Current Behavior
 

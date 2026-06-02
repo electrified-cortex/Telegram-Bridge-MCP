@@ -35,6 +35,7 @@ import { removeSession as removeBehaviorTrackerSession } from "./behavior-tracke
 import { removeSilenceState } from "./silence-detector.js";
 import { clearActivityFile } from "./tools/activity/file-state.js";
 import { unregisterChannelSubscriber } from "./channel.js";
+import { removeDequeueRateState } from "./tools/dequeue.js";
 
 /**
  * Perform the full teardown for a session identified by `sid`.
@@ -73,6 +74,7 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   // Cancel any pending channel subscription and debounce timers
   unregisterChannelSubscriber(sid);
   revokeAllForSession(sid);
+  removeDequeueRateState(sid);
   if (getActiveSession() === sid) setActiveSession(0);
 
   const wasGovernor = sid === getGovernorSid();

@@ -23,6 +23,7 @@
  */
 
 import type { TelegramError } from "./telegram.js";
+import { delay } from "./utils/timing.js";
 
 // ---------------------------------------------------------------------------
 // State
@@ -99,7 +100,7 @@ export async function debounceSend(): Promise<void> {
   await ticket;
   const gap = Date.now() - _lastSendAt;
   if (gap < MIN_SEND_INTERVAL_MS) {
-    await new Promise<void>(r => setTimeout(r, MIN_SEND_INTERVAL_MS - gap));
+    await delay(MIN_SEND_INTERVAL_MS - gap);
   }
   _lastSendAt = Date.now();
   resolve();

@@ -14,7 +14,7 @@ Reads the bridge event log (NDJSON from 10-0831) and answers operator questions 
 
 ## Use case
 
-Operator asks Curator: "given these metrics, where are we at right now? How can we improve?"
+Operator asks Curator (distilled): given these metrics, where do things stand now and how can they be improved?
 
 Curator runs the reporting tool, gets a digest, summarizes for operator. Tool is the data layer; Curator is the interpretation layer.
 

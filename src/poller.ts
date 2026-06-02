@@ -20,6 +20,7 @@ import { recordInbound, hasPendingWaiters, patchVoiceText, isMessageConsumed } f
 import { hasSessionWaiterForMessage, isSessionMessageConsumed, deliverVoiceTranscriptionFailed } from "./session-queue.js";
 import { transcribeVoice } from "./transcribe.js";
 import { dlog } from "./debug-log.js";
+import { delay } from "./utils/timing.js";
 
 const REACT_TRANSCRIBING = "\u270D" as ReactionEmoji;  // ✍
 const REACT_QUEUED = "\uD83D\uDE34" as ReactionEmoji;  // 😴
@@ -167,7 +168,7 @@ async function _pollLoop(): Promise<void> {
 
       // Transient: log and back off
       process.stderr.write(`[poller] error: ${msg}\n`);
-      await new Promise<void>((r) => setTimeout(r, DEFAULT_BACKOFF_MS));
+      await delay(DEFAULT_BACKOFF_MS);
     }
   }
 }

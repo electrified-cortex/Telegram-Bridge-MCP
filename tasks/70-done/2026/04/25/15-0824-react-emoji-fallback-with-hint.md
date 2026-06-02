@@ -13,7 +13,7 @@ When `action(type: 'react', emoji: ...)` is called with an emoji Telegram does n
 
 ## Trigger
 
-Operator: "I've seen quite often agents will use, they'll send a reaction that doesn't exist. That reaction will be like, for example, the ear, like they're listening to an audio message, which is very cool, but it's wrong. So what we should do is adapt to that, certain emojis can have an analog ... the message will be a success, but it'll say, hey, hint, there is no ear emoji or whatever it is in Telegram right now. We've sent an eyes emoji instead or an eyes reaction instead."
+Operator (distilled): agents often send a reaction emoji that does not exist as a Telegram reaction — e.g. an ear to signal listening to an audio message, which is a nice intent but invalid. The bridge should adapt by mapping such emojis to a supported analog: the call still succeeds, but returns a hint noting the requested emoji is unavailable and that an alternative (e.g. eyes) was used instead.
 
 The agent's intent (acknowledge by listening / processing) is good — Telegram's reaction set is the constraint. The bridge already has the supported emoji set; it can map sensibly.
 

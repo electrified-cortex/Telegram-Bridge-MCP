@@ -29,7 +29,7 @@ The new pattern (verified 2026-05-24, see `stations/docs/claude/lifecycle-behavi
 - OS-level SIGKILL is futile against `--bg` (supervisor auto-respawns).
 - Self-exit from inside is not honored — pods need an external `exit.sh` watcher.
 
-Operator's quote: "I'm loving this new form where you can close the Cloud Code instance, but you can bring them back with continue, and it works appropriately."
+Operator endorsement (voice msg 60714, distilled): values the new lifecycle where a Claude Code instance can be closed and later resumed via `--continue`, working as intended.
 
 Once foreman+worker are upgraded, Overseer dogfoods the pipeline by driving TMCP cleanup through it.
 
@@ -60,7 +60,7 @@ Out of scope:
 
 ### R1 — Worker pod: full replace
 
-The canonical worker pod is short-lived and stateless (no resumable conversation worth preserving — each worker spawns for ONE assignment and exits). Operator's read confirmed: "worker could just be outright replaced — shouldn't be anything old there."
+The canonical worker pod is short-lived and stateless (no resumable conversation worth preserving — each worker spawns for ONE assignment and exits). Operator's read (distilled): the worker can be replaced outright, since nothing old needs to be preserved.
 
 **Action:** delete the worker's existing `spawn.sh`. Replace with the `.overseer-pod/spawn.sh` shape, adapted:
 
@@ -145,7 +145,7 @@ Update both pods' `spec.md` to reference the new lifecycle:
 
 ## Curator's role from here
 
-Spec drafted. Available for clarification or v0.2 if Overseer's gate review surfaces issues. Operator's note: "make sure you and the operator are in sync on this before we start doing any work" — operator-sync happens via Curator (this Telegram channel); Overseer drives the execution.
+Spec drafted. Available for clarification or v0.2 if Overseer's gate review surfaces issues. Operator's note (distilled): operator and agent must be in sync before any work begins — operator-sync happens via Curator (this Telegram channel); Overseer drives the execution.
 
 ## Overseer review
 

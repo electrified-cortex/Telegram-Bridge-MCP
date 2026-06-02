@@ -63,7 +63,7 @@ v6.5 — not blocking current work. Filed as priority 20 (low urgency).
 ## Notes
 
 - Large refactor. May benefit from incremental approach (one namespace at a time).
-- Operator noted this explicitly as a "v6.5 or something like that" scope item.
+- Operator noted this explicitly as a roughly v6.5-era scope item.
 
 ## Completion
 

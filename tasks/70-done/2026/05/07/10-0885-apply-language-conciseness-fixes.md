@@ -60,7 +60,7 @@ Direct on `release/7.4` (no feature branch — operator authorized 7.4 landings)
 
 ## Priority
 
-P10 — release/7.4 ship gate. Operator's directive: "as much as we can get into release/7.4."
+P10 — release/7.4 ship gate. Operator's directive (distilled): get as much as possible into release/7.4.
 
 ## Completion
 

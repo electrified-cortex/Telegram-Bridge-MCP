@@ -22,3 +22,8 @@ Source: 2026-05-27 refactor scan
 - [ ] No inline message strings in the reconnect path of `session/start.ts`.
 - [ ] All service messages reference `SERVICE_MESSAGES` constants.
 - [ ] Tests pass.
+
+## Overseer bounce (2026-06-01)
+- verdict: REJECT — wrong line numbers, ambiguous scope
+- finding: Problem says "around line 542" but strings start at lines 531-533 and 546-547. TODO at line 542 says "not in scope" making it self-cancelling. No delegation. No test strategy for reconnect path.
+- action: Verify current line numbers, resolve the in-scope vs out-of-scope ambiguity, add delegation and test strategy.

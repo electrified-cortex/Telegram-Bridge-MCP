@@ -13,7 +13,7 @@ delegation: Worker
 
 ## Operator directive (2026-05-05)
 
-> "We need to revise this whole process to kind of be more like it was. Make how was it at 7.3 and the basic gist of how dequeuing works. And now we're introducing this as part of the startup. When you get the startup, you actually tell the agent — you instruct the agent — if you can, monitor, call this to monitor a file. But we still tell the same story about, to stay in the loop, call dequeue. You don't want to remove that primary responsibility that dequeuing is the way to get through. We're just adding this as an augment to replace the Telegram loop guard pattern, which really kind of sucked."
+> Source: operator voice, 2026-05-05 (distilled). Revert the onboarding story toward the 7.3-era framing of how dequeuing works. At startup, instruct the agent that — if it can monitor — it may call to monitor a file, while still telling the same core story: stay in the loop by calling dequeue. Dequeue remains the primary responsibility and the way to get through; monitoring is only an augment replacing the (poorly-received) Telegram loop-guard pattern.
 
 Prior to 2026-05-04 (TMCP 7.3-era), the canonical loop story was:
 

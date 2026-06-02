@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
+import { delay } from "../../utils/timing.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
 import type { ButtonResult, TextResult, VoiceResult } from "../button-helpers.js";
 
@@ -190,7 +191,7 @@ describe("choose tool", () => {
     await call({ text: "Pick", options: OPTIONS, token: 1123456});
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "opt_b", qid: "cq1" } });
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     // No highlighted rows — buttons are cleared (inline_keyboard: []) after selection
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
       42, 7, "Pick", "Option B", "cq1", false,
@@ -203,7 +204,7 @@ describe("choose tool", () => {
     await call({ text: "Pick one", options: OPTIONS, token: 1123456});
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "opt_a", qid: "cq1" } });
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     // No highlighted rows — buttons are cleared (inline_keyboard: []) after selection
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
       42, 7, "Pick one", "Option A", "cq1", false,
@@ -215,7 +216,7 @@ describe("choose tool", () => {
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
     await call({ text: "Pick", options: OPTIONS, timeout_seconds: 1, token: 1123456});
     // Wait for the void+catch chain to settle
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 7, "Pick", false);
     expect(mocks.ackAndEditSelection).not.toHaveBeenCalled();
     expect(mocks.editWithSkipped).not.toHaveBeenCalled();
@@ -322,7 +323,7 @@ describe("choose tool", () => {
     await call({ text: "Pick", options: OPTIONS, token: 1123456});
     const hookFn = mocks.registerMessageHook.mock.calls[0][1];
     hookFn();
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.clearCallbackHook).toHaveBeenCalledWith(7);
     // editWithSkipped is NOT called — buttons were already removed by editWithTimedOut
     expect(mocks.editWithSkipped).not.toHaveBeenCalled();
@@ -385,7 +386,7 @@ describe("choose tool", () => {
     mocks.ackAndEditSelection.mockRejectedValueOnce(new Error("network"));
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "opt_a", qid: "cq1" } });
-    await new Promise((r) => setTimeout(r, 20));
+    await delay(20);
     // No unhandled rejection — .catch swallowed the error gracefully
     expect(mocks.ackAndEditSelection).toHaveBeenCalled();
   });
@@ -572,7 +573,7 @@ testIdentityGate((args) => call(args), mocks.validateSession, {"text":"x","optio
       await call(BASE_VOICE_ARGS);
       const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
       hookFn({ content: { data: "a", qid: "cq1" } });
-      await new Promise((r) => setTimeout(r, 0));
+      await delay(0);
       // No highlighted rows — buttons are cleared (inline_keyboard: []) after selection
       expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
         42, 8, "Which option?", "Alpha", "cq1", true,
@@ -603,7 +604,7 @@ testIdentityGate((args) => call(args), mocks.validateSession, {"text":"x","optio
     it("calls editWithTimedOut with isVoice=true immediately on timeout for voice message", async () => {
       mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
       await call(BASE_VOICE_ARGS);
-      await new Promise((r) => setTimeout(r, 0));
+      await delay(0);
       expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 8, "Which option?", true);
       expect(mocks.editWithSkipped).not.toHaveBeenCalled();
     });

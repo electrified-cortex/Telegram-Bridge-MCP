@@ -13,8 +13,8 @@ Replace the narrow `/hook/animation` pattern with a general-purpose event system
 
 ## Why
 
-Operator quote (2026-04-25):
-> "instead of that, we should have an event system, an external event system, so that the Telegram MCP can log or emit service messages to participants. For example, let's say there's an event for compacting... all participants get a service message that says hey, so-and-so is compacting right now... maintain awareness of what's going on... these types of external non-MCP events can be triggered in such a way like whether it's pre-compact, or startup or shutdown or whatever, can be more robust as a non-MCP way of doing things... the logging of events becomes part of our log. And we can get metrics from how often things like the worker, or you or the overseer are compacting."
+Operator framing (2026-04-25, distilled):
+> Source: operator voice, 2026-04-25 (distilled). Build a general external event system so the bridge can log and emit service messages to participants. For example, a "compacting" event would notify all participants that a given session is compacting, maintaining shared awareness. Non-MCP lifecycle events (pre-compact, startup, shutdown, etc.) can be triggered this way for robustness, with event logging feeding metrics — e.g. how often the worker, governor, or other sessions compact.
 
 Single endpoint covers PreCompact, startup, shutdown, and any future agent-lifecycle signal. Built-in metrics. Awareness propagates without the originating agent having to know who needs to hear.
 
@@ -43,7 +43,7 @@ Behavior on success:
 
 ## Event kinds — strict taxonomy (MVP)
 
-Only these kinds are accepted. Unknown kinds → 400 reject. **No arbitrary text payloads** — events are predefined signals, not a generic message bus. Operator (2026-04-25): "There's no custom messages... no one can come in and start spamming all the participants this way. They have to be actual predefined events."
+Only these kinds are accepted. Unknown kinds → 400 reject. **No arbitrary text payloads** — events are predefined signals, not a generic message bus. Operator (2026-04-25, distilled): no custom messages — nobody can spam all participants this way; events must be predefined.
 
 MVP set:
 - `compacting` — agent entering compaction
@@ -66,7 +66,7 @@ Recipients render their own UI from the structured fields (e.g. Curator may deci
 
 ## Relationship to `/hook/animation`
 
-**REPLACE.** Operator (2026-04-25): "hook animation is going to be dead. We're not doing that. We're just changing to events."
+**REPLACE.** Operator (2026-04-25, distilled): the hook-animation approach is being dropped entirely in favor of events.
 
 `/hook/animation` is removed/deprecated. Animation is no longer separately addressable — it's a side-effect of governor-actor `compacting` events.
 
@@ -78,12 +78,12 @@ When `actor_sid == governor_sid` AND `kind == "compacting"`:
 
 - Trigger a TEMPORARY high-priority `compacting` preset animation on the governor's session.
 - Animation auto-vaporizes when the next outbound message from the governor arrives, OR on a fixed timeout (recommend 60s) — whichever comes first.
-- Operator (2026-04-25): "a long-term temporary animation, meaning if anything comes in from the governor, it vaporizes... at very high priority level."
+- Operator (2026-04-25, distilled): a long-lived temporary, high-priority animation that vaporizes as soon as anything comes in from the governor.
 
 When `actor_sid == governor_sid` AND `kind == "compacted"`:
 
 - Cancel the active `compacting` animation immediately (don't wait for the next outbound message or timeout).
-- DO NOT emit any "back from compaction" notification. Operator (2026-04-25): "there shouldn't be any notice or notification that has to happen... telling the operator, hey, I'm back from compaction because they will have known. And then post-compaction should cancel the compacting preset." The animation disappearing IS the signal.
+- DO NOT emit any "back from compaction" notification. Operator (2026-04-25, distilled): no notice or notification should be sent telling the operator the session is back from compaction — they will already know; post-compaction simply cancels the compacting preset. The animation disappearing IS the signal.
 
 ## help() integration
 
@@ -107,7 +107,7 @@ Implications for the log line:
 
 The reporting tool is a separate task (filed alongside) — but the log shape MUST be designed to support it now. Don't ship `/event` and discover it can't answer the questions.
 
-Operator quote (2026-04-25): "how often does a specific agent compact? How long does the compaction take? ... we can ask you for it. Say, hey, given these metrics, where are we at right now? How can we improve?"
+Operator framing (2026-04-25, distilled): the log should be able to answer questions like how often a given agent compacts and how long compaction takes, so the operator can later ask for those metrics and discuss where things stand and how to improve.
 
 ## Implementation notes
 

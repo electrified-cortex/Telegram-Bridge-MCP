@@ -41,7 +41,7 @@ Worker (TMCP). Curator stages, operator merges.
 
 ## Operator refinement (2026-04-19, voice 38209-38211, 38217, 38223-38224)
 
-Decision tree the help topic must encode (operator voice, captured then codified):
+Decision tree the help topic must encode (operator voice 38209-38211, 38217, 38223-38224, distilled and codified):
 
 ### Priority axis (text vs audio vs buttons)
 

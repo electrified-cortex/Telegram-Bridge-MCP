@@ -23,7 +23,7 @@ Reduce agent errors on `send` calls by making `type` inferrable from the payload
 
 ## Notes
 
-- Operator: "what is type? When is it used? It should be optional"
+- Operator (distilled): questioned what `type` is and when it's used, and asked that it be made optional.
 - Related: 10-751 (clarify hybrid in onboarding service message)
 - Low-risk if type inference is additive (fallback to explicit when ambiguous)
 

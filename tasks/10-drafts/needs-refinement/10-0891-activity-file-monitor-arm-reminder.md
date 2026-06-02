@@ -61,3 +61,8 @@ Two-prong reminder so the agent doesn't drop the watcher step:
   arm and operator caught the gap on review.
 - The bridge already has the `service_message` plumbing; this is
   another event type plus tracking, not new infrastructure.
+
+## Overseer bounce (2026-06-01)
+- verdict: REJECT — missing frontmatter and integration points underspecified
+- finding: No YAML frontmatter (no status/repo/agent_type/model_class/target_branch). Target source files not named. "Ack mechanism" ambiguous about state location. No AC for session-close cleanup of tracking state.
+- action: Add frontmatter, name specific source files, define ack state location, add session-close AC.

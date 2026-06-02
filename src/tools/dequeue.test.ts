@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
+import { delay } from "../utils/timing.js";
 import type { TimelineEvent } from "../message-store.js";
 
 interface CompactEvent {
@@ -155,7 +156,7 @@ vi.mock("../reminder-state.js", () => ({
 
 
 
-import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest } from "./dequeue.js";
+import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest, _resetDequeueRateForTest } from "./dequeue.js";
 
 function makeEvent(id: number, text: string, event = "message" as string): TimelineEvent {
   return {
@@ -287,7 +288,7 @@ describe("dequeue tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     // waitForEnqueue resolves but dequeue still returns nothing
     mocks.waitForEnqueue.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(r, 50)),
+      () => delay(50),
     );
     const result = await call({ timeout: 1, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
@@ -298,7 +299,7 @@ describe("dequeue tool", () => {
   it("calls waitForEnqueue when queue is empty and timeout > 0", async () => {
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.waitForEnqueue.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(r, 50)),
+      () => delay(50),
     );
     await call({ timeout: 1, token: 1_123_456 });
     expect(mocks.waitForEnqueue).toHaveBeenCalled();
@@ -314,7 +315,7 @@ describe("dequeue tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.pendingCount.mockReturnValue(3);
     mocks.waitForEnqueue.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(r, 50)),
+      () => delay(50),
     );
     const result = await call({ timeout: 1, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
@@ -866,7 +867,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(1);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 2, force: true, token: 1_123_456 });
       // Should NOT return TIMEOUT_EXCEEDS_DEFAULT — actual poll behavior fires
@@ -879,7 +880,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(2);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult(result);
@@ -892,7 +893,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(5);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 3, token: 1_123_456 });
       const data = parseResult(result);
@@ -936,7 +937,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(1);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ token: 1_123_456 }); // no timeout param
       const data = parseResult(result);
@@ -950,7 +951,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(2);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult(result);
@@ -1503,7 +1504,7 @@ describe("dequeue tool", () => {
     it("compact: timed_out:true is present when blocking wait expires (always emitted)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456, response_format: "compact" });
       expect(isError(result)).toBe(false);
@@ -1522,7 +1523,7 @@ describe("dequeue tool", () => {
     it("default: timed_out:true is present when blocking wait expires (response_format: default)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456, response_format: "default" });
       const data = parseResult<DequeueResult>(result);
@@ -1540,7 +1541,7 @@ describe("dequeue tool", () => {
     it("omitted response_format: timed_out:true is present (backward compat)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
@@ -1575,4 +1576,123 @@ describe("dequeue tool", () => {
   // ONBOARDING_LOOP_PATTERN at session start now covers the activity-file
   // guidance once; the redundant hint on first dequeue was deleted.
   // =========================================================================
+});
+
+// =============================================================================
+// checkDequeueRate — runaway-dequeue rate guard
+// =============================================================================
+describe("checkDequeueRate (runaway-dequeue rate guard)", () => {
+  const SID = 42;
+  const TOKEN = SID * 1_000_000 + 123_456; // e.g. 42_123_456
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+  });
+
+  it("does not warn when attempts are below threshold", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 19 calls — just under RATE_THRESHOLD (20)
+    for (let i = 0; i < 19; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("RUNAWAY DEQUEUE"),
+      "behavior_runaway_dequeue",
+    );
+  });
+
+  it("delivers a behavior_runaway_dequeue warning on the 20th attempt", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 20 calls — meets RATE_THRESHOLD
+    for (let i = 0; i < 20; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("RUNAWAY DEQUEUE"),
+      "behavior_runaway_dequeue",
+    );
+  });
+
+  it("does not repeat the warning within the 30s cooldown", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Trigger the warning
+    for (let i = 0; i < 20; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    const warnCount = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_runaway_dequeue",
+    ).length;
+    expect(warnCount).toBe(1);
+
+    // 10 more calls within the same window — cooldown should suppress second warn
+    for (let i = 0; i < 10; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    const warnCountAfter = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_runaway_dequeue",
+    ).length;
+    expect(warnCountAfter).toBe(1);
+  });
+
+  it("prunes old attempts outside the 60s window so a settled session does not retrigger", async () => {
+    // Directly manipulate the rate state by calling via runDrainLoop 19 times,
+    // then reset so all existing timestamps are treated as old, and confirm
+    // 19 fresh calls (well under threshold) do not warn.
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 19 calls to build up state
+    for (let i = 0; i < 19; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // Reset only the rate state (simulating 60s passing) without resetting mocks
+    _resetDequeueRateForTest();
+
+    // 19 fresh calls — still under threshold
+    for (let i = 0; i < 19; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("RUNAWAY DEQUEUE"),
+      "behavior_runaway_dequeue",
+    );
+  });
 });

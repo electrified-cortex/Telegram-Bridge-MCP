@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { TelegramError } from "../../telegram.js";
+import { delay } from "../../utils/timing.js";
 import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
 
@@ -299,8 +300,8 @@ describe("send_choice tool", () => {
       const [, hookFn] = mocks.registerPersistentCallbackHook.mock.calls[0] as [number, HookFn];
 
       hookFn({ content: { qid: "ack123", data: "like" } });
-      await new Promise<void>((r) => setTimeout(r, 0));
-      await new Promise<void>((r) => setTimeout(r, 0));
+      await delay(0);
+      await delay(0);
 
       expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("ack123");
       // editMessageText called with non-empty keyboard (persistent highlight)
@@ -325,8 +326,8 @@ describe("send_choice tool", () => {
       const [, hookFn] = mocks.registerPersistentCallbackHook.mock.calls[0] as [number, HookFn];
 
       hookFn({ content: { qid: "ack456", data: "dislike" } });
-      await new Promise<void>((r) => setTimeout(r, 0));
-      await new Promise<void>((r) => setTimeout(r, 0));
+      await delay(0);
+      await delay(0);
 
       expect(mocks.editMessageReplyMarkup).not.toHaveBeenCalled();
       expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
@@ -340,11 +341,11 @@ describe("send_choice tool", () => {
       const [, hookFn] = mocks.registerPersistentCallbackHook.mock.calls[0] as [number, HookFn];
 
       hookFn({ content: { qid: "q1", data: "like" } });
-      await new Promise<void>((r) => setTimeout(r, 0));
-      await new Promise<void>((r) => setTimeout(r, 0));
+      await delay(0);
+      await delay(0);
       hookFn({ content: { qid: "q2", data: "dislike" } });
-      await new Promise<void>((r) => setTimeout(r, 0));
-      await new Promise<void>((r) => setTimeout(r, 0));
+      await delay(0);
+      await delay(0);
 
       expect(mocks.editMessageText).toHaveBeenCalledTimes(2);
     });

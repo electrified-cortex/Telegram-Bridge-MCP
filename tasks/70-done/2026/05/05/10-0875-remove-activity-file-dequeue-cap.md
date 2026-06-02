@@ -13,7 +13,7 @@ delegation: Worker
 
 ## Operator framing (2026-05-05)
 
-> "We need to remove the feature that says when calling `activity/file/create` there was something in there that reset the dequeue max_wait to like 5 seconds or something. Let's just remove any of that custom max_wait stuff and keep things at the default of 300 seconds. If somebody wants to reduce it down to one minute, the cost is token churn — the longer the dequeue is waiting, the less token churn you're going to have."
+> Source: operator voice, 2026-05-05 (distilled). Remove the behavior where calling `activity/file/create` reset the dequeue `max_wait` (to ~5s). Drop all that custom `max_wait` handling and keep the default of 300s. Reducing it (e.g. to one minute) costs token churn — longer dequeue waits mean less churn.
 
 ## Where the cap lives
 

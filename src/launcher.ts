@@ -4,6 +4,7 @@ import { config as dotenvConfig } from "dotenv";
 import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { DEFAULT_HTTP_PORT } from "./cli-args.js";
+import { delay } from "./utils/timing.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, "..");
@@ -50,7 +51,7 @@ async function probeServer(url: string, timeoutMs: number): Promise<boolean> {
 async function waitForServer(url: string): Promise<void> {
   const deadline = Date.now() + WAIT_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    await new Promise<void>((r) => { setTimeout(r, WAIT_INTERVAL_MS); });
+    await delay(WAIT_INTERVAL_MS);
     if (await probeServer(url, PROBE_TIMEOUT_MS)) return;
   }
   throw new Error(`[launcher] server did not become ready within ${WAIT_TIMEOUT_MS}ms`);
@@ -117,7 +118,7 @@ async function listenServerEvents(baseUrl: string, getSessionId: () => string | 
   for (;;) {
     const sid = getSessionId();
     if (sid === undefined) {
-      await new Promise<void>((r) => { setTimeout(r, SSE_RECONNECT_DELAY_MS); });
+      await delay(SSE_RECONNECT_DELAY_MS);
       continue;
     }
     try {
@@ -127,14 +128,14 @@ async function listenServerEvents(baseUrl: string, getSessionId: () => string | 
       });
       if (!res.ok) {
         process.stderr.write(`[launcher] GET /mcp ${res.status}, retrying...\n`);
-        await new Promise<void>((r) => { setTimeout(r, SSE_RECONNECT_DELAY_MS); });
+        await delay(SSE_RECONNECT_DELAY_MS);
         continue;
       }
       await readSse(res);
       process.stderr.write("[launcher] GET /mcp SSE stream ended, reconnecting...\n");
     } catch (err: unknown) {
       process.stderr.write(`[launcher] GET /mcp error: ${String(err)}, retrying...\n`);
-      await new Promise<void>((r) => { setTimeout(r, SSE_RECONNECT_DELAY_MS); });
+      await delay(SSE_RECONNECT_DELAY_MS);
     }
   }
 }

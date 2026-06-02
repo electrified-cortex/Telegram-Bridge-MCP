@@ -6,8 +6,10 @@ Story
 
 ## Origin
 
-Operator voice message (2026-03-18):
-> "The pattern is: bot icon, then monospace name, then if there's a topic, it's on the next line in brackets, bold."
+Operator voice message (2026-03-18, distilled):
+> Source: operator voice, 2026-03-18 (distilled).
+
+The desired pattern: bot icon, then the name in monospace; if a topic is present, it goes on the next line in bold brackets.
 
 ## Current Behavior
 

@@ -4,7 +4,7 @@
 
 Operator (2026-04-19) on the current `send(type: "checklist")` summary line:
 
-> "I think we can have better formatting for the checklist summary that occurs. Love the yellow incomplete. That's so good. But as much as I'm happy that we can use em dashes and things like that, humans don't care about em dashes... I think incomplete should be on its own line, right? And then why do you need the em dash at all? And then is it 'six of seven completed' or 'six of seven complete'? Just stick with what's right."
+> Source: operator voice, 2026-04-19 (distilled). The checklist summary formatting can be improved. The yellow "incomplete" indicator is good and should be on its own line. Drop the em-dash separator. Settle the count phrasing ("6 of 7 completed" vs "6 of 7 complete") on one consistent form.
 
 Current rendered checklist summary uses an em-dash separator and inline placement that mashes counts and incomplete status together. Operator wants:
 
@@ -39,7 +39,7 @@ Current rendered checklist summary uses an em-dash separator and inline placemen
 
 ## Open Questions
 
-- Confirm exact existing failed-state header word/icon when reading the renderer (operator referenced "red failed or something like that" — verify the actual string).
+- Confirm exact existing failed-state header word/icon when reading the renderer (operator referenced a red "failed"-style indicator — verify the actual string).
 - The "exceptional counts" rule treats `skipped` and `failed` as exceptions worth highlighting. Is `pending`/`running` ever surfaced post-completion? (Probably not — those are mid-flight states.)
 
 ## Delegation

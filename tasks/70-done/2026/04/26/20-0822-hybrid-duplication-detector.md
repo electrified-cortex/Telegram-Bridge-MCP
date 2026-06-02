@@ -13,7 +13,7 @@ When `send` is called with both `audio` and `text`/`caption`, detect whether the
 
 ## Caveats
 
-Operator: "the duplication thing is really hard to nail down ... agent tends to be off by a word here and there, so it might be like one is exactly the same, one isn't ... cool idea, but maybe not that much, not that valuable."
+Operator (distilled): duplication is hard to detect reliably — agents are often off by a word, so one version may match exactly while another does not; interesting idea but possibly low value.
 
 False positives waste a service-message slot on a non-violation; false negatives let the duplication through. Without a confidence floor, this nudge is worse than no nudge. Only ship if a deterministic non-LLM algorithm hits a reasonable accuracy bar (TBD).
 

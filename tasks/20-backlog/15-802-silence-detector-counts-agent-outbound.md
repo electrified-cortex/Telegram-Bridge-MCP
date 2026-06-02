@@ -11,7 +11,11 @@ marker: needs refinement
 
 ## Operator observation
 
-"The waiting for curator to come back messages don't seem to respond to you or identify that when you're sending a voice message or something like that, that that actually is a point of activity. Like input activity into the MCP should be enough to say, oh, there's something going on, not just waiting for a DQ or something like that."
+> Source: operator voice msg 41685, 2026-04-24 (distilled).
+
+The "waiting for curator to come back" messages don't recognize outbound activity — e.g.
+sending a voice message — as a sign of presence. Any input activity into the MCP should count
+as a signal that something is happening, rather than relying solely on a pending dequeue.
 
 ## Issue
 

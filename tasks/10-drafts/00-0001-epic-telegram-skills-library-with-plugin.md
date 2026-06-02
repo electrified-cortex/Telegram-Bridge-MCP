@@ -44,4 +44,4 @@ Create a Telegram-specific skills library that:
 
 ## Source
 
-Operator request 2026-05-15: "create a skills library that lives in telegram MCP that's specific to telegram that also has a Claude code plugin and everybody's happy."
+Operator request 2026-05-15 (distilled): create a Telegram-specific skills library that lives in the Telegram MCP and also ships as a Claude Code plugin.

@@ -14,7 +14,7 @@ target_repo: telegram-bridge-mcp
 
 ## Operator framing (2026-05-05, msg 50321)
 
-> "When she shut down — the message that there was an async message sent and then she shut down, that was really cool. But then her name tag, basically because her session was closed, that particular message did not complete correctly with the right name tag. It's a bug, not a very high priority one, but we should log it. If there's N number of messages queued up, and then an entity or session decides to close or whatever, those should still resolve with the proper name tag."
+> Source: operator voice msg 50321, 2026-05-05 (distilled). An async message that resolved after its session closed rendered without the proper name tag, because the owning session was already gone. Low-priority bug worth logging: any messages queued before a session closes should still resolve with the correct name tag.
 
 ## Observed
 

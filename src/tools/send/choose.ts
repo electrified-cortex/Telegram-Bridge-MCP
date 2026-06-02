@@ -20,6 +20,7 @@ import { getDefaultVoice } from "../../config.js";
 import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../../typing-state.js";
 import { applyTopicToText } from "../../topic-state.js";
 import { markdownToV2 } from "../../markdown.js";
+import { delay, POST_VOICE_SEND_DELAY_MS } from "../../utils/timing.js";
 
 const DESCRIPTION =
   "Send a prompt with 2–8 buttons and wait for the user to press one. " +
@@ -163,7 +164,7 @@ export async function handleChoose(
       } finally {
         if (voiceSent) {
           // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
-          await new Promise<void>(resolve => setTimeout(resolve, 3000));
+          await delay(POST_VOICE_SEND_DELAY_MS);
         }
         cancelTypingIfSameGeneration(gen);
       }

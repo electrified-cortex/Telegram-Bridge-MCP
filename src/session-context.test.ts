@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { delay } from "./utils/timing.js";
 
 vi.mock("./session-manager.js", () => ({
   getActiveSession: vi.fn(() => 0),
@@ -63,7 +64,7 @@ describe("session-context (AsyncLocalStorage)", () => {
       results.push(getCallerSid());
       await Promise.resolve();
       results.push(getCallerSid());
-      await new Promise((r) => setTimeout(r, 10));
+      await delay(10);
       results.push(getCallerSid());
     });
     expect(results).toEqual([5, 5, 5]);
@@ -76,13 +77,13 @@ describe("session-context (AsyncLocalStorage)", () => {
 
     const task1 = runInSessionContext(1, async () => {
       log.push(`t1-start:${getCallerSid()}`);
-      await new Promise((r) => setTimeout(r, 20));
+      await delay(20);
       log.push(`t1-end:${getCallerSid()}`);
     });
 
     const task2 = runInSessionContext(2, async () => {
       log.push(`t2-start:${getCallerSid()}`);
-      await new Promise((r) => setTimeout(r, 10));
+      await delay(10);
       log.push(`t2-end:${getCallerSid()}`);
     });
 

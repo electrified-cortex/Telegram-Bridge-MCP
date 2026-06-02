@@ -27,7 +27,7 @@ Add two new reminder actions:
 - **Sleep value is a datetime, not a duration.** Durations would keep running post-compaction; a datetime is the cleanest check.
 - To wake early: `reminder/sleep` again with a past datetime (sets sleep to "already expired" — reminder resumes).
 - "Forever" = pass a far-future date (e.g., year 9999). No special sentinel values needed.
-- **Key semantic:** sleep is TRANSIENT — the sleep state does NOT persist across session end or `profile/save`. Profile stores reminder config (text, interval, recurring) only; the `until` field is memory-only. Operator 2026-04-24: "the nice thing about sleep is that information wouldn't get stored; if they saved their profile, they wouldn't lose their reminder, and that sleep info just wouldn't go along with it."
+- **Key semantic:** sleep is TRANSIENT — the sleep state does NOT persist across session end or `profile/save`. Profile stores reminder config (text, interval, recurring) only; the `until` field is memory-only. Operator 2026-04-24 (distilled): the advantage of sleep is that the sleep state is not stored — saving a profile preserves the reminder itself but drops the transient sleep info.
 - Contrast with `disable`, which persists across session + profile-save.
 
 ## Requirements

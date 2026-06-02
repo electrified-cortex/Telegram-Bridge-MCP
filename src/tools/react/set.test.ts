@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
+import { delay } from "../../utils/timing.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
 import { GrammyError } from "grammy";
 
@@ -174,7 +175,7 @@ describe("set_reaction tool", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.applied).toEqual(["👍"]);
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 6);
   });
 
@@ -690,20 +691,20 @@ describe("set_reaction — implicit 👌 base reaction", () => {
   it("markBaseReaction is called after a permanent reaction", async () => {
     await call({ message_id: 50, emoji: "👍", token: 1123456 });
     // Give the background void promise a tick to run
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 50);
   });
 
   it("markBaseReaction is called after a temporary reaction", async () => {
     await call({ message_id: 51, emoji: "👀", token: 1123456 });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 51);
   });
 
   it("👌 is not inserted when hasBaseReaction returns true (idempotent)", async () => {
     mocks.hasBaseReaction.mockReturnValue(true);
     await call({ message_id: 52, emoji: "👍", token: 1123456 });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.markBaseReaction).not.toHaveBeenCalled();
     // setMessageReaction only called once (for the actual reaction, not for 👌)
     expect(mocks.setMessageReaction).toHaveBeenCalledTimes(1);
@@ -715,7 +716,7 @@ describe("set_reaction — implicit 👌 base reaction", () => {
     // Set a temp reaction — 👌 base should be registered but NOT sent via API
     await call({ message_id: 60, emoji: "🤔", token: 1123456 });
     // Flush microtasks/macrotasks
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 60);
     // setMessageReaction must NOT have been called at all — 🤔 goes via setTempReaction
@@ -727,7 +728,7 @@ describe("set_reaction — implicit 👌 base reaction", () => {
     // Permanent 👍 — base 👌 is registered locally but must NOT fire via API
     // (doing so would overwrite the permanent emoji the user just set — P0 bug fix).
     await call({ message_id: 61, emoji: "👍", token: 1123456 });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 61);
     // Only one API call: the 👍 permanent reaction; 👌 must NOT fire immediately
@@ -747,7 +748,7 @@ describe("set_reaction — implicit 👌 base reaction", () => {
       ],
       token: 1123456,
     });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     expect(mocks.markBaseReaction).toHaveBeenCalledWith(42, 62);
     // setMessageReaction must NOT be called — both the base (👌) and temp (👀)
@@ -759,7 +760,7 @@ describe("set_reaction — implicit 👌 base reaction", () => {
     mocks.hasBaseReaction.mockReturnValue(false);
     await call({ message_id: 55, emoji: "🤔", token: 1123456 });
     // Flush any microtasks/background promises
-    await new Promise(r => setTimeout(r, 10));
+    await delay(10);
     expect(mocks.setTempReaction).toHaveBeenCalledWith(55, "🤔", undefined, undefined);
     // setMessageReaction must NOT be called — base is virtual, no API call
     expect(mocks.setMessageReaction).not.toHaveBeenCalled();

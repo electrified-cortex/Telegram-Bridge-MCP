@@ -20,6 +20,16 @@ Source: 2026-05-27 refactor scan
 
 ## Acceptance Criteria
 
-- [ ] `edit_message_text` no longer appears in the registered tool list.
-- [ ] `_retired/` folder is empty or removed.
-- [ ] Tests pass.
+- [x] `edit_message_text` no longer appears in the registered tool list.
+- [x] `_retired/` folder is empty or removed.
+- [x] Tests pass.
+
+## Verification
+
+- **Verdict:** APPROVED
+- **Date:** 2026-06-01
+- **Verifier:** dispatched sub-agent (read-only)
+- **Squash commit:** `aa61e14` on `dev`
+- **Worker commit:** `261593fb` on `worker/20-2102-v8-remove-retired-edit-message-text`
+- **Test evidence:** 3271/3271 tests pass (142 files), tsc clean
+- **Notes:** action.ts was already clean; _retired/ folder fully removed including companion test file

@@ -10,8 +10,10 @@ Story — Spike / Feature
 
 ## Origin
 
-Operator voice message (2026-03-18):
-> "Service messages that go out to individual agents when certain things happen. A new agent started, you are the governor, you'll be getting messages routed to you."
+Operator voice message (2026-03-18, distilled):
+> Source: operator voice, 2026-03-18 (distilled).
+
+Service messages should be pushed to individual agents when lifecycle events occur — e.g. a new agent starting, or notifying a session that it is now the governor and will receive routed messages.
 
 ## Problem
 

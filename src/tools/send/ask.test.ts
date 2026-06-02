@@ -3,6 +3,7 @@ import { createMockServer, parseResult, isError, errorCode } from "../test-utils
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
 import type { TimelineEvent } from "../../message-store.js";
 import { runInSessionContext } from "../../session-context.js";
+import { delay } from "../../utils/timing.js";
 
 const mocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),
@@ -16,12 +17,12 @@ const mocks = vi.hoisted(() => ({
   sessionQueue1: {
     pendingCount: vi.fn(() => 0),
     dequeueMatch: vi.fn((_predicate: (e: TimelineEvent) => unknown) => undefined as unknown),
-    waitForEnqueue: vi.fn(() => new Promise<void>((r) => setTimeout(r, 10))),
+    waitForEnqueue: vi.fn(() => delay(10)),
   },
   sessionQueue2: {
     pendingCount: vi.fn(() => 0),
     dequeueMatch: vi.fn((_predicate: (e: TimelineEvent) => unknown) => undefined as unknown),
-    waitForEnqueue: vi.fn(() => new Promise<void>((r) => setTimeout(r, 10))),
+    waitForEnqueue: vi.fn(() => delay(10)),
   },
   peekSessionCategories: vi.fn((_sid: number) => undefined as Record<string, number> | undefined),
 }));

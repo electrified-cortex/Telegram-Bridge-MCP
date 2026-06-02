@@ -34,7 +34,7 @@ Ship both: `monitor.sh` (bash) and `monitor.ps1` (PowerShell). Same style as exi
 
 ## Source
 
-- Operator request 2026-05-14T21:42 UTC: "Telegram MCP should provide a monitor script that's part of the activity, in the same location as our dump scripts. Agents call that script for their monitor."
+- Operator request 2026-05-14T21:42 UTC (distilled): the Telegram MCP should provide a monitor script alongside the dump scripts, which agents call for their monitor.
 
 ## Verification
 

@@ -15,7 +15,7 @@ source: operator voice msg 60829 (2026-05-24 ~21:27 PT)
 
 Operator-reported 2026-05-24: TTS synthesis times out frequently. Empirically today, several messages of ~38-46 words hit `tts_timeout: TTS synthesis timed out after 45000ms` with the "Local model not responding" note. Multiple instances per session.
 
-Operator's stated baseline expectation: "You should be able to record a two-minute-long audio, no problem."
+Operator's stated baseline expectation (distilled): recording a two-minute-long audio should work without issue.
 
 Current behavior: 45-second hard timeout. Messages ≥~40 words are at risk; ≥~50 words frequently fail. The audio-chunking memory rule (`feedback_audio_chunking.md`) was a workaround — split into <40-word bursts — but the real fix is a higher / smarter timeout OR a faster TTS path.
 

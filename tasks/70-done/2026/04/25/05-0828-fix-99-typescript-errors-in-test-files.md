@@ -18,7 +18,7 @@ delegation: any
 - `vitest run` uses the esbuild loader, not strict tsc → tests executed and passed.
 - `pnpm typecheck` script existed but was not in any verify lane.
 
-The structural fix landed first (`pnpm test` now chains typecheck before vitest). Operator's call: "typecheck should always be present as part of pnpm test."
+The structural fix landed first (`pnpm test` now chains typecheck before vitest). Operator's call (distilled): typecheck should always run as part of `pnpm test`.
 
 ## Affected files (25)
 
@@ -78,7 +78,7 @@ For `_retired/` files: lowest priority. Consider whether to delete the directory
 
 ## Pipeline impact
 
-While this is open, **`pnpm test` will fail** in any worker checking out fresh code. Acceptable per operator: "should always be present." Workers should fix-as-they-go on whichever test files they touch in their primary task; this task absorbs the rest.
+While this is open, **`pnpm test` will fail** in any worker checking out fresh code. Acceptable per operator (typecheck should always be part of `pnpm test`). Workers should fix-as-they-go on whichever test files they touch in their primary task; this task absorbs the rest.
 
 ## Related
 

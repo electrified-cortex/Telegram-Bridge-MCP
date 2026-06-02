@@ -26,7 +26,9 @@ operator without requiring separate DM sessions.
 
 ## Operator framing (msg 51226, 2026-05-07)
 
-> "Bot-to-bot we do better. @mention its own spike."
+> Source: operator voice msg 51226, 2026-05-07 (distilled).
+
+Direction: improve bot-to-bot messaging, and investigate @mention as its own separate spike.
 
 Context: The operator reviewed the Telegram AI bot update blog post and identified
 @mention as a distinct capability worth investigating separately from the streaming text

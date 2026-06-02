@@ -6,9 +6,9 @@
 
 ## Design Intent (from operator)
 
-> "Every tool except for very few must have an identity. Once you've received your identity from session_start, you reuse it. You don't pass around your pin code — you use it yourself. SID could be targeting a different session (like DMs). But YOUR identity is always present."
+> Source: operator voice (distilled). Nearly every tool must carry an identity. Once an identity is received from session_start, the session reuses it; the pin code is never passed around — the session uses it itself. SID may target a different session (e.g. DMs), but the caller's own identity is always present.
 >
-> "Multi-session mode is all the time. It's never not multi-session mode. The only thing that changes with one session is UI (name tags not shown). That's it."
+> Multi-session mode is always in effect — it is never "not multi-session mode." With a single session, the only difference is UI (name tags are not shown).
 
 ## Key Rule
 

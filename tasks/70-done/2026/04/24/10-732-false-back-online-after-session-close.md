@@ -2,7 +2,7 @@
 
 ## Context
 
-Observed 2026-04-19 (msgs 38373 + 38376): immediately after Curator called `session/close` on the Overseer, TMCP emitted a "session back online" service message for the just-closed SID. Operator confirmed: "bridge MCP detected [close] as activity and decided to say back online."
+Observed 2026-04-19 (msgs 38373 + 38376): immediately after Curator called `session/close` on the Overseer, TMCP emitted a "session back online" service message for the just-closed SID. Operator confirmed (distilled): the bridge treated the close as activity and reported the session back online.
 
 This is a real bug in the session presence tracker. Closing a session must NOT flag the session as online. The close event itself is being treated as liveness activity.
 

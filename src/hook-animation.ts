@@ -20,6 +20,7 @@ import { handleShowAnimation } from "./tools/animation/show.js";
 import { decodeToken } from "./tools/identity-schema.js";
 import { validateSession } from "./session-manager.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
+import { hasActiveAnimation } from "./animation-state.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,14 @@ export async function handleHookAnimation(
   const { sid, suffix } = decodeToken(tokenNum);
   if (!validateSession(sid, suffix)) {
     return [401, { ok: false, error: "AUTH_FAILED" }];
+  }
+
+  // ── Debounce (Option A — server-side) ────────────────────────────────────
+  // The PreToolUse hook fires on every tool call, potentially re-firing while
+  // the working animation is already running. Return early so the bridge isn't
+  // flooded — one active animation per session is enough for a work burst.
+  if (hasActiveAnimation(sid)) {
+    return [200, { ok: true }];
   }
 
   // ── Body validation ──────────────────────────────────────────────────────

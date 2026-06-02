@@ -24,7 +24,7 @@ When a `send` call with both `audio` (TTS) and `text` (caption) is made async (d
 
 Note `\.` `\(` `\)` `\+` `\=` `\-` — V2 escape sequences exposed as literal backslashes in the rendered output.
 
-Witnessed 2026-05-15. Operator: "the escape sequences are retained" (msg 55461 reply to 55459).
+Witnessed 2026-05-15. Operator noted (distilled) that the escape sequences were retained (msg 55461 reply to 55459).
 
 ## Acceptance criteria
 

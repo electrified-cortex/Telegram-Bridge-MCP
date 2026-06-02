@@ -17,7 +17,7 @@ target_branch: release/7.4
 
 10-0886 produced `audit/response-payload.md` with 20 findings (5 High, 7 Medium, 3 Low) covering always-true booleans, empty `{}` returns, echo-back fields, and redundant wrappers. Estimated payload reduction: 15-20% across typical agent workflows. Curator reviewed — all 20 are valid.
 
-Operator directive 5/6: "as much as we can in 7.4." This is the response-shape pass; pairs with 10-0885 (text/copy pass).
+Operator directive 5/6 (distilled): get as much as possible into 7.4. This is the response-shape pass; pairs with 10-0885 (text/copy pass).
 
 ## Scope
 

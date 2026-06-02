@@ -65,11 +65,29 @@ This is a single non-blocking call — do not loop. If a `post_compact_monitor_r
 
 ## R4 — Post-connect setup
 
+**Step 1 — Profile load:**
+
+```mcp
+action(type: 'profile/load', key: '<agent-name>')
+```
+
+Load the agent's own profile — voice, animation presets, reminders. Use the pod's own identifier (e.g. `bt`, `curator`, `zhuli`, `overseer`). MUST use the agent's own key; never another session's key. Idempotent — safe to re-call after compaction. Must run after R2 (session anchor complete) and before the monitor arm.
+
+**Step 2 — Boot animation:**
+
+```mcp
+send(type: 'animation', preset: 'working', timeout: 60, token: <token>)
+```
+
+The earliest visible presence signal once a session is anchored. Without it, the operator sees nothing for the several seconds it takes the agent to finish setup (monitor arm, defaults). 60-second temporary animation — auto-clears, or is naturally superseded by the agent's first real send. Must fire after Step 1 (profile/load provides the voice/animation settings the session will use).
+
+**Step 3 — Setup delegation:**
+
 ```mcp
 help('startup')
 ```
 
-This covers profile load, activity monitor arm, and dequeue defaults. Must run after the session is anchored (R2 complete).
+Covers activity monitor arm and dequeue defaults. Must run after the session is anchored (R2 complete) and after the boot animation fires (Step 2). Profile load is now handled explicitly in Step 1 and need not be repeated here.
 
 ## R5 — Dequeue loop
 
@@ -79,7 +97,7 @@ End every agent turn with a dequeue call:
 dequeue(token)
 ```
 
-Use no explicit `max_wait` — the session default applies (set by `help('startup')` / `profile/load`). Do not override the session default via `profile/dequeue-default`. Drain polls (`max_wait: 0`) are permitted when needed.
+Use no explicit `max_wait` — the session default applies (loaded via `profile/load` in R4 Step 1, confirmed by `help('startup')`). Do not override the session default via `profile/dequeue-default`. Drain polls (`max_wait: 0`) are permitted when needed.
 
 ## Closeout
 
@@ -91,13 +109,14 @@ Before any shutdown path — planned exit, shutdown directive, on-demand close:
 ## Don'ts
 
 - Do not call `help('startup')` before the session is anchored (R2 must complete first).
+- Do not call `profile/load` with another agent's key — always use the pod's own identifier.
 - Do not loop the R3 drain — it is a single call.
 - Do not override the session dequeue default via `profile/dequeue-default`.
 - Every code path that ends the agent session must call `help('shutdown')`.
 
 ## Cross-references
 
-- `help('startup')` — profile load, monitor arm, dequeue defaults
+- `help('startup')` — monitor arm, dequeue defaults (profile/load now explicit in R4 Step 1)
 - `help('compacted')` — post-compaction monitor recovery
 - `help('guide')` — communication patterns, etiquette, presence, animations
 - `help('activity/file')` — activity file and watcher scripts in depth

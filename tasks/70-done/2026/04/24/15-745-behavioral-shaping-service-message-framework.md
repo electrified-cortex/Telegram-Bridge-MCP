@@ -9,16 +9,16 @@ and don't persist across sessions, roles, or agent restarts. The root fix is
 not another memory entry. The root fix is a **TMCP-level behavioral shaping
 layer** that delivers guidance with the same weight as operator speech.
 
-Operator (2026-04-19, voice 38961): *"You can look up things like reaction.
-You can look up responsiveness... the task is to... there should be like a
-spec somewhere, it should be in the Telegram MCP."* And voice 38948: *"It's
-more important that there's a change in the MCP to fix it."* And voice
-38950: *"Stronger things are service messages that tell it 'this is a
-behavioral thing you need to adopt.' It's almost as strong as receiving it
-from the user."*
+Operator (2026-04-19, voice 38961, distilled): behavioral guidance such as
+reaction and responsiveness rules should live in a spec inside the Telegram
+MCP itself. Voice 38948 (distilled): the more important fix is a change in
+the MCP. Voice 38950 (distilled): service messages are the stronger
+mechanism — they tell the agent "this is a behavioral thing you need to
+adopt," carrying almost as much weight as guidance received directly from the
+user.
 
-Operator (voice 38961, re: this task + 15-746): *"745 and 746. Very much tied
-together, right? Why are we not [one task]?"* — consolidated here.
+Operator (voice 38961, distilled): this task and 15-746 are tightly
+coupled and should be a single task — consolidated here.
 
 ## Scope — Architecture + first two instances
 
@@ -73,8 +73,8 @@ Correct 4-tier hierarchy:
 - **Tier 3 — animation (persistent)**: durable, flagged persistent ONLY when
   work is actively running. **Cancel immediately on transition to dequeue
   wait**, reply send, or any idle state. Persistent animation during idle is
-  a visual lie (voice 38942: *"If you lie too long, it becomes not useful
-  because the human will start to distrust it."*).
+  a visual lie (voice 38942, distilled: sustaining a false signal too long
+  erodes its usefulness, because the human stops trusting it).
 - **Tier 4 — progress**: percentaged long-running work with
   `progress/update`.
 

@@ -42,5 +42,5 @@ The "Hello?" incidents appear to be UX perception issues (compaction gap + batch
 ## Source
 
 - Operator voice 62932 — `tasks/00-ideas/voice-async-transcription-sleep-bug-voice-62932-2026-05-27.md`
-- BT outbox report: `/opt/stacks/bt/.bt-pod/outbox/20260528T053206Z-96c22cc3.txt`
+- BT outbox report: the agents host (`<deploy-root>/bt/.bt-pod/outbox/20260528T053206Z-96c22cc3.txt`)
 

@@ -37,6 +37,61 @@ const STALE_ANIM_MIN_AGE_MS = 30_000;
 /** Minimum gap (ms) between stale-animation warnings for the same session. */
 const STALE_ANIM_COOLDOWN_MS = 120_000;
 
+// ---------------------------------------------------------------------------
+// Runaway-dequeue rate guard
+// ---------------------------------------------------------------------------
+
+/** Sliding window length for dequeue-rate tracking (ms). */
+const RATE_WINDOW_MS = 60_000;
+
+/** Dequeue attempts per window before flagging as a runaway loop (tunable). */
+const RATE_THRESHOLD = 20;
+
+/** Minimum gap (ms) between rate-warning service messages per session (anti-spam). */
+const RATE_WARN_COOLDOWN_MS = 30_000;
+
+/** Per-session sliding window of dequeue-attempt timestamps (ms). */
+const _dequeueAttempts = new Map<number, number[]>();
+
+/** Per-session last-warn timestamp to rate-limit warning delivery. */
+const _lastRateWarnAt = new Map<number, number>();
+
+/**
+ * Count every dequeue attempt in a per-session 60-second sliding window.
+ * When the count meets or exceeds RATE_THRESHOLD, deliver a rate-limited
+ * `behavior_runaway_dequeue` service message to the session.
+ *
+ * Never throws. Never alters dequeue semantics or latency.
+ */
+function checkDequeueRate(sid: number, now: number): void {
+  if (sid <= 0) return;
+  const cutoff = now - RATE_WINDOW_MS;
+  const pruned = (_dequeueAttempts.get(sid) ?? []).filter(t => t >= cutoff);
+  pruned.push(now);
+  _dequeueAttempts.set(sid, pruned);
+  if (pruned.length < RATE_THRESHOLD) return;
+  const lastWarn = _lastRateWarnAt.get(sid) ?? 0;
+  if (now - lastWarn < RATE_WARN_COOLDOWN_MS) return;
+  _lastRateWarnAt.set(sid, now);
+  deliverServiceMessage(
+    sid,
+    `RUNAWAY DEQUEUE: ${pruned.length} dequeue attempts in the last 60s — likely a stuck loop burning tokens. STOP looping; do real work or wait for a genuine signal, do not poll idly.`,
+    "behavior_runaway_dequeue",
+  );
+}
+
+/** Remove per-session rate-guard state on session close (prevents unbounded Map growth). */
+export function removeDequeueRateState(sid: number): void {
+  _dequeueAttempts.delete(sid);
+  _lastRateWarnAt.delete(sid);
+}
+
+/** Exported for test reset only — do not call in production code. */
+export function _resetDequeueRateForTest(): void {
+  _dequeueAttempts.clear();
+  _lastRateWarnAt.clear();
+}
+
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
 function ackVoice(event: TimelineEvent): void {
   if (event.from !== "user" || event.content.type !== "voice") return;
@@ -140,6 +195,9 @@ export async function runDrainLoop(
       message: `Session ${sid} has ended. Call action(type: 'session/start', ...) to open a new session if needed.`,
     };
   }
+
+  // Count every dequeue attempt (including idle/empty polls) for runaway-loop detection.
+  checkDequeueRate(sid, Date.now());
 
   // R5: First-dequeue detection for child sessions — inject onboarding before any content drain.
   // Checked here: after session existence confirmed, before setDequeueActive or content reads.

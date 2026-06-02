@@ -8,10 +8,9 @@ Testing
 
 Current tests mock individual functions but don't simulate real multi-session failure modes. Need integration-level tests that exercise the full path: session creation → message routing → dequeue → ack. The 2026-03-16 session exposed gaps where unit tests all passed but real multi-session usage broke (voice salute missing, queue isolation races).
 
-## User Quote
+## Operator framing
 
-> "Clearly we are not doing enough mock testing."
-> "TDD all day."
+> Source: operator voice (distilled). Not enough mock testing is being done; favor a test-driven approach throughout.
 
 ## Dependencies
 

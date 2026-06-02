@@ -4,7 +4,7 @@
 
 The silence-detector landed in PR #151. Operator reviewed its behavior and clarified the narrow window in which silence is actually meaningful. Most scenarios flagged as "silent agent" are legitimate idle states — we need the detector to distinguish them, and we need agent training materials (startup, skills, service messages) to teach the right response when the detector does fire.
 
-Operator voice 2026-04-20 (paraphrased): "The MCP cannot interpret intent. Agent dequeuing with no activity because there's nothing to do is fine — they're just waiting. The only meaningful red flag is: dequeue-of-a-message followed by silence with no acknowledgement signal (typing, reaction, animation, reply) for ~15–30s. That's the thin window that signals 'user is in the dark about what's happening.'"
+Operator voice 2026-04-20 (distilled): the MCP cannot interpret intent. An agent dequeuing with no activity because there is nothing to do is fine — it is simply waiting. The only meaningful red flag is a dequeue-of-a-message followed by silence with no acknowledgement signal (typing, reaction, animation, reply) for roughly 15–30s — the thin window signalling the user is in the dark about what is happening.
 
 ## Acceptance Criteria
 
@@ -16,7 +16,7 @@ Operator voice 2026-04-20 (paraphrased): "The MCP cannot interpret intent. Agent
    - any `react` call
    - any animation start (`animation/default`, preset animation)
    - any outbound message on the same session
-3. Default silence-detection threshold: **30s** (operator's "30 is where a human starts to wonder"). Floor: 15s. Configurable per-session.
+3. Default silence-detection threshold: **30s** (operator's rationale: ~30s is where a human starts to wonder). Floor: 15s. Configurable per-session.
 4. When threshold fires, the bridge emits a signal to the agent. Tiering:
    - First fire (per dequeue): **envelope hint** on the next dequeue response: `"silence: N s since last dequeue; operator sees no progress"`.
    - Second fire (no ack still, 2× threshold): **service message** (heavier weight) with the same content plus a reminder of acknowledgement options.

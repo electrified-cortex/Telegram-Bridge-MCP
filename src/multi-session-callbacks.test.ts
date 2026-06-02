@@ -17,6 +17,7 @@
  */
 import type { Update } from "grammy/types";
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { delay } from "./utils/timing.js";
 import { createMockServer, parseResult, isError, type ToolHandler } from "./tools/test-utils.js";
 
 // ---------------------------------------------------------------------------
@@ -162,7 +163,7 @@ describe("multi-session callback isolation", () => {
     const toolPromise = runInSessionContext(sid1, () =>
       handlers.confirm({ text: "Confirm?", ignore_pending: true, token: token1 }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // Callback arrives for SID1's message
     recordInbound(cbUpdate(5, "confirm_yes", "qid1"));
@@ -172,7 +173,7 @@ describe("multi-session callback isolation", () => {
     expect(parseResult(result).confirmed).toBe(true);
 
     // Wait for the fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     // Hook fired exactly once — SID2's presence didn't duplicate or suppress it
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
@@ -181,7 +182,7 @@ describe("multi-session callback isolation", () => {
 
     // Hook was one-shot: second callback for same message triggers nothing extra
     recordInbound(cbUpdate(5, "confirm_yes", "qid2"));
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
     expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
   });
@@ -205,7 +206,7 @@ describe("multi-session callback isolation", () => {
     const sid2Promise = runInSessionContext(sid2, () =>
       handlers.choose({ text: "Pick a color:", options: opts, ignore_pending: true, token: token2 }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // SID2's button press arrives first — only SID2's hook should fire
     recordInbound(cbUpdate(20, "blue", "qid_blue"));
@@ -216,7 +217,7 @@ describe("multi-session callback isolation", () => {
     expect(parseResult(sid2Result).label).toBe("Blue");
 
     // Wait for fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     // editMessageText called once (SID2's hook)
     expect(mocks.editMessageText).toHaveBeenCalledTimes(1);
@@ -230,7 +231,7 @@ describe("multi-session callback isolation", () => {
     expect(parseResult(sid1Result).confirmed).toBe(true);
 
     // Wait for fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     // editMessageText called a second time (SID1's hook)
     expect(mocks.editMessageText).toHaveBeenCalledTimes(2);
@@ -263,7 +264,7 @@ describe("multi-session callback isolation", () => {
 
     // Simulate a late button press after session close
     recordInbound(cbUpdate(5, "confirm_yes", "qid_late"));
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // Replacement handler fires: answers with "Session closed" text
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid_late", expect.objectContaining({ text: "Session closed" }));
@@ -291,7 +292,7 @@ describe("multi-session callback isolation", () => {
     const sid2ConfirmPromise = runInSessionContext(sid2, () =>
       handlers.confirm({ text: "Proceed?", ignore_pending: true, token: token2 }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // Simulate the outbound proxy recording ownership (in production, the proxy does this)
     trackMessageOwner(99, sid2);
@@ -304,7 +305,7 @@ describe("multi-session callback isolation", () => {
     expect(parseResult(sid2Result).confirmed).toBe(true);
 
     // Wait for fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     // Hook fired (acked + edited) — regardless of governor routing
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid_sid2");
@@ -336,7 +337,7 @@ describe("multi-session callback isolation", () => {
 
     // Fire callback for message 77
     recordInbound(cbUpdate(77, "some_data", "qid_ctx"));
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // Without the fix, capturedSid would be sid1 (the global active session).
     // With the fix, it should be sid2 (the hook owner via runInSessionContext).

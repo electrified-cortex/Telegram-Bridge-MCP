@@ -10,10 +10,12 @@ Feature — Core Queue Redesign
 
 ## Origin
 
-Operator voice discussion (2026-03-18):
-> "The batch would be like reaction, reaction, reaction, something, and then direct message. That is a batch. Nothing before that. Nothing after it. Just up to that point."
-> "A callback happened NOW. It goes into the timeline at the current position, not at the position of the original message."
-> "If the voice message has been received, you wait until the transcription is finished before sending."
+Operator voice discussion (2026-03-18, distilled):
+> Source: operator voice, 2026-03-18 (distilled).
+
+- A batch runs forward through events (e.g. reactions) up to and including the next message, with nothing before or after that boundary.
+- A callback is timestamped when it happens and enters the timeline at the current position, not at the position of the original message.
+- When a voice message arrives, delivery waits until its transcription is finished.
 
 ## Problem
 

@@ -145,5 +145,5 @@ Spec requires: "Documented in PR description."
 ## Notes
 
 - "Funny business" with name tags has been a recurring pain point — refactor explicitly aims to flatten the logic.
-- Operator framing: "the name tag is just a string of text, that's all it is, end of story."
+- Operator framing (distilled): the name tag is simply a string of text, nothing more.
 - Two 7.4 features: `activity/file` (already shipped, 50-0868) + this.

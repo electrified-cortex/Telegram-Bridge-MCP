@@ -13,7 +13,7 @@ delegation: Worker
 
 ## Operator framing (2026-05-05)
 
-> "The poke or the update of that file needs to happen with major debouncing. You can't be in the queue at the time. There should be zero activity basically for a certain amount of time before it's even valid to allow a message to come through, and any time new activity occurs from the actual session token, it just resets the timer."
+> Source: operator voice, 2026-05-05 (distilled). The activity-file touch needs heavy debouncing: a message should only be allowed through after a sustained period of zero activity (and not while a dequeue is in progress). Any new activity from the session token resets the timer.
 
 ## Current state
 
@@ -38,7 +38,7 @@ Any session activity resets the debounce timer.
 
 ### What counts as activity (operator 2026-05-05)
 
-> "It can only happen if the agent hasn't been doing any animations. It can't be doing anything, right? It has to be completely inactive. No typing, no in the middle of messages, no asynchronous messaging going on. It has to be silent for 60 seconds for that timeout."
+> Source: operator voice, 2026-05-05 (distilled). The kick may only fire when the agent is completely inactive — no animations, no typing, no in-flight messages, no asynchronous messaging. The session must be silent for the full 60-second window before the timeout applies.
 
 Activity is defined broadly — ANY of these resets the debounce timer:
 
@@ -95,7 +95,7 @@ on dequeue call (any return path) for session S:
 
 Schedule a timer at `lastActivityAt + DEBOUNCE_MS` so a queued message that arrived during suppression gets a kick when the window finally elapses. Reset/clear on any new tool call.
 
-**`DEBOUNCE_MS = 60_000` (60 seconds)** as default. **Configurable per session** — operator (2026-05-05): "that timeout should be configurable, just like max_wait is. In the same way that we're able to configure max_wait, you should be able to configure max_kick or something like that."
+**`DEBOUNCE_MS = 60_000` (60 seconds)** as default. **Configurable per session** — operator (2026-05-05, distilled): the timeout should be configurable in the same way `max_wait` is (e.g. a `max_kick`-style setting).
 
 Add a sibling action to `profile/dequeue-default`:
 

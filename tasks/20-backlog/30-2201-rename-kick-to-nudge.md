@@ -9,7 +9,7 @@ Source: operator voice 2026-05-05 msg 50374
 
 ## Problem
 
-TMCP uses "kick" for the activity-file mtime touch signal (e.g. `kickDebounce`, `lastKickAt`, `kickCount`). The word "kick" also means removing a user from a chat, creating confusion when reading TMCP source, service messages, or docs. Operator noted: "kick sounds like you're actually kicking someone out of the chat."
+TMCP uses "kick" for the activity-file mtime touch signal (e.g. `kickDebounce`, `lastKickAt`, `kickCount`). The word "kick" also means removing a user from a chat, creating confusion when reading TMCP source, service messages, or docs. Operator noted (voice msg 50374, distilled) that "kick" sounds like removing someone from the chat.
 
 `nudge` is already partially established in the codebase (`nudgeArmed`) and better describes the intent.
 

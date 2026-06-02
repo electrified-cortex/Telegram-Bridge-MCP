@@ -20,6 +20,13 @@
  *   );
  */
 
+import { fileURLToPath } from "url";
+import { dirname, resolve } from "path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const _monitorPs1 = resolve(__dirname, "..", "tools", "monitor.ps1");
+const _monitorSh = resolve(__dirname, "..", "tools", "monitor.sh");
+
 /**
  * Recursively freeze an object and all nested object values. Unlike
  * `Object.freeze`, this walks into object-typed properties so every entry in
@@ -186,8 +193,14 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
     /** @param filePath The activity file path returned by activity/file/create */
     text: (filePath: string) =>
       `Use this to guarantee a high quality file watch — run inside your harness's Monitor tool with persistent: true. Name it "Telegram message notifier" so you can recognize it after a compaction.\n\n` +
-      `Windows:  \`tools/monitor.ps1 "${filePath}"\`\n` +
-      `Linux/macOS:  \`tools/monitor.sh "${filePath}"\``,
+      `Windows:  \`"${_monitorPs1}" "${filePath}"\`\n` +
+      `Linux/macOS:  \`"${_monitorSh}" "${filePath}"\``,
+    details: {
+      script_path: {
+        windows: _monitorPs1,
+        posix: _monitorSh,
+      },
+    },
   },
 
   // ── Sub-session spawn hint ────────────────────────────────────────────────
@@ -231,7 +244,7 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
 
   NUDGE_TYPING_RATE: {
     eventType: "behavior_nudge_typing_rate" as const,
-    text: "Show-typing after receiving messages. help('show-typing')",
+    text: "show-typing = reply imminent (composition starting). React to ack receipt; animation preset for background work. help('show-typing')",
   },
 
   NUDGE_QUESTION_HINT: {

@@ -16,7 +16,7 @@ related:
 
 `action(type: 'session/spawn-child')` today goes through the same code path as `session/start` (calling `handleSessionStart` internally). The result is that a sub-session is presented to the operator as a brand-new peer session: it gets the operator approval dialog (color picker), a new "Session N — Online" announcement message, an inline keyboard, an announcement pin, and the full onboarding firehose of service messages designed for a top-level session.
 
-Empirically verified by live test on 2026-05-22: the host spawned `TestThread`, the operator saw an approval dialog, then saw a new participant labeled `TestThread` alongside `Curator` — visually indistinguishable from any other peer session. Operator described this as "I have two participants now" — exactly the wrong mental model.
+Empirically verified by live test on 2026-05-22: the host spawned `TestThread`, the operator saw an approval dialog, then saw a new participant labeled `TestThread` alongside `Curator` — visually indistinguishable from any other peer session. Operator described this (distilled) as perceiving two separate participants — exactly the wrong mental model.
 
 The intended model: a sub-session is the parent's own work-stream isolated by topic. The operator should see ONE participant (the parent) handling MANY topics, where each sub-session is a topic thread.
 
@@ -111,7 +111,7 @@ Live test 2026-05-22 (Curator session, sid=1, token=1601748):
 - Pin applied to message 59475 (R2 fail)
 - Outbound from sid=2 displayed as a separate participant in chat (R3 fail)
 - Sub-session's first dequeue contained 9 onboarding service messages, all from the host onboarding firehose (R4 + R5 fail)
-- Operator described experience: "I have two participants now. That is weird."
+- Operator described experience (distilled): perceived two separate participants, which was unexpected and wrong.
 
 Conversation context: telegram messages 59474 through 59488.
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getApi, toResult, toError, resolveChat, validateText, validateCallbackData, sendVoiceDirect } from "../../telegram.js";
 import { markdownToV2 } from "../../markdown.js";
 import { applyTopicToText } from "../../topic-state.js";
+import { delay, POST_VOICE_SEND_DELAY_MS } from "../../utils/timing.js";
 import { registerCallbackHook, clearCallbackHook, registerMessageHook, clearMessageHook, pendingCount } from "../../message-store.js";
 import { getSessionQueue, peekSessionCategories } from "../../session-queue.js";
 import { requireAuth } from "../../session-gate.js";
@@ -156,7 +157,7 @@ export async function confirmHandler(
       } finally {
         if (voiceSent) {
           // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
-          await new Promise<void>(resolve => setTimeout(resolve, 3000));
+          await delay(POST_VOICE_SEND_DELAY_MS);
         }
         cancelTypingIfSameGeneration(gen);
       }

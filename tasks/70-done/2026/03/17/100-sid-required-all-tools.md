@@ -8,9 +8,9 @@ Feature / Safety
 
 When multiple sessions are active, SID must be required on **every** tool call — not just `dequeue_update`. Currently only `dequeue_update` enforces `SID_REQUIRED` when `activeSessionCount() > 1`. The remaining 36 tools silently fall back to `getActiveSession()`, which is a race condition when two agents share a server process.
 
-## User Quote
+## Operator framing
 
-> "It's not optional. For any messages now, nothing is ever optional."
+> Source: operator voice (distilled). Identity on messages is not optional — for any message now, it is always required.
 
 ## Current State
 

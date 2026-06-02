@@ -47,7 +47,7 @@ Worker (TMCP). Curator stages, operator merges.
 
 ## Source content for `help('compression')` (operator voice 2026-04-19)
 
-The compression help topic must distinguish modality-by-modality. Operator's spec, captured verbatim then codified:
+The compression help topic must distinguish modality-by-modality. Operator's spec (voice 2026-04-19), distilled and codified:
 
 ### Text
 

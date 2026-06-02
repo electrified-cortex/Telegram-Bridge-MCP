@@ -2,7 +2,7 @@
 
 ## Context
 
-Operator (2026-04-19, voice 38225): "We've done a lot of fixes. We need to start thinking about merging V7 into master. The build is passing. ... Maybe dispatch a background Sonnet agent to consider what about the README needs to be updated, and how are we doing on auditing the help."
+Operator (2026-04-19, voice 38225, distilled): with many fixes landed and the build passing, it's time to start planning the V7 → master merge. Suggested dispatching a background Sonnet agent to assess what the README needs updated and how the help audit is progressing.
 
 Translation: V7 dev branch has accumulated enough fixes that it's worth shipping to master. Before doing so, two surface-level items need an audit:
 
@@ -11,7 +11,7 @@ Translation: V7 dev branch has accumulated enough fixes that it's worth shipping
 
 If both come back clean (or with small diff-able fixes), patch them in V7 and merge to master. If either reveals significant drift, file a follow-up before merging.
 
-Operator's framing also implied: "if anything is a quick fix, push it up" — i.e. small bugs that block merge confidence should be patched in V7 directly, not deferred.
+Operator's framing also implied that quick fixes should be pushed up — i.e. small bugs that block merge confidence should be patched in V7 directly, not deferred.
 
 ## Acceptance Criteria
 
@@ -57,6 +57,8 @@ External audit run by operator. Build green, 2441 tests pass across 115 files, l
 - **30-728** — `checklist.md:16` fence missing language tag.
 
 **Merge gate:** 05-722 MUST land before merge. 10-723 / 10-724 / 20-727 strongly recommended (public API surface). 10-725 is a design decision that can defer if time-pressed. 15-726 and 30-728 are nice-to-have cleanup that can ride on the next dev cycle.
+
+**Overseer note (2026-06-01):** 05-722 is RESOLVED — verified clean in 70-done/2026/04/19/. Lint exits 0 on dev branch. This blocker is no longer blocking. Merge gate satisfied on 05-722.
 
 ## Related
 

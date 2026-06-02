@@ -29,6 +29,8 @@ import { resolveHttpPort } from "./cli-args.js";
 import { enableLogging, isLoggingEnabled, rollLog, logEvent as logLocalEvent, flushCurrentLog } from "./local-log.js";
 import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
+import { attachHookRoutes } from "./hook-animation.js";
+import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -101,7 +103,7 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
         process.stderr.write(`[shutdown] sendServiceMessage error: ${String(e)}\n`);
       });
     })();
-    const timeout = new Promise<void>((r) => setTimeout(r, 10000));
+    const timeout = delay(GRACEFUL_SHUTDOWN_TIMEOUT_MS);
     void Promise.race([shutdownSequence, timeout])
       .finally(() => clearCommandsOnShutdown().finally(() => process.exit(0)));
   });
@@ -145,6 +147,7 @@ if (mcpPort !== undefined) {
   const app = createMcpExpressApp({ host: bindHost });
   attachEventRoute(app);
   attachDequeueRoute(app);
+  attachHookRoutes(app);
 
   /** Normalize header that may be string | string[] | undefined → string | undefined */
   const getSessionId = (req: Request): string | undefined => {

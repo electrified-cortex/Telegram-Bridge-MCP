@@ -10,7 +10,7 @@ needs: Curator-led; Sonnet+ for audits; multi-cycle
 
 # TMCP bundled skills — massive overhaul
 
-Operator (2026-04-25): "massive skill overhaul... we need to use our own skill methodology and apply it properly to this stuff, because I think a lot of it is trash... how much of it is really a skill that's helpful? ... do we need to expand the suite of skills? Is the help enough? Is this just extra fluff? How much actually needs to be there as a skill until they're finally using the actual thing? What about setup as a skill? What about all the things that make it fluid for people to use?"
+Operator (2026-04-25, distilled): a major skill overhaul is needed — apply the project's own skill methodology rigorously, since much of the current material may be low-value. Key questions: how much of it is genuinely a helpful skill versus fluff; whether the suite should be expanded; whether the help content is sufficient on its own; what minimally needs to exist as a skill; whether setup should be a skill; and what would make the skills fluid for people to use.
 
 ## Problem
 

@@ -6,6 +6,7 @@ import { SERVICE_MESSAGES } from "./service-messages.js";
 import { closeSessionById } from "./session-teardown.js";
 import { getSessionLogMode } from "./config.js";
 import { flushCurrentLog, isLoggingEnabled, rollLog } from "./local-log.js";
+import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS, SHUTDOWN_POLL_INTERVAL_MS } from "./utils/timing.js";
 
 // ---------------------------------------------------------------------------
 // Shutdown cause
@@ -179,7 +180,7 @@ export async function elegantShutdown(cause: ShutdownCause = "agent"): Promise<n
     // Timeout: 10s so a hung transcription doesn't stall shutdown indefinitely.
     await Promise.race([
       waitForPollerExit(),
-      new Promise<void>((r) => setTimeout(r, 10_000)),
+      delay(GRACEFUL_SHUTDOWN_TIMEOUT_MS),
     ]);
     await drainPendingUpdates();
   }
@@ -205,9 +206,9 @@ export async function elegantShutdown(cause: ShutdownCause = "agent"): Promise<n
 
   if (hasActiveSessions) {
     // Give sessions time to handle the shutdown message and close themselves (up to 10s).
-    const shutdownDeadline = Date.now() + 10_000;
+    const shutdownDeadline = Date.now() + GRACEFUL_SHUTDOWN_TIMEOUT_MS;
     while (Date.now() < shutdownDeadline && listSessions().length > 0) {
-      await new Promise<void>((r) => setTimeout(r, 500));
+      await delay(SHUTDOWN_POLL_INTERVAL_MS);
     }
 
     // Step 7: Emit chat lines for closed sessions and force-close any that remain.

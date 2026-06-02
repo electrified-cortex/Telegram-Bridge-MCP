@@ -44,7 +44,7 @@ The delay is short enough not to feel sluggish, long enough to register the clic
 
 ## Notes
 
-Operator-stated 2026-04-26 PM: "the whole experience is really awesome, but... can we add a quarter of a second delay to after the button is clicked before it actually collapses it up into the actual value inside the message?"
+Operator-stated 2026-04-26 PM (distilled): the experience is good overall; requested adding about a quarter-second delay after a button is clicked before it collapses into the selected value in the message.
 
 UX polish, not blocking. Pairs with the existing button + interactive-message infrastructure.
 

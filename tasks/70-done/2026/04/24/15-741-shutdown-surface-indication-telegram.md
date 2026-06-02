@@ -2,7 +2,7 @@
 
 ## Context
 
-Observed 2026-04-19 end-of-session: operator issued `/shutdown` on the bridge. The shutdown *worked* — sessions received a `⛔ Server shutting down. Your session will be invalidated on restart.` service_message via dequeue, MCP transport went down. But on the Telegram chat side, there was **zero indication** that anything was happening. Operator: "ZERO indication in telegram about what was going on. That needs fixing."
+Observed 2026-04-19 end-of-session: operator issued `/shutdown` on the bridge. The shutdown *worked* — sessions received a `⛔ Server shutting down. Your session will be invalidated on restart.` service_message via dequeue, MCP transport went down. But on the Telegram chat side, there was **zero indication** that anything was happening. Operator (distilled): there was zero indication in Telegram of what was happening, and that needs fixing.
 
 The shutdown service message is currently a session-scoped event (delivered through dequeue to live sessions). The human operator watching the Telegram channel sees nothing — no "bridge shutting down," no "fleet dying," no confirmation the shutdown took effect. This is a visibility failure: the operator who initiated the shutdown has no way to watch it complete from Telegram.
 

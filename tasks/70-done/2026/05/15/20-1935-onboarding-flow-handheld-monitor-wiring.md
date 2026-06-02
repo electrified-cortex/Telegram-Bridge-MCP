@@ -56,4 +56,4 @@ The `monitor` field replaces all use of `CANONICAL_MONITOR_RECIPE`.
 
 ## Source
 
-Operator 2026-05-16: "an agent starts up, it is handheld, walked into success — barely has to think. session/start → call dequeue. service message → set up monitor if you want. activity/file/create → here's your file, here's how to monitor it."
+Operator 2026-05-16 (distilled): a starting agent should be handheld into success with minimal thinking — session/start leads to calling dequeue; a service message offers optional monitor setup; activity/file/create returns the file and how to monitor it.
