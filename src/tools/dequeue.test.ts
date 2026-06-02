@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
+import { delay } from "../utils/timing.js";
 import type { TimelineEvent } from "../message-store.js";
 
 interface CompactEvent {
@@ -287,7 +288,7 @@ describe("dequeue tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     // waitForEnqueue resolves but dequeue still returns nothing
     mocks.waitForEnqueue.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(r, 50)),
+      () => delay(50),
     );
     const result = await call({ timeout: 1, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
@@ -298,7 +299,7 @@ describe("dequeue tool", () => {
   it("calls waitForEnqueue when queue is empty and timeout > 0", async () => {
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.waitForEnqueue.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(r, 50)),
+      () => delay(50),
     );
     await call({ timeout: 1, token: 1_123_456 });
     expect(mocks.waitForEnqueue).toHaveBeenCalled();
@@ -314,7 +315,7 @@ describe("dequeue tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.pendingCount.mockReturnValue(3);
     mocks.waitForEnqueue.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(r, 50)),
+      () => delay(50),
     );
     const result = await call({ timeout: 1, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
@@ -866,7 +867,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(1);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 2, force: true, token: 1_123_456 });
       // Should NOT return TIMEOUT_EXCEEDS_DEFAULT — actual poll behavior fires
@@ -879,7 +880,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(2);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult(result);
@@ -892,7 +893,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(5);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 3, token: 1_123_456 });
       const data = parseResult(result);
@@ -936,7 +937,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(1);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ token: 1_123_456 }); // no timeout param
       const data = parseResult(result);
@@ -950,7 +951,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(2);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult(result);
@@ -1503,7 +1504,7 @@ describe("dequeue tool", () => {
     it("compact: timed_out:true is present when blocking wait expires (always emitted)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456, response_format: "compact" });
       expect(isError(result)).toBe(false);
@@ -1522,7 +1523,7 @@ describe("dequeue tool", () => {
     it("default: timed_out:true is present when blocking wait expires (response_format: default)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456, response_format: "default" });
       const data = parseResult<DequeueResult>(result);
@@ -1540,7 +1541,7 @@ describe("dequeue tool", () => {
     it("omitted response_format: timed_out:true is present (backward compat)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise<void>((r) => setTimeout(r, 50)),
+        () => delay(50),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);

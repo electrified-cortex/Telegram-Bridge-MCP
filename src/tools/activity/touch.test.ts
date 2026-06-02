@@ -14,6 +14,7 @@
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, open, stat } from "fs/promises";
+import { delay } from "../../utils/timing.js";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -152,7 +153,7 @@ describe("TC3: success — file registered and present on disk", () => {
   it("updates the file's mtime on disk", async () => {
     const before = (await stat(filePath)).mtimeMs;
     // Ensure at least 1ms passes so mtime can change
-    await new Promise((r) => setTimeout(r, 10));
+    await delay(10);
     await handleActivityFileTouch({ token: SID });
     const after = (await stat(filePath)).mtimeMs;
     expect(after).toBeGreaterThanOrEqual(before);

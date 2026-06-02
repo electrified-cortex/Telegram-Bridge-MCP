@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
+import { delay } from "../../utils/timing.js";
 import type { TimelineEvent } from "../../message-store.js";
 
 // ---------------------------------------------------------------------------
@@ -194,7 +195,7 @@ describe("integration: set_dequeue_default affects dequeue gate", () => {
 
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.waitForEnqueue.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(r, 50)),
+      () => delay(50),
     );
     const result = await callDequeue({ timeout: 3, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
@@ -218,7 +219,7 @@ describe("integration: set_dequeue_default affects dequeue gate", () => {
 
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.waitForEnqueue.mockImplementation(
-      () => new Promise<void>((r) => setTimeout(r, 50)),
+      () => delay(50),
     );
     const result = await callDequeue({ timeout: 1, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);

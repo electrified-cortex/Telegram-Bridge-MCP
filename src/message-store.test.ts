@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { Update } from "grammy/types";
+import { delay } from "./utils/timing.js";
 import {
   recordInbound,
   recordOutgoing,
@@ -873,7 +874,7 @@ describe("scanAndRemove notify behavior (#3)", () => {
     expect(result).toBeUndefined();
 
     // Give microtasks a chance to resolve
-    await new Promise((r) => setTimeout(r, 10));
+    await delay(10);
 
     // Waiter should NOT have been woken — nothing was found
     expect(woken).toBe(false);
@@ -895,7 +896,7 @@ describe("scanAndRemove notify behavior (#3)", () => {
       evt.content.text === "target" ? true : undefined
     );
 
-    await new Promise((r) => setTimeout(r, 10));
+    await delay(10);
     // Should wake because a match was found and items remain
     expect(woken).toBe(true);
     await waiterPromise;

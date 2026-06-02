@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { delay } from "./utils/timing.js";
 import {
   registerChannelSubscriber,
   unregisterChannelSubscriber,
@@ -34,7 +35,7 @@ const SID = 1;
 const TOKEN = 1_000_001;
 
 /** Flush the microtask queue so Promise .then()/.catch() callbacks complete. */
-const flushPromises = () => new Promise<void>(r => setTimeout(r, 0));
+const flushPromises = () => delay(0);
 
 function makeServer() {
   const notify = vi.fn(() => Promise.resolve());

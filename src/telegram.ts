@@ -9,6 +9,7 @@ import {
   rateLimitRemainingSecs,
   resetRateLimiterForTest,
 } from "./rate-limiter.js";
+import { delay } from "./utils/timing.js";
 
 /** Directory where downloaded files are stored — only local paths under this dir are allowed for file uploads. */
 export const SAFE_FILE_DIR = resolve(tmpdir(), "telegram-bridge-mcp");
@@ -693,8 +694,8 @@ export async function callApi<T>(fn: () => Promise<T>, maxRetries = 3): Promise<
         const classified = classifyGrammyError(err);
         if (classified.code === "RATE_LIMITED") {
           recordRateLimit(classified.retry_after);
-          const delay = Math.min((classified.retry_after ?? 5) * 1000, 60_000);
-          await new Promise((r) => setTimeout(r, delay));
+          const waitMs = Math.min((classified.retry_after ?? 5) * 1000, 60_000);
+          await delay(waitMs);
           continue;
         }
       }

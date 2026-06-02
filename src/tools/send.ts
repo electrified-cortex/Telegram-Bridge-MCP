@@ -29,6 +29,7 @@ import { handleChoose } from "./send/choose.js";
 import { handleConfirm } from "./confirm/handler.js";
 import { detectCaptionDuplication, type DuplicationResult } from "../hybrid-duplication-detector.js";
 import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/stream.js";
+import { delay, POST_VOICE_SEND_DELAY_MS } from "../utils/timing.js";
 
 const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
 
@@ -451,7 +452,7 @@ export function register(server: McpServer) {
               // chunk is still rendering on the client.
               if (voiceStarted) {
                 // Voice messages take 2-5s to render after API confirmation; keep indicator alive.
-                await new Promise<void>(resolve => setTimeout(resolve, 3000));
+                await delay(POST_VOICE_SEND_DELAY_MS);
               }
               cancelTypingIfSameGeneration(gen);
               releaseRecordingIndicator(chatId, recordingEpoch);

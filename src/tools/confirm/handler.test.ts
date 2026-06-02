@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError } from "../test-utils.js";
+import { delay } from "../../utils/timing.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
 import type { ButtonResult, TextResult, VoiceResult } from "../button-helpers.js";
 
@@ -185,7 +186,7 @@ describe("confirm tool", () => {
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
     // Wait for async void in hook
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
       42, 5, "Proceed?", "OK", "cq1", false,
     );
@@ -196,7 +197,7 @@ describe("confirm tool", () => {
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
     await call({ text: "Proceed?", token: 1123456});
     // Wait for the void+catch chain to settle
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 5, "Proceed?", false);
     expect(mocks.ackAndEditSelection).not.toHaveBeenCalled();
   });
@@ -207,7 +208,7 @@ describe("confirm tool", () => {
     await call({ text: "Proceed?", yes_text: "✔️ Yes", no_text: "✖️ No", token: 1123456});
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_no", qid: "cq1" } });
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
       42, 5, "Proceed?", "✖️ No", "cq1", false,
     );
@@ -243,7 +244,7 @@ describe("confirm tool", () => {
     // Buttons are removed immediately — no ackAndEditSelection
     expect(mocks.ackAndEditSelection).not.toHaveBeenCalled();
     // editWithTimedOut fires immediately (void — awaited in background)
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 5, "Proceed?", false);
   });
 
@@ -298,7 +299,7 @@ describe("confirm tool", () => {
     await call({ text: "Proceed?", token: 1123456});
     const hookFn = mocks.registerMessageHook.mock.calls[0][1];
     hookFn();
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.clearCallbackHook).toHaveBeenCalledWith(5);
     // editWithSkipped is NOT called — buttons were already removed by editWithTimedOut
     expect(mocks.editWithSkipped).not.toHaveBeenCalled();
@@ -345,7 +346,7 @@ describe("confirm tool", () => {
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     // Fire hook with a value that isn't yes_data — guard should short-circuit
     hookFn({ content: { data: "rogue_data", qid: "cq-rogue" } });
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     // ackAndEditSelection was NOT called (hook returned early due to CTA guard)
     expect(mocks.ackAndEditSelection).not.toHaveBeenCalled();
   });
@@ -359,7 +360,7 @@ describe("confirm tool", () => {
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
     // Wait for the void+catch chain to settle
-    await new Promise((r) => setTimeout(r, 20));
+    await delay(20);
     // No unhandled rejection — .catch swallowed the error gracefully
     expect(mocks.ackAndEditSelection).toHaveBeenCalled();
   });
@@ -562,7 +563,7 @@ testIdentityGate((args) => call(args), mocks.validateSession, {"text":"x"});
       // Simulate the callback hook firing
       const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
       hookFn({ content: { data: "yes", qid: "cq1" } });
-      await new Promise((r) => setTimeout(r, 0));
+      await delay(0);
       expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
         42, 7, "Proceed?", "OK", "cq1", true,
       );
@@ -592,7 +593,7 @@ testIdentityGate((args) => call(args), mocks.validateSession, {"text":"x"});
     it("calls editWithTimedOut with isVoice=true immediately on timeout for voice message", async () => {
       mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
       await call(BASE_VOICE_ARGS);
-      await new Promise((r) => setTimeout(r, 0));
+      await delay(0);
       expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 7, "Proceed?", true);
       expect(mocks.editWithSkipped).not.toHaveBeenCalled();
     });
@@ -624,7 +625,7 @@ describe("confirmYN tool", () => {
     await call({ text: "Are you sure?", token: 1123456 });
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_yes", qid: "cq1" } });
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
       42, 5, "Are you sure?", "🟢 Yes", "cq1", false,
     );
@@ -636,7 +637,7 @@ describe("confirmYN tool", () => {
     await call({ text: "Are you sure?", token: 1123456 });
     const hookFn = mocks.registerCallbackHook.mock.calls[0][1];
     hookFn({ content: { data: "confirm_no", qid: "cq1" } });
-    await new Promise((r) => setTimeout(r, 0));
+    await delay(0);
     expect(mocks.ackAndEditSelection).toHaveBeenCalledWith(
       42, 5, "Are you sure?", "🔴 No", "cq1", false,
     );

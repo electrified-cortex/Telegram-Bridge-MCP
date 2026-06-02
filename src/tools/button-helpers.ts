@@ -7,6 +7,7 @@ import { markdownToV2, resolveParseMode } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
 import { getSessionQueue } from "../session-queue.js";
+import { delay } from "../utils/timing.js";
 
 const NO_TIMEOUT_CEILING_SECONDS = 86_400; // 24 h server-side ceiling when no timeout requested
 export const BUTTON_COLLAPSE_DELAY_MS = 250;
@@ -107,7 +108,7 @@ export async function pollButtonPress(
 
     await Promise.race([
       sq ? sq.waitForEnqueue() : waitForEnqueue(),
-      new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
+      delay(Math.min(remaining, 5000)),
       ...(abortPromise ? [abortPromise] : []),
     ]);
   }
@@ -215,7 +216,7 @@ export async function pollButtonOrTextOrVoice(
 
     await Promise.race([
       sq ? sq.waitForEnqueue() : waitForEnqueue(),
-      new Promise<void>((r) => setTimeout(r, Math.min(remaining, 5000))),
+      delay(Math.min(remaining, 5000)),
       ...(abortPromise ? [abortPromise] : []),
     ]);
   }
@@ -279,7 +280,7 @@ export async function ackAndEditSelection(
       .catch((e: unknown) => { console.error('[ackAndEditSelection] answerCallbackQuery failed:', e); });
     // Brief delay so the button color-flip (from answerCallbackQuery) is visible
     // before the keyboard collapses and the selection suffix appears.
-    await new Promise<void>((r) => setTimeout(r, delayMs));
+    await delay(delayMs);
   }
   const replyMarkup = highlightedRows ? { inline_keyboard: highlightedRows } : undefined;
   await appendSuffixAndEdit(chatId, messageId, originalText, `▸ *${chosenLabel}*`, isVoice, replyMarkup);
@@ -326,7 +327,7 @@ export async function highlightThenCollapse(
     .catch((e: unknown) => { console.error("[button-helpers] highlightThenCollapse stage-1 failed:", e); });
 
   // Stage 2: collapse after brief delay — remove keyboard and append suffix.
-  await new Promise<void>((r) => setTimeout(r, delayMs));
+  await delay(delayMs);
   // Must pass reply_markup: { inline_keyboard: [] } explicitly; editMessageText alone
   // does NOT clear an existing inline keyboard.
   // isVoice is always false here: highlightThenCollapse is only used by send_choice

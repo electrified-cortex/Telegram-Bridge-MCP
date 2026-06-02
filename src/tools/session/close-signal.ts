@@ -5,6 +5,7 @@ import { requireAuth } from "../../session-gate.js";
 import { deliverServiceMessage, notifySessionWaiters } from "../../session-queue.js";
 import { closeSessionById } from "../../session-teardown.js";
 import { refreshGovernorCommand } from "../../built-in-commands.js";
+import { delay, SHUTDOWN_POLL_INTERVAL_MS } from "../../utils/timing.js";
 
 export async function handleCloseSessionSignal({
   token,
@@ -56,7 +57,7 @@ export async function handleCloseSessionSignal({
       void refreshGovernorCommand();
       return toResult({ signaled: true, closed: true, sid: target_sid, reason: "self_closed" });
     }
-    await new Promise<void>((r) => setTimeout(r, 500));
+    await delay(SHUTDOWN_POLL_INTERVAL_MS);
   }
 
   // Re-validate governor status after the wait — it may have changed during the polling window

@@ -15,6 +15,7 @@
  */
 import type { Update } from "grammy/types";
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { delay } from "../utils/timing.js";
 import { createMockServer, parseResult, isError, type ToolHandler } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
@@ -142,7 +143,7 @@ describe("signal abort — interactive tools", () => {
     );
 
     // Wait for sendMessage to complete and the polling loop to begin
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     const start = Date.now();
     controller.abort();
@@ -188,7 +189,7 @@ describe("signal abort — interactive tools", () => {
       { signal: controller.signal },
     );
 
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     const start = Date.now();
     controller.abort();
@@ -215,13 +216,13 @@ describe("signal abort — interactive tools", () => {
       { signal: controller.signal },
     );
 
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
     controller.abort();
     await toolPromise; // timed_out: true
 
     // Simulate a late button press arriving after the tool has already returned
     recordInbound(cbUpdate(20, "confirm_yes", "qid_late"));
-    await new Promise<void>((r) => { setTimeout(r, 30); });
+    await delay(30);
 
     // The callback hook (still registered) fires and acks the late click
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
@@ -244,7 +245,7 @@ describe("signal abort — interactive tools", () => {
       { signal: controller.signal },
     );
 
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     const start = Date.now();
     controller.abort();
@@ -275,7 +276,7 @@ describe("signal abort — interactive tools", () => {
       { signal: controller.signal },
     );
 
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // Button is pressed — tool should resolve with confirmed: true
     recordInbound(cbUpdate(40, "confirm_yes", "qid_pressed"));
@@ -289,7 +290,7 @@ describe("signal abort — interactive tools", () => {
     expect(() => { controller.abort(); }).not.toThrow();
 
     // Wait for fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     // Verify the normal success path: button was acked and message was edited
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid_pressed");

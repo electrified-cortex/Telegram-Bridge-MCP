@@ -10,6 +10,7 @@
  */
 import type { Update } from "grammy/types";
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { delay } from "../utils/timing.js";
 import { createMockServer, parseResult, isError, type ToolHandler } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
@@ -165,7 +166,7 @@ describe("interactive flows — end-to-end integration", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.confirm({ text: "Proceed?", ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     recordInbound(cbUpdate(5, "confirm_yes"));
     const result = await toolPromise;
@@ -177,7 +178,7 @@ describe("interactive flows — end-to-end integration", () => {
     expect(data.value).toBe("confirm_yes");
     expect(data.message_id).toBe(5);
     // Wait for fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
     // Hook fired: ackAndEditSelection called answerCallbackQuery + editMessageText
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
     expect(mocks.editMessageText).toHaveBeenCalled();
@@ -187,7 +188,7 @@ describe("interactive flows — end-to-end integration", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.confirm({ text: "Delete everything?", ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     recordInbound(cbUpdate(5, "confirm_no"));
     const result = await toolPromise;
@@ -211,7 +212,7 @@ describe("interactive flows — end-to-end integration", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.choose({ text: "Pick one:", options: opts, ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     recordInbound(cbUpdate(5, "b"));
     const result = await toolPromise;
@@ -224,7 +225,7 @@ describe("interactive flows — end-to-end integration", () => {
     expect(data.message_id).toBe(5);
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
     // Wait for fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
     expect(mocks.editMessageText).toHaveBeenCalled();
   });
 
@@ -236,7 +237,7 @@ describe("interactive flows — end-to-end integration", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.ask({ question: "What is your name?", ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     recordInbound(textUpdate("Alice"));
     const result = await toolPromise;
@@ -256,7 +257,7 @@ describe("interactive flows — end-to-end integration", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.ask({ question: "Tell me something", ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // recordInbound accepts an optional transcribedText for voice messages
     recordInbound(voiceUpdate(), "this is transcribed");
@@ -342,7 +343,7 @@ describe("interactive flows — end-to-end integration", () => {
 
     // First press
     recordInbound(cbUpdate(5, "on", "qid1"));
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
     // Persistent mode: editMessageText called (with keyboard kept), editMessageReplyMarkup NOT called
@@ -351,7 +352,7 @@ describe("interactive flows — end-to-end integration", () => {
 
     // Second press — hook must still be alive
     recordInbound(cbUpdate(5, "off", "qid2"));
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(2);
     expect(mocks.editMessageText).toHaveBeenCalledTimes(2);
@@ -388,7 +389,7 @@ describe("interactive flows — end-to-end integration", () => {
     // dequeue surfaces the event; wait for the hook's fire-and-forget
     // chain (answerCallbackQuery → 250 ms delay → editMessageText) to complete.
     const dqResult = await handlers.dequeue({ timeout: 0, token });
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     expect(mocks.answerCallbackQuery.mock.calls.length).toBeGreaterThan(ackCallsBefore);
     expect(mocks.editMessageText).toHaveBeenCalled();
@@ -409,7 +410,7 @@ describe("interactive flows — end-to-end integration", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.choose({ text: "A or B?", options: opts, ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     recordInbound(voiceUpdate(), "I prefer A actually");
     const result = await toolPromise;
@@ -431,7 +432,7 @@ describe("interactive flows — end-to-end integration", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.confirm({ text: "Go ahead?", ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     recordInbound(textUpdate("Actually never mind"));
     const result = await toolPromise;

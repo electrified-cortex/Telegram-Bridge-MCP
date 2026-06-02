@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { delay } from "./utils/timing.js";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks — must come before imports
@@ -409,11 +410,11 @@ describe("outbound-proxy", () => {
         // Context A: bypassed
         bypassProxy(async () => {
           // Simulate an in-flight API call
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await delay(10);
         }),
         // Context B: NOT bypassed — should fire hooks normally
         (async () => {
-          await new Promise(resolve => setTimeout(resolve, 5));
+          await delay(5);
           await notifyAfterFileSend(99, "voice", "test", undefined);
           outsideBypassCalled = true;
         })(),

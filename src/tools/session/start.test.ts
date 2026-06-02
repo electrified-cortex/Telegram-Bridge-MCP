@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode, type ToolHandler } from "../test-utils.js";
+import { delay } from "../../utils/timing.js";
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
@@ -2394,11 +2395,11 @@ describe("session_start tool", () => {
     const callPromise = call({ name: "Worker" });
 
     // Wait for sendMessage to be called
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     // Fire a toggle callback
     hookFn!({ content: { data: "approve_toggle_delegation", qid: "t1" } });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     // Promise should NOT have resolved yet — editMessageReplyMarkup called, not deleteMessage
     expect(mocks.editMessageReplyMarkup).toHaveBeenCalled();
@@ -2425,11 +2426,11 @@ describe("session_start tool", () => {
     });
 
     const callPromise = call({ name: "Worker" });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     // Toggle ON
     hookFn!({ content: { data: "approve_toggle_delegation", qid: "t1" } });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     // editMessageReplyMarkup should have been called with the updated keyboard
     expect(mocks.editMessageReplyMarkup).toHaveBeenCalledWith(
@@ -2461,7 +2462,7 @@ describe("session_start tool", () => {
     });
 
     const callPromise = call({ name: "Worker" });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     const countButtons = (keyboard: unknown[][]) =>
       keyboard.reduce((acc, row) => acc + row.length, 0);
@@ -2473,7 +2474,7 @@ describe("session_start tool", () => {
 
     // Toggle
     hookFn!({ content: { data: "approve_toggle_delegation", qid: "t1" } });
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     const editedOpts = (mocks.editMessageReplyMarkup.mock.calls[0] as unknown as unknown[])[2] as Record<string, unknown>;
     const editedKeyboard = (editedOpts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
@@ -2534,7 +2535,7 @@ describe("reauth dialog auto-dismiss", () => {
     const callPromise = handleSessionReconnect({ name: "Overseer" });
 
     // Wait for sendMessage to be called
-    await new Promise(r => setTimeout(r, 0));
+    await delay(0);
 
     // setSessionReauthDialogMsgId must have been called with sid=1, msgId=700
     expect(mocks.setSessionReauthDialogMsgId).toHaveBeenCalledWith(1, 700);

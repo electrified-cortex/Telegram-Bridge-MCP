@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { delay } from "../utils/timing.js";
 
 const mocks = vi.hoisted(() => ({
   answerCallbackQuery: vi.fn(),
@@ -359,7 +360,7 @@ describe("button-helpers", () => {
     it("returns null on timeout with no match", async () => {
       mocks.dequeueMatch.mockReturnValue(undefined);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise((r) => setTimeout(r, 100)),
+        () => delay(100),
       );
       const result = await pollButtonPress(123, 10, 0.01);
       expect(result).toBeNull();
@@ -373,7 +374,7 @@ describe("button-helpers", () => {
         });
       });
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise((r) => setTimeout(r, 100)),
+        () => delay(100),
       );
       const result = await pollButtonPress(123, 10, 0.01);
       expect(result).toBeNull();
@@ -494,7 +495,7 @@ describe("button-helpers", () => {
         });
       });
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise((r) => setTimeout(r, 100)),
+        () => delay(100),
       );
       const result = await pollButtonOrTextOrVoice(123, 10, 0.01);
       expect(result).toBeNull();
@@ -503,7 +504,7 @@ describe("button-helpers", () => {
     it("returns null on timeout", async () => {
       mocks.dequeueMatch.mockReturnValue(undefined);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise((r) => setTimeout(r, 100)),
+        () => delay(100),
       );
       const result = await pollButtonOrTextOrVoice(123, 10, 0.01);
       expect(result).toBeNull();
@@ -576,7 +577,7 @@ describe("button-helpers", () => {
         return undefined; // guard returned undefined — event not consumed
       });
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise((r) => setTimeout(r, 100)),
+        () => delay(100),
       );
       const result = await pollButtonOrTextOrVoice(123, 10, 0.01);
       expect(matchFnResult).toBeUndefined(); // guard must return undefined for off-target reply
@@ -663,7 +664,7 @@ describe("button-helpers", () => {
     it("pollButtonOrTextOrVoice waits on session queue", async () => {
       mocks.sessionQueue.dequeueMatch.mockReturnValue(undefined);
       mocks.sessionQueue.waitForEnqueue.mockImplementation(
-        () => new Promise((r) => setTimeout(r, 100)),
+        () => delay(100),
       );
       const result = await pollButtonOrTextOrVoice(
         123, 10, 0.01, undefined, undefined, 1,
@@ -676,7 +677,7 @@ describe("button-helpers", () => {
     it("pollButtonPress falls back to global for unknown sid", async () => {
       mocks.dequeueMatch.mockReturnValue(undefined);
       mocks.waitForEnqueue.mockImplementation(
-        () => new Promise((r) => setTimeout(r, 100)),
+        () => delay(100),
       );
       // sid=999 has no queue — falls back to global
       const result = await pollButtonPress(123, 10, 0.01, undefined, 999);
@@ -693,7 +694,7 @@ describe("button-helpers", () => {
       // Session 2's queue is empty — times out immediately
       mocks.sessionQueue2.dequeueMatch.mockReturnValue(undefined);
       mocks.sessionQueue2.waitForEnqueue.mockImplementation(
-        () => new Promise((r) => setTimeout(r, 100)),
+        () => delay(100),
       );
 
       // Session 2 polls — must not consume session 1's event

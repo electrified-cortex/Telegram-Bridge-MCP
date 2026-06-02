@@ -13,6 +13,7 @@
  */
 import type { Update } from "grammy/types";
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { delay } from "../utils/timing.js";
 import { createMockServer, parseResult, isError, type ToolHandler } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
@@ -133,18 +134,18 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.confirm({ text: "Proceed?", ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // First click — hook fires, message edited, buttons removed
     recordInbound(cbUpdate(5, "confirm_yes", "qid1"));
     const result = await toolPromise;
 
     // Wait for fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     // Second click (same message_id, different query_id) — arrives after confirm resolved
     recordInbound(cbUpdate(5, "confirm_yes", "qid2"));
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     expect(isError(result)).toBe(false);
     expect(parseResult(result).confirmed).toBe(true);
@@ -170,7 +171,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.choose({ text: "Pick one:", options: opts, ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // Three rapid clicks on the same button — all arrive before choose processes them
     recordInbound(cbUpdate(5, "b", "qid1"));
@@ -180,7 +181,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
     const result = await toolPromise;
 
     // Wait for fire-and-forget ackAndEditSelection (250 ms collapse delay) to complete
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     expect(isError(result)).toBe(false);
     expect(parseResult(result).value).toBe("b");
@@ -204,13 +205,13 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
     const toolPromise = runInSessionContext(sid, () =>
       handlers.confirm({ text: "Still there?", ignore_pending: true, token }),
     );
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     recordInbound(cbUpdate(5, "confirm_yes", "qid1"));
     const result = await toolPromise;
 
     // Give ackAndEditSelection (fire-and-forget from hook) time to complete (250 ms collapse delay)
-    await new Promise<void>((r) => { setTimeout(r, 300); });
+    await delay(300);
 
     // No crash despite answerCallbackQuery failing
     expect(isError(result)).toBe(false);
@@ -241,7 +242,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
 
     // First press — hook fires ackAndEditSelection (keyboard stays visible with highlight)
     recordInbound(cbUpdate(5, "a", "qid1"));
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(1);
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith("qid1");
@@ -251,7 +252,7 @@ describe("callback edge-cases — rapid clicks and expired queries", () => {
 
     // Second press — hook must still be alive (persistent registration)
     recordInbound(cbUpdate(5, "b", "qid2"));
-    await new Promise<void>((r) => { setTimeout(r, 20); });
+    await delay(20);
 
     // Hook fired again: both presses acked and keyboard updated
     expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(2);
