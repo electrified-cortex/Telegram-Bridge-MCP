@@ -244,7 +244,7 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
 
   NUDGE_TYPING_RATE: {
     eventType: "behavior_nudge_typing_rate" as const,
-    text: "Show-typing after receiving messages. help('show-typing')",
+    text: "show-typing = reply imminent (composition starting). React to ack receipt; animation preset for background work. help('show-typing')",
   },
 
   NUDGE_QUESTION_HINT: {
