@@ -29,6 +29,7 @@ import { resolveHttpPort } from "./cli-args.js";
 import { enableLogging, isLoggingEnabled, rollLog, logEvent as logLocalEvent, flushCurrentLog } from "./local-log.js";
 import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
+import { attachHookRoutes } from "./hook-animation.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -145,6 +146,7 @@ if (mcpPort !== undefined) {
   const app = createMcpExpressApp({ host: bindHost });
   attachEventRoute(app);
   attachDequeueRoute(app);
+  attachHookRoutes(app);
 
   /** Normalize header that may be string | string[] | undefined → string | undefined */
   const getSessionId = (req: Request): string | undefined => {
