@@ -10,7 +10,7 @@ repo: Telegram MCP
 
 ## Operator directive (2026-04-26)
 
-> "Any question that is blocking and waiting for a response needs to be pinned. And then when it's completed as part of its cleanup, it also unpins itself."
+> Source: operator voice, 2026-04-26 (distilled). Any blocking question awaiting a response must be pinned, and must unpin itself as part of its cleanup once resolved.
 
 ## Problem
 

@@ -38,7 +38,7 @@ Operator believes this contract may already be partially implemented but it has 
 
 ## Source
 
-- Operator request 2026-05-15: "verification task for Telegram MCP that if any session is closed, it has to delete any relevant activity files. That should have already been true, but we need to have a verification of it. Including with that one, needs to verify that if the Telegram MCP is shut down, it also should remove any activity files."
+- Operator request 2026-05-15 (distilled): a verification task confirming that closing any session deletes its relevant activity files (expected behavior already, but needs verifying), and likewise that shutting down the Telegram MCP removes any activity files.
 - Triggered by: file-watching skill's delete-as-shutdown idiom enabling clean composability with TMCP's activity-file lifecycle.
 - Pairs with: file-watching skill at `electrified-cortex/skills/file-watching/` (just shipped 2026-05-15).
 

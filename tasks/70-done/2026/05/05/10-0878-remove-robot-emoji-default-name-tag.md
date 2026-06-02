@@ -14,7 +14,7 @@ target_repo: telegram-bridge-mcp
 
 ## Operator framing (2026-05-05)
 
-> "We should go ahead and remove the robot emoji from the default name tagging. We don't need it anymore. It's considered emoji fatigue."
+> Source: operator voice, 2026-05-05 (distilled). Remove the robot emoji from the default name tagging — it is no longer needed and contributes to emoji fatigue.
 
 10-0869 already removed `🤖` from the *auto-default* name tag (now `<color> <name>`). Confirmed: my session came online with `🟦 Curator`, no robot. But `🤖` is still hardcoded into many *other* TMCP-generated messages — surfaces where the operator can't have set a custom name tag yet (e.g. session-online announce fires before profile/load). Sweep these.
 

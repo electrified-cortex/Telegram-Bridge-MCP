@@ -4,8 +4,9 @@ Captured from operator voice (62784) during Curator spec v2 session, 2026-05-27.
 
 ## Operator intent
 
-> "Maybe even have a side document going about how to properly build agent structure"
+> Source: operator voice msg 62784, 2026-05-27 (distilled).
 
+Proposal to maintain a separate reference document on how to properly build agent structure.
 Mentioned in the context of rebuilding the Curator spec from scratch. The operator observed that agent specs historically conflate identity, purpose, and operational rules — and wanted a reference doc capturing the right way to structure an agent spec.
 
 ## Suggested scope

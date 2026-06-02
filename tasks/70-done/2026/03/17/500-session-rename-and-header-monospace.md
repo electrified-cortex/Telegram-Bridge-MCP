@@ -8,9 +8,9 @@ Feature
 
 Multi-session manual testing (2026-03-18)
 
-## User Quote
+## Operator framing
 
-> "Can we have name reservation/rename as long as no one else has it?"
+> Source: operator voice (distilled). Requested session name reservation/rename, permitted as long as the name is not already in use.
 
 ## Description
 

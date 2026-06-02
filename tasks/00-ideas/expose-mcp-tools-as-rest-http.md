@@ -9,7 +9,7 @@ date: 2026-05-05
 
 ## Operator framing (2026-05-05)
 
-> "We were considering can we actually just expose everything that the MCP has as a RESTful HTTP. I think as an interim check, that's like maybe an icebox thing."
+> Source: operator voice, 2026-05-05 (distilled). Considering exposing everything the MCP offers as a RESTful HTTP surface; framed as an interim, icebox-tier idea.
 
 Generic REST surface mirroring the MCP tool catalog. Each tool gets a corresponding `POST /<tool-name>` route that takes the tool's args as JSON body and returns the tool result with no MCP envelope. Auth: same token-from-body / token-from-query pattern as 10-0873.
 

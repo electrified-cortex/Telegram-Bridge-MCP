@@ -41,7 +41,7 @@ How to introduce the pod-style `monitor.sh` pattern into TMCP's Curator wake mec
 - Pod-side `monitor.sh` lives at `task-engine/.foreman-pod/{inbox,outbox}/monitor.sh` (and `.worker-pod/` copies). Single canonical source.
 - `--prefix` flag added 2026-05-13; would let the Curator's wake distinguish "TMCP activity" from "pod-message" kicks once the Curator has multiple monitors armed.
 - Curator-only because it's the Curator's own infrastructure; no Worker should touch this.
-- Operator authority: 2026-05-13 voice ("file curator-only task to follow up").
+- Operator authority: 2026-05-13 voice (distilled — directed filing a curator-only follow-up task).
 
 ## Won't-do (for this spike)
 

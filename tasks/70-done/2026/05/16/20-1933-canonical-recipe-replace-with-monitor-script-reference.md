@@ -13,7 +13,7 @@
 
 ## Source
 
-Operator 2026-05-16: "canonical monitor recipe is dead — we've offered up a monitor script."
+Operator 2026-05-16 (distilled): the canonical monitor recipe is retired in favor of the provided monitor script.
 
 ## Verification
 

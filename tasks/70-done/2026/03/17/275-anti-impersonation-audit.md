@@ -10,8 +10,10 @@ Story — Audit
 
 ## Origin
 
-Operator voice message (2026-03-18):
-> "DMs should have a confirmed envelope that says who it was from. There shouldn't be any direct way to impersonate."
+Operator voice message (2026-03-18, distilled):
+> Source: operator voice, 2026-03-18 (distilled).
+
+DMs should carry a confirmed envelope identifying the sender, with no direct way to impersonate another party.
 
 ## Current State
 

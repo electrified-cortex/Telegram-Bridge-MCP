@@ -48,7 +48,7 @@ When the governor DMs you "Shutting down — close your session" (or you decide 
 Operator-stated invariants:
 
 - Wipe token BEFORE calling `shutdown`.
-- If a participant fails to close cleanly, governor may need `action(type: "session/close", force: true, target_sid: N)` before invoking `shutdown` (verify against bridge behavior — operator said "we'll work out the nuances later").
+- If a participant fails to close cleanly, governor may need `action(type: "session/close", force: true, target_sid: N)` before invoking `shutdown` (verify against bridge behavior — operator noted the nuances would be worked out later).
 - Handoff doc is OPTIONAL and may be written AFTER `shutdown` (the agent process is still alive). Curator's habit is to write it before — that is a Curator preference, not a TMCP requirement.
 
 ## Acceptance

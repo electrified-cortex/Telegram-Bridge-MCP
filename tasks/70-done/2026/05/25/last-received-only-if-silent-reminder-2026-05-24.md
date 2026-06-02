@@ -6,9 +6,14 @@
 
 ---
 
-## Verbatim — msg 61116
+## Summary — msg 61116
 
-> Actually, now I want to augment the existing reminders. There needs to be a flag for, or some sort of like, I guess toggle. I mean, I realize now that if I send for the last message received, if I send a message and BT replies, then they took action and they don't need a reminder after that. So there does need to be another type of reminder, like a last received or maybe a last unreplied or something. You see what I'm saying? You see where I'm going with this?
+> Source: operator voice msg 61116, 2026-05-24 (distilled).
+
+Request to augment the existing reminders with a flag/toggle: for a last-received reminder, if
+a reply has already been sent since the inbound message, the recipient has taken action and no
+reminder is needed. This calls for a new reminder type along the lines of "last received" /
+"last unreplied".
 
 ---
 

@@ -15,9 +15,9 @@ target_branch: dev
 
 ## Operator framing (2026-05-05, msgs 50386 + 50387)
 
-> "It needs to emphasize like DQ on every turn. DQ on every turn. And then say that the DQ will eventually timeout. So use something like a monitor to get back in. That's it. And you don't have to explain. In startup, don't explain the max weight too much. Like you could say, hey, if you want to probe for messages, you can do `dequeue(token)`, or you can do `dequeue(max_wait)`, but that's it. Too much explanation makes it worse."
+> Source: operator voice msgs 50386 + 50387, 2026-05-05 (distilled). Onboarding text should emphasize calling dequeue every turn, note that dequeue eventually times out, and point to using a monitor to get back in — without over-explaining. At startup, avoid belaboring `max_wait`: a brief mention that you can probe with `dequeue(token)` or `dequeue(max_wait)` is enough. Too much explanation makes it worse.
 
-> "We're adding in this new onboarding loop pattern... There is a startup message that happens. It just seems too excessive. Again, explain what it needs to know to be in the loop, and then talk about monitoring, and then call the help for more. You don't have to make this a large expose in the service message. You can just say 'call help', which is what the other messages say to do."
+> Source: operator voice msgs 50386 + 50387, 2026-05-05 (distilled). The new onboarding-loop startup message feels excessive. It should cover only what the agent needs to stay in the loop, then mention monitoring, then defer to `help` for more — not a large exposition in the service message. A simple "call help" (consistent with the other messages) suffices.
 
 ## Concept
 

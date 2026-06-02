@@ -4,7 +4,7 @@
 
 Operator (2026-04-19, voice 38215-38216): when the operator (or an agent) tries to reach a target session that is offline, TMCP surfaces a prompt with buttons asking "what do you want to do?" — but the prompt's name tag identifies a DIFFERENT session as the source. Specifically observed: "Curator looks offline" prompt arrived bearing the name tag "Worker 3", which has no causal relationship to the operator's discovery query.
 
-> "It has a name tag of 'Worker 3'. That doesn't make sense. That's a bug. ... We've had that issue before. It's just never gotten fixed."
+> Source: operator voice msgs 38215-38216, 2026-04-19 (distilled). The prompt carried the wrong name tag ("Worker 3"), which makes no sense and is a recurring, never-fixed bug.
 
 The bug is recurring — operator confirms it has surfaced before and the fix never landed. Likely the prompt's "from" field is being populated from the wrong session in the lookup chain (perhaps the most recent session in some queue, rather than the actual asker).
 
@@ -37,7 +37,7 @@ Worker (TMCP). Curator stages, operator merges. Bug fix; no design needed.
 ## Related
 
 - `15-713`/`15-714` (other behavior-shaping work in TMCP).
-- Operator note: "we've had that issue before" — search git history for prior attempts.
+- Operator note (distilled): this issue has surfaced before — search git history for prior attempts.
 
 ## Completion
 

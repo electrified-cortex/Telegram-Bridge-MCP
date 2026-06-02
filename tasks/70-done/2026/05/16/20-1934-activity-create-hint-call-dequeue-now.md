@@ -12,7 +12,7 @@
 
 ## Source
 
-Operator 2026-05-16: "it's really important to actually call out strongly that call DQ now as the hint."
+Operator 2026-05-16 (distilled): the hint should strongly call out calling dequeue now.
 
 ## Verification
 

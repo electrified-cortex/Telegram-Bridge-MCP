@@ -18,7 +18,7 @@ After an operator answers a `send(type: "question", choose: [...])` message, the
 3. Operator tapped "Bump to 7.2.0 now".
 4. Bridge returned `{value: "bump", label: "Bump to 7.2.0 now", message_id: 42747}` to caller.
 5. Operator observed: message text updated to show the selection, but buttons remained tappable on the same message.
-6. Operator: "the message updated the text but didn't clear the buttons. I need you to follow up on this, that this is a bug."
+6. Operator (distilled): the message updated its text but did not clear the buttons — flagged as a bug to follow up on.
 
 ## Expected behavior
 
@@ -29,7 +29,7 @@ After a question is answered:
 
 ## Possible regression source
 
-Operator hint (2026-04-25): "It's the first time I've seen that that I can recall, and it might be a side effect of our new async message queue or whatever we got."
+Operator hint (2026-04-25, distilled): the operator hadn't seen this before and suspected it might be a side effect of the new async message queue.
 
 The async-default audio change (task 10-820) and the async-send-queue refactor for recording-indicator coordination both landed in the v7.2.0 cycle. If the question-answer edit path is now routing through the async queue (or sharing state with it), the keyboard-removal step may be getting dropped between the queue's edit emission and the underlying `editMessageText` call. Investigate whether question-answer edits go via the same queue path as audio sends, and whether `reply_markup` is preserved across that hop.
 

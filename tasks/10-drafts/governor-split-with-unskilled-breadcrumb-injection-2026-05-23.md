@@ -18,7 +18,7 @@ version: v0.1
 
 The threaded-conversations PRD (10-2100) assumes either (a) a skilled host with a haiku-driven router skill OR (b) a degraded manual mode where the operator drives thread creation explicitly. Missing: the **middle tier** — an unskilled host that doesn't have a router skill but CAN handle sub-sessions if the bridge tells it how, via the same breadcrumb-style service messages that already work for the monitor onboarding chain (shipped 2026-05-22 via `ACTIVITY_FILE_MONITOR_INSTRUCTIONS` + post-registration enqueue).
 
-Operator's framing (2026-05-23T20:11Z, voice msg 60091): "the unskilled governor can still do its job and take advantage of subsessions, but the skilled governor can even do crazier things, like use a haiku for routing. It's the ambiguousness of incoming messages that need to be routed, but that still pollutes the host context, which can confuse the host. I just want to make sure that the unskilled host agent understands what to do by getting all the right Telegram service messages."
+Operator's framing (2026-05-23T20:11Z, voice msg 60091, distilled): an unskilled governor can still do its job and use sub-sessions, while a skilled governor can go further (e.g. use a haiku for routing). The core issue is that ambiguous incoming messages need routing, but routing them in-host pollutes and can confuse the host context. The goal is to ensure the unskilled host agent knows what to do purely by receiving the right Telegram service messages.
 
 ## Prior art (proves the pattern)
 
@@ -139,7 +139,7 @@ AC7. Tier defaults to unskilled when no signal received. New hosts get breadcrum
 
 - Voice msg 60091 (2026-05-23T20:11:13Z): operator outlined the unskilled/skilled split.
 - Voice msgs 59314-59325 (2026-05-22T~03:00Z, ~8pm PT): operator designed the breadcrumb chain pattern for monitor onboarding. Pattern shipped.
-- Curator's response 60092 (2026-05-23T20:11:48Z): "Governor-split note filed as task #15" — but the substantive breadcrumb-injection mechanism was NOT captured in task #15's title alone. This spec is the substantive capture.
+- Curator's response 60092 (2026-05-23T20:11:48Z): noted that the governor-split was filed as task #15 — but the substantive breadcrumb-injection mechanism was NOT captured in task #15's title alone. This spec is the substantive capture.
 
 ## Delegation
 

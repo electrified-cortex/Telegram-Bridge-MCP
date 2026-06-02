@@ -32,8 +32,8 @@ Native OS file-event APIs eliminate the polling: the kernel wakes the process on
 
 ## Source
 
-- Operator request 2026-05-15T01:00 UTC: "are there better options other than sleep loops? Is there something with Windows where we can use an actual file monitor?"
-- Overseer concurrence (DM 2026-05-15): "process proliferation high priority this session, sleep-loop is root cause, FileSystemWatcher is right target."
+- Operator request 2026-05-15T01:00 UTC (distilled): asked whether there are better options than sleep loops — e.g. a real file monitor on Windows.
+- Overseer concurrence (DM 2026-05-15, distilled): process proliferation is high priority this session, the sleep-loop is the root cause, and FileSystemWatcher is the right target.
 - Builds on 30-0892 (sealed 2026-05-14, cherry-pick 5259c83c on dev).
 
 

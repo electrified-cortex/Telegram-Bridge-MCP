@@ -3,7 +3,7 @@ Created: 2026-04-10
 Status: Queued
 Host: local
 Priority: 10-446
-Source: Operator via Overseer — "dm should be canonical, direct the alias"
+Source: Operator via Overseer (distilled) — dm should be the canonical type, with direct as the alias
 ---
 
 # Make `dm` the canonical send type, `direct` the alias

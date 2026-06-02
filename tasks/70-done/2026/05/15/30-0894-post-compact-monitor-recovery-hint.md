@@ -36,7 +36,7 @@ Emit ONCE per compaction event (don't spam every dequeue). If no activity-file i
 
 ## Source
 
-- Operator request 2026-05-15T00:35 UTC: "if there's a monitor file active and we got a compaction event, we send them a service message... 'you probably lost your monitor, and we need to reconnect to this file.'"
+- Operator request 2026-05-15T00:35 UTC (distilled): if a monitor file is active and a compaction event occurs, send a service message indicating the monitor was likely lost and the file needs to be reconnected.
 - Related: companion to 30-0891 (activity-file recovery on file-deleted) and 30-0892 (bundled monitor script).
 
 ## Completion

@@ -19,7 +19,7 @@ updated: 2026-05-07
 
 ## Update 2026-05-06 — release/7.4 CI blocker
 
-Operator: "CI tests failing — most are content-string assertions. Get past the stupid removal of content checking, then we can merge release/7.4." This is now the merge gate for release/7.4. Bumped to P10. Target branch flipped to release/7.4 (was dev — release/7.4 is downstream of dev so the work needs to be there for PR #167 to go green).
+Operator (distilled): CI tests are failing, mostly on content-string assertions; remove the content-checking blockers so release/7.4 can merge. This is now the merge gate for release/7.4. Bumped to P10. Target branch flipped to release/7.4 (was dev — release/7.4 is downstream of dev so the work needs to be there for PR #167 to go green).
 
 The "no string-content tests" prohibition is now codified in `.agents/agents/worker/context/refresh.md` (commit b797e64) — Worker should follow that rule going forward AND retroactively scrub the existing test base.
 
@@ -29,7 +29,7 @@ The "no string-content tests" prohibition is now codified in `.agents/agents/wor
 
 ## Operator framing (2026-05-05, msg 50388)
 
-> "One thing I absolutely fucking hate is testing content in help tests. Like, what is this waste of brain power? This is terrible. We need to audit on this. Let's queue a task to audit our tests for stupid."
+> Source: operator voice msg 50388, 2026-05-05 (distilled). Strong objection to asserting on help-text content in tests — it is wasteful and should be audited; queue a task to review tests for low-value content assertions.
 
 ## Concept
 

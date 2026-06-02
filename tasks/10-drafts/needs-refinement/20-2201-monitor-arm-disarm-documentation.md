@@ -16,7 +16,7 @@ The correct pattern is simple:
 - DISARM at graceful shutdown
 - No re-arm needed at compaction recovery
 
-Operator directive (voice 62948): "We definitely need to have some sort of way of saying, hey, here's how you arm your monitor. And that happens at startup. And then shut down, here's how you disarm it. That's the critical piece. The verification loop is waste of energy and time for agents if monitors are actually working."
+Operator directive (voice 62948, distilled): documentation must clearly state how to arm a monitor at startup and how to disarm it at shutdown — that is the critical piece. The verification loop wastes agent time and energy when monitors are actually working.
 
 `recovery.md` has already been simplified (commit c5150ee). Remaining work is the broader documentation sweep.
 
@@ -28,3 +28,8 @@ Operator directive (voice 62948): "We definitely need to have some sort of way o
 - [ ] `help('compacted')` monitor section (see `30-2206`) aligned with stable-monitor fact — no re-arm step.
 - [ ] No references to "re-arm after compaction" remain in TMCP-owned documentation.
 - [ ] Verified: a fresh agent following the simplified docs successfully maintains monitor through a compaction cycle.
+
+## Overseer bounce (2026-06-01)
+- verdict: REJECT — ACs untestable, contradicts 30-2206
+- finding: No file list (scope subjective). Conflates two meanings of "re-arm". Final AC ("fresh agent follows docs through compaction") is a live integration test with no harness or pass criteria. Contradicts 30-2206 (which adds re-arm steps) — these must be reconciled first.
+- action: Enumerate specific files, clarify which "re-arm" concept is being simplified, add objective verification method, reconcile with 30-2206 before re-filing.

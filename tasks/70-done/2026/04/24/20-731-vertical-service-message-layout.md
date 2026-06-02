@@ -2,7 +2,7 @@
 
 ## Context
 
-Operator observed 2026-04-19 (msg 38372) that service messages like "closed session Overseer (SID2), this cannot be undone" crowd onto one line and are hard to parse at a glance on Telegram. Voice: "should be more vertical."
+Operator observed 2026-04-19 (msg 38372, distilled) that multi-attribute service messages (e.g. a session-close notice with SID and an undo warning) crowd onto one line and are hard to parse at a glance on Telegram — they should be laid out more vertically.
 
 The `service_message` rendering path currently concatenates title + detail + hint on a single line (or minimal line breaks), which works for short notices but fails readability for multi-attribute events like session closes, approvals, ticket issuance, and shutdown warnings.
 

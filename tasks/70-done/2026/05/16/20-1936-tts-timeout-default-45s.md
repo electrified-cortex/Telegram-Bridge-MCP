@@ -21,4 +21,4 @@ In `src/tts.ts`:
 
 ## Source
 
-Operator 2026-05-16: "I kind of want to put it at 45 seconds."
+Operator 2026-05-16 (distilled): preferred setting it to 45 seconds.

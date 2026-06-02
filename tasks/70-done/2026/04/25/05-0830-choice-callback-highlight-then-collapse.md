@@ -23,7 +23,7 @@ Two-stage animation:
 1. **Selection feedback (immediate, ≤ network round-trip):** chosen button takes the primary style (or success/danger if originally styled that way); ALL other buttons go to default Telegram style (no color, plain background). This is visually distinct from the current "all primary" state.
 2. **Collapse (≈500 ms after step 1):** keyboard removed entirely; message text gets the standard selection suffix (current "▸ <label>" behavior). Same end state as a `question` answer.
 
-Operator quote: "I would want the keyboard to be updated on that message with an immediate but what looks like an immediate button selection... and then no more than a second later, maybe even a half a second later, go ahead and roll it up."
+Operator framing (distilled): the keyboard should update on that message to show an immediate-looking button selection, then collapse it up roughly half a second to a second later.
 
 ## Multi-tap control panel — preserve
 

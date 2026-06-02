@@ -78,7 +78,7 @@ The actual sequence that breaks kicks:
 2. Agent makes ANY tool call → `recordActivityTouch(sid)` runs → `clearTimeout(debounceTimer)` kills the pending kick.
 3. Window expires → no timer fires (was cancelled in step 2). No kick happens.
 
-Operator confirmed empirically: "you went dormant >60s, nothing happened." Even when the agent goes idle AFTER the inbound, by then the timer is already cancelled — there's nothing left to fire.
+Operator confirmed empirically (distilled): the agent went dormant for over 60s and nothing fired. Even when the agent goes idle AFTER the inbound, by then the timer is already cancelled — there's nothing left to fire.
 
 This means: **for the kick to ever fire, the agent must be completely idle from the inbound moment through the full debounce window.** A single tool call between inbound and window-expiry cancels the kick.
 

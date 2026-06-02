@@ -42,7 +42,7 @@ Verify (not necessarily fix) that once a `choose`-style callback is received and
 
 ## Notes
 
-Operator-stated 2026-04-26 evening: "with the choose, once a callback occurs and is received, it can't be hit twice, right? You can't like double-pump a button that the callback for choose has been received. We basically go, yep, I've received it. I acknowledged it. It's removed from the registry, right?"
+Operator-stated 2026-04-26 evening (distilled): for `choose`, once a callback is received the button cannot be triggered twice — no double-pumping. The bridge acknowledges receipt and removes it from the registry.
 
 Pairs with 15-0862 (button collapse delay) — both target the same callback path UX.
 

@@ -8,9 +8,9 @@ Feature / Architecture
 
 Round-robin (`load_balance`) routing is deprecated as the default. When 2+ sessions are active, the default routing mode should be `governor` — the Primary session gets all ambiguous messages and decides what to do with them. Reply-to context handles targeted routing naturally (message goes to the session that sent the original).
 
-## User Quote
+## Operator framing
 
-> "Round-robin is dead. Too confusing."
+> Source: operator voice (distilled). Round-robin routing is deprecated — it is too confusing.
 
 ## Current State
 

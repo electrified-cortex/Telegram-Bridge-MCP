@@ -4,7 +4,7 @@
 
 Operator (2026-04-19, voice 38668): agents regularly go dark while doing substantive work. `show-typing` covers ~20 s; reactions are good for acknowledgement; but during multi-minute thinking/working the operator is left with no signal — indistinguishable from "stuck" or "crashed." Operator proposes the behavior-shaping live **in TMCP**, not in per-agent memory (which is what we currently rely on and what clearly isn't holding). We're dogfooding agent-behavior shaping — so the mechanism should be protocol-level.
 
-Quote: "while you're actually working and doing something, whether it's thinking or working, you should be showing an animation that says thinking or maybe the one for working. That should be something that the telegram MCP should have figured out to tell you and tell you like, hey, you're taking... you're leaving the operator... something gives you feedback... by the way, the operator has been waiting with no feedback for this amount of time. We should consider providing more animation feedback."
+Operator framing (voice 38668, distilled): while actively thinking or working, the agent should display a corresponding animation (thinking or working). The Telegram MCP should detect when an agent has left the operator without feedback for a while and prompt for more animation feedback.
 
 ## Principle
 

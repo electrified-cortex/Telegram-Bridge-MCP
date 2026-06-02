@@ -15,7 +15,7 @@ blocks: ["10-0872"]
 
 ## Operator decision (2026-05-05)
 
-> "We need a custom endpoint for DQ. It's that simple. Not a big deal. We've been building out the HTTP on demand at the moment, so why not. There's no security model, really, that we have to worry about — it's just a matter of can the local models or agents call into it. Just expose DQ as a simple call. The full message — the whole JSON payload — same behavior as if they were just calling DQ from MCP."
+> Source: operator voice, 2026-05-05 (distilled). Ship a simple custom HTTP endpoint for dequeue, reusing the HTTP surface already being built. No real security model is needed — the only requirement is that local models/agents can call into it. It should expose dequeue as a plain call returning the full JSON payload, with identical behavior to calling dequeue from MCP.
 
 Decision: ship a dedicated `/dequeue` HTTP route. Do NOT route through `/mcp` (which is wrapped by MCP SDK's `StreamableHTTPServerTransport` and requires an `mcp-session-id` header — verified in `src/index.ts:149`). A raw curl against `/mcp` returns 400 "No valid session ID."
 
@@ -74,7 +74,7 @@ Express route mount: alongside the existing `/mcp` route in `src/index.ts`. Not 
 
 ## Iceboxed (separate idea, not this task)
 
-Operator noted: "we were considering can we actually just expose everything that the MCP has as a RESTful HTTP. I think as an interim check that's like maybe an icebox thing." Captured for a future task — generic REST surface mirroring the MCP tool catalog. NOT part of 10-0873.
+Operator noted (distilled): considered exposing everything the MCP offers as a RESTful HTTP surface — framed as an interim, icebox-tier idea. Captured for a future task — generic REST surface mirroring the MCP tool catalog. NOT part of 10-0873.
 
 ## Dispatch
 

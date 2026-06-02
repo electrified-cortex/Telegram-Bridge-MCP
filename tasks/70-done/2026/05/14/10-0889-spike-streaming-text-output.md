@@ -15,16 +15,16 @@ target_branch: release/7.5
 
 ## Operator priority
 
-Highest-priority new feature (msgs 51226, 51234, 2026-05-07). "I would love to see streaming
-text actually working." Targeted for v7.5 or v8 — not a 7.4.x backport.
+Highest-priority new feature (msgs 51226, 51234, 2026-05-07, distilled): the operator wants
+streaming text working. Targeted for v7.5 or v8 — not a 7.4.x backport.
 
 This has been attempted 3–4 times before. The `append` tool exists but is inadequate:
 it requires deliberate per-chunk tool calls, not real streaming from the LLM output.
 
 ## Core problem (operator framing, msg 51234)
 
-"Claude is getting a stream of text coming into it. But can it route the stream of text
-coming from the LLM into another stream?"
+Operator framing (distilled): Claude receives an incoming stream of text — can it route the
+stream of text coming from the LLM into another outbound stream?
 
 The LLM generates tokens internally. The Claude Code agent sees complete tool results —
 it does NOT have access to its own token-generation stream. So the spike must answer:

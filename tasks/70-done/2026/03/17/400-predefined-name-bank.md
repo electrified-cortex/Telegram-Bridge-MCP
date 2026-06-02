@@ -10,8 +10,10 @@ Story — Design Discussion
 
 ## Origin
 
-Operator voice message (2026-03-18):
-> "Maybe predefined names. A bank of names they can choose from. With a number at the end. Worker 01, Scout, whatever. It's not a make up a name, it's a choice."
+Operator voice message (2026-03-18, distilled):
+> Source: operator voice, 2026-03-18 (distilled).
+
+Suggestion: a bank of predefined names that agents choose from rather than inventing, with a numeric suffix (e.g. Worker 01, Scout) — selection, not free-form naming.
 
 ## Description
 

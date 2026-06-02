@@ -26,7 +26,7 @@ A real reminder (`pickup-lenora-230`) reached `fires_in_seconds: 0` while in `st
 
 ## Source
 
-BT filed at: `agents.cortex.lan:/opt/stacks/bt/.bt-pod/outbox/bug-bridge-reminder-fire-failure.md`
+BT filed at: the agents host (`<host>:<deploy-root>/bt/.bt-pod/outbox/bug-bridge-reminder-fire-failure.md`)
 
 ## Investigation needed
 

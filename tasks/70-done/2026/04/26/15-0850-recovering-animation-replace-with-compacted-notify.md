@@ -41,7 +41,7 @@ Triggers for replacement:
 ## Notes
 
 - Pairs with the existing `compacting` / `compacted` event chain (TMCP 7.2).
-- Operator-stated 2026-04-26: "would be awesome if we just replaced it with an info message that says compacted."
+- Operator-stated 2026-04-26 (distilled): preferred replacing it with an info message that says "compacted".
 
 ## Source
 

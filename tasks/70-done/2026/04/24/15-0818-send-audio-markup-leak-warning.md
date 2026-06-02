@@ -3,7 +3,7 @@ id: 15-0818
 title: send — detect stray tool-call markup in audio payload, warn in result
 status: draft
 priority: 15
-origin: observed Curator session 2026-04-24 SID 1 — Opus 4.7 tool-call emission drift caused audio param to contain `</audio>\n<parameter name="text">...` literal; text param missing from call; Telegram rendered audio-only; operator "TMCP should return a warning if the message dropped"
+origin: observed Curator session 2026-04-24 SID 1 — Opus 4.7 tool-call emission drift caused audio param to contain `</audio>\n<parameter name="text">...` literal; text param missing from call; Telegram rendered audio-only; operator asked (distilled) that TMCP return a warning when a message is dropped
 ---
 
 # send — detect stray tool-call markup in audio payload, warn in result
@@ -21,7 +21,7 @@ Effect:
 
 - TTS rendered the entire mashed string, audibly reading the tool-call markup plus the intended caption content.
 - Telegram received no separate text, so the message rendered as audio-only.
-- Operator perceived "double-messaging on audio" and "TMCP dropping the caption," when in fact TMCP faithfully sent what it received.
+- Operator perceived double-messaging on audio and TMCP dropping the caption, when in fact TMCP faithfully sent what it received.
 
 Dev commits since v7.1 do not modify audio/text handling; the defect is upstream of TMCP (client-side tool-call emission). But TMCP is in the best position to detect and surface it.
 

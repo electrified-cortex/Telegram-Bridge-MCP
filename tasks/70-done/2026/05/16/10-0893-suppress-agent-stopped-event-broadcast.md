@@ -37,5 +37,5 @@ Likely candidates: event bridge/router, session event handler, or wherever `kind
 ## Notes
 
 - This is a patch-level change targeting 7.5.1.
-- The operator's framing: "the stop is there for tracking things, not for emitting stuff." The compaction event is explicitly called out as useful; stopped is not.
+- The operator's framing (distilled): the stop event exists for tracking, not for emitting notifications. The compaction event is explicitly called out as useful; stopped is not.
 - Future: when all pods have heartbeats, even started/stopped may become low-value. For now, just suppress stopped.

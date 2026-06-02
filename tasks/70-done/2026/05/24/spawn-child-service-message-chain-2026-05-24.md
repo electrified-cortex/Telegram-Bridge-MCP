@@ -108,7 +108,7 @@ Two legal exit paths — operator-confirmed 2026-05-24:
 **Path B — parent revokes the child (existing behavior, preserved — but discouraged while sub-agent active):**
 - Parent calls `session/revoke-child(token: <child_token>)`. Authorization passes via the existing `caller === registeredParent` branch. No code change required.
 - If the child had previously emitted `EXIT_STATUS: ...` but not yet self-revoked, the stored `exit_status` is still delivered to the parent via `CHILD_SESSION_RESOLVED` on revocation.
-- **Use with care (operator-confirmed 2026-05-24 msg 60558):** If the background sub-agent is still actively running and has not signaled exit, parent revocation severs it mid-conversation. Operator: "the host agent is at risk... if the background agent is still running, it's probably a bad idea." Reserve parent revocation for orphan cleanup, hung sub-agents, or operator-directed abort. The PREFERRED exit path is sub-agent self-revoke (Path A).
+- **Use with care (operator-confirmed 2026-05-24 msg 60558):** If the background sub-agent is still actively running and has not signaled exit, parent revocation severs it mid-conversation. Operator (distilled): revoking while the background agent is still running puts the host agent at risk and is likely a bad idea. Reserve parent revocation for orphan cleanup, hung sub-agents, or operator-directed abort. The PREFERRED exit path is sub-agent self-revoke (Path A).
 
 **Detection of `EXIT_STATUS:`:** The bridge inspects outbound message text via the `recordOutgoing` function in `src/message-store.ts` (the single converged write-path for outbound events). When `recordOutgoing` is called from a session that has `parent_sid` set AND the text matches `/^EXIT_STATUS: /`, the matched portion (after the prefix) is stored on `childSession.exit_status`. The `send` itself proceeds normally to whatever target_sid the sub-agent specified (typically operator-visible — meaning the literal `EXIT_STATUS: ...` text WILL appear in the operator's Telegram view; sub-agent skills should be aware this is operator-visible). The status capture is a side-effect of inspection.
 
@@ -156,7 +156,7 @@ exit_status?: string;
 
 `firstDequeueOccurred` gates R4. `exit_status` stores the post-`EXIT_STATUS:` payload from R3.
 
-Both fields live in the same in-memory session record as everything else. Bridge restart is not a concern — operator-confirmed 2026-05-24 (msg 60564): "if the bridge restarts, everything's over... it's a non-concern. It's dead. This is an in-memory process, period." If the bridge restarts, the session itself is gone too; there is no child SID to re-inject onboarding for, and no `exit_status` to recover.
+Both fields live in the same in-memory session record as everything else. Bridge restart is not a concern — operator-confirmed 2026-05-24 (msg 60564, distilled): a bridge restart is terminal and a non-concern, since this is an in-memory process. If the bridge restarts, the session itself is gone too; there is no child SID to re-inject onboarding for, and no `exit_status` to recover.
 
 ### R7 — REMOVED (deferred)
 

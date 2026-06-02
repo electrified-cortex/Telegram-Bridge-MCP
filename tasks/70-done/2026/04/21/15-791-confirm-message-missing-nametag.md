@@ -15,7 +15,7 @@ Regular text and voice messages from the same agent session *do* get nametagged.
 
 ## Evidence
 
-- Telegram message_id `39951` sent from Curator session (SID 1). Operator reply (39954): "This message had no nametag."
+- Telegram message_id `39951` sent from Curator session (SID 1). Operator reply (39954, distilled): the message had no name tag.
 - Send payload: `type:"question"`, `confirm:"Open PR v7-0-2 into master and run task finalization on 00-773?"`, caption + audio present.
 - Response: `{ skipped: true, text_response: "NO.\nPush and create a PR", text_message_id: 39952, message_id: 39951 }` — note `skipped:true` even though the message rendered.
 

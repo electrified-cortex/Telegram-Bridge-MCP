@@ -14,7 +14,7 @@ Target: V8
 
 Every TMCP action path, tool, and feature has its own help() topic. The index reflects all of them. Help content is accurate, comments are correct, and tests pass without dead or misleading cases.
 
-Operator directive (2026-05-27): "Each tool call should have its own help. Everything has a help. There are blanket help topics, there's an index — as all should be up to date for V8."
+Operator directive (2026-05-27, distilled): every tool call should have its own help, alongside blanket help topics and an index — all of it kept up to date for V8.
 
 ## Scope
 

@@ -10,8 +10,10 @@ Story — Documentation
 
 ## Origin
 
-Operator voice message (2026-03-18):
-> "A task to add guidance for inter-agent communications. An inter-agent comms guide that has all of it in there."
+Operator voice message (2026-03-18, distilled):
+> Source: operator voice, 2026-03-18 (distilled).
+
+Requested a task to add a comprehensive inter-agent communications guide covering the full protocol.
 
 ## Description
 

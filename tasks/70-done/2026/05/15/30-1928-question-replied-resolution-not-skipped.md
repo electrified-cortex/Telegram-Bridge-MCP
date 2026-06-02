@@ -36,7 +36,7 @@ Path (2) currently resolves as `skipped` — same bucket as the timeout path. Th
 
 ## Source
 
-- Operator request 2026-05-15 (post-compaction): "if a question is asked with buttons that would normally convert to a skipped, I want it to be that if it's actually replied to — like if it's something that I actually directly reply to that message — instead of saying skipped, it should say replied."
+- Operator request 2026-05-15 (post-compaction, distilled): when a buttoned question would normally resolve as "skipped" but the operator directly replies to that message, it should resolve as "replied" instead of "skipped".
 
 ## Verification
 

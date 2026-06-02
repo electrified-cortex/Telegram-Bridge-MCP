@@ -31,3 +31,8 @@ Source: 2026-05-27 refactor scan
 - [ ] No `sendMessage` / `editMessageText` call in panel handlers is missing pre-send length validation.
 - [ ] No `catch { /* ignore */ }` without at least one `dlog()` call inside.
 - [ ] Existing tests pass; new tests for length-exceeded path added.
+
+## Overseer bounce (2026-06-01)
+- verdict: REJECT — 3 structural gaps
+- finding: (1) dlog not imported in built-in-commands.ts — worker has no import guidance or DebugCategory values. (2) validateText utility referenced but does not exist in codebase. (3) No automated way to enforce catch-block dlog AC. Missing agent_type and model_class.
+- action: Add dlog import guidance + DebugCategory values, clarify whether to create validateText or use inline comparison, add lint rule or test strategy for catch-block AC, add frontmatter.

@@ -14,7 +14,7 @@ Two related code-quality issues found throughout TMCP source:
 1. The pattern `await new Promise(resolve => setTimeout(resolve, ms))` is repeated inline across `src/` and tests with no shared helper.
 2. Magic timing values (e.g. `300_000` for long-poll timeout, `30_000` for debounce) appear as bare numbers with no named constants, making the codebase hard to audit and adjust.
 
-Operator quote: "That should be a function that's so simple. Why doesn't there just a delay-async or something like that and move on. It's so replicated. And then I would say that allow it to be configurable."
+Operator note (voice msg 50376, distilled): this should be a single simple helper (e.g. a `delay`/async-delay function) rather than the heavily replicated inline pattern, and the timing values should be configurable.
 
 ## Acceptance Criteria
 

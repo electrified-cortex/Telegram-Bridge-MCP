@@ -9,7 +9,7 @@ delegation: any
 
 # Investigate Worker haiku compaction + cross-Worker working-tree bleed
 
-Two related concerns surfaced during today's `05-0828` cycle. Both are systemic and could repeat on any future task. Operator: "ultra high priority right now ... we've been burning through tokens a little too fast, probably because of these loops."
+Two related concerns surfaced during today's `05-0828` cycle. Both are systemic and could repeat on any future task. Operator (distilled): ultra-high priority — tokens are being burned too fast, likely because of these loops.
 
 ## Observation 1: false-positive recovery on Worker 2
 
@@ -32,7 +32,7 @@ If true: the recovery was a no-op functionally (the work landed) but it (a) wast
 
 ## Hypothesis B: haiku compaction loop within Worker
 
-Operator's hypothesis: "Maybe it's a haiku compaction problem ... haiku's inability to work with existing context." If Worker's main agent (or its dispatched subagent) hits compaction mid-task, it loses track of what it has already done and re-attempts work. That would explain 5 vitest cycles in a 13-minute Worker 2 window — possibly retrying after losing context.
+Operator's hypothesis (distilled): possibly a haiku compaction problem — haiku struggling to work with existing context. If Worker's main agent (or its dispatched subagent) hits compaction mid-task, it loses track of what it has already done and re-attempts work. That would explain 5 vitest cycles in a 13-minute Worker 2 window — possibly retrying after losing context.
 
 We have no telemetry on per-subagent token usage or compaction events. Cannot confirm or deny from outside.
 

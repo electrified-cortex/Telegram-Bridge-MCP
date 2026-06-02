@@ -8,7 +8,7 @@
 
 ## Conceptual model
 
-Operator (msg 60995, FINAL): "They are separate. There's only two reminders. For now, as a prototype, there's last sent and there's last received."
+Operator (msg 60995, FINAL, distilled): the two reminders are separate. For the prototype there are exactly two — last_sent and last_received.
 
 Two **independent** reminder triggers. Each tracks its own kind of conversation event. They DO NOT share a clock; they DO NOT reset each other.
 
@@ -159,7 +159,7 @@ If the session reconnects after a gap during which the reminder would have fired
 
 ## Priority
 
-HIGH per operator. Operator: "Let's make it happen. It's high pry."
+HIGH per operator (distilled): operator directed this as high priority and approved proceeding.
 
 ---
 

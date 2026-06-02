@@ -14,7 +14,7 @@ When TMCP returns the `activity_file_monitor_instructions` service message, the 
 **How to apply:**
 
 - On any fresh Curator-class boot, arm the activity-file monitor with the absolute path:
-  - Windows: `"D:\Users\essence\Development\cortex.lan\electrified-cortex\Telegram-Bridge-MCP\tools\monitor.ps1"`
+  - Windows: `"<TMCP-checkout-root>\tools\monitor.ps1"` (absolute path resolved from wherever the TMCP repo is checked out)
   - Linux/macOS sibling: `tools/monitor.sh` under same TMCP root.
 - Always pass the activity file as a quoted absolute path too.
 - Verify a kick event arrives before trusting the monitor — see [[monitor-fragility-mindset]].

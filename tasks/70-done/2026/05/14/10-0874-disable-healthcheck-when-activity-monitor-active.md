@@ -19,7 +19,7 @@ spawn_task: bse5gq7hc
 
 ## Operator framing (2026-05-05)
 
-> "It's good to see that the health check works, but I think we should disable it when an activity monitor is active. Because it's kind of misleading, right? The person that uses activity monitor will be a little bit frustrated with that."
+> Source: operator voice, 2026-05-05 (distilled). The health check works, but it should be disabled when an activity monitor is active — it is misleading and frustrating for users relying on the activity monitor.
 
 Health-check prompts (`hc_wait` callback buttons) are sent on long silence to verify the session is alive. When a session has an active activity-file watcher, presence is *already* maintained by the watcher's mtime-driven wakes — the health-check is redundant and confusing.
 

@@ -22,7 +22,7 @@ This is a docs-only release. No code changes to `monitor.ps1`, `monitor.sh`, `wa
    - Bold lead: "**Only `<file-path>` is required. Every flag below is optional.**"
    - Each flag tagged with `(optional)`
    - `-Timeout` flagged specifically: `(**optional — omit for indefinite runs**)`
-2. Same edit propagated fleet-wide to 14 other SKILL.md copies under per-pod skills directories (curator, overseer, BT, foreman + worker variants under task-engine, skills, Telegram-Bridge-MCP, hosts/services.cortex.lan).
+2. Same edit propagated fleet-wide to 14 other SKILL.md copies under per-pod skills directories (curator, overseer, BT, foreman + worker variants under task-engine, skills, Telegram-Bridge-MCP, and the services host).
 
 ## Acceptance criteria
 
@@ -42,3 +42,8 @@ This is a docs-only release. No code changes to `monitor.ps1`, `monitor.sh`, `wa
 ## Delegation
 
 Worker-eligible. Mechanical docs release; no design judgement required beyond what's specified.
+
+## Overseer bounce (2026-06-01)
+- verdict: REJECT — stale and misrouted
+- finding: package.json is already at 7.7.2 (v7.5.2 slot already used for a different feature). Target file skills/file-watching/SKILL.md does not exist in TMCP repo — this skill lives in electrified-cortex/skills/. "Release tagged and pushed" AC is non-binary. Task belongs in the skills repo, not TMCP.
+- action: Route to electrified-cortex/skills repo. Update version context and target file path. Clarify release AC with specific tag format and remote.

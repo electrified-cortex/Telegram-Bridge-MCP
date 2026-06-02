@@ -51,3 +51,8 @@ worktree, no external state, deterministic outcome.
   - v7.3 → 4747c989 (#164)
   - v7.4 → fd635289 (#167)
 - v7.4.1 already tagged manually by Curator (ab1d4139).
+
+## Overseer bounce (2026-06-01)
+- verdict: REJECT — spec is a planning note, not executable
+- finding: No delegation assignment. "Tags pushed to origin" requires push access (violates sandbox). Optional GitHub releases AC is inside the AC block making definition-of-done ambiguous.
+- action: Add delegation, remove push-to-origin AC (sandbox can't push), clarify optional vs required ACs.

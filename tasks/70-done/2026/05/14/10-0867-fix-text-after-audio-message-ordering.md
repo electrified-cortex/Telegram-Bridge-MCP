@@ -75,7 +75,7 @@ Worker. Sonnet for the queue design + integration; Haiku for the test fixtures.
 
 ## Notes
 
-- Friction surfaced 2026-05-04 during skill-auditing remediation; operator explicitly flagged it as a bug ("if it was being sent over audio, this message should have queued behind it. That's a bug.").
+- Friction surfaced 2026-05-04 during skill-auditing remediation; operator explicitly flagged it as a bug (distilled: a message should have queued behind the audio it accompanied).
 - Memory entry: `feedback_telegram_session_lifecycle.md` may need updating after fix lands.
 
 ## Completion
