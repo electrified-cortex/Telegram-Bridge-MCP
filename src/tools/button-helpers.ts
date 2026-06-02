@@ -2,7 +2,7 @@
  * Shared helpers for button-based interaction tools (choose, send_choice, confirm).
  */
 
-import { getApi, ackVoiceMessage } from "../telegram.js";
+import { getApi, ackVoiceMessage, LIMITS } from "../telegram.js";
 import { markdownToV2, resolveParseMode } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
@@ -384,6 +384,20 @@ export interface KeyboardOption {
   style?: "success" | "primary" | "danger";
 }
 
+export class ButtonLabelTooLongError extends Error {
+  constructor(label: string) {
+    super(`Button label "${label}" is ${label.length} chars; Telegram hard limit is ${LIMITS.BUTTON_TEXT}.`);
+    this.name = "ButtonLabelTooLongError";
+  }
+}
+
+export class ButtonDataTooLongError extends Error {
+  constructor(value: string) {
+    super(`Button callback_data "${value}" is ${value.length} chars; Telegram hard limit is ${LIMITS.CALLBACK_DATA}.`);
+    this.name = "ButtonDataTooLongError";
+  }
+}
+
 /** Arrange options into rows of `columns` buttons each. */
 export function buildKeyboardRows(
   options: KeyboardOption[],
@@ -392,11 +406,17 @@ export function buildKeyboardRows(
   const rows: { text: string; callback_data: string; style?: ButtonStyle }[][] = [];
   for (let i = 0; i < options.length; i += columns) {
     rows.push(
-      options.slice(i, i + columns).map((o) => ({
-        text: o.label,
-        callback_data: o.value,
-        ...(o.style ? { style: o.style } : {}),
-      })),
+      options.slice(i, i + columns).map((o) => {
+        if (o.label.length > LIMITS.BUTTON_TEXT)
+          throw new ButtonLabelTooLongError(o.label);
+        if (o.value.length > LIMITS.CALLBACK_DATA)
+          throw new ButtonDataTooLongError(o.value);
+        return {
+          text: o.label,
+          callback_data: o.value,
+          ...(o.style ? { style: o.style } : {}),
+        };
+      }),
     );
   }
   return rows;

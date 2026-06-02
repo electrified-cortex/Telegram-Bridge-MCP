@@ -48,6 +48,9 @@ import {
   pollButtonPress,
   pollButtonOrTextOrVoice,
   buildHighlightedRows,
+  buildKeyboardRows,
+  ButtonLabelTooLongError,
+  ButtonDataTooLongError,
 } from "./button-helpers.js";
 
 describe("button-helpers", () => {
@@ -700,6 +703,32 @@ describe("button-helpers", () => {
       expect(mocks.sessionQueue2.dequeueMatch).toHaveBeenCalled();
       // Session 1's queue was never touched
       expect(mocks.sessionQueue.dequeueMatch).not.toHaveBeenCalled();
+    });
+  });
+
+  // -- buildKeyboardRows length validation ------------------------------------
+
+  describe("buildKeyboardRows — length validation", () => {
+    const makeOpts = (label: string, value: string) => [{ label, value }, { label: "B", value: "b" }];
+
+    it("accepts a label of exactly 64 chars", () => {
+      const label = "a".repeat(64);
+      expect(() => buildKeyboardRows(makeOpts(label, "ok"), 2)).not.toThrow();
+    });
+
+    it("throws ButtonLabelTooLongError for a label of 65 chars", () => {
+      const label = "a".repeat(65);
+      expect(() => buildKeyboardRows(makeOpts(label, "ok"), 2)).toThrow(ButtonLabelTooLongError);
+    });
+
+    it("accepts callback_data of exactly 64 chars", () => {
+      const value = "a".repeat(64);
+      expect(() => buildKeyboardRows(makeOpts("OK", value), 2)).not.toThrow();
+    });
+
+    it("throws ButtonDataTooLongError for callback_data of 65 chars", () => {
+      const value = "a".repeat(65);
+      expect(() => buildKeyboardRows(makeOpts("OK", value), 2)).toThrow(ButtonDataTooLongError);
     });
   });
 });
