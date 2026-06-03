@@ -12,8 +12,11 @@ Bootstrap an agent into a TMCP-brokered Telegram session and keep it in the loop
 
 ## R1 — Connection check
 
-TMCP unreachable → notify operator; report unavailable; stop.
-TMCP reachable → R2.
+| Condition | Action |
+| --- | --- |
+| TMCP unreachable, no token | Notify operator; report unavailable; stop. |
+| TMCP unreachable, token present | Direct Connect mode; notify operator of TMCP unavailability; proceed to R2. |
+| TMCP reachable | Proceed to R2. |
 
 ## R2 — Session anchor
 
@@ -37,14 +40,43 @@ Operator approval dialog (up to 120s). Approved → store token; R3. Denied/time
 
 Then `help('startup')` — covers monitor arm and dequeue defaults.
 
-## R5 — Dequeue loop
+## R5 — Activity monitor arm
+
+**Branch A — compaction recovery:** `action(type: 'activity/file/get')`.
+- Returns a `file_path` → skip Branch B; proceed to path construction.
+- Returns no `file_path` → fall through to Branch B.
+
+**Branch B — fresh start:** `action(type: 'activity/file/create')`, then `dequeue(max_wait: 10)` scanning for `event_type: 'ACTIVITY_FILE_MONITOR_INSTRUCTIONS'`. Extract `file_path` from that event.
+
+**ALREADY_REGISTERED response (either branch):**
+- `details.file_path` non-empty → use it; proceed to path construction.
+- `details.file_path` empty → `action(type: 'activity/file/delete')`, then re-run Branch B.
+
+**Path construction and arm:**
+1. If `file_path` contains backslash (`\`) separators, convert to POSIX (forward slash) first.
+2. TMCP root = 3 parent directories up from `file_path`.
+3. Stop any running watcher, then arm: `<TMCP_root>/tools/monitor.sh <file_path>`.
+
+## R6 — Monitor verification
+
+1. Send a self-DM to trigger an activity file update.
+2. Wait up to 30s for the watcher to emit a signal.
+   - Signal received → monitor live; continue.
+   - No signal → re-arm: `action(type: 'activity/file/delete')`, then `action(type: 'activity/file/create')`; re-arm watcher.
+
+## R7 — Dequeue loop
 
 End every agent turn with `dequeue(token)`. Use session default.
 Don't override via `profile/dequeue-default`. Drain polls (`max_wait: 0`) permitted.
 
-## Closeout
+## R8 — Closeout
 
-Before any shutdown: drain the queue with `dequeue(max_wait: 0)`, then `action(type: 'session/close', token)`. On `LAST_SESSION` error: retry with `force: true`.
+R8 MUST run on ALL shutdown paths (planned exit, shutdown directive, forced stop).
+
+1. **Stop watcher:** by retained handle; if handle unavailable, `action(type: 'activity/file/delete')`.
+2. **Drain (capped at 10):** `dequeue(max_wait: 0)` up to 10 iterations until empty.
+3. **Clear token:** capture stored token, then clear it from state.
+4. **Close session:** `action(type: 'session/close', token: <captured>)`. On `LAST_SESSION` error: retry with `force: true`.
 
 ## Breadcrumbs
 
