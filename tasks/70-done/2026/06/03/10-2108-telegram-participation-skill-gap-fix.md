@@ -81,3 +81,17 @@ Add the complete decision matrix from the spec.
 - Verdict: PASS (v2 — file path corrected to stations canonical source, scope note added re: public plugin gate)
 - Review type: adversarial dispatch + fix
 - Checked: ACs binary and testable (7 items), scope bounded (SKILL.md only), reference spec present at curator-pod/tasks/40-queued/, correct target path (stations/skills/ not public skills/), standing gate respected (stage don't publish)
+
+## Verification
+
+- Verifier: dispatched sub-agent (independent)
+- Date: 2026-06-03
+- Verdict: APPROVED
+- AC1: CONFIRMED — R5 Branch A/B documented with explicit action calls (SKILL.md lines 45-49)
+- AC2: CONFIRMED — ALREADY_REGISTERED handling documented (SKILL.md lines 51-53)
+- AC3: CONFIRMED — Path construction (backslash→POSIX, TMCP root, monitor.sh cmd) documented (SKILL.md lines 55-58)
+- AC4: CONFIRMED — R6 monitor verification (self-DM, 30s wait, re-arm fallback) documented (SKILL.md lines 60-65)
+- AC5: CONFIRMED — R8 has watcher stop, 10-iteration cap, token clear, LAST_SESSION force-retry, mandatory all paths (SKILL.md lines 72-79)
+- AC6: CONFIRMED — R1 3-branch connection mode matrix present (SKILL.md lines 15-19)
+- AC7: CONFIRMED — skill-auditing PASS, no HIGH findings (.hash-record/.../skill-auditing/v2/report.md)
+- Squash commit: a8e3f86 on dev
