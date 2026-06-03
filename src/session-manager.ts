@@ -266,6 +266,11 @@ export function activeSessionCount(): number {
   return _sessions.size;
 }
 
+/** Count sessions without a parent_sid (root/primary sessions only). */
+export function primarySessionCount(): number {
+  return [..._sessions.values()].filter(s => s.parent_sid === undefined).length;
+}
+
 /** Record a heartbeat for a session — called by dequeue on every poll. */
 export function touchSession(sid: number): void {
   const s = _sessions.get(sid);

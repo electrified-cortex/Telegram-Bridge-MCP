@@ -99,6 +99,7 @@ const GATHER_BLOCKED = new Set([
   "approve",
   "shutdown",
   "shutdown/warn",
+  "profile/topic",
 ]);
 
 /** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */

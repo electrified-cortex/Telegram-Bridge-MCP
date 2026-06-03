@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   activeSessionCount: vi.fn(() => 0),
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
+  getSession: vi.fn(() => ({ sid: 1, name: "Test" })),  // no parent_sid = root session
   getTopic: vi.fn<() => string | null>(),
   setTopic: vi.fn(),
   clearTopic: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("../../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
   validateSession: mocks.validateSession,
+  getSession: mocks.getSession,
 }));
 
 import { register } from "./topic.js";

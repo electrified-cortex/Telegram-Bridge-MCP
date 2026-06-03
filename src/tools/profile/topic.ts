@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toResult, toError } from "../../telegram.js";
 import { setTopic, getTopic, clearTopic } from "../../topic-state.js";
 import { requireAuth } from "../../session-gate.js";
+import { getSession } from "../../session-manager.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 
 const DESCRIPTION =
@@ -16,6 +17,13 @@ const DESCRIPTION =
 export function handleSetTopic({ topic, token }: { topic: string; token: number }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
+  // Topic is set at spawn time for child sessions and is immutable thereafter.
+  if (getSession(_sid)?.parent_sid !== undefined) {
+    return toError({
+      code: "CAPABILITY_DENIED",
+      message: "Sub-sessions cannot change their topic — it was set at spawn time and is immutable.",
+    });
+  }
   const previous = getTopic();
   if (topic.trim() === "") {
     clearTopic();

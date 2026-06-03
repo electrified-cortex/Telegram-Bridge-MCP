@@ -36,6 +36,7 @@ vi.mock("./session-context.js", () => ({
 
 vi.mock("./session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
+  primarySessionCount: () => mocks.activeSessionCount(),  // mirrors activeSessionCount for test purposes
   getSession: (sid: number) => mocks.getSession(sid),
 }));
 

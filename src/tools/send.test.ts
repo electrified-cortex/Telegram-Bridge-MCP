@@ -99,6 +99,7 @@ vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => mocks.activeSessionCount(),
   getActiveSession: () => mocks.getActiveSession(),
   validateSession: (sid: number, suffix: number) => mocks.validateSession(sid, suffix),
+  getSession: () => undefined,  // no parent_sid for test sessions → root sessions
 }));
 
 vi.mock("./animation/show.js", () => ({

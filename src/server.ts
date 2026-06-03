@@ -74,6 +74,10 @@ export function dispatchBehaviorTracking(
   // This resets the activity suppression window so we don't kick an already-awake agent.
   activityRecordTouch(sid);
 
+  // Sub-sessions run tight dequeue loops and do not need behavioral nudges or
+  // host-flavored lazy onboarding messages.
+  if (getSession(sid)?.parent_sid !== undefined) return;
+
   if (name === "show_typing" || (name === "action" && cleanArgs.type === "show-typing")) {
     const isCancel = cleanArgs.cancel === true;
     if (!isCancel) { btRecordTyping(sid); recordPresenceSignal(sid); }
