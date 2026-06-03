@@ -152,7 +152,7 @@ describe("AC1 — EventContent.origin discriminator", () => {
       const et = c["event_type"] as string;
       return et?.startsWith("onboarding_child_");
     });
-    expect(onboarding.length).toBe(3);
+    expect(onboarding.length).toBe(4);
     for (const u of onboarding) {
       expect((u["content"] as Record<string, unknown>)["origin"]).toBe("bridge");
     }
@@ -171,23 +171,26 @@ describe("AC1 — EventContent.origin discriminator", () => {
   });
 });
 
-// ── AC2: first dequeue → 3 onboarding messages in order ──────────────────────
+// ── AC2: first dequeue → 4 onboarding messages in order ──────────────────────
 
-describe("AC2 — First dequeue injects 3 onboarding messages in order", () => {
-  it("AC2: first dequeue returns onboarding_child_role, _loop, _exit_protocol (in that order)", async () => {
+describe("AC2 — First dequeue injects 4 onboarding messages in order", () => {
+  it("AC2: first dequeue returns onboarding_child_token, _role, _loop, _exit_protocol (in that order)", async () => {
     const parent = makeParentSession("Parent");
     const child = makeChildSession(parent.sid, "ResearchTask");
 
     const result = await drain(child.sid);
     const types = eventTypes(result);
 
+    const tokenIdx = types.indexOf("onboarding_child_token");
     const roleIdx = types.indexOf("onboarding_child_role");
     const loopIdx = types.indexOf("onboarding_child_loop");
     const exitIdx = types.indexOf("onboarding_child_exit_protocol");
 
+    expect(tokenIdx).toBeGreaterThanOrEqual(0);
     expect(roleIdx).toBeGreaterThanOrEqual(0);
     expect(loopIdx).toBeGreaterThanOrEqual(0);
     expect(exitIdx).toBeGreaterThanOrEqual(0);
+    expect(tokenIdx).toBeLessThan(roleIdx);
     expect(roleIdx).toBeLessThan(loopIdx);
     expect(loopIdx).toBeLessThan(exitIdx);
   });

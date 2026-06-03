@@ -220,7 +220,7 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 const DESCRIPTION =
   "Start a named session and return its token. If you lost the token, use action(type: 'session/reconnect'). No args are reused.";
 
-export async function handleSessionStart({ name, color, refresh, token, autoload_profile }: { name: string; color?: string; refresh?: boolean; token?: number; autoload_profile?: boolean }) {
+export async function handleSessionStart({ name, color, refresh, token, autoload_profile, parentSid }: { name: string; color?: string; refresh?: boolean; token?: number; autoload_profile?: boolean; parentSid?: number }) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
 
@@ -291,8 +291,9 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
         // No live session found (AC2/AC3) — fall through to create a new one
       }
 
-      // Name collision guard: reject if a session with the same name exists
-      if (effectiveName) {
+      // Name collision guard: reject if a session with the same name exists.
+      // Bypassed for child sessions — sub-session topic names are scoped to the parent, not global.
+      if (effectiveName && parentSid === undefined) {
         const existing = listSessions().find(
           s => s.name.toLowerCase() === effectiveName.toLowerCase(),
         );
@@ -306,10 +307,11 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
         }
       }
 
-      // Approval gate: second+ sessions require operator approval
+      // Approval gate: second+ sessions require operator approval.
+      // Bypassed for child sessions — trust is inherited from the already-authorized parent.
       let chosenColor: string | undefined = color;
       let decision: { approved: boolean; color?: string; forceColor?: boolean } | undefined;
-      if (!isFirstSession) {
+      if (!isFirstSession && parentSid === undefined) {
         decision = await runInSessionContext(0, () =>
           requestApproval(chatId, effectiveName, false, color),
         );
@@ -322,9 +324,9 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
         chosenColor = decision.color;
       }
 
-      // forceColor = true when the operator explicitly tapped a color button, or on auto-approve (hint is definitive);
-      // forceColor = false for the first session (no dialog, no hint).
-      const session = createSession(effectiveName, chosenColor, decision?.forceColor ?? false);
+      // forceColor = true when the operator explicitly tapped a color button, on auto-approve,
+      // or when inheriting a parent's color for a child session.
+      const session = createSession(effectiveName, chosenColor, parentSid !== undefined || (decision?.forceColor ?? false));
       createSessionQueue(session.sid);
       setActiveSession(session.sid);
       if (!isPollerRunning()) startPoller();
@@ -370,78 +372,83 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
           deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_ROLE_GOVERNOR);
           if (discarded === 0) deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_NO_PENDING_YET);
         } else if (session.sessionsActive > 1) {
-          const allSessions = listSessions();
-          if (session.sessionsActive === 2) {
-            // Fresh joiners use lowest-SID heuristic (original session is the anchor).
-            const governorSid = Math.min(...allSessions.map(s => s.sid));
-            setGovernorSid(governorSid);
-          }
-
-          // Broadcast a visible announcement via the outbound proxy so the
-          // operator (and other sessions) can reply-to-address this session.
-          // runInSessionContext sets the ALS SID so the proxy prepends the
-          // correct name tag ("🟨 Worker 1\nSession 2 — 🟢 Online").
-          const _announcement = await Promise.resolve(
-            runInSessionContext(session.sid, () =>
-              getApi().sendMessage(chatId, `Session ${session.sid} — 🟢 Online`),
-            ),
-          ).catch(() => undefined);
-          const announcementMsgId = _announcement?.message_id;
-          if (announcementMsgId !== undefined) {
-            trackMessageOwner(announcementMsgId, session.sid);
-            setSessionAnnouncementMessage(session.sid, announcementMsgId);
-            // When second session joins, retroactively pin the first session's announcement
+          // Sub-sessions skip all announcement, pin, SESSION_JOINED, governor re-election,
+          // and host onboarding. Their narrowed onboarding is delivered on first dequeue.
+          if (parentSid === undefined) {
+            const allSessions = listSessions();
             if (session.sessionsActive === 2) {
-              for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
-                const fellowAnnouncement = getSessionAnnouncementMessage(fellow.sid);
-                if (fellowAnnouncement !== undefined) {
-                  getApi().pinChatMessage(chatId, fellowAnnouncement, { disable_notification: true }).catch(() => {});
+              // Fresh joiners use lowest-SID heuristic (original session is the anchor).
+              const governorSid = Math.min(...allSessions.map(s => s.sid));
+              setGovernorSid(governorSid);
+            }
+
+            // Broadcast a visible announcement via the outbound proxy so the
+            // operator (and other sessions) can reply-to-address this session.
+            // runInSessionContext sets the ALS SID so the proxy prepends the
+            // correct name tag ("🟨 Worker 1\nSession 2 — 🟢 Online").
+            const _announcement = await Promise.resolve(
+              runInSessionContext(session.sid, () =>
+                getApi().sendMessage(chatId, `Session ${session.sid} — 🟢 Online`),
+              ),
+            ).catch(() => undefined);
+            const announcementMsgId = _announcement?.message_id;
+            if (announcementMsgId !== undefined) {
+              trackMessageOwner(announcementMsgId, session.sid);
+              setSessionAnnouncementMessage(session.sid, announcementMsgId);
+              // When second session joins, retroactively pin the first session's announcement
+              if (session.sessionsActive === 2) {
+                for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
+                  const fellowAnnouncement = getSessionAnnouncementMessage(fellow.sid);
+                  if (fellowAnnouncement !== undefined) {
+                    getApi().pinChatMessage(chatId, fellowAnnouncement, { disable_notification: true }).catch(() => {});
+                  }
                 }
               }
+              getApi().pinChatMessage(chatId, announcementMsgId, { disable_notification: true }).catch(() => {});
             }
-            getApi().pinChatMessage(chatId, announcementMsgId, { disable_notification: true }).catch(() => {});
-          }
 
-          // Notify existing sessions and the new session of the join event
-          const governorSid = getGovernorSid();
-          const governorSession = allSessions.find(s => s.sid === governorSid);
-          const governorLabel = governorSession ? `'${governorSession.name}' (SID ${governorSid})` : `SID ${governorSid}`;
+            // Notify existing sessions and the new session of the join event
+            const governorSid = getGovernorSid();
+            const governorSession = allSessions.find(s => s.sid === governorSid);
+            const governorLabel = governorSession ? `'${governorSession.name}' (SID ${governorSid})` : `SID ${governorSid}`;
 
-          for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
-            const isGovernor = fellow.sid === governorSid;
-            const text = isGovernor
-              ? SERVICE_MESSAGES.SESSION_JOINED.text(effectiveName, session.sid)
-              : SERVICE_MESSAGES.SESSION_JOINED_FELLOW.text(effectiveName, session.sid, governorLabel);
-            const eventType = isGovernor
-              ? SERVICE_MESSAGES.SESSION_JOINED.eventType
-              : SERVICE_MESSAGES.SESSION_JOINED_FELLOW.eventType; // both share "session_joined" — intentional, same bridge event
+            for (const fellow of allSessions.filter(s => s.sid !== session.sid)) {
+              const isGovernor = fellow.sid === governorSid;
+              const text = isGovernor
+                ? SERVICE_MESSAGES.SESSION_JOINED.text(effectiveName, session.sid)
+                : SERVICE_MESSAGES.SESSION_JOINED_FELLOW.text(effectiveName, session.sid, governorLabel);
+              const eventType = isGovernor
+                ? SERVICE_MESSAGES.SESSION_JOINED.eventType
+                : SERVICE_MESSAGES.SESSION_JOINED_FELLOW.eventType; // both share "session_joined" — intentional, same bridge event
+              deliverServiceMessage(
+                fellow.sid,
+                text,
+                eventType,
+                { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
+              );
+            }
+
+            // Notify the new session of its role
+            const newIsGovernor = session.sid === governorSid;
+            const roleNote = newIsGovernor
+              ? `You are the governor (SID ${session.sid}). Ambiguous messages will be routed to you. Call help(topic: 'guide') for trust and routing guidance.`
+              : `You are SID ${session.sid}. ${governorLabel} is your first escalation point. Ambiguous messages go to them. Call help(topic: 'guide') for trust and routing guidance.`;
             deliverServiceMessage(
-              fellow.sid,
-              text,
-              eventType,
+              session.sid,
+              roleNote,
+              "session_orientation",
               { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
             );
+            deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE);
+            deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN);
+            deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_COMPACTION_HINT);
+            // session_orientation already carries role info (governor vs participant) for multi-session.
+            // Skip onboarding_role here to avoid duplication.
+            if (discarded === 0) deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_NO_PENDING_YET);
           }
-
-          // Notify the new session of its role
-          const newIsGovernor = session.sid === governorSid;
-          const roleNote = newIsGovernor
-            ? `You are the governor (SID ${session.sid}). Ambiguous messages will be routed to you. Call help(topic: 'guide') for trust and routing guidance.`
-            : `You are SID ${session.sid}. ${governorLabel} is your first escalation point. Ambiguous messages go to them. Call help(topic: 'guide') for trust and routing guidance.`;
-          deliverServiceMessage(
-            session.sid,
-            roleNote,
-            "session_orientation",
-            { sid: session.sid, name: effectiveName, governor_sid: governorSid, ...(announcementMsgId !== undefined && { announcement_message_id: announcementMsgId }) },
-          );
-          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE);
-          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN);
-          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_COMPACTION_HINT);
-          // session_orientation already carries role info (governor vs participant) for multi-session.
-          // Skip onboarding_role here to avoid duplication.
-          if (discarded === 0) deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_NO_PENDING_YET);
+          // Child session onboarding is delivered on first dequeue (dequeue.ts).
         }
-        void refreshGovernorCommand();
+        if (parentSid === undefined) void refreshGovernorCommand();
 
         // Fire startup reminders for the new session
         const startupFired = runInSessionContext(session.sid, () => fireStartupReminders(session.sid));
@@ -449,8 +456,8 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
           deliverReminderEvent(session.sid, buildReminderEvent(r));
         }
 
-        // Auto-load profile matching session name (opt-in: session param or profile flag)
-        if (effectiveName) {
+        // Auto-load profile matching session name (opt-in; skipped for child sessions).
+        if (effectiveName && parentSid === undefined) {
           const profile = readProfile(effectiveName);
           if (profile && (autoload_profile === true || profile.autoload === true)) {
             applyProfile(session.sid, profile);

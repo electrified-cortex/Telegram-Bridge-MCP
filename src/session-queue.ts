@@ -535,6 +535,42 @@ export function deliverServiceMessage(
 }
 
 /**
+ * Inject a child/notify service event into the parent session's queue.
+ * Delivered with from: "child" so the parent can distinguish it from bridge service messages.
+ * Returns false if the parent queue does not exist (revoked between caller's check and notify).
+ */
+export function deliverChildNotifyEvent(
+  parentSid: number,
+  callerSid: number,
+  eventType: string,
+  payload?: Record<string, unknown>,
+): boolean {
+  const q = _queues.get(parentSid);
+  if (!q) return false;
+
+  const event: TimelineEvent = {
+    id: _nextServiceId--,
+    timestamp: new Date().toISOString(),
+    event: "service_message",
+    from: "child",
+    content: {
+      type: "service",
+      event_type: eventType,
+      ...(payload !== undefined && { payload }),
+      child_sid: callerSid,
+      origin: "child_notify",
+    },
+    sid: callerSid,
+  };
+
+  q.enqueue(event);
+  kickIfAllowed(parentSid, "service", isDequeueActive(parentSid));
+  notifyChannelSubscriber(parentSid, event);
+  dlog("service", `child_notify → sid=${parentSid}`, { eventType, callerSid });
+  return true;
+}
+
+/**
  * Inject a reminder event into a session queue.
  * Used by session_start to deliver startup reminders.
  * Returns false if the target queue does not exist.

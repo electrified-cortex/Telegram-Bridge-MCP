@@ -14,6 +14,7 @@ import { findUnrenderableChars } from "../unrenderable-chars.js";
 import { deliverServiceMessage, deliverAsyncSendCallback } from "../session-queue.js";
 import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator, hasInflightAudio, enqueueTextSend } from "../async-send-queue.js";
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
+import { getSession } from "../session-manager.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
 // Type-routing handlers (v6 Phase 2)
 import { handleSendFile } from "./send/file.js";
@@ -586,8 +587,9 @@ export function register(server: McpServer) {
           if (!resolvedTarget) return toError({ code: "MISSING_PARAM" as const, message: 'type: "dm" requires a "target_sid" (or "target") param.', hint: "Call help(topic: 'send') for the required params for this type." });
           if (!text) return toError({ code: "MISSING_PARAM" as const, message: 'type: "dm" requires a "text" param.', hint: "Call help(topic: 'send') for the required params for this type." });
           const dmResult = handleSendDirectMessage({ token: args.token, target_sid: resolvedTarget, text });
-          // Inject compression reminder on first DM this session (only on success)
+          // Inject compression reminder on first DM this session (only on success; skip for sub-sessions).
           if (!(dmResult as { isError?: boolean }).isError &&
+              !getSession(_sid)?.parent_sid &&
               markFirstUseHintSeen(_sid, "compression_hint_dm")) {
             deliverServiceMessage(_sid, SERVICE_MESSAGES.COMPRESSION_HINT_FIRST_DM);
           }

@@ -19,6 +19,7 @@ import { handleSessionStart, handleSessionReconnect } from "./session/start.js";
 import { handleSpawnChild } from "./session/spawn-child.js";
 import { handleRevokeChild } from "./session/revoke-child.js";
 import { handleChildForward } from "./session/forward-child.js";
+import { handleChildNotify } from "./session/child-notify.js";
 import { handleRenameSession } from "./session/rename.js";
 import { handleSessionIdle } from "./session/idle.js";
 import { handleSessionStatus } from "./session/status.js";
@@ -81,6 +82,9 @@ import { decodeToken } from "./identity-schema.js";
 import { getSession } from "../session-manager.js";
 type ToolResult = ReturnType<typeof toResult>;
 
+/** Action paths explicitly permitted for `read-only` child sessions. */
+const READ_ONLY_ALLOWED = new Set(["child/notify"]);
+
 /** Action paths that are blocked for `gather`-capability sessions. */
 const GATHER_BLOCKED = new Set([
   "session/start",
@@ -95,6 +99,7 @@ const GATHER_BLOCKED = new Set([
   "approve",
   "shutdown",
   "shutdown/warn",
+  "profile/topic",
 ]);
 
 /** Returns the closest string in `candidates` to `input`, or null if no reasonable match. */
@@ -133,6 +138,7 @@ export function setupActionRegistry(): void {
   registerAction("session/spawn-child", toActionHandler(handleSpawnChild));
   registerAction("session/revoke-child", toActionHandler(handleRevokeChild));
   registerAction("child/forward", toActionHandler(handleChildForward));
+  registerAction("child/notify", toActionHandler(handleChildNotify));
   registerAction("session/list", toActionHandler(handleListSessions));
   registerAction("session/idle", toActionHandler(handleSessionIdle));
   registerAction("session/rename", toActionHandler(handleRenameSession));
@@ -691,6 +697,16 @@ export function register(server: McpServer): void {
           .string()
           .optional()
           .describe("child/forward: Text message to inject into the child session's dequeue queue as an operator-forwarded message."),
+        // child/notify params
+        event_type: z
+          .string()
+          .max(64)
+          .optional()
+          .describe("child/notify: Caller-defined event type (max 64 chars, alphanumeric + '/' + '_')."),
+        payload: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("child/notify: Optional JSON-serializable object delivered verbatim to the parent session."),
         // session/spawn-child capability param
         child_capability: z
           .enum(["read-only", "gather", "full"])
@@ -731,7 +747,7 @@ export function register(server: McpServer): void {
         if (typeof capToken === "number" && capToken > 0) {
           const { sid: callerSid } = decodeToken(capToken);
           const cap = getSession(callerSid)?.child_capability;
-          if (cap === "read-only") {
+          if (cap === "read-only" && !READ_ONLY_ALLOWED.has(type)) {
             return toError({
               code: "CAPABILITY_DENIED",
               message: `Action '${type}' is not available to read-only sessions. Only dequeue is permitted.`,

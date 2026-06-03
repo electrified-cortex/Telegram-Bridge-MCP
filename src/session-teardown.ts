@@ -36,6 +36,7 @@ import { removeSilenceState } from "./silence-detector.js";
 import { clearActivityFile } from "./tools/activity/file-state.js";
 import { unregisterChannelSubscriber } from "./channel.js";
 import { removeDequeueRateState } from "./tools/dequeue.js";
+import { getChildSids, unregisterChild } from "./tools/session/child-registry.js";
 
 /**
  * Perform the full teardown for a session identified by `sid`.
@@ -54,6 +55,17 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   const sessionInfo = getSession(sid);
   const sessionName = sessionInfo?.name || `Session ${sid}`;
   const announcementMsgId = getSessionAnnouncementMessage(sid);
+
+  // Cascading revocation: close all child sessions before closing the parent.
+  // Only for root sessions (parent_sid === undefined) to avoid infinite recursion.
+  // Best-effort sequential — orphaned children are acceptable on crash (cleared on restart).
+  if (sessionInfo?.parent_sid === undefined) {
+    const childSids = getChildSids(sid);
+    for (const childSid of childSids) {
+      closeSessionById(childSid);
+      unregisterChild(childSid);
+    }
+  }
 
   const closed = closeSession(sid);
   if (!closed) return { closed: false, sid };
@@ -80,8 +92,11 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   const wasGovernor = sid === getGovernorSid();
   const remaining = listSessions().sort((a, b) => a.sid - b.sid);
 
-  // Always notify the operator that this session disconnected
-  sendServiceMessage(`${sessionName} has disconnected.`).catch(() => {});
+  // Notify the operator that this session disconnected.
+  // Suppressed for sub-sessions — they are not visible as separate participants.
+  if (!sessionInfo?.parent_sid) {
+    sendServiceMessage(`${sessionName} has disconnected.`).catch(() => {});
+  }
 
   // Unpin the session's announcement message, if one was pinned
   if (announcementMsgId !== undefined) {

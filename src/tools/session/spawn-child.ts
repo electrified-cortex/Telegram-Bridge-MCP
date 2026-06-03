@@ -6,14 +6,14 @@ import { getCallerSid, runInSessionContext } from "../../session-context.js";
 import { setSessionParentSid, setSessionCapability, getSession } from "../../session-manager.js";
 import { setTopic } from "../../topic-state.js";
 import { handleSessionStart } from "./start.js";
-import { registerChild } from "./child-registry.js";
+import { registerChild, getChildren } from "./child-registry.js";
 import { deliverServiceMessage } from "../../session-queue.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
 
 export async function handleSpawnChild({
   token,
   name,
-  color,
+  color: _color,  // ignored — color is always inherited from parent
   child_capability,
 }: {
   token?: number;
@@ -34,9 +34,19 @@ export async function handleSpawnChild({
     });
   }
 
+  const parentSession = getSession(parentSid);
+
+  // Recursive spawn gate: sessions with parent_sid cannot spawn children.
+  if (parentSession?.parent_sid !== undefined) {
+    return toError({
+      code: "CAPABILITY_DENIED",
+      message: "Sub-sessions cannot spawn further children. Only root sessions may call session/spawn-child.",
+    });
+  }
+
   // R8: Capability gate — spawn-child requires full capability.
   // This guard lives here (not only in action.ts) to cover direct MCP tool calls.
-  const callerCap = getSession(parentSid)?.child_capability;
+  const callerCap = parentSession?.child_capability;
   if (callerCap !== undefined && callerCap !== "full") {
     return toError({
       code: "CAPABILITY_DENIED",
@@ -44,24 +54,48 @@ export async function handleSpawnChild({
     });
   }
 
+  // SUB_SESSION_LIMIT: enforce 9-concurrent-children cap per parent (gap-fill, 1-9).
+  const occupiedSlots = getChildren(parentSid);
+  if (occupiedSlots.length >= 9) {
+    return toError({
+      code: "SUB_SESSION_LIMIT",
+      message: `Parent session ${parentSid} already has 9 active sub-sessions. Revoke a child before spawning another.`,
+      limit: 9,
+      current: occupiedSlots.length,
+      parent_sid: parentSid,
+    });
+  }
+
   const cap = child_capability ?? "gather";
 
-  const result = await handleSessionStart({ name, color });
+  // Inherit parent's name and color. Sub-sessions present as the parent so the
+  // operator sees one participant with multiple topic chips.
+  const inheritedName = parentSession?.name ?? name;
+  const inheritedColor = parentSession?.color;
+
+  // Create the child session (bypasses approval, announcement, pin, SESSION_JOINED, host onboarding).
+  const result = await handleSessionStart({ name: inheritedName, color: inheritedColor, parentSid });
   if ("isError" in result && result.isError) return result;
 
   const data = JSON.parse(result.content[0].text) as { token: number; sid: number };
-  registerChild(parentSid, data.sid);
-  setSessionParentSid(data.sid, parentSid);
-  setSessionCapability(data.sid, cap);
-  runInSessionContext(data.sid, () => { setTopic(name); });
+  const childSid = data.sid;
+
+  // Register and assign gap-fill display slot (1-9). Returns the assigned slot.
+  const displayIndex = registerChild(parentSid, childSid);
+  setSessionParentSid(childSid, parentSid);
+  setSessionCapability(childSid, cap);
+
+  // Set the topic chip: "TopicName ①" — visible as **[TopicName ①]** in Telegram.
+  const circleDigit = String.fromCodePoint(0x245F + displayIndex);
+  runInSessionContext(childSid, () => { setTopic(`${name} ${circleDigit}`); });
 
   // Guide the parent (host) toward dispatching a background sub-agent for the
   // new sub-session. Lands in the parent's next dequeue, not the child's.
   deliverServiceMessage(
     parentSid,
-    SERVICE_MESSAGES.SPAWN_CHILD_SUBAGENT_HINT.text(data.sid, name, data.token),
+    SERVICE_MESSAGES.SPAWN_CHILD_SUBAGENT_HINT.text(childSid, name, data.token),
     SERVICE_MESSAGES.SPAWN_CHILD_SUBAGENT_HINT.eventType,
-    { child_sid: data.sid, child_name: name },
+    { child_sid: childSid, child_name: name },
   );
 
   return {
@@ -70,9 +104,10 @@ export async function handleSpawnChild({
         type: "text" as const,
         text: JSON.stringify({
           token: data.token,
-          sid: data.sid,
+          sid: childSid,
           parent_sid: parentSid,
-          hint: `call dequeue(token: ${token}) for next-step instructions`,
+          display_index: displayIndex,
+          hint: `call dequeue(token: ${data.token}) for next-step instructions`,
         }),
       },
     ],
@@ -85,15 +120,15 @@ export const SPAWN_CHILD_SCHEMA = {
     .string()
     .min(1)
     .describe(
-      "Name for the child session. Must be unique and alphanumeric. " +
-        "Passed directly to session/start — the operator approval dialog will appear.",
+      "Topic name for the child session (e.g. 'Refactor', 'Research'). " +
+        "Used as the topic chip label in Telegram: **[TopicName ①]**. " +
+        "The sub-session presents as the parent — no separate approval dialog.",
     ),
   color: z
     .string()
     .optional()
     .describe(
-      "Preferred color square emoji hint for the child session. " +
-        "The operator makes the final choice via the approval dialog.",
+      "Ignored — color is always inherited from the parent session.",
     ),
   child_capability: z
     .enum(["read-only", "gather", "full"])

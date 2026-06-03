@@ -56,14 +56,18 @@ export interface EventContent {
   event_type?: string;
   /** Structured details — set for service_message events. */
   details?: Record<string, unknown>;
+  /** Caller-supplied payload — set for child/notify service events. */
+  payload?: Record<string, unknown>;
+  /** SID of the child that sent a child/notify event. */
+  child_sid?: number;
   /**
    * SID of the session that explicitly routed this message via `route_message`.
    * Server-injected — cannot be forged by any agent. Absent if the event
    * arrived naturally (not via governor delegation).
    */
   routed_by?: number;
-  /** Origin of bridge-injected events: "bridge" for service messages, "child_forward" for forwarded child content. */
-  origin?: "bridge" | "child_forward";
+  /** Origin of bridge-injected events. */
+  origin?: "bridge" | "child_forward" | "child_notify";
 }
 
 /**
@@ -77,8 +81,8 @@ export interface TimelineEvent {
   timestamp: string;
   /** Event type: message, sent, reaction, callback, edit, user_edit. */
   event: string;
-  /** Who originated: "user", "bot", or "system" (server-injected service messages). */
-  from: "user" | "bot" | "system";
+  /** Who originated: "user", "bot", "system" (server-injected), or "child" (child/notify). */
+  from: "user" | "bot" | "system" | "child";
   /** Event-specific payload. */
   content: EventContent;
   /** Session ID that produced this event (0 or absent = single-session). */

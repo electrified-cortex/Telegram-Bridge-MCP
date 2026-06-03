@@ -283,7 +283,13 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
       `Investigate — one caller may be consuming events intended for the other.`,
   },
 
-  // ── Child-session onboarding (R2) ────────────────────────────────────────
+  // ── Child-session onboarding (R4) ────────────────────────────────────────
+
+  /** Fired on child session's first dequeue. Token save reminder. */
+  ONBOARDING_CHILD_TOKEN: {
+    eventType: "onboarding_child_token" as const,
+    text: "Your token is real; save it for the duration of this dispatch.",
+  },
 
   /** Fired on child session's first dequeue. Identifies the sub-agent's role and context. */
   CHILD_ONBOARDING_ROLE: {

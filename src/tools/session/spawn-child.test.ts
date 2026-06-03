@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { parseResult, isError } from "../test-utils.js";
-import { clearChildRegistry, getParent } from "./child-registry.js";
+import { clearChildRegistry, getParent, registerChild } from "./child-registry.js";
 import { runInSessionContext } from "../../session-context.js";
 import { getTopic, resetTopicStateForTest } from "../../topic-state.js";
 
@@ -99,16 +99,23 @@ describe("session/spawn-child", () => {
     expect(mocks.setSessionCapability).toHaveBeenCalledWith(CHILD_SID, "full");
   });
 
-  it("AC1: calls handleSessionStart with provided name and color", async () => {
+  it("AC1: calls handleSessionStart with inherited name, inherited color, and parentSid (color arg ignored)", async () => {
+    // getSession returns undefined → inheritedName falls back to topic name "Helper", inheritedColor = undefined
     await handleSpawnChild({ token: 1123456, name: "Helper", color: "🟩" });
 
-    expect(mocks.handleSessionStart).toHaveBeenCalledWith({ name: "Helper", color: "🟩" });
+    expect(mocks.handleSessionStart).toHaveBeenCalledWith({ name: "Helper", color: undefined, parentSid: PARENT_SID });
   });
 
-  it("AC1: calls handleSessionStart with name only when color is omitted", async () => {
+  it("AC1: calls handleSessionStart with parentSid when color is omitted", async () => {
     await handleSpawnChild({ token: 1123456, name: "Helper" });
 
-    expect(mocks.handleSessionStart).toHaveBeenCalledWith({ name: "Helper", color: undefined });
+    expect(mocks.handleSessionStart).toHaveBeenCalledWith({ name: "Helper", color: undefined, parentSid: PARENT_SID });
+  });
+
+  it("AC1: result includes display_index field (gap-fill slot 1 on first spawn)", async () => {
+    const result = parseResult(await handleSpawnChild({ token: 1123456, name: "Helper" }));
+
+    expect(result.display_index).toBe(1);
   });
 
   // ── AC1b: token mismatch returns UNAUTHORIZED ───────────────────────────
@@ -261,14 +268,14 @@ describe("session/spawn-child", () => {
     expect(isError(result)).toBe(false);
   });
 
-  // ── AC3: sets topic label on child session ───────────────────────────────
+  // ── AC3: sets topic chip on child session ───────────────────────────────
 
-  it("AC3: sets topic to the child's name so outbound messages are prefixed with [Helper]", async () => {
+  it("AC3: topic includes circle digit so messages render as **[Helper ①]**", async () => {
     await handleSpawnChild({ token: 1123456, name: "Helper" });
 
-    // getTopic in the child's session context should return "Helper"
+    // getTopic in the child's session context should return "Helper ①" (slot 1)
     const topic = runInSessionContext(CHILD_SID, () => getTopic());
-    expect(topic).toBe("Helper");
+    expect(topic).toBe("Helper ①");
   });
 
   it("AC3: topic is keyed to the child SID, not the parent SID", async () => {
@@ -276,7 +283,38 @@ describe("session/spawn-child", () => {
 
     const childTopic = runInSessionContext(CHILD_SID, () => getTopic());
     const parentTopic = runInSessionContext(PARENT_SID, () => getTopic());
-    expect(childTopic).toBe("Helper");
+    expect(childTopic).toBe("Helper ①");
     expect(parentTopic).toBeNull();
+  });
+
+  // ── AC3a: SUB_SESSION_LIMIT for 10th spawn ─────────────────────────────
+
+  it("AC3a: returns SUB_SESSION_LIMIT when 9 slots already occupied", async () => {
+    // Pre-register 9 children to fill all slots
+    for (let i = 1; i <= 9; i++) {
+      registerChild(PARENT_SID, 100 + i);
+    }
+
+    const result = await handleSpawnChild({ token: 1123456, name: "TooMany" });
+
+    expect(isError(result)).toBe(true);
+    const parsed = parseResult(result);
+    expect(parsed.code).toBe("SUB_SESSION_LIMIT");
+    expect(parsed.limit).toBe(9);
+    expect(parsed.current).toBe(9);
+    expect(parsed.parent_sid).toBe(PARENT_SID);
+    expect(mocks.handleSessionStart).not.toHaveBeenCalled();
+  });
+
+  // ── AC7: recursive spawn gate ─────────────────────────────────────────
+
+  it("AC7: returns CAPABILITY_DENIED when caller session is itself a child (parent_sid set)", async () => {
+    mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent", parent_sid: 5 });
+
+    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+
+    expect(isError(result)).toBe(true);
+    expect(parseResult(result).code).toBe("CAPABILITY_DENIED");
+    expect(mocks.handleSessionStart).not.toHaveBeenCalled();
   });
 });

@@ -210,7 +210,12 @@ export async function runDrainLoop(
     const _parentSession = getSession(_parentSid);
     const _parentName = _parentSession?.name ?? "";
 
-    // R2: pre-enqueue three onboarding messages into the child SID's queue
+    // R4: deliver four narrowed onboarding messages on child session's first dequeue.
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.ONBOARDING_CHILD_TOKEN.text,
+      SERVICE_MESSAGES.ONBOARDING_CHILD_TOKEN.eventType,
+    );
     deliverServiceMessage(
       sid,
       SERVICE_MESSAGES.CHILD_ONBOARDING_ROLE.text(_topicName, _parentSid, _parentName),
