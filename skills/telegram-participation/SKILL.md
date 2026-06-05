@@ -66,8 +66,15 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 
 ## R7 — Dequeue loop
 
-End every agent turn with `dequeue(token)`. Use session default.
-Don't override via `profile/dequeue-default`. Drain polls (`max_wait: 0`) permitted.
+**Do not specify `max_wait` unless you have a clear reason.** Session default (90 s–300 s) is correct for all normal operation.
+
+**With monitor armed (R5–R6 complete):** only call `dequeue(token)` when the monitor fires a notification kick. Let it time out naturally — don't re-enter dequeue until the next kick arrives. The monitor is the wakeup; dequeue is how you drain the batch.
+
+**Without monitor (fallback only):** blocking dequeue loop is acceptable. Verify session default ≥ 90 s on startup.
+
+Drain polls (`max_wait: 0`) permitted for explicit flush patterns only.
+
+**Why this matters:** too-short max_wait burns one full API turn per interval even when the queue is empty. Too-long delays notifications. The session default (set by `profile/load` or `help('startup')`) is the correct balance — do not override it.
 
 ## R8 — Closeout
 
