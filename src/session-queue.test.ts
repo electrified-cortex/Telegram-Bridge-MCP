@@ -19,6 +19,10 @@ import {
   setGovernorSid,
   resetRoutingModeForTest,
 } from "./routing-mode.js";
+import {
+  getLastReceivedAt,
+  resetReminderStateForTest,
+} from "./reminder-state.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,6 +70,7 @@ describe("session-queue", () => {
   beforeEach(() => {
     resetSessionQueuesForTest();
     resetRoutingModeForTest();
+    resetReminderStateForTest();
   });
 
   // -------------------------------------------------------------------------
@@ -513,6 +518,45 @@ describe("session-queue", () => {
       resetSessionQueuesForTest();
       expect(sessionQueueCount()).toBe(0);
       expect(getMessageOwner(100)).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // last_received timer — routing-aware (AC1/AC2/AC3)
+  // -------------------------------------------------------------------------
+
+  describe("last_received timer — routing-aware", () => {
+    it("AC2: targeted routing resets last_received for the owning session", () => {
+      createSessionQueue(1);
+      createSessionQueue(2);
+      trackMessageOwner(50, 1);
+      routeToSession(replyEvent(50)); // targeted at sid 1
+      expect(getLastReceivedAt(1, "all")).toBeDefined();
+    });
+
+    it("AC3: ambiguous governor routing does NOT reset last_received for the governor", () => {
+      setGovernorSid(2);
+      createSessionQueue(1);
+      createSessionQueue(2);
+      routeToSession(makeEvent({ id: 10 })); // no reply_to → ambiguous → governor
+      expect(getLastReceivedAt(2, "all")).toBeUndefined();
+    });
+
+    it("AC3: broadcast routing does NOT reset last_received for any session", () => {
+      createSessionQueue(1);
+      createSessionQueue(2);
+      routeToSession(makeEvent({ id: 20 })); // no governor → broadcast
+      expect(getLastReceivedAt(1, "all")).toBeUndefined();
+      expect(getLastReceivedAt(2, "all")).toBeUndefined();
+    });
+
+    it("AC1: targeted message to one session does not affect another session's timer", () => {
+      createSessionQueue(1);
+      createSessionQueue(2);
+      trackMessageOwner(50, 1);
+      routeToSession(replyEvent(50)); // targeted at sid 1
+      expect(getLastReceivedAt(1, "all")).toBeDefined(); // sid 1 updated
+      expect(getLastReceivedAt(2, "all")).toBeUndefined(); // sid 2 untouched
     });
   });
 });

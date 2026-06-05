@@ -12,18 +12,19 @@ description: >-
 
 ## What this skill governs
 
-The complete bootstrap sequence for an agent participating in a TMCP-brokered Telegram session. Covers: connection check, session anchoring (fresh start and reconnect), startup drain, post-connect setup, and the dequeue loop.
+The complete bootstrap sequence for an agent participating in a TMCP-brokered Telegram session. Covers: connection check, session anchoring (fresh start and reconnect), startup drain, post-connect setup, activity monitor arm and verification, the dequeue loop, and graceful shutdown.
 
 Load this skill on every startup and resume. Invoke it on demand to re-anchor (e.g., after a forced-stop recovery).
-
-Everything post-connection — profile load, monitor arm, shutdown sequence — is delegated to bridge `help()` topics. This skill is the launch pad; the bridge is the guide.
 
 ## R1 — Connection check
 
 Check whether TMCP is reachable before making any session calls.
 
-- TMCP unreachable → notify operator; report unavailable; stop.
-- TMCP reachable → proceed to R2.
+| Condition | Action |
+| --- | --- |
+| TMCP unreachable, no token | Notify operator; report unavailable; stop. |
+| TMCP unreachable, token present | Direct Connect mode; notify operator of TMCP unavailability; proceed to R2. |
+| TMCP reachable | Proceed to R2. |
 
 ## R2 — Session anchor
 
@@ -89,7 +90,49 @@ help('startup')
 
 Covers activity monitor arm and dequeue defaults. Must run after the session is anchored (R2 complete) and after the boot animation fires (Step 2). Profile load is now handled explicitly in Step 1 and need not be repeated here.
 
-## R5 — Dequeue loop
+## R5 — Activity monitor arm
+
+Arm the activity file watcher so the session has an activity signal. Two entry paths depending on whether a prior registration survives.
+
+**Branch A — compaction recovery:**
+
+```mcp
+action(type: 'activity/file/get')
+```
+
+If the response includes a `file_path`, a prior registration survives — use it and skip Branch B. If no `file_path` is returned, fall through to Branch B.
+
+**Branch B — fresh start:**
+
+```mcp
+action(type: 'activity/file/create')
+```
+
+Then call `dequeue(max_wait: 10)` and scan the batch for an event with `event_type: 'ACTIVITY_FILE_MONITOR_INSTRUCTIONS'`. Extract `file_path` from that event.
+
+**ALREADY_REGISTERED response (either branch):**
+
+- `details.file_path` non-empty → use it; proceed to path construction.
+- `details.file_path` empty → `action(type: 'activity/file/delete')`, then re-run Branch B from scratch.
+
+**Path construction and arm:**
+
+1. If `file_path` contains backslash (`\`) separators, convert to POSIX (forward slash) first.
+2. TMCP root = 3 parent directories up from `file_path` (i.e., `dirname(dirname(dirname(file_path)))`).
+3. Stop any previously running watcher, then arm: `<TMCP_root>/tools/monitor.sh <file_path>`.
+
+Retain the watcher handle for use during shutdown (R8).
+
+## R6 — Monitor verification
+
+After arming, verify the watcher is live before proceeding to the dequeue loop.
+
+1. Send a self-DM — this triggers an update to the activity file.
+2. Wait up to 30 seconds for the watcher to emit a signal (file change notification).
+   - Signal received → monitor is live; proceed to R7.
+   - No signal within 30s → re-arm: `action(type: 'activity/file/delete')`, then `action(type: 'activity/file/create')`; re-arm the watcher.
+
+## R7 — Dequeue loop
 
 End every agent turn with a dequeue call:
 
@@ -99,12 +142,26 @@ dequeue(token)
 
 Use no explicit `max_wait` — the session default applies (loaded via `profile/load` in R4 Step 1, confirmed by `help('startup')`). Do not override the session default via `profile/dequeue-default`. Drain polls (`max_wait: 0`) are permitted when needed.
 
-## Closeout
+## R8 — Closeout
 
-Before any shutdown path — planned exit, shutdown directive, on-demand close:
+R8 MUST run on ALL shutdown paths — planned exit, shutdown directive, forced stop. Skipping any step risks leaving orphaned registrations or an unclosed session.
 
-1. Drain: `dequeue(max_wait: 0)` until empty.
-2. `action(type: 'session/close', token)`. On `LAST_SESSION` error: retry with `force: true`.
+**Step 1 — Stop watcher:**
+Stop the file watcher using the retained handle (from R5). If the handle is unavailable (e.g., after a compaction that didn't preserve it), call `action(type: 'activity/file/delete')` instead.
+
+**Step 2 — Drain queue (capped at 10):**
+Call `dequeue(max_wait: 0)` up to 10 iterations until the queue is empty. The cap prevents a deadlock if the queue keeps receiving messages during shutdown.
+
+**Step 3 — Clear token:**
+Capture the stored session token into a local variable, then clear it from state. This ensures the token is available for the close call but is not retained afterward.
+
+**Step 4 — Close session:**
+
+```mcp
+action(type: 'session/close', token: <captured>)
+```
+
+On `LAST_SESSION` error: retry once with `force: true`.
 
 ## Don'ts
 
@@ -112,7 +169,7 @@ Before any shutdown path — planned exit, shutdown directive, on-demand close:
 - Do not call `profile/load` with another agent's key — always use the pod's own identifier.
 - Do not loop the R3 drain — it is a single call.
 - Do not override the session dequeue default via `profile/dequeue-default`.
-- Every code path that ends the agent session must call `help('shutdown')`.
+- R8 must run on every shutdown path — do not skip or short-circuit.
 
 ## Cross-references
 

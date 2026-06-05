@@ -21,6 +21,7 @@ import type { ReminderEvent } from "./reminder-state.js";
 import { recordLastSentAt, recordLastReceivedAt } from "./reminder-state.js";
 import { kickIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
 import { notifyChannelSubscriber } from "./channel.js";
+import { kickSseSubscriber } from "./sse-endpoint.js";
 
 // ---------------------------------------------------------------------------
 // Voice-ready predicate (shared with message-store's queue)
@@ -238,7 +239,8 @@ export function routeToSession(event: TimelineEvent): void {
   if (gSid > 0 && _queues.has(gSid)) {
     dlog("route", `governor event=${event.id} → sid=${gSid}`, { type: event.content.type });
     enqueueToSession(gSid, event);
-    notifyLastReceived(gSid, event);
+    // Do NOT call notifyLastReceived — ambiguous routing does not count as
+    // "received by this session" for last_received reminder tracking.
     return;
   }
 
@@ -248,7 +250,9 @@ export function routeToSession(event: TimelineEvent): void {
     q.enqueue(event);
     kickIfAllowed(sid, "operator", isDequeueActive(sid));
     notifyChannelSubscriber(sid, event);
-    notifyLastReceived(sid, event);
+    kickSseSubscriber(sid);
+    // Do NOT call notifyLastReceived — broadcast/ambiguous routing does not
+    // count as "received by this session" for last_received reminder tracking.
   }
 }
 
@@ -280,6 +284,7 @@ function enqueueToSession(
   q.enqueue(event);
   kickIfAllowed(sid, "operator", isDequeueActive(sid));
   notifyChannelSubscriber(sid, event);
+  kickSseSubscriber(sid);
 }
 
 // ---------------------------------------------------------------------------
@@ -450,6 +455,7 @@ export function deliverDirectMessage(
   q.enqueue(event);
   kickIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
+  kickSseSubscriber(targetSid);
   dlog("dm", `delivered DM from sid=${senderSid} → sid=${targetSid}`, { eventId: event.id });
   return true;
 }
@@ -530,6 +536,7 @@ export function deliverServiceMessage(
   q.enqueue(event);
   kickIfAllowed(targetSid, "service", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
+  kickSseSubscriber(targetSid);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
@@ -566,6 +573,7 @@ export function deliverChildNotifyEvent(
   q.enqueue(event);
   kickIfAllowed(parentSid, "service", isDequeueActive(parentSid));
   notifyChannelSubscriber(parentSid, event);
+  kickSseSubscriber(parentSid);
   dlog("service", `child_notify → sid=${parentSid}`, { eventType, callerSid });
   return true;
 }
@@ -605,6 +613,7 @@ export function deliverReminderEvent(
   q.enqueue(event);
   kickIfAllowed(targetSid, "reminder", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
+  kickSseSubscriber(targetSid);
   dlog("service", `startup reminder → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
 }
@@ -630,6 +639,7 @@ export function routeMessage(messageId: number, targetSid: number, routerSid: nu
   q.enqueue(routed);
   kickIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, routed);
+  kickSseSubscriber(targetSid);
   dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`, { routerSid });
   return true;
 }

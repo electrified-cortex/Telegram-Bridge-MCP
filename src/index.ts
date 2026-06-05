@@ -30,6 +30,7 @@ import { enableLogging, isLoggingEnabled, rollLog, logEvent as logLocalEvent, fl
 import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
 import { attachHookRoutes } from "./hook-animation.js";
+import { attachSseRoute } from "./sse-endpoint.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -148,6 +149,7 @@ if (mcpPort !== undefined) {
   attachEventRoute(app);
   attachDequeueRoute(app);
   attachHookRoutes(app);
+  attachSseRoute(app);
 
   /** Normalize header that may be string | string[] | undefined → string | undefined */
   const getSessionId = (req: Request): string | undefined => {

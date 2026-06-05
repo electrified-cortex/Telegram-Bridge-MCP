@@ -19,6 +19,7 @@
 
 ### Fixed
 
+- **`last_received` reminder timer no longer resets on ambiguously-routed messages**: `routeToSession` now calls `notifyLastReceived` only for targeted routing (explicit reply-to, callback, or reaction on an owned message); governor and broadcast paths no longer update the `last_received` clock, so `only_if_silent: true` reminders fire correctly even when the operator messages other sessions during the quiet window (fixes task 30-2300)
 - `channel.ts` `_send`: corrected MCP SDK call from non-existent `sendNotification()` to `notification()` on the underlying `Server` instance — channel push notifications were silently failing before this fix
 - `scheduleRetry` (`file-state.ts`): wrapped `setTimeout(async () => {...})` in `void (async () => {...})()` to satisfy `no-misused-promises` lint rule
 - `handleChildForward`, `handleRevokeChild`: removed erroneous `async` keyword — both functions are synchronous; test callsites updated accordingly

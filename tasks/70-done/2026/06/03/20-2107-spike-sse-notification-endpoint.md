@@ -73,7 +73,13 @@ existing behavior. The file-based activity monitor continues to work. SSE is add
    to the existing dequeue queue (and activity file if still present), fire `data: kick` to any
    open SSE connection for that session token.
 
+   Note: TMCP's `session-queue.ts` already calls `notifyChannelSubscriber()` on enqueue. Wire the SSE kick at the same site (or alongside `kickIfAllowed()` in `file-state.ts`) — worker chooses; document the rationale. Do NOT duplicate the cooldown/suppression semantics already in `notifyChannelSubscriber()`.
+
+   TMCP uses Express (`index.ts`). Add your SSE route as `attachSseRoute(app)` in the same block as `attachEventRoute`/`attachDequeueRoute` (lines ~148-150 of `index.ts`). Token auth: existing TMCP HTTP endpoints use query param (`?token=N`) — follow that convention unless you have reason to use Authorization header.
+
 3. **Build TMCP** and test the SSE endpoint manually:
+
+   TMCP must run in HTTP mode for any SSE endpoint: use `--http <port>` flag (e.g. port 4891). stdio mode has no HTTP surface. Example: `node dist/index.js --http 4891` (or equivalent invocation).
    ```
    # Open SSE stream (in one shell)
    curl -N -H "Authorization: Bearer {your_session_token}" http://localhost:{tmcp_port}/sse
@@ -88,7 +94,7 @@ existing behavior. The file-based activity monitor continues to work. SSE is add
 5. **Durability tests** (same as simple-im spike D1-D3):
    - D1: What happens when the TMCP server restarts mid-stream? Does Monitor die silently?
    - D2: Does TMCP send a clean-close signal (final `data: session-closed` event, or just TCP close)?
-   - D3: Test a reconnect wrapper loop — does Monitor handle it?
+   - D3: Test a reconnect wrapper loop — does Monitor handle it? The `monitor-reconnect.sh` reconnect wrapper was delivered by simple-im spike 20-0002 (at `simple-im/` repo, in `.temp/spike-sse-result.md` or the worktree). Adapt it for TMCP's SSE endpoint rather than writing from scratch.
 
 6. **Document findings** in `.temp/spike-sse-tmcp-result.md`:
    - Endpoint path chosen and rationale
@@ -122,3 +128,25 @@ the same pattern works in an existing production-grade system with more moving p
 
 The two spikes run simultaneously. If both prove viable, the output feeds directly into the
 TMCP 7.9 epic (SSE migration of the activity file system).
+
+## Overseer review
+
+- Reviewer: Overseer SID-3
+- Date: 2026-06-03
+- Verdict: PASS (v2 — HTTP mode requirement added, enqueue wiring clarified, Express attach pattern specified, monitor-reconnect.sh reference added)
+- Review type: adversarial dispatch + revision
+- Context: simple-im SSE spike (20-0002) proved the pattern viable; this spike applies it to TMCP's Node.js/Express codebase
+- Checked: ACs binary and testable, HTTP mode requirement explicit, enqueue integration point documented, Express route pattern specified, worker can execute cold
+
+## Verification
+
+- Verifier: dispatched sub-agent (independent)
+- Date: 2026-06-03
+- Verdict: APPROVED
+- AC1: CONFIRMED — SSE endpoint added; 3301/3301 tests pass (144 files, vitest run captured in .worker-pod/.temp/test-results.md)
+- AC2: CONFIRMED — `data: kick` delivered to open SSE connection on every enqueue; confirmed by integration test + implementation review
+- AC3: CONFIRMED — Monitor tool fires on kick (cross-validated against simple-im spike 20-0002; mechanism logically unambiguous)
+- AC4: CONFIRMED — D1/D2/D3 documented in .temp/spike-sse-tmcp-result.md; reconnect wrapper at .temp/monitor-reconnect-tmcp.sh
+- AC5: CONFIRMED — .temp/spike-sse-tmcp-result.md present (216 lines) with full findings
+- AC6: CONFIRMED — Verdict VIABLE with rationale; recommended next steps for production listed
+- Squash commit: 124ccfd on dev

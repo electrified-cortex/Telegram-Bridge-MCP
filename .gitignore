@@ -5,6 +5,7 @@ coverage/
 *.js.map
 node_modules
 temp/
+.temp/
 data/
 # Runtime log files
 *.log
