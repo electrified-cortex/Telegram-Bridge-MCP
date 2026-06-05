@@ -53,9 +53,11 @@ export const SERVICE_MESSAGES = deepFreeze({
   ONBOARDING_LOOP_PATTERN: {
     eventType: "onboarding_loop_pattern" as const,
     text: `Welcome to the loop. Stay in it.
+Two paths — pick one based on your toolset:
 
-1. Call dequeue(token) every turn.
-2. If you have a Monitor tool, call action(type: 'activity/file/create') — it returns a file path. Watch it with a **persistent** Monitor.
+Monitor tool available: call action(type: 'activity/file/create') then dequeue — the response will deliver full wake-signal setup instructions.
+
+No Monitor tool: call dequeue(token) on every turn.
 
 Details: help('start'), help('dequeue'), help('activity/file').`,
   },
@@ -195,7 +197,7 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
       `Use this to guarantee a high quality file watch — run inside your harness's Monitor tool with persistent: true. Name it "Telegram message notifier" so you can recognize it after a compaction.\n\n` +
       `Windows:  \`"${_monitorPs1}" "${filePath}"\`\n` +
       `Linux/macOS:  \`"${_monitorSh}" "${filePath}"\`\n\n` +
-      `No Monitor tool? Skip the above and just keep calling \`dequeue(token)\` at the end of every turn — that is your loop.`,
+      `Loop pattern: When a wake signal arrives, call dequeue(token) and handle each message one at a time until pending = 0. Then call dequeue(token) once more.`,
     details: {
       script_path: {
         windows: _monitorPs1,

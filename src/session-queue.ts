@@ -239,7 +239,8 @@ export function routeToSession(event: TimelineEvent): void {
   if (gSid > 0 && _queues.has(gSid)) {
     dlog("route", `governor event=${event.id} → sid=${gSid}`, { type: event.content.type });
     enqueueToSession(gSid, event);
-    notifyLastReceived(gSid, event);
+    // Do NOT call notifyLastReceived — ambiguous routing does not count as
+    // "received by this session" for last_received reminder tracking.
     return;
   }
 
@@ -250,7 +251,8 @@ export function routeToSession(event: TimelineEvent): void {
     kickIfAllowed(sid, "operator", isDequeueActive(sid));
     notifyChannelSubscriber(sid, event);
     kickSseSubscriber(sid);
-    notifyLastReceived(sid, event);
+    // Do NOT call notifyLastReceived — broadcast/ambiguous routing does not
+    // count as "received by this session" for last_received reminder tracking.
   }
 }
 
