@@ -66,15 +66,9 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 
 ## R7 — Dequeue loop
 
-Two rules that together form the correct loop:
+**When your monitor fires:** handle messages one at a time until there are no pending messages (`pending = 0`). Then stop — do not re-enter the dequeue loop. Your monitor will bring you back when the next message arrives.
 
-1. **Drain until timeout.** When active (monitor fired or pending > 0), keep calling `dequeue(token)` until the call times out. The timeout IS the listener — it's what keeps you ready for the next message. If a response includes `pending > 0`, call again immediately without waiting for another kick.
-
-2. **Don't re-enter after timeout.** Once a dequeue call times out with nothing, STOP. Don't loop again until the monitor fires the next kick. Looping on timeout burns one full API turn per interval with no message processed.
-
-**Without monitor (fallback only):** blocking dequeue loop is acceptable, but set a long session default (≥ 90 s). Verify on startup.
-
-**Never specify `max_wait` unless you have a clear reason.** Session default (90 s–300 s) is correct for all normal operation. Do not override it via `profile/dequeue-default`.
+**Without monitor (fallback only):** blocking dequeue loop (`dequeue(token)` with session default) is acceptable. Verify session default ≥ 90 s on startup. Never specify `max_wait` unless you have a clear reason — too-short values burn one full API turn per interval with no message processed.
 
 ## R8 — Closeout
 
