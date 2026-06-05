@@ -66,15 +66,15 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 
 ## R7 — Dequeue loop
 
-**Do not specify `max_wait` unless you have a clear reason.** Session default (90 s–300 s) is correct for all normal operation.
+Two rules that together form the correct loop:
 
-**With monitor armed (R5–R6 complete):** only call `dequeue(token)` when the monitor fires a notification kick. Let it time out naturally — don't re-enter dequeue until the next kick arrives. The monitor is the wakeup; dequeue is how you drain the batch.
+1. **Drain until timeout.** When active (monitor fired or pending > 0), keep calling `dequeue(token)` until the call times out. The timeout IS the listener — it's what keeps you ready for the next message. If a response includes `pending > 0`, call again immediately without waiting for another kick.
 
-**Without monitor (fallback only):** blocking dequeue loop is acceptable. Verify session default ≥ 90 s on startup.
+2. **Don't re-enter after timeout.** Once a dequeue call times out with nothing, STOP. Don't loop again until the monitor fires the next kick. Looping on timeout burns one full API turn per interval with no message processed.
 
-Drain polls (`max_wait: 0`) permitted for explicit flush patterns only.
+**Without monitor (fallback only):** blocking dequeue loop is acceptable, but set a long session default (≥ 90 s). Verify on startup.
 
-**Why this matters:** too-short max_wait burns one full API turn per interval even when the queue is empty. Too-long delays notifications. The session default (set by `profile/load` or `help('startup')`) is the correct balance — do not override it.
+**Never specify `max_wait` unless you have a clear reason.** Session default (90 s–300 s) is correct for all normal operation. Do not override it via `profile/dequeue-default`.
 
 ## R8 — Closeout
 
