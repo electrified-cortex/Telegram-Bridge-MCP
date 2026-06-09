@@ -2706,6 +2706,51 @@ describe("handleSessionReconnect", () => {
 
     expect((result).monitor_recipe).toBeUndefined();
   });
+
+  // =========================================================================
+  // Profile autoload on reconnect (AC1–AC3)
+  // =========================================================================
+
+  it("AC1: profile.autoload: true → profile applied on reconnect, profile_autoloaded in response", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 5, name: "Primary", color: "🟦", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({ sid: 5, suffix: 500001, name: "Primary", color: "🟦", healthy: true });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+    mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
+    mocks.readProfile.mockReturnValue({ voice: "nova", autoload: true });
+
+    const result = parseResult(await handleSessionReconnect({ name: "Primary" }));
+
+    expect(mocks.readProfile).toHaveBeenCalledWith("Primary");
+    expect(mocks.applyProfile).toHaveBeenCalledWith(5, { voice: "nova", autoload: true });
+    expect(result.profile_autoloaded).toBe("Primary");
+  });
+
+  it("AC2: profile.autoload: false → profile NOT applied on reconnect, no profile_autoloaded", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 6, name: "Worker", color: "🟩", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({ sid: 6, suffix: 600001, name: "Worker", color: "🟩", healthy: true });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+    mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
+    mocks.readProfile.mockReturnValue({ voice: "onyx", autoload: false });
+
+    const result = parseResult(await handleSessionReconnect({ name: "Worker" }));
+
+    expect(mocks.applyProfile).not.toHaveBeenCalled();
+    expect(result.profile_autoloaded).toBeUndefined();
+  });
+
+  it("AC3: no matching profile → reconnect succeeds, profile NOT applied", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 7, name: "Scout", color: "🟨", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({ sid: 7, suffix: 700001, name: "Scout", color: "🟨", healthy: true });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+    mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
+    mocks.readProfile.mockReturnValue(null);
+
+    const result = parseResult(await handleSessionReconnect({ name: "Scout" }));
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.applyProfile).not.toHaveBeenCalled();
+    expect(result.profile_autoloaded).toBeUndefined();
+  });
 });
 
 describe("session/start refresh flag", () => {

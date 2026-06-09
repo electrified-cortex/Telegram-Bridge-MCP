@@ -588,11 +588,20 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     deliverReminderEvent(existing.sid, buildReminderEvent(r));
   }
 
+  // Auto-load profile matching session name if profile.autoload === true
+  const reconProfile = readProfile(existing.name);
+  let reconProfileAutoloaded: string | undefined;
+  if (reconProfile && reconProfile.autoload === true) {
+    applyProfile(existing.sid, reconProfile);
+    reconProfileAutoloaded = existing.name;
+  }
+
   const reconToken = fullSession.sid * 1_000_000 + fullSession.suffix;
   return toResult({
     token: reconToken,
     sid: fullSession.sid,
     hint: "Call dequeue(token) NOW — do not proceed without draining",
+    ...(reconProfileAutoloaded !== undefined ? { profile_autoloaded: reconProfileAutoloaded } : {}),
   });
 }
 
@@ -635,7 +644,7 @@ export function register(server: McpServer) {
             "When true, automatically applies the saved profile matching the session name (if one exists). " +
             "Also applies if the matching profile has autoload: true, even when this flag is false or omitted. " +
             "No error if no profile exists — session starts normally. " +
-            "session/reconnect never auto-loads.",
+            "session/reconnect also auto-loads when profile.autoload is true.",
           ),
       },
     },

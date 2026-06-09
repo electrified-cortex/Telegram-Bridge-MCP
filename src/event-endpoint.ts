@@ -45,6 +45,19 @@ interface PostEventBody {
 
 const VALID_KINDS = new Set(["compacting", "compacted", "startup", "shutdown_warn", "shutdown_complete", "stopped"]);
 
+// ── Event deduplication ──────────────────────────────────────────────────────
+
+/** Time window (ms) within which identical (kind, actor_sid) events are suppressed. */
+const EVENT_DEDUP_WINDOW_MS = 2_000;
+
+/** Last delivery timestamp per "kind:actor_sid" key. */
+const _eventDedup = new Map<string, number>();
+
+/** Exported for test reset only — do not call in production code. */
+export function _resetEventDedupForTest(): void {
+  _eventDedup.clear();
+}
+
 // ── Internal handler (exported for testing) ──────────────────────────────────
 
 /**
@@ -122,11 +135,20 @@ export function handlePostEvent(
     details = detailsObj;
   }
 
-  // ── 1. Resolve actor name ────────────────────────────────────────────────
+  // ── 1. Dedup: suppress if same (kind, actor_sid) arrived within window ───
+  const dedupKey = `${kind}:${resolvedActorSid}`;
+  const lastDeliveredAt = _eventDedup.get(dedupKey);
+  const nowMs = Date.now();
+  if (lastDeliveredAt !== undefined && nowMs - lastDeliveredAt < EVENT_DEDUP_WINDOW_MS) {
+    return [200, { ok: true, fanout: 0, hint: "duplicate_suppressed" }];
+  }
+  _eventDedup.set(dedupKey, nowMs);
+
+  // ── 2. Resolve actor name ────────────────────────────────────────────────
   const actorSession = getSession(resolvedActorSid);
   const actorName = actorSession?.name ?? "unknown";
 
-  // ── 2. Log (fire-and-forget) ─────────────────────────────────────────────
+  // ── 3. Log (fire-and-forget) ─────────────────────────────────────────────
   const logEntry = {
     timestamp: new Date().toISOString(),
     kind,
@@ -148,7 +170,7 @@ export function handlePostEvent(
     process.stderr.write(`[event] log write error: ${String(err)}\n`);
   });
 
-  // ── 3. Fan out ───────────────────────────────────────────────────────────
+  // ── 4. Fan out ───────────────────────────────────────────────────────────
   // kind=stopped is suppressed from broadcast — high-frequency noise, no actionable signal.
   const sessions = listSessions();
   let fanout = 0;
@@ -164,7 +186,7 @@ export function handlePostEvent(
     }
   }
 
-  // ── 4. Governor side-effect ──────────────────────────────────────────────
+  // ── 5. Governor side-effect ──────────────────────────────────────────────
   const governorSid = getGovernorSid();
   if (governorSid !== 0 && resolvedActorSid === governorSid) {
     if (kind === "compacted") {
@@ -177,7 +199,7 @@ export function handlePostEvent(
     }
   }
 
-  // ── 5. "stopped" side-effect ─────────────────────────────────────────────
+  // ── 6. "stopped" side-effect ─────────────────────────────────────────────
   // Agent-side wiring: TBD — likely a Stop hook analogous to PreCompact.
   if (kind === "stopped") {
     const { noOp } = handleSessionStopped(sid);
@@ -186,7 +208,7 @@ export function handlePostEvent(
     }
   }
 
-  // ── 6. "compacting" side-effect — post-compact monitor recovery hint ──────
+  // ── 7. "compacting" side-effect — post-compact monitor recovery hint ──────
   if (kind === "compacting") {
     const activityState = getActivityFile(resolvedActorSid);
     if (activityState) {

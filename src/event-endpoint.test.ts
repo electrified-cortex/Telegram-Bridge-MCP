@@ -61,7 +61,7 @@ vi.mock("fs", () => ({
   mkdirSync: vi.fn(),
 }));
 
-import { handlePostEvent } from "./event-endpoint.js";
+import { handlePostEvent, _resetEventDedupForTest } from "./event-endpoint.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -77,6 +77,7 @@ function makeSession(sid: number, name = "TestAgent") {
 describe("POST /event handler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetEventDedupForTest();
     mocks.validateSession.mockReturnValue(true);
     mocks.listSessions.mockReturnValue([makeSession(1)]);
     mocks.getSession.mockReturnValue(makeSession(1));
@@ -298,6 +299,52 @@ describe("POST /event handler", () => {
     expect(agentEventCalls).toHaveLength(0);
     expect((body as { fanout: number }).fanout).toBe(0);
   });
+
+  // ── Dedup ─────────────────────────────────────────────────────────────────
+
+  it("suppresses a duplicate (kind, actor_sid) within the dedup window", () => {
+    mocks.listSessions.mockReturnValue([makeSession(1)]);
+
+    const [status1, body1] = handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+    expect(status1).toBe(200);
+    expect((body1 as { hint?: string }).hint).toBeUndefined();
+    expect(mocks.deliverServiceMessage).toHaveBeenCalled();
+
+    mocks.deliverServiceMessage.mockClear();
+
+    const [status2, body2] = handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+    expect(status2).toBe(200);
+    expect((body2 as { hint: string }).hint).toBe("duplicate_suppressed");
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+  });
+
+  it("allows the same kind from a different actor_sid within the dedup window", () => {
+    // VALID_TOKEN decodes to sid=1; actor_sid=2 is a different actor
+    mocks.listSessions.mockReturnValue([makeSession(1), makeSession(2)]);
+    mocks.getSession.mockImplementation((s: unknown) =>
+      (s as number) === 2 ? makeSession(2, "OtherAgent") : makeSession(1),
+    );
+
+    const [status1] = handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+    expect(status1).toBe(200);
+
+    // Second call with a different actor_sid should not be suppressed
+    const [status2, body2] = handlePostEvent(String(VALID_TOKEN), { kind: "compacting", actor_sid: 2 });
+    expect(status2).toBe(200);
+    expect((body2 as { hint?: string }).hint).toBeUndefined();
+  });
+
+  it("allows a different kind from the same actor within the dedup window", () => {
+    mocks.listSessions.mockReturnValue([makeSession(1)]);
+
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+    mocks.deliverServiceMessage.mockClear();
+
+    // "compacted" is a different kind — not suppressed
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
+    expect(status).toBe(200);
+    expect((body as { hint?: string }).hint).toBeUndefined();
+  });
 });
 
 // ── post_compact_monitor_recovery tests ───────────────────────────────────────
@@ -312,6 +359,7 @@ function recoveryDeliveryCalls() {
 describe("POST /event handler — post_compact_monitor_recovery hint", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetEventDedupForTest();
     mocks.validateSession.mockReturnValue(true);
     mocks.listSessions.mockReturnValue([]);
     mocks.getSession.mockReturnValue(makeSession(1));

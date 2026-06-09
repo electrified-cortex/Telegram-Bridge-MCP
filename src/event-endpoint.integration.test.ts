@@ -52,7 +52,7 @@ vi.mock("./telegram.js", async (importOriginal) => {
 
 // ── Imports (real modules for session + event endpoint) ───────────────────────
 
-import { attachEventRoute } from "./event-endpoint.js";
+import { attachEventRoute, _resetEventDedupForTest } from "./event-endpoint.js";
 import { createSession, resetSessions } from "./session-manager.js";
 import { deliverServiceMessage } from "./session-queue.js";
 import { getGovernorSid } from "./routing-mode.js";
@@ -86,6 +86,7 @@ describe("POST /event — integration", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    _resetEventDedupForTest();
 
     resetSessions();
 

@@ -62,8 +62,16 @@ function containsMarkdownTable(text: string): boolean {
   return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
 }
 
-/** Scan text for unrenderable chars and deliver a service warning to the session if any are found. */
-function warnUnrenderableChars(sid: number, text: string): void {
+// Disabled by default — flip to true to re-enable if genuine render bugs reappear.
+export let UNRENDERABLE_WARNING_ENABLED = false;
+/** Set the unrenderable-chars warning flag — primarily for testing. */
+export function setUnrenderableWarningEnabled(enabled: boolean): void {
+  UNRENDERABLE_WARNING_ENABLED = enabled;
+}
+
+// Disabled by default; arrows and similar chars render fine in Telegram. Flip UNRENDERABLE_WARNING_ENABLED to re-enable.
+export function warnUnrenderableChars(sid: number, text: string): void {
+  if (!UNRENDERABLE_WARNING_ENABLED) return;
   const badChars = findUnrenderableChars(text);
   if (badChars.length > 0) {
     const charList = badChars

@@ -23,7 +23,8 @@ notes/
 # Code review eval artefacts — local-only (contain absolute paths)
 .code-reviews/
 
-.foreman-pod/
+# Provisioned foreman pods — all variants (standard + temp suffixes)
+.foreman-pod*/
 # Claude --bg session tracking artifact (written by spawn.sh when pod cwd is here)
 .session-id
 
