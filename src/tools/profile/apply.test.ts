@@ -1,8 +1,17 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createHash } from "crypto";
 
-function contentHash(text: string, recurring: boolean, trigger: "time" | "startup" = "time"): string {
-  return createHash("sha256").update(`${text}\0${recurring}\0${trigger}`).digest("hex").slice(0, 16);
+function contentHash(
+  text: string,
+  recurring: boolean,
+  trigger: "time" | "startup" | "last_sent" | "last_received" = "time",
+  mode?: "all" | "operator",
+  only_if_silent?: boolean,
+): string {
+  return createHash("sha256")
+    .update(`${text}\0${recurring}\0${trigger}\0${mode ?? ""}\0${only_if_silent ?? ""}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 const mocks = vi.hoisted(() => ({
@@ -30,8 +39,13 @@ vi.mock("../../reminder-state.js", () => ({
   listReminders: mocks.listReminders,
   disableReminder: mocks.disableReminder,
   enableReminder: mocks.enableReminder,
-  reminderContentHash: (text: string, recurring: boolean, trigger: "time" | "startup" = "time") =>
-    contentHash(text, recurring, trigger),
+  reminderContentHash: (
+    text: string,
+    recurring: boolean,
+    trigger: "time" | "startup" | "last_sent" | "last_received" = "time",
+    mode?: "all" | "operator",
+    only_if_silent?: boolean,
+  ) => contentHash(text, recurring, trigger, mode, only_if_silent),
 }));
 vi.mock("../../session-manager.js", () => ({ getSession: mocks.getSession }));
 
@@ -212,6 +226,97 @@ describe("applyProfile — reminder guard behavior", () => {
     expect("applied" in result).toBe(true);
     expect(mocks.disableReminder).not.toHaveBeenCalled();
     expect(mocks.enableReminder).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyProfile — last_received/last_sent loop fix (BT-7274)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listReminders.mockReturnValue([]);
+    mocks.addReminder.mockImplementation(
+      (r: { id: string; text: string; delay_seconds: number; recurring: boolean; trigger?: string }) => ({
+        ...r,
+        state: "event_pending",
+        created_at: Date.now(),
+        activated_at: null,
+      }),
+    );
+  });
+
+  it("last_received: adds reminder when not already present", () => {
+    const result = applyProfile(1, {
+      reminders: [{ trigger: "last_received", text: "Ping me", recurring: true, delay_seconds: 120 }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.addReminder).toHaveBeenCalledOnce();
+    const applied = (result as { applied: Record<string, unknown> }).applied;
+    expect((applied.reminders as { added: string[] }).added).toHaveLength(1);
+  });
+
+  it("last_received: skips addReminder when already present (preserves last_fired_for)", () => {
+    const existingId = contentHash("Ping me", true, "last_received", "all");
+    mocks.listReminders.mockReturnValue([{ id: existingId }]);
+    const result = applyProfile(1, {
+      reminders: [{ trigger: "last_received", text: "Ping me", recurring: true, delay_seconds: 120 }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.addReminder).not.toHaveBeenCalled();
+    const applied = (result as { applied: Record<string, unknown> }).applied;
+    expect((applied.reminders as { updated: string[] }).updated).toContain(existingId);
+  });
+
+  it("last_sent: adds reminder when not already present", () => {
+    const result = applyProfile(1, {
+      reminders: [{ trigger: "last_sent", text: "Follow up", recurring: true, delay_seconds: 300 }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.addReminder).toHaveBeenCalledOnce();
+    const applied = (result as { applied: Record<string, unknown> }).applied;
+    expect((applied.reminders as { added: string[] }).added).toHaveLength(1);
+  });
+
+  it("last_sent: skips addReminder when already present (preserves last_fired_for)", () => {
+    const existingId = contentHash("Follow up", true, "last_sent");
+    mocks.listReminders.mockReturnValue([{ id: existingId }]);
+    const result = applyProfile(1, {
+      reminders: [{ trigger: "last_sent", text: "Follow up", recurring: true, delay_seconds: 300 }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.addReminder).not.toHaveBeenCalled();
+    const applied = (result as { applied: Record<string, unknown> }).applied;
+    expect((applied.reminders as { updated: string[] }).updated).toContain(existingId);
+  });
+
+  it("last_received: disabled flag applied to existing reminder without re-adding it", () => {
+    const existingId = contentHash("Ping me", true, "last_received", "all");
+    mocks.listReminders.mockReturnValue([{ id: existingId }]);
+    applyProfile(1, {
+      reminders: [{ trigger: "last_received", text: "Ping me", recurring: true, delay_seconds: 120, disabled: true }],
+    });
+    expect(mocks.addReminder).not.toHaveBeenCalled();
+    expect(mocks.disableReminder).toHaveBeenCalledWith(existingId);
+  });
+
+  it("last_sent: enabled flag applied to existing reminder without re-adding it", () => {
+    const existingId = contentHash("Follow up", true, "last_sent");
+    mocks.listReminders.mockReturnValue([{ id: existingId }]);
+    applyProfile(1, {
+      reminders: [{ trigger: "last_sent", text: "Follow up", recurring: true, delay_seconds: 300, disabled: false }],
+    });
+    expect(mocks.addReminder).not.toHaveBeenCalled();
+    expect(mocks.enableReminder).toHaveBeenCalledWith(existingId);
+  });
+
+  it("last_received with operator mode: skips addReminder when already present", () => {
+    const existingId = contentHash("Op ping", false, "last_received", "operator");
+    mocks.listReminders.mockReturnValue([{ id: existingId }]);
+    const result = applyProfile(1, {
+      reminders: [{ trigger: "last_received", text: "Op ping", recurring: false, delay_seconds: 60, mode: "operator" } as { trigger: "last_received"; text: string; recurring: boolean; delay_seconds: number; mode: "operator" }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.addReminder).not.toHaveBeenCalled();
+    const applied = (result as { applied: Record<string, unknown> }).applied;
+    expect((applied.reminders as { updated: string[] }).updated).toContain(existingId);
   });
 });
 
