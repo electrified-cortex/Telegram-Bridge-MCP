@@ -31,6 +31,24 @@ export function kickSseSubscriber(sid: number): void {
   }
 }
 
+/**
+ * Close the open SSE connection for the given session.
+ * Sends `data: cancelled` before closing so the client can exit cleanly.
+ * Idempotent — no-op when no connection is registered.
+ */
+export function cancelSseConnection(sid: number): void {
+  const res = _connections.get(sid);
+  _connections.delete(sid);
+  if (!res) return;
+  try {
+    res.write("data: cancelled\n\n");
+    res.end();
+  } catch {
+    // ignore — connection may have already closed
+  }
+  process.stderr.write(`[sse] connection cancelled sid=${sid}\n`);
+}
+
 export function attachSseRoute(app: Express): void {
   app.get("/sse", (req: Request, res: Response) => {
     const rawToken = req.query.token;

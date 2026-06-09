@@ -31,6 +31,7 @@ import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
 import { attachHookRoutes } from "./hook-animation.js";
 import { attachSseRoute } from "./sse-endpoint.js";
+import { setSseBaseUrl } from "./http-mode.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -145,6 +146,7 @@ try {
 if (mcpPort !== undefined) {
   // ── Streamable HTTP mode (shared server, multiple clients) ──
   const bindHost = process.env.MCP_BIND ?? "127.0.0.1";
+  setSseBaseUrl(`http://${bindHost}:${mcpPort}`);
   const app = createMcpExpressApp({ host: bindHost });
   attachEventRoute(app);
   attachDequeueRoute(app);
