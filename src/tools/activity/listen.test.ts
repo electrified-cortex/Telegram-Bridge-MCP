@@ -35,7 +35,7 @@ vi.mock("../../http-mode.js", () => ({
 }));
 
 vi.mock("../../sse-endpoint.js", () => ({
-  cancelSseConnection: (sid: number) => sseEndpointMocks.cancelSseConnection(sid),
+  cancelSseConnection: (sid: number) => { sseEndpointMocks.cancelSseConnection(sid); },
 }));
 
 import { handleActivityListen } from "./listen.js";
@@ -67,8 +67,8 @@ beforeEach(() => {
 // ── TC1: activity/listen — HTTP mode active ───────────────────────────────────
 
 describe("TC1: activity/listen — HTTP mode active", () => {
-  it("returns ok:true with sse_url and command", async () => {
-    const result = await handleActivityListen({ token: TOKEN });
+  it("returns ok:true with sse_url and command", () => {
+    const result = handleActivityListen({ token: TOKEN });
     expect(isError(result as { isError?: boolean })).toBe(false);
     const body = parseResult(result);
     expect(body.ok).toBe(true);
@@ -77,9 +77,9 @@ describe("TC1: activity/listen — HTTP mode active", () => {
     expect(body.command).toBe(`curl -N '${body.sse_url as string}'`);
   });
 
-  it("builds URL from base URL returned by getSseBaseUrl", async () => {
+  it("builds URL from base URL returned by getSseBaseUrl", () => {
     httpModeMocks.getSseBaseUrl.mockReturnValue("http://192.168.1.10:5000");
-    const result = await handleActivityListen({ token: TOKEN });
+    const result = handleActivityListen({ token: TOKEN });
     const body = parseResult(result);
     expect(body.sse_url).toBe(`http://192.168.1.10:5000/sse?token=${TOKEN}`);
   });
@@ -88,9 +88,9 @@ describe("TC1: activity/listen — HTTP mode active", () => {
 // ── TC2: activity/listen — HTTP mode not active ───────────────────────────────
 
 describe("TC2: activity/listen — HTTP mode not active", () => {
-  it("returns HTTP_MODE_REQUIRED error", async () => {
+  it("returns HTTP_MODE_REQUIRED error", () => {
     httpModeMocks.getSseBaseUrl.mockReturnValue(null);
-    const result = await handleActivityListen({ token: TOKEN });
+    const result = handleActivityListen({ token: TOKEN });
     expect(isError(result as { isError?: boolean })).toBe(true);
     const body = parseResult(result);
     expect(body.code).toBe("HTTP_MODE_REQUIRED");
@@ -100,9 +100,9 @@ describe("TC2: activity/listen — HTTP mode not active", () => {
 // ── TC3: activity/listen — auth failure ──────────────────────────────────────
 
 describe("TC3: activity/listen — auth failure", () => {
-  it("returns AUTH_FAILED error", async () => {
+  it("returns AUTH_FAILED error", () => {
     gateMocks.requireAuth.mockReturnValue(AUTH_ERROR);
-    const result = await handleActivityListen({ token: 99999 });
+    const result = handleActivityListen({ token: 99999 });
     expect(isError(result as { isError?: boolean })).toBe(true);
     const body = parseResult(result);
     expect(body.code).toBe("AUTH_FAILED");
@@ -112,8 +112,8 @@ describe("TC3: activity/listen — auth failure", () => {
 // ── TC4: activity/listen/cancel — connection open ────────────────────────────
 
 describe("TC4: activity/listen/cancel — connection open", () => {
-  it("returns ok:true and calls cancelSseConnection with the sid", async () => {
-    const result = await handleActivityListenCancel({ token: TOKEN });
+  it("returns ok:true and calls cancelSseConnection with the sid", () => {
+    const result = handleActivityListenCancel({ token: TOKEN });
     expect(isError(result as { isError?: boolean })).toBe(false);
     const body = parseResult(result);
     expect(body.ok).toBe(true);
@@ -124,9 +124,9 @@ describe("TC4: activity/listen/cancel — connection open", () => {
 // ── TC5: activity/listen/cancel — no connection open (idempotent) ─────────────
 
 describe("TC5: activity/listen/cancel — idempotent when no connection open", () => {
-  it("returns ok:true even when cancelSseConnection is a no-op", async () => {
+  it("returns ok:true even when cancelSseConnection is a no-op", () => {
     // cancelSseConnection is already a no-op mock by default
-    const result = await handleActivityListenCancel({ token: TOKEN });
+    const result = handleActivityListenCancel({ token: TOKEN });
     expect(isError(result as { isError?: boolean })).toBe(false);
     const body = parseResult(result);
     expect(body.ok).toBe(true);
@@ -137,9 +137,9 @@ describe("TC5: activity/listen/cancel — idempotent when no connection open", (
 // ── TC6: activity/listen/cancel — auth failure ───────────────────────────────
 
 describe("TC6: activity/listen/cancel — auth failure", () => {
-  it("returns AUTH_FAILED error and does not call cancelSseConnection", async () => {
+  it("returns AUTH_FAILED error and does not call cancelSseConnection", () => {
     gateMocks.requireAuth.mockReturnValue(AUTH_ERROR);
-    const result = await handleActivityListenCancel({ token: 99999 });
+    const result = handleActivityListenCancel({ token: 99999 });
     expect(isError(result as { isError?: boolean })).toBe(true);
     const body = parseResult(result);
     expect(body.code).toBe("AUTH_FAILED");

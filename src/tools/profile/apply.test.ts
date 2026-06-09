@@ -311,7 +311,7 @@ describe("applyProfile — last_received/last_sent loop fix (BT-7274)", () => {
     const existingId = contentHash("Op ping", false, "last_received", "operator");
     mocks.listReminders.mockReturnValue([{ id: existingId }]);
     const result = applyProfile(1, {
-      reminders: [{ trigger: "last_received", text: "Op ping", recurring: false, delay_seconds: 60, mode: "operator" } as { trigger: "last_received"; text: string; recurring: boolean; delay_seconds: number; mode: "operator" }],
+      reminders: [{ trigger: "last_received", text: "Op ping", recurring: false, delay_seconds: 60, mode: "operator" }],
     });
     expect("applied" in result).toBe(true);
     expect(mocks.addReminder).not.toHaveBeenCalled();

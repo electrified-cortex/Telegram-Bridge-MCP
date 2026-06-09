@@ -10,7 +10,7 @@ import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
 import { cancelSseConnection } from "../../sse-endpoint.js";
 
-export async function handleActivityListenCancel(args: Record<string, unknown>) {
+export function handleActivityListenCancel(args: Record<string, unknown>) {
   const _sid = requireAuth(args.token as number | undefined);
   if (typeof _sid !== "number") return toError(_sid);
 
