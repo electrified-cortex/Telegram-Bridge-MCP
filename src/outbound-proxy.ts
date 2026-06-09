@@ -17,7 +17,7 @@ import { clearPendingTemp } from "./temp-message.js";
 import { recordOutgoing } from "./message-store.js";
 import { clearAllTempReactions } from "./temp-reaction.js";
 import { getCallerSid } from "./session-context.js";
-import { activeSessionCount, primarySessionCount, getSession } from "./session-manager.js";
+import { primarySessionCount, getSession } from "./session-manager.js";
 import { maybeReplaceRecoveringAnimation } from "./compaction-recovery.js";
 import { escapeHtml } from "./markdown.js";
 import { resolveNameTag } from "./tools/name-tag.js";

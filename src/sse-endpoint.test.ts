@@ -42,7 +42,7 @@ function closeServer(server: http.Server): Promise<void> {
 async function collectSseLines(url: string, count: number, timeoutMs = 2000): Promise<string[]> {
   const lines: string[] = [];
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const timer = setTimeout(() => { ac.abort(); }, timeoutMs);
 
   try {
     const res = await fetch(url, { signal: ac.signal });
