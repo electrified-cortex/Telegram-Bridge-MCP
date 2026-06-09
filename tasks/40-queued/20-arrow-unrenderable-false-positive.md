@@ -25,6 +25,7 @@ character — which is why a blanket char blocklist was the wrong tool.
 ## Approach (recommended -> minimal)
 
 **Recommended — default-off flag (true deprecation):**
+
 1. Gate `warnUnrenderableChars` (src/tools/send.ts:66; call sites L408/L430/L525)
    behind a config flag (e.g. `UNRENDERABLE_WARNING_ENABLED`) that **defaults to
    false**. When off, the scan/emit is skipped entirely (no perf cost, no event).
