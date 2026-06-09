@@ -966,22 +966,17 @@ describe("unrenderable char warning — audio+caption and captionOverflow paths"
   // ---------------------------------------------------------------------------
   // captionOverflow path — unrenderable char in overflow text message
   // ---------------------------------------------------------------------------
-  it("captionOverflow: fires warning when overflow text message contains an unrenderable char", async () => {
+  it("captionOverflow: no warning by default (UNRENDERABLE_WARNING_ENABLED is off)", async () => {
     // Build a string > MAX_CAPTION (1024-60=964) that contains an arrow (→ U+2192)
-    const longTextWithBadChar = "A".repeat(962) + "\u2192end"; // 966 chars > 964, contains →
+    const longTextWithBadChar = "A".repeat(962) + "→end"; // 966 chars > 964, contains →
     const result = await call({ text: longTextWithBadChar, audio: "hello", async: false, token: TOKEN });
 
     expect(isError(result)).toBe(false);
-    const _data = parseResult(result);
     // captionOverflow triggered: voice sent + separate text message
     expect(mocks.sendVoiceDirect).toHaveBeenCalledOnce();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
-    // Warning fired for the overflow text
-    expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
-    const warningMsg = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[1] as string;
-    expect(warningMsg).toContain("U+2192");
-    const eventType = (mocks.deliverServiceMessage.mock.calls[0] as unknown[])[2] as string;
-    expect(eventType).toBe("unrenderable_chars_warning");
+    // Warning suppressed by default -- flip UNRENDERABLE_WARNING_ENABLED to re-enable
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 });
 
