@@ -19,8 +19,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 vi.mock("../../session-manager.js", () => ({
-  getKickLockoutMs: vi.fn((_sid: number): number => 300_000),
-  getKickDebounceMs: vi.fn((_sid: number): number => 60_000),
+  getnotifyLockoutMs: vi.fn((_sid: number): number => 300_000),
+  getnotifyDebounceMs: vi.fn((_sid: number): number => 60_000),
   getDequeueDefault: vi.fn((_sid: number): number => 300),
   setDequeueDefault: vi.fn((_sid: number, _v: number): void => {}),
 }));
@@ -87,8 +87,8 @@ describe("TC2: file registered but missing from disk", () => {
       filePath: "/nonexistent/path/activity-file-that-does-not-exist",
       tmcpOwned: false,
       inflightDequeue: false,
-      kickLockedUntil: null,
-      kickPendingBecauseLocked: false,
+      notifyLockedUntil: null,
+      notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
     });
@@ -127,8 +127,8 @@ describe("TC3: success — file registered and present on disk", () => {
       filePath,
       tmcpOwned: false,
       inflightDequeue: false,
-      kickLockedUntil: null,
-      kickPendingBecauseLocked: false,
+      notifyLockedUntil: null,
+      notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
     });
@@ -201,8 +201,8 @@ describe("TC5: idempotent — rapid repeated calls", () => {
       filePath,
       tmcpOwned: false,
       inflightDequeue: false,
-      kickLockedUntil: null,
-      kickPendingBecauseLocked: false,
+      notifyLockedUntil: null,
+      notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
     });
@@ -242,8 +242,8 @@ describe("TC6: TMCP-owned file", () => {
       filePath,
       tmcpOwned: true,
       inflightDequeue: false,
-      kickLockedUntil: null,
-      kickPendingBecauseLocked: false,
+      notifyLockedUntil: null,
+      notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
     });

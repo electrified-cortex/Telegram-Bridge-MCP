@@ -15,7 +15,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 vi.mock("../../session-manager.js", () => ({
-  getKickDebounceMs: vi.fn((_sid: number): number => 60_000),
+  getnotifyDebounceMs: vi.fn((_sid: number): number => 60_000),
   getDequeueDefault: vi.fn((_sid: number): number => 300),
   setDequeueDefault: vi.fn((_sid: number, _v: number): void => {}),
 }));
@@ -53,8 +53,8 @@ function makeEntry(filePath: string, tmcpOwned: boolean) {
     filePath,
     tmcpOwned,
     inflightDequeue: false,
-    kickLockedUntil: null as number | null,
-    kickPendingBecauseLocked: false,
+    notifyLockedUntil: null as number | null,
+    notifyPendingBecauseLocked: false,
     touchInFlight: false,
     pendingRetryHandle: null as ReturnType<typeof setTimeout> | null,
   };

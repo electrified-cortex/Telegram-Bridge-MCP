@@ -23,6 +23,6 @@ export function handleActivityFileGet(args: Record<string, unknown>) {
   return toResult({
     file_path: entry.filePath,
     tmcp_owned: entry.tmcpOwned,
-    locked_until: entry.kickLockedUntil !== null ? new Date(entry.kickLockedUntil).toISOString() : null,
+    locked_until: entry.notifyLockedUntil !== null ? new Date(entry.notifyLockedUntil).toISOString() : null,
   });
 }

@@ -17,14 +17,14 @@ import {
   resolveIana,
   validateIana,
   toOffsetISO,
-  initReminderSseKick,
+  initReminderSseNotify,
 } from "../../reminder-state.js";
 import { applyProfile } from "../profile/apply.js";
 
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
-  kickSseSubscriber: vi.fn(),
-  kickIfAllowed: vi.fn(),
+  notifySseSubscriber: vi.fn(),
+  notifyIfAllowed: vi.fn(),
 }));
 
 vi.mock("../../session-manager.js", () => ({
@@ -32,12 +32,12 @@ vi.mock("../../session-manager.js", () => ({
 }));
 
 vi.mock("../../sse-endpoint.js", () => ({
-  kickSseSubscriber: mocks.kickSseSubscriber,
+  notifySseSubscriber: mocks.notifySseSubscriber,
 }));
 
 vi.mock("../activity/file-state.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../activity/file-state.js")>()),
-  kickIfAllowed: mocks.kickIfAllowed,
+  notifyIfAllowed: mocks.notifyIfAllowed,
 }));
 
 import { handleScheduleReminder } from "./schedule.js";
@@ -121,7 +121,7 @@ describe("scheduleReminder / reminder-state", () => {
     mocks.validateSession.mockReturnValue(true);
     resetReminderStateForTest();
     // B3: inject the mock SSE kick callback so the sweep can call it
-    initReminderSseKick(mocks.kickSseSubscriber);
+    initReminderSseNotify(mocks.notifySseSubscriber);
   });
 
   it("adds a schedule reminder with correct state and next_fire_ms", () => {
@@ -209,20 +209,20 @@ describe("scheduleReminder / reminder-state", () => {
 
   it("sweep wakes BOTH the SSE subscriber AND the activity-file monitor for a due reminder", () => {
     // A scheduled reminder must wake an agent parked on its activity-FILE monitor (BT,
-    // Curator), not only SSE subscribers. The sweep must call kickIfAllowed, not just
-    // kickSseSubscriber. Without this the reminder fires but never wakes a file-parked agent.
+    // Curator), not only SSE subscribers. The sweep must call notifyIfAllowed, not just
+    // notifySseSubscriber. Without this the reminder fires but never wakes a file-parked agent.
     vi.useFakeTimers();
     try {
-      mocks.kickSseSubscriber.mockClear();
-      mocks.kickIfAllowed.mockClear();
+      mocks.notifySseSubscriber.mockClear();
+      mocks.notifyIfAllowed.mockClear();
       withSid(7, () => {
         scheduleReminder({ id: "s1", text: "Due soon", cron: "0 9 * * *", tz: "UTC" });
         // Force inside the 6s kick-ahead window so the next sweep tick kicks.
         listReminders()[0].next_fire_ms = Date.now() + 3_000;
       });
       vi.advanceTimersByTime(5_000); // one sweep tick (5s interval)
-      expect(mocks.kickSseSubscriber).toHaveBeenCalledWith(7);
-      expect(mocks.kickIfAllowed).toHaveBeenCalledWith(7, "reminder", false);
+      expect(mocks.notifySseSubscriber).toHaveBeenCalledWith(7);
+      expect(mocks.notifyIfAllowed).toHaveBeenCalledWith(7, "reminder", false);
     } finally {
       clearSessionReminders(7);
       vi.useRealTimers();

@@ -30,9 +30,9 @@ import { enableLogging, isLoggingEnabled, rollLog, logEvent as logLocalEvent, fl
 import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
 import { attachHookRoutes } from "./hook-animation.js";
-import { attachSseRoute, kickSseSubscriber } from "./sse-endpoint.js";
+import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
-import { initReminderSseKick } from "./reminder-state.js";
+import { initReminderSseNotify } from "./reminder-state.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -40,7 +40,7 @@ const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-
 process.stderr.write(`[info] [${pkg.name}] v${pkg.version} starting...\n`);
 
 // B3: inject SSE kick callback into reminder-state so domain code never imports transport
-initReminderSseKick(kickSseSubscriber);
+initReminderSseNotify(notifySseSubscriber);
 
 // Initialize security config early so warnings surface at startup
 getSecurityConfig();

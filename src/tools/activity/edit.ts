@@ -46,8 +46,8 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
       filePath,
       tmcpOwned: false,
       inflightDequeue: false,
-      kickLockedUntil: null,
-      kickPendingBecauseLocked: false,
+      notifyLockedUntil: null,
+      notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
     });
@@ -69,8 +69,8 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
     filePath: generatedPath,
     tmcpOwned: true,
     inflightDequeue: false,
-    kickLockedUntil: null,
-    kickPendingBecauseLocked: false,
+    notifyLockedUntil: null,
+    notifyPendingBecauseLocked: false,
     touchInFlight: false,
     pendingRetryHandle: null,
   });

@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseKickLockout, kickIfAllowed } from "./activity/file-state.js";
+import { setDequeueActive, releaseNotifyLockout, notifyIfAllowed } from "./activity/file-state.js";
 import { resetChannelCooldown } from "../channel.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
@@ -330,7 +330,7 @@ export async function runDrainLoop(
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
-    releaseKickLockout(sid); // content-returning exit
+    releaseNotifyLockout(sid); // content-returning exit
     resetChannelCooldown(sid);
     return result;
   }
@@ -353,9 +353,9 @@ export async function runDrainLoop(
         ...(reminderPending > 0 ? { pending: reminderPending } : {}),
       };
       setDequeueActive(sid, false);
-      releaseKickLockout(sid);
+      releaseNotifyLockout(sid);
       resetChannelCooldown(sid);
-      kickIfAllowed(sid, "reminder", false);
+      notifyIfAllowed(sid, "reminder", false);
       return reminderResult;
     }
   }
@@ -519,11 +519,11 @@ export async function runDrainLoop(
     setDequeueActive(sid, false);
     // Release kick lockout on all dequeue exits (content-returning and timeout).
     if (_lockoutRelease) {
-      releaseKickLockout(sid);
+      releaseNotifyLockout(sid);
       resetChannelCooldown(sid);
     }
     if (_reminderKickNeeded) {
-      kickIfAllowed(sid, "reminder", false);
+      notifyIfAllowed(sid, "reminder", false);
     }
   }
 }

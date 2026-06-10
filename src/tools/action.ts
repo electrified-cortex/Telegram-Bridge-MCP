@@ -80,7 +80,7 @@ import { handleActivityFileGet } from "./activity/get.js";
 import { handleActivityFileTouch } from "./activity/touch.js";
 import { handleActivityListen } from "./activity/listen.js";
 import { handleActivityListenCancel } from "./activity/cancel-listen.js";
-import { KICK_DEBOUNCE_MIN_MS, KICK_DEBOUNCE_MAX_MS, LOCKOUT_MIN_MS, LOCKOUT_MAX_MS } from "./activity/file-state.js";
+import { NOTIFY_DEBOUNCE_MIN_MS, NOTIFY_DEBOUNCE_MAX_MS, LOCKOUT_MIN_MS, LOCKOUT_MAX_MS } from "./activity/file-state.js";
 import { handleNameTag } from "./name-tag.js";
 import { decodeToken } from "./identity-schema.js";
 import { getSession } from "../session-manager.js";
@@ -543,7 +543,7 @@ export function register(server: McpServer): void {
           .optional()
           .describe(
             `profile/kick-lockout: Post-kick lockout window in milliseconds (${LOCKOUT_MIN_MS}–${LOCKOUT_MAX_MS}). Omit to get current value. ` +
-            `profile/kick-debounce (deprecated): Accepted range ${KICK_DEBOUNCE_MIN_MS}–${KICK_DEBOUNCE_MAX_MS}; use profile/kick-lockout instead.`,
+            `profile/kick-debounce (deprecated): Accepted range ${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}; use profile/kick-lockout instead.`,
           ),
         // animation/default params
         frames: z

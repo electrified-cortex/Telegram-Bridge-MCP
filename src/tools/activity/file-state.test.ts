@@ -5,7 +5,7 @@
  *  AC1. Cold-start kick fires immediately (no lockout)
  *  AC2. Burst single-kick: N messages in lockout window → exactly one mtime change
  *  AC3. Stale-lockout safety net: after LOCKOUT_MS expiry, next inbound fires again
- *  AC4. Post-content-DQ snap: releaseKickLockout clears lockout → next inbound fires
+ *  AC4. Post-content-DQ snap: releaseNotifyLockout clears lockout → next inbound fires
  *  AC5. Suppressed-during-lockout re-evaluation fires after lockout release
  *  AC6. Polling agent (timeout dequeue) does NOT release kick lockout
  *  AC7. In-flight dequeue suppresses kicks (agent reads inline)
@@ -32,13 +32,13 @@ vi.mock("../../session-gate.js", () => ({
 
 // Mock session-manager
 const sessionMocks = vi.hoisted(() => ({
-  getKickLockoutMs: vi.fn((_sid: number): number => 300_000),
+  getnotifyLockoutMs: vi.fn((_sid: number): number => 300_000),
   getDequeueDefault: vi.fn((_sid: number): number => 300),
   setDequeueDefault: vi.fn((_sid: number, _v: number): void => {}),
 }));
 
 vi.mock("../../session-manager.js", () => ({
-  getKickLockoutMs: (sid: number) => sessionMocks.getKickLockoutMs(sid),
+  getnotifyLockoutMs: (sid: number) => sessionMocks.getnotifyLockoutMs(sid),
   getDequeueDefault: (sid: number) => sessionMocks.getDequeueDefault(sid),
   setDequeueDefault: (sid: number, v: number) => { sessionMocks.setDequeueDefault(sid, v); },
 }));
@@ -67,10 +67,10 @@ import { appendFile, mkdir, open } from "fs/promises";
 import {
   setActivityFile,
   getActivityFile,
-  kickIfAllowed,
+  notifyIfAllowed,
   setDequeueActive,
-  releaseKickLockout,
-  resetKickGateState,
+  releaseNotifyLockout,
+  resetNotifyGateState,
   handleSessionStopped,
   replaceActivityFile,
   resetActivityFileStateForTest,
@@ -88,8 +88,8 @@ function makeState(overrides: Partial<ActivityFileState> = {}): ActivityFileStat
     filePath: "/tmp/test-activity-file",
     tmcpOwned: false,
     inflightDequeue: false,
-    kickLockedUntil: null,
-    kickPendingBecauseLocked: false,
+    notifyLockedUntil: null,
+    notifyPendingBecauseLocked: false,
     touchInFlight: false,
     pendingRetryHandle: null,
     ...overrides,
@@ -101,7 +101,7 @@ describe("kick-lockout gate — ACs 1-10", () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     resetActivityFileStateForTest();
-    sessionMocks.getKickLockoutMs.mockReturnValue(LOCKOUT_MS);
+    sessionMocks.getnotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
     queueMocks.hasPendingUserContent.mockReturnValue(true);
     vi.mocked(appendFile).mockResolvedValue(undefined);
   });
@@ -114,18 +114,18 @@ describe("kick-lockout gate — ACs 1-10", () => {
   it("AC1: fresh session, operator message → kick fires immediately", () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
 
     const entry = getActivityFile(SID)!;
     expect(entry.touchInFlight).toBe(true);              // async touch in progress
-    expect(entry.kickLockedUntil).not.toBeNull();         // lockout set
-    expect(entry.kickPendingBecauseLocked).toBe(false);   // no suppression
+    expect(entry.notifyLockedUntil).not.toBeNull();         // lockout set
+    expect(entry.notifyPendingBecauseLocked).toBe(false);   // no suppression
   });
 
   it("AC1: appendFile is called on first kick", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
@@ -136,29 +136,29 @@ describe("kick-lockout gate — ACs 1-10", () => {
     setActivityFile(SID, makeState());
 
     // First kick sets lockout
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
     const entry = getActivityFile(SID)!;
-    expect(entry.kickLockedUntil).not.toBeNull(); // lockout active
+    expect(entry.notifyLockedUntil).not.toBeNull(); // lockout active
 
     // 9 more messages during lockout — all suppressed
     for (let i = 0; i < 9; i++) {
-      kickIfAllowed(SID, "operator", false);
+      notifyIfAllowed(SID, "operator", false);
     }
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1); // still just 1
-    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(true);
+    expect(getActivityFile(SID)!.notifyPendingBecauseLocked).toBe(true);
   });
 
   // ── AC 3: Stale-lockout safety net ────────────────────────────────────────
   it("AC3: after LOCKOUT_MS expires, next inbound fires another kick", async () => {
-    sessionMocks.getKickLockoutMs.mockReturnValue(5_000); // short lockout for test
+    sessionMocks.getnotifyLockoutMs.mockReturnValue(5_000); // short lockout for test
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
 
@@ -166,28 +166,28 @@ describe("kick-lockout gate — ACs 1-10", () => {
     vi.advanceTimersByTime(6_000);
 
     // Next inbound should fire a fresh kick (lockout expired)
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
   });
 
   // ── AC 4: Post-content-DQ snap ────────────────────────────────────────────
-  it("AC4: releaseKickLockout clears lockout; next inbound kicks immediately", async () => {
-    sessionMocks.getKickLockoutMs.mockReturnValue(5_000);
+  it("AC4: releaseNotifyLockout clears lockout; next inbound kicks immediately", async () => {
+    sessionMocks.getnotifyLockoutMs.mockReturnValue(5_000);
     setActivityFile(SID, makeState());
 
     // Set lockout via first kick
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
-    expect(getActivityFile(SID)!.kickLockedUntil).not.toBeNull();
+    expect(getActivityFile(SID)!.notifyLockedUntil).not.toBeNull();
 
     // Content-returning dequeue releases lockout
-    releaseKickLockout(SID);
-    expect(getActivityFile(SID)!.kickLockedUntil).toBeNull();
+    releaseNotifyLockout(SID);
+    expect(getActivityFile(SID)!.notifyLockedUntil).toBeNull();
 
     // Next inbound should kick immediately (lockout cleared)
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
   });
@@ -197,36 +197,36 @@ describe("kick-lockout gate — ACs 1-10", () => {
     setActivityFile(SID, makeState());
 
     // M1 kick
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
 
     // M2 suppressed during lockout
-    kickIfAllowed(SID, "operator", false);
-    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(true);
+    notifyIfAllowed(SID, "operator", false);
+    expect(getActivityFile(SID)!.notifyPendingBecauseLocked).toBe(true);
 
     // Agent dequeues (content-returning) → lockout releases → re-eval kick fires
     queueMocks.hasPendingUserContent.mockReturnValue(true); // M2 still in queue
-    releaseKickLockout(SID);
+    releaseNotifyLockout(SID);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     // Re-evaluation kick should have fired
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
-    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(false);
+    expect(getActivityFile(SID)!.notifyPendingBecauseLocked).toBe(false);
   });
 
   it("AC5: if queue drained before lockout release → no spurious re-eval kick", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
-    kickIfAllowed(SID, "operator", false); // suppressed
-    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(true);
+    notifyIfAllowed(SID, "operator", false); // suppressed
+    expect(getActivityFile(SID)!.notifyPendingBecauseLocked).toBe(true);
 
     // Queue is now empty (agent dequeued everything)
     queueMocks.hasPendingUserContent.mockReturnValue(false);
-    releaseKickLockout(SID);
+    releaseNotifyLockout(SID);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     // No re-eval kick — queue was empty
@@ -234,81 +234,81 @@ describe("kick-lockout gate — ACs 1-10", () => {
   });
 
   // ── AC 6: Lockout release is opt-in — setDequeueActive alone does not clear it ──
-  // NOTE (BT-2301): dequeue.ts now calls releaseKickLockout on ALL exit paths
+  // NOTE (BT-2301): dequeue.ts now calls releaseNotifyLockout on ALL exit paths
   // (content-returning AND timeout). The unit invariant below still holds:
   // setDequeueActive(false) alone does NOT release the lockout — only
-  // releaseKickLockout() does. The integration test for the new timeout-exit
+  // releaseNotifyLockout() does. The integration test for the new timeout-exit
   // behavior lives in src/tools/dequeue.test.ts ("timeout-exit lockout release").
   it("AC6: setDequeueActive(false) alone does NOT release kick lockout", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
-    const lockedUntil = getActivityFile(SID)!.kickLockedUntil;
+    const lockedUntil = getActivityFile(SID)!.notifyLockedUntil;
     expect(lockedUntil).not.toBeNull();
 
-    // setDequeueActive cycle without calling releaseKickLockout
+    // setDequeueActive cycle without calling releaseNotifyLockout
     setDequeueActive(SID, true);
     setDequeueActive(SID, false);
-    // releaseKickLockout NOT called
+    // releaseNotifyLockout NOT called
 
-    // Lockout must still be active — only releaseKickLockout() clears it
-    expect(getActivityFile(SID)!.kickLockedUntil).toBe(lockedUntil);
+    // Lockout must still be active — only releaseNotifyLockout() clears it
+    expect(getActivityFile(SID)!.notifyLockedUntil).toBe(lockedUntil);
   });
 
-  it("AC6: releaseKickLockout clears lockout (timeout-exit path now calls it — BT-2301)", async () => {
+  it("AC6: releaseNotifyLockout clears lockout (timeout-exit path now calls it — BT-2301)", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
-    expect(getActivityFile(SID)!.kickLockedUntil).not.toBeNull();
+    expect(getActivityFile(SID)!.notifyLockedUntil).not.toBeNull();
 
     // Simulate the new timeout-exit behavior: dequeue.ts now sets _lockoutRelease=true
-    // on timeout exits, so the finally block calls releaseKickLockout.
-    releaseKickLockout(SID);
+    // on timeout exits, so the finally block calls releaseNotifyLockout.
+    releaseNotifyLockout(SID);
 
     // Lockout is cleared — a subsequent kick from a reminder will not be suppressed
-    expect(getActivityFile(SID)!.kickLockedUntil).toBeNull();
+    expect(getActivityFile(SID)!.notifyLockedUntil).toBeNull();
   });
 
   it("AC6: message arriving during lockout while agent polls → no additional kick", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
 
     // Operator sends during lockout
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     // Still exactly one kick
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
-    expect(getActivityFile(SID)!.kickPendingBecauseLocked).toBe(true);
+    expect(getActivityFile(SID)!.notifyPendingBecauseLocked).toBe(true);
   });
 
   // ── AC 7: In-flight dequeue suppresses kicks ───────────────────────────────
   it("AC7: operator message during inflight dequeue → zero appendFile calls", async () => {
     setActivityFile(SID, makeState({ inflightDequeue: true }));
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
     // Lockout should NOT be set (kick was suppressed by inflightDequeue check)
-    expect(getActivityFile(SID)!.kickLockedUntil).toBeNull();
+    expect(getActivityFile(SID)!.notifyLockedUntil).toBeNull();
   });
 
   it("AC7: after dequeue ends (setDequeueActive false), next inbound fires kick", async () => {
     setActivityFile(SID, makeState({ inflightDequeue: true }));
 
-    kickIfAllowed(SID, "operator", false); // suppressed — inflight
+    notifyIfAllowed(SID, "operator", false); // suppressed — inflight
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
 
     setDequeueActive(SID, false);
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
   });
@@ -320,12 +320,12 @@ describe("kick-lockout gate — ACs 1-10", () => {
     );
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     const entry = getActivityFile(SID)!;
     // Lockout should be rolled back after failure
-    expect(entry.kickLockedUntil).toBeNull();
+    expect(entry.notifyLockedUntil).toBeNull();
     expect(entry.touchInFlight).toBe(false);
     // pendingRetryHandle should be set (retry scheduled)
     expect(entry.pendingRetryHandle).not.toBeNull();
@@ -337,11 +337,11 @@ describe("kick-lockout gate — ACs 1-10", () => {
       .mockResolvedValue(undefined); // retry succeeds
 
     setActivityFile(SID, makeState());
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve(); // first attempt fails, retry scheduled
 
     const entryAfterFail = getActivityFile(SID)!;
-    expect(entryAfterFail.kickLockedUntil).toBeNull();
+    expect(entryAfterFail.notifyLockedUntil).toBeNull();
     expect(entryAfterFail.pendingRetryHandle).not.toBeNull();
 
     // Fire the retry timer (1s delay)
@@ -349,7 +349,7 @@ describe("kick-lockout gate — ACs 1-10", () => {
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     const entryAfterRetry = getActivityFile(SID)!;
-    expect(entryAfterRetry.kickLockedUntil).not.toBeNull(); // set after retry success
+    expect(entryAfterRetry.notifyLockedUntil).not.toBeNull(); // set after retry success
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
   });
 
@@ -357,17 +357,17 @@ describe("kick-lockout gate — ACs 1-10", () => {
   it("AC9: service message during inflight dequeue (inflightAtEnqueue=true) → no kick", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "service", true); // inflightAtEnqueue=true
+    notifyIfAllowed(SID, "service", true); // inflightAtEnqueue=true
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
-    expect(getActivityFile(SID)!.kickLockedUntil).toBeNull();
+    expect(getActivityFile(SID)!.notifyLockedUntil).toBeNull();
   });
 
   it("AC9: service message to idle session (inflightAtEnqueue=false) → kick fires", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "service", false); // inflightAtEnqueue=false → idle session
+    notifyIfAllowed(SID, "service", false); // inflightAtEnqueue=false → idle session
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
@@ -376,7 +376,7 @@ describe("kick-lockout gate — ACs 1-10", () => {
   it("AC9: reminder to idle session → kick fires", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "reminder", false);
+    notifyIfAllowed(SID, "reminder", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
@@ -385,36 +385,36 @@ describe("kick-lockout gate — ACs 1-10", () => {
   it("AC9: bridge-internal event → no kick regardless of inflightAtEnqueue", async () => {
     setActivityFile(SID, makeState());
 
-    kickIfAllowed(SID, "bridge-internal", false);
-    kickIfAllowed(SID, "bridge-internal", true);
+    notifyIfAllowed(SID, "bridge-internal", false);
+    notifyIfAllowed(SID, "bridge-internal", true);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
   });
 
   // ── AC 10: Reconnect resets state ─────────────────────────────────────────
-  it("AC10: resetKickGateState clears lockout mid-lockout", async () => {
+  it("AC10: resetNotifyGateState clears lockout mid-lockout", async () => {
     setActivityFile(SID, makeState());
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
-    expect(getActivityFile(SID)!.kickLockedUntil).not.toBeNull();
+    expect(getActivityFile(SID)!.notifyLockedUntil).not.toBeNull();
 
-    resetKickGateState(SID);
+    resetNotifyGateState(SID);
 
     const entry = getActivityFile(SID)!;
-    expect(entry.kickLockedUntil).toBeNull();
-    expect(entry.kickPendingBecauseLocked).toBe(false);
+    expect(entry.notifyLockedUntil).toBeNull();
+    expect(entry.notifyPendingBecauseLocked).toBe(false);
     expect(entry.touchInFlight).toBe(false);
   });
 
-  it("AC10: next inbound after resetKickGateState triggers immediate kick", async () => {
+  it("AC10: next inbound after resetNotifyGateState triggers immediate kick", async () => {
     setActivityFile(SID, makeState());
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     vi.mocked(appendFile).mockClear();
 
-    resetKickGateState(SID);
-    kickIfAllowed(SID, "operator", false);
+    resetNotifyGateState(SID);
+    notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
 
     expect(vi.mocked(appendFile)).toHaveBeenCalledOnce();
@@ -427,7 +427,7 @@ describe("kick-lockout gate — ACs 1-10", () => {
   });
 
   it("handleSessionStopped: resets gate and kicks if queue has pending", async () => {
-    setActivityFile(SID, makeState({ kickLockedUntil: Date.now() + 300_000 }));
+    setActivityFile(SID, makeState({ notifyLockedUntil: Date.now() + 300_000 }));
     queueMocks.hasPendingUserContent.mockReturnValue(true);
 
     const result = handleSessionStopped(SID);
@@ -438,7 +438,7 @@ describe("kick-lockout gate — ACs 1-10", () => {
   });
 
   it("handleSessionStopped: resets gate but does NOT kick if queue empty", async () => {
-    setActivityFile(SID, makeState({ kickLockedUntil: Date.now() + 300_000 }));
+    setActivityFile(SID, makeState({ notifyLockedUntil: Date.now() + 300_000 }));
     queueMocks.hasPendingUserContent.mockReturnValue(false);
 
     handleSessionStopped(SID);
@@ -446,12 +446,12 @@ describe("kick-lockout gate — ACs 1-10", () => {
 
     expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
     const entry = getActivityFile(SID)!;
-    expect(entry.kickLockedUntil).toBeNull(); // reset, not kicked
+    expect(entry.notifyLockedUntil).toBeNull(); // reset, not kicked
   });
 
   // ── replaceActivityFile ────────────────────────────────────────────────────
   it("replaceActivityFile: carries over gate state from old entry", async () => {
-    const oldState = makeState({ kickLockedUntil: Date.now() + 300_000 });
+    const oldState = makeState({ notifyLockedUntil: Date.now() + 300_000 });
     setActivityFile(SID, oldState);
 
     const newState = makeState({ filePath: "/tmp/new-file" });
@@ -459,18 +459,18 @@ describe("kick-lockout gate — ACs 1-10", () => {
 
     const entry = getActivityFile(SID)!;
     expect(entry).toBe(newState);
-    expect(entry.kickLockedUntil).toBe(oldState.kickLockedUntil); // carried over
+    expect(entry.notifyLockedUntil).toBe(oldState.notifyLockedUntil); // carried over
   });
 
-  it("replaceActivityFile: concurrent kickIfAllowed reaches new entry", async () => {
-    const oldState = makeState({ kickLockedUntil: null }); // no lockout
+  it("replaceActivityFile: concurrent notifyIfAllowed reaches new entry", async () => {
+    const oldState = makeState({ notifyLockedUntil: null }); // no lockout
     setActivityFile(SID, oldState);
 
-    const newState = makeState({ filePath: "/tmp/new-file", kickLockedUntil: null });
+    const newState = makeState({ filePath: "/tmp/new-file", notifyLockedUntil: null });
     const replacePromise = replaceActivityFile(SID, newState);
 
     // Touch fires while replace is still awaiting cleanup
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
 
     await replacePromise;
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
@@ -478,7 +478,7 @@ describe("kick-lockout gate — ACs 1-10", () => {
     // newState should have been kicked
     const entry = getActivityFile(SID)!;
     expect(entry).toBe(newState);
-    expect(entry.kickLockedUntil).not.toBeNull();
+    expect(entry.notifyLockedUntil).not.toBeNull();
   });
 });
 
@@ -492,7 +492,7 @@ describe("activity/file/create — ALREADY_REGISTERED guard", () => {
     resetActivityFileStateForTest();
     gateMocks.requireAuth.mockReturnValue(SID);
     queueMocks.hasPendingUserContent.mockReturnValue(true);
-    sessionMocks.getKickLockoutMs.mockReturnValue(LOCKOUT_MS);
+    sessionMocks.getnotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
   });
 
   afterEach(() => {
@@ -549,7 +549,7 @@ describe("appendNewline ENOENT recovery", () => {
     vi.clearAllMocks();
     resetActivityFileStateForTest();
     queueMocks.hasPendingUserContent.mockReturnValue(true);
-    sessionMocks.getKickLockoutMs.mockReturnValue(LOCKOUT_MS);
+    sessionMocks.getnotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
   });
 
   afterEach(async () => {
@@ -561,7 +561,7 @@ describe("appendNewline ENOENT recovery", () => {
     vi.mocked(appendFile).mockRejectedValueOnce(enoentErr);
 
     setActivityFile(SID, makeState());
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
 
     for (let i = 0; i < 10; i++) await Promise.resolve();
 
@@ -581,7 +581,7 @@ describe("appendNewline ENOENT recovery", () => {
     vi.mocked(mkdir).mockRejectedValueOnce(new Error("EPERM: permission denied"));
 
     setActivityFile(SID, makeState());
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
 
     for (let i = 0; i < 10; i++) await Promise.resolve();
 
@@ -592,7 +592,7 @@ describe("appendNewline ENOENT recovery", () => {
 
   it("no warn, single appendFile call when file exists (normal touch)", async () => {
     setActivityFile(SID, makeState());
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
 
     for (let i = 0; i < 10; i++) await Promise.resolve();
 
@@ -606,13 +606,13 @@ describe("appendNewline ENOENT recovery", () => {
     vi.mocked(mkdir).mockRejectedValueOnce(new Error("EPERM"));
 
     setActivityFile(SID, makeState());
-    kickIfAllowed(SID, "operator", false);
+    notifyIfAllowed(SID, "operator", false);
 
     for (let i = 0; i < 10; i++) await Promise.resolve();
 
     // Touch ultimately failed → lockout must be rolled back
     const entry = getActivityFile(SID)!;
-    expect(entry.kickLockedUntil).toBeNull();
+    expect(entry.notifyLockedUntil).toBeNull();
     expect(entry.touchInFlight).toBe(false);
   });
 });
