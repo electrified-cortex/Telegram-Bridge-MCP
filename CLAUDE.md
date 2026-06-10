@@ -1,7 +1,3 @@
-# TMCP — Agent Startup Notes
+# Dev Guide
 
-## Package manager
-Strongly prefer **pnpm** for all package operations (`pnpm install`, `pnpm test`, `pnpm run <script>`).
-Use npm only if absolutely necessary (e.g. a tool explicitly requires it).
-
-The repo uses `pnpm-lock.yaml` — avoid npm to keep the lockfile consistent.
+Use `pnpm` for all package operations (`pnpm install`, `pnpm build`, `pnpm test`, etc).
