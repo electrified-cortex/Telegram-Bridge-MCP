@@ -104,6 +104,8 @@ export interface ActivityFileState {
   touchInFlight: boolean;
   /** setTimeout handle for the next bounded retry; null if none. */
   pendingRetryHandle: ReturnType<typeof setTimeout> | null;
+  /** setTimeout handle for the one-shot 5-min active re-notify; null if none. */
+  pendingReNotifyHandle: ReturnType<typeof setTimeout> | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +331,19 @@ export function notifyIfAllowed(
 
   // 5. Notify — synchronous reservation before async touch
   entry.touchInFlight = true;
-  entry.notifyLockedUntil = now + getNotifyLockoutMs(sid);
+  // Cancel any existing re-notify timer before registering a new one
+  if (entry.pendingReNotifyHandle !== null) {
+    clearTimeout(entry.pendingReNotifyHandle);
+  }
+  const lockoutMs = getNotifyLockoutMs(sid);
+  entry.notifyLockedUntil = now + lockoutMs;
+  entry.pendingReNotifyHandle = setTimeout(() => {
+    entry.pendingReNotifyHandle = null;
+    // TODO §5-b: include reminder types once §5-b lands
+    if (hasPendingUserContent(sid)) {
+      fireRevaluationNotify(sid);
+    }
+  }, lockoutMs);
   entry.notifyPendingBecauseLocked = false;
   void doTouchWithRollback(sid, entry);
 }
@@ -345,6 +359,10 @@ export function releaseNotifyLockout(sid: number): void {
   if (entry.notifyLockedUntil === null && !entry.notifyPendingBecauseLocked) return;
 
   const pending = entry.notifyPendingBecauseLocked;
+  if (entry.pendingReNotifyHandle !== null) {
+    clearTimeout(entry.pendingReNotifyHandle);
+    entry.pendingReNotifyHandle = null;
+  }
   entry.notifyLockedUntil = null;
   entry.notifyPendingBecauseLocked = false;
 
@@ -379,6 +397,11 @@ export function resetNotifyGateState(sid: number): void {
     entry.pendingRetryHandle = null;
   }
 
+  if (entry.pendingReNotifyHandle !== null) {
+    clearTimeout(entry.pendingReNotifyHandle);
+    entry.pendingReNotifyHandle = null;
+  }
+
   entry.notifyLockedUntil = null;
   entry.notifyPendingBecauseLocked = false;
   entry.touchInFlight = false;
@@ -405,6 +428,12 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
   if (entry.pendingRetryHandle !== null) {
     clearTimeout(entry.pendingRetryHandle);
     entry.pendingRetryHandle = null;
+  }
+
+  // Cancel any pending re-notify timer (prevents ghost timer after restart)
+  if (entry.pendingReNotifyHandle !== null) {
+    clearTimeout(entry.pendingReNotifyHandle);
+    entry.pendingReNotifyHandle = null;
   }
 
   // Reset all gate state
@@ -434,6 +463,11 @@ export async function clearActivityFile(sid: number): Promise<void> {
   if (entry.pendingRetryHandle !== null) {
     clearTimeout(entry.pendingRetryHandle);
     entry.pendingRetryHandle = null;
+  }
+
+  if (entry.pendingReNotifyHandle !== null) {
+    clearTimeout(entry.pendingReNotifyHandle);
+    entry.pendingReNotifyHandle = null;
   }
 
   _state.delete(sid);
@@ -466,6 +500,8 @@ export async function replaceActivityFile(
     newState.touchInFlight = oldEntry.touchInFlight;
     // Do not carry over pendingRetryHandle — old retry targets old file path
     newState.pendingRetryHandle = null;
+    // Do not carry over pendingReNotifyHandle — cancel old timer, new entry starts fresh
+    newState.pendingReNotifyHandle = null;
   }
 
   // Write new entry first — notify logic reads this immediately
@@ -477,6 +513,12 @@ export async function replaceActivityFile(
   if (oldEntry.pendingRetryHandle !== null) {
     clearTimeout(oldEntry.pendingRetryHandle);
     oldEntry.pendingRetryHandle = null;
+  }
+
+  // Cancel any pending re-notify timer on the old entry
+  if (oldEntry.pendingReNotifyHandle !== null) {
+    clearTimeout(oldEntry.pendingReNotifyHandle);
+    oldEntry.pendingReNotifyHandle = null;
   }
 
   // Delete old TMCP-owned file (best-effort, after new path is registered)
@@ -515,6 +557,10 @@ export async function clearAllActivityFiles(): Promise<void> {
 export function resetActivityFileStateForTest(): void {
   for (const entry of _state.values()) {
     if (entry.pendingRetryHandle !== null) clearTimeout(entry.pendingRetryHandle);
+    if (entry.pendingReNotifyHandle !== null) {
+      clearTimeout(entry.pendingReNotifyHandle);
+      entry.pendingReNotifyHandle = null;
+    }
   }
   _state.clear();
   _activityDirReady = false;

@@ -50,6 +50,7 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
       notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
+      pendingReNotifyHandle: null,
     });
 
     return toResult({ file_path: filePath, hint: "Call help('activity/file') now", previous_path: previousPath });
@@ -73,6 +74,7 @@ export async function handleActivityFileEdit(args: Record<string, unknown>) {
     notifyPendingBecauseLocked: false,
     touchInFlight: false,
     pendingRetryHandle: null,
+    pendingReNotifyHandle: null,
   });
 
   return toResult({ file_path: generatedPath, hint: "Call help('activity/file') now", previous_path: previousPath });

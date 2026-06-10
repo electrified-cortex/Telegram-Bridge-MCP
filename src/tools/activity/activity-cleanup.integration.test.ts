@@ -57,6 +57,7 @@ function makeEntry(filePath: string, tmcpOwned: boolean) {
     notifyPendingBecauseLocked: false,
     touchInFlight: false,
     pendingRetryHandle: null as ReturnType<typeof setTimeout> | null,
+    pendingReNotifyHandle: null as ReturnType<typeof setTimeout> | null,
   };
 }
 
