@@ -133,6 +133,8 @@ const reminderMocks = vi.hoisted(() => ({
   getSoonestDeferredMs: vi.fn((_sid: number): number | null => null),
   popFireableEventReminders: vi.fn((_sid: number): unknown[] => []),
   getSoonestEventReminderMs: vi.fn((_sid: number): number | null => null),
+  popFireableScheduleReminders: vi.fn((_sid: number): unknown[] => []),
+  getSoonestScheduleFireMs: vi.fn((_sid: number): number | null => null),
   buildReminderEvent: vi.fn((r: unknown) => ({
     id: -1,
     event: "reminder",
@@ -149,6 +151,8 @@ vi.mock("../reminder-state.js", () => ({
   getSoonestDeferredMs: (sid: number) => reminderMocks.getSoonestDeferredMs(sid),
   popFireableEventReminders: (sid: number) => reminderMocks.popFireableEventReminders(sid),
   getSoonestEventReminderMs: (sid: number) => reminderMocks.getSoonestEventReminderMs(sid),
+  popFireableScheduleReminders: (sid: number) => reminderMocks.popFireableScheduleReminders(sid),
+  getSoonestScheduleFireMs: (sid: number) => reminderMocks.getSoonestScheduleFireMs(sid),
   buildReminderEvent: (r: unknown) => reminderMocks.buildReminderEvent(r),
 }));
 
@@ -205,6 +209,8 @@ describe("dequeue tool", () => {
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
     reminderMocks.popFireableEventReminders.mockReturnValue([]);
     reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     mocks.peekSessionCategories.mockReturnValue(undefined);
@@ -1596,6 +1602,8 @@ describe("checkDequeueRate (runaway-dequeue rate guard)", () => {
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
     reminderMocks.popFireableEventReminders.mockReturnValue([]);
     reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     mocks.peekSessionCategories.mockReturnValue(undefined);

@@ -60,16 +60,28 @@ export function handleSaveProfile({ key, token, autoload = false }: { key: strin
   }
 
   if (reminders.length > 0) {
-    data.reminders = reminders.map(r => ({
-      text: r.text,
-      ...(r.trigger !== "startup" ? { delay_seconds: r.delay_seconds } : {}),
-      recurring: r.recurring,
-      ...(r.trigger !== "time" ? { trigger: r.trigger } : {}),
-      ...(r.trigger === "last_received" ? { mode: r.mode ?? "all" } : {}),
-      // Persist disabled flag — intentional permanent mute survives restart.
-      // sleep_until and last_fired_for are NOT persisted — transient state.
-      ...(r.disabled ? { disabled: true } : {}),
-    }));
+    data.reminders = reminders.map(r => {
+      // G-4/G-B: schedule reminders serialize cron+tz only; skip delay_seconds, next_fire_ms, timeoutHandle
+      if (r.trigger === "schedule") {
+        return {
+          trigger: "schedule" as const,
+          text: r.text,
+          cron: r.cron ?? "",
+          ...(r.tz ? { tz: r.tz } : {}),
+          ...(r.disabled ? { disabled: true } : {}),
+        };
+      }
+      return {
+        text: r.text,
+        ...(r.trigger !== "startup" ? { delay_seconds: r.delay_seconds } : {}),
+        recurring: r.recurring,
+        ...(r.trigger !== "time" ? { trigger: r.trigger } : {}),
+        ...(r.trigger === "last_received" ? { mode: r.mode ?? "all" } : {}),
+        // Persist disabled flag — intentional permanent mute survives restart.
+        // sleep_until and last_fired_for are NOT persisted — transient state.
+        ...(r.disabled ? { disabled: true } : {}),
+      };
+    });
     sections.push("reminders");
   }
 

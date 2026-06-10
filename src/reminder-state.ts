@@ -5,12 +5,15 @@
  * - `deferred` — has a `delay_seconds` > 0 that has not yet elapsed. Cannot fire yet.
  * - `active`   — delay has elapsed (or was 0). Fires after 60 s of idle within `dequeue`.
  * - `startup`  — fires on the next `session_start` (including reconnects), not on a timer.
+ * - `schedule` — wall-clock cron-based; fires when now >= next_fire_ms, checked in dequeue.
  *
  * Reminders are keyed by SID (per-session, all in-memory).
  */
 
 import { createHash } from "crypto";
+import { Cron } from "croner";
 import { getCallerSid } from "./session-context.js";
+import { kickSseSubscriber } from "./sse-endpoint.js";
 
 /**
  * Deterministic reminder ID derived from content.
@@ -20,7 +23,7 @@ import { getCallerSid } from "./session-context.js";
 export function reminderContentHash(
   text: string,
   recurring: boolean,
-  trigger: "time" | "startup" | "last_sent" | "last_received" = "time",
+  trigger: "time" | "startup" | "last_sent" | "last_received" | "schedule" = "time",
   mode?: "all" | "operator",
   only_if_silent?: boolean,
 ): string {
@@ -35,7 +38,7 @@ export interface Reminder {
   text: string;
   delay_seconds: number;
   recurring: boolean;
-  trigger: "time" | "startup" | "last_sent" | "last_received";
+  trigger: "time" | "startup" | "last_sent" | "last_received" | "schedule";
   /** Only set for `last_received` reminders. Defaults to "all" if omitted. */
   mode?: "all" | "operator";
   /**
@@ -45,7 +48,7 @@ export interface Reminder {
   only_if_silent?: boolean;
   created_at: number;      // Date.now() when added
   activated_at: number | null; // Date.now() when promoted to active (null if still deferred/startup)
-  state: "deferred" | "active" | "startup" | "event_pending";
+  state: "deferred" | "active" | "startup" | "event_pending" | "schedule";
   /**
    * Persists across session restart / profile-save.
    * When true the reminder will not fire until re-enabled.
@@ -62,10 +65,121 @@ export interface Reminder {
    * Cleared implicitly when a new qualifying event arrives (new timestamp ≠ last_fired_for).
    */
   last_fired_for?: number;
+  /** For `schedule` only: 5-field cron expression. */
+  cron?: string;
+  /** For `schedule` only: resolved IANA timezone (e.g. "America/New_York"). */
+  tz?: string;
+  /** For `schedule` only: epoch ms of the next fire. Runtime-only — not persisted. */
+  next_fire_ms?: number;
 }
 
 const _reminders = new Map<number, Reminder[]>();
 let _nextEventId = -10_000;
+
+// ── Schedule sweep (shared, module-level) ─────────────────────────────────
+// Single 5-second interval; starts on first reminder/schedule, stops when last is removed.
+// Sends a kick (wake signal) when next_fire_ms is within 6 s. The actual fire happens
+// in dequeue's in-loop check (popFireableScheduleReminders), not here.
+
+const _scheduleSids = new Set<number>();
+let _sweepInterval: ReturnType<typeof setInterval> | null = null;
+const SCHEDULE_SWEEP_INTERVAL_MS = 5_000;
+const SCHEDULE_KICK_AHEAD_MS = 6_000;
+
+function startScheduleSweep(): void {
+  if (_sweepInterval !== null) return;
+  _sweepInterval = setInterval(() => {
+    const now = Date.now();
+    for (const sid of _scheduleSids) {
+      const list = _reminders.get(sid) ?? [];
+      const kickNeeded = list.some(r =>
+        r.trigger === "schedule" &&
+        !r.disabled &&
+        r.next_fire_ms !== undefined &&
+        r.next_fire_ms - now <= SCHEDULE_KICK_AHEAD_MS,
+      );
+      if (kickNeeded) kickSseSubscriber(sid);
+    }
+  }, SCHEDULE_SWEEP_INTERVAL_MS);
+}
+
+function stopScheduleSweep(): void {
+  if (_scheduleSids.size > 0) return;
+  if (_sweepInterval !== null) {
+    clearInterval(_sweepInterval);
+    _sweepInterval = null;
+  }
+}
+
+// ── Timezone / cron utilities ─────────────────────────────────────────────
+
+const TIMEZONE_ALIASES: Record<string, string> = {
+  // DST-aware mappings — abbreviation always resolves to the IANA zone
+  PST: "America/Los_Angeles",
+  PDT: "America/Los_Angeles",
+  MST: "America/Denver",   // DST-aware; MDT handled by same zone
+  MDT: "America/Denver",
+  CST: "America/Chicago",
+  CDT: "America/Chicago",
+  EST: "America/New_York",
+  EDT: "America/New_York",
+  UTC: "UTC",
+  GMT: "Etc/GMT",
+};
+
+/** Resolve a TZ abbreviation to its IANA name, or return the input unchanged. */
+export function resolveIana(tz: string): string {
+  const envTz = process.env.TZ;
+  if (envTz && tz === envTz && tz in TIMEZONE_ALIASES) return TIMEZONE_ALIASES[tz];
+  return TIMEZONE_ALIASES[tz] ?? tz;
+}
+
+/** Validate a resolved IANA timezone by attempting to create a formatter. */
+export function validateIana(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Format `date` as an offset-ISO string in the given IANA timezone.
+ * Result: "2026-06-10T01:00:00-04:00". Never emits UTC "Z" suffix (§T-6).
+ */
+export function toOffsetISO(date: Date, tz: string): string {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZoneName: "shortOffset",
+  });
+  const parts = fmt.formatToParts(date);
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? "";
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  let hour = get("hour");
+  const minute = get("minute");
+  const second = get("second");
+  const tzName = get("timeZoneName"); // e.g. "GMT-4", "GMT+5:30", "GMT+0"
+  if (hour === "24") hour = "00";
+  const m = tzName.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  let offset = "+00:00";
+  if (m) {
+    const sign = m[1];
+    const h = m[2].padStart(2, "0");
+    const min = ((m[3] as string | undefined) ?? "00").padStart(2, "0");
+    offset = `${sign}${h}:${min}`;
+  }
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
+}
 
 /** Per-session timestamp of the most recent confirmed outbound send (epoch ms). */
 const _lastSentAt = new Map<number, number>();
@@ -87,25 +201,41 @@ export function addReminder(params: {
   text: string;
   delay_seconds: number;
   recurring: boolean;
-  trigger?: "time" | "startup" | "last_sent" | "last_received";
+  trigger?: "time" | "startup" | "last_sent" | "last_received" | "schedule";
   mode?: "all" | "operator";
   only_if_silent?: boolean;
+  // Schedule-specific (runtime-only, NOT serialized to profile)
+  cron?: string;
+  tz?: string;
+  next_fire_ms?: number;
 }): Reminder {
   const sid = getCallerSid();
   const list = _reminders.get(sid) ?? [];
   // Replace existing reminder with the same ID (user-friendly for re-adds)
   const existingIdx = list.findIndex(r => r.id === params.id);
   if (existingIdx !== -1) {
+    const existingReminder = list[existingIdx];
     list.splice(existingIdx, 1);
+    // G-A: clean up sweep state if a schedule reminder is replaced by a non-schedule one
+    if (existingReminder.trigger === "schedule" && params.trigger !== "schedule") {
+      const hasMoreSchedule = list.some(r => r.trigger === "schedule");
+      if (!hasMoreSchedule) {
+        _scheduleSids.delete(sid);
+        stopScheduleSweep();
+      }
+    }
   } else if (list.length >= MAX_REMINDERS_PER_SESSION) {
     throw new Error(`Max reminders per session (${MAX_REMINDERS_PER_SESSION}) reached`);
   }
   const now = Date.now();
   const trigger = params.trigger ?? "time";
-  const normalizedDelay = trigger === "startup" ? 0 : params.delay_seconds;
+  const normalizedDelay = (trigger === "startup" || trigger === "schedule") ? 0 : params.delay_seconds;
   let state: Reminder["state"];
   let activated_at: number | null;
-  if (trigger === "startup") {
+  if (trigger === "schedule") {
+    state = "schedule";
+    activated_at = null;
+  } else if (trigger === "startup") {
     state = "startup";
     activated_at = null;
   } else if (trigger === "last_sent" || trigger === "last_received") {
@@ -124,6 +254,11 @@ export function addReminder(params: {
     trigger,
     ...(trigger === "last_received" ? { mode: params.mode ?? "all" } : {}),
     ...(trigger === "last_received" && params.only_if_silent ? { only_if_silent: true } : {}),
+    ...(trigger === "schedule" ? {
+      cron: params.cron,
+      ...(params.tz !== undefined ? { tz: params.tz } : {}),
+      next_fire_ms: params.next_fire_ms,
+    } : {}),
     created_at: now,
     activated_at,
     state,
@@ -142,7 +277,16 @@ export function cancelReminder(id: string): boolean {
   const list = _reminders.get(sid) ?? [];
   const idx = list.findIndex(r => r.id === id);
   if (idx === -1) return false;
+  const removed = list[idx];
   list.splice(idx, 1);
+  // G-A: clean up sweep state when a schedule reminder is cancelled
+  if (removed.trigger === "schedule") {
+    const hasMoreSchedule = list.some(r => r.trigger === "schedule");
+    if (!hasMoreSchedule) {
+      _scheduleSids.delete(sid);
+      stopScheduleSweep();
+    }
+  }
   return true;
 }
 
@@ -197,6 +341,7 @@ export function listReminders(): Reminder[] {
 export function getActiveReminders(sid: number): Reminder[] {
   const now = Date.now();
   return (_reminders.get(sid) ?? []).filter(r =>
+    r.trigger !== "schedule" &&   // §G-3: schedule reminders are never fired by the idle path
     r.state === "active" &&
     !r.disabled &&
     !(r.sleep_until !== undefined && now < r.sleep_until),
@@ -227,7 +372,8 @@ export function getFireableStartupReminders(sid: number): Reminder[] {
  */
 export function getSoonestDeferredMs(sid: number): number | null {
   const list = _reminders.get(sid) ?? [];
-  const deferred = list.filter(r => r.state === "deferred");
+  // §G-3: exclude schedule reminders; they have no delay-based activation
+  const deferred = list.filter(r => r.trigger !== "schedule" && r.state === "deferred");
   if (deferred.length === 0) return null;
   const now = Date.now();
   const times = deferred.map(r => r.created_at + r.delay_seconds * 1000 - now);
@@ -245,7 +391,8 @@ export function promoteDeferred(sid: number): void {
   if (!list) return;
   const now = Date.now();
   for (const r of list) {
-    if (r.state === "deferred" && now >= r.created_at + r.delay_seconds * 1000) {
+    // §G-3: schedule reminders never enter the deferred→active path
+    if (r.trigger !== "schedule" && r.state === "deferred" && now >= r.created_at + r.delay_seconds * 1000) {
       r.state = "active";
       r.activated_at = now;
     }
@@ -262,6 +409,7 @@ export function popActiveReminders(sid: number): Reminder[] {
   if (!list) return [];
   const now = Date.now();
   const fireable = list.filter(r =>
+    r.trigger !== "schedule" &&   // §G-3: schedule reminders fired only by popFireableScheduleReminders
     r.state === "active" &&
     !r.disabled &&
     !(r.sleep_until !== undefined && now < r.sleep_until),
@@ -349,7 +497,7 @@ export interface ReminderEvent {
     text: string;
     reminder_id: string;
     recurring: boolean;
-    trigger: "time" | "startup" | "last_sent" | "last_received";
+    trigger: "time" | "startup" | "last_sent" | "last_received" | "schedule";
   };
   routing: string;
 }
@@ -376,6 +524,9 @@ export function clearSessionReminders(sid: number): void {
   _reminders.delete(sid);
   _lastSentAt.delete(sid);
   _lastReceivedAt.delete(sid);
+  // R-4: remove from schedule sweep; stop sweep if this was the last session
+  _scheduleSids.delete(sid);
+  stopScheduleSweep();
 }
 
 /** For testing only: reset all state. */
@@ -384,6 +535,103 @@ export function resetReminderStateForTest(): void {
   _lastSentAt.clear();
   _lastReceivedAt.clear();
   _nextEventId = -10_000;
+  _scheduleSids.clear();
+  if (_sweepInterval !== null) {
+    clearInterval(_sweepInterval);
+    _sweepInterval = null;
+  }
+}
+
+// ── Schedule (cron-based) reminder helpers ─────────────────────────────────
+
+/**
+ * Create and register a cron-based schedule reminder for the current caller's session.
+ * Computes `next_fire_ms` from the cron pattern, arms the shared sweep, and returns the Reminder.
+ * Caller must have already validated the cron expression and resolved the IANA timezone.
+ */
+export function scheduleReminder(params: {
+  id: string;
+  text: string;
+  cron: string;
+  tz?: string;
+}): Reminder {
+  const sid = getCallerSid();
+  const cron = new Cron(params.cron, { timezone: params.tz, mode: "5-part" });
+  const nextDate = cron.nextRun(new Date());
+  if (!nextDate) throw new Error("Cron expression produces no future occurrences");
+  const next_fire_ms = nextDate.getTime();
+  const reminder = addReminder({
+    id: params.id,
+    text: params.text,
+    delay_seconds: 0,
+    recurring: true,
+    trigger: "schedule",
+    cron: params.cron,
+    tz: params.tz,
+    next_fire_ms,
+  });
+  _scheduleSids.add(sid);
+  startScheduleSweep();
+  return reminder;
+}
+
+/**
+ * Fire all schedule reminders for `sid` whose `next_fire_ms` has elapsed.
+ * Advances `next_fire_ms` to the next cron occurrence (collapses catch-up via while loop).
+ * Returns the fired reminders (before advancement) — caller converts via buildReminderEvent.
+ */
+export function popFireableScheduleReminders(sid: number): Reminder[] {
+  const list = _reminders.get(sid);
+  if (!list) return [];
+  const now = Date.now();
+  const fireable = list.filter(r =>
+    r.trigger === "schedule" &&
+    !r.disabled &&
+    r.next_fire_ms !== undefined &&
+    now >= r.next_fire_ms &&
+    !(r.sleep_until !== undefined && now < r.sleep_until),
+  );
+  if (fireable.length === 0) return [];
+
+  const fireableIds = new Set(fireable.map(r => r.id));
+  const remaining: Reminder[] = [];
+  for (const r of list) {
+    if (fireableIds.has(r.id)) {
+      // §R-2 catch-up: advance next_fire_ms past now (collapse missed occurrences into one fire)
+      if (!r.cron || r.next_fire_ms === undefined) { remaining.push(r); continue; }
+      const cron = new Cron(r.cron, { timezone: r.tz, mode: "5-part" });
+      let nextMs = r.next_fire_ms;
+      while (nextMs <= now) {
+        const nextDate = cron.nextRun(new Date(nextMs));
+        if (!nextDate) break;
+        nextMs = nextDate.getTime();
+      }
+      // Schedule reminders are always recurring — keep with updated next_fire_ms
+      remaining.push({ ...r, next_fire_ms: nextMs, sleep_until: undefined });
+    } else {
+      remaining.push(r);
+    }
+  }
+  _reminders.set(sid, remaining);
+  return fireable;
+}
+
+/**
+ * Milliseconds until the soonest schedule reminder for `sid` will fire.
+ * Returns null if no schedule reminders exist for this session.
+ * Used by dequeue to wake up exactly at next_fire_ms (§R-6).
+ */
+export function getSoonestScheduleFireMs(sid: number): number | null {
+  const list = _reminders.get(sid) ?? [];
+  const now = Date.now();
+  let soonest: number | null = null;
+  for (const r of list) {
+    if (r.trigger !== "schedule" || r.disabled || r.next_fire_ms === undefined) continue;
+    if (r.sleep_until !== undefined && now < r.sleep_until) continue;
+    const ms = Math.max(0, r.next_fire_ms - now);
+    if (soonest === null || ms < soonest) soonest = ms;
+  }
+  return soonest;
 }
 
 // ── Event-triggered reminder timestamps ────────────────────────────────────
