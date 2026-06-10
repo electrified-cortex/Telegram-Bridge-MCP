@@ -22,6 +22,8 @@ import { recordLastSentAt, recordLastReceivedAt } from "./reminder-state.js";
 import { notifyIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
 import { notifyChannelSubscriber } from "./channel.js";
 import { notifySseSubscriber } from "./sse-endpoint.js";
+import { getSession } from "./session-manager.js";
+import { recordNonToolEvent } from "./trace-log.js";
 
 // ---------------------------------------------------------------------------
 // Voice-ready predicate (shared with message-store's queue)
@@ -580,7 +582,8 @@ export function deliverChildNotifyEvent(
 
 /**
  * Inject a reminder event into a session queue.
- * Used by session_start to deliver startup reminders.
+ * Used by session_start for startup reminders, the active-reminder sweep, the schedule
+ * sweep, and the event-triggered path in enqueueToSession. (§5-b: no longer startup-only.)
  * Returns false if the target queue does not exist.
  */
 export function deliverReminderEvent(
@@ -610,11 +613,13 @@ export function deliverReminderEvent(
     trigger: src.trigger,
   });
 
+  recordNonToolEvent("reminder_fire", targetSid, getSession(targetSid)?.name ?? "", src.text);
   q.enqueue(event);
   notifyIfAllowed(targetSid, "reminder", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
+  // TODO 10-2305: notifySseSubscriber here is ungated — fixed when 10-2305 gates all SSE calls
   notifySseSubscriber(targetSid);
-  dlog("service", `startup reminder → sid=${targetSid}`, { reminderId: src.reminder_id });
+  dlog("service", `reminder delivered → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
 }
 

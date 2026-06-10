@@ -272,7 +272,13 @@ export async function runDrainLoop(
   if (sid > 0) touchSession(sid);
 
   function dequeueBatchAny(): TimelineEvent[] {
-    return sq.dequeueBatch();
+    const batch = sq.dequeueBatch();
+    // §5-b decision B: messages-first ordering — reminders yield to real messages.
+    return batch.sort((a, b) => {
+      const aR = a.event === "reminder" ? 1 : 0;
+      const bR = b.event === "reminder" ? 1 : 0;
+      return aR - bR;
+    });
   }
 
   function pendingCountAny(): number {
