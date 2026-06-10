@@ -82,6 +82,9 @@ let _nextEventId = -10_000;
 // in dequeue's in-loop check (popFireableScheduleReminders), not here.
 
 const _scheduleSids = new Set<number>();
+// FIX 4: per-reminder last-kicked dedup — tracks (sid → reminderId → last_kicked_fire_ms)
+// Prevents duplicate SSE kicks when the same next_fire_ms falls within two consecutive sweep ticks.
+const _lastKickedFireMs = new Map<number, Map<string, number>>();
 let _sweepInterval: ReturnType<typeof setInterval> | null = null;
 const SCHEDULE_SWEEP_INTERVAL_MS = 5_000;
 const SCHEDULE_KICK_AHEAD_MS = 6_000;
@@ -92,13 +95,22 @@ function startScheduleSweep(): void {
     const now = Date.now();
     for (const sid of _scheduleSids) {
       const list = _reminders.get(sid) ?? [];
-      const kickNeeded = list.some(r =>
-        r.trigger === "schedule" &&
-        !r.disabled &&
-        r.next_fire_ms !== undefined &&
-        r.next_fire_ms - now <= SCHEDULE_KICK_AHEAD_MS,
-      );
-      if (kickNeeded) kickSseSubscriber(sid);
+      let shouldKick = false;
+      for (const r of list) {
+        if (
+          r.trigger !== "schedule" ||
+          r.disabled ||
+          r.next_fire_ms === undefined ||
+          r.next_fire_ms - now > SCHEDULE_KICK_AHEAD_MS
+        ) continue;
+        // Dedup: only kick once per unique next_fire_ms value per reminder
+        let kickMap = _lastKickedFireMs.get(sid);
+        if (!kickMap) { kickMap = new Map<string, number>(); _lastKickedFireMs.set(sid, kickMap); }
+        if (kickMap.get(r.id) === r.next_fire_ms) continue;
+        kickMap.set(r.id, r.next_fire_ms);
+        shouldKick = true;
+      }
+      if (shouldKick) kickSseSubscriber(sid);
     }
   }, SCHEDULE_SWEEP_INTERVAL_MS);
 }
@@ -524,6 +536,7 @@ export function clearSessionReminders(sid: number): void {
   _reminders.delete(sid);
   _lastSentAt.delete(sid);
   _lastReceivedAt.delete(sid);
+  _lastKickedFireMs.delete(sid);
   // R-4: remove from schedule sweep; stop sweep if this was the last session
   _scheduleSids.delete(sid);
   stopScheduleSweep();
@@ -534,6 +547,7 @@ export function resetReminderStateForTest(): void {
   _reminders.clear();
   _lastSentAt.clear();
   _lastReceivedAt.clear();
+  _lastKickedFireMs.clear();
   _nextEventId = -10_000;
   _scheduleSids.clear();
   if (_sweepInterval !== null) {
@@ -604,7 +618,9 @@ export function popFireableScheduleReminders(sid: number): Reminder[] {
       while (nextMs <= now) {
         const nextDate = cron.nextRun(new Date(nextMs));
         if (!nextDate) break;
-        nextMs = nextDate.getTime();
+        const candidate = nextDate.getTime();
+        if (candidate <= nextMs) break; // guard: cron returned same/past timestamp at exact boundary
+        nextMs = candidate;
       }
       // Schedule reminders are always recurring — keep with updated next_fire_ms
       remaining.push({ ...r, next_fire_ms: nextMs, sleep_until: undefined });

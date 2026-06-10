@@ -1,7 +1,7 @@
 import type { ProfileData } from "../../profile-store.js";
 import { setSessionVoice, setSessionSpeed } from "../../voice-state.js";
 import { setSessionDefault, registerPreset } from "../../animation-state.js";
-import { addReminder, disableReminder, enableReminder, listReminders, reminderContentHash, scheduleReminder } from "../../reminder-state.js";
+import { addReminder, disableReminder, enableReminder, listReminders, reminderContentHash, scheduleReminder, resolveIana, validateIana } from "../../reminder-state.js";
 import { getSession } from "../../session-manager.js";
 
 export interface ApplyResult {
@@ -126,15 +126,18 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
         } else if (trigger === "schedule") {
           // G-4: schedule branch — use cron+tz, skip delay_seconds/next_fire_ms/timeoutHandle
           const cron = rd.cron as string | undefined;
-          const tz = rd.tz as string | undefined;
+          const rawTz = rd.tz as string | undefined;
           if (!cron) continue; // cron is required for schedule reminders
+          // FIX 2: resolve + validate TZ on the apply path (same as schedule.ts handler)
+          const resolvedTz = rawTz !== undefined ? resolveIana(rawTz) : resolveIana(process.env.TZ ?? "UTC");
+          if (!validateIana(resolvedTz)) continue; // skip if TZ is invalid
           const reminderId = reminderContentHash(r.text, true, "schedule");
           // G-C: BT-7274 dedup guard — check for existing reminder by ID before re-adding
           const alreadyExists = existing.some(e => e.id === reminderId);
           if (alreadyExists) {
             updatedReminders.push(reminderId);
           } else {
-            scheduleReminder({ id: reminderId, text: r.text, cron, tz });
+            scheduleReminder({ id: reminderId, text: r.text, cron, tz: resolvedTz });
             addedReminders.push(reminderId);
           }
           if (r.disabled) disableReminder(reminderId);
