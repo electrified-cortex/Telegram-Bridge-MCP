@@ -376,7 +376,7 @@ export async function runDrainLoop(
   // Tracks whether this dequeue call exits via a content-returning path.
   // Only content-returning exits release the notify lockout; timeout exits skip.
   let _lockoutRelease = false;
-  let _reminderKickNeeded = false;
+  let _reminderNotifyNeeded = false;
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) break;
@@ -426,7 +426,7 @@ export async function runDrainLoop(
           };
           dlog("queue", `dequeue returning sid=${sid} batch=${allFired.length} event-reminder payloadLen=${JSON.stringify(reminderResult).length}`);
           _lockoutRelease = true;
-          _reminderKickNeeded = true;
+          _reminderNotifyNeeded = true;
           return reminderResult;
         }
       }
@@ -453,7 +453,7 @@ export async function runDrainLoop(
         // `updates` (real event data) and optionally `pending` (when > 0), neither
         // of which are compact-suppressible fields.
         _lockoutRelease = true;
-        _reminderKickNeeded = true;
+        _reminderNotifyNeeded = true;
         return reminderResult;
       }
 
@@ -522,7 +522,7 @@ export async function runDrainLoop(
       releaseNotifyLockout(sid);
       resetChannelCooldown(sid);
     }
-    if (_reminderKickNeeded) {
+    if (_reminderNotifyNeeded) {
       notifyIfAllowed(sid, "reminder", false);
     }
   }

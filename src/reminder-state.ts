@@ -107,7 +107,7 @@ function startScheduleSweep(): void {
     const now = Date.now();
     for (const sid of _scheduleSids) {
       const list = _reminders.get(sid) ?? [];
-      let shouldKick = false;
+      let shouldNotify = false;
       for (const r of list) {
         if (
           r.trigger !== "schedule" ||
@@ -120,9 +120,9 @@ function startScheduleSweep(): void {
         if (!notifyMap) { notifyMap = new Map<string, number>(); _lastNotifiedFireMs.set(sid, notifyMap); }
         if (notifyMap.get(r.id) === r.next_fire_ms) continue;
         notifyMap.set(r.id, r.next_fire_ms);
-        shouldKick = true;
+        shouldNotify = true;
       }
-      if (shouldKick) {
+      if (shouldNotify) {
         // Wake BOTH parked-agent flavors: SSE-stream subscribers AND activity-file
         // monitors. Most pods (BT, Curator) park on the activity FILE, not SSE — without
         // the file notify a scheduled reminder fires but never wakes a file-parked agent.
