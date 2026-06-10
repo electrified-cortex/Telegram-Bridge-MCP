@@ -439,7 +439,9 @@ export function popActiveReminders(sid: number): Reminder[] {
   if (!list) return [];
   const now = Date.now();
   const fireable = list.filter(r =>
-    r.trigger !== "schedule" &&   // §G-3: schedule reminders fired only by popFireableScheduleReminders
+    r.trigger !== "schedule" &&       // §G-3: schedule reminders fired only by popFireableScheduleReminders
+    r.trigger !== "last_received" &&  // §5-b: event-triggered; handled by event path only
+    r.trigger !== "last_sent" &&      // §5-b: event-triggered; handled by event path only
     r.state === "active" &&
     !r.disabled &&
     !(r.sleep_until !== undefined && now < r.sleep_until),
