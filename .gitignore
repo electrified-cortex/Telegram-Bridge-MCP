@@ -29,3 +29,5 @@ notes/
 .session-id
 
 .scratch/
+# Runtime agent state — never commit
+memory/telegram/
