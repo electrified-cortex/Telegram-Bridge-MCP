@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseNotifyLockout, notifyIfAllowed } from "./activity/file-state.js";
+import { setDequeueActive, releaseNotifyLockout } from "./activity/file-state.js";
 import { resetChannelCooldown } from "../channel.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
