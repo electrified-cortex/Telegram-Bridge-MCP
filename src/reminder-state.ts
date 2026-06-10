@@ -13,7 +13,10 @@
 import { createHash } from "crypto";
 import { Cron } from "croner";
 import { getCallerSid } from "./session-context.js";
-import { notifyIfAllowed } from "./tools/activity/file-state.js";
+import { notifyIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
+// NOTE: circular import (session-queue.ts ↔ reminder-state.ts) — safe because
+// deliverReminderEvent is only called inside interval callbacks, never at module init.
+import { deliverReminderEvent } from "./session-queue.js";
 
 // B3: domain code must not name the transport directly.
 // Inject the SSE notify callback at startup via initReminderSseNotify().
@@ -101,6 +104,12 @@ let _sweepInterval: ReturnType<typeof setInterval> | null = null;
 const SCHEDULE_SWEEP_INTERVAL_MS = 5_000;
 const SCHEDULE_NOTIFY_AHEAD_MS = 6_000;
 
+// ── Active-reminder sweep (§5-b) ──────────────────────────────────────────
+// Sessions that have at least one active time/active reminder awaiting delivery.
+const _activeSids = new Set<number>();
+let _activeSweepInterval: ReturnType<typeof setInterval> | null = null;
+const ACTIVE_REMINDER_SWEEP_MS = 5_000;
+
 function startScheduleSweep(): void {
   if (_sweepInterval !== null) return;
   _sweepInterval = setInterval(() => {
@@ -140,6 +149,22 @@ function stopScheduleSweep(): void {
     _sweepInterval = null;
   }
 }
+
+// ── Active-reminder sweep (§5-b) ──────────────────────────────────────────
+// Always-running 5-second interval that fires active reminders for parked agents.
+// Skips sessions where a dequeue is in flight (they handle their own context).
+
+_activeSweepInterval = setInterval(() => {
+  for (const sid of _activeSids) {
+    // Reminders do not interrupt active conversations.
+    // Starvation (indefinite deferral during activity) is acceptable by design. §5-b
+    if (isDequeueActive(sid)) continue;
+    for (const r of popActiveReminders(sid)) {
+      deliverReminderEvent(sid, buildReminderEvent(r));
+    }
+    if (getActiveReminders(sid).length === 0) _activeSids.delete(sid);
+  }
+}, ACTIVE_REMINDER_SWEEP_MS);
 
 // ── Timezone / cron utilities ─────────────────────────────────────────────
 
@@ -295,6 +320,7 @@ export function addReminder(params: {
   };
   list.push(reminder);
   _reminders.set(sid, list);
+  if (reminder.state === "active") _activeSids.add(sid);
   return reminder;
 }
 
@@ -317,6 +343,8 @@ export function cancelReminder(id: string): boolean {
       stopScheduleSweep();
     }
   }
+  // §5-b: deregister from active sweep if no active reminders remain
+  if (getActiveReminders(sid).length === 0) _activeSids.delete(sid);
   return true;
 }
 
@@ -425,6 +453,7 @@ export function promoteDeferred(sid: number): void {
     if (r.trigger !== "schedule" && r.state === "deferred" && now >= r.created_at + r.delay_seconds * 1000) {
       r.state = "active";
       r.activated_at = now;
+      _activeSids.add(sid);
     }
   }
 }
@@ -560,6 +589,8 @@ export function clearSessionReminders(sid: number): void {
   // R-4: remove from schedule sweep; stop sweep if this was the last session
   _scheduleSids.delete(sid);
   stopScheduleSweep();
+  // §5-b: remove from active-reminder sweep
+  _activeSids.delete(sid);
 }
 
 /** For testing only: reset all state. */
@@ -573,6 +604,12 @@ export function resetReminderStateForTest(): void {
   if (_sweepInterval !== null) {
     clearInterval(_sweepInterval);
     _sweepInterval = null;
+  }
+  // §5-b: reset active-reminder sweep
+  _activeSids.clear();
+  if (_activeSweepInterval !== null) {
+    clearInterval(_activeSweepInterval);
+    _activeSweepInterval = null;
   }
 }
 
