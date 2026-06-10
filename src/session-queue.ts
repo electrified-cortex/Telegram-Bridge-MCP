@@ -18,7 +18,7 @@ import { getMessage, CURRENT } from "./message-store.js";
 import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
 import type { ReminderEvent } from "./reminder-state.js";
-import { recordLastSentAt, recordLastReceivedAt } from "./reminder-state.js";
+import { recordLastSentAt, recordLastReceivedAt, popFireableEventReminders, buildReminderEvent } from "./reminder-state.js";
 import { notifyIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
 import { notifyChannelSubscriber } from "./channel.js";
 import { notifySseSubscriber } from "./sse-endpoint.js";
@@ -287,6 +287,13 @@ function enqueueToSession(
   notifyIfAllowed(sid, "operator", isDequeueActive(sid));
   notifyChannelSubscriber(sid, event);
   notifySseSubscriber(sid);
+  // §5-b: Fire event-triggered reminders eagerly when events arrive for parked agents.
+  // deliverReminderEvent calls q.enqueue directly (not via enqueueToSession) — no recursion risk.
+  if (!isDequeueActive(sid)) {
+    for (const r of popFireableEventReminders(sid)) {
+      deliverReminderEvent(sid, buildReminderEvent(r));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
