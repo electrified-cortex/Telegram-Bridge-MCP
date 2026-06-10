@@ -92,6 +92,7 @@ function makeState(overrides: Partial<ActivityFileState> = {}): ActivityFileStat
     notifyPendingBecauseLocked: false,
     touchInFlight: false,
     pendingRetryHandle: null,
+    pendingReNotifyHandle: null,
     ...overrides,
   };
 }
@@ -614,5 +615,124 @@ describe("appendNewline ENOENT recovery", () => {
     const entry = getActivityFile(SID)!;
     expect(entry.notifyLockedUntil).toBeNull();
     expect(entry.touchInFlight).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5-minute active re-notify — §5-a (10-2303)
+// ---------------------------------------------------------------------------
+
+describe("5-minute active re-notify (§5-a)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    sessionMocks.getNotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    vi.mocked(appendFile).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // ── AC-5: Parked agent re-notify fires once after lockout ─────────────────
+  it("AC-5: parked agent — re-notify fires exactly once after 5 min, then silence", async () => {
+    setActivityFile(SID, makeState());
+
+    // Initial notify
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    // Agent does NOT dequeue — timer fires after lockout
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Re-notify should have fired: exactly 1 additional touch
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+
+    // Advance another full lockout window — no further re-notify (one-shot)
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+  });
+
+  // ── AC-6: Agent dequeues before timer fires → no extra touch ──────────────
+  it("AC-6: dequeue before 5 min cancels re-notify timer — no extra touch fires", async () => {
+    setActivityFile(SID, makeState());
+
+    // Notify
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    // Queue drains (agent dequeues before 5 min) — cancels pending re-notify
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Should still be 1 — no re-eval (queue was empty)
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    // Advance past where the old timer would have fired — still no extra touch
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+  });
+
+  // ── AC-7: Fresh re-notify cycle after content-returning dequeue + new content ─
+  it("AC-7: dequeue + new content → fresh 5-min timer; old cancelled; re-notify fires once", async () => {
+    setActivityFile(SID, makeState());
+
+    // First notify — registers timer T1
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    const entryAfterNotify = getActivityFile(SID)!;
+    const handleT1 = entryAfterNotify.pendingReNotifyHandle;
+    expect(handleT1).not.toBeNull();
+
+    // Content-returning dequeue: cancels T1, clears lockout
+    queueMocks.hasPendingUserContent.mockReturnValue(true); // still has content
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // releaseNotifyLockout called fireRevaluationNotify (notifyPendingBecauseLocked was false,
+    // but pending is false so no re-eval here — lockout cleared, T1 cancelled).
+    // Actually releaseNotifyLockout fires re-eval only if notifyPendingBecauseLocked was true.
+    // Since we didn't suppress any notify, pending is false → no re-eval notify.
+    // appendFile count: still 1 (no re-eval fired from releaseNotifyLockout).
+
+    // T1 must be cancelled after releaseNotifyLockout
+    const entryAfterRelease = getActivityFile(SID)!;
+    expect(entryAfterRelease.pendingReNotifyHandle).toBeNull();
+    expect(entryAfterRelease.notifyLockedUntil).toBeNull();
+
+    // New content enqueued → agent idle → notifyIfAllowed fires, registers timer T2
+    vi.mocked(appendFile).mockClear();
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    const entryAfterNewNotify = getActivityFile(SID)!;
+    const handleT2 = entryAfterNewNotify.pendingReNotifyHandle;
+    expect(handleT2).not.toBeNull();
+    expect(handleT2).not.toBe(handleT1); // fresh handle
+
+    // Advance 5 min → T2 fires → re-notify
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // One additional touch from T2 re-notify
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+
+    // No further re-notify after that (one-shot)
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
   });
 });
