@@ -17,6 +17,7 @@ import {
   resolveIana,
   validateIana,
   toOffsetISO,
+  initReminderSseKick,
 } from "../../reminder-state.js";
 import { applyProfile } from "../profile/apply.js";
 
@@ -119,6 +120,8 @@ describe("scheduleReminder / reminder-state", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     resetReminderStateForTest();
+    // B3: inject the mock SSE kick callback so the sweep can call it
+    initReminderSseKick(mocks.kickSseSubscriber);
   });
 
   it("adds a schedule reminder with correct state and next_fire_ms", () => {

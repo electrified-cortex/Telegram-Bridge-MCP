@@ -508,6 +508,7 @@ export async function runDrainLoop(
 
     resyncActiveSession();
     const pending = pendingCountAny();
+    _lockoutRelease = true;  // Release lockout on timeout exits too (BT-2301)
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {
     // Note: if two concurrent dequeue calls share the same sid (unusual but
@@ -516,7 +517,7 @@ export async function runDrainLoop(
     // that case. A refcount would be needed to handle it precisely.
     setDequeueIdle(sid, false);
     setDequeueActive(sid, false);
-    // Release kick lockout only on content-returning exits; timeout exits skip.
+    // Release kick lockout on all dequeue exits (content-returning and timeout).
     if (_lockoutRelease) {
       releaseKickLockout(sid);
       resetChannelCooldown(sid);
