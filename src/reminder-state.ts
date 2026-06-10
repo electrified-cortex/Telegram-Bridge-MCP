@@ -13,18 +13,18 @@
 import { createHash } from "crypto";
 import { Cron } from "croner";
 import { getCallerSid } from "./session-context.js";
-import { kickIfAllowed } from "./tools/activity/file-state.js";
+import { notifyIfAllowed } from "./tools/activity/file-state.js";
 
 // B3: domain code must not name the transport directly.
-// Inject the SSE kick callback at startup via initReminderSseKick().
-let _kickSseSubscriber: ((sid: number) => void) | null = null;
+// Inject the SSE notify callback at startup via initReminderSseNotify().
+let _notifySseSubscriber: ((sid: number) => void) | null = null;
 
 /**
- * Inject the SSE kick callback so this domain module never imports the transport.
+ * Inject the SSE notify callback so this domain module never imports the transport.
  * Call once at startup before any reminders are scheduled.
  */
-export function initReminderSseKick(fn: (sid: number) => void): void {
-  _kickSseSubscriber = fn;
+export function initReminderSseNotify(fn: (sid: number) => void): void {
+  _notifySseSubscriber = fn;
 }
 
 /**
@@ -90,16 +90,16 @@ let _nextEventId = -10_000;
 
 // ── Schedule sweep (shared, module-level) ─────────────────────────────────
 // Single 5-second interval; starts on first reminder/schedule, stops when last is removed.
-// Sends a kick (wake signal) when next_fire_ms is within 6 s. The actual fire happens
+// Sends a notify (wake signal) when next_fire_ms is within 6 s. The actual fire happens
 // in dequeue's in-loop check (popFireableScheduleReminders), not here.
 
 const _scheduleSids = new Set<number>();
-// FIX 4: per-reminder last-kicked dedup — tracks (sid → reminderId → last_kicked_fire_ms)
-// Prevents duplicate SSE kicks when the same next_fire_ms falls within two consecutive sweep ticks.
-const _lastKickedFireMs = new Map<number, Map<string, number>>();
+// FIX 4: per-reminder last-notified dedup — tracks (sid → reminderId → last_notified_fire_ms)
+// Prevents duplicate SSE notifications when the same next_fire_ms falls within two consecutive sweep ticks.
+const _lastNotifiedFireMs = new Map<number, Map<string, number>>();
 let _sweepInterval: ReturnType<typeof setInterval> | null = null;
 const SCHEDULE_SWEEP_INTERVAL_MS = 5_000;
-const SCHEDULE_KICK_AHEAD_MS = 6_000;
+const SCHEDULE_NOTIFY_AHEAD_MS = 6_000;
 
 function startScheduleSweep(): void {
   if (_sweepInterval !== null) return;
@@ -107,27 +107,27 @@ function startScheduleSweep(): void {
     const now = Date.now();
     for (const sid of _scheduleSids) {
       const list = _reminders.get(sid) ?? [];
-      let shouldKick = false;
+      let shouldNotify = false;
       for (const r of list) {
         if (
           r.trigger !== "schedule" ||
           r.disabled ||
           r.next_fire_ms === undefined ||
-          r.next_fire_ms - now > SCHEDULE_KICK_AHEAD_MS
+          r.next_fire_ms - now > SCHEDULE_NOTIFY_AHEAD_MS
         ) continue;
-        // Dedup: only kick once per unique next_fire_ms value per reminder
-        let kickMap = _lastKickedFireMs.get(sid);
-        if (!kickMap) { kickMap = new Map<string, number>(); _lastKickedFireMs.set(sid, kickMap); }
-        if (kickMap.get(r.id) === r.next_fire_ms) continue;
-        kickMap.set(r.id, r.next_fire_ms);
-        shouldKick = true;
+        // Dedup: only notify once per unique next_fire_ms value per reminder
+        let notifyMap = _lastNotifiedFireMs.get(sid);
+        if (!notifyMap) { notifyMap = new Map<string, number>(); _lastNotifiedFireMs.set(sid, notifyMap); }
+        if (notifyMap.get(r.id) === r.next_fire_ms) continue;
+        notifyMap.set(r.id, r.next_fire_ms);
+        shouldNotify = true;
       }
-      if (shouldKick) {
+      if (shouldNotify) {
         // Wake BOTH parked-agent flavors: SSE-stream subscribers AND activity-file
         // monitors. Most pods (BT, Curator) park on the activity FILE, not SSE — without
-        // the file kick a scheduled reminder fires but never wakes a file-parked agent.
-        _kickSseSubscriber?.(sid);
-        kickIfAllowed(sid, "reminder", false);
+        // the file notify a scheduled reminder fires but never wakes a file-parked agent.
+        _notifySseSubscriber?.(sid);
+        notifyIfAllowed(sid, "reminder", false);
       }
     }
   }, SCHEDULE_SWEEP_INTERVAL_MS);
@@ -554,7 +554,7 @@ export function clearSessionReminders(sid: number): void {
   _reminders.delete(sid);
   _lastSentAt.delete(sid);
   _lastReceivedAt.delete(sid);
-  _lastKickedFireMs.delete(sid);
+  _lastNotifiedFireMs.delete(sid);
   // R-4: remove from schedule sweep; stop sweep if this was the last session
   _scheduleSids.delete(sid);
   stopScheduleSweep();
@@ -565,7 +565,7 @@ export function resetReminderStateForTest(): void {
   _reminders.clear();
   _lastSentAt.clear();
   _lastReceivedAt.clear();
-  _lastKickedFireMs.clear();
+  _lastNotifiedFireMs.clear();
   _nextEventId = -10_000;
   _scheduleSids.clear();
   if (_sweepInterval !== null) {

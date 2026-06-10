@@ -15,14 +15,14 @@ import {
 const mocks = vi.hoisted(() => ({
   getDequeueDefault: vi.fn((_sid: number) => 300),
   setDequeueDefault: vi.fn((_sid: number, _val: number) => {}),
-  getKickLockoutMs: vi.fn((_sid: number) => 500),
+  getNotifyLockoutMs: vi.fn((_sid: number) => 500),
   isDequeueActive: vi.fn((_sid: number) => false),
 }));
 
 vi.mock("./session-manager.js", () => ({
   getDequeueDefault: (sid: number) => mocks.getDequeueDefault(sid),
   setDequeueDefault: (sid: number, val: number) => { mocks.setDequeueDefault(sid, val); },
-  getKickLockoutMs: (sid: number) => mocks.getKickLockoutMs(sid),
+  getNotifyLockoutMs: (sid: number) => mocks.getNotifyLockoutMs(sid),
 }));
 
 vi.mock("./tools/activity/file-state.js", () => ({
@@ -50,7 +50,7 @@ describe("channel", () => {
     unregisterChannelSubscriber(SID); // clean up first — may call setDequeueDefault
     vi.clearAllMocks();               // wipe any calls from the cleanup above
     mocks.getDequeueDefault.mockReturnValue(300);
-    mocks.getKickLockoutMs.mockReturnValue(500);
+    mocks.getNotifyLockoutMs.mockReturnValue(500);
     mocks.isDequeueActive.mockReturnValue(false);
   });
 
@@ -198,7 +198,7 @@ describe("channel", () => {
 
     it("fires again once the cooldown window has expired", async () => {
       // Return a negative lockout so cooldownUntil lands in the past immediately
-      mocks.getKickLockoutMs.mockReturnValue(-1000);
+      mocks.getNotifyLockoutMs.mockReturnValue(-1000);
       const { server, notify } = makeServer();
       registerChannelSubscriber(SID, TOKEN, server);
       notifyChannelSubscriber(SID);

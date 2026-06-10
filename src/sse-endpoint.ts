@@ -19,9 +19,9 @@ const _connections = new Map<number, Response>();
 /**
  * Fire `data: kick` to the open SSE connection for the given session, if any.
  * No-op when no connection is registered. No cooldown — the caller's dequeue
- * will be empty if there is nothing to read; extra kicks are harmless.
+ * will be empty if there is nothing to read; extra notifications are harmless.
  */
-export function kickSseSubscriber(sid: number): void {
+export function notifySseSubscriber(sid: number): void {
   const res = _connections.get(sid);
   if (!res) return;
   try {

@@ -105,7 +105,7 @@ vi.mock("fs", async (importActual) => {
           "",
           "## How to monitor the activity file",
           "",
-          "Run tools/monitor.ps1 <path> (preferred on Windows) or tools/monitor.sh <path> from your repo root to watch for kicks.",
+          "Run tools/monitor.ps1 <path> (preferred on Windows) or tools/monitor.sh <path> from your repo root to watch for notifications.",
           "",
           "Monitor parameters: persistent: true, description. timeout_ms is ignored when persistent: true.",
           "",

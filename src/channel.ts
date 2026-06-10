@@ -10,7 +10,7 @@
  *
  * URI scheme: `telegram://inbox/<token>`
  *
- * Cooldown model (mirrors the activity-file kick gate):
+ * Cooldown model (mirrors the activity-file notify gate):
  *   - First inbound → notify immediately; cooldown arms after send confirms.
  *   - Further inbounds during cooldown → set a "pending" flag; no extra notification.
  *   - Content-returning dequeue → clear cooldown + flag (agent consumed; no reminder needed).
@@ -26,7 +26,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { TimelineEvent } from "./message-store.js";
 import { isDequeueActive } from "./tools/activity/file-state.js";
-import { getDequeueDefault, setDequeueDefault, getKickLockoutMs } from "./session-manager.js";
+import { getDequeueDefault, setDequeueDefault, getNotifyLockoutMs } from "./session-manager.js";
 
 /** Maximum dequeue wait (seconds) for sessions with an active channel subscription. */
 const CHANNEL_MAX_WAIT_S = 90;
@@ -114,7 +114,7 @@ function _send(entry: ChannelEntry, sid: number, event: TimelineEvent | undefine
     method: "notifications/resources/updated",
     params: { uri },
   }).then(() => {
-    entry.cooldownUntil = Date.now() + getKickLockoutMs(sid);
+    entry.cooldownUntil = Date.now() + getNotifyLockoutMs(sid);
   }).catch((e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
     process.stderr.write(`[channel] notify failed sid=${sid}: ${msg}\n`);

@@ -43,13 +43,13 @@ Session token via `?token=<int>` query param **or** JSON body field `"token"`. (
 | `startup` | Agent starting up | `bounce` | — |
 | `shutdown_warn` | Agent about to shut down | — | — |
 | `shutdown_complete` | Agent shut down | — | — |
-| `stopped` | Agent session stopped (drop-exit-resume) | — | Cancels pending debounce timer; re-arms nudge cycle; issues immediate activity-file kick |
+| `stopped` | Agent session stopped (drop-exit-resume) | — | Cancels pending debounce timer; re-arms nudge cycle; issues immediate activity-file notify |
 
 ### `stopped` — state-mutating side effect
 
 Unlike the other kinds, `stopped` mutates state on the **firing session** itself:
 
-1. Any pending debounce kick-timer for the session is cancelled.
+1. Any pending debounce notify-timer for the session is cancelled.
 2. The nudge cycle is re-armed (`nudgeArmed = true`).
 3. An immediate `doTouch` is issued to the activity file, signaling the external watcher
    that the session is "available again."

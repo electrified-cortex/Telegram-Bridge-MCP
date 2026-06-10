@@ -19,9 +19,9 @@ import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
 import type { ReminderEvent } from "./reminder-state.js";
 import { recordLastSentAt, recordLastReceivedAt } from "./reminder-state.js";
-import { kickIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
+import { notifyIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
 import { notifyChannelSubscriber } from "./channel.js";
-import { kickSseSubscriber } from "./sse-endpoint.js";
+import { notifySseSubscriber } from "./sse-endpoint.js";
 
 // ---------------------------------------------------------------------------
 // Voice-ready predicate (shared with message-store's queue)
@@ -248,9 +248,9 @@ export function routeToSession(event: TimelineEvent): void {
   dlog("route", `broadcast event=${event.id} → ${_queues.size} sessions`);
   for (const [sid, q] of _queues.entries()) {
     q.enqueue(event);
-    kickIfAllowed(sid, "operator", isDequeueActive(sid));
+    notifyIfAllowed(sid, "operator", isDequeueActive(sid));
     notifyChannelSubscriber(sid, event);
-    kickSseSubscriber(sid);
+    notifySseSubscriber(sid);
     // Do NOT call notifyLastReceived — broadcast/ambiguous routing does not
     // count as "received by this session" for last_received reminder tracking.
   }
@@ -282,9 +282,9 @@ function enqueueToSession(
   const q = _queues.get(sid);
   if (!q) return;
   q.enqueue(event);
-  kickIfAllowed(sid, "operator", isDequeueActive(sid));
+  notifyIfAllowed(sid, "operator", isDequeueActive(sid));
   notifyChannelSubscriber(sid, event);
-  kickSseSubscriber(sid);
+  notifySseSubscriber(sid);
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +421,7 @@ export function deliverAsyncSendCallback(
   };
 
   q.enqueue(event);
-  // send_callback is bridge-internal housekeeping — no kick
+  // send_callback is bridge-internal housekeeping — no notify
   dlog("async-send", `callback → sid=${targetSid}`, { pendingId: payload.pendingId, status: payload.status });
   // Update last_sent_at on confirmed async TTS delivery (message_id returned).
   if (payload.status === "ok" && (payload.messageId !== undefined || (payload.messageIds?.length ?? 0) > 0)) {
@@ -453,9 +453,9 @@ export function deliverDirectMessage(
   };
 
   q.enqueue(event);
-  kickIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
+  notifyIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
-  kickSseSubscriber(targetSid);
+  notifySseSubscriber(targetSid);
   dlog("dm", `delivered DM from sid=${senderSid} → sid=${targetSid}`, { eventId: event.id });
   return true;
 }
@@ -534,9 +534,9 @@ export function deliverServiceMessage(
   };
 
   q.enqueue(event);
-  kickIfAllowed(targetSid, "service", isDequeueActive(targetSid));
+  notifyIfAllowed(targetSid, "service", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
-  kickSseSubscriber(targetSid);
+  notifySseSubscriber(targetSid);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
@@ -571,9 +571,9 @@ export function deliverChildNotifyEvent(
   };
 
   q.enqueue(event);
-  kickIfAllowed(parentSid, "service", isDequeueActive(parentSid));
+  notifyIfAllowed(parentSid, "service", isDequeueActive(parentSid));
   notifyChannelSubscriber(parentSid, event);
-  kickSseSubscriber(parentSid);
+  notifySseSubscriber(parentSid);
   dlog("service", `child_notify → sid=${parentSid}`, { eventType, callerSid });
   return true;
 }
@@ -611,9 +611,9 @@ export function deliverReminderEvent(
   });
 
   q.enqueue(event);
-  kickIfAllowed(targetSid, "reminder", isDequeueActive(targetSid));
+  notifyIfAllowed(targetSid, "reminder", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
-  kickSseSubscriber(targetSid);
+  notifySseSubscriber(targetSid);
   dlog("service", `startup reminder → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
 }
@@ -637,9 +637,9 @@ export function routeMessage(messageId: number, targetSid: number, routerSid: nu
     content: { ...event.content, routed_by: routerSid },
   };
   q.enqueue(routed);
-  kickIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
+  notifyIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, routed);
-  kickSseSubscriber(targetSid);
+  notifySseSubscriber(targetSid);
   dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`, { routerSid });
   return true;
 }
