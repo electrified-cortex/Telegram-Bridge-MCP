@@ -20,7 +20,7 @@ export interface Session {
   reauthDialogMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
   notifyDebounceMs?: number; // deprecated — translated to notifyLockoutMs on use via profile/kick-debounce
-  notifyLockoutMs?: number; // per-session post-kick lockout window (ms), undefined = use default (300_000)
+  notifyLockoutMs?: number; // per-session post-notify lockout window (ms), undefined = use default (300_000)
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
   pendingEnvelopeHint?: string;
   silenceThresholdS?: number;

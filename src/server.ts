@@ -71,7 +71,7 @@ export function dispatchBehaviorTracking(
 ): void {
   initSession(sid);
   // Notify the activity-file subsystem that the agent is active.
-  // This resets the activity suppression window so we don't kick an already-awake agent.
+  // This resets the activity suppression window so we don't notify an already-awake agent.
   activityRecordTouch(sid);
 
   // Sub-sessions run tight dequeue loops and do not need behavioral nudges or

@@ -39,7 +39,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
 process.stderr.write(`[info] [${pkg.name}] v${pkg.version} starting...\n`);
 
-// B3: inject SSE kick callback into reminder-state so domain code never imports transport
+// B3: inject SSE notify callback into reminder-state so domain code never imports transport
 initReminderSseNotify(notifySseSubscriber);
 
 // Initialize security config early so warnings surface at startup

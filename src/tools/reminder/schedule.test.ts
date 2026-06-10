@@ -120,7 +120,7 @@ describe("scheduleReminder / reminder-state", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     resetReminderStateForTest();
-    // B3: inject the mock SSE kick callback so the sweep can call it
+    // B3: inject the mock SSE notify callback so the sweep can call it
     initReminderSseNotify(mocks.notifySseSubscriber);
   });
 
@@ -217,7 +217,7 @@ describe("scheduleReminder / reminder-state", () => {
       mocks.notifyIfAllowed.mockClear();
       withSid(7, () => {
         scheduleReminder({ id: "s1", text: "Due soon", cron: "0 9 * * *", tz: "UTC" });
-        // Force inside the 6s kick-ahead window so the next sweep tick kicks.
+        // Force inside the 6s notify-ahead window so the next sweep tick notifies.
         listReminders()[0].next_fire_ms = Date.now() + 3_000;
       });
       vi.advanceTimersByTime(5_000); // one sweep tick (5s interval)

@@ -361,7 +361,7 @@ export async function runDrainLoop(
   }
 
   if (timeout === 0) {
-    // Timeout=0 empty-poll: not content-returning — do NOT release kick lockout.
+    // Timeout=0 empty-poll: not content-returning — do NOT release notify lockout.
     setDequeueActive(sid, false);
     return { pending: pendingCountAny() };
   }
@@ -374,7 +374,7 @@ export async function runDrainLoop(
   let _staleWarnSent = false;
   setDequeueIdle(sid, true);
   // Tracks whether this dequeue call exits via a content-returning path.
-  // Only content-returning exits release the kick lockout; timeout exits skip.
+  // Only content-returning exits release the notify lockout; timeout exits skip.
   let _lockoutRelease = false;
   let _reminderKickNeeded = false;
   try {
@@ -517,7 +517,7 @@ export async function runDrainLoop(
     // that case. A refcount would be needed to handle it precisely.
     setDequeueIdle(sid, false);
     setDequeueActive(sid, false);
-    // Release kick lockout on all dequeue exits (content-returning and timeout).
+    // Release notify lockout on all dequeue exits (content-returning and timeout).
     if (_lockoutRelease) {
       releaseNotifyLockout(sid);
       resetChannelCooldown(sid);

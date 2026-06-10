@@ -16,11 +16,11 @@ import { getCallerSid } from "./session-context.js";
 import { notifyIfAllowed } from "./tools/activity/file-state.js";
 
 // B3: domain code must not name the transport directly.
-// Inject the SSE kick callback at startup via initReminderSseNotify().
+// Inject the SSE notify callback at startup via initReminderSseNotify().
 let _notifySseSubscriber: ((sid: number) => void) | null = null;
 
 /**
- * Inject the SSE kick callback so this domain module never imports the transport.
+ * Inject the SSE notify callback so this domain module never imports the transport.
  * Call once at startup before any reminders are scheduled.
  */
 export function initReminderSseNotify(fn: (sid: number) => void): void {
@@ -90,7 +90,7 @@ let _nextEventId = -10_000;
 
 // ── Schedule sweep (shared, module-level) ─────────────────────────────────
 // Single 5-second interval; starts on first reminder/schedule, stops when last is removed.
-// Sends a kick (wake signal) when next_fire_ms is within 6 s. The actual fire happens
+// Sends a notify (wake signal) when next_fire_ms is within 6 s. The actual fire happens
 // in dequeue's in-loop check (popFireableScheduleReminders), not here.
 
 const _scheduleSids = new Set<number>();
@@ -115,7 +115,7 @@ function startScheduleSweep(): void {
           r.next_fire_ms === undefined ||
           r.next_fire_ms - now > SCHEDULE_NOTIFY_AHEAD_MS
         ) continue;
-        // Dedup: only kick once per unique next_fire_ms value per reminder
+        // Dedup: only notify once per unique next_fire_ms value per reminder
         let notifyMap = _lastNotifiedFireMs.get(sid);
         if (!notifyMap) { notifyMap = new Map<string, number>(); _lastNotifiedFireMs.set(sid, notifyMap); }
         if (notifyMap.get(r.id) === r.next_fire_ms) continue;
@@ -125,7 +125,7 @@ function startScheduleSweep(): void {
       if (shouldKick) {
         // Wake BOTH parked-agent flavors: SSE-stream subscribers AND activity-file
         // monitors. Most pods (BT, Curator) park on the activity FILE, not SSE — without
-        // the file kick a scheduled reminder fires but never wakes a file-parked agent.
+        // the file notify a scheduled reminder fires but never wakes a file-parked agent.
         _notifySseSubscriber?.(sid);
         notifyIfAllowed(sid, "reminder", false);
       }

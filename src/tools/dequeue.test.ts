@@ -1296,10 +1296,10 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // Reminder kick — activity file monitor wakeup on reminder return
+  // Reminder notify — activity file monitor wakeup on reminder return
   // =========================================================================
 
-  describe("reminder kick (activity monitor wakeup)", () => {
+  describe("reminder notify (activity monitor wakeup)", () => {
     it("P1: pre-loop event reminder calls notifyIfAllowed", async () => {
       const fakeReminder = { text: "event reminder pre-loop" };
       reminderMocks.popFireableEventReminders.mockReturnValueOnce([fakeReminder]);
@@ -1350,7 +1350,7 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // BT-2301: timeout-exit releases kick lockout
+  // BT-2301: timeout-exit releases notify lockout
   // =========================================================================
 
   describe("timeout-exit lockout release (BT-2301)", () => {
@@ -1385,15 +1385,15 @@ describe("dequeue tool", () => {
     });
 
     it("subsequent notifyIfAllowed fires after timeout exit (end-to-end AC1)", async () => {
-      // Verify that after a timeout exit releases the lockout, the next kick is not suppressed.
+      // Verify that after a timeout exit releases the lockout, the next notify is not suppressed.
       // This requires the real file-state module (not the mock), so we verify via
-      // the dequeue mock: releaseNotifyLockout was called → lockout is cleared → kick allowed.
+      // the dequeue mock: releaseNotifyLockout was called → lockout is cleared → notify allowed.
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(() => delay(50));
 
       await call({ timeout: 1, token: 1_123_456 });
 
-      // releaseNotifyLockout was called — a file-parked agent would now accept a kick
+      // releaseNotifyLockout was called — a file-parked agent would now accept a notify
       expect(fileStateMocks.releaseNotifyLockout).toHaveBeenCalledWith(1);
     });
   });

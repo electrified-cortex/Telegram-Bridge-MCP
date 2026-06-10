@@ -524,7 +524,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   // Reset health markers; preserve queued messages for the reconnecting session
   fullSession.lastPollAt = undefined;
   fullSession.healthy = true;
-  // Reset kick gate state so the new agent gets a kick on the next inbound (AC #10)
+  // Reset notify gate state so the new agent gets a notify on the next inbound (AC #10)
   resetNotifyGateState(existing.sid);
   const _pending = getSessionQueue(existing.sid)?.pendingCount() ?? 0;
   setActiveSession(existing.sid);

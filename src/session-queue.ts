@@ -421,7 +421,7 @@ export function deliverAsyncSendCallback(
   };
 
   q.enqueue(event);
-  // send_callback is bridge-internal housekeeping — no kick
+  // send_callback is bridge-internal housekeeping — no notify
   dlog("async-send", `callback → sid=${targetSid}`, { pendingId: payload.pendingId, status: payload.status });
   // Update last_sent_at on confirmed async TTS delivery (message_id returned).
   if (payload.status === "ok" && (payload.messageId !== undefined || (payload.messageIds?.length ?? 0) > 0)) {

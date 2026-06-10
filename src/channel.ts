@@ -10,7 +10,7 @@
  *
  * URI scheme: `telegram://inbox/<token>`
  *
- * Cooldown model (mirrors the activity-file kick gate):
+ * Cooldown model (mirrors the activity-file notify gate):
  *   - First inbound → notify immediately; cooldown arms after send confirms.
  *   - Further inbounds during cooldown → set a "pending" flag; no extra notification.
  *   - Content-returning dequeue → clear cooldown + flag (agent consumed; no reminder needed).

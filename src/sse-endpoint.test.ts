@@ -140,7 +140,7 @@ describe("GET /sse", () => {
     expect(lines).toContain("data: kick");
   });
 
-  it("does NOT deliver kick when notifySseSubscriber is called for a different sid", async () => {
+  it("does NOT deliver notify when notifySseSubscriber is called for a different sid", async () => {
     const collectPromise = collectSseLines(`http://127.0.0.1:${port}/sse?token=${token}`, 1, 350);
 
     await new Promise(r => setTimeout(r, 60));
