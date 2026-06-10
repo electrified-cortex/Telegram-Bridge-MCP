@@ -23,6 +23,7 @@ import { applyProfile } from "../profile/apply.js";
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   kickSseSubscriber: vi.fn(),
+  kickIfAllowed: vi.fn(),
 }));
 
 vi.mock("../../session-manager.js", () => ({
@@ -31,6 +32,11 @@ vi.mock("../../session-manager.js", () => ({
 
 vi.mock("../../sse-endpoint.js", () => ({
   kickSseSubscriber: mocks.kickSseSubscriber,
+}));
+
+vi.mock("../activity/file-state.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../activity/file-state.js")>()),
+  kickIfAllowed: mocks.kickIfAllowed,
 }));
 
 import { handleScheduleReminder } from "./schedule.js";
@@ -196,6 +202,28 @@ describe("scheduleReminder / reminder-state", () => {
       addReminder({ id: "t1", text: "time", delay_seconds: 300, recurring: false, trigger: "time" });
       expect(getSoonestScheduleFireMs(1)).toBeNull();
     });
+  });
+
+  it("sweep wakes BOTH the SSE subscriber AND the activity-file monitor for a due reminder", () => {
+    // A scheduled reminder must wake an agent parked on its activity-FILE monitor (BT,
+    // Curator), not only SSE subscribers. The sweep must call kickIfAllowed, not just
+    // kickSseSubscriber. Without this the reminder fires but never wakes a file-parked agent.
+    vi.useFakeTimers();
+    try {
+      mocks.kickSseSubscriber.mockClear();
+      mocks.kickIfAllowed.mockClear();
+      withSid(7, () => {
+        scheduleReminder({ id: "s1", text: "Due soon", cron: "0 9 * * *", tz: "UTC" });
+        // Force inside the 6s kick-ahead window so the next sweep tick kicks.
+        listReminders()[0].next_fire_ms = Date.now() + 3_000;
+      });
+      vi.advanceTimersByTime(5_000); // one sweep tick (5s interval)
+      expect(mocks.kickSseSubscriber).toHaveBeenCalledWith(7);
+      expect(mocks.kickIfAllowed).toHaveBeenCalledWith(7, "reminder", false);
+    } finally {
+      clearSessionReminders(7);
+      vi.useRealTimers();
+    }
   });
 
   it("§R-4: clearSessionReminders cleans up sweep state", () => {

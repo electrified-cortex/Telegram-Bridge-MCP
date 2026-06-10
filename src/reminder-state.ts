@@ -14,6 +14,7 @@ import { createHash } from "crypto";
 import { Cron } from "croner";
 import { getCallerSid } from "./session-context.js";
 import { kickSseSubscriber } from "./sse-endpoint.js";
+import { kickIfAllowed } from "./tools/activity/file-state.js";
 
 /**
  * Deterministic reminder ID derived from content.
@@ -110,7 +111,13 @@ function startScheduleSweep(): void {
         kickMap.set(r.id, r.next_fire_ms);
         shouldKick = true;
       }
-      if (shouldKick) kickSseSubscriber(sid);
+      if (shouldKick) {
+        // Wake BOTH parked-agent flavors: SSE-stream subscribers AND activity-file
+        // monitors. Most pods (BT, Curator) park on the activity FILE, not SSE — without
+        // the file kick a scheduled reminder fires but never wakes a file-parked agent.
+        kickSseSubscriber(sid);
+        kickIfAllowed(sid, "reminder", false);
+      }
     }
   }, SCHEDULE_SWEEP_INTERVAL_MS);
 }
