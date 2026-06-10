@@ -106,7 +106,8 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           if (typeof delay_seconds !== "number" || isNaN(delay_seconds)) continue;
           const recurring = (rd.recurring as boolean | undefined) ?? false;
           const mode = (rd.mode as "all" | "operator" | undefined) ?? "all";
-          const reminderId = reminderContentHash(r.text, recurring, "last_received", mode);
+          const only_if_silent = rd.only_if_silent as boolean | undefined;
+          const reminderId = reminderContentHash(r.text, recurring, "last_received", mode, only_if_silent);
           const alreadyExists = existing.some(e => e.id === reminderId);
           if (!alreadyExists) {
             addReminder({
@@ -116,6 +117,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
               trigger: "last_received",
               delay_seconds,
               mode,
+              only_if_silent,
             });
             addedReminders.push(reminderId);
           } else {
