@@ -1258,40 +1258,22 @@ describe("dequeue tool", () => {
   });
 
   describe("reminder fire path", () => {
-    it("fires reminder events and returns updates with no hint fields", async () => {
-      // Strategy: mock Date.now so that idleDuration immediately exceeds
-      // REMINDER_IDLE_THRESHOLD_MS (60_000 ms) on the first loop iteration.
-      // This lets us test the reminder-fire return path without real delays
-      // or fake timers (which cause V8 heap issues in this test runner).
-      const realDateNow = Date.now;
-      const fakeStart = realDateNow();
-      let dateNowCallCount = 0;
-      Date.now = () => {
-        // Calls in dequeue.ts (in order):
-        //   0: deadline = Date.now() + timeout * 1000   → fakeStart (normal)
-        //   1: reminderIdleStart = Date.now()           → fakeStart (normal)
-        //   2: while (Date.now() < deadline)            → fakeStart (enters loop)
-        //   3: const now = Date.now()                   → fakeStart + 61_000 (idleDuration >= threshold)
-        const callIdx = dateNowCallCount++;
-        return callIdx < 3 ? fakeStart : fakeStart + 61_000;
-      };
+    it("does NOT return reminder updates — reminders now delivered via session-queue", async () => {
+      const fakeStart = Date.now();
+      const fakeReminder = { id: "rem-1", text: "test reminder", recurring: false,
+        delay_seconds: 0, created_at: fakeStart, activated_at: fakeStart, state: "active" as const };
+      reminderMocks.getActiveReminders.mockReturnValue([fakeReminder]);
+      reminderMocks.popActiveReminders.mockReturnValue([fakeReminder]);
 
-      try {
-        const fakeReminder = { id: "rem-1", text: "test reminder", recurring: false, delay_seconds: 0, created_at: fakeStart, activated_at: fakeStart, state: "active" as const };
-        reminderMocks.getActiveReminders.mockReturnValue([fakeReminder]);
-        reminderMocks.popActiveReminders.mockReturnValue([fakeReminder]);
+      const result = await call({ timeout: 0, token: 1_123_456 });  // timeout:0 to avoid spin
+      const data = parseResult(result);
 
-        const result = await call({ timeout: 300, token: 1_123_456 });
-        const data = parseResult(result);
-
-        // The reminder-fire path should have fired
-        expect(data.updates).toBeDefined();
-        expect(Array.isArray(data.updates)).toBe(true);
-        // No hint field in lean response
-        expect(data.hint).toBeUndefined();
-      } finally {
-        Date.now = realDateNow;
-      }
+      // Dequeue should return an empty response (pending-only), NOT reminder updates
+      // timeout:0 returns { pending: N } not { timed_out: true }
+      expect(data.updates ?? []).toHaveLength(0);
+      expect(data.timed_out).toBeUndefined();
+      // popActiveReminders NOT called by dequeue (§5-b moved delivery to session-queue)
+      expect(reminderMocks.popActiveReminders).not.toHaveBeenCalled();
     });
   });
 
@@ -1300,46 +1282,15 @@ describe("dequeue tool", () => {
   // =========================================================================
 
   describe("reminder notify (activity monitor wakeup)", () => {
-    it("P1: pre-loop event reminder calls notifyIfAllowed", async () => {
-      const fakeReminder = { text: "event reminder pre-loop" };
-      reminderMocks.popFireableEventReminders.mockReturnValueOnce([fakeReminder]);
+    it("P1-P3 (§5-b): dequeue does NOT call notifyIfAllowed for reminder delivery — moved to session-queue", async () => {
+      // Reminder content exists but dequeue should not deliver it
+      reminderMocks.popFireableEventReminders.mockReturnValue([{ text: "event reminder" }]);
+      reminderMocks.getActiveReminders.mockReturnValue([{ text: "active reminder" }]);
 
-      await call({ timeout: 300, token: 1_123_456 });
+      await call({ timeout: 0, token: 1_123_456 });
 
-      expect(fileStateMocks.notifyIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
-    });
-
-    it("P2: in-loop event reminder calls notifyIfAllowed via finally block", async () => {
-      const fakeReminder = { text: "event reminder in-loop" };
-      reminderMocks.popFireableEventReminders
-        .mockReturnValueOnce([]) // pre-loop check: skip P1
-        .mockReturnValueOnce([fakeReminder]); // first loop iteration: P2 fires
-
-      await call({ timeout: 300, token: 1_123_456 });
-
-      expect(fileStateMocks.notifyIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
-    });
-
-    it("P3: idle-threshold reminder calls notifyIfAllowed via finally block", async () => {
-      const realDateNow = Date.now;
-      const fakeStart = realDateNow();
-      let dateNowCallCount = 0;
-      Date.now = () => {
-        const callIdx = dateNowCallCount++;
-        return callIdx < 3 ? fakeStart : fakeStart + 61_000;
-      };
-
-      try {
-        const fakeReminder = { id: "rem-1", text: "idle reminder", recurring: false, delay_seconds: 0, created_at: fakeStart, activated_at: fakeStart, state: "active" as const };
-        reminderMocks.getActiveReminders.mockReturnValue([fakeReminder]);
-        reminderMocks.popActiveReminders.mockReturnValue([fakeReminder]);
-
-        await call({ timeout: 300, token: 1_123_456 });
-
-        expect(fileStateMocks.notifyIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
-      } finally {
-        Date.now = realDateNow;
-      }
+      // notifyIfAllowed should NOT be called — delivery is now via deliverReminderEvent in session-queue
+      expect(fileStateMocks.notifyIfAllowed).not.toHaveBeenCalled();
     });
 
     it("timeout=0 empty-poll does NOT call notifyIfAllowed", async () => {

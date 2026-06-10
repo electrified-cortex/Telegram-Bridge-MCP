@@ -318,6 +318,28 @@ describe("applyProfile — last_received/last_sent loop fix (BT-7274)", () => {
     const applied = (result as { applied: Record<string, unknown> }).applied;
     expect((applied.reminders as { updated: string[] }).updated).toContain(existingId);
   });
+
+  it("Bug 1 fix — last_received with only_if_silent: true passes flag to addReminder and reminderContentHash", () => {
+    const result = applyProfile(1, {
+      // Cast to any to pass only_if_silent — the apply.ts code reads it via rd.only_if_silent cast
+      reminders: [{ trigger: "last_received", text: "Quiet check", recurring: false, delay_seconds: 60, only_if_silent: true } as unknown as { trigger: "last_received"; text: string; recurring: boolean; delay_seconds: number }],
+    });
+    expect("applied" in result).toBe(true);
+    expect(mocks.addReminder).toHaveBeenCalledOnce();
+    // only_if_silent must reach addReminder (Bug 1 fix: apply.ts now extracts and passes it)
+    expect(mocks.addReminder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trigger: "last_received",
+        only_if_silent: true,
+      }),
+    );
+    // The content hash must include only_if_silent (different hash from without flag)
+    const withFlagId = contentHash("Quiet check", false, "last_received", "all", true);
+    const withoutFlagId = contentHash("Quiet check", false, "last_received", "all", undefined);
+    expect(withFlagId).not.toBe(withoutFlagId); // hash changes when only_if_silent differs
+    const callArgs = (mocks.addReminder.mock.calls[0] as [{ id: string }])[0];
+    expect(callArgs.id).toBe(withFlagId);
+  });
 });
 
 describe("applyProfile — name_tag application", () => {
