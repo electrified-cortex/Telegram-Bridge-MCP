@@ -15,7 +15,7 @@ vi.mock("./telegram.js", async (importOriginal) => {
 });
 
 import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
-import { createSession, resetSessions } from "./session-manager.js";
+import { createSession, resetSessions, getDequeueDefault, setDequeueDefault } from "./session-manager.js";
 
 // ── Server helpers ────────────────────────────────────────────────────────────
 
@@ -148,5 +148,46 @@ describe("GET /sse", () => {
 
     const lines = await collectPromise;
     expect(lines).toHaveLength(0);
+  });
+
+  // ── AC-10a / AC-10b: 90s max_wait cap ────────────────────────────────────
+
+  describe("max_wait cap", () => {
+    it("AC-10a: default > 90 → capped to 90 on connect, restored on close", async () => {
+      // Server default is 300s — verify it's > 90 before connecting
+      expect(getDequeueDefault(sid)).toBeGreaterThan(90);
+      const prior = getDequeueDefault(sid);
+
+      const ac = new AbortController();
+      fetch(`http://127.0.0.1:${port}/sse?token=${token}`, { signal: ac.signal }).catch(() => {});
+
+      // Wait for connection to register and cap to apply
+      await new Promise(r => setTimeout(r, 80));
+      expect(getDequeueDefault(sid)).toBe(90);
+
+      // Close the SSE connection and wait for the close event to propagate
+      ac.abort();
+      await new Promise(r => setTimeout(r, 80));
+
+      // Prior default should be restored
+      expect(getDequeueDefault(sid)).toBe(prior);
+    });
+
+    it("AC-10b: default ≤ 90 → unchanged on connect and close", async () => {
+      setDequeueDefault(sid, 60); // explicitly set to ≤ 90
+      expect(getDequeueDefault(sid)).toBe(60);
+
+      const ac = new AbortController();
+      fetch(`http://127.0.0.1:${port}/sse?token=${token}`, { signal: ac.signal }).catch(() => {});
+
+      // Wait for connection to register
+      await new Promise(r => setTimeout(r, 80));
+      expect(getDequeueDefault(sid)).toBe(60); // unchanged
+
+      // Close connection
+      ac.abort();
+      await new Promise(r => setTimeout(r, 80));
+      expect(getDequeueDefault(sid)).toBe(60); // still unchanged
+    });
   });
 });

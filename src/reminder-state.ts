@@ -19,18 +19,6 @@ import { isDequeueActive } from "./tools/activity/file-state.js";
 // deliverReminderEvent is only called inside interval callbacks, never at module init.
 import { deliverReminderEvent } from "./session-queue.js";
 
-// B3: domain code must not name the transport directly.
-// Inject the SSE notify callback at startup via initReminderSseNotify().
-let _notifySseSubscriber: ((sid: number) => void) | null = null;
-
-/**
- * Inject the SSE notify callback so this domain module never imports the transport.
- * Call once at startup before any reminders are scheduled.
- */
-export function initReminderSseNotify(fn: (sid: number) => void): void {
-  _notifySseSubscriber = fn;
-}
-
 /**
  * Deterministic reminder ID derived from content.
  * Same text+recurring+trigger+mode+only_if_silent always yields the same 16-char hex string.

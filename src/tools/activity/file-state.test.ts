@@ -74,6 +74,7 @@ import {
   handleSessionStopped,
   replaceActivityFile,
   resetActivityFileStateForTest,
+  initSseNotifyCallback,
   type ActivityFileState,
 } from "./file-state.js";
 
@@ -734,5 +735,132 @@ describe("5-minute active re-notify (§5-a)", () => {
     await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-11: initSseNotifyCallback — SSE parity for file-state re-evaluation path
+// ---------------------------------------------------------------------------
+
+describe("AC-11: initSseNotifyCallback SSE parity", () => {
+  let sseSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    sessionMocks.getNotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    vi.mocked(appendFile).mockResolvedValue(undefined);
+    sseSpy = vi.fn();
+    initSseNotifyCallback(sseSpy as (sid: number) => void);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // AC-3 equiv: releaseNotifyLockout with pending → SSE fires once
+  it("AC-3 equiv: lockout active + pending → releaseNotifyLockout fires SSE once", async () => {
+    setActivityFile(SID, {
+      ...makeState(),
+      notifyLockedUntil: Date.now() + 10_000,
+      notifyPendingBecauseLocked: true,
+      touchInFlight: false,
+    });
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // AC-4 equiv: no lockout + not pending → releaseNotifyLockout is a no-op
+  it("AC-4 equiv: no lockout + no pending → releaseNotifyLockout fires SSE zero times", async () => {
+    setActivityFile(SID, {
+      ...makeState(),
+      notifyLockedUntil: null,
+      notifyPendingBecauseLocked: false,
+      touchInFlight: false,
+    });
+
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).toHaveBeenCalledTimes(0);
+  });
+
+  // AC-5 equiv: parked agent — SSE re-notify fires after 5-min lockout window
+  it("AC-5 equiv: 5-min inactivity → exactly 1 SSE write via _sseNotifyCallback", async () => {
+    setActivityFile(SID, makeState());
+
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // SSE not called yet — callback is for re-evaluation, not the initial notify
+    expect(sseSpy).not.toHaveBeenCalled();
+
+    // Advance 5 min → timer fires → fireRevaluationNotify → _sseNotifyCallback
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+
+    // One-shot: no further SSE after the re-notify window
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // AC-6 equiv: queue drains before 5 min → no SSE re-notify
+  it("AC-6 equiv: queue drains before 5 min → no SSE re-notify", async () => {
+    setActivityFile(SID, makeState());
+
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Queue empties — content-returning dequeue clears lockout and cancels timer
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Advance past where old timer would have fired
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).not.toHaveBeenCalled();
+  });
+
+  // AC-7 equiv: dequeue resets timer → fresh 5-min window fires SSE once
+  it("AC-7 equiv: dequeue resets timer → fresh 5-min window fires SSE once", async () => {
+    setActivityFile(SID, makeState());
+
+    // First notify — registers timer T1
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Content-returning dequeue: queue still has content, releases lockout (cancels T1)
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // New content → fresh notifyIfAllowed → timer T2 set
+    vi.mocked(appendFile).mockClear();
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).not.toHaveBeenCalled();
+
+    // Advance 5 min → T2 fires → SSE notify
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+
+    // No further SSE (one-shot)
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).toHaveBeenCalledTimes(1);
   });
 });

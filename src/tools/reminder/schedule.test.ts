@@ -17,7 +17,6 @@ import {
   resolveIana,
   validateIana,
   toOffsetISO,
-  initReminderSseNotify,
 } from "../../reminder-state.js";
 import { createSessionQueue, removeSessionQueue, resetSessionQueuesForTest } from "../../session-queue.js";
 import { applyProfile } from "../profile/apply.js";
@@ -41,6 +40,13 @@ vi.mock("../../sse-endpoint.js", () => ({
 vi.mock("../activity/file-state.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../activity/file-state.js")>()),
   notifyIfAllowed: mocks.notifyIfAllowed,
+}));
+
+// Mock notify.js so notifySession delegates to the mocked notifySseSubscriber.
+// The real notify.ts imports sse-endpoint + file-state whose mock intercepts are
+// unreliable in this transitive context (schedule.test.ts → session-queue.ts → notify.ts).
+vi.mock("../../tools/notify.js", () => ({
+  notifySession: (sid: number) => { mocks.notifySseSubscriber(sid); },
 }));
 
 import { handleScheduleReminder } from "./schedule.js";
@@ -122,10 +128,11 @@ describe("scheduleReminder / reminder-state", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
+    // notifySession gates notifySseSubscriber behind notifyIfAllowed (10-2305).
+    // Return true so SSE notifications propagate through the gate in these tests.
+    mocks.notifyIfAllowed.mockReturnValue(true);
     resetReminderStateForTest();
     resetSessionQueuesForTest();
-    // B3: inject the mock SSE notify callback so the sweep can call it
-    initReminderSseNotify(mocks.notifySseSubscriber);
   });
 
   it("adds a schedule reminder with correct state and next_fire_ms", () => {
@@ -212,9 +219,8 @@ describe("scheduleReminder / reminder-state", () => {
   });
 
   it("sweep delivers due reminder via deliverReminderEvent, which calls notifySseSubscriber", () => {
-    // §5-b step 8 (kick-ahead removal): schedule sweep now calls deliverReminderEvent directly
-    // instead of notifyIfAllowed+notifySseSubscriber. deliverReminderEvent enqueues the event
-    // and calls notifySseSubscriber internally. A session queue must exist for delivery to proceed.
+    // §5-b step 8 + 10-2305: schedule sweep calls deliverReminderEvent → notifySession →
+    // notifyIfAllowed (mocked true) → notifySseSubscriber. Session queue must exist for delivery.
     vi.useFakeTimers();
     createSessionQueue(7);
     try {
@@ -226,7 +232,7 @@ describe("scheduleReminder / reminder-state", () => {
       });
       vi.advanceTimersByTime(5_000); // one sweep tick (5s interval)
       expect(mocks.notifySseSubscriber).toHaveBeenCalledWith(7);
-      // Note: notifyIfAllowed is no longer called directly by the sweep (§5-b step 8 / TODO 10-2305)
+      // notifyIfAllowed is called via notifySession (10-2305) and mocked to return true above
     } finally {
       removeSessionQueue(7);
       clearSessionReminders(7);

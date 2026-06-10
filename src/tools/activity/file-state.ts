@@ -55,6 +55,12 @@ import { getNotifyLockoutMs } from "../../session-manager.js";
 import { hasPendingUserContent } from "../../session-queue.js";
 import { dlog } from "../../debug-log.js";
 
+let _sseNotifyCallback: ((sid: number) => void) | null = null;
+
+export function initSseNotifyCallback(fn: (sid: number) => void): void {
+  _sseNotifyCallback = fn;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** data/activity/ lives at repo_root/data/activity/ */
 const ACTIVITY_DIR = resolve(__dirname, "../../../", "data", "activity");
@@ -268,6 +274,7 @@ function fireRevaluationNotify(sid: number): void {
   entry.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
   entry.notifyPendingBecauseLocked = false;
   void doTouchWithRollback(sid, entry);
+  _sseNotifyCallback?.(sid);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,27 +313,27 @@ export function notifyIfAllowed(
   sid: number,
   source: NotifySource,
   inflightAtEnqueue: boolean,
-): void {
+): boolean {
   const entry = _state.get(sid);
-  if (!entry) return;
+  if (!entry) return false;
 
   // 1. Source classification
-  if (!classify(source, inflightAtEnqueue)) return;
+  if (!classify(source, inflightAtEnqueue)) return false;
 
   // 2. In-flight suppression: agent is blocked in dequeue, event delivered inline
-  if (entry.inflightDequeue) return;
+  if (entry.inflightDequeue) return false;
 
   // 3. Touch-in-flight: another notify is already executing
   if (entry.touchInFlight) {
     entry.notifyPendingBecauseLocked = true;
-    return;
+    return false;
   }
 
   // 4. Lockout check
   const now = Date.now();
   if (entry.notifyLockedUntil !== null && entry.notifyLockedUntil > now) {
     entry.notifyPendingBecauseLocked = true;
-    return;
+    return false;
   }
 
   // 5. Notify — synchronous reservation before async touch
@@ -346,6 +353,7 @@ export function notifyIfAllowed(
   }, lockoutMs);
   entry.notifyPendingBecauseLocked = false;
   void doTouchWithRollback(sid, entry);
+  return true;
 }
 
 /**
