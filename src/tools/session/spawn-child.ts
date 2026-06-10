@@ -85,6 +85,14 @@ export async function handleSpawnChild({
   setSessionParentSid(childSid, parentSid);
   setSessionCapability(childSid, cap);
 
+  // Inherit parent's name_tag so the child presents identically in Telegram.
+  if (parentSession?.name_tag !== undefined) {
+    const childSession = getSession(childSid);
+    if (childSession) {
+      childSession.name_tag = parentSession.name_tag;
+    }
+  }
+
   // Set the topic chip: "TopicName ①" — visible as **[TopicName ①]** in Telegram.
   const circleDigit = String.fromCodePoint(0x245F + displayIndex);
   runInSessionContext(childSid, () => { setTopic(`${name} ${circleDigit}`); });
