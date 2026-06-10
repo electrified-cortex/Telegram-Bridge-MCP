@@ -19,9 +19,9 @@ import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
 import type { ReminderEvent } from "./reminder-state.js";
 import { recordLastSentAt, recordLastReceivedAt, popFireableEventReminders, buildReminderEvent } from "./reminder-state.js";
-import { notifyIfAllowed, isDequeueActive } from "./tools/activity/file-state.js";
+import { isDequeueActive } from "./tools/activity/file-state.js";
 import { notifyChannelSubscriber } from "./channel.js";
-import { notifySseSubscriber } from "./sse-endpoint.js";
+import { notifySession } from "./tools/notify.js";
 import { getSession } from "./session-manager.js";
 import { recordNonToolEvent } from "./trace-log.js";
 
@@ -250,9 +250,8 @@ export function routeToSession(event: TimelineEvent): void {
   dlog("route", `broadcast event=${event.id} → ${_queues.size} sessions`);
   for (const [sid, q] of _queues.entries()) {
     q.enqueue(event);
-    notifyIfAllowed(sid, "operator", isDequeueActive(sid));
+    notifySession(sid, "operator", isDequeueActive(sid));
     notifyChannelSubscriber(sid, event);
-    notifySseSubscriber(sid);
     // Do NOT call notifyLastReceived — broadcast/ambiguous routing does not
     // count as "received by this session" for last_received reminder tracking.
   }
@@ -284,9 +283,8 @@ function enqueueToSession(
   const q = _queues.get(sid);
   if (!q) return;
   q.enqueue(event);
-  notifyIfAllowed(sid, "operator", isDequeueActive(sid));
+  notifySession(sid, "operator", isDequeueActive(sid));
   notifyChannelSubscriber(sid, event);
-  notifySseSubscriber(sid);
   // §5-b: Fire event-triggered reminders eagerly when events arrive for parked agents.
   // deliverReminderEvent calls q.enqueue directly (not via enqueueToSession) — no recursion risk.
   if (!isDequeueActive(sid)) {
@@ -462,9 +460,8 @@ export function deliverDirectMessage(
   };
 
   q.enqueue(event);
-  notifyIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
+  notifySession(targetSid, "operator", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
-  notifySseSubscriber(targetSid);
   dlog("dm", `delivered DM from sid=${senderSid} → sid=${targetSid}`, { eventId: event.id });
   return true;
 }
@@ -543,9 +540,8 @@ export function deliverServiceMessage(
   };
 
   q.enqueue(event);
-  notifyIfAllowed(targetSid, "service", isDequeueActive(targetSid));
+  notifySession(targetSid, "service", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
-  notifySseSubscriber(targetSid);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
@@ -580,9 +576,8 @@ export function deliverChildNotifyEvent(
   };
 
   q.enqueue(event);
-  notifyIfAllowed(parentSid, "service", isDequeueActive(parentSid));
+  notifySession(parentSid, "service", isDequeueActive(parentSid));
   notifyChannelSubscriber(parentSid, event);
-  notifySseSubscriber(parentSid);
   dlog("service", `child_notify → sid=${parentSid}`, { eventType, callerSid });
   return true;
 }
@@ -622,10 +617,8 @@ export function deliverReminderEvent(
 
   recordNonToolEvent("reminder_fire", targetSid, getSession(targetSid)?.name ?? "", src.text);
   q.enqueue(event);
-  notifyIfAllowed(targetSid, "reminder", isDequeueActive(targetSid));
+  notifySession(targetSid, "reminder", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
-  // TODO 10-2305: notifySseSubscriber here is ungated — fixed when 10-2305 gates all SSE calls
-  notifySseSubscriber(targetSid);
   dlog("service", `reminder delivered → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
 }
@@ -649,9 +642,8 @@ export function routeMessage(messageId: number, targetSid: number, routerSid: nu
     content: { ...event.content, routed_by: routerSid },
   };
   q.enqueue(routed);
-  notifyIfAllowed(targetSid, "operator", isDequeueActive(targetSid));
+  notifySession(targetSid, "operator", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, routed);
-  notifySseSubscriber(targetSid);
   dlog("route", `governor delegated msg=${messageId} → sid=${targetSid}`, { routerSid });
   return true;
 }

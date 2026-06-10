@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { TimelineEvent } from "./message-store.js";
 import {
   createSessionQueue,
@@ -11,10 +11,30 @@ import {
   broadcastOutbound,
   notifySessionWaiters,
   deliverDirectMessage,
+  deliverServiceMessage,
   deliverReminderEvent,
   hasPendingUserContent,
   resetSessionQueuesForTest,
 } from "./session-queue.js";
+
+// ---------------------------------------------------------------------------
+// Hoisted mocks for SSE notify gating (AC-2)
+// ---------------------------------------------------------------------------
+
+const sseMock = vi.hoisted(() => vi.fn());
+const notifyIfAllowedMock = vi.hoisted(() => vi.fn());
+const isDequeueActiveMock = vi.hoisted(() => vi.fn());
+
+vi.mock("./sse-endpoint.js", () => ({
+  notifySseSubscriber: sseMock,
+}));
+
+vi.mock("./tools/activity/file-state.js", () => ({
+  notifyIfAllowed: notifyIfAllowedMock,
+  isDequeueActive: isDequeueActiveMock,
+  setActivityFile: vi.fn(),
+  getActivityFile: vi.fn(),
+}));
 import {
   setGovernorSid,
   resetRoutingModeForTest,
@@ -68,6 +88,7 @@ function reactionEvent(target: number, id = 400): TimelineEvent {
 
 describe("session-queue", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     resetSessionQueuesForTest();
     resetRoutingModeForTest();
     resetReminderStateForTest();
@@ -611,6 +632,28 @@ describe("session-queue", () => {
       expect(sorted).toHaveLength(2);
       expect(sorted[0].event).toBe("message");
       expect(sorted[1].event).toBe("reminder");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // AC-2: SSE notification gating via notifySession
+  // -------------------------------------------------------------------------
+
+  describe("AC-2: SSE notification gating", () => {
+    const SID = 5;
+
+    beforeEach(() => {
+      // notifyIfAllowed returns true the first time (fires SSE), false thereafter (suppressed)
+      notifyIfAllowedMock.mockReturnValueOnce(true).mockReturnValue(false);
+      isDequeueActiveMock.mockReturnValue(false);
+      createSessionQueue(SID);
+    });
+
+    it("deliverServiceMessage ×10 → notifySseSubscriber called exactly once", () => {
+      for (let i = 0; i < 10; i++) {
+        deliverServiceMessage(SID, "msg", "test");
+      }
+      expect(sseMock).toHaveBeenCalledTimes(1);
     });
   });
 });

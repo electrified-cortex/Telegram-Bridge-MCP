@@ -10,7 +10,7 @@
  */
 import type { Request, Response, Express } from "express";
 import { decodeToken } from "./tools/identity-schema.js";
-import { validateSession } from "./session-manager.js";
+import { validateSession, getDequeueDefault, setDequeueDefault } from "./session-manager.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
 
 /** sid → active SSE response */
@@ -79,9 +79,17 @@ export function attachSseRoute(app: Express): void {
     _connections.set(sid, res);
     process.stderr.write(`[sse] connection opened sid=${sid}\n`);
 
+    const priorDefault = getDequeueDefault(sid);
+    if (priorDefault > 90) {
+      setDequeueDefault(sid, 90);
+    }
+
     req.on("close", () => {
       if (_connections.get(sid) === res) {
         _connections.delete(sid);
+        if (priorDefault > 90) {
+          setDequeueDefault(sid, priorDefault);
+        }
         process.stderr.write(`[sse] connection closed sid=${sid}\n`);
       }
     });
