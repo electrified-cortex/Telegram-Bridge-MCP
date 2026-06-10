@@ -14,7 +14,7 @@ vi.mock("./telegram.js", async (importOriginal) => {
   return { ...real, resolveChat: vi.fn().mockReturnValue(12345) };
 });
 
-import { attachSseRoute, kickSseSubscriber } from "./sse-endpoint.js";
+import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
 import { createSession, resetSessions } from "./session-manager.js";
 
 // ── Server helpers ────────────────────────────────────────────────────────────
@@ -128,23 +128,23 @@ describe("GET /sse", () => {
     ac.abort();
   });
 
-  it("delivers data: kick to an open SSE connection when kickSseSubscriber fires", async () => {
+  it("delivers data: kick to an open SSE connection when notifySseSubscriber fires", async () => {
     const collectPromise = collectSseLines(`http://127.0.0.1:${port}/sse?token=${token}`, 1);
 
     // Give the connection time to register
     await new Promise(r => setTimeout(r, 60));
 
-    kickSseSubscriber(sid);
+    notifySseSubscriber(sid);
 
     const lines = await collectPromise;
     expect(lines).toContain("data: kick");
   });
 
-  it("does NOT deliver kick when kickSseSubscriber is called for a different sid", async () => {
+  it("does NOT deliver notify when notifySseSubscriber is called for a different sid", async () => {
     const collectPromise = collectSseLines(`http://127.0.0.1:${port}/sse?token=${token}`, 1, 350);
 
     await new Promise(r => setTimeout(r, 60));
-    kickSseSubscriber(sid + 999); // wrong sid
+    notifySseSubscriber(sid + 999); // wrong sid
 
     const lines = await collectPromise;
     expect(lines).toHaveLength(0);

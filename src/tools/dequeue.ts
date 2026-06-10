@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseKickLockout, kickIfAllowed } from "./activity/file-state.js";
+import { setDequeueActive, releaseNotifyLockout, notifyIfAllowed } from "./activity/file-state.js";
 import { resetChannelCooldown } from "../channel.js";
 import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
@@ -244,7 +244,7 @@ export async function runDrainLoop(
     }
   }
 
-  // Mark this session as having an in-flight dequeue — suppresses activity-file kicks
+  // Mark this session as having an in-flight dequeue — suppresses activity-file notifications
   // while the agent is actively waiting for messages.
   // Only set after confirming the session exists so every path through the
   // try/finally below is guaranteed to call setDequeueActive(sid, false).
@@ -330,7 +330,7 @@ export async function runDrainLoop(
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
-    releaseKickLockout(sid); // content-returning exit
+    releaseNotifyLockout(sid); // content-returning exit
     resetChannelCooldown(sid);
     return result;
   }
@@ -353,15 +353,15 @@ export async function runDrainLoop(
         ...(reminderPending > 0 ? { pending: reminderPending } : {}),
       };
       setDequeueActive(sid, false);
-      releaseKickLockout(sid);
+      releaseNotifyLockout(sid);
       resetChannelCooldown(sid);
-      kickIfAllowed(sid, "reminder", false);
+      notifyIfAllowed(sid, "reminder", false);
       return reminderResult;
     }
   }
 
   if (timeout === 0) {
-    // Timeout=0 empty-poll: not content-returning — do NOT release kick lockout.
+    // Timeout=0 empty-poll: not content-returning — do NOT release notify lockout.
     setDequeueActive(sid, false);
     return { pending: pendingCountAny() };
   }
@@ -374,9 +374,9 @@ export async function runDrainLoop(
   let _staleWarnSent = false;
   setDequeueIdle(sid, true);
   // Tracks whether this dequeue call exits via a content-returning path.
-  // Only content-returning exits release the kick lockout; timeout exits skip.
+  // Only content-returning exits release the notify lockout; timeout exits skip.
   let _lockoutRelease = false;
-  let _reminderKickNeeded = false;
+  let _reminderNotifyNeeded = false;
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) break;
@@ -426,7 +426,7 @@ export async function runDrainLoop(
           };
           dlog("queue", `dequeue returning sid=${sid} batch=${allFired.length} event-reminder payloadLen=${JSON.stringify(reminderResult).length}`);
           _lockoutRelease = true;
-          _reminderKickNeeded = true;
+          _reminderNotifyNeeded = true;
           return reminderResult;
         }
       }
@@ -453,7 +453,7 @@ export async function runDrainLoop(
         // `updates` (real event data) and optionally `pending` (when > 0), neither
         // of which are compact-suppressible fields.
         _lockoutRelease = true;
-        _reminderKickNeeded = true;
+        _reminderNotifyNeeded = true;
         return reminderResult;
       }
 
@@ -517,13 +517,13 @@ export async function runDrainLoop(
     // that case. A refcount would be needed to handle it precisely.
     setDequeueIdle(sid, false);
     setDequeueActive(sid, false);
-    // Release kick lockout on all dequeue exits (content-returning and timeout).
+    // Release notify lockout on all dequeue exits (content-returning and timeout).
     if (_lockoutRelease) {
-      releaseKickLockout(sid);
+      releaseNotifyLockout(sid);
       resetChannelCooldown(sid);
     }
-    if (_reminderKickNeeded) {
-      kickIfAllowed(sid, "reminder", false);
+    if (_reminderNotifyNeeded) {
+      notifyIfAllowed(sid, "reminder", false);
     }
   }
 }

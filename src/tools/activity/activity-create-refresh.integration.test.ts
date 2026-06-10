@@ -20,8 +20,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 vi.mock("../../session-manager.js", () => ({
-  getKickLockoutMs: vi.fn((_sid: number): number => 300_000),
-  getKickDebounceMs: vi.fn((_sid: number): number => 60_000),
+  getNotifyLockoutMs: vi.fn((_sid: number): number => 300_000),
+  getNotifyDebounceMs: vi.fn((_sid: number): number => 60_000),
   getDequeueDefault: vi.fn((_sid: number): number => 300),
   setDequeueDefault: vi.fn((_sid: number, _v: number): void => {}),
 }));

@@ -29,15 +29,15 @@ interface SessionQueue {
 const fileStateMocks = vi.hoisted(() => ({
   setDequeueActive: vi.fn(),
   getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
-  releaseKickLockout: vi.fn((_sid: number) => {}),
-  kickIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
+  releaseNotifyLockout: vi.fn((_sid: number) => {}),
+  notifyIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
   setDequeueActive: (sid: number, active: boolean) => fileStateMocks.setDequeueActive(sid, active),
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
-  releaseKickLockout: (sid: number) => { fileStateMocks.releaseKickLockout(sid); },
-  kickIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.kickIfAllowed(sid, source, inflight); },
+  releaseNotifyLockout: (sid: number) => { fileStateMocks.releaseNotifyLockout(sid); },
+  notifyIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.notifyIfAllowed(sid, source, inflight); },
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -1296,20 +1296,20 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // Reminder kick — activity file monitor wakeup on reminder return
+  // Reminder notify — activity file monitor wakeup on reminder return
   // =========================================================================
 
-  describe("reminder kick (activity monitor wakeup)", () => {
-    it("P1: pre-loop event reminder calls kickIfAllowed", async () => {
+  describe("reminder notify (activity monitor wakeup)", () => {
+    it("P1: pre-loop event reminder calls notifyIfAllowed", async () => {
       const fakeReminder = { text: "event reminder pre-loop" };
       reminderMocks.popFireableEventReminders.mockReturnValueOnce([fakeReminder]);
 
       await call({ timeout: 300, token: 1_123_456 });
 
-      expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
+      expect(fileStateMocks.notifyIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
     });
 
-    it("P2: in-loop event reminder calls kickIfAllowed via finally block", async () => {
+    it("P2: in-loop event reminder calls notifyIfAllowed via finally block", async () => {
       const fakeReminder = { text: "event reminder in-loop" };
       reminderMocks.popFireableEventReminders
         .mockReturnValueOnce([]) // pre-loop check: skip P1
@@ -1317,10 +1317,10 @@ describe("dequeue tool", () => {
 
       await call({ timeout: 300, token: 1_123_456 });
 
-      expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
+      expect(fileStateMocks.notifyIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
     });
 
-    it("P3: idle-threshold reminder calls kickIfAllowed via finally block", async () => {
+    it("P3: idle-threshold reminder calls notifyIfAllowed via finally block", async () => {
       const realDateNow = Date.now;
       const fakeStart = realDateNow();
       let dateNowCallCount = 0;
@@ -1336,65 +1336,65 @@ describe("dequeue tool", () => {
 
         await call({ timeout: 300, token: 1_123_456 });
 
-        expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
+        expect(fileStateMocks.notifyIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
       } finally {
         Date.now = realDateNow;
       }
     });
 
-    it("timeout=0 empty-poll does NOT call kickIfAllowed", async () => {
+    it("timeout=0 empty-poll does NOT call notifyIfAllowed", async () => {
       await call({ timeout: 0, token: 1_123_456 });
 
-      expect(fileStateMocks.kickIfAllowed).not.toHaveBeenCalled();
+      expect(fileStateMocks.notifyIfAllowed).not.toHaveBeenCalled();
     });
   });
 
   // =========================================================================
-  // BT-2301: timeout-exit releases kick lockout
+  // BT-2301: timeout-exit releases notify lockout
   // =========================================================================
 
   describe("timeout-exit lockout release (BT-2301)", () => {
-    it("releaseKickLockout is called after a blocking wait that times out", async () => {
+    it("releaseNotifyLockout is called after a blocking wait that times out", async () => {
       // Arrange: dequeue blocks, no content ever arrives, times out
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(() => delay(50));
 
       await call({ timeout: 1, token: 1_123_456 });
 
-      // Primary assertion: releaseKickLockout MUST be called on timeout exit (BT-2301 fix)
-      expect(fileStateMocks.releaseKickLockout).toHaveBeenCalledWith(1);
+      // Primary assertion: releaseNotifyLockout MUST be called on timeout exit (BT-2301 fix)
+      expect(fileStateMocks.releaseNotifyLockout).toHaveBeenCalledWith(1);
     });
 
-    it("releaseKickLockout is also called on content-returning paths (no regression)", async () => {
+    it("releaseNotifyLockout is also called on content-returning paths (no regression)", async () => {
       // Content-returning path: batch arrives immediately
       const evt = makeEvent(42, "content");
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
 
       await call({ timeout: 300, token: 1_123_456 });
 
-      expect(fileStateMocks.releaseKickLockout).toHaveBeenCalledWith(1);
+      expect(fileStateMocks.releaseNotifyLockout).toHaveBeenCalledWith(1);
     });
 
-    it("timeout=0 instant-poll does NOT call releaseKickLockout (empty-poll guard preserved)", async () => {
+    it("timeout=0 instant-poll does NOT call releaseNotifyLockout (empty-poll guard preserved)", async () => {
       // timeout=0 takes a different early-return path — lockout not released
       mocks.dequeueBatch.mockReturnValue([]);
 
       await call({ timeout: 0, token: 1_123_456 });
 
-      expect(fileStateMocks.releaseKickLockout).not.toHaveBeenCalled();
+      expect(fileStateMocks.releaseNotifyLockout).not.toHaveBeenCalled();
     });
 
-    it("subsequent kickIfAllowed fires after timeout exit (end-to-end AC1)", async () => {
-      // Verify that after a timeout exit releases the lockout, the next kick is not suppressed.
+    it("subsequent notifyIfAllowed fires after timeout exit (end-to-end AC1)", async () => {
+      // Verify that after a timeout exit releases the lockout, the next notify is not suppressed.
       // This requires the real file-state module (not the mock), so we verify via
-      // the dequeue mock: releaseKickLockout was called → lockout is cleared → kick allowed.
+      // the dequeue mock: releaseNotifyLockout was called → lockout is cleared → notify allowed.
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(() => delay(50));
 
       await call({ timeout: 1, token: 1_123_456 });
 
-      // releaseKickLockout was called — a file-parked agent would now accept a kick
-      expect(fileStateMocks.releaseKickLockout).toHaveBeenCalledWith(1);
+      // releaseNotifyLockout was called — a file-parked agent would now accept a notify
+      expect(fileStateMocks.releaseNotifyLockout).toHaveBeenCalledWith(1);
     });
   });
 

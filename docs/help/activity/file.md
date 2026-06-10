@@ -76,7 +76,7 @@ pwsh tools/monitor.ps1 $activityFilePath -Prefix MySession
 When you call `activity/file/create`, the response includes a `monitor` field with ready-to-run instructions for your platform:
 
 ```
-Run tools/monitor.ps1 <path> (preferred on Windows) or tools/monitor.sh <path> from your repo root to watch for kicks.
+Run tools/monitor.ps1 <path> (preferred on Windows) or tools/monitor.sh <path> from your repo root to watch for notifications.
 ```
 
 Pass the command to the Claude Code `Monitor` tool with `persistent: true` so it survives across dequeue calls.

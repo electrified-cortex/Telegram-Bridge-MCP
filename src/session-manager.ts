@@ -19,8 +19,8 @@ export interface Session {
   announcementMsgId?: number;
   reauthDialogMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
-  kickDebounceMs?: number; // deprecated — translated to kickLockoutMs on use via profile/kick-debounce
-  kickLockoutMs?: number; // per-session post-kick lockout window (ms), undefined = use default (300_000)
+  notifyDebounceMs?: number; // deprecated — translated to notifyLockoutMs on use via profile/kick-debounce
+  notifyLockoutMs?: number; // per-session post-notify lockout window (ms), undefined = use default (300_000)
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
   pendingEnvelopeHint?: string;
   silenceThresholdS?: number;
@@ -331,37 +331,37 @@ export function setDequeueDefault(sid: number, timeout: number): void {
 }
 
 /**
- * Get the per-session activity-file kick debounce window (ms).
+ * Get the per-session activity-file notify debounce window (ms).
  * Falls back to 60 000 ms if not set.
  */
-export function getKickDebounceMs(sid: number): number {
-  return _sessions.get(sid)?.kickDebounceMs ?? 60_000;
+export function getNotifyDebounceMs(sid: number): number {
+  return _sessions.get(sid)?.notifyDebounceMs ?? 60_000;
 }
 
 /**
- * Set the per-session activity-file kick debounce window (ms).
+ * Set the per-session activity-file notify debounce window (ms).
  * No-op if the session does not exist.
  */
-export function setKickDebounceMs(sid: number, ms: number): void {
+export function setNotifyDebounceMs(sid: number, ms: number): void {
   const session = _sessions.get(sid);
-  if (session) session.kickDebounceMs = ms;
+  if (session) session.notifyDebounceMs = ms;
 }
 
 /**
- * Get the per-session post-kick lockout window (ms).
+ * Get the per-session post-notify lockout window (ms).
  * Falls back to 300 000 ms (5 min) if not set.
  */
-export function getKickLockoutMs(sid: number): number {
-  return _sessions.get(sid)?.kickLockoutMs ?? 300_000;
+export function getNotifyLockoutMs(sid: number): number {
+  return _sessions.get(sid)?.notifyLockoutMs ?? 300_000;
 }
 
 /**
- * Set the per-session post-kick lockout window (ms).
+ * Set the per-session post-notify lockout window (ms).
  * No-op if the session does not exist.
  */
-export function setKickLockoutMs(sid: number, ms: number): void {
+export function setNotifyLockoutMs(sid: number, ms: number): void {
   const session = _sessions.get(sid);
-  if (session) session.kickLockoutMs = ms;
+  if (session) session.notifyLockoutMs = ms;
 }
 
 /** Set a pending envelope hint to be included on the next dequeue response for this session. */

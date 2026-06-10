@@ -1,5 +1,5 @@
 /**
- * Per-session activity file state and kick gate.
+ * Per-session activity file state and notify gate.
  *
  * Tracks whether a session has opted into the file-touch feature.
  * On inbound messages, TMCP appends "\n" to the registered file so
@@ -9,29 +9,29 @@
  *   tmcpOwned = true  → TMCP created the file; deletes on clear/close.
  *   tmcpOwned = false → agent supplied path; TMCP never touches lifecycle.
  *
- * Kick gate (post-kick lockout):
- *   kickIfAllowed() is the sole entry point for kicking. It:
+ * Notify gate (post-notify lockout):
+ *   notifyIfAllowed() is the sole entry point for notifying. It:
  *     1. Classifies the event by source + inflightAtEnqueue.
  *     2. Suppresses if dequeue is in-flight (agent reads inline).
- *     3. Suppresses if the kick lockout is active (kickLockedUntil > now).
- *     4. If suppressed, sets kickPendingBecauseLocked for re-evaluation.
+ *     3. Suppresses if the notify lockout is active (notifyLockedUntil > now).
+ *     4. If suppressed, sets notifyPendingBecauseLocked for re-evaluation.
  *     5. Otherwise: touches the activity file, sets lockout for LOCKOUT_MS.
  *   On touch failure, lockout is rolled back and a bounded retry is scheduled.
  *
  * Lockout release:
- *   releaseKickLockout() is called from content-returning dequeue exits.
- *   If a kick was suppressed during lockout AND the queue still has pending
- *   content, a re-evaluation kick fires immediately after the lockout clears.
- *   Timeout-only dequeue exits do NOT call releaseKickLockout.
+ *   releaseNotifyLockout() is called from content-returning dequeue exits.
+ *   If a notification was suppressed during lockout AND the queue still has pending
+ *   content, a re-evaluation notify fires immediately after the lockout clears.
+ *   Timeout-only dequeue exits do NOT call releaseNotifyLockout.
  *
  * Stale lockout:
- *   If the lockout expires (kickLockedUntil elapsed) before the agent dequeues,
- *   the next inbound fires a fresh kick. Wedged agents get at most one kick
+ *   If the lockout expires (notifyLockedUntil elapsed) before the agent dequeues,
+ *   the next inbound fires a fresh notify. Wedged agents get at most one notify
  *   per LOCKOUT_MS.
  *
  * Classification (A.3):
- *   source          | inflightAtEnqueue | kicks?
- *   ----------------+-------------------+-------
+ *   source          | inflightAtEnqueue | notifies?
+ *   ----------------+-------------------+----------
  *   operator        | *                 | yes
  *   reminder        | *                 | yes
  *   approval-self   | *                 | yes
@@ -41,8 +41,8 @@
  *   bridge-internal | *                 | no
  *
  * Reset points:
- *   handleSessionStopped — clears lockout, kicks if queue has pending.
- *   resetKickGateState   — clears lockout state only (reconnect path).
+ *   handleSessionStopped — clears lockout, notifies if queue has pending.
+ *   resetNotifyGateState   — clears lockout state only (reconnect path).
  *   clearActivityFile    — cancels retry handle.
  *   replaceActivityFile  — cancels retry handle of old entry, carries gate state.
  */
@@ -51,7 +51,7 @@ import { appendFile, unlink, mkdir, open } from "fs/promises";
 import { dirname, isAbsolute, resolve } from "path";
 import { randomBytes } from "crypto";
 import { fileURLToPath } from "url";
-import { getKickLockoutMs } from "../../session-manager.js";
+import { getNotifyLockoutMs } from "../../session-manager.js";
 import { hasPendingUserContent } from "../../session-queue.js";
 import { dlog } from "../../debug-log.js";
 
@@ -63,7 +63,7 @@ const ACTIVITY_DIR = resolve(__dirname, "../../../", "data", "activity");
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Default post-kick lockout window (ms). */
+/** Default post-notify lockout window (ms). */
 export const LOCKOUT_DEFAULT_MS = 300_000;
 
 /** Minimum allowed lockout window (ms). */
@@ -73,15 +73,15 @@ export const LOCKOUT_MIN_MS = 1_000;
 export const LOCKOUT_MAX_MS = 3_600_000;
 
 // Kept for deprecated profile/kick-debounce migration response only.
-export const KICK_DEBOUNCE_DEFAULT_MS = 60_000;
-export const KICK_DEBOUNCE_MIN_MS = 1_000;
-export const KICK_DEBOUNCE_MAX_MS = 600_000;
+export const NOTIFY_DEBOUNCE_DEFAULT_MS = 60_000;
+export const NOTIFY_DEBOUNCE_MIN_MS = 1_000;
+export const NOTIFY_DEBOUNCE_MAX_MS = 600_000;
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type KickSource =
+export type NotifySource =
   | "operator"
   | "reminder"
   | "approval-self"
@@ -97,9 +97,9 @@ export interface ActivityFileState {
   /** True while a dequeue call is being processed for this session. */
   inflightDequeue: boolean;
   /** UTC ms when lockout expires; null = not locked. */
-  kickLockedUntil: number | null;
-  /** True when a kickable inbound was suppressed during lockout. */
-  kickPendingBecauseLocked: boolean;
+  notifyLockedUntil: number | null;
+  /** True when a notifiable inbound was suppressed during lockout. */
+  notifyPendingBecauseLocked: boolean;
   /** True while appendNewline is in flight (including retries). */
   touchInFlight: boolean;
   /** setTimeout handle for the next bounded retry; null if none. */
@@ -196,7 +196,7 @@ async function doTouchWithRollback(sid: number, lockedEntry: ActivityFileState):
 
   if (!ok) {
     // Touch failed — roll back lockout so next inbound retries
-    recheck.kickLockedUntil = null;
+    recheck.notifyLockedUntil = null;
     scheduleRetry(sid, recheck, 0);
   }
 }
@@ -232,7 +232,7 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
       recheck.touchInFlight = false;
 
       if (ok) {
-        recheck.kickLockedUntil = Date.now() + getKickLockoutMs(sid);
+        recheck.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
       } else {
         scheduleRetry(sid, recheck, attempt + 1);
       }
@@ -240,8 +240,8 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
   }, RETRY_DELAYS[attempt]);
 }
 
-/** Classify whether a source + context warrants a kick. Pure over inputs. */
-function classify(source: KickSource, inflightAtEnqueue: boolean): boolean {
+/** Classify whether a source + context warrants a notify. Pure over inputs. */
+function classify(source: NotifySource, inflightAtEnqueue: boolean): boolean {
   switch (source) {
     case "bridge-internal": return false;
     case "service": return !inflightAtEnqueue;
@@ -250,21 +250,21 @@ function classify(source: KickSource, inflightAtEnqueue: boolean): boolean {
 }
 
 /**
- * Fire a re-evaluation kick after lockout clears when a kickable event was suppressed.
- * Direct touch path — does not re-enter kickIfAllowed (no classification, never declines).
+ * Fire a re-evaluation notify after lockout clears when a notifiable event was suppressed.
+ * Direct touch path — does not re-enter notifyIfAllowed (no classification, never declines).
  */
-function fireRevaluationKick(sid: number): void {
+function fireRevaluationNotify(sid: number): void {
   const entry = _state.get(sid);
   if (!entry) return;
 
   if (entry.touchInFlight) {
-    entry.kickPendingBecauseLocked = true;
+    entry.notifyPendingBecauseLocked = true;
     return;
   }
 
   entry.touchInFlight = true;
-  entry.kickLockedUntil = Date.now() + getKickLockoutMs(sid);
-  entry.kickPendingBecauseLocked = false;
+  entry.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
+  entry.notifyPendingBecauseLocked = false;
   void doTouchWithRollback(sid, entry);
 }
 
@@ -296,13 +296,13 @@ export function isDequeueActive(sid: number): boolean {
  * Gate function called after every inbound event enqueue.
  *
  * Classifies the event by source and inflightAtEnqueue, then decides
- * whether to kick the activity file now, suppress (and arm re-evaluation),
+ * whether to notify the activity file now, suppress (and arm re-evaluation),
  * or skip entirely. Synchronous reservation above the await is atomic in
  * Node.js single-threaded execution — no mutex required.
  */
-export function kickIfAllowed(
+export function notifyIfAllowed(
   sid: number,
-  source: KickSource,
+  source: NotifySource,
   inflightAtEnqueue: boolean,
 ): void {
   const entry = _state.get(sid);
@@ -314,49 +314,49 @@ export function kickIfAllowed(
   // 2. In-flight suppression: agent is blocked in dequeue, event delivered inline
   if (entry.inflightDequeue) return;
 
-  // 3. Touch-in-flight: another kick is already executing
+  // 3. Touch-in-flight: another notify is already executing
   if (entry.touchInFlight) {
-    entry.kickPendingBecauseLocked = true;
+    entry.notifyPendingBecauseLocked = true;
     return;
   }
 
   // 4. Lockout check
   const now = Date.now();
-  if (entry.kickLockedUntil !== null && entry.kickLockedUntil > now) {
-    entry.kickPendingBecauseLocked = true;
+  if (entry.notifyLockedUntil !== null && entry.notifyLockedUntil > now) {
+    entry.notifyPendingBecauseLocked = true;
     return;
   }
 
-  // 5. Kick — synchronous reservation before async touch
+  // 5. Notify — synchronous reservation before async touch
   entry.touchInFlight = true;
-  entry.kickLockedUntil = now + getKickLockoutMs(sid);
-  entry.kickPendingBecauseLocked = false;
+  entry.notifyLockedUntil = now + getNotifyLockoutMs(sid);
+  entry.notifyPendingBecauseLocked = false;
   void doTouchWithRollback(sid, entry);
 }
 
 /**
- * Release the kick lockout after any dequeue exit (content-returning or timeout).
- * If a kickable event was suppressed during lockout AND the queue still has
- * pending content, fires one re-evaluation kick immediately.
+ * Release the notify lockout after any dequeue exit (content-returning or timeout).
+ * If a notifiable event was suppressed during lockout AND the queue still has
+ * pending content, fires one re-evaluation notify immediately.
  */
-export function releaseKickLockout(sid: number): void {
+export function releaseNotifyLockout(sid: number): void {
   const entry = _state.get(sid);
   if (!entry) return;
-  if (entry.kickLockedUntil === null && !entry.kickPendingBecauseLocked) return;
+  if (entry.notifyLockedUntil === null && !entry.notifyPendingBecauseLocked) return;
 
-  const pending = entry.kickPendingBecauseLocked;
-  entry.kickLockedUntil = null;
-  entry.kickPendingBecauseLocked = false;
+  const pending = entry.notifyPendingBecauseLocked;
+  entry.notifyLockedUntil = null;
+  entry.notifyPendingBecauseLocked = false;
 
   if (pending && hasPendingUserContent(sid)) {
-    fireRevaluationKick(sid);
+    fireRevaluationNotify(sid);
   }
 }
 
 /**
  * Set the in-flight dequeue flag for a session.
  * Call active=true when dequeue starts; active=false when it returns (any path).
- * Lockout release is handled separately — call releaseKickLockout() from
+ * Lockout release is handled separately — call releaseNotifyLockout() from
  * content-returning exits only.
  */
 export function setDequeueActive(sid: number, active: boolean): void {
@@ -366,11 +366,11 @@ export function setDequeueActive(sid: number, active: boolean): void {
 }
 
 /**
- * Reset only the kick gate state for a session (reconnect path).
- * Clears lockout and pending flags without touching the file path or kicking.
- * The next inbound will fire a fresh kick.
+ * Reset only the notify gate state for a session (reconnect path).
+ * Clears lockout and pending flags without touching the file path or notifying.
+ * The next inbound will fire a fresh notify.
  */
-export function resetKickGateState(sid: number): void {
+export function resetNotifyGateState(sid: number): void {
   const entry = _state.get(sid);
   if (!entry) return;
 
@@ -379,8 +379,8 @@ export function resetKickGateState(sid: number): void {
     entry.pendingRetryHandle = null;
   }
 
-  entry.kickLockedUntil = null;
-  entry.kickPendingBecauseLocked = false;
+  entry.notifyLockedUntil = null;
+  entry.notifyPendingBecauseLocked = false;
   entry.touchInFlight = false;
 }
 
@@ -394,7 +394,7 @@ export function recordActivityTouch(_sid: number): void {
 
 /**
  * Handle the "stopped" event for a session.
- * Resets all kick gate state and fires a kick if the queue has pending content
+ * Resets all notify gate state and fires a notify if the queue has pending content
  * so the arriving agent gets notified on reconnect.
  */
 export function handleSessionStopped(sid: number): { noOp: boolean } {
@@ -408,15 +408,15 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
   }
 
   // Reset all gate state
-  entry.kickLockedUntil = null;
-  entry.kickPendingBecauseLocked = false;
+  entry.notifyLockedUntil = null;
+  entry.notifyPendingBecauseLocked = false;
   entry.touchInFlight = false;
   entry.inflightDequeue = false;
 
-  // Kick if queue has pending content so the new agent gets a wake-up signal
+  // Notify if queue has pending content so the new agent gets a wake-up signal
   if (hasPendingUserContent(sid)) {
     entry.touchInFlight = true;
-    entry.kickLockedUntil = Date.now() + getKickLockoutMs(sid);
+    entry.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
     void doTouchWithRollback(sid, entry);
   }
 
@@ -461,14 +461,14 @@ export async function replaceActivityFile(
   if (oldEntry) {
     // Carry over in-flight gate state so a file swap does not reset an active lockout
     newState.inflightDequeue = oldEntry.inflightDequeue;
-    newState.kickLockedUntil = oldEntry.kickLockedUntil;
-    newState.kickPendingBecauseLocked = oldEntry.kickPendingBecauseLocked;
+    newState.notifyLockedUntil = oldEntry.notifyLockedUntil;
+    newState.notifyPendingBecauseLocked = oldEntry.notifyPendingBecauseLocked;
     newState.touchInFlight = oldEntry.touchInFlight;
     // Do not carry over pendingRetryHandle — old retry targets old file path
     newState.pendingRetryHandle = null;
   }
 
-  // Write new entry first — kick logic reads this immediately
+  // Write new entry first — notify logic reads this immediately
   _state.set(sid, newState);
 
   if (!oldEntry) return;
