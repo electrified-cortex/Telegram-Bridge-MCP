@@ -1,6 +1,6 @@
 import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
-import { getnotifyLockoutMs, setnotifyLockoutMs } from "../../session-manager.js";
+import { getNotifyLockoutMs, setNotifyLockoutMs } from "../../session-manager.js";
 import { deliverServiceMessage } from "../../session-queue.js";
 import {
   LOCKOUT_MIN_MS,
@@ -22,7 +22,7 @@ export function handleKickLockout({ token, ms }: { token: number; ms?: number })
   const sid = _sid;
 
   if (ms === undefined) {
-    return toResult({ ok: true, ms: getnotifyLockoutMs(sid), default_ms: LOCKOUT_DEFAULT_MS });
+    return toResult({ ok: true, ms: getNotifyLockoutMs(sid), default_ms: LOCKOUT_DEFAULT_MS });
   }
 
   if (ms < LOCKOUT_MIN_MS || ms > LOCKOUT_MAX_MS) {
@@ -31,8 +31,8 @@ export function handleKickLockout({ token, ms }: { token: number; ms?: number })
     );
   }
 
-  const previous = getnotifyLockoutMs(sid);
-  setnotifyLockoutMs(sid, ms);
+  const previous = getNotifyLockoutMs(sid);
+  setNotifyLockoutMs(sid, ms);
   return toResult({ ok: true, ms, previous });
 }
 
@@ -55,7 +55,7 @@ export function handleKickDebounce({ token, ms }: { token: number; ms?: number }
       ok: true,
       deprecated: true,
       replacement: "profile/kick-lockout",
-      current_as_lockout_ms: getnotifyLockoutMs(sid),
+      current_as_lockout_ms: getNotifyLockoutMs(sid),
     });
   }
 
@@ -66,7 +66,7 @@ export function handleKickDebounce({ token, ms }: { token: number; ms?: number }
     );
   }
 
-  setnotifyLockoutMs(sid, ms); // literal translation: same ms value becomes the lockout window
+  setNotifyLockoutMs(sid, ms); // literal translation: same ms value becomes the lockout window
 
   // Surface deprecation via service message
   deliverServiceMessage(

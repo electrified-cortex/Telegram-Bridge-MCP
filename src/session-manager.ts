@@ -331,35 +331,35 @@ export function setDequeueDefault(sid: number, timeout: number): void {
 }
 
 /**
- * Get the per-session activity-file kick debounce window (ms).
+ * Get the per-session activity-file notify debounce window (ms).
  * Falls back to 60 000 ms if not set.
  */
-export function getnotifyDebounceMs(sid: number): number {
+export function getNotifyDebounceMs(sid: number): number {
   return _sessions.get(sid)?.notifyDebounceMs ?? 60_000;
 }
 
 /**
- * Set the per-session activity-file kick debounce window (ms).
+ * Set the per-session activity-file notify debounce window (ms).
  * No-op if the session does not exist.
  */
-export function setnotifyDebounceMs(sid: number, ms: number): void {
+export function setNotifyDebounceMs(sid: number, ms: number): void {
   const session = _sessions.get(sid);
   if (session) session.notifyDebounceMs = ms;
 }
 
 /**
- * Get the per-session post-kick lockout window (ms).
+ * Get the per-session post-notify lockout window (ms).
  * Falls back to 300 000 ms (5 min) if not set.
  */
-export function getnotifyLockoutMs(sid: number): number {
+export function getNotifyLockoutMs(sid: number): number {
   return _sessions.get(sid)?.notifyLockoutMs ?? 300_000;
 }
 
 /**
- * Set the per-session post-kick lockout window (ms).
+ * Set the per-session post-notify lockout window (ms).
  * No-op if the session does not exist.
  */
-export function setnotifyLockoutMs(sid: number, ms: number): void {
+export function setNotifyLockoutMs(sid: number, ms: number): void {
   const session = _sessions.get(sid);
   if (session) session.notifyLockoutMs = ms;
 }

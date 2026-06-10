@@ -31,7 +31,7 @@ Pass the `command` string to the `Monitor` tool with `persistent: true`:
 ```
 Monitor(
   command: "<command from response>",
-  description: "SSE kick watcher for session <sid>",
+  description: "SSE notify watcher for session <sid>",
   persistent: true
 )
 ```

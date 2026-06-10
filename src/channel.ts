@@ -26,7 +26,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { TimelineEvent } from "./message-store.js";
 import { isDequeueActive } from "./tools/activity/file-state.js";
-import { getDequeueDefault, setDequeueDefault, getnotifyLockoutMs } from "./session-manager.js";
+import { getDequeueDefault, setDequeueDefault, getNotifyLockoutMs } from "./session-manager.js";
 
 /** Maximum dequeue wait (seconds) for sessions with an active channel subscription. */
 const CHANNEL_MAX_WAIT_S = 90;
@@ -114,7 +114,7 @@ function _send(entry: ChannelEntry, sid: number, event: TimelineEvent | undefine
     method: "notifications/resources/updated",
     params: { uri },
   }).then(() => {
-    entry.cooldownUntil = Date.now() + getnotifyLockoutMs(sid);
+    entry.cooldownUntil = Date.now() + getNotifyLockoutMs(sid);
   }).catch((e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
     process.stderr.write(`[channel] notify failed sid=${sid}: ${msg}\n`);
