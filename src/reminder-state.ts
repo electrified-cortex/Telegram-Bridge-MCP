@@ -13,8 +13,19 @@
 import { createHash } from "crypto";
 import { Cron } from "croner";
 import { getCallerSid } from "./session-context.js";
-import { kickSseSubscriber } from "./sse-endpoint.js";
 import { kickIfAllowed } from "./tools/activity/file-state.js";
+
+// B3: domain code must not name the transport directly.
+// Inject the SSE kick callback at startup via initReminderSseKick().
+let _kickSseSubscriber: ((sid: number) => void) | null = null;
+
+/**
+ * Inject the SSE kick callback so this domain module never imports the transport.
+ * Call once at startup before any reminders are scheduled.
+ */
+export function initReminderSseKick(fn: (sid: number) => void): void {
+  _kickSseSubscriber = fn;
+}
 
 /**
  * Deterministic reminder ID derived from content.
@@ -115,7 +126,7 @@ function startScheduleSweep(): void {
         // Wake BOTH parked-agent flavors: SSE-stream subscribers AND activity-file
         // monitors. Most pods (BT, Curator) park on the activity FILE, not SSE — without
         // the file kick a scheduled reminder fires but never wakes a file-parked agent.
-        kickSseSubscriber(sid);
+        _kickSseSubscriber?.(sid);
         kickIfAllowed(sid, "reminder", false);
       }
     }
