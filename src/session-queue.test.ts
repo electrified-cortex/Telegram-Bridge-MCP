@@ -559,4 +559,58 @@ describe("session-queue", () => {
       expect(getLastReceivedAt(2, "all")).toBeUndefined(); // sid 2 untouched
     });
   });
+
+  // -------------------------------------------------------------------------
+  // AC-9 — messages-first ordering (§5-b, decision B)
+  // -------------------------------------------------------------------------
+
+  describe("AC-9 — messages-first ordering in dequeueBatch", () => {
+    it("raw dequeueBatch order: lightweight reminder precedes heavyweight message", () => {
+      createSessionQueue(1);
+
+      // Deliver reminder first (lightweight event — not a heavyweight text/voice message)
+      deliverReminderEvent(1, {
+        id: -9001,
+        event: "reminder",
+        from: "system",
+        routing: "ambiguous",
+        content: { type: "reminder", text: "Stand-up", reminder_id: "r-1", recurring: false, trigger: "time" },
+      });
+
+      // Then enqueue a user text message (heavyweight — acts as batch delimiter)
+      routeToSession(makeEvent({ id: 500 }));
+
+      const q = getSessionQueue(1)!;
+      const raw = q.dequeueBatch();
+      // FIFO order: reminder (lightweight) collected before the message delimiter
+      expect(raw).toHaveLength(2);
+      expect(raw[0].event).toBe("reminder");
+      expect(raw[1].event).toBe("message");
+    });
+
+    it("messages-first sort: applying the §5-b sort puts messages before reminders", () => {
+      createSessionQueue(1);
+
+      deliverReminderEvent(1, {
+        id: -9002,
+        event: "reminder",
+        from: "system",
+        routing: "ambiguous",
+        content: { type: "reminder", text: "Check CI", reminder_id: "r-2", recurring: false, trigger: "time" },
+      });
+      routeToSession(makeEvent({ id: 501 }));
+
+      const q = getSessionQueue(1)!;
+      const batch = q.dequeueBatch();
+
+      // Apply the messages-first sort used by dequeueBatchAny (§5-b decision B)
+      const sorted = [...batch].sort(
+        (a, b) => (a.event === "reminder" ? 1 : 0) - (b.event === "reminder" ? 1 : 0),
+      );
+
+      expect(sorted).toHaveLength(2);
+      expect(sorted[0].event).toBe("message");
+      expect(sorted[1].event).toBe("reminder");
+    });
+  });
 });

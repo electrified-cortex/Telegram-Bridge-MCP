@@ -132,17 +132,23 @@ function stopScheduleSweep(): void {
 // Always-running 5-second interval that fires active reminders for parked agents.
 // Skips sessions where a dequeue is in flight (they handle their own context).
 
-_activeSweepInterval = setInterval(() => {
-  for (const sid of _activeSids) {
-    // Reminders do not interrupt active conversations.
-    // Starvation (indefinite deferral during activity) is acceptable by design. §5-b
-    if (isDequeueActive(sid)) continue;
-    for (const r of popActiveReminders(sid)) {
-      deliverReminderEvent(sid, buildReminderEvent(r));
+function startActiveSweep(): void {
+  if (_activeSweepInterval !== null) return;
+  _activeSweepInterval = setInterval(() => {
+    for (const sid of _activeSids) {
+      // Reminders do not interrupt active conversations.
+      // Starvation (indefinite deferral during activity) is acceptable by design. §5-b
+      if (isDequeueActive(sid)) continue;
+      for (const r of popActiveReminders(sid)) {
+        deliverReminderEvent(sid, buildReminderEvent(r));
+      }
+      if (getActiveReminders(sid).length === 0) _activeSids.delete(sid);
     }
-    if (getActiveReminders(sid).length === 0) _activeSids.delete(sid);
-  }
-}, ACTIVE_REMINDER_SWEEP_MS);
+  }, ACTIVE_REMINDER_SWEEP_MS);
+}
+
+// Start immediately at module load.
+startActiveSweep();
 
 // ── Timezone / cron utilities ─────────────────────────────────────────────
 
@@ -569,6 +575,9 @@ export function clearSessionReminders(sid: number): void {
   // §5-b: remove from active-reminder sweep
   _activeSids.delete(sid);
 }
+
+/** For testing only: restart the active-reminder sweep after resetReminderStateForTest + vi.useFakeTimers. */
+export function restartActiveSweepForTest(): void { startActiveSweep(); }
 
 /** For testing only: reset all state. */
 export function resetReminderStateForTest(): void {

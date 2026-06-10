@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   addReminder,
   cancelReminder,
@@ -26,8 +26,20 @@ import {
   getFireableEventReminders,
   popFireableEventReminders,
   getSoonestEventReminderMs,
+  scheduleReminder,
+  restartActiveSweepForTest,
 } from "./reminder-state.js";
 import { runInSessionContext } from "./session-context.js";
+import { deliverReminderEvent } from "./session-queue.js";
+import { isDequeueActive } from "./tools/activity/file-state.js";
+
+// §5-b sweep tests: mock dependencies so fake-timer tests stay self-contained
+vi.mock("./session-queue.js", () => ({
+  deliverReminderEvent: vi.fn(),
+}));
+vi.mock("./tools/activity/file-state.js", () => ({
+  isDequeueActive: vi.fn(),
+}));
 
 describe("reminder-state", () => {
   beforeEach(() => { resetReminderStateForTest(); });
@@ -1300,6 +1312,107 @@ describe("reminder-state", () => {
       popFireableEventReminders(1);
       // Should not be fireable again until a new send
       expect(getFireableEventReminders(1)).toHaveLength(0);
+    });
+  });
+
+  // ── Bug 2 — popActiveReminders guard: event-triggered triggers excluded ────
+
+  describe("Bug 2 — popActiveReminders guard: event-triggered triggers excluded from sweep", () => {
+    it("last_received: popActiveReminders returns empty even when state is forced to active", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "lr1", text: "x", delay_seconds: 0, recurring: true, trigger: "last_received", mode: "all" });
+        // Force state to active to simulate the Bug 2 edge case guarded by §5-b fix
+        const r = listReminders()[0];
+        r.state = "active";
+        r.activated_at = Date.now();
+      });
+      // Bug 2 guard: last_received is excluded from popActiveReminders regardless of state
+      expect(popActiveReminders(1)).toHaveLength(0);
+    });
+
+    it("last_sent: popActiveReminders returns empty even when state is forced to active", () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ls1", text: "x", delay_seconds: 0, recurring: true, trigger: "last_sent" });
+        const r = listReminders()[0];
+        r.state = "active";
+        r.activated_at = Date.now();
+      });
+      // Bug 2 guard: last_sent is excluded from popActiveReminders regardless of state
+      expect(popActiveReminders(1)).toHaveLength(0);
+    });
+  });
+
+  // ── AC-8 — active-reminder sweep ──────────────────────────────────────────
+
+  describe("AC-8 — active-reminder sweep delivers to parked agent", () => {
+    beforeEach(() => {
+      resetReminderStateForTest();       // clear any real timers before installing fake ones
+      vi.useFakeTimers();               // replace setInterval with fake implementation
+      restartActiveSweepForTest();      // restart sweep using the now-fake setInterval
+      vi.mocked(deliverReminderEvent).mockClear();
+      vi.mocked(isDequeueActive).mockReturnValue(false);
+    });
+
+    afterEach(() => {
+      resetReminderStateForTest(); // clear fake timer interval first
+      vi.useRealTimers();          // then restore real timers
+    });
+
+    it("delivers active time reminder after 5 000 ms to a parked agent", async () => {
+      runInSessionContext(1, () => {
+        addReminder({ id: "ac8-time", text: "Check in", delay_seconds: 0, recurring: false });
+      });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(deliverReminderEvent).toHaveBeenCalledOnce();
+      expect(deliverReminderEvent).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ event: "reminder" }),
+      );
+    });
+
+    it("does NOT deliver when dequeue is active (conversation in flight)", async () => {
+      vi.mocked(isDequeueActive).mockReturnValue(true);
+
+      runInSessionContext(1, () => {
+        addReminder({ id: "ac8-blocked", text: "Blocked reminder", delay_seconds: 0, recurring: false });
+      });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(deliverReminderEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Schedule sweep — direct delivery via deliverReminderEvent ────────────
+
+  describe("Schedule sweep — direct delivery via deliverReminderEvent (§5-b, kick-ahead removal)", () => {
+    beforeEach(() => {
+      resetReminderStateForTest();
+      // Fake time: 2024-01-01 00:00:00 UTC
+      vi.useFakeTimers({ now: new Date("2024-01-01T00:00:00.000Z").getTime() });
+      vi.mocked(deliverReminderEvent).mockClear();
+    });
+
+    afterEach(() => {
+      resetReminderStateForTest();
+      vi.useRealTimers();
+    });
+
+    it("fires schedule reminder via deliverReminderEvent when next_fire_ms is reached", async () => {
+      runInSessionContext(1, () => {
+        // cron "1 * * * *" = at minute :01 every hour → next fire is 00:01:00Z = 60 000 ms away
+        scheduleReminder({ id: "sched1", text: "Scheduled ping", cron: "1 * * * *", tz: "UTC" });
+      });
+
+      // Advance past next_fire_ms (60s) + one sweep interval (5s) to trigger delivery
+      await vi.advanceTimersByTimeAsync(65_000);
+
+      expect(deliverReminderEvent).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ event: "reminder" }),
+      );
     });
   });
 });
