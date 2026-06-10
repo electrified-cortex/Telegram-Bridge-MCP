@@ -244,7 +244,7 @@ export async function runDrainLoop(
     }
   }
 
-  // Mark this session as having an in-flight dequeue — suppresses activity-file kicks
+  // Mark this session as having an in-flight dequeue — suppresses activity-file notifications
   // while the agent is actively waiting for messages.
   // Only set after confirming the session exists so every path through the
   // try/finally below is guaranteed to call setDequeueActive(sid, false).

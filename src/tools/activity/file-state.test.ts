@@ -446,7 +446,7 @@ describe("notify-lockout gate — ACs 1-10", () => {
 
     expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
     const entry = getActivityFile(SID)!;
-    expect(entry.notifyLockedUntil).toBeNull(); // reset, not kicked
+    expect(entry.notifyLockedUntil).toBeNull(); // reset, not notified
   });
 
   // ── replaceActivityFile ────────────────────────────────────────────────────

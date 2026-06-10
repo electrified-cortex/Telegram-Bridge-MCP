@@ -94,8 +94,8 @@ let _nextEventId = -10_000;
 // in dequeue's in-loop check (popFireableScheduleReminders), not here.
 
 const _scheduleSids = new Set<number>();
-// FIX 4: per-reminder last-kicked dedup — tracks (sid → reminderId → last_kicked_fire_ms)
-// Prevents duplicate SSE kicks when the same next_fire_ms falls within two consecutive sweep ticks.
+// FIX 4: per-reminder last-notified dedup — tracks (sid → reminderId → last_notified_fire_ms)
+// Prevents duplicate SSE notifications when the same next_fire_ms falls within two consecutive sweep ticks.
 const _lastNotifiedFireMs = new Map<number, Map<string, number>>();
 let _sweepInterval: ReturnType<typeof setInterval> | null = null;
 const SCHEDULE_SWEEP_INTERVAL_MS = 5_000;

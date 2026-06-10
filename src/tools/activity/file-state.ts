@@ -98,7 +98,7 @@ export interface ActivityFileState {
   inflightDequeue: boolean;
   /** UTC ms when lockout expires; null = not locked. */
   notifyLockedUntil: number | null;
-  /** True when a kickable inbound was suppressed during lockout. */
+  /** True when a notifiable inbound was suppressed during lockout. */
   notifyPendingBecauseLocked: boolean;
   /** True while appendNewline is in flight (including retries). */
   touchInFlight: boolean;
