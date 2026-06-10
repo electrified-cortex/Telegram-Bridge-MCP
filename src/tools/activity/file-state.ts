@@ -335,11 +335,9 @@ export function kickIfAllowed(
 }
 
 /**
- * Release the kick lockout after a content-returning dequeue exit.
+ * Release the kick lockout after any dequeue exit (content-returning or timeout).
  * If a kickable event was suppressed during lockout AND the queue still has
  * pending content, fires one re-evaluation kick immediately.
- *
- * Must NOT be called from timeout-only dequeue exits.
  */
 export function releaseKickLockout(sid: number): void {
   const entry = _state.get(sid);

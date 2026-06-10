@@ -50,7 +50,7 @@ export function handleLoadProfile({ key, token }: { key: string; token: number }
   const reminders = profile.reminders ?? [];
   if (reminders.length > 0) {
     const startupCount = reminders.filter(r => r.trigger === "startup").length;
-    const recurringCount = reminders.filter(r => r.trigger !== "startup" && r.recurring).length;
+    const recurringCount = reminders.filter(r => r.trigger !== "startup" && r.trigger !== "schedule" && r.recurring).length;
     const s = startupCount === 1 ? "" : "s";
     parts.push(`${startupCount} startup reminder${s}, ${recurringCount} recurring.`);
   }

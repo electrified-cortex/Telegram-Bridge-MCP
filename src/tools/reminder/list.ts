@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toResult, toError } from "../../telegram.js";
-import { listReminders, computeReminderDisplayState, getLastSentAt, getLastReceivedAt } from "../../reminder-state.js";
+import { listReminders, computeReminderDisplayState, getLastSentAt, getLastReceivedAt, toOffsetISO } from "../../reminder-state.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 
@@ -12,6 +12,26 @@ export function handleListReminders({ token }: { token: number }) {
   const now = Date.now();
   const reminders = listReminders().map(r => {
     const { state: displayState, until } = computeReminderDisplayState(r, now);
+
+    // Schedule reminders have their own field set (cron, tz, next_fire) — no delay_seconds
+    if (r.trigger === "schedule") {
+      const entry: Record<string, unknown> = {
+        id: r.id,
+        text: r.text,
+        trigger: r.trigger,
+        cron: r.cron,
+        tz: r.tz ?? "UTC",
+        state: displayState,
+      };
+      if (r.next_fire_ms !== undefined && displayState !== "disabled" && displayState !== "sleeping") {
+        entry.next_fire = toOffsetISO(new Date(r.next_fire_ms), r.tz ?? "UTC");
+      }
+      if (displayState === "sleeping" && until !== undefined) {
+        entry.until = new Date(until).toISOString();
+      }
+      return entry;
+    }
+
     const entry: Record<string, unknown> = {
       id: r.id,
       text: r.text,

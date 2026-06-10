@@ -1,7 +1,7 @@
 import type { ProfileData } from "../../profile-store.js";
 import { setSessionVoice, setSessionSpeed } from "../../voice-state.js";
 import { setSessionDefault, registerPreset } from "../../animation-state.js";
-import { addReminder, disableReminder, enableReminder, listReminders, reminderContentHash } from "../../reminder-state.js";
+import { addReminder, disableReminder, enableReminder, listReminders, reminderContentHash, scheduleReminder, resolveIana, validateIana } from "../../reminder-state.js";
 import { getSession } from "../../session-manager.js";
 
 export interface ApplyResult {
@@ -57,18 +57,21 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
     if (profile.reminders !== undefined) {
       const existing = listReminders();
       for (const r of profile.reminders) {
-        // Normalize undefined trigger to "time"
+        // Normalize undefined trigger to "time". Cast to a flexible type for property access
+        // since TypeScript cannot narrow through a derived `trigger` variable on a union type.
         const trigger = r.trigger ?? "time";
+        const rd = r as Record<string, unknown>;
         if (trigger === "startup") {
           // Startup reminder — delay_seconds not required
-          const reminderId = reminderContentHash(r.text, r.recurring, "startup");
+          const recurring = (rd.recurring as boolean | undefined) ?? false;
+          const reminderId = reminderContentHash(r.text, recurring, "startup");
           const alreadyExists = existing.some(e => e.id === reminderId);
           const added = addReminder({
             id: reminderId,
             text: r.text,
-            recurring: r.recurring,
+            recurring,
             trigger: "startup",
-            delay_seconds: r.delay_seconds ?? 0,
+            delay_seconds: (rd.delay_seconds as number | undefined) ?? 0,
           });
           // Restore persisted disabled flag (sleep_until is not persisted)
           if (r.disabled) disableReminder(added.id);
@@ -79,16 +82,18 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
             addedReminders.push(added.id);
           }
         } else if (trigger === "last_sent") {
-          if (typeof r.delay_seconds !== "number" || isNaN(r.delay_seconds)) continue;
-          const reminderId = reminderContentHash(r.text, r.recurring, "last_sent");
+          const delay_seconds = rd.delay_seconds as number | undefined;
+          if (typeof delay_seconds !== "number" || isNaN(delay_seconds)) continue;
+          const recurring = (rd.recurring as boolean | undefined) ?? false;
+          const reminderId = reminderContentHash(r.text, recurring, "last_sent");
           const alreadyExists = existing.some(e => e.id === reminderId);
           if (!alreadyExists) {
             addReminder({
               id: reminderId,
               text: r.text,
-              recurring: r.recurring,
+              recurring,
               trigger: "last_sent",
-              delay_seconds: r.delay_seconds,
+              delay_seconds,
             });
             addedReminders.push(reminderId);
           } else {
@@ -97,17 +102,19 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           if (r.disabled) disableReminder(reminderId);
           else if (r.disabled === false) enableReminder(reminderId);
         } else if (trigger === "last_received") {
-          if (typeof r.delay_seconds !== "number" || isNaN(r.delay_seconds)) continue;
-          const mode = (r as { mode?: "all" | "operator" }).mode ?? "all";
-          const reminderId = reminderContentHash(r.text, r.recurring, "last_received", mode);
+          const delay_seconds = rd.delay_seconds as number | undefined;
+          if (typeof delay_seconds !== "number" || isNaN(delay_seconds)) continue;
+          const recurring = (rd.recurring as boolean | undefined) ?? false;
+          const mode = (rd.mode as "all" | "operator" | undefined) ?? "all";
+          const reminderId = reminderContentHash(r.text, recurring, "last_received", mode);
           const alreadyExists = existing.some(e => e.id === reminderId);
           if (!alreadyExists) {
             addReminder({
               id: reminderId,
               text: r.text,
-              recurring: r.recurring,
+              recurring,
               trigger: "last_received",
-              delay_seconds: r.delay_seconds,
+              delay_seconds,
               mode,
             });
             addedReminders.push(reminderId);
@@ -116,17 +123,38 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           }
           if (r.disabled) disableReminder(reminderId);
           else if (r.disabled === false) enableReminder(reminderId);
+        } else if (trigger === "schedule") {
+          // G-4: schedule branch — use cron+tz, skip delay_seconds/next_fire_ms/timeoutHandle
+          const cron = rd.cron as string | undefined;
+          const rawTz = rd.tz as string | undefined;
+          if (!cron) continue; // cron is required for schedule reminders
+          // FIX 2: resolve + validate TZ on the apply path (same as schedule.ts handler)
+          const resolvedTz = rawTz !== undefined ? resolveIana(rawTz) : resolveIana(process.env.TZ ?? "UTC");
+          if (!validateIana(resolvedTz)) continue; // skip if TZ is invalid
+          const reminderId = reminderContentHash(r.text, true, "schedule");
+          // G-C: BT-7274 dedup guard — check for existing reminder by ID before re-adding
+          const alreadyExists = existing.some(e => e.id === reminderId);
+          if (alreadyExists) {
+            updatedReminders.push(reminderId);
+          } else {
+            scheduleReminder({ id: reminderId, text: r.text, cron, tz: resolvedTz });
+            addedReminders.push(reminderId);
+          }
+          if (r.disabled) disableReminder(reminderId);
+          else if (r.disabled === false) enableReminder(reminderId);
         } else {
           // Time reminder — delay_seconds is required; skip if missing/invalid
-          if (typeof r.delay_seconds !== "number" || isNaN(r.delay_seconds)) continue;
-          const reminderId = reminderContentHash(r.text, r.recurring, "time");
+          const delay_seconds = rd.delay_seconds as number | undefined;
+          if (typeof delay_seconds !== "number" || isNaN(delay_seconds)) continue;
+          const recurring = (rd.recurring as boolean | undefined) ?? false;
+          const reminderId = reminderContentHash(r.text, recurring, "time");
           const alreadyExists = existing.some(e => e.id === reminderId);
           const added = addReminder({
             id: reminderId,
             text: r.text,
-            recurring: r.recurring,
+            recurring,
             trigger: "time",
-            delay_seconds: r.delay_seconds,
+            delay_seconds,
           });
           // Restore persisted disabled flag (sleep_until is not persisted)
           if (r.disabled) disableReminder(added.id);

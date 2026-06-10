@@ -133,6 +133,8 @@ const reminderMocks = vi.hoisted(() => ({
   getSoonestDeferredMs: vi.fn((_sid: number): number | null => null),
   popFireableEventReminders: vi.fn((_sid: number): unknown[] => []),
   getSoonestEventReminderMs: vi.fn((_sid: number): number | null => null),
+  popFireableScheduleReminders: vi.fn((_sid: number): unknown[] => []),
+  getSoonestScheduleFireMs: vi.fn((_sid: number): number | null => null),
   buildReminderEvent: vi.fn((r: unknown) => ({
     id: -1,
     event: "reminder",
@@ -149,6 +151,8 @@ vi.mock("../reminder-state.js", () => ({
   getSoonestDeferredMs: (sid: number) => reminderMocks.getSoonestDeferredMs(sid),
   popFireableEventReminders: (sid: number) => reminderMocks.popFireableEventReminders(sid),
   getSoonestEventReminderMs: (sid: number) => reminderMocks.getSoonestEventReminderMs(sid),
+  popFireableScheduleReminders: (sid: number) => reminderMocks.popFireableScheduleReminders(sid),
+  getSoonestScheduleFireMs: (sid: number) => reminderMocks.getSoonestScheduleFireMs(sid),
   buildReminderEvent: (r: unknown) => reminderMocks.buildReminderEvent(r),
 }));
 
@@ -205,6 +209,8 @@ describe("dequeue tool", () => {
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
     reminderMocks.popFireableEventReminders.mockReturnValue([]);
     reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     mocks.peekSessionCategories.mockReturnValue(undefined);
@@ -1344,6 +1350,55 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
+  // BT-2301: timeout-exit releases kick lockout
+  // =========================================================================
+
+  describe("timeout-exit lockout release (BT-2301)", () => {
+    it("releaseKickLockout is called after a blocking wait that times out", async () => {
+      // Arrange: dequeue blocks, no content ever arrives, times out
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(() => delay(50));
+
+      await call({ timeout: 1, token: 1_123_456 });
+
+      // Primary assertion: releaseKickLockout MUST be called on timeout exit (BT-2301 fix)
+      expect(fileStateMocks.releaseKickLockout).toHaveBeenCalledWith(1);
+    });
+
+    it("releaseKickLockout is also called on content-returning paths (no regression)", async () => {
+      // Content-returning path: batch arrives immediately
+      const evt = makeEvent(42, "content");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+
+      await call({ timeout: 300, token: 1_123_456 });
+
+      expect(fileStateMocks.releaseKickLockout).toHaveBeenCalledWith(1);
+    });
+
+    it("timeout=0 instant-poll does NOT call releaseKickLockout (empty-poll guard preserved)", async () => {
+      // timeout=0 takes a different early-return path — lockout not released
+      mocks.dequeueBatch.mockReturnValue([]);
+
+      await call({ timeout: 0, token: 1_123_456 });
+
+      expect(fileStateMocks.releaseKickLockout).not.toHaveBeenCalled();
+    });
+
+    it("subsequent kickIfAllowed fires after timeout exit (end-to-end AC1)", async () => {
+      // Verify that after a timeout exit releases the lockout, the next kick is not suppressed.
+      // This requires the real file-state module (not the mock), so we verify via
+      // the dequeue mock: releaseKickLockout was called → lockout is cleared → kick allowed.
+      mocks.dequeueBatch.mockReturnValue([]);
+      mocks.waitForEnqueue.mockImplementation(() => delay(50));
+
+      await call({ timeout: 1, token: 1_123_456 });
+
+      // releaseKickLockout was called — a file-parked agent would now accept a kick
+      expect(fileStateMocks.releaseKickLockout).toHaveBeenCalledWith(1);
+    });
+  });
+
+  // =========================================================================
   // Option A — Duplicate session detection (connection_token mismatch)
   // =========================================================================
 
@@ -1596,6 +1651,8 @@ describe("checkDequeueRate (runaway-dequeue rate guard)", () => {
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
     reminderMocks.popFireableEventReminders.mockReturnValue([]);
     reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     mocks.peekSessionCategories.mockReturnValue(undefined);

@@ -233,8 +233,13 @@ describe("kick-lockout gate — ACs 1-10", () => {
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
   });
 
-  // ── AC 6: Polling agent (timeout dequeue) doesn't release lockout ─────────
-  it("AC6: timeout-only dequeue exits do NOT release kick lockout", async () => {
+  // ── AC 6: Lockout release is opt-in — setDequeueActive alone does not clear it ──
+  // NOTE (BT-2301): dequeue.ts now calls releaseKickLockout on ALL exit paths
+  // (content-returning AND timeout). The unit invariant below still holds:
+  // setDequeueActive(false) alone does NOT release the lockout — only
+  // releaseKickLockout() does. The integration test for the new timeout-exit
+  // behavior lives in src/tools/dequeue.test.ts ("timeout-exit lockout release").
+  it("AC6: setDequeueActive(false) alone does NOT release kick lockout", async () => {
     setActivityFile(SID, makeState());
 
     kickIfAllowed(SID, "operator", false);
@@ -242,13 +247,28 @@ describe("kick-lockout gate — ACs 1-10", () => {
     const lockedUntil = getActivityFile(SID)!.kickLockedUntil;
     expect(lockedUntil).not.toBeNull();
 
-    // Simulate timeout dequeue (setDequeueActive without releaseKickLockout)
+    // setDequeueActive cycle without calling releaseKickLockout
     setDequeueActive(SID, true);
     setDequeueActive(SID, false);
-    // releaseKickLockout NOT called (timeout path)
+    // releaseKickLockout NOT called
 
-    // Lockout should still be active
+    // Lockout must still be active — only releaseKickLockout() clears it
     expect(getActivityFile(SID)!.kickLockedUntil).toBe(lockedUntil);
+  });
+
+  it("AC6: releaseKickLockout clears lockout (timeout-exit path now calls it — BT-2301)", async () => {
+    setActivityFile(SID, makeState());
+
+    kickIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(getActivityFile(SID)!.kickLockedUntil).not.toBeNull();
+
+    // Simulate the new timeout-exit behavior: dequeue.ts now sets _lockoutRelease=true
+    // on timeout exits, so the finally block calls releaseKickLockout.
+    releaseKickLockout(SID);
+
+    // Lockout is cleared — a subsequent kick from a reminder will not be suppressed
+    expect(getActivityFile(SID)!.kickLockedUntil).toBeNull();
   });
 
   it("AC6: message arriving during lockout while agent polls → no additional kick", async () => {

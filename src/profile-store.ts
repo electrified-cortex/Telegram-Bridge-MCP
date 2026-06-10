@@ -23,7 +23,9 @@ export type ReminderDef =
   | { trigger?: "time"; text: string; recurring: boolean; delay_seconds: number; disabled?: boolean }
   | { trigger: "startup"; text: string; recurring: boolean; delay_seconds?: number; disabled?: boolean }
   | { trigger: "last_sent"; text: string; recurring: boolean; delay_seconds: number; disabled?: boolean }
-  | { trigger: "last_received"; text: string; recurring: boolean; delay_seconds: number; mode?: "all" | "operator"; disabled?: boolean };
+  | { trigger: "last_received"; text: string; recurring: boolean; delay_seconds: number; mode?: "all" | "operator"; disabled?: boolean }
+  // next_fire_ms and timeoutHandle must NOT appear here (G-B) — they are runtime-only on Reminder
+  | { trigger: "schedule"; text: string; cron: string; tz?: string; disabled?: boolean };
 
 export interface ProfileData {
   voice?: string;

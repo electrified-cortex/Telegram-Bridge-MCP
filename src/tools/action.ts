@@ -42,6 +42,8 @@ import { handleListReminders } from "./reminder/list.js";
 import { handleDisableReminder } from "./reminder/disable.js";
 import { handleEnableReminder } from "./reminder/enable.js";
 import { handleSleepReminder } from "./reminder/sleep.js";
+import { handleScheduleReminder } from "./reminder/schedule.js";
+import { handleReminderUnschedule } from "./reminder/unschedule.js";
 import { handleSetDequeueDefault } from "./profile/dequeue-default.js";
 import { handleKickLockout, handleKickDebounce } from "./profile/kick-lockout.js";
 import { handleSetDefaultAnimation } from "./animation/default.js";
@@ -176,6 +178,8 @@ export function setupActionRegistry(): void {
   registerAction("reminder/disable", toActionHandler(handleDisableReminder));
   registerAction("reminder/enable", toActionHandler(handleEnableReminder));
   registerAction("reminder/sleep", toActionHandler(handleSleepReminder));
+  registerAction("reminder/schedule", toActionHandler(handleScheduleReminder));
+  registerAction("reminder/unschedule", toActionHandler(handleReminderUnschedule));
   registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
   registerAction("profile/kick-lockout", toActionHandler(handleKickLockout));
   registerAction("profile/kick-debounce", toActionHandler(handleKickDebounce));
@@ -456,21 +460,40 @@ export function register(server: McpServer): void {
           .array(
             z.object({
               text: z.string(),
-              delay_seconds: z.number(),
+              delay_seconds: z.number().optional(),
               recurring: z.boolean().default(false),
-              trigger: z.enum(["time", "startup", "last_sent", "last_received"]).optional(),
+              trigger: z.enum(["time", "startup", "last_sent", "last_received", "schedule"]).optional(),
               mode: z.enum(["all", "operator"]).optional(),
               only_if_silent: z.boolean().optional(),
               disabled: z.boolean().optional(),
+              cron: z.string().optional(),
+              tz: z.string().optional(),
             }),
           )
           .optional()
-          .describe("profile/import: Reminders to register for this session."),
+          .describe("profile/import: Reminders to register for this session. Supports time, startup, last_sent, last_received, and schedule (cron-based) triggers."),
         name_tag: z
           .string()
           .max(64)
           .optional()
           .describe("name-tag/set or profile/import: Custom name tag string. Replaces the auto-default (<color> <name>). No newlines. Max 64 chars."),
+        // reminder/schedule params
+        cron: z
+          .string()
+          .optional()
+          .describe(
+            "reminder/schedule: 5-field cron expression (minute hour day month weekday). " +
+            "Example: \"0 9 * * *\" fires at 9am daily. 6-field expressions are rejected.",
+          ),
+        tz: z
+          .string()
+          .optional()
+          .describe(
+            "reminder/schedule: Timezone for the cron expression. Accepts IANA names (e.g. \"America/New_York\") " +
+            "or aliases: PST/PDT→America/Los_Angeles, MST/MDT→America/Denver, " +
+            "CST/CDT→America/Chicago, EST/EDT→America/New_York, UTC→UTC, GMT→Etc/GMT. " +
+            "Default: \"UTC\".",
+          ),
         // reminder/set params
         trigger: z
           .enum(["time", "startup", "last_sent", "last_received"])
