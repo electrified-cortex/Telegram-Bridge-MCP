@@ -42,17 +42,21 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 
 ## R5 — Activity monitor arm
 
-**Branch A — compaction recovery:** `action(type: 'activity/file/get')`.
+**SSE check (try first):** `action(type: 'activity/listen')`.
+- Returns `ok: true` → HTTP mode active. Arm: `Monitor(command: "<command from response>", persistent: true, description: "Telegram SSE notifier")`. Skip to R6.
+- Returns `HTTP_MODE_REQUIRED` → fall through to Branch A/B below (file-watch path).
+
+**Branch A — compaction recovery (file-watch path):** `action(type: 'activity/file/get')`.
 - Returns a `file_path` → skip Branch B; proceed to path construction.
 - Returns no `file_path` → fall through to Branch B.
 
-**Branch B — fresh start:** `action(type: 'activity/file/create')`, then `dequeue(max_wait: 10)` scanning for `event_type: 'ACTIVITY_FILE_MONITOR_INSTRUCTIONS'`. Extract `file_path` from that event.
+**Branch B — fresh start (file-watch path):** `action(type: 'activity/file/create')`, then `dequeue(max_wait: 10)` scanning for `event_type: 'ACTIVITY_FILE_MONITOR_INSTRUCTIONS'`. Extract `file_path` from that event.
 
 **ALREADY_REGISTERED response (either branch):**
 - `details.file_path` non-empty → use it; proceed to path construction.
 - `details.file_path` empty → `action(type: 'activity/file/delete')`, then re-run Branch B.
 
-**Path construction and arm:**
+**Path construction and arm (file-watch path):**
 1. If `file_path` contains backslash (`\`) separators, convert to POSIX (forward slash) first.
 2. TMCP root = 3 parent directories up from `file_path`.
 3. Stop any running watcher, then arm: `<TMCP_root>/tools/monitor.sh <file_path>`.

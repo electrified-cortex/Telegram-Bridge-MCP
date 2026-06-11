@@ -53,13 +53,13 @@ export const SERVICE_MESSAGES = deepFreeze({
   ONBOARDING_LOOP_PATTERN: {
     eventType: "onboarding_loop_pattern" as const,
     text: `Welcome to the loop. Stay in it.
-Two paths — pick one based on your toolset:
+Three paths — pick based on your environment:
 
-Monitor tool available: call action(type: 'activity/file/create') then dequeue — the response will deliver full wake-signal setup instructions.
-
+HTTP mode (preferred): action(type: 'activity/listen') → ok:true → arm SSE Monitor with the returned command. help('activity/listen').
+No HTTP / Monitor available: action(type: 'activity/file/create') → arm file Monitor on the returned path. help('activity/file').
 No Monitor tool: call dequeue(token) on every turn.
 
-Details: help('start'), help('dequeue'), help('activity/file').`,
+Details: help('start'), help('dequeue').`,
   },
 
   ONBOARDING_COMPACTION_HINT: {
@@ -197,13 +197,27 @@ Details: help('start'), help('dequeue'), help('activity/file').`,
       `Use this to guarantee a high quality file watch — run inside your harness's Monitor tool with persistent: true. Name it "Telegram message notifier" so you can recognize it after a compaction.\n\n` +
       `Windows:  \`"${_monitorPs1}" "${filePath}"\`\n` +
       `Linux/macOS:  \`"${_monitorSh}" "${filePath}"\`\n\n` +
-      `Loop pattern: When a wake signal arrives, call dequeue(token) and handle each message one at a time until pending = 0. Then call dequeue(token) once more.`,
+      `Loop pattern: When a wake signal arrives, call dequeue(token) and handle each message one at a time until pending = 0. Then call dequeue(token) once more.\n\n` +
+      `Note: If TMCP is in HTTP mode, prefer activity/listen (SSE) for push notifications — no filesystem access required. help('activity/listen').`,
     details: {
       script_path: {
         windows: _monitorPs1,
         posix: _monitorSh,
       },
     },
+  },
+
+  // ── SSE compaction recovery ───────────────────────────────────────────────
+
+  /** Fired after compaction recovery when SSE was the active wake mechanism */
+  POST_COMPACT_SSE_RECOVERY: {
+    eventType: "post_compact_sse_recovery" as const,
+    /** @param sseUrl The SSE URL to reconnect to */
+    text: (sseUrl: string) =>
+      `Looks like you compacted. Re-arm your SSE monitor.\n` +
+      `Run inside your harness's Monitor tool with persistent: true:\n` +
+      `\`curl -N '${sseUrl}'\`\n\n` +
+      `Or call action(type: 'activity/listen') to get a fresh URL and command.`,
   },
 
   // ── Sub-session spawn hint ────────────────────────────────────────────────

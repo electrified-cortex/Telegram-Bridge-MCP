@@ -1,12 +1,24 @@
-# compaction-recovery — Activity File Monitor Recovery
+# compaction-recovery — Wake Monitor Recovery
 
-When Claude Code compacts a conversation, all in-memory state is lost — including active Monitor tasks. An activity-file monitor that was running before compaction **will not survive**. On resumption, its task ID is gone, its file watch is dead, and TMCP will never nudge it again.
+When Claude Code compacts a conversation, all in-memory state is lost — including active Monitor tasks. Any wake monitor (SSE or activity-file) that was running before compaction **will not survive**. On resumption, its task ID is gone, your wake signal is dead, and TMCP will never nudge you again until you re-arm.
 
 ## Why monitors don't survive compaction
 
-Monitors are held in-process by the agent harness. Compaction replaces the conversation context with a summary; the harness re-launches into a clean state with no knowledge of the previous monitor task. The monitor process itself is killed, and the activity file is left untouched but un-watched.
+Monitors are held in-process by the agent harness. Compaction replaces the conversation context with a summary; the harness re-launches into a clean state with no knowledge of the previous monitor task. The monitor process itself is killed.
 
-## Recovery sequence
+## SSE recovery (HTTP mode — preferred)
+
+SSE state is not held server-side beyond the URL. Recovery is simple: get the URL and re-arm.
+
+```
+result = action(type: "activity/listen/get", token: <token>)
+// result.command is the curl command
+Monitor(command: result.command, persistent: true, description: "Telegram SSE notifier")
+```
+
+`activity/listen/get` is the symmetric recovery read for `activity/listen`. Returns `HTTP_MODE_REQUIRED` if TMCP is no longer in HTTP mode — fall back to the file-watch path below.
+
+## Activity-file recovery (stdio mode / no HTTP)
 
 Do **not** call `activity/file/create` again — that would register a second file and cause proliferation (multiple stale activity files accumulating across compactions).
 
@@ -34,5 +46,6 @@ Calling `activity/file/create` after compaction registers a **second** file. The
 
 ## See also
 
+- `help('activity/listen')` — SSE wake monitor (preferred in HTTP mode), compaction recovery
 - `help('activity/file')` — full wake-nudge integration guide (setup, watcher patterns, lifecycle)
 - `help('compacted')` — general post-compaction recovery (session token, dequeue drain)
