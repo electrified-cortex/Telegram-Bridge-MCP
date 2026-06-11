@@ -208,16 +208,13 @@ export function handlePostEvent(
     }
   }
 
-  // ── 7. "compacting" side-effect — post-compact monitor recovery hint ──────
-  if (kind === "compacting") {
-    const activityState = getActivityFile(resolvedActorSid);
-    if (activityState) {
-      deliverServiceMessage(
-        resolvedActorSid,
-        SERVICE_MESSAGES.POST_COMPACT_MONITOR_RECOVERY.text(activityState.filePath),
-        SERVICE_MESSAGES.POST_COMPACT_MONITOR_RECOVERY.eventType,
-      );
-    }
+  // ── 7. "compacted" side-effect — post-compact recovery hint (token echo) ──
+  if (kind === "compacted") {
+    deliverServiceMessage(
+      resolvedActorSid,
+      SERVICE_MESSAGES.POST_COMPACT_MONITOR_RECOVERY.text(tokenNum),
+      SERVICE_MESSAGES.POST_COMPACT_MONITOR_RECOVERY.eventType,
+    );
   }
 
   return [200, { ok: true, fanout }];

@@ -371,11 +371,8 @@ describe("POST /event handler — post_compact_monitor_recovery hint", () => {
     mocks.getActivityFile.mockReturnValue(undefined);
   });
 
-  it("delivers post_compact_monitor_recovery to the actor session when compacting and activity file is registered", () => {
-    const filePath = "/tmp/agent-activity.txt";
-    mocks.getActivityFile.mockReturnValue({ filePath });
-
-    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+  it("delivers post_compact_monitor_recovery to the actor session on compacted", () => {
+    const [status, body] = handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
 
     expect(status).toBe(200);
     expect((body as { ok: boolean }).ok).toBe(true);
@@ -385,53 +382,44 @@ describe("POST /event handler — post_compact_monitor_recovery hint", () => {
     // VALID_TOKEN decodes to sid=1 — that is the target
     expect(calls[0][0]).toBe(1);
     expect(calls[0][2]).toBe("post_compact_monitor_recovery");
-    expect(String(calls[0][1])).toContain(filePath);
+    // message must contain the token so the agent can reorient
+    expect(String(calls[0][1])).toContain(String(VALID_TOKEN));
   });
 
-  it("does not deliver post_compact_monitor_recovery when no activity file is registered", () => {
-    mocks.getActivityFile.mockReturnValue(undefined);
-
+  it("does not deliver post_compact_monitor_recovery for 'compacting' events", () => {
     handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
 
     expect(recoveryDeliveryCalls()).toHaveLength(0);
   });
 
-  it("delivers the recovery message exactly once per compacting event", () => {
-    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/once.txt" });
-
-    handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+  it("delivers the recovery message exactly once per compacted event", () => {
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
 
     expect(recoveryDeliveryCalls()).toHaveLength(1);
   });
 
   it("delivers once even when multiple sessions are in the fan-out", () => {
     mocks.listSessions.mockReturnValue([makeSession(1), makeSession(2), makeSession(3)]);
-    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/multi.txt" });
 
-    handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
 
     // Fan-out delivers "agent_event" to all sessions; recovery goes only to the actor
     expect(recoveryDeliveryCalls()).toHaveLength(1);
   });
 
-  it("does not deliver post_compact_monitor_recovery for 'compacted' events", () => {
-    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/activity.txt" });
-
-    handlePostEvent(String(VALID_TOKEN), { kind: "compacted" });
+  it("does not deliver post_compact_monitor_recovery for 'compacting' events (regression guard)", () => {
+    handlePostEvent(String(VALID_TOKEN), { kind: "compacting" });
 
     expect(recoveryDeliveryCalls()).toHaveLength(0);
   });
 
   it("does not deliver post_compact_monitor_recovery for 'startup' events", () => {
-    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/activity.txt" });
-
     handlePostEvent(String(VALID_TOKEN), { kind: "startup" });
 
     expect(recoveryDeliveryCalls()).toHaveLength(0);
   });
 
   it("does not deliver post_compact_monitor_recovery for 'stopped' events", () => {
-    mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/activity.txt" });
     mocks.handleSessionStopped.mockReturnValue({ noOp: false });
 
     handlePostEvent(String(VALID_TOKEN), { kind: "stopped" });

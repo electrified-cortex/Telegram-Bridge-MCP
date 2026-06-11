@@ -179,12 +179,11 @@ Details: help('start'), help('dequeue').`,
 
   // ── Compaction recovery ───────────────────────────────────────────────────
 
-  /** @param filePath The registered activity file path to re-arm */
   POST_COMPACT_MONITOR_RECOVERY: {
     eventType: "post_compact_monitor_recovery" as const,
-    /** @param filePath The registered activity file path to re-arm */
-    text: (filePath: string) =>
-      `Looks like you compacted. Re-arm your activity-file monitor on this path.\n**Path:** ${filePath}\nAlso re-arm any other persistent monitors your session was running before compaction.`,
+    /** @param token The caller's session token — echoed back so the agent can reorient immediately after resuming */
+    text: (token: number) =>
+      `You compacted. Your session token: \`${token}\`\nRun \`TaskList\` to verify your monitors are still running. See \`help('compaction-recovery')\` if needed.`,
   },
 
   // ── Activity file monitor instructions ────────────────────────────────────
