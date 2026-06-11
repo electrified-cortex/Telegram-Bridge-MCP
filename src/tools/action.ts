@@ -79,7 +79,6 @@ import { handleActivityFileDelete } from "./activity/delete.js";
 import { handleActivityFileGet } from "./activity/get.js";
 import { handleActivityFileTouch } from "./activity/touch.js";
 import { handleActivityListen } from "./activity/listen.js";
-import { handleActivityListenGet } from "./activity/get-listen.js";
 import { handleActivityListenCancel } from "./activity/cancel-listen.js";
 import { NOTIFY_DEBOUNCE_MIN_MS, NOTIFY_DEBOUNCE_MAX_MS, LOCKOUT_MIN_MS, LOCKOUT_MAX_MS } from "./activity/file-state.js";
 import { handleNameTag } from "./name-tag.js";
@@ -255,9 +254,8 @@ export function setupActionRegistry(): void {
   registerAction("activity/file/get", toActionHandler(handleActivityFileGet));
   registerAction("activity/file/touch", toActionHandler(handleActivityFileTouch));
 
-  // activity/listen, activity/listen/get, and activity/listen/cancel
+  // activity/listen and activity/listen/cancel
   registerAction("activity/listen",        toActionHandler(handleActivityListen));
-  registerAction("activity/listen/get",    toActionHandler(handleActivityListenGet));
   registerAction("activity/listen/cancel", toActionHandler(handleActivityListenCancel));
 
   // name-tag — get or set session name tag

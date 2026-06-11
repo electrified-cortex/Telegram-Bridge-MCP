@@ -6,7 +6,7 @@ You just lost conversational context. This help topic covers Telegram/MCP recove
 2. **If token present**: `dequeue(max_wait: 0, token)` to drain pending messages and confirm the bridge link.
 3. **If token missing or `dequeue` returns `session_closed`**: call `action(type: 'session/reconnect', name: '<your_name>')` to rejoin, or `action(type: 'session/start', name: '<your_name>')` for a fresh session.
 4. **Monitor**: If your harness doesn't support file monitoring (e.g. VS Code), skip this step entirely — **keep dequeuing at the end of every turn, that's all you need.** Otherwise, re-arm your wake monitor. **SSE path (HTTP mode):**
-   - **SSE-A**: `action(type: 'activity/listen/get')` → arm `Monitor(command: <returned command>, persistent: true)`. Resume loop.
+   - **SSE-A**: `action(type: 'activity/listen')` → arm `Monitor(command: <returned command>, persistent: true)`. Resume loop.
    - SSE does not persist state server-side beyond the URL; always re-arm fresh after compaction.
 
    **File-watch path (stdio / no HTTP):** TMCP keeps your activity file registration intact across compaction — but your local watcher process may have died. Recovery:
@@ -14,7 +14,7 @@ You just lost conversational context. This help topic covers Telegram/MCP recove
    - **File-B. Arm verification**: set a 30-second harness-local timer (not a Telegram reminder), then end your turn and wait — whichever fires first wins.
    - **File-C. Watcher notify fires first**: monitor is live — cancel the timer and resume your dequeue loop.
    - **File-D. Timer fires first (or touch errored)**: `action(type: 'activity/file/create', refresh: true)` — wipes the old registration, creates a fresh file. Re-arm a persistent monitor on the returned path (see `help('activity/file')`). Resume loop.
-5. **Other monitors**: re-arm any other persistent monitors that may have dropped (S-IM, BT, etc.).
+5. **Other monitors**: re-arm any other persistent monitors your session was running before compaction.
 6. **Resume your dequeue loop**.
 
 For a richer refresher:

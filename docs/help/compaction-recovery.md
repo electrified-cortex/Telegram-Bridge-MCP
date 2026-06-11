@@ -11,14 +11,14 @@ Monitors are held in-process by the agent harness. Compaction replaces the conve
 SSE state is not held server-side beyond the URL. Recovery is simple: get the URL and re-arm.
 
 ```
-result = action(type: "activity/listen/get", token: <token>)
+result = action(type: "activity/listen", token: <token>)
 // result.command is the curl command
 Monitor(command: result.command, persistent: true, description: "Telegram SSE notifier")
 ```
 
-`activity/listen/get` is the symmetric recovery read for `activity/listen`. Returns `HTTP_MODE_REQUIRED` if TMCP is no longer in HTTP mode — fall back to the file-watch path below.
+Returns `HTTP_MODE_REQUIRED` if TMCP is no longer in HTTP mode — fall back to the file-watch path below.
 
-After re-arming the SSE monitor, also re-arm any other persistent monitors your session was running before compaction (S-IM, BT, or others).
+After re-arming the SSE monitor, also re-arm any other persistent monitors your session was running before compaction.
 
 ## Activity-file recovery (stdio mode / no HTTP)
 
@@ -38,7 +38,7 @@ file_path = result.file_path
 startMonitor(file_path)
 ```
 
-After re-arming the activity-file monitor, also re-arm any other persistent monitors your session was running before compaction (S-IM, BT, or others).
+After re-arming the activity-file monitor, also re-arm any other persistent monitors your session was running before compaction.
 
 ## `activity/file/get` is the source of truth
 

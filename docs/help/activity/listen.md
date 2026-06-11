@@ -9,7 +9,6 @@ Opens a server-sent events stream so agents can receive push notifications witho
 | Path | Input | Effect |
 | --- | --- | --- |
 | `activity/listen` | `token` | Returns the SSE URL and a ready-to-run curl command. No state change. |
-| `activity/listen/get` | `token` | Recovery read: same URL/command as `activity/listen`. Call after compaction to re-arm without re-probing HTTP mode. |
 | `activity/listen/cancel` | `token` | Closes the open SSE connection for this session. Sends `data: cancelled` then `res.end()`. Idempotent. |
 
 ## activity/listen
@@ -69,12 +68,10 @@ Both mechanisms trigger the same dequeue poll.
 
 ## Compaction recovery
 
-After a context compaction, re-arm your SSE monitor:
+After a context compaction, re-arm your SSE monitor using `activity/listen` again:
 
 ```
-result = action(type: "activity/listen/get", token: <token>)
+result = action(type: "activity/listen", token: <token>)
 // result.command is the curl command to re-arm
 Monitor(command: result.command, persistent: true, description: "SSE notify watcher")
 ```
-
-`activity/listen/get` is the symmetric recovery read — same URL/command as `activity/listen`, named explicitly for recovery flows.
