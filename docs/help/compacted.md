@@ -14,7 +14,8 @@ You just lost conversational context. This help topic covers Telegram/MCP recove
    - **File-B. Arm verification**: set a 30-second harness-local timer (not a Telegram reminder), then end your turn and wait — whichever fires first wins.
    - **File-C. Watcher notify fires first**: monitor is live — cancel the timer and resume your dequeue loop.
    - **File-D. Timer fires first (or touch errored)**: `action(type: 'activity/file/create', refresh: true)` — wipes the old registration, creates a fresh file. Re-arm a persistent monitor on the returned path (see `help('activity/file')`). Resume loop.
-5. **Resume your dequeue loop**.
+5. **Other monitors**: re-arm any other persistent monitors that may have dropped (S-IM, BT, etc.).
+6. **Resume your dequeue loop**.
 
 For a richer refresher:
 

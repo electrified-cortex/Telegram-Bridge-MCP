@@ -18,6 +18,8 @@ Monitor(command: result.command, persistent: true, description: "Telegram SSE no
 
 `activity/listen/get` is the symmetric recovery read for `activity/listen`. Returns `HTTP_MODE_REQUIRED` if TMCP is no longer in HTTP mode — fall back to the file-watch path below.
 
+After re-arming the SSE monitor, also re-arm any other persistent monitors your session was running before compaction (S-IM, BT, or others).
+
 ## Activity-file recovery (stdio mode / no HTTP)
 
 Do **not** call `activity/file/create` again — that would register a second file and cause proliferation (multiple stale activity files accumulating across compactions).
@@ -35,6 +37,8 @@ file_path = result.file_path
 // re-arm on the returned path — do NOT call activity/file/create
 startMonitor(file_path)
 ```
+
+After re-arming the activity-file monitor, also re-arm any other persistent monitors your session was running before compaction (S-IM, BT, or others).
 
 ## `activity/file/get` is the source of truth
 

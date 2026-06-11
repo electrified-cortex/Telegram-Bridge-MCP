@@ -184,7 +184,7 @@ Details: help('start'), help('dequeue').`,
     eventType: "post_compact_monitor_recovery" as const,
     /** @param filePath The registered activity file path to re-arm */
     text: (filePath: string) =>
-      `Looks like you compacted. Re-arm your activity-file monitor on this path.\n**Path:** ${filePath}`,
+      `Looks like you compacted. Re-arm your activity-file monitor on this path.\n**Path:** ${filePath}\nAlso re-arm any other persistent monitors (S-IM, BT, or other services) that may have dropped during compaction.`,
   },
 
   // ── Activity file monitor instructions ────────────────────────────────────
