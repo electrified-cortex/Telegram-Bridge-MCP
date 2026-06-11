@@ -317,4 +317,43 @@ describe("session/spawn-child", () => {
     expect(parseResult(result).code).toBe("CAPABILITY_DENIED");
     expect(mocks.handleSessionStart).not.toHaveBeenCalled();
   });
+
+  // ── name_tag inheritance ───────────────────────────────────────────────────
+
+  it("name_tag is inherited from parent to child session", async () => {
+    const childSession: { name_tag?: string } = {};
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { sid: PARENT_SID, name: "Parent", name_tag: "Agent" };
+      if (sid === CHILD_SID) return childSession;
+      return undefined;
+    });
+
+    await handleSpawnChild({ token: 1123456, name: "child" });
+
+    expect(childSession.name_tag).toBe("Agent");
+  });
+
+  it("no crash when parent has no name_tag (child spawns successfully)", async () => {
+    mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent" }); // no name_tag field
+
+    const result = await handleSpawnChild({ token: 1123456, name: "child" });
+
+    expect(isError(result)).toBe(false);
+    expect(parseResult(result).token).toBe(CHILD_TOKEN);
+  });
+
+  it("regression: name and color are still inherited after name_tag change", async () => {
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { sid: PARENT_SID, name: "ParentName", color: "🔵", name_tag: "Agent" };
+      return {};
+    });
+
+    await handleSpawnChild({ token: 1123456, name: "child" });
+
+    expect(mocks.handleSessionStart).toHaveBeenCalledWith({
+      name: "ParentName",
+      color: "🔵",
+      parentSid: PARENT_SID,
+    });
+  });
 });

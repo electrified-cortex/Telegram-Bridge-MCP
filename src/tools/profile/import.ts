@@ -68,6 +68,7 @@ export function register(server: McpServer) {
               recurring: z.boolean().default(false),
               trigger: z.enum(["time", "startup"]).optional(),
               disabled: z.boolean().optional(),
+              only_if_silent: z.boolean().optional(),
             }),
           )
           .optional()

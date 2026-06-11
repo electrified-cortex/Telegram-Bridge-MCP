@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach } from "vitest";
 import type { TimelineEvent } from "./message-store.js";
 import {
   createSessionQueue,
@@ -11,10 +11,30 @@ import {
   broadcastOutbound,
   notifySessionWaiters,
   deliverDirectMessage,
+  deliverServiceMessage,
   deliverReminderEvent,
   hasPendingUserContent,
   resetSessionQueuesForTest,
 } from "./session-queue.js";
+
+// ---------------------------------------------------------------------------
+// Hoisted mocks for SSE notify gating (AC-2)
+// ---------------------------------------------------------------------------
+
+const sseMock = vi.hoisted(() => vi.fn());
+const notifyIfAllowedMock = vi.hoisted(() => vi.fn());
+const isDequeueActiveMock = vi.hoisted(() => vi.fn());
+
+vi.mock("./sse-endpoint.js", () => ({
+  notifySseSubscriber: sseMock,
+}));
+
+vi.mock("./tools/activity/file-state.js", () => ({
+  notifyIfAllowed: notifyIfAllowedMock,
+  isDequeueActive: isDequeueActiveMock,
+  setActivityFile: vi.fn(),
+  getActivityFile: vi.fn(),
+}));
 import {
   setGovernorSid,
   resetRoutingModeForTest,
@@ -68,6 +88,7 @@ function reactionEvent(target: number, id = 400): TimelineEvent {
 
 describe("session-queue", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     resetSessionQueuesForTest();
     resetRoutingModeForTest();
     resetReminderStateForTest();
@@ -557,6 +578,82 @@ describe("session-queue", () => {
       routeToSession(replyEvent(50)); // targeted at sid 1
       expect(getLastReceivedAt(1, "all")).toBeDefined(); // sid 1 updated
       expect(getLastReceivedAt(2, "all")).toBeUndefined(); // sid 2 untouched
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // AC-9 — messages-first ordering (§5-b, decision B)
+  // -------------------------------------------------------------------------
+
+  describe("AC-9 — messages-first ordering in dequeueBatch", () => {
+    it("raw dequeueBatch order: lightweight reminder precedes heavyweight message", () => {
+      createSessionQueue(1);
+
+      // Deliver reminder first (lightweight event — not a heavyweight text/voice message)
+      deliverReminderEvent(1, {
+        id: -9001,
+        event: "reminder",
+        from: "system",
+        routing: "ambiguous",
+        content: { type: "reminder", text: "Stand-up", reminder_id: "r-1", recurring: false, trigger: "time" },
+      });
+
+      // Then enqueue a user text message (heavyweight — acts as batch delimiter)
+      routeToSession(makeEvent({ id: 500 }));
+
+      const q = getSessionQueue(1)!;
+      const raw = q.dequeueBatch();
+      // FIFO order: reminder (lightweight) collected before the message delimiter
+      expect(raw).toHaveLength(2);
+      expect(raw[0].event).toBe("reminder");
+      expect(raw[1].event).toBe("message");
+    });
+
+    it("messages-first sort: applying the §5-b sort puts messages before reminders", () => {
+      createSessionQueue(1);
+
+      deliverReminderEvent(1, {
+        id: -9002,
+        event: "reminder",
+        from: "system",
+        routing: "ambiguous",
+        content: { type: "reminder", text: "Check CI", reminder_id: "r-2", recurring: false, trigger: "time" },
+      });
+      routeToSession(makeEvent({ id: 501 }));
+
+      const q = getSessionQueue(1)!;
+      const batch = q.dequeueBatch();
+
+      // Apply the messages-first sort used by dequeueBatchAny (§5-b decision B)
+      const sorted = [...batch].sort(
+        (a, b) => (a.event === "reminder" ? 1 : 0) - (b.event === "reminder" ? 1 : 0),
+      );
+
+      expect(sorted).toHaveLength(2);
+      expect(sorted[0].event).toBe("message");
+      expect(sorted[1].event).toBe("reminder");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // AC-2: SSE notification gating via notifySession
+  // -------------------------------------------------------------------------
+
+  describe("AC-2: SSE notification gating", () => {
+    const SID = 5;
+
+    beforeEach(() => {
+      // notifyIfAllowed returns true the first time (fires SSE), false thereafter (suppressed)
+      notifyIfAllowedMock.mockReturnValueOnce(true).mockReturnValue(false);
+      isDequeueActiveMock.mockReturnValue(false);
+      createSessionQueue(SID);
+    });
+
+    it("deliverServiceMessage ×10 → notifySseSubscriber called exactly once", () => {
+      for (let i = 0; i < 10; i++) {
+        deliverServiceMessage(SID, "msg", "test");
+      }
+      expect(sseMock).toHaveBeenCalledTimes(1);
     });
   });
 });

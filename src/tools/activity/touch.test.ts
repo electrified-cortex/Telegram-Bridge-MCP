@@ -91,6 +91,7 @@ describe("TC2: file registered but missing from disk", () => {
       notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
+      pendingReNotifyHandle: null,
     });
   });
 
@@ -131,6 +132,7 @@ describe("TC3: success — file registered and present on disk", () => {
       notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
+      pendingReNotifyHandle: null,
     });
   });
 
@@ -205,6 +207,7 @@ describe("TC5: idempotent — rapid repeated calls", () => {
       notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
+      pendingReNotifyHandle: null,
     });
   });
 
@@ -246,6 +249,7 @@ describe("TC6: TMCP-owned file", () => {
       notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
+      pendingReNotifyHandle: null,
     });
   });
 

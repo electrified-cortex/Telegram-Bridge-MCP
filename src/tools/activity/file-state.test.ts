@@ -74,6 +74,10 @@ import {
   handleSessionStopped,
   replaceActivityFile,
   resetActivityFileStateForTest,
+  initSseNotifyCallback,
+  registerSseMonitor,
+  unregisterSseMonitor,
+  clearActivityFile,
   type ActivityFileState,
 } from "./file-state.js";
 
@@ -92,6 +96,7 @@ function makeState(overrides: Partial<ActivityFileState> = {}): ActivityFileStat
     notifyPendingBecauseLocked: false,
     touchInFlight: false,
     pendingRetryHandle: null,
+    pendingReNotifyHandle: null,
     ...overrides,
   };
 }
@@ -234,10 +239,10 @@ describe("notify-lockout gate — ACs 1-10", () => {
   });
 
   // ── AC 6: Lockout release is opt-in — setDequeueActive alone does not clear it ──
-  // NOTE (BT-2301): dequeue.ts now calls releaseNotifyLockout on ALL exit paths
+  // NOTE: dequeue.ts calls releaseNotifyLockout on ALL exit paths
   // (content-returning AND timeout). The unit invariant below still holds:
   // setDequeueActive(false) alone does NOT release the lockout — only
-  // releaseNotifyLockout() does. The integration test for the new timeout-exit
+  // releaseNotifyLockout() does. The integration test for the timeout-exit
   // behavior lives in src/tools/dequeue.test.ts ("timeout-exit lockout release").
   it("AC6: setDequeueActive(false) alone does NOT release notify lockout", async () => {
     setActivityFile(SID, makeState());
@@ -256,7 +261,7 @@ describe("notify-lockout gate — ACs 1-10", () => {
     expect(getActivityFile(SID)!.notifyLockedUntil).toBe(lockedUntil);
   });
 
-  it("AC6: releaseNotifyLockout clears lockout (timeout-exit path now calls it — BT-2301)", async () => {
+  it("AC6: releaseNotifyLockout clears lockout (timeout-exit path now calls it)", async () => {
     setActivityFile(SID, makeState());
 
     notifyIfAllowed(SID, "operator", false);
@@ -614,5 +619,378 @@ describe("appendNewline ENOENT recovery", () => {
     const entry = getActivityFile(SID)!;
     expect(entry.notifyLockedUntil).toBeNull();
     expect(entry.touchInFlight).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5-minute active re-notify — §5-a (10-2303)
+// ---------------------------------------------------------------------------
+
+describe("5-minute active re-notify (§5-a)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    sessionMocks.getNotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    vi.mocked(appendFile).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // ── AC-5: Parked agent re-notify fires once after lockout ─────────────────
+  it("AC-5: parked agent — re-notify fires exactly once after 5 min, then silence", async () => {
+    setActivityFile(SID, makeState());
+
+    // Initial notify
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    // Agent does NOT dequeue — timer fires after lockout
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Re-notify should have fired: exactly 1 additional touch
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+
+    // Advance another full lockout window — no further re-notify (one-shot)
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+  });
+
+  // ── AC-6: Agent dequeues before timer fires → no extra touch ──────────────
+  it("AC-6: dequeue before 5 min cancels re-notify timer — no extra touch fires", async () => {
+    setActivityFile(SID, makeState());
+
+    // Notify
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    // Queue drains (agent dequeues before 5 min) — cancels pending re-notify
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Should still be 1 — no re-eval (queue was empty)
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    // Advance past where the old timer would have fired — still no extra touch
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+  });
+
+  // ── AC-7: Fresh re-notify cycle after content-returning dequeue + new content ─
+  it("AC-7: dequeue + new content → fresh 5-min timer; old cancelled; re-notify fires once", async () => {
+    setActivityFile(SID, makeState());
+
+    // First notify — registers timer T1
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    const entryAfterNotify = getActivityFile(SID)!;
+    const handleT1 = entryAfterNotify.pendingReNotifyHandle;
+    expect(handleT1).not.toBeNull();
+
+    // Content-returning dequeue: cancels T1, clears lockout
+    queueMocks.hasPendingUserContent.mockReturnValue(true); // still has content
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // releaseNotifyLockout called fireRevaluationNotify (notifyPendingBecauseLocked was false,
+    // but pending is false so no re-eval here — lockout cleared, T1 cancelled).
+    // Actually releaseNotifyLockout fires re-eval only if notifyPendingBecauseLocked was true.
+    // Since we didn't suppress any notify, pending is false → no re-eval notify.
+    // appendFile count: still 1 (no re-eval fired from releaseNotifyLockout).
+
+    // T1 must be cancelled after releaseNotifyLockout
+    const entryAfterRelease = getActivityFile(SID)!;
+    expect(entryAfterRelease.pendingReNotifyHandle).toBeNull();
+    expect(entryAfterRelease.notifyLockedUntil).toBeNull();
+
+    // New content enqueued → agent idle → notifyIfAllowed fires, registers timer T2
+    vi.mocked(appendFile).mockClear();
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
+
+    const entryAfterNewNotify = getActivityFile(SID)!;
+    const handleT2 = entryAfterNewNotify.pendingReNotifyHandle;
+    expect(handleT2).not.toBeNull();
+    expect(handleT2).not.toBe(handleT1); // fresh handle
+
+    // Advance 5 min → T2 fires → re-notify
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // One additional touch from T2 re-notify
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+
+    // No further re-notify after that (one-shot)
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-11: initSseNotifyCallback — SSE parity for file-state re-evaluation path
+// ---------------------------------------------------------------------------
+
+describe("AC-11: initSseNotifyCallback SSE parity", () => {
+  let sseSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    sessionMocks.getNotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    vi.mocked(appendFile).mockResolvedValue(undefined);
+    sseSpy = vi.fn();
+    initSseNotifyCallback(sseSpy as (sid: number) => void);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // AC-3 equiv: releaseNotifyLockout with pending → SSE fires once
+  it("AC-3 equiv: lockout active + pending → releaseNotifyLockout fires SSE once", async () => {
+    setActivityFile(SID, {
+      ...makeState(),
+      notifyLockedUntil: Date.now() + 10_000,
+      notifyPendingBecauseLocked: true,
+      touchInFlight: false,
+    });
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // AC-4 equiv: no lockout + not pending → releaseNotifyLockout is a no-op
+  it("AC-4 equiv: no lockout + no pending → releaseNotifyLockout fires SSE zero times", async () => {
+    setActivityFile(SID, {
+      ...makeState(),
+      notifyLockedUntil: null,
+      notifyPendingBecauseLocked: false,
+      touchInFlight: false,
+    });
+
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).toHaveBeenCalledTimes(0);
+  });
+
+  // AC-5 equiv: parked agent — SSE re-notify fires after 5-min lockout window
+  it("AC-5 equiv: 5-min inactivity → exactly 1 SSE write via _sseNotifyCallback", async () => {
+    setActivityFile(SID, makeState());
+
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // SSE not called yet — callback is for re-evaluation, not the initial notify
+    expect(sseSpy).not.toHaveBeenCalled();
+
+    // Advance 5 min → timer fires → fireRevaluationNotify → _sseNotifyCallback
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+
+    // One-shot: no further SSE after the re-notify window
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // AC-6 equiv: queue drains before 5 min → no SSE re-notify
+  it("AC-6 equiv: queue drains before 5 min → no SSE re-notify", async () => {
+    setActivityFile(SID, makeState());
+
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Queue empties — content-returning dequeue clears lockout and cancels timer
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Advance past where old timer would have fired
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).not.toHaveBeenCalled();
+  });
+
+  // AC-7 equiv: dequeue resets timer → fresh 5-min window fires SSE once
+  it("AC-7 equiv: dequeue resets timer → fresh 5-min window fires SSE once", async () => {
+    setActivityFile(SID, makeState());
+
+    // First notify — registers timer T1
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Content-returning dequeue: queue still has content, releases lockout (cancels T1)
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    releaseNotifyLockout(SID);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // New content → fresh notifyIfAllowed → timer T2 set
+    vi.mocked(appendFile).mockClear();
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).not.toHaveBeenCalled();
+
+    // Advance 5 min → T2 fires → SSE notify
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+
+    // No further SSE (one-shot)
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSE-only monitor gate (activity/listen with NO activity file). This is the
+// path that previously got ZERO kicks: notifyIfAllowed declined at `!entry`
+// because only file registration created gate state. registerSseMonitor now
+// gives an SSE-only session a fileless gate entry so it obeys the SAME gate.
+// ---------------------------------------------------------------------------
+
+describe("SSE-only monitor gate (no activity file)", () => {
+  let sseSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    sessionMocks.getNotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    vi.mocked(appendFile).mockResolvedValue(undefined);
+    sseSpy = vi.fn();
+    initSseNotifyCallback(sseSpy as (sid: number) => void);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("registerSseMonitor creates a fileless gate entry; getActivityFile hides it", () => {
+    registerSseMonitor(SID);
+    // No FILE is registered, so the file-oriented accessor reports nothing…
+    expect(getActivityFile(SID)).toBeUndefined();
+    // …but the gate is live: an operator event is now allowed through.
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+  });
+
+  it("first operator event → gate allows it (caller fires SSE), no file touched", async () => {
+    registerSseMonitor(SID);
+
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // SSE-only: there is no file, so appendFile must never be called.
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+  });
+
+  it("burst of events → allowed once then debounced (parity with file path)", () => {
+    registerSseMonitor(SID);
+
+    // First event opens the lockout → allowed.
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+    // Nine more during the lockout window → all suppressed.
+    for (let i = 0; i < 9; i++) {
+      expect(notifyIfAllowed(SID, "operator", false)).toBe(false);
+    }
+  });
+
+  it("content-returning dequeue releases the lockout → SSE re-kick fires once", async () => {
+    registerSseMonitor(SID);
+
+    notifyIfAllowed(SID, "operator", false); // opens lockout
+    notifyIfAllowed(SID, "operator", false); // suppressed → notifyPendingBecauseLocked
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    releaseNotifyLockout(SID); // dequeue exit with pending content
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Re-evaluation kicks the SSE stream (no file → no appendFile).
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+  });
+
+  it("5-min inactivity → exactly one SSE re-kick, then silence (one-shot)", async () => {
+    registerSseMonitor(SID);
+
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).not.toHaveBeenCalled(); // initial kick is the caller's job
+
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).toHaveBeenCalledTimes(1); // one-shot
+  });
+
+  it("in-flight dequeue suppresses the kick (parity with file path)", () => {
+    registerSseMonitor(SID);
+    setDequeueActive(SID, true);
+
+    // Agent is mid-dequeue → event delivered inline, no kick.
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(false);
+  });
+
+  it("unregisterSseMonitor tears down the gate when no file remains", () => {
+    registerSseMonitor(SID);
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+
+    unregisterSseMonitor(SID);
+    // Gate entry gone → back to the original `!entry` decline.
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(false);
+  });
+
+  it("file + SSE: clearing the file keeps the gate alive for the SSE stream", async () => {
+    // Register a file first, then attach SSE on the same session.
+    setActivityFile(SID, makeState());
+    registerSseMonitor(SID);
+    expect(getActivityFile(SID)).toBeDefined();
+
+    await clearActivityFile(SID);
+
+    // File view is gone, but the SSE gate persists and still passes events.
+    expect(getActivityFile(SID)).toBeUndefined();
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+  });
+
+  it("file + SSE: dropping SSE keeps the gate alive for the file monitor", () => {
+    setActivityFile(SID, makeState());
+    registerSseMonitor(SID);
+
+    unregisterSseMonitor(SID);
+
+    // File monitor still registered → gate persists.
+    expect(getActivityFile(SID)).toBeDefined();
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
   });
 });

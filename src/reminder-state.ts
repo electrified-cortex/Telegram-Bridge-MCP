@@ -2,10 +2,11 @@
  * Per-session reminder state for the Scheduled Reminders feature.
  *
  * **Three-tier queue:**
- * - `deferred` — has a `delay_seconds` > 0 that has not yet elapsed. Cannot fire yet.
- * - `active`   — delay has elapsed (or was 0). Fires after 60 s of idle within `dequeue`.
- * - `startup`  — fires on the next `session_start` (including reconnects), not on a timer.
- * - `schedule` — wall-clock cron-based; fires when now >= next_fire_ms, checked in dequeue.
+ * - `deferred`      — has a `delay_seconds` > 0 that has not yet elapsed. Cannot fire yet.
+ * - `active`        — delay has elapsed (or was 0). Delivered via _activeSids sweep (§5-b).
+ * - `event_pending` — last_sent/last_received trigger; fires when event condition is met.
+ * - `startup`       — fires on the next `session_start` (including reconnects), not on a timer.
+ * - `schedule`      — wall-clock cron-based; fires when now >= next_fire_ms via _sweepInterval.
  *
  * Reminders are keyed by SID (per-session, all in-memory).
  */
@@ -13,19 +14,10 @@
 import { createHash } from "crypto";
 import { Cron } from "croner";
 import { getCallerSid } from "./session-context.js";
-import { notifyIfAllowed } from "./tools/activity/file-state.js";
-
-// B3: domain code must not name the transport directly.
-// Inject the SSE notify callback at startup via initReminderSseNotify().
-let _notifySseSubscriber: ((sid: number) => void) | null = null;
-
-/**
- * Inject the SSE notify callback so this domain module never imports the transport.
- * Call once at startup before any reminders are scheduled.
- */
-export function initReminderSseNotify(fn: (sid: number) => void): void {
-  _notifySseSubscriber = fn;
-}
+import { isDequeueActive } from "./tools/activity/file-state.js";
+// NOTE: circular import (session-queue.ts ↔ reminder-state.ts) — safe because
+// deliverReminderEvent is only called inside interval callbacks, never at module init.
+import { deliverReminderEvent } from "./session-queue.js";
 
 /**
  * Deterministic reminder ID derived from content.
@@ -89,45 +81,28 @@ const _reminders = new Map<number, Reminder[]>();
 let _nextEventId = -10_000;
 
 // ── Schedule sweep (shared, module-level) ─────────────────────────────────
-// Single 5-second interval; starts on first reminder/schedule, stops when last is removed.
-// Sends a notify (wake signal) when next_fire_ms is within 6 s. The actual fire happens
-// in dequeue's in-loop check (popFireableScheduleReminders), not here.
+// Single 5-second interval; starts on first schedule reminder, stops when last is removed.
+// §5-b (decision D): fires reminders directly via deliverReminderEvent when next_fire_ms
+// has elapsed. No longer uses kick-ahead (SCHEDULE_NOTIFY_AHEAD_MS removed). Dedup is
+// handled by popFireableScheduleReminders advancing next_fire_ms on fire.
 
 const _scheduleSids = new Set<number>();
-// FIX 4: per-reminder last-notified dedup — tracks (sid → reminderId → last_notified_fire_ms)
-// Prevents duplicate SSE notifications when the same next_fire_ms falls within two consecutive sweep ticks.
-const _lastNotifiedFireMs = new Map<number, Map<string, number>>();
 let _sweepInterval: ReturnType<typeof setInterval> | null = null;
 const SCHEDULE_SWEEP_INTERVAL_MS = 5_000;
-const SCHEDULE_NOTIFY_AHEAD_MS = 6_000;
+
+// ── Active-reminder sweep (§5-b) ──────────────────────────────────────────
+// Sessions that have at least one active time/active reminder awaiting delivery.
+const _activeSids = new Set<number>();
+let _activeSweepInterval: ReturnType<typeof setInterval> | null = null;
+const ACTIVE_REMINDER_SWEEP_MS = 5_000;
 
 function startScheduleSweep(): void {
   if (_sweepInterval !== null) return;
   _sweepInterval = setInterval(() => {
-    const now = Date.now();
     for (const sid of _scheduleSids) {
-      const list = _reminders.get(sid) ?? [];
-      let shouldNotify = false;
-      for (const r of list) {
-        if (
-          r.trigger !== "schedule" ||
-          r.disabled ||
-          r.next_fire_ms === undefined ||
-          r.next_fire_ms - now > SCHEDULE_NOTIFY_AHEAD_MS
-        ) continue;
-        // Dedup: only notify once per unique next_fire_ms value per reminder
-        let notifyMap = _lastNotifiedFireMs.get(sid);
-        if (!notifyMap) { notifyMap = new Map<string, number>(); _lastNotifiedFireMs.set(sid, notifyMap); }
-        if (notifyMap.get(r.id) === r.next_fire_ms) continue;
-        notifyMap.set(r.id, r.next_fire_ms);
-        shouldNotify = true;
-      }
-      if (shouldNotify) {
-        // Wake BOTH parked-agent flavors: SSE-stream subscribers AND activity-file
-        // monitors. Most pods (BT, Curator) park on the activity FILE, not SSE — without
-        // the file notify a scheduled reminder fires but never wakes a file-parked agent.
-        _notifySseSubscriber?.(sid);
-        notifyIfAllowed(sid, "reminder", false);
+      const fired = popFireableScheduleReminders(sid);
+      for (const r of fired) {
+        deliverReminderEvent(sid, buildReminderEvent(r));
       }
     }
   }, SCHEDULE_SWEEP_INTERVAL_MS);
@@ -140,6 +115,28 @@ function stopScheduleSweep(): void {
     _sweepInterval = null;
   }
 }
+
+// ── Active-reminder sweep (§5-b) ──────────────────────────────────────────
+// Always-running 5-second interval that fires active reminders for parked agents.
+// Skips sessions where a dequeue is in flight (they handle their own context).
+
+function startActiveSweep(): void {
+  if (_activeSweepInterval !== null) return;
+  _activeSweepInterval = setInterval(() => {
+    for (const sid of _activeSids) {
+      // Reminders do not interrupt active conversations.
+      // Starvation (indefinite deferral during activity) is acceptable by design. §5-b
+      if (isDequeueActive(sid)) continue;
+      for (const r of popActiveReminders(sid)) {
+        deliverReminderEvent(sid, buildReminderEvent(r));
+      }
+      if (getActiveReminders(sid).length === 0) _activeSids.delete(sid);
+    }
+  }, ACTIVE_REMINDER_SWEEP_MS);
+}
+
+// Start immediately at module load.
+startActiveSweep();
 
 // ── Timezone / cron utilities ─────────────────────────────────────────────
 
@@ -295,6 +292,7 @@ export function addReminder(params: {
   };
   list.push(reminder);
   _reminders.set(sid, list);
+  if (reminder.state === "active") _activeSids.add(sid);
   return reminder;
 }
 
@@ -317,6 +315,8 @@ export function cancelReminder(id: string): boolean {
       stopScheduleSweep();
     }
   }
+  // §5-b: deregister from active sweep if no active reminders remain
+  if (getActiveReminders(sid).length === 0) _activeSids.delete(sid);
   return true;
 }
 
@@ -425,6 +425,7 @@ export function promoteDeferred(sid: number): void {
     if (r.trigger !== "schedule" && r.state === "deferred" && now >= r.created_at + r.delay_seconds * 1000) {
       r.state = "active";
       r.activated_at = now;
+      _activeSids.add(sid);
     }
   }
 }
@@ -439,7 +440,9 @@ export function popActiveReminders(sid: number): Reminder[] {
   if (!list) return [];
   const now = Date.now();
   const fireable = list.filter(r =>
-    r.trigger !== "schedule" &&   // §G-3: schedule reminders fired only by popFireableScheduleReminders
+    r.trigger !== "schedule" &&       // §G-3: schedule reminders fired only by popFireableScheduleReminders
+    r.trigger !== "last_received" &&  // §5-b: event-triggered; handled by event path only
+    r.trigger !== "last_sent" &&      // §5-b: event-triggered; handled by event path only
     r.state === "active" &&
     !r.disabled &&
     !(r.sleep_until !== undefined && now < r.sleep_until),
@@ -554,23 +557,32 @@ export function clearSessionReminders(sid: number): void {
   _reminders.delete(sid);
   _lastSentAt.delete(sid);
   _lastReceivedAt.delete(sid);
-  _lastNotifiedFireMs.delete(sid);
   // R-4: remove from schedule sweep; stop sweep if this was the last session
   _scheduleSids.delete(sid);
   stopScheduleSweep();
+  // §5-b: remove from active-reminder sweep
+  _activeSids.delete(sid);
 }
+
+/** For testing only: restart the active-reminder sweep after resetReminderStateForTest + vi.useFakeTimers. */
+export function restartActiveSweepForTest(): void { startActiveSweep(); }
 
 /** For testing only: reset all state. */
 export function resetReminderStateForTest(): void {
   _reminders.clear();
   _lastSentAt.clear();
   _lastReceivedAt.clear();
-  _lastNotifiedFireMs.clear();
   _nextEventId = -10_000;
   _scheduleSids.clear();
   if (_sweepInterval !== null) {
     clearInterval(_sweepInterval);
     _sweepInterval = null;
+  }
+  // §5-b: reset active-reminder sweep
+  _activeSids.clear();
+  if (_activeSweepInterval !== null) {
+    clearInterval(_activeSweepInterval);
+    _activeSweepInterval = null;
   }
 }
 

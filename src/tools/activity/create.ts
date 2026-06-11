@@ -107,6 +107,7 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
       notifyPendingBecauseLocked: false,
       touchInFlight: false,
       pendingRetryHandle: null,
+      pendingReNotifyHandle: null,
     });
 
     // One-time event: when an activity file is registered, set the session's
@@ -155,6 +156,7 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
     notifyPendingBecauseLocked: false,
     touchInFlight: false,
     pendingRetryHandle: null,
+    pendingReNotifyHandle: null,
   });
 
   // Cap dequeue max_wait to 90 s once a file is registered. A monitor on

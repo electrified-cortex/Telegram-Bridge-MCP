@@ -146,3 +146,4 @@ describe("TC6: activity/listen/cancel — auth failure", () => {
     expect(sseEndpointMocks.cancelSseConnection).not.toHaveBeenCalled();
   });
 });
+

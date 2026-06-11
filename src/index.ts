@@ -11,7 +11,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "./server.js";
 import { getSecurityConfig, getApi, resolveChat, installOutboundProxy, sendServiceMessage } from "./telegram.js";
 import { clearCommandsOnShutdown } from "./shutdown.js";
-import { clearAllActivityFiles } from "./tools/activity/file-state.js";
+import { clearAllActivityFiles, initSseNotifyCallback } from "./tools/activity/file-state.js";
 import { BUILT_IN_COMMANDS, applySessionLogConfig, doTimelineDump } from "./built-in-commands.js";
 import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from "./poller.js";
 import { startSilenceDetector } from "./silence-detector.js";
@@ -32,15 +32,16 @@ import { attachDequeueRoute } from "./dequeue-endpoint.js";
 import { attachHookRoutes } from "./hook-animation.js";
 import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
-import { initReminderSseNotify } from "./reminder-state.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
 process.stderr.write(`[info] [${pkg.name}] v${pkg.version} starting...\n`);
 
-// B3: inject SSE notify callback into reminder-state so domain code never imports transport
-initReminderSseNotify(notifySseSubscriber);
+// B3: inject SSE notify callback into file-state so domain code never imports the transport directly
+initSseNotifyCallback((sid) => {
+  notifySseSubscriber(sid);
+});
 
 // Initialize security config early so warnings surface at startup
 getSecurityConfig();

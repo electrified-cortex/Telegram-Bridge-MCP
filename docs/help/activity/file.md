@@ -1,6 +1,8 @@
-# activity/file — Wake-Nudge Integration Guide
+# activity/file — Wake-Nudge Integration Guide (Fallback)
 
-The activity-file feature is the **wakeup mechanism** for agents that have a filesystem watcher (e.g. Monitor tool, FileSystemWatcher, inotifywait). Register an activity file and watch it with a **persistent** Monitor. TMCP bumps the file's mtime when messages arrive AND the debounce window has passed AND no dequeue is in-flight. Your watcher fires, you call dequeue — done.
+> **Prefer `activity/listen` (SSE) when TMCP is in HTTP mode** — it requires no filesystem access and works wherever curl is available. Use `activity/file` when in stdio mode or when curl is not available. See `help('activity/listen')`.
+
+The activity-file feature is a **wakeup mechanism** for agents that have a filesystem watcher (e.g. Monitor tool, FileSystemWatcher, inotifywait). Register an activity file and watch it with a **persistent** Monitor. TMCP bumps the file's mtime when messages arrive AND the debounce window has passed AND no dequeue is in-flight. Your watcher fires, you call dequeue — done.
 
 Without a watcher: long-poll `dequeue(max_wait: 300)` is always sufficient on its own.
 

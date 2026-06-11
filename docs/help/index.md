@@ -8,15 +8,18 @@ GETTING STARTED
   help(topic: 'guide')       — Full agent communication guide
 
 CORE OPERATIONS
-  help(topic: 'dequeue')     — Dequeue loop: heartbeat, drain, block, react rules
-  help(topic: 'reminders')   — Reminder-first delegation and async follow-up
-  help(topic: 'animation')   — Animation frames and named presets
-  help(topic: 'checklist')   — Checklist step status values
+  help(topic: 'dequeue')          — Dequeue loop: heartbeat, drain, block, react rules
+  help(topic: 'activity/listen')  — SSE wake monitor (preferred — HTTP mode, no filesystem needed)
+  help(topic: 'activity/file')    — File-watch wake monitor (fallback — stdio or no curl)
+  help(topic: 'reminders')        — Reminder-first delegation and async follow-up
+  help(topic: 'animation')        — Animation frames and named presets
+  help(topic: 'checklist')        — Checklist step status values
 
 RECOVERY
-  help(topic: 'compacted')   — Post-compaction recovery (token lost, context reset)
-  help(topic: 'forced-stop') — Forced stop detection, checkpoint pattern, restart
-  help(topic: 'stop-hook')   — VS Code stop hook fires — immediate action
+  help(topic: 'compacted')            — Post-compaction recovery (token lost, context reset)
+  help(topic: 'compaction-recovery')  — Wake monitor recovery (SSE + activity-file re-arm steps)
+  help(topic: 'forced-stop')          — Forced stop detection, checkpoint pattern, restart
+  help(topic: 'stop-hook')            — VS Code stop hook fires — immediate action
 
 SESSION LIFECYCLE
   help(topic: 'shutdown')    — Graceful shutdown (common + governor + Worker kill)

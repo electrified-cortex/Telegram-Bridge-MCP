@@ -7,21 +7,14 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseNotifyLockout, notifyIfAllowed } from "./activity/file-state.js";
+import { setDequeueActive, releaseNotifyLockout } from "./activity/file-state.js";
 import { resetChannelCooldown } from "../channel.js";
-import { recordNonToolEvent } from "../trace-log.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import {
   promoteDeferred,
-  getActiveReminders,
-  popActiveReminders,
   getSoonestDeferredMs,
-  buildReminderEvent,
-  popFireableEventReminders,
-  getSoonestEventReminderMs,
-  popFireableScheduleReminders,
   getSoonestScheduleFireMs,
 } from "../reminder-state.js";
 import { getGovernorSid } from "../routing-mode.js";
@@ -29,9 +22,6 @@ import { SERVICE_MESSAGES } from "../service-messages.js";
 
 /** Defensive clamp for a single setTimeout call, kept below Node.js's ~2^31-1 ms overflow limit. */
 const MAX_SET_TIMEOUT_MS = 2_000_000_000;
-
-/** Seconds an active reminder must be idle before it fires within dequeue. */
-const REMINDER_IDLE_THRESHOLD_MS = 60_000;
 
 /** Minimum animation age (ms) before a stale warning fires on idle. */
 const STALE_ANIM_MIN_AGE_MS = 30_000;
@@ -272,7 +262,13 @@ export async function runDrainLoop(
   if (sid > 0) touchSession(sid);
 
   function dequeueBatchAny(): TimelineEvent[] {
-    return sq.dequeueBatch();
+    const batch = sq.dequeueBatch();
+    // §5-b decision B: messages-first ordering — reminders yield to real messages.
+    return batch.sort((a, b) => {
+      const aR = a.event === "reminder" ? 1 : 0;
+      const bR = b.event === "reminder" ? 1 : 0;
+      return aR - bR;
+    });
   }
 
   function pendingCountAny(): number {
@@ -335,31 +331,6 @@ export async function runDrainLoop(
     return result;
   }
 
-  // Check event-triggered reminders (last_sent / last_received) before timeout=0 return.
-  // These fire based on elapsed time since a qualifying event — no idle threshold required.
-  {
-    const eventFired = popFireableEventReminders(sid);
-    const scheduleFired = popFireableScheduleReminders(sid);
-    const allFired = [...eventFired, ...scheduleFired];
-    if (allFired.length > 0) {
-      const sessionName = getSession(sid)?.name ?? "";
-      for (const reminder of allFired) {
-        recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
-      }
-      resyncActiveSession();
-      const reminderPending = pendingCountAny();
-      const reminderResult: Record<string, unknown> = {
-        updates: allFired.map(buildReminderEvent),
-        ...(reminderPending > 0 ? { pending: reminderPending } : {}),
-      };
-      setDequeueActive(sid, false);
-      releaseNotifyLockout(sid);
-      resetChannelCooldown(sid);
-      notifyIfAllowed(sid, "reminder", false);
-      return reminderResult;
-    }
-  }
-
   if (timeout === 0) {
     // Timeout=0 empty-poll: not content-returning — do NOT release notify lockout.
     setDequeueActive(sid, false);
@@ -370,13 +341,11 @@ export async function runDrainLoop(
   // Mark session as idle for fleet visibility (session/idle action).
   const deadline = Date.now() + timeout * 1000;
   const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
-  const reminderIdleStart = Date.now();
   let _staleWarnSent = false;
   setDequeueIdle(sid, true);
   // Tracks whether this dequeue call exits via a content-returning path.
   // Only content-returning exits release the notify lockout; timeout exits skip.
   let _lockoutRelease = false;
-  let _reminderNotifyNeeded = false;
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) break;
@@ -406,68 +375,19 @@ export async function runDrainLoop(
       }
 
       // Promote any deferred reminders whose delay has elapsed.
+      // (Active reminders are picked up by the module-level sweep in reminder-state.ts §5-b)
       promoteDeferred(sid);
 
-      // Check event-triggered and schedule reminders — no idle threshold.
-      {
-        const eventFired = popFireableEventReminders(sid);
-        const scheduleFired = popFireableScheduleReminders(sid);
-        const allFired = [...eventFired, ...scheduleFired];
-        if (allFired.length > 0) {
-          const sessionName = getSession(sid)?.name ?? "";
-          for (const reminder of allFired) {
-            recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
-          }
-          resyncActiveSession();
-          const reminderPending = pendingCountAny();
-          const reminderResult: Record<string, unknown> = {
-            updates: allFired.map(buildReminderEvent),
-            ...(reminderPending > 0 ? { pending: reminderPending } : {}),
-          };
-          dlog("queue", `dequeue returning sid=${sid} batch=${allFired.length} event-reminder payloadLen=${JSON.stringify(reminderResult).length}`);
-          _lockoutRelease = true;
-          _reminderNotifyNeeded = true;
-          return reminderResult;
-        }
-      }
-
       const now = Date.now();
-      const idleDuration = now - reminderIdleStart;
-      const activeReminders = getActiveReminders(sid);
-
-      // Fire active reminders after 60 s of idle (no real messages).
-      if (idleDuration >= REMINDER_IDLE_THRESHOLD_MS && activeReminders.length > 0) {
-        const fired = popActiveReminders(sid);
-        const sessionName = getSession(sid)?.name ?? "";
-        for (const reminder of fired) {
-          recordNonToolEvent("reminder_fire", sid, sessionName, reminder.text);
-        }
-        resyncActiveSession();
-        const reminderPending = pendingCountAny();
-        const reminderResult: Record<string, unknown> = {
-          updates: fired.map(buildReminderEvent),
-          ...(reminderPending > 0 ? { pending: reminderPending } : {}),
-        };
-        dlog("queue", `dequeue returning sid=${sid} batch=${fired.length} payloadLen=${JSON.stringify(reminderResult).length}`);
-        // responseFormat is not applied here: the reminder response only contains
-        // `updates` (real event data) and optionally `pending` (when > 0), neither
-        // of which are compact-suppressible fields.
-        _lockoutRelease = true;
-        _reminderNotifyNeeded = true;
-        return reminderResult;
-      }
-
       const remaining = deadline - now;
       if (remaining <= 0) break;
 
-      // Wake up as soon as the earliest of: event/schedule reminder fire, idle threshold, next deferred promotion, or timeout.
-      const timeToFireMs = activeReminders.length > 0
-        ? Math.max(0, REMINDER_IDLE_THRESHOLD_MS - idleDuration)
-        : Infinity;
+      // Wake up as soon as the earliest of: next deferred promotion, schedule fire, or timeout.
+      // §5-b: active and event-triggered reminders are delivered via sweeps/enqueueToSession,
+      // not by the dequeue loop. Only schedule fire and deferred promotion need explicit timing.
       const deferredMs = getSoonestDeferredMs(sid);
-      const eventReminderMs = getSoonestEventReminderMs(sid);
       const scheduleFireMs = getSoonestScheduleFireMs(sid); // §R-6: wake exactly at next_fire_ms
-      const waitMs = Math.min(remaining, timeToFireMs, deferredMs ?? Infinity, eventReminderMs ?? Infinity, scheduleFireMs ?? Infinity);
+      const waitMs = Math.min(remaining, deferredMs ?? Infinity, scheduleFireMs ?? Infinity);
       const useVersionedWait = hasVersionedWaitAny(sq);
       const wakeVersion = useVersionedWait ? getWakeVersionAny(sq) : 0;
 
@@ -508,7 +428,7 @@ export async function runDrainLoop(
 
     resyncActiveSession();
     const pending = pendingCountAny();
-    _lockoutRelease = true;  // Release lockout on timeout exits too (BT-2301)
+    _lockoutRelease = true;  // Release lockout on timeout exits too
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {
     // Note: if two concurrent dequeue calls share the same sid (unusual but
@@ -521,9 +441,6 @@ export async function runDrainLoop(
     if (_lockoutRelease) {
       releaseNotifyLockout(sid);
       resetChannelCooldown(sid);
-    }
-    if (_reminderNotifyNeeded) {
-      notifyIfAllowed(sid, "reminder", false);
     }
   }
 }
