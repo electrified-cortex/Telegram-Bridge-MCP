@@ -39,7 +39,9 @@ const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-
 process.stderr.write(`[info] [${pkg.name}] v${pkg.version} starting...\n`);
 
 // B3: inject SSE notify callback into file-state so domain code never imports the transport directly
-initSseNotifyCallback((sid) => notifySseSubscriber(sid));
+initSseNotifyCallback((sid) => {
+  notifySseSubscriber(sid);
+});
 
 // Initialize security config early so warnings surface at startup
 getSecurityConfig();
