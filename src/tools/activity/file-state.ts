@@ -1,5 +1,23 @@
 /**
- * Per-session activity file state and notify gate.
+ * Per-session monitor notify gate (file-touch + SSE).
+ *
+ * Holds ONE gate state machine per session that has ANY monitor — an activity
+ * file, an SSE/listen stream, or both. The gate (lockout / debounce / 5-min
+ * re-kick) is monitor-agnostic; the file touch is a side-effect that runs only
+ * when a file is registered (`filePath !== null`), and the SSE kick is delivered
+ * by the caller (notifySession) / the injected `_sseNotifyCallback`. This is the
+ * "monitor = file OR listen; behavior MUST be the same" contract: a gate entry
+ * is created when EITHER monitor appears and torn down when the last one leaves.
+ *
+ * GOTCHA — shared gate when a session runs BOTH channels at once:
+ *   File and SSE share ONE lockout / re-notify timer (deliberately simplest;
+ *   a session using both at the same time is a near-zero case). Consequence:
+ *   the channels are NOT fully isolated when both are active. Most notably, a
+ *   file-touch FAILURE rolls back the shared `notifyLockedUntil` (see
+ *   doTouchWithRollback), which also clears the SSE channel's debounce, so the
+ *   next event can re-kick SSE earlier than its own window would allow. Each
+ *   channel still works standalone; only the both-active overlap is coupled. If
+ *   simultaneous use ever becomes real, split this into per-channel gates.
  *
  * Tracks whether a session has opted into the file-touch feature.
  * On inbound messages, TMCP appends "\n" to the registered file so
@@ -96,10 +114,12 @@ export type NotifySource =
   | "bridge-internal";
 
 export interface ActivityFileState {
-  /** Absolute path to the registered file. */
-  filePath: string;
+  /** Absolute path to the registered file; null when this is an SSE-only gate. */
+  filePath: string | null;
   /** True if TMCP created and owns this file. */
   tmcpOwned: boolean;
+  /** True while an SSE/listen monitor is connected for this session. */
+  sseConnected?: boolean;
   /** True while a dequeue call is being processed for this session. */
   inflightDequeue: boolean;
   /** UTC ms when lockout expires; null = not locked. */
@@ -191,7 +211,14 @@ async function doTouchWithRollback(sid: number, lockedEntry: ActivityFileState):
     return;
   }
 
-  const ok = await appendNewline(lockedEntry.filePath);
+  // SSE-only gate (no file) — nothing to touch.
+  const filePath = lockedEntry.filePath;
+  if (filePath === null) {
+    lockedEntry.touchInFlight = false;
+    return;
+  }
+
+  const ok = await appendNewline(filePath);
 
   // Post-await generation check (entry may have been replaced during the await)
   const recheck = _state.get(sid);
@@ -203,7 +230,10 @@ async function doTouchWithRollback(sid: number, lockedEntry: ActivityFileState):
   recheck.touchInFlight = false;
 
   if (!ok) {
-    // Touch failed — roll back lockout so next inbound retries
+    // Touch failed — roll back lockout so next inbound retries.
+    // GOTCHA: when an SSE stream is ALSO attached to this session, this rollback
+    // clears the lockout that channel shares, briefly un-debouncing SSE. Benign
+    // (an extra kick is harmless) and near-zero in practice — see module header.
     recheck.notifyLockedUntil = null;
     scheduleRetry(sid, recheck, 0);
   }
@@ -226,10 +256,12 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
       entry.pendingRetryHandle = null;
 
       if (_state.get(sid) !== entry) return;
+      const filePath = entry.filePath;
+      if (filePath === null) return; // SSE-only — no file retry
       if (!hasPendingUserContent(sid)) return;
 
       entry.touchInFlight = true;
-      const ok = await appendNewline(entry.filePath);
+      const ok = await appendNewline(filePath);
 
       const recheck = _state.get(sid);
       if (!recheck || recheck !== entry) {
@@ -270,10 +302,12 @@ function fireRevaluationNotify(sid: number): void {
     return;
   }
 
-  entry.touchInFlight = true;
   entry.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
   entry.notifyPendingBecauseLocked = false;
-  void doTouchWithRollback(sid, entry);
+  if (entry.filePath !== null) {
+    entry.touchInFlight = true;
+    void doTouchWithRollback(sid, entry);
+  }
   _sseNotifyCallback?.(sid);
 }
 
@@ -286,14 +320,84 @@ export function setActivityFile(sid: number, state: ActivityFileState): void {
   _state.set(sid, state);
 }
 
-/** Get the activity file state for a session (undefined if not registered). */
-export function getActivityFile(sid: number): ActivityFileState | undefined {
-  return _state.get(sid);
+/**
+ * Get the activity FILE registration for a session.
+ *
+ * Returns the entry only when a file is actually registered (`filePath !==
+ * null`). A session with only an SSE monitor has a gate entry in `_state` but no
+ * file; this returns `undefined` for it, so the file-oriented tools
+ * (create/edit/get/delete/touch) and liveness checks see "no file registered"
+ * exactly as before. Gate-internal code reads `_state` directly and is
+ * unaffected by this filter. The return type narrows `filePath` to `string` so
+ * callers need no null handling.
+ */
+export function getActivityFile(
+  sid: number,
+): (ActivityFileState & { filePath: string }) | undefined {
+  const entry = _state.get(sid);
+  if (!entry || entry.filePath === null) return undefined;
+  return entry as ActivityFileState & { filePath: string };
 }
 
-/** Return true if the session has an active activity file registration. */
+/** Return true if the session has an active activity FILE registration. */
 export function isActivityFileActive(sid: number): boolean {
-  return _state.has(sid);
+  return _state.get(sid)?.filePath != null;
+}
+
+/**
+ * Register that an SSE (activity/listen) monitor connected for this session.
+ *
+ * The notify gate (lockout / debounce / 5-min re-kick) lives in `_state` and was
+ * historically created only when an activity FILE was registered. An SSE-only
+ * agent has no file, so without this it would have no gate entry and every kick
+ * would be suppressed by notifyIfAllowed's `!entry` guard. Creating a fileless
+ * gate entry on connect brings the SSE path under the exact same gate as the
+ * file path — one kick, debounced, re-kicked at 5 min.
+ *
+ * Idempotent: if a gate entry already exists (file monitor, or a prior SSE
+ * connection), it just marks SSE present without disturbing the lockout.
+ */
+export function registerSseMonitor(sid: number): void {
+  const entry = _state.get(sid);
+  if (entry) {
+    entry.sseConnected = true;
+    return;
+  }
+  _state.set(sid, {
+    filePath: null,
+    tmcpOwned: false,
+    sseConnected: true,
+    inflightDequeue: false,
+    notifyLockedUntil: null,
+    notifyPendingBecauseLocked: false,
+    touchInFlight: false,
+    pendingRetryHandle: null,
+    pendingReNotifyHandle: null,
+  });
+}
+
+/**
+ * Unregister the SSE monitor for this session (connection closed/cancelled).
+ *
+ * Clears the SSE flag. If no activity file remains, the session has no monitor
+ * left, so the gate entry and its pending timers are torn down. Idempotent and
+ * safe when no entry exists.
+ */
+export function unregisterSseMonitor(sid: number): void {
+  const entry = _state.get(sid);
+  if (!entry) return;
+  entry.sseConnected = false;
+  if (entry.filePath === null) {
+    if (entry.pendingRetryHandle !== null) {
+      clearTimeout(entry.pendingRetryHandle);
+      entry.pendingRetryHandle = null;
+    }
+    if (entry.pendingReNotifyHandle !== null) {
+      clearTimeout(entry.pendingReNotifyHandle);
+      entry.pendingReNotifyHandle = null;
+    }
+    _state.delete(sid);
+  }
 }
 
 /** Return true if the session currently has an in-flight dequeue. */
@@ -336,8 +440,10 @@ export function notifyIfAllowed(
     return false;
   }
 
-  // 5. Notify — synchronous reservation before async touch
-  entry.touchInFlight = true;
+  // 5. Notify — arm the shared gate (lockout + 5-min re-notify timer) for every
+  //    monitor. The file touch runs only when a file is registered; for an
+  //    SSE-only gate the kick is delivered by the caller (notifySession) on the
+  //    `true` return. Both monitors are debounced by the same lockout.
   // Cancel any existing re-notify timer before registering a new one
   if (entry.pendingReNotifyHandle !== null) {
     clearTimeout(entry.pendingReNotifyHandle);
@@ -352,7 +458,11 @@ export function notifyIfAllowed(
     }
   }, lockoutMs);
   entry.notifyPendingBecauseLocked = false;
-  void doTouchWithRollback(sid, entry);
+  if (entry.filePath !== null) {
+    // Synchronous reservation before the async touch (atomic in single-thread).
+    entry.touchInFlight = true;
+    void doTouchWithRollback(sid, entry);
+  }
   return true;
 }
 
@@ -450,11 +560,16 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
   entry.touchInFlight = false;
   entry.inflightDequeue = false;
 
-  // Notify if queue has pending content so the new agent gets a wake-up signal
+  // Notify if queue has pending content so the new agent gets a wake-up signal.
+  // Parity: touch the file when one is registered AND kick the SSE stream when
+  // one is connected — both monitors wake identically.
   if (hasPendingUserContent(sid)) {
-    entry.touchInFlight = true;
     entry.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
-    void doTouchWithRollback(sid, entry);
+    if (entry.filePath !== null) {
+      entry.touchInFlight = true;
+      void doTouchWithRollback(sid, entry);
+    }
+    _sseNotifyCallback?.(sid);
   }
 
   return { noOp: false };
@@ -468,21 +583,34 @@ export async function clearActivityFile(sid: number): Promise<void> {
   const entry = _state.get(sid);
   if (!entry) return;
 
+  // The file-touch retry targets the file path — meaningless once it is gone.
   if (entry.pendingRetryHandle !== null) {
     clearTimeout(entry.pendingRetryHandle);
     entry.pendingRetryHandle = null;
   }
 
-  if (entry.pendingReNotifyHandle !== null) {
-    clearTimeout(entry.pendingReNotifyHandle);
-    entry.pendingReNotifyHandle = null;
+  const filePath = entry.filePath;
+  const tmcpOwned = entry.tmcpOwned;
+
+  if (entry.sseConnected) {
+    // An SSE monitor is still active — keep the shared gate entry alive (its
+    // lockout + re-notify timer still govern the SSE stream); drop only the
+    // file registration.
+    entry.filePath = null;
+    entry.tmcpOwned = false;
+    entry.touchInFlight = false;
+  } else {
+    // No monitor left — tear down the gate entry and its re-notify timer.
+    if (entry.pendingReNotifyHandle !== null) {
+      clearTimeout(entry.pendingReNotifyHandle);
+      entry.pendingReNotifyHandle = null;
+    }
+    _state.delete(sid);
   }
 
-  _state.delete(sid);
-
-  if (entry.tmcpOwned) {
+  if (tmcpOwned && filePath !== null) {
     try {
-      await unlink(entry.filePath);
+      await unlink(filePath);
     } catch {
       // best-effort — file may already be gone
     }
@@ -506,6 +634,9 @@ export async function replaceActivityFile(
     newState.notifyLockedUntil = oldEntry.notifyLockedUntil;
     newState.notifyPendingBecauseLocked = oldEntry.notifyPendingBecauseLocked;
     newState.touchInFlight = oldEntry.touchInFlight;
+    // Carry over the SSE monitor flag — registering/swapping a file must not
+    // drop an already-connected SSE stream's gate membership.
+    newState.sseConnected = oldEntry.sseConnected;
     // Do not carry over pendingRetryHandle — old retry targets old file path
     newState.pendingRetryHandle = null;
     // Do not carry over pendingReNotifyHandle — cancel old timer, new entry starts fresh
@@ -530,7 +661,7 @@ export async function replaceActivityFile(
   }
 
   // Delete old TMCP-owned file (best-effort, after new path is registered)
-  if (oldEntry.tmcpOwned && oldEntry.filePath !== newState.filePath) {
+  if (oldEntry.tmcpOwned && oldEntry.filePath !== null && oldEntry.filePath !== newState.filePath) {
     try {
       await unlink(oldEntry.filePath);
     } catch {

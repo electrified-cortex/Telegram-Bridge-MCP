@@ -11,6 +11,7 @@
 import type { Request, Response, Express } from "express";
 import { decodeToken } from "./tools/identity-schema.js";
 import { validateSession, getDequeueDefault, setDequeueDefault } from "./session-manager.js";
+import { registerSseMonitor, unregisterSseMonitor } from "./tools/activity/file-state.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
 
 /** sid → active SSE response */
@@ -39,6 +40,9 @@ export function notifySseSubscriber(sid: number): void {
 export function cancelSseConnection(sid: number): void {
   const res = _connections.get(sid);
   _connections.delete(sid);
+  // Deleting from _connections above makes the req-close guard a no-op, so drop
+  // this stream's gate membership here instead.
+  unregisterSseMonitor(sid);
   if (!res) return;
   try {
     res.write("data: cancelled\n\n");
@@ -77,6 +81,10 @@ export function attachSseRoute(app: Express): void {
     res.write(": connected\n\n");
 
     _connections.set(sid, res);
+    // Bring this SSE stream under the shared notify gate so it is debounced /
+    // re-kicked exactly like an activity-file monitor (and so kicks reach it at
+    // all when no activity file is registered).
+    registerSseMonitor(sid);
     process.stderr.write(`[sse] connection opened sid=${sid}\n`);
 
     const priorDefault = getDequeueDefault(sid);
@@ -87,6 +95,7 @@ export function attachSseRoute(app: Express): void {
     req.on("close", () => {
       if (_connections.get(sid) === res) {
         _connections.delete(sid);
+        unregisterSseMonitor(sid);
         if (priorDefault > 90) {
           setDequeueDefault(sid, priorDefault);
         }

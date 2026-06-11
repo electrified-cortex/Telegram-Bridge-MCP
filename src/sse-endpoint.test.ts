@@ -15,6 +15,8 @@ vi.mock("./telegram.js", async (importOriginal) => {
 });
 
 import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
+import { notifySession } from "./tools/notify.js";
+import { resetActivityFileStateForTest } from "./tools/activity/file-state.js";
 import { createSession, resetSessions, getDequeueDefault, setDequeueDefault } from "./session-manager.js";
 
 // ── Server helpers ────────────────────────────────────────────────────────────
@@ -96,6 +98,7 @@ describe("GET /sse", () => {
 
   afterEach(async () => {
     await closeServer(server);
+    resetActivityFileStateForTest(); // clear gate entries + any armed re-notify timers
     resetSessions();
   });
 
@@ -188,6 +191,39 @@ describe("GET /sse", () => {
       ac.abort();
       await new Promise(r => setTimeout(r, 80));
       expect(getDequeueDefault(sid)).toBe(60); // still unchanged
+    });
+  });
+
+  // ── Gate parity: SSE stream with NO activity file ────────────────────────
+  // Regression guard for the bug where an SSE-only session (activity/listen,
+  // no activity/file) received `: connected` but never a single `data: kick`,
+  // because notifySession routed through notifyIfAllowed which declined any
+  // session without an activity-file gate entry. These exercise the REAL
+  // dispatch (notifySession → notifyIfAllowed → notifySseSubscriber) end to end,
+  // not the mocked seam.
+  describe("gate parity (no activity file registered)", () => {
+    it("delivers data: kick on a real enqueue when only an SSE monitor exists", async () => {
+      const collectPromise = collectSseLines(`http://127.0.0.1:${port}/sse?token=${token}`, 1);
+
+      // Let the connection register (route calls registerSseMonitor).
+      await new Promise(r => setTimeout(r, 60));
+
+      notifySession(sid, "operator", false);
+
+      const lines = await collectPromise;
+      expect(lines).toContain("data: kick");
+    });
+
+    it("debounces a burst to exactly one kick (parity with the file monitor)", async () => {
+      const collectPromise = collectSseLines(`http://127.0.0.1:${port}/sse?token=${token}`, 5, 350);
+
+      await new Promise(r => setTimeout(r, 60));
+
+      // Five enqueues with no dequeue between them → one outstanding kick.
+      for (let i = 0; i < 5; i++) notifySession(sid, "operator", false);
+
+      const lines = await collectPromise;
+      expect(lines.filter(l => l === "data: kick")).toHaveLength(1);
     });
   });
 });

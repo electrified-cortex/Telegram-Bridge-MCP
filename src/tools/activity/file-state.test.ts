@@ -75,6 +75,9 @@ import {
   replaceActivityFile,
   resetActivityFileStateForTest,
   initSseNotifyCallback,
+  registerSseMonitor,
+  unregisterSseMonitor,
+  clearActivityFile,
   type ActivityFileState,
 } from "./file-state.js";
 
@@ -862,5 +865,132 @@ describe("AC-11: initSseNotifyCallback SSE parity", () => {
     await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(sseSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSE-only monitor gate (activity/listen with NO activity file). This is the
+// path that previously got ZERO kicks: notifyIfAllowed declined at `!entry`
+// because only file registration created gate state. registerSseMonitor now
+// gives an SSE-only session a fileless gate entry so it obeys the SAME gate.
+// ---------------------------------------------------------------------------
+
+describe("SSE-only monitor gate (no activity file)", () => {
+  let sseSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    sessionMocks.getNotifyLockoutMs.mockReturnValue(LOCKOUT_MS);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    vi.mocked(appendFile).mockResolvedValue(undefined);
+    sseSpy = vi.fn();
+    initSseNotifyCallback(sseSpy as (sid: number) => void);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("registerSseMonitor creates a fileless gate entry; getActivityFile hides it", () => {
+    registerSseMonitor(SID);
+    // No FILE is registered, so the file-oriented accessor reports nothing…
+    expect(getActivityFile(SID)).toBeUndefined();
+    // …but the gate is live: an operator event is now allowed through.
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+  });
+
+  it("first operator event → gate allows it (caller fires SSE), no file touched", async () => {
+    registerSseMonitor(SID);
+
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // SSE-only: there is no file, so appendFile must never be called.
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+  });
+
+  it("burst of events → allowed once then debounced (parity with file path)", () => {
+    registerSseMonitor(SID);
+
+    // First event opens the lockout → allowed.
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+    // Nine more during the lockout window → all suppressed.
+    for (let i = 0; i < 9; i++) {
+      expect(notifyIfAllowed(SID, "operator", false)).toBe(false);
+    }
+  });
+
+  it("content-returning dequeue releases the lockout → SSE re-kick fires once", async () => {
+    registerSseMonitor(SID);
+
+    notifyIfAllowed(SID, "operator", false); // opens lockout
+    notifyIfAllowed(SID, "operator", false); // suppressed → notifyPendingBecauseLocked
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    releaseNotifyLockout(SID); // dequeue exit with pending content
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Re-evaluation kicks the SSE stream (no file → no appendFile).
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+  });
+
+  it("5-min inactivity → exactly one SSE re-kick, then silence (one-shot)", async () => {
+    registerSseMonitor(SID);
+
+    notifyIfAllowed(SID, "operator", false);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).not.toHaveBeenCalled(); // initial kick is the caller's job
+
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(LOCKOUT_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(sseSpy).toHaveBeenCalledTimes(1); // one-shot
+  });
+
+  it("in-flight dequeue suppresses the kick (parity with file path)", () => {
+    registerSseMonitor(SID);
+    setDequeueActive(SID, true);
+
+    // Agent is mid-dequeue → event delivered inline, no kick.
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(false);
+  });
+
+  it("unregisterSseMonitor tears down the gate when no file remains", () => {
+    registerSseMonitor(SID);
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+
+    unregisterSseMonitor(SID);
+    // Gate entry gone → back to the original `!entry` decline.
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(false);
+  });
+
+  it("file + SSE: clearing the file keeps the gate alive for the SSE stream", async () => {
+    // Register a file first, then attach SSE on the same session.
+    setActivityFile(SID, makeState());
+    registerSseMonitor(SID);
+    expect(getActivityFile(SID)).toBeDefined();
+
+    await clearActivityFile(SID);
+
+    // File view is gone, but the SSE gate persists and still passes events.
+    expect(getActivityFile(SID)).toBeUndefined();
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+  });
+
+  it("file + SSE: dropping SSE keeps the gate alive for the file monitor", () => {
+    setActivityFile(SID, makeState());
+    registerSseMonitor(SID);
+
+    unregisterSseMonitor(SID);
+
+    // File monitor still registered → gate persists.
+    expect(getActivityFile(SID)).toBeDefined();
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
   });
 });
