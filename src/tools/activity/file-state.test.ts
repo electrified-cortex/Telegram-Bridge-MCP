@@ -236,10 +236,10 @@ describe("notify-lockout gate — ACs 1-10", () => {
   });
 
   // ── AC 6: Lockout release is opt-in — setDequeueActive alone does not clear it ──
-  // NOTE (BT-2301): dequeue.ts now calls releaseNotifyLockout on ALL exit paths
+  // NOTE: dequeue.ts calls releaseNotifyLockout on ALL exit paths
   // (content-returning AND timeout). The unit invariant below still holds:
   // setDequeueActive(false) alone does NOT release the lockout — only
-  // releaseNotifyLockout() does. The integration test for the new timeout-exit
+  // releaseNotifyLockout() does. The integration test for the timeout-exit
   // behavior lives in src/tools/dequeue.test.ts ("timeout-exit lockout release").
   it("AC6: setDequeueActive(false) alone does NOT release notify lockout", async () => {
     setActivityFile(SID, makeState());
@@ -258,7 +258,7 @@ describe("notify-lockout gate — ACs 1-10", () => {
     expect(getActivityFile(SID)!.notifyLockedUntil).toBe(lockedUntil);
   });
 
-  it("AC6: releaseNotifyLockout clears lockout (timeout-exit path now calls it — BT-2301)", async () => {
+  it("AC6: releaseNotifyLockout clears lockout (timeout-exit path now calls it)", async () => {
     setActivityFile(SID, makeState());
 
     notifyIfAllowed(SID, "operator", false);

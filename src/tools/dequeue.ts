@@ -428,7 +428,7 @@ export async function runDrainLoop(
 
     resyncActiveSession();
     const pending = pendingCountAny();
-    _lockoutRelease = true;  // Release lockout on timeout exits too (BT-2301)
+    _lockoutRelease = true;  // Release lockout on timeout exits too
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {
     // Note: if two concurrent dequeue calls share the same sid (unusual but

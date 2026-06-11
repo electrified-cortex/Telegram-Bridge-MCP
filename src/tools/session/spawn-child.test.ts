@@ -328,7 +328,7 @@ describe("session/spawn-child", () => {
       return undefined;
     });
 
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, name: "child" });
 
     expect(childSession.name_tag).toBe("Agent");
   });
@@ -336,7 +336,7 @@ describe("session/spawn-child", () => {
   it("no crash when parent has no name_tag (child spawns successfully)", async () => {
     mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent" }); // no name_tag field
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, name: "child" });
 
     expect(isError(result)).toBe(false);
     expect(parseResult(result).token).toBe(CHILD_TOKEN);
@@ -348,7 +348,7 @@ describe("session/spawn-child", () => {
       return {};
     });
 
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, name: "child" });
 
     expect(mocks.handleSessionStart).toHaveBeenCalledWith({
       name: "ParentName",

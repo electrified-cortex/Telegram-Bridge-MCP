@@ -1301,10 +1301,10 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // BT-2301: timeout-exit releases notify lockout
+  // timeout-exit releases notify lockout
   // =========================================================================
 
-  describe("timeout-exit lockout release (BT-2301)", () => {
+  describe("timeout-exit lockout release", () => {
     it("releaseNotifyLockout is called after a blocking wait that times out", async () => {
       // Arrange: dequeue blocks, no content ever arrives, times out
       mocks.dequeueBatch.mockReturnValue([]);
@@ -1312,7 +1312,7 @@ describe("dequeue tool", () => {
 
       await call({ timeout: 1, token: 1_123_456 });
 
-      // Primary assertion: releaseNotifyLockout MUST be called on timeout exit (BT-2301 fix)
+      // Primary assertion: releaseNotifyLockout MUST be called on timeout exit
       expect(fileStateMocks.releaseNotifyLockout).toHaveBeenCalledWith(1);
     });
 
