@@ -10,7 +10,10 @@ dequeue(token) IS the loop. Long-poll every cycle.
 Default timeout: 5 min. timed_out → call again. empty → block again.
 Pattern: drain (max_wait: 0) until empty → block (max_wait: 300) → handle → repeat.
 To increase default: action(type: 'profile/dequeue-default', timeout: N, token)
-If your MCP client supports file watching, call `activity/file/create` and watch the returned path with a **persistent** Monitor; on change call dequeue. See help('activity/file') and help('dequeue-http').
+**Wake monitor — pick one:**
+1. **HTTP mode (preferred):** `action(type: 'activity/listen')` → arm `Monitor(command: <returned command>, persistent: true)`. See help('activity/listen').
+2. **File watcher (fallback):** `action(type: 'activity/file/create')` → arm Monitor on returned path. See help('activity/file').
+3. **No Monitor:** long-poll `dequeue(max_wait: 300)` every turn — always sufficient.
 
 ## Send Basics
 send(type: 'text', token, text: 'Hello') → text message

@@ -9,6 +9,7 @@ Opens a server-sent events stream so agents can receive push notifications witho
 | Path | Input | Effect |
 | --- | --- | --- |
 | `activity/listen` | `token` | Returns the SSE URL and a ready-to-run curl command. No state change. |
+| `activity/listen/get` | `token` | Recovery read: same URL/command as `activity/listen`. Call after compaction to re-arm without re-probing HTTP mode. |
 | `activity/listen/cancel` | `token` | Closes the open SSE connection for this session. Sends `data: cancelled` then `res.end()`. Idempotent. |
 
 ## activity/listen
@@ -55,9 +56,25 @@ The open SSE stream receives `data: cancelled` and then closes. If you are using
 
 ## Compared to activity/file
 
-| Mechanism | When to use |
+| Mechanism | Use when |
 | --- | --- |
-| `activity/file` | Agent can run a file-watching Monitor (`Monitor` tool with a script). Works in stdio and HTTP mode. |
-| `activity/listen` | Agent cannot watch a file but TMCP is in HTTP mode. The SSE stream is the wake signal instead of an mtime bump. |
+| `activity/listen` (**preferred**) | TMCP is in HTTP mode and curl is available. Push notifications — no filesystem access needed. |
+| `activity/file` (fallback) | stdio mode, or no curl. File-watching Monitor required. Works in both stdio and HTTP mode. |
 
-Both mechanisms trigger the same dequeue poll. Use whichever is available in your environment.
+Both mechanisms trigger the same dequeue poll.
+
+**Capability gate:** call `action(type: "activity/listen")`:
+- `ok: true` → HTTP mode active, SSE available — use `activity/listen`.
+- `HTTP_MODE_REQUIRED` → stdio mode or no HTTP — fall back to `activity/file`.
+
+## Compaction recovery
+
+After a context compaction, re-arm your SSE monitor:
+
+```
+result = action(type: "activity/listen/get", token: <token>)
+// result.command is the curl command to re-arm
+Monitor(command: result.command, persistent: true, description: "SSE notify watcher")
+```
+
+`activity/listen/get` is the symmetric recovery read — same URL/command as `activity/listen`, named explicitly for recovery flows.

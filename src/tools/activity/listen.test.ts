@@ -1,5 +1,5 @@
 /**
- * Unit tests for activity/listen and activity/listen/cancel handlers.
+ * Unit tests for activity/listen, activity/listen/get, and activity/listen/cancel handlers.
  *
  * Covers:
  *   TC1. activity/listen — HTTP mode active → returns ok:true with sse_url and command
@@ -8,6 +8,9 @@
  *   TC4. activity/listen/cancel — connection open → ok:true, connection cancelled
  *   TC5. activity/listen/cancel — no connection open → ok:true (idempotent)
  *   TC6. activity/listen/cancel — auth failure → AUTH_FAILED error
+ *   TC7. activity/listen/get — HTTP mode active → returns ok:true with sse_url and command
+ *   TC8. activity/listen/get — HTTP mode not active → HTTP_MODE_REQUIRED error
+ *   TC9. activity/listen/get — auth failure → AUTH_FAILED error
  */
 
 import { vi, describe, it, expect, beforeEach } from "vitest";
@@ -39,6 +42,7 @@ vi.mock("../../sse-endpoint.js", () => ({
 }));
 
 import { handleActivityListen } from "./listen.js";
+import { handleActivityListenGet } from "./get-listen.js";
 import { handleActivityListenCancel } from "./cancel-listen.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -144,5 +148,50 @@ describe("TC6: activity/listen/cancel — auth failure", () => {
     const body = parseResult(result);
     expect(body.code).toBe("AUTH_FAILED");
     expect(sseEndpointMocks.cancelSseConnection).not.toHaveBeenCalled();
+  });
+});
+
+// ── TC7: activity/listen/get — HTTP mode active ───────────────────────────────
+
+describe("TC7: activity/listen/get — HTTP mode active", () => {
+  it("returns ok:true with sse_url and command", () => {
+    const result = handleActivityListenGet({ token: TOKEN });
+    expect(isError(result as { isError?: boolean })).toBe(false);
+    const body = parseResult(result);
+    expect(body.ok).toBe(true);
+    expect(typeof body.sse_url).toBe("string");
+    expect((body.sse_url as string)).toContain(`/sse?token=${TOKEN}`);
+    expect(body.command).toBe(`curl -N '${body.sse_url as string}'`);
+  });
+
+  it("builds URL from base URL returned by getSseBaseUrl", () => {
+    httpModeMocks.getSseBaseUrl.mockReturnValue("http://192.168.1.10:5000");
+    const result = handleActivityListenGet({ token: TOKEN });
+    const body = parseResult(result);
+    expect(body.sse_url).toBe(`http://192.168.1.10:5000/sse?token=${TOKEN}`);
+  });
+});
+
+// ── TC8: activity/listen/get — HTTP mode not active ──────────────────────────
+
+describe("TC8: activity/listen/get — HTTP mode not active", () => {
+  it("returns HTTP_MODE_REQUIRED error", () => {
+    httpModeMocks.getSseBaseUrl.mockReturnValue(null);
+    const result = handleActivityListenGet({ token: TOKEN });
+    expect(isError(result as { isError?: boolean })).toBe(true);
+    const body = parseResult(result);
+    expect(body.code).toBe("HTTP_MODE_REQUIRED");
+  });
+});
+
+// ── TC9: activity/listen/get — auth failure ───────────────────────────────────
+
+describe("TC9: activity/listen/get — auth failure", () => {
+  it("returns AUTH_FAILED error", () => {
+    gateMocks.requireAuth.mockReturnValue(AUTH_ERROR);
+    const result = handleActivityListenGet({ token: 99999 });
+    expect(isError(result as { isError?: boolean })).toBe(true);
+    const body = parseResult(result);
+    expect(body.code).toBe("AUTH_FAILED");
   });
 });
