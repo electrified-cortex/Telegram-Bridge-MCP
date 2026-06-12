@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   isLoggingEnabled: vi.fn((): boolean => true),
   rollLog: vi.fn((): string | null => null),
   closeSessionById: vi.fn((): { closed: boolean; sid: number } => ({ closed: true, sid: 0 })),
+  getGovernorSid: vi.fn((): number => 0),
 }));
 
 vi.mock("./telegram.js", () => ({
@@ -53,6 +54,10 @@ vi.mock("./local-log.js", () => ({
 
 vi.mock("./session-teardown.js", () => ({
   closeSessionById: mocks.closeSessionById,
+}));
+
+vi.mock("./routing-mode.js", () => ({
+  getGovernorSid: mocks.getGovernorSid,
 }));
 
 import {
@@ -182,6 +187,7 @@ describe("elegantShutdown", () => {
     mocks.getSessionLogMode.mockReturnValue(null);
     mocks.isLoggingEnabled.mockReturnValue(true);
     mocks.rollLog.mockReturnValue(null);
+    mocks.getGovernorSid.mockReturnValue(0);
     // Prevent process.exit from actually killing the test runner
     exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
   });
@@ -362,6 +368,61 @@ describe("elegantShutdown", () => {
     await expect(elegantShutdown()).resolves.toBeUndefined();
     expect(exitSpy).toHaveBeenCalledWith(0);
   });
+
+  // ── No-participants grace period skip (10-0012) ────────────────────────────
+
+  it("skips grace period when governor is the only active session", async () => {
+    // Governor (sid=1) is the only session — no participants to self-close.
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Governor" }]);
+    mocks.getGovernorSid.mockReturnValue(1);
+    await elegantShutdown();
+    // Force-close must NOT be called — the grace period is skipped entirely.
+    expect(mocks.closeSessionById).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  it("still drains poller and delivers shutdown message to governor-only session", async () => {
+    // Even without participants, the poller drain and SHUTDOWN service message must fire.
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Governor" }]);
+    mocks.getGovernorSid.mockReturnValue(1);
+    await elegantShutdown();
+    expect(mocks.stopPoller).toHaveBeenCalledTimes(1);
+    expect(mocks.waitForPollerExit).toHaveBeenCalledTimes(1);
+    expect(mocks.drainPendingUpdates).toHaveBeenCalledTimes(1);
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.notifySessionWaiters).toHaveBeenCalledTimes(1);
+  });
+
+  it("enters grace period when non-governor participants are present", async () => {
+    const governor = { sid: 1, name: "Governor" };
+    const participant = { sid: 2, name: "Worker" };
+    // Snapshot → [gov, participant]; wait-loop → [] (self-closed); remaining → []
+    mocks.listSessions
+      .mockReturnValueOnce([governor, participant])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+    mocks.getGovernorSid.mockReturnValue(1);
+    await elegantShutdown();
+    // Grace period was entered — no remaining sessions so no force-close.
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    // Both sessions received SHUTDOWN message
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("force-closes participant sessions that remain after the grace period loop exits", async () => {
+    const governor = { sid: 1, name: "Governor" };
+    const participant = { sid: 2, name: "Worker" };
+    // Simulate: wait-loop exits immediately (returns []) then remaining query finds participant
+    // still present. This exercises the force-close code path without a real 10s timeout.
+    mocks.listSessions
+      .mockReturnValueOnce([governor, participant])  // snapshot
+      .mockReturnValueOnce([])                        // while-check → loop exits immediately
+      .mockReturnValueOnce([participant]);             // remaining → force-close is triggered
+    mocks.getGovernorSid.mockReturnValue(1);
+    await elegantShutdown();
+    expect(mocks.closeSessionById).toHaveBeenCalledWith(2);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -378,6 +439,7 @@ describe("elegantShutdown — chat announcement sequence (AC5)", () => {
     mocks.getSessionLogMode.mockReturnValue(null);
     mocks.isLoggingEnabled.mockReturnValue(false);  // skip log-roll noise
     mocks.rollLog.mockReturnValue(null);
+    mocks.getGovernorSid.mockReturnValue(0);
     exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
   });
 

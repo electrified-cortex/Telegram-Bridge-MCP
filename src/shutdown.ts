@@ -7,6 +7,7 @@ import { closeSessionById } from "./session-teardown.js";
 import { getSessionLogMode } from "./config.js";
 import { flushCurrentLog, isLoggingEnabled, rollLog } from "./local-log.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS, SHUTDOWN_POLL_INTERVAL_MS } from "./utils/timing.js";
+import { getGovernorSid } from "./routing-mode.js";
 
 // ---------------------------------------------------------------------------
 // Shutdown cause
@@ -170,6 +171,20 @@ export async function elegantShutdown(cause: ShutdownCause = "agent"): Promise<n
   const sessions = listSessions();
   const hasActiveSessions = sessions.length > 0;
 
+  // Participants are non-governor sessions that respond to the SHUTDOWN service message
+  // and self-close. The governor (the session that called shutdown) will NOT self-close —
+  // it is the one initiating the shutdown.
+  //
+  // In normal operation getGovernorSid() is always set to a non-zero SID whenever any
+  // session is active (set in session/start.ts on first session create). It is 0 only
+  // when no sessions exist. When governorSid === 0 but sessions somehow exist (defensive
+  // path), fall back to treating all sessions as participants (conservative, no data loss).
+  const governorSid = getGovernorSid();
+  const participantSessions = governorSid > 0
+    ? sessions.filter(s => s.sid !== governorSid)
+    : sessions;
+  const hasParticipants = participantSessions.length > 0;
+
   // Step 1: pre-shutdown chat announcement (before tearing anything down)
   await postShutdownAnnouncement(cause, sessions.length);
 
@@ -204,8 +219,10 @@ export async function elegantShutdown(cause: ShutdownCause = "agent"): Promise<n
     );
   }
 
-  if (hasActiveSessions) {
-    // Give sessions time to handle the shutdown message and close themselves (up to 10s).
+  if (hasParticipants) {
+    // Give participants time to handle the shutdown message and close themselves (up to 10s).
+    // Skipped when only the governor is active — it will not self-close, so there is no
+    // one to wait for and the grace period would run to timeout for no reason.
     const shutdownDeadline = Date.now() + GRACEFUL_SHUTDOWN_TIMEOUT_MS;
     while (Date.now() < shutdownDeadline && listSessions().length > 0) {
       await delay(SHUTDOWN_POLL_INTERVAL_MS);
