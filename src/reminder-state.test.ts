@@ -28,6 +28,8 @@ import {
   getSoonestEventReminderMs,
   scheduleReminder,
   restartActiveSweepForTest,
+  setReminderFireCallback,
+  getScheduleSidsForTest,
 } from "./reminder-state.js";
 import { runInSessionContext } from "./session-context.js";
 import { deliverReminderEvent } from "./session-queue.js";
@@ -1351,6 +1353,7 @@ describe("reminder-state", () => {
       restartActiveSweepForTest();      // restart sweep using the now-fake setInterval
       vi.mocked(deliverReminderEvent).mockClear();
       vi.mocked(isDequeueActive).mockReturnValue(false);
+      setReminderFireCallback(vi.mocked(deliverReminderEvent));
     });
 
     afterEach(() => {
@@ -1385,14 +1388,93 @@ describe("reminder-state", () => {
     });
   });
 
-  // ── Schedule sweep — direct delivery via deliverReminderEvent ────────────
+  // ── P4 — sweep leak on disable ────────────────────────────────────────────
 
-  describe("Schedule sweep — direct delivery via deliverReminderEvent (§5-b, kick-ahead removal)", () => {
+  describe("P4 — sweep tracking pruned when schedule reminder is disabled", () => {
+    beforeEach(() => {
+      resetReminderStateForTest();
+    });
+
+    afterEach(() => {
+      resetReminderStateForTest();
+    });
+
+    it("removes session from _scheduleSids when the last schedule reminder is disabled", () => {
+      runInSessionContext(1, () => {
+        scheduleReminder({ id: "r1", text: "Test", cron: "* * * * *", tz: "UTC" });
+      });
+
+      expect(getScheduleSidsForTest().has(1)).toBe(true);
+
+      runInSessionContext(1, () => {
+        disableReminder("r1");
+      });
+
+      expect(getScheduleSidsForTest().has(1)).toBe(false);
+    });
+
+    it("keeps session in _scheduleSids while at least one schedule reminder remains enabled", () => {
+      runInSessionContext(1, () => {
+        scheduleReminder({ id: "r1", text: "First",  cron: "* * * * *", tz: "UTC" });
+        scheduleReminder({ id: "r2", text: "Second", cron: "0 * * * *", tz: "UTC" });
+      });
+
+      runInSessionContext(1, () => {
+        disableReminder("r1");
+      });
+
+      // r2 is still enabled → session must remain tracked
+      expect(getScheduleSidsForTest().has(1)).toBe(true);
+    });
+
+    it("removes session only after all schedule reminders are disabled one by one", () => {
+      runInSessionContext(1, () => {
+        scheduleReminder({ id: "r1", text: "First",  cron: "* * * * *", tz: "UTC" });
+        scheduleReminder({ id: "r2", text: "Second", cron: "0 * * * *", tz: "UTC" });
+      });
+
+      runInSessionContext(1, () => { disableReminder("r1"); });
+      expect(getScheduleSidsForTest().has(1)).toBe(true);  // r2 still active
+
+      runInSessionContext(1, () => { disableReminder("r2"); });
+      expect(getScheduleSidsForTest().has(1)).toBe(false); // all disabled
+    });
+
+    it("sweep does not invoke the fire callback after the session's last reminder is disabled", () => {
+      resetReminderStateForTest();
+      vi.useFakeTimers({ now: new Date("2024-01-01T00:00:00.000Z").getTime() });
+      vi.mocked(deliverReminderEvent).mockClear();
+      setReminderFireCallback(vi.mocked(deliverReminderEvent));
+
+      try {
+        const reminder = runInSessionContext(1, () =>
+          scheduleReminder({ id: "r1", text: "Test", cron: "1 * * * *", tz: "UTC" }),
+        );
+
+        // Force next_fire_ms into the past so a live sweep would fire it
+        reminder.next_fire_ms = 0;
+
+        runInSessionContext(1, () => { disableReminder("r1"); });
+
+        // Advance well past the 5 s sweep interval
+        vi.advanceTimersByTime(10_000);
+
+        expect(deliverReminderEvent).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // ── Schedule sweep — fires via reminder-fire callback ────────────────────
+
+  describe("Schedule sweep — fires via reminder-fire callback (§5-b, kick-ahead removal)", () => {
     beforeEach(() => {
       resetReminderStateForTest();
       // Fake time: 2024-01-01 00:00:00 UTC
       vi.useFakeTimers({ now: new Date("2024-01-01T00:00:00.000Z").getTime() });
       vi.mocked(deliverReminderEvent).mockClear();
+      setReminderFireCallback(vi.mocked(deliverReminderEvent));
     });
 
     afterEach(() => {
@@ -1400,7 +1482,7 @@ describe("reminder-state", () => {
       vi.useRealTimers();
     });
 
-    it("fires schedule reminder via deliverReminderEvent when next_fire_ms is reached", async () => {
+    it("fires schedule reminder via reminder-fire callback when next_fire_ms is reached", async () => {
       runInSessionContext(1, () => {
         // cron "1 * * * *" = at minute :01 every hour → next fire is 00:01:00Z = 60 000 ms away
         scheduleReminder({ id: "sched1", text: "Scheduled ping", cron: "1 * * * *", tz: "UTC" });

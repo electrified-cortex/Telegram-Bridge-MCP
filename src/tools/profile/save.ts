@@ -66,7 +66,7 @@ export function handleSaveProfile({ key, token, autoload = false }: { key: strin
         return {
           trigger: "schedule" as const,
           text: r.text,
-          cron: r.cron ?? "",
+          cron: r.cron,
           ...(r.tz ? { tz: r.tz } : {}),
           ...(r.disabled ? { disabled: true } : {}),
         };

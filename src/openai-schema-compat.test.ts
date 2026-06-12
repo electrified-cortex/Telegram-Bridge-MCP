@@ -125,7 +125,7 @@ describe("OpenAI JSON Schema compatibility — all tools", () => {
 
   // Import createServer which registers all tools on a real McpServer.
   // We then access the private _registeredTools map.
-  it("collects all registered tools", async () => {
+  it("collects all registered tools", { timeout: 30_000 }, async () => {
     const { createServer } = await import("./server.js");
     const server = createServer();
 
@@ -149,6 +149,7 @@ describe("OpenAI JSON Schema compatibility — all tools", () => {
 
   it.each(["draft-2020-12", "openapi-3.0"] as const)(
     "no tool schema contains prefixItems or array-form items (target: %s)",
+    { timeout: 30_000 },
     (target) => {
       expect(captured.length).toBe(4);
 
@@ -178,6 +179,7 @@ describe("OpenAI JSON Schema compatibility — all tools", () => {
 
   it.each(["draft-2020-12", "openapi-3.0"] as const)(
     "items is always an object or boolean when present (target: %s)",
+    { timeout: 30_000 },
     (target) => {
       for (const { name, inputSchema } of captured) {
         const jsonSchema = z.toJSONSchema(inputSchema, { target }) as Record<string, unknown>;

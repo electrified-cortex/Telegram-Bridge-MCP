@@ -33,6 +33,7 @@ import { attachHookRoutes } from "./hook-animation.js";
 import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
+import { initReminderFireCallback } from "./session-queue.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -42,6 +43,10 @@ process.stderr.write(`[info] [${pkg.name}] v${pkg.version} starting...\n`);
 initSseNotifyCallback((sid) => {
   notifySseSubscriber(sid);
 });
+
+// P1: wire reminder-fire callback so reminder-state.ts can deliver events through
+// session-queue.ts without a circular import (both modules are fully initialized here)
+initReminderFireCallback();
 
 // Initialize security config early so warnings surface at startup
 getSecurityConfig();

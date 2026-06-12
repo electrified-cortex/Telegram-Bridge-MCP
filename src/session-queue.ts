@@ -18,7 +18,7 @@ import { getMessage, CURRENT } from "./message-store.js";
 import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
 import type { ReminderEvent } from "./reminder-state.js";
-import { recordLastSentAt, recordLastReceivedAt, popFireableEventReminders, buildReminderEvent } from "./reminder-state.js";
+import { recordLastSentAt, recordLastReceivedAt, popFireableEventReminders, buildReminderEvent, setReminderFireCallback } from "./reminder-state.js";
 import { isDequeueActive } from "./tools/activity/file-state.js";
 import { notifyChannelSubscriber } from "./channel.js";
 import { notifySession } from "./tools/notify.js";
@@ -647,6 +647,15 @@ export function deliverReminderEvent(
   notifyChannelSubscriber(targetSid, event);
   dlog("service", `reminder delivered → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
+}
+
+/**
+ * Wire the reminder-fire callback so reminder-state.ts can deliver events through
+ * session-queue.ts without a circular import. Call this once at server startup
+ * (from index.ts) after both modules are fully initialized.
+ */
+export function initReminderFireCallback(): void {
+  setReminderFireCallback(deliverReminderEvent);
 }
 
 /**
