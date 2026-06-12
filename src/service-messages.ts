@@ -52,14 +52,23 @@ export const SERVICE_MESSAGES = deepFreeze({
 
   ONBOARDING_LOOP_PATTERN: {
     eventType: "onboarding_loop_pattern" as const,
-    text: `Welcome to the loop. Stay in it.
-Three paths — pick based on your environment:
-
-HTTP mode (preferred): action(type: 'activity/listen') → ok:true → arm SSE Monitor with the returned command. help('activity/listen').
-No HTTP / Monitor available: action(type: 'activity/file/create') → arm file Monitor on the returned path. help('activity/file').
-No Monitor tool: call dequeue(token) on every turn.
-
-Details: help('start'), help('dequeue').`,
+    text: "You are onboarding. To participate, you need a running monitor.\n\n" +
+      "Three paths — pick based on your environment:\n\n" +
+      "HTTP mode (preferred):\n" +
+      "  1. Call action(type: 'activity/listen') → returns { command, download_url, arm_instructions, ... }.\n" +
+      "  2. Get sse-monitor.sh:\n" +
+      "     - Repo checkout: use <repo>/tools/sse-monitor.sh directly.\n" +
+      "     - No checkout: download from the returned download_url and save to a local path\n" +
+      "       of your choice (e.g. your pod root or memory/ dir).\n" +
+      "  ⚠ IMPORTANT: The SSE stream sends a `: keepalive` heartbeat every 30 s. Arming a raw\n" +
+      "     curl -N makes EVERY heartbeat a wake event = token-burn spam. Use the filtered script.\n" +
+      "  3. Arm the Monitor tool with: bash <path-to-script> '<sse_url>' and persistent: true.\n" +
+      "     You are participating once the monitor is live.\n\n" +
+      "No HTTP / Monitor available:\n" +
+      "  action(type: 'activity/file/create') → arm file Monitor on the returned path. help('activity/file').\n\n" +
+      "No Monitor tool:\n" +
+      "  Call dequeue(token) on every turn.\n\n" +
+      "Details: help('start'), help('dequeue'), help('activity/listen').",
   },
 
   ONBOARDING_COMPACTION_HINT: {
@@ -206,6 +215,22 @@ Details: help('start'), help('dequeue').`,
     },
   },
 
+  // ── SSE onboarding handshake ──────────────────────────────────────────────
+
+  /** Fired once when the participant's SSE monitor actually connects (filtered path confirmed). */
+  ONBOARDING_PARTICIPATING: {
+    eventType: "onboarding_participating" as const,
+    text: "✅ You're participating now — monitor armed, SSE live, heartbeats filtered. You'll wake only on real messages.",
+  },
+
+  /** Fired once ~45 s after activity/listen if no SSE connection appeared (gentle reminder). */
+  ONBOARDING_ARM_REMINDER: {
+    eventType: "onboarding_arm_reminder" as const,
+    /** @param command The arm command returned by activity/listen */
+    text: (command: string) =>
+      `You opened a subscription but haven't armed the monitor yet — arm \`${command}\` in the Monitor tool (persistent: true) to start participating.`,
+  },
+
   // ── SSE compaction recovery ───────────────────────────────────────────────
 
   /** Fired after compaction recovery when SSE was the active wake mechanism */
@@ -215,8 +240,9 @@ Details: help('start'), help('dequeue').`,
     text: (sseUrl: string) =>
       `Looks like you compacted. Re-arm your SSE monitor.\n` +
       `Run inside your harness's Monitor tool with persistent: true:\n` +
-      `\`curl -N '${sseUrl}'\`\n\n` +
-      `Or call action(type: 'activity/listen') to get a fresh URL and command.`,
+      `\`bash sse-monitor.sh '${sseUrl}'\`\n\n` +
+      "⚠ Do NOT use raw curl -N — the SSE stream sends `: keepalive` heartbeats every 30 s that would spam wake events.\n\n" +
+      "Or call action(type: 'activity/listen') to get a fresh URL, command, and download_url for the filtered script.",
   },
 
   // ── Sub-session spawn hint ────────────────────────────────────────────────

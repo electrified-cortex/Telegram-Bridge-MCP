@@ -2,7 +2,7 @@
  * Unit tests for activity/listen and activity/listen/cancel handlers.
  *
  * Covers:
- *   TC1. activity/listen — HTTP mode active → returns ok:true with sse_url and command
+ *   TC1. activity/listen — HTTP mode active → returns ok:true with filtered command and guidance fields
  *   TC2. activity/listen — HTTP mode not active → HTTP_MODE_REQUIRED error
  *   TC3. activity/listen — auth failure → AUTH_FAILED error
  *   TC4. activity/listen/cancel — connection open → ok:true, connection cancelled
@@ -24,6 +24,7 @@ const httpModeMocks = vi.hoisted(() => ({
 
 const sseEndpointMocks = vi.hoisted(() => ({
   cancelSseConnection: vi.fn((_sid: number): void => {}),
+  scheduleArmReminder: vi.fn((_sid: number, _command: string): void => {}),
 }));
 
 vi.mock("../../session-gate.js", () => ({
@@ -36,6 +37,7 @@ vi.mock("../../http-mode.js", () => ({
 
 vi.mock("../../sse-endpoint.js", () => ({
   cancelSseConnection: (sid: number) => { sseEndpointMocks.cancelSseConnection(sid); },
+  scheduleArmReminder: (sid: number, command: string) => { sseEndpointMocks.scheduleArmReminder(sid, command); },
 }));
 
 import { handleActivityListen } from "./listen.js";
@@ -62,19 +64,28 @@ beforeEach(() => {
   gateMocks.requireAuth.mockReturnValue(SID);
   httpModeMocks.getSseBaseUrl.mockReturnValue("http://127.0.0.1:3099");
   sseEndpointMocks.cancelSseConnection.mockReturnValue(undefined);
+  sseEndpointMocks.scheduleArmReminder.mockReturnValue(undefined);
 });
 
 // ── TC1: activity/listen — HTTP mode active ───────────────────────────────────
 
 describe("TC1: activity/listen — HTTP mode active", () => {
-  it("returns ok:true with sse_url and command", () => {
+  it("returns ok:true with filtered command and guidance fields", () => {
     const result = handleActivityListen({ token: TOKEN });
     expect(isError(result as { isError?: boolean })).toBe(false);
     const body = parseResult(result);
     expect(body.ok).toBe(true);
     expect(typeof body.sse_url).toBe("string");
     expect((body.sse_url as string)).toContain(`/sse?token=${TOKEN}`);
-    expect(body.command).toBe(`curl -N '${body.sse_url as string}'`);
+    // command must use the filtered script, NOT raw curl -N
+    expect(body.command).toBe(`bash sse-monitor.sh '${body.sse_url as string}'`);
+    expect(body.monitor_type).toBe("sse");
+    expect(typeof body.heartbeat_warning).toBe("string");
+    expect(body.arm_with).toBe("Monitor tool, persistent: true");
+    expect(typeof body.download_url).toBe("string");
+    expect((body.download_url as string)).toContain("/tools/sse-monitor.sh");
+    // arm reminder must be scheduled
+    expect(sseEndpointMocks.scheduleArmReminder).toHaveBeenCalledWith(SID, body.command);
   });
 
   it("builds URL from base URL returned by getSseBaseUrl", () => {
@@ -82,6 +93,7 @@ describe("TC1: activity/listen — HTTP mode active", () => {
     const result = handleActivityListen({ token: TOKEN });
     const body = parseResult(result);
     expect(body.sse_url).toBe(`http://192.168.1.10:5000/sse?token=${TOKEN}`);
+    expect(body.download_url).toBe(`http://192.168.1.10:5000/tools/sse-monitor.sh`);
   });
 });
 

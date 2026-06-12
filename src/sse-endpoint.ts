@@ -1,22 +1,88 @@
 /**
- * Spike: SSE notification endpoint — GET /sse?token=<num>
+ * SSE notification endpoint — GET /sse?token=<num>
  *
  * Opens a server-sent events stream per session. Fires `data: notify\n\n`
  * whenever a new event is enqueued for that session, so agents running
- * `curl -N` as a Monitor tool command wake up without a shared filesystem.
+ * the filtered sse-monitor.sh script (via Monitor tool) wake up without a
+ * shared filesystem.
  *
  * Auth: session token integer via ?token=N (same convention as /dequeue).
- * Spike only — the connection map is in-memory and not durable across restarts.
+ * Connection map is in-memory and not durable across restarts.
+ *
+ * Also serves GET /tools/sse-monitor.sh (read-only) so participants without
+ * a repo checkout can download the filtered monitor script.
  */
+import { readFileSync } from "fs";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 import type { Request, Response, Express } from "express";
 import { decodeToken } from "./tools/identity-schema.js";
 import { validateSession, getDequeueDefault, setDequeueDefault } from "./session-manager.js";
 import { registerSseMonitor, unregisterSseMonitor, resetNotifyGateState } from "./tools/activity/file-state.js";
-import { hasAnyPendingContent } from "./session-queue.js";
+import { hasAnyPendingContent, deliverServiceMessage } from "./session-queue.js";
+import { SERVICE_MESSAGES } from "./service-messages.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+/** Absolute path to tools/sse-monitor.sh relative to this compiled file (src → repo root). */
+const _sseMonitorPath = resolve(__dirname, "..", "tools", "sse-monitor.sh");
 
 /** sid → active SSE response */
 const _connections = new Map<number, Response>();
+
+/**
+ * Tracks which sids have already received the ONBOARDING_PARTICIPATING message.
+ * Fires once per session, not per reconnect — monitors auto-reconnect on network
+ * drops/restarts/post-compaction, so without this guard the message would spam
+ * every time the SSE stream re-opens.
+ * Cleared on cancelSseConnection (genuine teardown) so a truly new participation
+ * re-confirms after a real session end.
+ */
+const _onboardingParticipatingFired = new Set<number>();
+
+/**
+ * sid → pending arm-reminder timer handle.
+ *
+ * Seeded by scheduleArmReminder() when activity/listen returns a subscription
+ * URL. Cancelled when the SSE connection actually opens. If it fires (~45 s),
+ * a gentle ONBOARDING_ARM_REMINDER service message is delivered once.
+ */
+const _armReminderTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+/** Arm-reminder delay (ms). One reminder, then silence. */
+const ARM_REMINDER_DELAY_MS = 45_000;
+
+/**
+ * Schedule a one-shot arm reminder for the given session.
+ *
+ * Call this immediately after returning the activity/listen response. If the
+ * participant arms the Monitor tool within ARM_REMINDER_DELAY_MS, the SSE
+ * connection open cancels the timer before it fires (no message sent). If they
+ * don't, one gentle reminder is delivered.
+ *
+ * Idempotent: re-calling resets the timer (each listen call gets one window).
+ */
+export function scheduleArmReminder(sid: number, command: string): void {
+  // Cancel any existing timer for this sid
+  const existing = _armReminderTimers.get(sid);
+  if (existing !== undefined) {
+    clearTimeout(existing);
+  }
+
+  const handle = setTimeout(() => {
+    _armReminderTimers.delete(sid);
+    // Only fire if the SSE connection is still NOT open
+    if (!_connections.has(sid)) {
+      deliverServiceMessage(
+        sid,
+        SERVICE_MESSAGES.ONBOARDING_ARM_REMINDER.text(command),
+        SERVICE_MESSAGES.ONBOARDING_ARM_REMINDER.eventType,
+      );
+    }
+  }, ARM_REMINDER_DELAY_MS);
+
+  _armReminderTimers.set(sid, handle);
+}
 
 /**
  * Fire `data: notify` to the open SSE connection for the given session, if any.
@@ -44,6 +110,9 @@ export function cancelSseConnection(sid: number): void {
   // Deleting from _connections above makes the req-close guard a no-op, so drop
   // this stream's gate membership here instead.
   unregisterSseMonitor(sid);
+  // Clear the once-per-session participation guard so a genuinely new connection
+  // after a real teardown re-sends the confirmation.
+  _onboardingParticipatingFired.delete(sid);
   if (!res) return;
   try {
     res.write("data: cancelled\n\n");
@@ -55,6 +124,20 @@ export function cancelSseConnection(sid: number): void {
 }
 
 export function attachSseRoute(app: Express): void {
+  // ── GET /tools/sse-monitor.sh — serve the filtered SSE monitor script ──────
+  // Read-only, no auth required. Allows participants without a repo checkout to
+  // download the heartbeat-filtering wrapper before arming the Monitor tool.
+  app.get("/tools/sse-monitor.sh", (_req: Request, res: Response) => {
+    try {
+      const contents = readFileSync(_sseMonitorPath, "utf-8");
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="sse-monitor.sh"');
+      res.status(200).send(contents);
+    } catch {
+      res.status(503).json({ ok: false, error: "sse-monitor.sh not available on this server" });
+    }
+  });
+
   app.get("/sse", (req: Request, res: Response) => {
     const rawToken = req.query.token;
     if (!rawToken || typeof rawToken !== "string" || !DIGITS_ONLY.test(rawToken)) {
@@ -85,6 +168,12 @@ export function attachSseRoute(app: Express): void {
     // window is safe because Node.js is single-threaded — no await between .set
     // and the hasPendingContent check, so no concurrent enqueue can slip in.
     _connections.set(sid, res);
+    // Cancel any pending arm-reminder for this sid — participant has connected.
+    const pendingReminder = _armReminderTimers.get(sid);
+    if (pendingReminder !== undefined) {
+      clearTimeout(pendingReminder);
+      _armReminderTimers.delete(sid);
+    }
     // Bring this SSE stream under the shared notify gate so it is debounced /
     // re-notified exactly like an activity-file monitor (and so notifications reach
     // it at all when no activity file is registered).
@@ -93,6 +182,17 @@ export function attachSseRoute(app: Express): void {
     // starts with an unblocked gate (F-3: stale lockout on reconnect).
     resetNotifyGateState(sid);
     process.stderr.write(`[sse] connection opened sid=${sid}\n`);
+
+    // Onboarding handshake — fires once per session, not per reconnect. Monitors
+    // auto-reconnect on network drops/restarts/post-compaction; without the guard
+    // this message would re-fire on every reconnect and spam the participant.
+    // Uses source "service" + inflightAtEnqueue=false so it is enqueued and
+    // notified immediately. The SSE stream itself is up at this point, so the
+    // agent will see this on its first dequeue.
+    if (!_onboardingParticipatingFired.has(sid)) {
+      _onboardingParticipatingFired.add(sid);
+      deliverServiceMessage(sid, SERVICE_MESSAGES.ONBOARDING_PARTICIPATING);
+    }
 
     // EC-1: re-arm race fix — if messages arrived during the gap between the
     // prior monitor exiting and this connection registering, the enqueue-time
