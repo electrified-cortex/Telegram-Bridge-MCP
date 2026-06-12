@@ -41,14 +41,34 @@
 #   keepalives + 15 s grace). Any arriving line — heartbeat or data — resets
 #   the idle clock simply by causing `read` to return successfully. No watchdog
 #   process, no timestamp file, no exported variables required.
+#   read exit code is captured directly (while true; do read; rc=$?) — NOT via
+#   `$?` after `while read; done` (that captures the loop body's last status,
+#   always 0, making silence detection dead code).
+#
+# RECONNECT STABILITY (H5)
+#   fails/backoff reset only after MIN_STABLE_SECS uptime — not on first data.
+#   A server that sends one event then drops must still exhaust MAX_RETRIES.
 #
 # CURL PID MANAGEMENT
 #   curl is backgrounded as a direct job feeding a named FIFO; $! immediately
 #   captures the real curl PID. The read loop consumes from the FIFO on fd 3.
 #   Teardown kills only that specific PID — never `kill 0`. SIGINT/SIGTERM run
 #   cleanup AND exit, so a supervising agent can always stop the monitor.
+#   Backoff sleep uses `sleep & wait $!` for signal interruptibility.
 
 set -uo pipefail
+
+# ---------------------------------------------------------------------------
+# Bash preflight — EPOCHSECONDS requires bash 4.2+.
+# ---------------------------------------------------------------------------
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "data: MONITOR_EXIT reason=not_bash action=run_with_bash"
+    exit 3
+fi
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 2) )); then
+    echo "data: MONITOR_EXIT reason=bash_too_old action=run_with_bash_4_2_or_later"
+    exit 3
+fi
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -58,6 +78,7 @@ SILENCE_TIMEOUT=75      # seconds of silence = dead connection (2 missed keepali
 MAX_RETRIES=8           # max consecutive reconnect attempts before permanent exit
 BACKOFF_INITIAL=2       # first retry delay (seconds)
 BACKOFF_CAP=60          # maximum retry delay (seconds)
+MIN_STABLE_SECS=15      # connection must be up this long before fails/backoff reset (H5)
 
 # ---------------------------------------------------------------------------
 # State
@@ -124,11 +145,24 @@ while true; do
     exec 3< "$fifo"      # open FIFO read end; this unblocks curl's open of the write end
 
     # --- Inner read loop ---
+    # H1/H2 fix (empirically verified): `$?` after `while read; done` is the loop
+    # BODY's last exit status, not read's exit code when the condition failed. Every
+    # body path ends in `continue` (status 0), so read_exit was always 0 — dead code.
+    # Fixed by `while true; do read; read_exit=$?` — direct capture yields:
+    #   read_exit > 128 (142) → SILENCE_TIMEOUT exceeded (dead connection / class C)
+    #   read_exit == 1        → EOF (curl exited: clean drop or server close)
+    #   read_exit == 0        → successful read; line processed; loop continues
     got_cancel=0
     last_http_code=""
+    read_exit=0
+    conn_start=$EPOCHSECONDS   # H5: track uptime for stable-connection reset
 
-    while IFS= read -r -t "$SILENCE_TIMEOUT" -u 3 line; do
-        # read returned 0 → got a line within the timeout window
+    while true; do
+        IFS= read -r -t "$SILENCE_TIMEOUT" -u 3 line
+        read_exit=$?
+        if (( read_exit != 0 )); then
+            break
+        fi
         line="${line%$'\r'}"   # strip trailing CR — SSE framing may use CRLF
 
         case "$line" in
@@ -150,9 +184,9 @@ while true; do
             data:*)
                 # Real SSE event — emit to stdout (agent wake)
                 echo "$line"
-                # First real data after a reconnect: reset failure counters
-                fails=0
-                backoff=$BACKOFF_INITIAL
+                # H5: do NOT reset fails/backoff here. Reset is deferred to the
+                # post-loop section where conn_uptime can be checked. A server that
+                # sends one event then immediately drops must still exhaust MAX_RETRIES.
                 continue
                 ;;
             [0-9][0-9][0-9])
@@ -167,15 +201,15 @@ while true; do
                 ;;
         esac
     done
-    read_exit=$?
-    # read_exit > 128  → timed out (SILENCE_TIMEOUT exceeded, dead connection)
-    # read_exit == 1   → EOF (curl exited cleanly or dropped)
-    # read_exit == 0   → loop exited via break (got_cancel)
+    # read_exit is now correctly captured:
+    # > 128 (142) → silence timeout (dead connection)
+    # == 1        → EOF (curl dropped / exited)
+    # == 0        → exited via break (got_cancel or cancel-path break)
 
     # --- Tear down this connection attempt (idempotent helper) ---
     terminate_curl
 
-    # If read timed out, emit a stderr advisory (not stdout — not an agent event)
+    # If read timed out, emit a stderr advisory (now correctly reachable)
     if (( read_exit > 128 )); then
         echo "MONITOR_INFO dead_connection_detected silence=${SILENCE_TIMEOUT}s classifying_as=transient_drop" >&2
     fi
@@ -195,6 +229,16 @@ while true; do
         exit 1
     fi
 
+    # H5: stable-connection check — only reset fails/backoff if the connection was
+    # healthy for at least MIN_STABLE_SECS. A server that accepts then immediately
+    # drops (post-welcome flap) must still exhaust MAX_RETRIES, not retry forever.
+    conn_uptime=$(( EPOCHSECONDS - conn_start ))
+    if (( conn_uptime >= MIN_STABLE_SECS )); then
+        echo "MONITOR_INFO stable_connection_reset uptime=${conn_uptime}s" >&2
+        fails=0
+        backoff=$BACKOFF_INITIAL
+    fi
+
     # 3. Transient drop — reconnect with exponential backoff
     fails=$(( fails + 1 ))
     if (( fails >= MAX_RETRIES )); then
@@ -203,7 +247,10 @@ while true; do
     fi
 
     echo "MONITOR_INFO reconnecting attempt=${fails}/${MAX_RETRIES} delay=${backoff}s" >&2
-    sleep "$backoff"
+
+    # H4: sleep in background + wait so bash can service INT/TERM traps during backoff.
+    # `wait` for a background job is interruptible; the trap fires immediately on signal.
+    sleep "$backoff" & wait $!
 
     # Exponential backoff with cap
     backoff=$(( backoff * 2 ))
