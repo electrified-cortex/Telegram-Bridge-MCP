@@ -29,7 +29,7 @@ import { getGovernorSid } from "./routing-mode.js";
 import { handleShowAnimation } from "./tools/animation/show.js";
 import { handleCancelAnimation } from "./tools/animation/cancel.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
-import { handleSessionStopped, getActivityFile } from "./tools/activity/file-state.js";
+import { handleSessionStopped } from "./tools/activity/file-state.js";
 import { SERVICE_MESSAGES } from "./service-messages.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

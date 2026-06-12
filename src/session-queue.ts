@@ -168,6 +168,32 @@ export function hasPendingUserContent(sid: number): boolean {
 }
 
 /**
+ * Returns true iff a call to /dequeue would drain at least one item from this
+ * session's queue (i.e. dequeueBatch() would return a non-empty batch).
+ *
+ * dequeueBatch returns [] in exactly one case: the queue has a heavyweight item
+ * (text/voice message) as its first heavyweight, and that item is NOT yet ready
+ * (voice pending transcription). In all other cases — pure-lightweight queues
+ * (direct_message, callback, send_callback, service_message, reminder, etc.) or
+ * queues whose first heavyweight IS ready — the batch is non-empty.
+ *
+ * Use this for the connect-notify EC-1 path only. Keep hasPendingUserContent for
+ * lockout/re-notify logic (those paths intentionally ignore lightweight-only queues).
+ */
+export function hasAnyPendingContent(sid: number): boolean {
+  const q = _queues.get(sid);
+  if (!q) return false;
+  // A pending count of zero means nothing to drain.
+  if (q.pendingCount() === 0) return false;
+  // dequeueBatch returns [] only when the FIRST heavyweight is not ready.
+  // peekFirst finds that item; if it is lightweight (or doesn't exist), the batch drains.
+  const firstHeavy = q.peekFirst(isHeavyweightEvent);
+  if (firstHeavy === undefined) return true; // all items are lightweight → drains everything
+  // Check readiness (isEventReady is defined at module scope above).
+  return isEventReady(firstHeavy); // ready heavyweight → batch drains it; not-ready → holds
+}
+
+/**
  * Returns the arrival timestamp (ms since epoch) of the newest pending text
  * or voice event in the session queue. Used by the silence detector to anchor
  * the elapsed clock to the most recent inbound content arrival.
