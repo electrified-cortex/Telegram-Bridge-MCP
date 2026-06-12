@@ -1,5 +1,11 @@
 # [Unreleased]
 
+## In-branch
+
+### Changed
+
+- **rename: notify-lockout terminology renamed to notify-debounce throughout** — `notifyLockedUntil`→`notifyDebounceUntil`, `notifyPendingBecauseLocked`→`notifyPendingBecauseDebounce`, `releaseNotifyLockout`→`releaseNotifyDebounce`, `getNotifyLockoutMs`/`setNotifyLockoutMs`→`getNotifyDebounceMs`/`setNotifyDebounceMs`; constants `LOCKOUT_*`→`NOTIFY_DEBOUNCE_*`; `profile/kick-lockout` action path renamed to `profile/notify-debounce` (old path kept as backward-compat alias); `src/tools/profile/kick-lockout.ts` renamed to `notify-debounce.ts`. Pure terminology change — no behavior or numeric value changes.
+
 ## v7.5.2
 
 ### Added

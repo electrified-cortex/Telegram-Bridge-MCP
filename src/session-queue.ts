@@ -178,7 +178,7 @@ export function hasPendingUserContent(sid: number): boolean {
  * queues whose first heavyweight IS ready — the batch is non-empty.
  *
  * Use this for the connect-notify EC-1 path only. Keep hasPendingUserContent for
- * lockout/re-notify logic (those paths intentionally ignore lightweight-only queues).
+ * debounce/re-notify logic (those paths intentionally ignore lightweight-only queues).
  */
 export function hasAnyPendingContent(sid: number): boolean {
   const q = _queues.get(sid);

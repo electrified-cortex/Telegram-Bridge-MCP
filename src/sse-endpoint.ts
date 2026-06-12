@@ -178,8 +178,8 @@ export function attachSseRoute(app: Express): void {
     // re-notified exactly like an activity-file monitor (and so notifications reach
     // it at all when no activity file is registered).
     registerSseMonitor(sid);
-    // Clear any stale lockout from the prior connection so the fresh connection
-    // starts with an unblocked gate (F-3: stale lockout on reconnect).
+    // Clear any stale debounce from the prior connection so the fresh connection
+    // starts with an unblocked gate (F-3: stale debounce on reconnect).
     resetNotifyGateState(sid);
     process.stderr.write(`[sse] connection opened sid=${sid}\n`);
 

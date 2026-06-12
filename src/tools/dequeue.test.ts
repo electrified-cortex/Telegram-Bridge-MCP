@@ -29,14 +29,14 @@ interface SessionQueue {
 const fileStateMocks = vi.hoisted(() => ({
   setDequeueActive: vi.fn(),
   getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
-  releaseNotifyLockout: vi.fn((_sid: number) => {}),
+  releaseNotifyDebounce: vi.fn((_sid: number) => {}),
   notifyIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
   setDequeueActive: (sid: number, active: boolean) => fileStateMocks.setDequeueActive(sid, active),
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
-  releaseNotifyLockout: (sid: number) => { fileStateMocks.releaseNotifyLockout(sid); },
+  releaseNotifyDebounce: (sid: number) => { fileStateMocks.releaseNotifyDebounce(sid); },
   notifyIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.notifyIfAllowed(sid, source, inflight); },
 }));
 
@@ -1301,51 +1301,51 @@ describe("dequeue tool", () => {
   });
 
   // =========================================================================
-  // timeout-exit releases notify lockout
+  // timeout-exit releases notify debounce
   // =========================================================================
 
-  describe("timeout-exit lockout release", () => {
-    it("releaseNotifyLockout is called after a blocking wait that times out", async () => {
+  describe("timeout-exit debounce release", () => {
+    it("releaseNotifyDebounce is called after a blocking wait that times out", async () => {
       // Arrange: dequeue blocks, no content ever arrives, times out
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(() => delay(50));
 
       await call({ timeout: 1, token: 1_123_456 });
 
-      // Primary assertion: releaseNotifyLockout MUST be called on timeout exit
-      expect(fileStateMocks.releaseNotifyLockout).toHaveBeenCalledWith(1);
+      // Primary assertion: releaseNotifyDebounce MUST be called on timeout exit
+      expect(fileStateMocks.releaseNotifyDebounce).toHaveBeenCalledWith(1);
     });
 
-    it("releaseNotifyLockout is also called on content-returning paths (no regression)", async () => {
+    it("releaseNotifyDebounce is also called on content-returning paths (no regression)", async () => {
       // Content-returning path: batch arrives immediately
       const evt = makeEvent(42, "content");
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
 
       await call({ timeout: 300, token: 1_123_456 });
 
-      expect(fileStateMocks.releaseNotifyLockout).toHaveBeenCalledWith(1);
+      expect(fileStateMocks.releaseNotifyDebounce).toHaveBeenCalledWith(1);
     });
 
-    it("timeout=0 instant-poll does NOT call releaseNotifyLockout (empty-poll guard preserved)", async () => {
-      // timeout=0 takes a different early-return path — lockout not released
+    it("timeout=0 instant-poll does NOT call releaseNotifyDebounce (empty-poll guard preserved)", async () => {
+      // timeout=0 takes a different early-return path — debounce not released
       mocks.dequeueBatch.mockReturnValue([]);
 
       await call({ timeout: 0, token: 1_123_456 });
 
-      expect(fileStateMocks.releaseNotifyLockout).not.toHaveBeenCalled();
+      expect(fileStateMocks.releaseNotifyDebounce).not.toHaveBeenCalled();
     });
 
     it("subsequent notifyIfAllowed fires after timeout exit (end-to-end AC1)", async () => {
-      // Verify that after a timeout exit releases the lockout, the next notify is not suppressed.
+      // Verify that after a timeout exit releases the debounce, the next notify is not suppressed.
       // This requires the real file-state module (not the mock), so we verify via
-      // the dequeue mock: releaseNotifyLockout was called → lockout is cleared → notify allowed.
+      // the dequeue mock: releaseNotifyDebounce was called → debounce is cleared → notify allowed.
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(() => delay(50));
 
       await call({ timeout: 1, token: 1_123_456 });
 
-      // releaseNotifyLockout was called — a file-parked agent would now accept a notify
-      expect(fileStateMocks.releaseNotifyLockout).toHaveBeenCalledWith(1);
+      // releaseNotifyDebounce was called — a file-parked agent would now accept a notify
+      expect(fileStateMocks.releaseNotifyDebounce).toHaveBeenCalledWith(1);
     });
   });
 

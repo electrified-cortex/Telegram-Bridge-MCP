@@ -52,7 +52,7 @@ vi.mock("../../session-queue.js", () => ({
 vi.mock("../activity/file-state.js", () => ({
   setDequeueActive: vi.fn(),
   getActivityFile: vi.fn((_sid: number) => ({ filePath: "/mock/activity.txt" })),
-  releaseNotifyLockout: vi.fn(),
+  releaseNotifyDebounce: vi.fn(),
   resetChannelCooldown: vi.fn(),
   notifyIfAllowed: vi.fn(),
 }));
