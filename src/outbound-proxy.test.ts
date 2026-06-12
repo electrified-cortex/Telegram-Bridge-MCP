@@ -829,7 +829,7 @@ describe("outbound-proxy", () => {
       expect(sentText).toBe("`🟦 Scout`\nHello");
     });
 
-    it("suppresses name_tag header when the session has a topic set (no double prefix)", async () => {
+    it("includes name_tag header even when the session has a topic set (both are independent)", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getCallerSid.mockReturnValue(1);
       mocks.getSession.mockReturnValue({ name: "Helper", color: "🟩" });
@@ -837,11 +837,76 @@ describe("outbound-proxy", () => {
 
       const raw = fakeApi();
       const p = proxy(raw);
+      // Text already has the topic prefix injected by send.ts before reaching the proxy
       await (p as unknown as FakeApi).sendMessage(42, "**[Helper]**\nHello from Helper");
 
       const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
-      // name_tag header suppressed — only the topic prefix injected by send.ts appears
-      expect(sentText).toBe("**[Helper]**\nHello from Helper");
+      // name_tag header must appear — topic prefix is independently in the body
+      expect(sentText).toBe("`🟩 Helper`\n**[Helper]**\nHello from Helper");
+    });
+
+    it("name_tag header appears on send(type:text) with active topic (send-path simulation)", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Scout", color: "🟦" });
+      setTopic("Research");
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      // Simulate send.ts calling sendMessage after applyTopicToText added the prefix
+      await (p as unknown as FakeApi).sendMessage(42, "**[Research]**\nHere is my report.");
+
+      const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
+      expect(sentText).toContain("`🟦 Scout`\n");
+      expect(sentText).toContain("**[Research]**\nHere is my report.");
+    });
+
+    it("name_tag header appears on send(type:notification) with active topic", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Worker", color: "🟥" });
+      setTopic("Build");
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      // notify calls sendMessage with MarkdownV2 after applying topic to the title
+      await (p as unknown as FakeApi).sendMessage(42, "*[Build] ✅ Done*", {
+        parse_mode: "MarkdownV2",
+      });
+
+      const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
+      expect(sentText).toContain("`🟥 Worker`\n");
+      expect(sentText).toContain("*[Build] ✅ Done*");
+    });
+
+    it("topic prefix still appears in message body when topic is set (preserved behavior)", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Agent", color: "🟧" });
+      setTopic("Deploy");
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      // send.ts injects the topic prefix before calling sendMessage
+      await (p as unknown as FakeApi).sendMessage(42, "**[Deploy]**\nAll good.");
+
+      const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
+      // Topic prefix preserved in the body
+      expect(sentText).toContain("**[Deploy]**\nAll good.");
+    });
+
+    it("name_tag still appears when no topic is set (regression guard)", async () => {
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Scout", color: "🟦" });
+      // no setTopic call — topic is null
+
+      const raw = fakeApi();
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).sendMessage(42, "Hello world");
+
+      const [, sentText] = raw.sendMessage.mock.calls[0] as [number, string, unknown];
+      expect(sentText).toBe("`🟦 Scout`\nHello world");
     });
 
     it("_skipHeader suppresses nametag injection in editMessageText", async () => {
