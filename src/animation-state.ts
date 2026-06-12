@@ -25,6 +25,21 @@ import {
 } from "./outbound-proxy.js";
 import { recordOutgoing, getHighestMessageId, trackMessageId } from "./message-store.js";
 import { dlog } from "./debug-log.js";
+import { deliverServiceMessage } from "./session-queue.js";
+
+// ---------------------------------------------------------------------------
+// Watchdog configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * How often (ms) to fire a service-message warning for a persistent animation
+ * that is still running. Fires once at this interval, then resets and fires again.
+ * Configurable via PERSISTENT_ANIMATION_WARN_MS env var; defaults to 10 minutes.
+ */
+const PERSISTENT_ANIMATION_WARN_MS =
+  (parseInt(process.env["PERSISTENT_ANIMATION_WARN_MS"] ?? "", 10) || 0) > 0
+    ? parseInt(process.env["PERSISTENT_ANIMATION_WARN_MS"] ?? "", 10)
+    : 600_000;
 
 // ---------------------------------------------------------------------------
 // State
@@ -133,6 +148,12 @@ let _resumeTimer: ReturnType<typeof setTimeout> | null = null;  // 429 recovery
 /** Number of dispatched frames per backoff step — interval doubles at each multiple. */
 const DISPATCHES_PER_BACKOFF_STEP = 20;
 
+/**
+ * Per-session watchdog interval timers for persistent animations.
+ * Fires every PERSISTENT_ANIMATION_WARN_MS to remind the agent the animation is still running.
+ */
+const _watchdogTimers = new Map<number, ReturnType<typeof setInterval>>();
+
 interface SavedResume {
   rawFrames: string[];
   intervalMs: number;
@@ -173,6 +194,50 @@ function startTopTimeoutTimer(): void {
   const remaining = Math.max(0, (entry.startedAt + entry.timeoutMs) - Date.now());
   _timeoutTimer = setTimeout(() => { _timeoutTimer = null; void cascade(); }, remaining);
   unrefTimer(_timeoutTimer);
+}
+
+/** Clear the watchdog timer for a session (no-op if none running). */
+function clearWatchdogTimer(sid: number): void {
+  const existing = _watchdogTimers.get(sid);
+  if (existing !== undefined) {
+    clearInterval(existing);
+    _watchdogTimers.delete(sid);
+  }
+}
+
+/**
+ * Start (or restart) the persistent-animation watchdog timer for a session.
+ * Fires every PERSISTENT_ANIMATION_WARN_MS and injects a service message into
+ * the session's dequeue queue. Resets automatically after each fire (setInterval).
+ * Must be called after the entry is confirmed in the stack.
+ */
+function startWatchdogTimer(entry: StackEntry): void {
+  clearWatchdogTimer(entry.sid);  // always clear any prior timer for this SID
+
+  const timer = setInterval(() => {
+    // Safety: if entry is no longer in the stack, the timer should have been
+    // cleared already — but guard here to prevent stale deliveries.
+    if (!_stack.includes(entry)) {
+      clearWatchdogTimer(entry.sid);
+      return;
+    }
+    const elapsedSeconds = Math.floor((Date.now() - entry.startedAt) / 1000);
+    const msgId = getAnimationMessageId(entry.sid);
+    deliverServiceMessage(
+      entry.sid,
+      "[event] Persistent animation still active (10 min). Call animation/cancel if no longer needed.",
+      "persistent_animation_running",
+      {
+        message_id: msgId,
+        preset: null,
+        elapsed_seconds: elapsedSeconds,
+      },
+    );
+    dlog("animation", `watchdog fired sid=${entry.sid} elapsed=${elapsedSeconds}s`);
+  }, PERSISTENT_ANIMATION_WARN_MS);
+
+  unrefTimer(timer);
+  _watchdogTimers.set(entry.sid, timer);
 }
 
 /** Sort comparator: priority desc, then startedAt desc, then seq desc (all → more = better). */
@@ -234,6 +299,7 @@ async function cycleFrame(): Promise<void> {
     _displayedChatId = null;
     stopTimers();
     clearSendInterceptor(entry.sid);
+    clearWatchdogTimer(entry.sid);
     await cascade();
     return;
   }
@@ -336,6 +402,7 @@ async function cascade(): Promise<void> {
   } catch {
     _stack.shift();
     clearSendInterceptor(next.sid);
+    clearWatchdogTimer(next.sid);
     await cascade();
   }
 }
@@ -412,6 +479,9 @@ export async function startAnimation(
 
   // Clean up any stale saved resume for this SID (gap recovery takes priority)
   if (_savedForResumes.has(sid)) _savedForResumes.delete(sid);
+
+  // Clear any existing watchdog for this SID before replacing the entry
+  clearWatchdogTimer(sid);
 
   pushEntry(entry);
   const isNowTop = _stack[0].sid === sid;
@@ -558,6 +628,7 @@ export async function startAnimation(
 
       if (captured.persistent) {
         _savedForResumes.set(sid, { rawFrames: captured.rawFrames, intervalMs: captured.intervalMs, timeoutSeconds: captured.timeoutMs / 1000, priority: captured.priority, notify: captured.notify });
+        clearWatchdogTimer(sid);  // pause watchdog during file-send gap; afterFileSend restarts it
       } else {
         clearSendInterceptor(sid);
       }
@@ -577,6 +648,11 @@ export async function startAnimation(
       resetAnimationTimeout(sid);
     },
   });
+
+  // Start persistent-animation watchdog (fires every PERSISTENT_ANIMATION_WARN_MS)
+  if (persistent) {
+    startWatchdogTimer(entry);
+  }
 
   return isNowTop ? (_displayedMsgId ?? 0) : 0;
 }
@@ -604,6 +680,7 @@ export async function cancelAnimation(
   if (stackIdx !== -1) _stack.splice(stackIdx, 1);
   _savedForResumes.delete(sid);
   clearSendInterceptor(sid);
+  clearWatchdogTimer(sid);  // stop any persistent-animation watchdog
 
   dlog("animation", `cancelled sid=${sid} wasTop=${wasTop} replacement=${!!text}`);
 
@@ -705,6 +782,8 @@ export function isAnimationPersistent(sid: number): boolean {
 /** For testing only: resets all animation state without API calls. */
 export function resetAnimationForTest(): void {
   stopTimers();
+  for (const timer of _watchdogTimers.values()) clearInterval(timer);
+  _watchdogTimers.clear();
   _stack.length = 0;
   _entrySeq = 0;
   _displayedMsgId = null;

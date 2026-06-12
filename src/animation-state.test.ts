@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   registerSendInterceptor: vi.fn(),
   clearSendInterceptor: vi.fn(),
   getHighestMessageId: vi.fn((): number => 0),
+  deliverServiceMessage: vi.fn((): boolean => true),
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
@@ -39,6 +40,10 @@ vi.mock("./message-store.js", () => ({
   recordOutgoing: vi.fn(),
   getHighestMessageId: mocks.getHighestMessageId,
   trackMessageId: vi.fn(),
+}));
+
+vi.mock("./session-queue.js", () => ({
+  deliverServiceMessage: mocks.deliverServiceMessage,
 }));
 
 import { GrammyError } from "grammy";
@@ -1217,6 +1222,113 @@ describe("animation-state", () => {
       expect(cancelResult).toEqual({});
       expect(isAnimationActive(2)).toBe(false);
       expect(mocks.deleteMessage).toHaveBeenCalledWith(123, 99);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Persistent animation watchdog
+  // -----------------------------------------------------------------------
+
+  describe("persistent animation watchdog", () => {
+    /** PERSISTENT_ANIMATION_WARN_MS default = 600_000 ms (10 min). */
+    const WARN_MS = 600_000;
+
+    it("delivers a service message after 10 min of persistent animation", async () => {
+      await startAnimation(1, ["⏳"], 1000, 60, true);
+
+      mocks.deliverServiceMessage.mockClear();
+      await vi.advanceTimersByTimeAsync(WARN_MS);
+
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
+      const [sid, text, eventType, details] = mocks.deliverServiceMessage.mock.calls[0] as unknown as [
+        number, string, string, Record<string, unknown>,
+      ];
+      expect(sid).toBe(1);
+      expect(text).toContain("Persistent animation still active");
+      expect(eventType).toBe("persistent_animation_running");
+      expect(details.message_id).toBe(42);
+      expect(details.preset).toBeNull();
+      expect(typeof details.elapsed_seconds).toBe("number");
+      expect(details.elapsed_seconds as number).toBeGreaterThanOrEqual(600);
+    });
+
+    it("resets and fires again at T+20min (second warning)", async () => {
+      await startAnimation(1, ["⏳"], 1000, 60, true);
+
+      // First warning at T+10min
+      await vi.advanceTimersByTimeAsync(WARN_MS);
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledTimes(1);
+
+      mocks.deliverServiceMessage.mockClear();
+
+      // Second warning at T+20min
+      await vi.advanceTimersByTimeAsync(WARN_MS);
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
+
+      const [, , eventType] = mocks.deliverServiceMessage.mock.calls[0] as unknown as [number, string, string, unknown];
+      expect(eventType).toBe("persistent_animation_running");
+    });
+
+    it("no warning fires when animation is cancelled before 10 min", async () => {
+      await startAnimation(1, ["⏳"], 1000, 60, true);
+      await cancelAnimation(1);
+
+      mocks.deliverServiceMessage.mockClear();
+      // Advance well past the warning threshold
+      await vi.advanceTimersByTimeAsync(WARN_MS + 1000);
+
+      expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+    });
+
+    it("timed (non-persistent) animation never fires a watchdog warning", async () => {
+      await startAnimation(1, ["⏳"], 1000, 30, false);  // 30s timeout, not persistent
+
+      mocks.deliverServiceMessage.mockClear();
+      // Advance past both the animation timeout and the watchdog threshold
+      await vi.advanceTimersByTimeAsync(WARN_MS + 10_000);
+
+      expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+    });
+
+    it("restarting persistent animation resets the watchdog clock", async () => {
+      mocks.sendMessage
+        .mockResolvedValueOnce({ message_id: 42 })
+        .mockResolvedValueOnce({ message_id: 55 });
+
+      await startAnimation(1, ["⏳"], 1000, 60, true);
+
+      // Advance 9 min (just before first warning)
+      await vi.advanceTimersByTimeAsync(9 * 60 * 1000);
+      expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+
+      // Start a new persistent animation for the same SID (replaces entry + resets clock)
+      await startAnimation(1, ["⌛"], 1000, 60, true);
+
+      mocks.deliverServiceMessage.mockClear();
+
+      // Advance another 9 min from now (< 10 min from restart) → no warning yet
+      await vi.advanceTimersByTimeAsync(9 * 60 * 1000);
+      expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+
+      // Advance another 1 min → now 10 min from restart → warning fires
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
+    });
+
+    it("elapsed_seconds in second warning is ~1200 (20 min)", async () => {
+      await startAnimation(1, ["⏳"], 1000, 60, true);
+
+      // Skip first warning
+      await vi.advanceTimersByTimeAsync(WARN_MS);
+      mocks.deliverServiceMessage.mockClear();
+
+      // Second warning
+      await vi.advanceTimersByTimeAsync(WARN_MS);
+
+      const [, , , details] = mocks.deliverServiceMessage.mock.calls[0] as unknown as [
+        number, string, string, Record<string, unknown>,
+      ];
+      expect(details.elapsed_seconds as number).toBeGreaterThanOrEqual(1200);
     });
   });
 });
