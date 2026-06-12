@@ -51,37 +51,37 @@ export function handleKickDebounce({ token, ms }: { token: number; ms?: number }
   const sid = _sid;
 
   if (ms === undefined) {
-    // GET: return current debounce value with deprecation notice
+    // GET: return current kick gate value with deprecation notice
     return toResult({
       ok: true,
       deprecated: true,
-      replacement: "profile/notify-debounce",
-      current_as_debounce_ms: getNotifyDebounceMs(sid),
+      replacement: "profile/kick-gate",
+      current_as_kick_gate_ms: getNotifyDebounceMs(sid),
     });
   }
 
-  // SET: validate against old range, then translate to debounce
+  // SET: validate against old range, then translate to kick gate window
   if (ms < NOTIFY_DEBOUNCE_MIN_MS || ms > _LEGACY_DEBOUNCE_MAX_MS) {
     return toError(
       `kick_debounce ms must be between ${NOTIFY_DEBOUNCE_MIN_MS} and ${_LEGACY_DEBOUNCE_MAX_MS}. Got ${ms}.`,
     );
   }
 
-  setNotifyDebounceMs(sid, ms); // literal translation: same ms value becomes the debounce window
+  setNotifyDebounceMs(sid, ms); // literal translation: same ms value becomes the kick gate window
 
   // Surface deprecation via service message
   deliverServiceMessage(
     sid,
     `profile/kick-debounce is deprecated. ` +
-      `Your value (${ms} ms) has been applied as the new notify-debounce window. ` +
-      `Switch to action(type: 'profile/notify-debounce', ms: ${ms}) to silence this warning.`,
+      `Your value (${ms} ms) has been applied as the new kick gate window. ` +
+      `Switch to action(type: 'profile/kick-gate', ms: ${ms}) to silence this warning.`,
     "kick_debounce_deprecated",
   );
 
   return toResult({
     ok: true,
     deprecated: true,
-    replacement: "profile/notify-debounce",
+    replacement: "profile/kick-gate",
     translated_value: ms,
   });
 }

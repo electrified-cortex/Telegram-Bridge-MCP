@@ -46,6 +46,7 @@ import { handleScheduleReminder } from "./reminder/schedule.js";
 import { handleReminderUnschedule } from "./reminder/unschedule.js";
 import { handleSetDequeueDefault } from "./profile/dequeue-default.js";
 import { handleNotifyDebounce, handleKickDebounce } from "./profile/notify-debounce.js";
+import { handleKickGate } from "./profile/activity-kick-gate.js";
 import { handleSetDefaultAnimation } from "./animation/default.js";
 import { handleToggleLogging } from "./logging/toggle.js";
 // Phase 2 imports — message/history, message/get
@@ -181,8 +182,9 @@ export function setupActionRegistry(): void {
   registerAction("reminder/schedule", toActionHandler(handleScheduleReminder));
   registerAction("reminder/unschedule", toActionHandler(handleReminderUnschedule));
   registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
+  registerAction("profile/kick-gate", toActionHandler(handleKickGate));
   registerAction("profile/notify-debounce", toActionHandler(handleNotifyDebounce));
-  registerAction("profile/kick-lockout", toActionHandler(handleNotifyDebounce)); // backward-compat alias
+  registerAction("profile/kick-lockout", toActionHandler(handleNotifyDebounce)); // backward-compat alias for profile/notify-debounce
   registerAction("profile/kick-debounce", toActionHandler(handleKickDebounce));
   registerAction("animation/default", toActionHandler(handleSetDefaultAnimation));
   registerAction("logging/toggle", toActionHandler(handleToggleLogging));
@@ -535,7 +537,7 @@ export function register(server: McpServer): void {
           .max(3600)
           .optional()
           .describe("profile/dequeue-default: Default dequeue timeout in seconds (0–3600)."),
-        // profile/notify-debounce and profile/kick-debounce (deprecated) params
+        // profile/kick-gate, profile/notify-debounce, and profile/kick-debounce (deprecated) params
         ms: z
           .number()
           .int()
@@ -543,8 +545,9 @@ export function register(server: McpServer): void {
           .max(NOTIFY_DEBOUNCE_MAX_MS)
           .optional()
           .describe(
+            `profile/kick-gate: Post-kick lockout window in milliseconds (${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}). Omit to get current value. ` +
             `profile/notify-debounce: Post-notify debounce window in milliseconds (${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}). Omit to get current value. ` +
-            `profile/kick-debounce (deprecated): Accepted range 1000–600000; use profile/notify-debounce instead.`,
+            `profile/kick-debounce (deprecated): Accepted range 1000–600000; use profile/kick-gate instead.`,
           ),
         // animation/default params
         frames: z
