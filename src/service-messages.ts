@@ -22,6 +22,7 @@
 
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
+import { ACTIVITY_FILE_MONITOR_RECIPE } from "./tools/activity/canonical-recipe.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _monitorPs1 = resolve(__dirname, "..", "tools", "monitor.ps1");
@@ -64,10 +65,13 @@ export const SERVICE_MESSAGES = deepFreeze({
       "     curl -N makes EVERY heartbeat a wake event = token-burn spam. Use the filtered script.\n" +
       "  3. Arm the Monitor tool with: bash <path-to-script> '<sse_url>' and persistent: true.\n" +
       "     You are participating once the monitor is live.\n\n" +
-      "No HTTP / Monitor available:\n" +
-      "  action(type: 'activity/file/create') → arm file Monitor on the returned path. help('activity/file').\n\n" +
-      "No Monitor tool:\n" +
-      "  Call dequeue(token) on every turn.\n\n" +
+      "Monitor-capable runtime (Claude Code) — stdio / no HTTP:\n" +
+      "  1. Call action(type: 'activity/file/create') → returns { file_path }.\n" +
+      "  2. Replace <path> with file_path, then arm Monitor (persistent: true):\n" +
+      "     " + ACTIVITY_FILE_MONITOR_RECIPE.replace(/\n/g, "\n     ") + "\n" +
+      "  3. On each kick → call dequeue(max_wait: 0); loop until pending = 0.\n\n" +
+      "No Monitor tool (VS Code, other runtimes):\n" +
+      "  Call dequeue(max_wait: 30) on every turn.\n\n" +
       "Details: help('start'), help('dequeue'), help('activity/listen').",
   },
 
