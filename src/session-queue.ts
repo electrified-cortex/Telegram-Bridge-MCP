@@ -274,9 +274,11 @@ export function routeToSession(event: TimelineEvent): void {
 
   // Fallback: broadcast to all sessions
   dlog("route", `broadcast event=${event.id} → ${_queues.size} sessions`);
+  // Pass originatorSid so each session's SSE suppresses self-notifications (AC-1).
+  const broadcastOriginatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
   for (const [sid, q] of _queues.entries()) {
     q.enqueue(event);
-    notifySession(sid, "operator", isDequeueActive(sid));
+    notifySession(sid, "operator", isDequeueActive(sid), broadcastOriginatorSid);
     notifyChannelSubscriber(sid, event);
     // Do NOT call notifyLastReceived — broadcast/ambiguous routing does not
     // count as "received by this session" for last_received reminder tracking.
@@ -309,7 +311,9 @@ function enqueueToSession(
   const q = _queues.get(sid);
   if (!q) return;
   q.enqueue(event);
-  notifySession(sid, "operator", isDequeueActive(sid));
+  // Pass originatorSid so notifySession suppresses self-notifications (AC-1).
+  const originatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
+  notifySession(sid, "operator", isDequeueActive(sid), originatorSid);
   notifyChannelSubscriber(sid, event);
   // §5-b: Fire event-triggered reminders eagerly when events arrive for parked agents.
   // deliverReminderEvent calls q.enqueue directly (not via enqueueToSession) — no recursion risk.
