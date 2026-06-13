@@ -1,5 +1,6 @@
 import { Api, GrammyError, HttpError, InputFile } from "grammy";
 import type { ReactionTypeEmoji, Update } from "grammy/types";
+import type { InputRichMessage, RichMessage } from "./types/rich-message.js";
 import { readFileSync, existsSync, realpathSync } from "fs";
 import path, { resolve } from "path";
 import { tmpdir } from "os";
@@ -105,6 +106,7 @@ export type TelegramErrorCode =
   | "NOT_PENDING"
   | "INVALID_COLOR"
   | "UNKNOWN_PRESET"
+  | "RICH_MESSAGE_UNSUPPORTED"
   | "UNKNOWN";
 
 export interface TelegramError {
@@ -628,6 +630,111 @@ export async function sendVoiceDirect(
     : options.caption;
   await notifyAfterFileSend(json.result.message_id, "voice", undefined, recordCaption);
   return json.result;
+}
+
+// ---------------------------------------------------------------------------
+// Rich message raw-fetch helpers (Bot API 10.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sends a rich message directly via the Telegram Bot API using fetch + JSON.
+ * Bypasses grammY because Bot API 10.1 rich-message support is not yet in grammY.
+ *
+ * On non-ok API response: throws an Error augmented with TelegramError fields.
+ * The `code` field is set to `RICH_MESSAGE_UNSUPPORTED` when the API returns an
+ * error indicating the feature is unavailable (HTTP 400 with a "rich"-related
+ * description), or `UNKNOWN` for other failures.
+ */
+export async function sendRichMessageDirect(
+  chatId: number | string,
+  richMessage: InputRichMessage,
+  options: {
+    disable_notification?: boolean;
+    reply_to_message_id?: number;
+    message_thread_id?: number;
+    business_connection_id?: string;
+  } = {}
+): Promise<{ message_id: number }> {
+  const token = process.env.BOT_TOKEN;
+  if (!token) throw new Error("BOT_TOKEN not set");
+
+  const body: Record<string, unknown> = {
+    chat_id: chatId,
+    rich_message: richMessage,
+  };
+  if (options.disable_notification != null)
+    body.disable_notification = options.disable_notification;
+  if (options.reply_to_message_id != null)
+    body.reply_parameters = { message_id: options.reply_to_message_id };
+  if (options.message_thread_id != null)
+    body.message_thread_id = options.message_thread_id;
+  if (options.business_connection_id != null)
+    body.business_connection_id = options.business_connection_id;
+
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendRichMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const json = (await res.json()) as {
+    ok: boolean;
+    result?: { message_id: number };
+    description?: string;
+    error_code?: number;
+  };
+
+  if (!json.ok) {
+    const desc = json.description ?? `Telegram API error ${json.error_code}`;
+    const descLower = desc.toLowerCase();
+    const isUnsupported =
+      json.error_code === 400 &&
+      (descLower.includes("rich") || descLower.includes("not supported"));
+    const code: TelegramErrorCode = isUnsupported ? "RICH_MESSAGE_UNSUPPORTED" : "UNKNOWN";
+    const telegramErr: TelegramError = { code, message: desc, raw: desc };
+    throw Object.assign(new Error(desc), telegramErr);
+  }
+
+  return { message_id: json.result!.message_id };
+}
+
+/**
+ * Updates an in-progress rich message draft.
+ *
+ * @remarks
+ * TODO(10-3012): updateRichMessageDraftDirect — draft update API not confirmed in schema.
+ * Replace when Bot API draft-update endpoint is confirmed in docs/rich-message-schema.md.
+ */
+export async function updateRichMessageDraftDirect(
+  _chatId: number | string,
+  _draftId: number,
+  _richMessage: InputRichMessage,
+  _options: {
+    disable_notification?: boolean;
+  } = {}
+): Promise<{ message_id: number }> {
+  // TODO(10-3012): updateRichMessageDraftDirect — draft update API not confirmed in schema.
+  // Replace when Bot API draft-update endpoint is confirmed in docs/rich-message-schema.md.
+  throw new Error("not yet implemented — updateRichMessageDraftDirect");
+}
+
+/**
+ * Finalizes a rich message draft, converting it into a permanent message.
+ *
+ * @remarks
+ * TODO(10-3012): finalizeRichMessageDraftDirect — draft finalize API not confirmed in schema.
+ * Replace when Bot API draft-finalize endpoint is confirmed in docs/rich-message-schema.md.
+ */
+export async function finalizeRichMessageDraftDirect(
+  _chatId: number | string,
+  _draftId: number,
+  _options: {
+    disable_notification?: boolean;
+  } = {}
+): Promise<{ message_id: number }> {
+  // TODO(10-3012): finalizeRichMessageDraftDirect — draft finalize API not confirmed in schema.
+  // Replace when Bot API draft-finalize endpoint is confirmed in docs/rich-message-schema.md.
+  throw new Error("not yet implemented — finalizeRichMessageDraftDirect");
 }
 
 /** Canonical type for a Telegram reaction emoji string. */
