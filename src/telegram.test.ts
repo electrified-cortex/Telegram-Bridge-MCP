@@ -22,6 +22,7 @@ import {
   fireHijackNotification,
   resetApi,
   sendVoiceDirect,
+  sendRichMessageDirect,
   ackVoiceMessage,
   recordRateLimitHit,
   getRateLimitRemaining,
@@ -810,5 +811,70 @@ describe("ackVoiceMessage", () => {
     );
     expect(getBotReaction(104)).toBeNull();
     stderrSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sendRichMessageDirect
+// ---------------------------------------------------------------------------
+
+describe("sendRichMessageDirect", () => {
+  beforeEach(() => {
+    process.env.BOT_TOKEN = "test_rich_token";
+  });
+
+  afterEach(() => {
+    delete process.env.BOT_TOKEN;
+    vi.restoreAllMocks();
+  });
+
+  it("success path: returns { message_id } when API responds ok", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      json: async () => ({ ok: true, result: { message_id: 42 } }),
+    }));
+
+    const result = await sendRichMessageDirect(123, { markdown: "**hello**" });
+    expect(result).toEqual({ message_id: 42 });
+  });
+
+  it("non-2xx HTTP: throws when API returns ok: false (e.g. 500)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      json: async () => ({
+        ok: false,
+        error_code: 500,
+        description: "Internal Server Error",
+      }),
+    }));
+
+    await expect(
+      sendRichMessageDirect(123, { markdown: "**hello**" })
+    ).rejects.toThrow();
+  });
+
+  it("RICH_MESSAGE_UNSUPPORTED: sets code when API returns 400 with rich-message description", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      json: async () => ({
+        ok: false,
+        error_code: 400,
+        description: "rich message not supported",
+      }),
+    }));
+
+    let thrown: unknown;
+    try {
+      await sendRichMessageDirect(123, { markdown: "**hello**" });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeDefined();
+    expect((thrown as { code?: string }).code).toBe("RICH_MESSAGE_UNSUPPORTED");
+  });
+
+  it("throws BOT_TOKEN error when BOT_TOKEN is not set", async () => {
+    delete process.env.BOT_TOKEN;
+    await expect(
+      sendRichMessageDirect(123, { markdown: "**hello**" })
+    ).rejects.toThrow(/BOT_TOKEN/);
   });
 });
