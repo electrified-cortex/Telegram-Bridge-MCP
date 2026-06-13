@@ -1,0 +1,374 @@
+/**
+ * Tests for markdownToRichBlocks — Phase 1 Markdown → RichBlocks compiler
+ * Task: 10-3013
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { markdownToRichBlocks } from "./rich-message-compiler.js";
+import type {
+  RichBlock,
+  RichText,
+  RichBlockParagraph,
+  RichBlockSectionHeading,
+  RichBlockPreformatted,
+  RichBlockList,
+  RichBlockBlockQuotation,
+  RichTextBold,
+  RichTextCode,
+  RichTextAnchorLink,
+} from "./types/rich-message.js";
+
+describe("markdownToRichBlocks", () => {
+  // ── 1. Single paragraph ──────────────────────────────────────────────────
+  it("1. single paragraph → RichBlockParagraph", () => {
+    const result = markdownToRichBlocks("Hello, world!");
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockParagraph;
+    expect(block.type).toBe("paragraph");
+    expect(block.text).toBe("Hello, world!");
+  });
+
+  // ── 2. Headings ──────────────────────────────────────────────────────────
+  it("2a. # Heading → RichBlockSectionHeading size:1", () => {
+    const result = markdownToRichBlocks("# Title");
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockSectionHeading;
+    expect(block.type).toBe("heading");
+    expect(block.size).toBe(1);
+    expect(block.text).toBe("Title");
+  });
+
+  it("2b. ## Heading → RichBlockSectionHeading size:2", () => {
+    const result = markdownToRichBlocks("## Sub");
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockSectionHeading;
+    expect(block.type).toBe("heading");
+    expect(block.size).toBe(2);
+  });
+
+  it("2c. ###### Heading → RichBlockSectionHeading size:6", () => {
+    const result = markdownToRichBlocks("###### Small");
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockSectionHeading;
+    expect(block.type).toBe("heading");
+    expect(block.size).toBe(6);
+  });
+
+  it("2d. heading correct level for 3 hashes", () => {
+    const result = markdownToRichBlocks("### Three");
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockSectionHeading;
+    expect(block.size).toBe(3);
+    expect(block.text).toBe("Three");
+  });
+
+  // ── 3. Fenced code block ─────────────────────────────────────────────────
+  it("3. fenced code block → RichBlockPreformatted with language", () => {
+    const md = "```typescript\nconst x = 1;\n```";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockPreformatted;
+    expect(block.type).toBe("pre");
+    expect(block.language).toBe("typescript");
+    expect(block.text).toBe("const x = 1;");
+  });
+
+  it("3b. fenced code block without language", () => {
+    const md = "```\nplain code\n```";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockPreformatted;
+    expect(block.type).toBe("pre");
+    expect(block.language).toBeUndefined();
+    expect(block.text).toBe("plain code");
+  });
+
+  // ── 4. Unordered list ────────────────────────────────────────────────────
+  it("4. unordered list → RichBlockList with RichBlockListItem children", () => {
+    const md = "- Alpha\n- Beta\n- Gamma";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockList;
+    expect(block.type).toBe("list");
+    expect(block.items).toHaveLength(3);
+    // Items should NOT have value/type (unordered)
+    expect(block.items[0].value).toBeUndefined();
+    expect(block.items[0].type).toBeUndefined();
+    // Label is the bullet
+    expect(block.items[0].label).toBe("•");
+    // Each item has blocks
+    expect(block.items[0].blocks).toHaveLength(1);
+  });
+
+  it("4b. asterisk-style unordered list", () => {
+    const md = "* One\n* Two";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockList;
+    expect(block.type).toBe("list");
+    expect(block.items).toHaveLength(2);
+  });
+
+  // ── 5. Ordered list ──────────────────────────────────────────────────────
+  it("5. ordered list → RichBlockList with ordered RichBlockListItem children", () => {
+    const md = "1. First\n2. Second\n3. Third";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockList;
+    expect(block.type).toBe("list");
+    expect(block.items).toHaveLength(3);
+    // First item has value and type "1"
+    expect(block.items[0].value).toBe(1);
+    expect(block.items[0].type).toBe("1");
+    expect(block.items[1].value).toBe(2);
+    // Label encodes the number
+    expect(block.items[0].label).toBe("1.");
+    expect(block.items[2].label).toBe("3.");
+  });
+
+  // ── 6. Blockquote ────────────────────────────────────────────────────────
+  it("6. blockquote → RichBlockBlockQuotation", () => {
+    const md = "> This is a quote";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockBlockQuotation;
+    expect(block.type).toBe("blockquote");
+    expect(Array.isArray(block.blocks)).toBe(true);
+    expect(block.blocks.length).toBeGreaterThan(0);
+  });
+
+  it("6b. multi-line blockquote", () => {
+    const md = "> Line one\n> Line two";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const block = result[0] as RichBlockBlockQuotation;
+    expect(block.type).toBe("blockquote");
+  });
+
+  // ── 7. GFM table passthrough ─────────────────────────────────────────────
+  describe("7. GFM table passthrough", () => {
+    let debugSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      debugSpy.mockRestore();
+    });
+
+    it("GFM table with separator row → RichBlockParagraph + debug log", () => {
+      const md = "| Col A | Col B |\n| --- | --- |\n| val1 | val2 |";
+      const result = markdownToRichBlocks(md);
+      // Emits as paragraph (passthrough)
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe("paragraph");
+      // Debug log must fire
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[10-3014]"),
+      );
+    });
+
+    it("pipes without separator row → treated as paragraph (not table)", () => {
+      const md = "| Col A | Col B |\n| val1 | val2 |";
+      const result = markdownToRichBlocks(md);
+      // No separator → not a GFM table → plain paragraph
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe("paragraph");
+      // Debug log must NOT fire
+      expect(debugSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── 8. Inline bold ───────────────────────────────────────────────────────
+  it("8a. **bold** inside paragraph → RichTextBold node", () => {
+    const result = markdownToRichBlocks("Hello **world**!");
+    expect(result).toHaveLength(1);
+    const para = result[0] as RichBlockParagraph;
+    const text = para.text as RichText[];
+    expect(Array.isArray(text)).toBe(true);
+    const boldNode = text.find(
+      (t): t is RichTextBold =>
+        typeof t === "object" && !Array.isArray(t) && (t as { type: string }).type === "bold",
+    );
+    expect(boldNode).toBeDefined();
+    expect(boldNode!.type).toBe("bold");
+    expect(boldNode!.text).toBe("world");
+  });
+
+  it("8b. *bold* (single asterisk) inside paragraph → RichTextBold node", () => {
+    const result = markdownToRichBlocks("Say *hello*!");
+    expect(result).toHaveLength(1);
+    const para = result[0] as RichBlockParagraph;
+    const text = para.text as RichText[];
+    expect(Array.isArray(text)).toBe(true);
+    const boldNode = text.find(
+      (t): t is RichTextBold =>
+        typeof t === "object" && !Array.isArray(t) && (t as { type: string }).type === "bold",
+    );
+    expect(boldNode).toBeDefined();
+    expect(boldNode!.type).toBe("bold");
+  });
+
+  // ── 9. Inline code ───────────────────────────────────────────────────────
+  it("9. `code` → RichTextCode node", () => {
+    const result = markdownToRichBlocks("Use `console.log()` here");
+    expect(result).toHaveLength(1);
+    const para = result[0] as RichBlockParagraph;
+    const text = para.text as RichText[];
+    const codeNode = text.find(
+      (t): t is RichTextCode =>
+        typeof t === "object" && !Array.isArray(t) && (t as { type: string }).type === "code",
+    );
+    expect(codeNode).toBeDefined();
+    expect(codeNode!.type).toBe("code");
+    expect(codeNode!.text).toBe("console.log()");
+  });
+
+  // ── 10. Inline link ──────────────────────────────────────────────────────
+  it("10. [label](url) → RichTextAnchorLink node", () => {
+    const result = markdownToRichBlocks("Visit [Google](https://google.com)");
+    expect(result).toHaveLength(1);
+    const para = result[0] as RichBlockParagraph;
+    const text = para.text as RichText[];
+    const linkNode = text.find(
+      (t): t is RichTextAnchorLink =>
+        typeof t === "object" && !Array.isArray(t) && (t as { type: string }).type === "anchor_link",
+    );
+    expect(linkNode).toBeDefined();
+    expect(linkNode!.type).toBe("anchor_link");
+    expect(linkNode!.anchor_name).toBe("https://google.com");
+    expect(linkNode!.text).toBe("Google");
+  });
+
+  // ── 11. Partial mode — unclosed fenced code block ────────────────────────
+  it("11. partial=true with unclosed fenced code → no throw, returns array", () => {
+    const md = "```javascript\nconst x = 1;\n// more code...";
+    let result: RichBlock[];
+    expect(() => {
+      result = markdownToRichBlocks(md, true);
+    }).not.toThrow();
+    expect(Array.isArray(result!)).toBe(true);
+    expect(result!.length).toBeGreaterThan(0);
+    const pre = result![0] as RichBlockPreformatted;
+    expect(pre.type).toBe("pre");
+    expect(pre.language).toBe("javascript");
+  });
+
+  it("11b. partial=false with unclosed fenced code → also emits preformatted (graceful)", () => {
+    const md = "```python\nprint('hello')";
+    const result = markdownToRichBlocks(md, false);
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBeGreaterThan(0);
+    const pre = result[0] as RichBlockPreformatted;
+    expect(pre.type).toBe("pre");
+  });
+
+  // ── 12. Empty string ─────────────────────────────────────────────────────
+  it("12. empty string → [] (no throw)", () => {
+    expect(() => {
+      const result = markdownToRichBlocks("");
+      expect(result).toEqual([]);
+    }).not.toThrow();
+  });
+
+  it("12b. whitespace-only string → [] (no throw)", () => {
+    expect(() => {
+      const result = markdownToRichBlocks("   \n\n\t  ");
+      expect(result).toEqual([]);
+    }).not.toThrow();
+  });
+
+  // ── 13. 10 000-char string ───────────────────────────────────────────────
+  it("13. 10 000-char string → no throw", () => {
+    const big = "a".repeat(5000) + "\n" + "b".repeat(5000);
+    expect(() => {
+      const result = markdownToRichBlocks(big);
+      expect(Array.isArray(result)).toBe(true);
+    }).not.toThrow();
+  });
+
+  it("13b. 10 000-char all-special-chars → no throw", () => {
+    const specials = "**~~__`[]()**~~__`".repeat(600);
+    expect(() => {
+      const result = markdownToRichBlocks(specials);
+      expect(Array.isArray(result)).toBe(true);
+    }).not.toThrow();
+  });
+
+  // ── 14. Integration gate — no references in src/tools/ ───────────────────
+  // (This is validated by the grep acceptance criterion, not a runtime test.
+  //  Skipping programmatic check — see assignment item 14.)
+
+  // ── Additional coverage ──────────────────────────────────────────────────
+  it("multiple block types in sequence", () => {
+    const md = [
+      "# Heading",
+      "",
+      "Paragraph text.",
+      "",
+      "- item a",
+      "- item b",
+      "",
+      "> blockquote",
+    ].join("\n");
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(4);
+    expect(result[0].type).toBe("heading");
+    expect(result[1].type).toBe("paragraph");
+    expect(result[2].type).toBe("list");
+    expect(result[3].type).toBe("blockquote");
+  });
+
+  it("_italic_ → RichTextItalic node", () => {
+    const result = markdownToRichBlocks("Say _emphasis_ here");
+    expect(result).toHaveLength(1);
+    const para = result[0] as RichBlockParagraph;
+    const text = para.text as RichText[];
+    expect(Array.isArray(text)).toBe(true);
+    const italicNode = text.find(
+      (t) => typeof t === "object" && !Array.isArray(t) && (t as { type: string }).type === "italic",
+    );
+    expect(italicNode).toBeDefined();
+  });
+
+  it("__underline__ → RichTextUnderline node", () => {
+    const result = markdownToRichBlocks("Say __underlined__ here");
+    expect(result).toHaveLength(1);
+    const para = result[0] as RichBlockParagraph;
+    const text = para.text as RichText[];
+    expect(Array.isArray(text)).toBe(true);
+    const node = text.find(
+      (t) => typeof t === "object" && !Array.isArray(t) && (t as { type: string }).type === "underline",
+    );
+    expect(node).toBeDefined();
+  });
+
+  it("~~strikethrough~~ → RichTextStrikethrough node", () => {
+    const result = markdownToRichBlocks("Say ~~struck~~ here");
+    expect(result).toHaveLength(1);
+    const para = result[0] as RichBlockParagraph;
+    const text = para.text as RichText[];
+    expect(Array.isArray(text)).toBe(true);
+    const node = text.find(
+      (t) => typeof t === "object" && !Array.isArray(t) && (t as { type: string }).type === "strikethrough",
+    );
+    expect(node).toBeDefined();
+  });
+
+  it("code block multi-line content", () => {
+    const md = "```js\nline1\nline2\nline3\n```";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const pre = result[0] as RichBlockPreformatted;
+    expect(pre.text).toBe("line1\nline2\nline3");
+  });
+
+  it("blockquote with inner content is parsed recursively", () => {
+    const md = "> # Inner heading";
+    const result = markdownToRichBlocks(md);
+    expect(result).toHaveLength(1);
+    const bq = result[0] as RichBlockBlockQuotation;
+    expect(bq.type).toBe("blockquote");
+    expect(bq.blocks[0]?.type).toBe("heading");
+  });
+});
