@@ -19,8 +19,7 @@ export interface Session {
   announcementMsgId?: number;
   reauthDialogMsgId?: number;
   dequeueDefault?: number; // per-session timeout default, undefined = use server default (300)
-  notifyDebounceMs?: number; // deprecated — translated to notifyLockoutMs on use via profile/kick-debounce
-  notifyLockoutMs?: number; // per-session post-notify lockout window (ms), undefined = use default (300_000)
+  notifyDebounceMs?: number; // per-session post-notify debounce window (ms), undefined = use default (300_000)
   dequeueIdleAt?: number; // timestamp when session entered dequeue blocking wait; undefined = not idle
   pendingEnvelopeHint?: string;
   silenceThresholdS?: number;
@@ -331,37 +330,20 @@ export function setDequeueDefault(sid: number, timeout: number): void {
 }
 
 /**
- * Get the per-session activity-file notify debounce window (ms).
- * Falls back to 60 000 ms if not set.
+ * Get the per-session post-notify debounce window (ms).
+ * Falls back to 300 000 ms (5 min) if not set.
  */
 export function getNotifyDebounceMs(sid: number): number {
-  return _sessions.get(sid)?.notifyDebounceMs ?? 60_000;
+  return _sessions.get(sid)?.notifyDebounceMs ?? 300_000;
 }
 
 /**
- * Set the per-session activity-file notify debounce window (ms).
+ * Set the per-session post-notify debounce window (ms).
  * No-op if the session does not exist.
  */
 export function setNotifyDebounceMs(sid: number, ms: number): void {
   const session = _sessions.get(sid);
   if (session) session.notifyDebounceMs = ms;
-}
-
-/**
- * Get the per-session post-notify lockout window (ms).
- * Falls back to 300 000 ms (5 min) if not set.
- */
-export function getNotifyLockoutMs(sid: number): number {
-  return _sessions.get(sid)?.notifyLockoutMs ?? 300_000;
-}
-
-/**
- * Set the per-session post-notify lockout window (ms).
- * No-op if the session does not exist.
- */
-export function setNotifyLockoutMs(sid: number, ms: number): void {
-  const session = _sessions.get(sid);
-  if (session) session.notifyLockoutMs = ms;
 }
 
 /** Set a pending envelope hint to be included on the next dequeue response for this session. */

@@ -656,4 +656,69 @@ describe("session-queue", () => {
       expect(sseMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // AC-1 (self-notify filter): self-originated events must not fire SSE
+  // -------------------------------------------------------------------------
+
+  describe("AC-1: self-notify suppression via enqueueToSession and broadcast", () => {
+    const SID = 7;
+
+    beforeEach(() => {
+      // Gate always allows — any SSE suppression is from the self-filter, not the gate.
+      notifyIfAllowedMock.mockReturnValue(true);
+      isDequeueActiveMock.mockReturnValue(false);
+    });
+
+    it("targeted route: self-originated event (event.sid === targetSid) → SSE suppressed", () => {
+      createSessionQueue(SID);
+      trackMessageOwner(70, SID);
+      // A reaction event where the bot (session SID) reacted to its own message.
+      // event.sid = SID marks this as originated by session SID.
+      const evt = makeEvent({
+        id: 701,
+        event: "reaction",
+        content: { type: "reaction", target: 70, added: ["👍"] },
+        sid: SID,
+      });
+      routeToSession(evt);
+      expect(sseMock).not.toHaveBeenCalled();
+    });
+
+    it("targeted route: externally originated event (no event.sid) → SSE fires", () => {
+      createSessionQueue(SID);
+      trackMessageOwner(70, SID);
+      // User-generated reaction — event.sid is undefined (external user, not the bot).
+      const evt = makeEvent({
+        id: 702,
+        event: "reaction",
+        content: { type: "reaction", target: 70, added: ["❤️"] },
+      });
+      routeToSession(evt);
+      expect(sseMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("broadcast: self-originated event suppressed for originating session, fires for others", () => {
+      const OTHER = SID + 1;
+      createSessionQueue(SID);
+      createSessionQueue(OTHER);
+      // event.sid = SID: originated by session SID, broadcast to all (no reply_to/target)
+      const evt = makeEvent({ id: 703, sid: SID });
+      routeToSession(evt);
+      // Session SID is the originator → SSE suppressed for it
+      // Session OTHER is a different session → SSE fires
+      // sseMock should be called exactly once (for OTHER), not twice
+      expect(sseMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("broadcast: inbound event (no sid) fires SSE for all sessions", () => {
+      const OTHER = SID + 1;
+      createSessionQueue(SID);
+      createSessionQueue(OTHER);
+      // No event.sid → external (user-sent) event; all sessions should be notified
+      const evt = makeEvent({ id: 704 });
+      routeToSession(evt);
+      expect(sseMock).toHaveBeenCalledTimes(2);
+    });
+  });
 });

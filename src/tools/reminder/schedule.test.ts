@@ -17,8 +17,9 @@ import {
   resolveIana,
   validateIana,
   toOffsetISO,
+  setReminderFireCallback,
 } from "../../reminder-state.js";
-import { createSessionQueue, removeSessionQueue, resetSessionQueuesForTest } from "../../session-queue.js";
+import { createSessionQueue, removeSessionQueue, resetSessionQueuesForTest, deliverReminderEvent } from "../../session-queue.js";
 import { applyProfile } from "../profile/apply.js";
 
 const mocks = vi.hoisted(() => ({
@@ -221,6 +222,8 @@ describe("scheduleReminder / reminder-state", () => {
   it("sweep delivers due reminder via deliverReminderEvent, which calls notifySseSubscriber", () => {
     // §5-b step 8 + 10-2305: schedule sweep calls deliverReminderEvent → notifySession →
     // notifyIfAllowed (mocked true) → notifySseSubscriber. Session queue must exist for delivery.
+    // Wire the reminder-fire callback (normally done at server startup in index.ts).
+    setReminderFireCallback(deliverReminderEvent);
     vi.useFakeTimers();
     createSessionQueue(7);
     try {

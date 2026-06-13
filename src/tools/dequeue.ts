@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseNotifyLockout } from "./activity/file-state.js";
+import { setDequeueActive, releaseNotifyDebounce } from "./activity/file-state.js";
 import { resetChannelCooldown } from "../channel.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -304,8 +304,6 @@ export async function runDrainLoop(
     if (voiceHint !== undefined) hints.push(voiceHint);
     // Pending-queue nudge: when more messages are waiting, suggest the
     // processing preset so the operator knows the agent sees the backlog.
-    // TODO: honor a profile flag (e.g. ProfileData.suppress_pending_hint)
-    // to let agents opt out once that flag is introduced in profile-store.ts.
     if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
     if (hints.length > 0) result.hint = hints.join(" ");
     return result;
@@ -326,13 +324,13 @@ export async function runDrainLoop(
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
-    releaseNotifyLockout(sid); // content-returning exit
+    releaseNotifyDebounce(sid); // content-returning exit
     resetChannelCooldown(sid);
     return result;
   }
 
   if (timeout === 0) {
-    // Timeout=0 empty-poll: not content-returning — do NOT release notify lockout.
+    // Timeout=0 empty-poll: not content-returning — do NOT release notify debounce.
     setDequeueActive(sid, false);
     return { pending: pendingCountAny() };
   }
@@ -344,8 +342,8 @@ export async function runDrainLoop(
   let _staleWarnSent = false;
   setDequeueIdle(sid, true);
   // Tracks whether this dequeue call exits via a content-returning path.
-  // Only content-returning exits release the notify lockout; timeout exits skip.
-  let _lockoutRelease = false;
+  // Only content-returning exits release the notify debounce; timeout exits skip.
+  let _debounceRelease = false;
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) break;
@@ -362,7 +360,7 @@ export async function runDrainLoop(
             _lastStaleWarningSentAt.set(sid, Date.now());
             resyncActiveSession();
             dlog("queue", `dequeue stale animation warning sid=${sid} message_id=${_animStatus.message_id}`);
-            _lockoutRelease = true;
+            _debounceRelease = true;
             return {
               updates: [{
                 event: "animation_stale_warning",
@@ -400,7 +398,7 @@ export async function runDrainLoop(
           const result = buildBatchResult(batch);
           resyncActiveSession();
           dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-          _lockoutRelease = true;
+          _debounceRelease = true;
           return result;
         }
       }
@@ -421,14 +419,14 @@ export async function runDrainLoop(
         const result = buildBatchResult(batch);
         resyncActiveSession();
         dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-        _lockoutRelease = true;
+        _debounceRelease = true;
         return result;
       }
     }
 
     resyncActiveSession();
     const pending = pendingCountAny();
-    _lockoutRelease = true;  // Release lockout on timeout exits too
+    _debounceRelease = true;  // Release debounce on timeout exits too
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {
     // Note: if two concurrent dequeue calls share the same sid (unusual but
@@ -437,9 +435,9 @@ export async function runDrainLoop(
     // that case. A refcount would be needed to handle it precisely.
     setDequeueIdle(sid, false);
     setDequeueActive(sid, false);
-    // Release notify lockout on all dequeue exits (content-returning and timeout).
-    if (_lockoutRelease) {
-      releaseNotifyLockout(sid);
+    // Release notify debounce on all dequeue exits (content-returning and timeout).
+    if (_debounceRelease) {
+      releaseNotifyDebounce(sid);
       resetChannelCooldown(sid);
     }
   }

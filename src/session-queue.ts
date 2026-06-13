@@ -18,7 +18,7 @@ import { getMessage, CURRENT } from "./message-store.js";
 import { getGovernorSid } from "./routing-mode.js";
 import { dlog } from "./debug-log.js";
 import type { ReminderEvent } from "./reminder-state.js";
-import { recordLastSentAt, recordLastReceivedAt, popFireableEventReminders, buildReminderEvent } from "./reminder-state.js";
+import { recordLastSentAt, recordLastReceivedAt, popFireableEventReminders, buildReminderEvent, setReminderFireCallback } from "./reminder-state.js";
 import { isDequeueActive } from "./tools/activity/file-state.js";
 import { notifyChannelSubscriber } from "./channel.js";
 import { notifySession } from "./tools/notify.js";
@@ -168,6 +168,32 @@ export function hasPendingUserContent(sid: number): boolean {
 }
 
 /**
+ * Returns true iff a call to /dequeue would drain at least one item from this
+ * session's queue (i.e. dequeueBatch() would return a non-empty batch).
+ *
+ * dequeueBatch returns [] in exactly one case: the queue has a heavyweight item
+ * (text/voice message) as its first heavyweight, and that item is NOT yet ready
+ * (voice pending transcription). In all other cases — pure-lightweight queues
+ * (direct_message, callback, send_callback, service_message, reminder, etc.) or
+ * queues whose first heavyweight IS ready — the batch is non-empty.
+ *
+ * Use this for the connect-notify EC-1 path only. Keep hasPendingUserContent for
+ * debounce/re-notify logic (those paths intentionally ignore lightweight-only queues).
+ */
+export function hasAnyPendingContent(sid: number): boolean {
+  const q = _queues.get(sid);
+  if (!q) return false;
+  // A pending count of zero means nothing to drain.
+  if (q.pendingCount() === 0) return false;
+  // dequeueBatch returns [] only when the FIRST heavyweight is not ready.
+  // peekFirst finds that item; if it is lightweight (or doesn't exist), the batch drains.
+  const firstHeavy = q.peekFirst(isHeavyweightEvent);
+  if (firstHeavy === undefined) return true; // all items are lightweight → drains everything
+  // Check readiness (isEventReady is defined at module scope above).
+  return isEventReady(firstHeavy); // ready heavyweight → batch drains it; not-ready → holds
+}
+
+/**
  * Returns the arrival timestamp (ms since epoch) of the newest pending text
  * or voice event in the session queue. Used by the silence detector to anchor
  * the elapsed clock to the most recent inbound content arrival.
@@ -248,9 +274,11 @@ export function routeToSession(event: TimelineEvent): void {
 
   // Fallback: broadcast to all sessions
   dlog("route", `broadcast event=${event.id} → ${_queues.size} sessions`);
+  // Pass originatorSid so each session's SSE suppresses self-notifications (AC-1).
+  const broadcastOriginatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
   for (const [sid, q] of _queues.entries()) {
     q.enqueue(event);
-    notifySession(sid, "operator", isDequeueActive(sid));
+    notifySession(sid, "operator", isDequeueActive(sid), broadcastOriginatorSid);
     notifyChannelSubscriber(sid, event);
     // Do NOT call notifyLastReceived — broadcast/ambiguous routing does not
     // count as "received by this session" for last_received reminder tracking.
@@ -283,7 +311,9 @@ function enqueueToSession(
   const q = _queues.get(sid);
   if (!q) return;
   q.enqueue(event);
-  notifySession(sid, "operator", isDequeueActive(sid));
+  // Pass originatorSid so notifySession suppresses self-notifications (AC-1).
+  const originatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
+  notifySession(sid, "operator", isDequeueActive(sid), originatorSid);
   notifyChannelSubscriber(sid, event);
   // §5-b: Fire event-triggered reminders eagerly when events arrive for parked agents.
   // deliverReminderEvent calls q.enqueue directly (not via enqueueToSession) — no recursion risk.
@@ -621,6 +651,15 @@ export function deliverReminderEvent(
   notifyChannelSubscriber(targetSid, event);
   dlog("service", `reminder delivered → sid=${targetSid}`, { reminderId: src.reminder_id });
   return true;
+}
+
+/**
+ * Wire the reminder-fire callback so reminder-state.ts can deliver events through
+ * session-queue.ts without a circular import. Call this once at server startup
+ * (from index.ts) after both modules are fully initialized.
+ */
+export function initReminderFireCallback(): void {
+  setReminderFireCallback(deliverReminderEvent);
 }
 
 /**

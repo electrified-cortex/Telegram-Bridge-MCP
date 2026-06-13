@@ -3,6 +3,7 @@ import { setSessionVoice, setSessionSpeed } from "../../voice-state.js";
 import { setSessionDefault, registerPreset } from "../../animation-state.js";
 import { addReminder, disableReminder, enableReminder, listReminders, reminderContentHash, scheduleReminder, resolveIana, validateIana } from "../../reminder-state.js";
 import { getSession } from "../../session-manager.js";
+import { runInSessionContext } from "../../session-context.js";
 
 export interface ApplyResult {
   applied: Record<string, unknown>;
@@ -14,6 +15,7 @@ export interface ApplyError {
 }
 
 export function applyProfile(sid: number, profile: ProfileData): ApplyResult | ApplyError {
+  return runInSessionContext(sid, () => {
   const applied: Record<string, unknown> = {};
 
   try {
@@ -134,7 +136,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           const resolvedTz = rawTz !== undefined ? resolveIana(rawTz) : resolveIana(process.env.TZ ?? "UTC");
           if (!validateIana(resolvedTz)) continue; // skip if TZ is invalid
           const reminderId = reminderContentHash(r.text, true, "schedule");
-          // G-C: BT-7274 dedup guard — check for existing reminder by ID before re-adding
+          // dedup guard — check for existing reminder by ID before re-adding
           const alreadyExists = existing.some(e => e.id === reminderId);
           if (alreadyExists) {
             updatedReminders.push(reminderId);
@@ -188,4 +190,5 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
   }
 
   return { applied };
+  }); // end runInSessionContext
 }

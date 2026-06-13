@@ -5,21 +5,33 @@ import { elegantShutdown } from "../../shutdown.js";
 import { pendingCount } from "../../message-store.js";
 import { listSessions } from "../../session-manager.js";
 import { getSessionQueue } from "../../session-queue.js";
+import { getGovernorSid } from "../../routing-mode.js";
 
 const DESCRIPTION =
   "Shuts down the MCP server process cleanly. Notifies all active sessions, " +
   "flushes pending queues, dumps the session log, then exits. " +
   "Call this after running `pnpm build` to pick up code changes. " +
-  "If there are pending messages across any active session queue, a success " +
-  "result containing a `warning` field is returned (not a tool error) — " +
+  "When no non-governor participant sessions are active (i.e. you are the only " +
+  "session), shutdown proceeds immediately regardless of pending messages. " +
+  "When other participant sessions are active and there are pending messages, a " +
+  "success result containing a `warning` field is returned (not a tool error) — " +
   "callers must handle both the warning form (`shutting_down: false, warning: " +
   "'PENDING_MESSAGES'`) and the shutdown form (`shutting_down: true`). " +
   "Drain pending messages first or pass `force: true` to shut down anyway.";
 
 export function handleShutdown({ force }: { force?: boolean }) {
-  // With no active sessions, pending items can never be processed — shut down immediately.
+  // When no non-governor participant sessions are active, pending items can never be
+  // processed — the governor is shutting down and no other sessions exist to drain them.
+  // Shut down immediately without the pending-message safety check.
+  //
+  // This covers both the zero-sessions case and the governor-only (single-session) case.
+  // In normal operation getGovernorSid() is non-zero whenever sessions are active.
+  // When governorSid === 0 (no governor tracked), filter(s.sid !== 0) preserves all
+  // sessions so the pending check still fires — safe conservative fallback.
   const activeSessions = listSessions();
-  if (activeSessions.length === 0) {
+  const governorSid = getGovernorSid();
+  const participantCount = activeSessions.filter(s => s.sid !== governorSid).length;
+  if (participantCount === 0) {
     const result = toResult({ shutting_down: true, pending_at_shutdown: pendingCount() });
     setImmediate(() => { void elegantShutdown("agent"); });
     return result;
@@ -28,7 +40,7 @@ export function handleShutdown({ force }: { force?: boolean }) {
   // Sum pending across the global queue (unrouted messages) and all active
   // session queues (routed but not yet consumed by agents).
   const globalPending = pendingCount();
-  const sessionPending = listSessions()
+  const sessionPending = activeSessions
     .reduce((sum, s) => sum + (getSessionQueue(s.sid)?.pendingCount() ?? 0), 0);
   const pending = globalPending + sessionPending;
 

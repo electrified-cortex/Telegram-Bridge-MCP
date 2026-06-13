@@ -21,7 +21,6 @@ import { primarySessionCount, getSession } from "./session-manager.js";
 import { maybeReplaceRecoveringAnimation } from "./compaction-recovery.js";
 import { escapeHtml } from "./markdown.js";
 import { resolveNameTag } from "./tools/name-tag.js";
-import { getTopic } from "./topic-state.js";
 
 // ---------------------------------------------------------------------------
 // Session header injection
@@ -36,8 +35,6 @@ import { getTopic } from "./topic-state.js";
  */
 export function buildHeader(parseMode?: string): { plain: string; formatted: string } {
   if (primarySessionCount() < 2) return { plain: "", formatted: "" };
-  // When the session has a topic set, topic-state prefix takes over — skip name_tag.
-  if (getTopic()) return { plain: "", formatted: "" };
   const sid = getCallerSid();
   const session = sid > 0 ? getSession(sid) : undefined;
   // Guard: no sid or no session means we can't produce a header

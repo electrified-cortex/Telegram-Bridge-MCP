@@ -15,9 +15,6 @@ import { createHash } from "crypto";
 import { Cron } from "croner";
 import { getCallerSid } from "./session-context.js";
 import { isDequeueActive } from "./tools/activity/file-state.js";
-// NOTE: circular import (session-queue.ts ↔ reminder-state.ts) — safe because
-// deliverReminderEvent is only called inside interval callbacks, never at module init.
-import { deliverReminderEvent } from "./session-queue.js";
 
 /**
  * Deterministic reminder ID derived from content.
@@ -80,9 +77,20 @@ export interface Reminder {
 const _reminders = new Map<number, Reminder[]>();
 let _nextEventId = -10_000;
 
+// ── Reminder fire callback (injected at startup, breaking circular import) ───
+let _reminderFireCallback: ((sid: number, event: ReminderEvent) => void) | null = null;
+
+/**
+ * Register the callback invoked when a reminder fires from a sweep.
+ * Call this once at server startup (e.g. from session-queue.ts) to wire up delivery.
+ */
+export function setReminderFireCallback(fn: (sid: number, event: ReminderEvent) => void): void {
+  _reminderFireCallback = fn;
+}
+
 // ── Schedule sweep (shared, module-level) ─────────────────────────────────
 // Single 5-second interval; starts on first schedule reminder, stops when last is removed.
-// §5-b (decision D): fires reminders directly via deliverReminderEvent when next_fire_ms
+// §5-b (decision D): fires reminders directly via reminder-fire callback when next_fire_ms
 // has elapsed. No longer uses kick-ahead (SCHEDULE_NOTIFY_AHEAD_MS removed). Dedup is
 // handled by popFireableScheduleReminders advancing next_fire_ms on fire.
 
@@ -102,7 +110,7 @@ function startScheduleSweep(): void {
     for (const sid of _scheduleSids) {
       const fired = popFireableScheduleReminders(sid);
       for (const r of fired) {
-        deliverReminderEvent(sid, buildReminderEvent(r));
+        _reminderFireCallback?.(sid, buildReminderEvent(r));
       }
     }
   }, SCHEDULE_SWEEP_INTERVAL_MS);
@@ -128,7 +136,7 @@ function startActiveSweep(): void {
       // Starvation (indefinite deferral during activity) is acceptable by design. §5-b
       if (isDequeueActive(sid)) continue;
       for (const r of popActiveReminders(sid)) {
-        deliverReminderEvent(sid, buildReminderEvent(r));
+        _reminderFireCallback?.(sid, buildReminderEvent(r));
       }
       if (getActiveReminders(sid).length === 0) _activeSids.delete(sid);
     }
@@ -243,7 +251,7 @@ export function addReminder(params: {
   if (existingIdx !== -1) {
     const existingReminder = list[existingIdx];
     list.splice(existingIdx, 1);
-    // G-A: clean up sweep state if a schedule reminder is replaced by a non-schedule one
+    // clean up sweep state if a schedule reminder is replaced by a non-schedule one
     if (existingReminder.trigger === "schedule" && params.trigger !== "schedule") {
       const hasMoreSchedule = list.some(r => r.trigger === "schedule");
       if (!hasMoreSchedule) {
@@ -307,7 +315,7 @@ export function cancelReminder(id: string): boolean {
   if (idx === -1) return false;
   const removed = list[idx];
   list.splice(idx, 1);
-  // G-A: clean up sweep state when a schedule reminder is cancelled
+  // clean up sweep state when a schedule reminder is cancelled
   if (removed.trigger === "schedule") {
     const hasMoreSchedule = list.some(r => r.trigger === "schedule");
     if (!hasMoreSchedule) {
@@ -330,6 +338,14 @@ export function disableReminder(id: string): Reminder | null {
   const r = list.find(r => r.id === id);
   if (!r) return null;
   r.disabled = true;
+  // P4: prune sweep tracking — if all schedule reminders are disabled, remove from sweep
+  if (r.trigger === "schedule") {
+    const hasActiveSchedule = list.some(lr => lr.trigger === "schedule" && !lr.disabled);
+    if (!hasActiveSchedule) {
+      _scheduleSids.delete(sid);
+      stopScheduleSweep();
+    }
+  }
   return r;
 }
 
@@ -402,7 +418,7 @@ export function getFireableStartupReminders(sid: number): Reminder[] {
  */
 export function getSoonestDeferredMs(sid: number): number | null {
   const list = _reminders.get(sid) ?? [];
-  // §G-3: exclude schedule reminders; they have no delay-based activation
+  // exclude schedule reminders; they have no delay-based activation
   const deferred = list.filter(r => r.trigger !== "schedule" && r.state === "deferred");
   if (deferred.length === 0) return null;
   const now = Date.now();
@@ -421,7 +437,7 @@ export function promoteDeferred(sid: number): void {
   if (!list) return;
   const now = Date.now();
   for (const r of list) {
-    // §G-3: schedule reminders never enter the deferred→active path
+    // schedule reminders never enter the deferred→active path
     if (r.trigger !== "schedule" && r.state === "deferred" && now >= r.created_at + r.delay_seconds * 1000) {
       r.state = "active";
       r.activated_at = now;
@@ -567,6 +583,9 @@ export function clearSessionReminders(sid: number): void {
 /** For testing only: restart the active-reminder sweep after resetReminderStateForTest + vi.useFakeTimers. */
 export function restartActiveSweepForTest(): void { startActiveSweep(); }
 
+/** For testing only: returns the set of session IDs currently tracked by the schedule sweep. */
+export function getScheduleSidsForTest(): ReadonlySet<number> { return _scheduleSids; }
+
 /** For testing only: reset all state. */
 export function resetReminderStateForTest(): void {
   _reminders.clear();
@@ -584,6 +603,7 @@ export function resetReminderStateForTest(): void {
     clearInterval(_activeSweepInterval);
     _activeSweepInterval = null;
   }
+  _reminderFireCallback = null;
 }
 
 // ── Schedule (cron-based) reminder helpers ─────────────────────────────────
@@ -665,7 +685,7 @@ export function popFireableScheduleReminders(sid: number): Reminder[] {
 /**
  * Milliseconds until the soonest schedule reminder for `sid` will fire.
  * Returns null if no schedule reminders exist for this session.
- * Used by dequeue to wake up exactly at next_fire_ms (§R-6).
+ * Used by dequeue to wake up exactly at next_fire_ms.
  */
 export function getSoonestScheduleFireMs(sid: number): number | null {
   const list = _reminders.get(sid) ?? [];

@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { SERVICE_MESSAGES } from "./service-messages.js";
+import { ACTIVITY_FILE_MONITOR_RECIPE } from "./tools/activity/canonical-recipe.js";
 
 // ---------------------------------------------------------------------------
 // SESSION_CLOSED — 2 attributes (name + SID) → vertical
@@ -293,6 +294,41 @@ describe("shutdown_warn message layout", () => {
     const text = buildShutdownWarnText();
     expect(typeof text).toBe("string");
     expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ONBOARDING_LOOP_PATTERN — runtime-conditional structure
+// ---------------------------------------------------------------------------
+describe("SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN", () => {
+  it("event type is onboarding_loop_pattern", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.eventType).toBe("onboarding_loop_pattern");
+  });
+
+  it("contains Monitor-capable runtime path for Claude Code", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("Monitor-capable");
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("Claude Code");
+  });
+
+  it("contains explicit activity/file/create step", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("activity/file/create");
+  });
+
+  it("contains dequeue(max_wait: 0) for Monitor-driven drain", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("max_wait: 0");
+  });
+
+  it("contains non-Monitor runtime fallback path", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("No Monitor tool");
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("max_wait: 30");
+  });
+
+  it("references canonical recipe — each recipe line appears verbatim (not duplicated inline)", () => {
+    // Verifies ACTIVITY_FILE_MONITOR_RECIPE is embedded via import, not copy-pasted.
+    // Each line of the recipe must appear as a substring in the message text.
+    for (const line of ACTIVITY_FILE_MONITOR_RECIPE.split("\n")) {
+      expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain(line);
+    }
   });
 });
 

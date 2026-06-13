@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   pendingCount: vi.fn((): number => 0),
   listSessions: vi.fn(() => [] as Array<{ sid: number }>),
   getSessionQueue: vi.fn((_sid: number) => undefined as { pendingCount(): number } | undefined),
+  getGovernorSid: vi.fn((): number => 0),
 }));
 
 vi.mock("../../shutdown.js", () => ({
@@ -24,6 +25,10 @@ vi.mock("../../session-queue.js", () => ({
   getSessionQueue: mocks.getSessionQueue,
 }));
 
+vi.mock("../../routing-mode.js", () => ({
+  getGovernorSid: mocks.getGovernorSid,
+}));
+
 import { register } from "./handler.js";
 
 describe("shutdown tool", () => {
@@ -33,6 +38,7 @@ describe("shutdown tool", () => {
     vi.clearAllMocks();
     mocks.listSessions.mockReturnValue([]);
     mocks.getSessionQueue.mockReturnValue(undefined);
+    mocks.getGovernorSid.mockReturnValue(0);
     const server = createMockServer();
     register(server);
     call = server.getHandler("shutdown");
@@ -48,6 +54,7 @@ describe("shutdown tool", () => {
   });
 
   it("returns warning (not error) when global queue has items and force is not set", async () => {
+    // governor=0, participant sid=1 → participantCount=1 → pending check applies
     mocks.listSessions.mockReturnValue([{ sid: 1 }]);
     mocks.pendingCount.mockReturnValue(3);
     const result = await call({});
@@ -111,6 +118,56 @@ describe("shutdown tool", () => {
     mocks.getSessionQueue
       .mockReturnValueOnce({ pendingCount: () => 0 })
       .mockReturnValueOnce({ pendingCount: () => 0 });
+    const result = parseResult(await call({}));
+    expect(result.shutting_down).toBe(true);
+    await new Promise<void>((r) => setImmediate(r));
+    expect(mocks.elegantShutdown).toHaveBeenCalledTimes(1);
+  });
+
+  // ── No-participants fast path ──────────────────────────────────────────────
+
+  it("shuts down immediately when governor is the only session (no participants)", async () => {
+    // Single-session mode: only the governor session is active.
+    mocks.listSessions.mockReturnValue([{ sid: 5 }]);
+    mocks.getGovernorSid.mockReturnValue(5);
+    mocks.pendingCount.mockReturnValue(0);
+    const result = parseResult(await call({}));
+    expect(result.shutting_down).toBe(true);
+    await new Promise<void>((r) => setImmediate(r));
+    expect(mocks.elegantShutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips pending-message check when governor is the only session", async () => {
+    // Even with pending messages, governor-only → immediate shutdown (nobody to drain them).
+    mocks.listSessions.mockReturnValue([{ sid: 3 }]);
+    mocks.getGovernorSid.mockReturnValue(3);
+    mocks.pendingCount.mockReturnValue(7);
+    const result = parseResult(await call({}));
+    expect(result.shutting_down).toBe(true);
+    expect(result.pending_at_shutdown).toBe(7);
+    await new Promise<void>((r) => setImmediate(r));
+    expect(mocks.elegantShutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves PENDING_MESSAGES warning when non-governor participants are present", async () => {
+    // Governor (sid=1) + participant (sid=2) → pending check applies.
+    mocks.listSessions.mockReturnValue([{ sid: 1 }, { sid: 2 }]);
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.pendingCount.mockReturnValue(4);
+    const result = await call({});
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.shutting_down).toBe(false);
+    expect(data.warning).toBe("PENDING_MESSAGES");
+    expect(data.pending).toBe(4);
+    expect(mocks.elegantShutdown).not.toHaveBeenCalled();
+  });
+
+  it("shuts down immediately with zero sessions (no-sessions fast path)", async () => {
+    // Unchanged behavior: 0 sessions → participantCount === 0 → immediate shutdown.
+    mocks.listSessions.mockReturnValue([]);
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.pendingCount.mockReturnValue(0);
     const result = parseResult(await call({}));
     expect(result.shutting_down).toBe(true);
     await new Promise<void>((r) => setImmediate(r));

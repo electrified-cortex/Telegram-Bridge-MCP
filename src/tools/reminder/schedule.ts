@@ -10,6 +10,11 @@ import {
   MAX_REMINDERS_PER_SESSION,
 } from "../../reminder-state.js";
 
+/** Sanitize user input for safe interpolation into log/error messages. */
+function sanitize(s: string, maxLen = 64): string {
+  return s.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, maxLen);
+}
+
 export function handleScheduleReminder({ token, text, cron, tz = "UTC", id }: {
   token: number;
   text: string;
@@ -25,7 +30,7 @@ export function handleScheduleReminder({ token, text, cron, tz = "UTC", id }: {
   if (fields.length !== 5) {
     return toError({
       code: "INVALID_CRON" as const,
-      message: `Cron expression must have exactly 5 fields (minute hour day month weekday). Got ${fields.length} field(s): "${cron}"`,
+      message: `Cron expression must have exactly 5 fields (minute hour day month weekday). Got ${fields.length} field(s): "${sanitize(cron)}"`,
       hint: "Example: \"0 9 * * *\" fires at 9am daily.",
     });
   }
@@ -37,7 +42,7 @@ export function handleScheduleReminder({ token, text, cron, tz = "UTC", id }: {
   if (!validateIana(resolvedTz)) {
     return toError({
       code: "INVALID_TIMEZONE" as const,
-      message: `Invalid timezone: "${tz}"${resolvedTz !== tz ? ` (resolved to "${resolvedTz}")` : ""}. Use an IANA timezone name (e.g. "America/New_York") or a supported alias (PST, MST, CST, EST, UTC, GMT).`,
+      message: `Invalid timezone: "${sanitize(tz)}"${resolvedTz !== tz ? ` (resolved to "${sanitize(resolvedTz)}")` : ""}. Use an IANA timezone name (e.g. "America/New_York") or a supported alias (PST, MST, CST, EST, UTC, GMT).`,
     });
   }
 
@@ -45,6 +50,15 @@ export function handleScheduleReminder({ token, text, cron, tz = "UTC", id }: {
   const existing = listReminders();
   const reminderId = id ?? reminderContentHash(text, true, "schedule");
   const isReplace = existing.some(r => r.id === reminderId);
+
+  // Ownership check: if caller supplied an id (replace path), it must belong to this session.
+  if (id !== undefined && !isReplace) {
+    return toError({
+      code: "NOT_FOUND" as const,
+      message: `No reminder with id="${sanitize(reminderId)}" found for this session. Call action(type: 'reminder/list') to see active reminder IDs.`,
+    });
+  }
+
   if (!isReplace && existing.length >= MAX_REMINDERS_PER_SESSION) {
     return toError({
       code: "LIMIT_EXCEEDED" as const,
@@ -69,5 +83,6 @@ export function handleScheduleReminder({ token, text, cron, tz = "UTC", id }: {
     cron: reminder.cron,
     tz: reminder.tz ?? "UTC",
     next_fire: toOffsetISO(nextDate, reminder.tz ?? "UTC"),
+    ...(resolvedTz !== tz ? { note: `Timezone '${tz}' resolved to '${resolvedTz}'` } : {}),
   });
 }
