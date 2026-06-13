@@ -191,3 +191,231 @@ describe("markdownToV2 — partial mode", () => {
     expect(markdownToV2("**incomplete", false)).toBe("\\*\\*incomplete");
   });
 });
+
+// ─── Regression baseline — 10-3010 ────────────────────────────────────────────
+// All lines below are additions only; no lines above are modified.
+import { vi, beforeEach } from "vitest";
+import { resolveParseMode } from "./markdown.js";
+import { buildHeader } from "./outbound-proxy.js";
+import { splitMessage } from "./telegram.js";
+
+// vi.hoisted() ensures mock functions exist before vi.mock() factories run.
+// Vitest hoists vi.hoisted() and vi.mock() calls to the top of the module.
+const _mocks = vi.hoisted(() => ({
+  primarySessionCount: vi.fn(),
+  getSession: vi.fn(),
+  getCallerSid: vi.fn(),
+  resolveNameTag: vi.fn(),
+}));
+
+vi.mock("./session-manager.js", () => ({
+  primarySessionCount: _mocks.primarySessionCount,
+  getSession: _mocks.getSession,
+}));
+
+vi.mock("./session-context.js", () => ({
+  getCallerSid: _mocks.getCallerSid,
+}));
+
+vi.mock("./tools/name-tag.js", () => ({
+  resolveNameTag: _mocks.resolveNameTag,
+}));
+
+describe("regression baseline — 10-3010", () => {
+  // ── markdownToV2 construct snapshots ───────────────────────────────────────
+  describe("markdownToV2 — construct snapshots", () => {
+    it("bold double-asterisk", () => {
+      expect(markdownToV2("**hello world**")).toMatchSnapshot();
+    });
+
+    it("bold single-asterisk", () => {
+      expect(markdownToV2("*hello world*")).toMatchSnapshot();
+    });
+
+    it("italic underscore", () => {
+      expect(markdownToV2("_hello world_")).toMatchSnapshot();
+    });
+
+    it("underline double-underscore", () => {
+      expect(markdownToV2("__hello world__")).toMatchSnapshot();
+    });
+
+    it("strikethrough", () => {
+      expect(markdownToV2("~~hello world~~")).toMatchSnapshot();
+    });
+
+    it("inline code", () => {
+      expect(markdownToV2("`hello world`")).toMatchSnapshot();
+    });
+
+    it("fenced code block with language tag", () => {
+      expect(markdownToV2("```js\nconst x = 1;\n```")).toMatchSnapshot();
+    });
+
+    it("fenced code block without language tag", () => {
+      expect(markdownToV2("```\nconst x = 1;\n```")).toMatchSnapshot();
+    });
+
+    it("blockquote single line", () => {
+      expect(markdownToV2("> hello world")).toMatchSnapshot();
+    });
+
+    it("ATX heading H1", () => {
+      expect(markdownToV2("# Heading One")).toMatchSnapshot();
+    });
+
+    it("ATX heading H2", () => {
+      expect(markdownToV2("## Heading Two")).toMatchSnapshot();
+    });
+
+    it("ATX heading H3", () => {
+      expect(markdownToV2("### Heading Three")).toMatchSnapshot();
+    });
+
+    it("ATX heading H4", () => {
+      expect(markdownToV2("#### Heading Four")).toMatchSnapshot();
+    });
+
+    it("ATX heading H5", () => {
+      expect(markdownToV2("##### Heading Five")).toMatchSnapshot();
+    });
+
+    it("ATX heading H6", () => {
+      expect(markdownToV2("###### Heading Six")).toMatchSnapshot();
+    });
+
+    it("hyperlink", () => {
+      expect(markdownToV2("[click here](https://example.com)")).toMatchSnapshot();
+    });
+
+    it("plain text with all V2_SPECIAL chars", () => {
+      // V2_SPECIAL covers: _ * [ ] ( ) ~ ` > # + - = | { } . ! \
+      expect(markdownToV2("_ * [ ] ( ) ~ ` > # + - = | { } . ! \\")).toMatchSnapshot();
+    });
+
+    it("markdown table pipe syntax — current escape-through behavior", () => {
+      expect(markdownToV2("| col1 | col2 |\n| --- | --- |\n| a | b |")).toMatchSnapshot();
+    });
+
+    it("unordered list dash — current passthrough", () => {
+      expect(markdownToV2("- item one\n- item two\n- item three")).toMatchSnapshot();
+    });
+
+    it("unordered list asterisk — current passthrough", () => {
+      expect(markdownToV2("* item one\n* item two")).toMatchSnapshot();
+    });
+
+    it("ordered list — current passthrough", () => {
+      expect(markdownToV2("1. item one\n2. item two\n3. item three")).toMatchSnapshot();
+    });
+
+    it("mixed content — heading paragraph code block list", () => {
+      const input = [
+        "# Title",
+        "",
+        "Some **bold** and _italic_ text.",
+        "",
+        "```js",
+        "const x = 1;",
+        "```",
+        "",
+        "- item one",
+        "- item two",
+      ].join("\n");
+      expect(markdownToV2(input)).toMatchSnapshot();
+    });
+  });
+
+  // ── markdownToV2 partial mode ──────────────────────────────────────────────
+  describe("markdownToV2 — partial mode snapshots", () => {
+    it("partial mode unclosed bold", () => {
+      expect(markdownToV2("**unclosed bold", true)).toMatchSnapshot();
+    });
+
+    it("partial mode unclosed italic", () => {
+      expect(markdownToV2("_unclosed italic", true)).toMatchSnapshot();
+    });
+
+    it("partial mode unclosed inline code", () => {
+      expect(markdownToV2("`unclosed code", true)).toMatchSnapshot();
+    });
+
+    it("partial mode unclosed fenced code block", () => {
+      expect(markdownToV2("```js\nunclosed block", true)).toMatchSnapshot();
+    });
+  });
+
+  // ── resolveParseMode ───────────────────────────────────────────────────────
+  describe("resolveParseMode — snapshots", () => {
+    it("Markdown parse mode — converts to MarkdownV2", () => {
+      expect(resolveParseMode("**hello**", "Markdown")).toMatchSnapshot();
+    });
+
+    it("MarkdownV2 parse mode — passthrough", () => {
+      expect(resolveParseMode("*hello*", "MarkdownV2")).toMatchSnapshot();
+    });
+
+    it("HTML parse mode — passthrough", () => {
+      expect(resolveParseMode("<b>hello</b>", "HTML")).toMatchSnapshot();
+    });
+
+    it("undefined parse mode — passthrough", () => {
+      expect(resolveParseMode("hello world")).toMatchSnapshot();
+    });
+  });
+
+  // ── buildHeader ────────────────────────────────────────────────────────────
+  describe("buildHeader — snapshots", () => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+      _mocks.primarySessionCount.mockReturnValue(1);
+      _mocks.getCallerSid.mockReturnValue(0);
+      _mocks.getSession.mockReturnValue(undefined);
+    });
+
+    it("single-session context — returns empty strings", () => {
+      // primarySessionCount() < 2 → early return { plain: "", formatted: "" }
+      expect(buildHeader()).toMatchSnapshot();
+    });
+
+    it("multi-session MarkdownV2 — formats name tag in backticks", () => {
+      _mocks.primarySessionCount.mockReturnValue(2);
+      _mocks.getCallerSid.mockReturnValue(1);
+      _mocks.getSession.mockReturnValue({
+        sid: 1, name: "TestBot", color: "🟦",
+        connectionToken: "tok", suffix: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        lastPollAt: undefined, healthy: true,
+      });
+      _mocks.resolveNameTag.mockReturnValue("TestBot");
+      expect(buildHeader()).toMatchSnapshot();
+    });
+
+    it("multi-session HTML — formats name tag in code tag", () => {
+      _mocks.primarySessionCount.mockReturnValue(2);
+      _mocks.getCallerSid.mockReturnValue(1);
+      _mocks.getSession.mockReturnValue({
+        sid: 1, name: "TestBot", color: "🟦",
+        connectionToken: "tok", suffix: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        lastPollAt: undefined, healthy: true,
+      });
+      _mocks.resolveNameTag.mockReturnValue("TestBot");
+      expect(buildHeader("HTML")).toMatchSnapshot();
+    });
+  });
+
+  // ── splitMessage ───────────────────────────────────────────────────────────
+  describe("splitMessage — chunking snapshot", () => {
+    it("5000-char input — split points are stable", () => {
+      // 4000 'a' chars + '\n\n' + 998 'b' chars = 5000 chars total.
+      // splitMessage prefers the last \n\n before index 4096; finds it at 4000
+      // → trimEnd removes the trailing \n\n, chunk1 = 4000 chars, chunk2 = 998 chars.
+      const text = "a".repeat(4000) + "\n\n" + "b".repeat(998);
+      const chunks = splitMessage(text);
+      expect(chunks.length).toBe(2);
+      expect(chunks.every((c) => c.length <= 4096)).toBe(true);
+      expect({ count: chunks.length, lengths: chunks.map((c) => c.length) }).toMatchSnapshot();
+    });
+  });
+});
