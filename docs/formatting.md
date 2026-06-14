@@ -183,3 +183,82 @@ Body content — any Markdown blocks.
 **Rationale for `:::details`:** this syntax is unambiguous and does not
 conflict with CommonMark.  HTML `<details>` blocks are not used here to avoid
 parsing complexity in the rich-message compiler path.
+
+### Inline Media Blocks (`![alt](token)`) → `RichBlockPhoto` / `RichBlockCollage` / `RichBlockSlideshow` / `RichBlockAnimation`
+
+When a line consists **entirely** of a Markdown image-link (`![alt](token)`),
+the compiler attempts to parse it as a rich media block (Phase 4).  Dispatch
+is based on the `token` inside the parentheses:
+
+| Token pattern | Emitted block |
+| --- | --- |
+| Starts with `https://` or `http://` | `null` — rendered as a regular paragraph (standard inline image link) |
+| `slideshow:id1 id2 id3 ...` | `RichBlockSlideshow` — each id becomes a nested `RichBlockPhoto` in `blocks` |
+| `animation:id` | `RichBlockAnimation` |
+| Ends with `.gif` | `RichBlockAnimation` |
+| `id1 id2` (two or more space-separated tokens) | `RichBlockCollage` — each id becomes a nested `RichBlockPhoto` in `blocks` |
+| Single non-URL string (Telegram `file_id`) | `RichBlockPhoto` |
+
+#### File ID vs URL distinction
+
+A Telegram `file_id` is any single-token string that does **not** start with
+`http://` or `https://`.  File IDs are opaque strings returned by the Bot API
+(e.g. `AgACAgIAAxkBAAN...`).  The compiler does not validate the format — it
+simply checks for the URL prefix to decide whether to pass through or emit a
+media block.
+
+#### Caption mapping
+
+The `alt` text (inside `[...]`) maps to the optional `caption.text` field on
+the outer block:
+
+- Non-empty alt text → `caption: { text: "<alt>" }`
+- Empty alt text → `caption` is omitted entirely
+
+Captions are applied to the outer `RichBlockPhoto`, `RichBlockCollage`,
+`RichBlockSlideshow`, or `RichBlockAnimation` block; nested photo blocks inside
+a collage or slideshow do **not** receive individual captions.
+
+#### Examples
+
+```markdown
+![My photo](AgACAgIAAxkBAAN...)
+```
+→ `RichBlockPhoto` with `caption.text = "My photo"`
+
+```markdown
+![cats](file_id_1 file_id_2)
+```
+→ `RichBlockCollage` containing two `RichBlockPhoto` blocks
+
+```markdown
+![](slideshow:file_a file_b file_c)
+```
+→ `RichBlockSlideshow` containing three `RichBlockPhoto` blocks
+
+```markdown
+![anim](animation:AgACBQAD...)
+```
+→ `RichBlockAnimation`
+
+```markdown
+![](loop.gif)
+```
+→ `RichBlockAnimation`
+
+```markdown
+![logo](https://example.com/logo.png)
+```
+→ rendered as a regular paragraph (HTTPS URL — not a media block)
+
+#### Stub metadata
+
+The compiler populates `width`, `height`, `duration`, and `file_unique_id`
+with stub values (`0` / `""`) when emitting media blocks.  The actual metadata
+is resolved during the API send step when the Bot API processes the `file_id`.
+
+#### Standalone function
+
+`parseMediaBlock(line: string): RichBlock | null` is exported as a standalone
+helper for callers that need to inspect a single line without running the full
+`markdownToRichBlocks` pipeline.

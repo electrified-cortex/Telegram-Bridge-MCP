@@ -21,6 +21,13 @@ import type {
   RichBlockTableCell,
   RichBlockMathematicalExpression,
   RichBlockDetails,
+  RichBlockPhoto,
+  RichBlockCollage,
+  RichBlockSlideshow,
+  RichBlockAnimation,
+  RichBlockCaption,
+  TgPhotoSize,
+  TgAnimation,
   RichTextBold,
   RichTextItalic,
   RichTextUnderline,
@@ -470,6 +477,113 @@ const RE_FENCE_CLOSE = /^`{3,}\s*$/;
 const RE_UL_ITEM = /^[-*]\s+([\s\S]*)/;
 const RE_OL_ITEM = /^(\d+)\.\s+([\s\S]*)/;
 const RE_BLOCKQUOTE = /^>\s?(.*)/;
+/** Matches a full-line Markdown image-link: `![alt](token)` */
+const RE_IMAGE_LINK = /^!\[([^\]]*)\]\(([^)]+)\)$/;
+
+// ─── Phase 4: Media block parser ─────────────────────────────────────────────
+
+/**
+ * Parse a single Markdown image-link line into a media RichBlock.
+ *
+ * Dispatch rules (token = the `(...)` portion of `![alt](token)`):
+ *
+ * | Token                            | Emitted block        |
+ * |----------------------------------|----------------------|
+ * | `https://...` or `http://...`    | `null` (pass-through)|
+ * | `slideshow:id1 id2 ...`          | `RichBlockSlideshow` |
+ * | `animation:id`                   | `RichBlockAnimation` |
+ * | `*.gif`                          | `RichBlockAnimation` |
+ * | `id1 id2` (2+ space-sep tokens)  | `RichBlockCollage`   |
+ * | single non-URL token             | `RichBlockPhoto`     |
+ *
+ * The `alt` text becomes `caption.text` when non-empty; otherwise `caption` is
+ * omitted.  Width, height, duration, and `file_unique_id` are stub values
+ * (`0` / `""`) — the actual metadata is resolved during the API send step.
+ *
+ * @param line A single Markdown line (e.g. `"![My photo](AgACAgI...)"`)
+ * @returns The appropriate `RichBlock`, or `null` when the token is a URL.
+ */
+export function parseMediaBlock(line: string): RichBlock | null {
+  const m = RE_IMAGE_LINK.exec(line);
+  if (!m) return null;
+
+  const altText = m[1];
+  const token = m[2].trim();
+
+  // HTTP / HTTPS URLs → pass through as a regular inline image link
+  if (token.startsWith("https://") || token.startsWith("http://")) {
+    return null;
+  }
+
+  // Build optional caption
+  const caption: RichBlockCaption | undefined = altText
+    ? { text: altText }
+    : undefined;
+
+  // ── slideshow:id1 id2 ... ─────────────────────────────────────────────
+  if (token.startsWith("slideshow:")) {
+    const fileIds = token.slice("slideshow:".length).trim().split(/\s+/).filter(Boolean);
+    const blocks: RichBlock[] = fileIds.map((id): RichBlockPhoto => ({
+      type: "photo",
+      photo: [{ file_id: id, file_unique_id: "", width: 0, height: 0 } as TgPhotoSize],
+    }));
+    const result: RichBlockSlideshow = { type: "slideshow", blocks };
+    if (caption) result.caption = caption;
+    return result;
+  }
+
+  // ── animation:id ──────────────────────────────────────────────────────
+  if (token.startsWith("animation:")) {
+    const fileId = token.slice("animation:".length).trim();
+    const animation: TgAnimation = {
+      file_id: fileId,
+      file_unique_id: "",
+      width: 0,
+      height: 0,
+      duration: 0,
+    };
+    const result: RichBlockAnimation = { type: "animation", animation };
+    if (caption) result.caption = caption;
+    return result;
+  }
+
+  // ── *.gif ─────────────────────────────────────────────────────────────
+  if (token.endsWith(".gif")) {
+    const animation: TgAnimation = {
+      file_id: token,
+      file_unique_id: "",
+      width: 0,
+      height: 0,
+      duration: 0,
+    };
+    const result: RichBlockAnimation = { type: "animation", animation };
+    if (caption) result.caption = caption;
+    return result;
+  }
+
+  // ── Two or more space-separated file_ids → collage ────────────────────
+  const parts = token.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const blocks: RichBlock[] = parts.map((id): RichBlockPhoto => ({
+      type: "photo",
+      photo: [{ file_id: id, file_unique_id: "", width: 0, height: 0 } as TgPhotoSize],
+    }));
+    const result: RichBlockCollage = { type: "collage", blocks };
+    if (caption) result.caption = caption;
+    return result;
+  }
+
+  // ── Single non-URL file_id → photo ────────────────────────────────────
+  const photoSize: TgPhotoSize = {
+    file_id: token,
+    file_unique_id: "",
+    width: 0,
+    height: 0,
+  };
+  const result: RichBlockPhoto = { type: "photo", photo: [photoSize] };
+  if (caption) result.caption = caption;
+  return result;
+}
 
 // ─── Core parsing logic ───────────────────────────────────────────────────────
 
@@ -636,6 +750,16 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
         value: parseInt(olMatch[1], 10),
       });
       continue;
+    }
+
+    // ── Inline image / media block ──────────────────────────────────────────
+    {
+      const mediaBlock = parseMediaBlock(line);
+      if (mediaBlock !== null) {
+        flushInline(state);
+        state.blocks.push(mediaBlock);
+        continue;
+      }
     }
 
     // ── Regular paragraph text ─────────────────────────────────────────────
