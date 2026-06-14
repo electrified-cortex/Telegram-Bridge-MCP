@@ -17,12 +17,17 @@ import type {
   RichBlockList,
   RichBlockListItem,
   RichBlockBlockQuotation,
+  RichBlockTable,
+  RichBlockTableCell,
+  RichBlockMathematicalExpression,
+  RichBlockDetails,
   RichTextBold,
   RichTextItalic,
   RichTextUnderline,
   RichTextStrikethrough,
   RichTextCode,
   RichTextAnchorLink,
+  RichTextMathematicalExpression,
 } from "./types/rich-message.js";
 
 // ─── Inline tokenizer ─────────────────────────────────────────────────────────
@@ -196,6 +201,41 @@ function parseInlineRange(text: string, start: number, end: number): RichText {
       }
     }
 
+    // ── $math$ → RichTextMathematicalExpression ──────────────────────────────
+    // Note: type is RichTextMathematicalExpression per schema; $...$ matches
+    // the Markdown convention per the Telegram Bot API 10.1 specification.
+    if (c === "$") {
+      // $$ at this position is NOT an inline math delimiter — skip both chars
+      if (i + 1 < end && text[i + 1] === "$") {
+        i += 2;
+        continue;
+      }
+      // $digit → currency amount (e.g. $100): treat as a plain dollar sign
+      if (i + 1 < end && /\d/.test(text[i + 1])) {
+        i++;
+        continue;
+      }
+      // Look for a closing single $
+      const mathClose = text.indexOf("$", i + 1);
+      if (mathClose !== -1 && mathClose < end) {
+        const expr = text.slice(i + 1, mathClose);
+        if (expr.trim().length > 0) {
+          flushPlain(i);
+          const node: RichTextMathematicalExpression = {
+            type: "mathematical_expression",
+            expression: expr,
+          };
+          tokens.push(node);
+          i = mathClose + 1;
+          plainStart = i;
+          continue;
+        }
+      }
+      // No valid closing $ or whitespace-only content → plain dollar sign
+      i++;
+      continue;
+    }
+
     // ── plain text ───────────────────────────────────────────────────────────
     i++;
   }
@@ -240,6 +280,69 @@ function isGfmTable(lines: string[]): boolean {
   return lines.some((l) => isTableSeparatorRow(l));
 }
 
+// ─── GFM table parser ─────────────────────────────────────────────────────────
+
+/**
+ * Parse pipe-delimited `lines` as a GFM table.
+ * Returns a `RichBlockTable` on success, or `null` if the lines don't form a
+ * valid GFM table (the second line must be a separator row).
+ */
+function tryParseGfmTable(lines: string[]): RichBlockTable | null {
+  if (lines.length < 2) return null;
+  // Separator must be the second line
+  if (!isTableSeparatorRow(lines[1])) return null;
+
+  // Extract per-column alignment from the separator row
+  const sepInner = lines[1].trim().replace(/^\||\|$/g, "");
+  const alignments: Array<"left" | "center" | "right" | undefined> = sepInner
+    .split("|")
+    .map((cell) => {
+      const c = cell.trim();
+      if (c.startsWith(":") && c.endsWith(":")) return "center";
+      if (c.endsWith(":")) return "right";
+      if (c.startsWith(":")) return "left";
+      return undefined;
+    });
+
+  /** Split a pipe-delimited table row into trimmed cell strings. */
+  function parseRowCells(line: string): string[] {
+    const inner = line.trim().replace(/^\||\|$/g, "");
+    return inner.split("|").map((c) => c.trim());
+  }
+
+  const cells: RichBlockTableCell[][] = [];
+
+  // Header row (index 0): cells get is_header: true
+  const headerRow: RichBlockTableCell[] = parseRowCells(lines[0]).map(
+    (cellText, colIdx) => {
+      const cell: RichBlockTableCell = { is_header: true };
+      const parsed = parseInline(cellText);
+      if (parsed !== "") cell.text = parsed;
+      const align = alignments[colIdx];
+      if (align !== undefined) cell.align = align;
+      return cell;
+    },
+  );
+  cells.push(headerRow);
+
+  // Data rows (index 2+; index 1 is the separator row)
+  for (let r = 2; r < lines.length; r++) {
+    const row: RichBlockTableCell[] = parseRowCells(lines[r]).map(
+      (cellText, colIdx) => {
+        const cell: RichBlockTableCell = {};
+        const parsed = parseInline(cellText);
+        if (parsed !== "") cell.text = parsed;
+        const align = alignments[colIdx];
+        if (align !== undefined) cell.align = align;
+        return cell;
+      },
+    );
+    cells.push(row);
+  }
+
+  return { type: "table", cells, is_bordered: true };
+}
+
 // ─── Block parser state ───────────────────────────────────────────────────────
 
 interface ParseState {
@@ -255,6 +358,10 @@ interface ParseState {
   } | null;
   /** Current fenced code block being built. */
   code: { lang: string; lines: string[] } | null;
+  /** Lines inside a display math block (between `$$` delimiters). */
+  math: { lines: string[] } | null;
+  /** Lines inside a `:::details` fenced container. */
+  details: { summary: string; lines: string[] } | null;
 }
 
 function makeState(): ParseState {
@@ -264,6 +371,8 @@ function makeState(): ParseState {
     quote: null,
     list: null,
     code: null,
+    math: null,
+    details: null,
   };
 }
 
@@ -274,17 +383,13 @@ function flushParagraph(state: ParseState): void {
   state.paragraph = null;
   if (!lines || lines.length === 0) return;
 
-  // GFM table passthrough
+  // GFM table — Phase 3 parser
   if (lines.some((l) => l.includes("|")) && isGfmTable(lines)) {
-    console.debug(
-      "[10-3014] GFM table detected but deferred to Phase 3 compiler",
-    );
-    const block: RichBlockParagraph = {
-      type: "paragraph",
-      text: lines.join("\n"),
-    };
-    state.blocks.push(block);
-    return;
+    const table = tryParseGfmTable(lines);
+    if (table) {
+      state.blocks.push(table);
+      return;
+    }
   }
 
   const block: RichBlockParagraph = {
@@ -368,7 +473,7 @@ const RE_BLOCKQUOTE = /^>\s?(.*)/;
 
 // ─── Core parsing logic ───────────────────────────────────────────────────────
 
-function _parseBlocks(input: string, partial: boolean): RichBlock[] {
+function _parseBlocks(input: string, partial: boolean, allowDetails = true): RichBlock[] {
   if (!input) return [];
 
   const state = makeState();
@@ -385,12 +490,81 @@ function _parseBlocks(input: string, partial: boolean): RichBlock[] {
       continue;
     }
 
+    // ── Inside a display math block ($$ ... $$) ────────────────────────────
+    if (state.math !== null) {
+      if (line.trim() === "$$") {
+        const expression = state.math.lines.join("\n").trim();
+        state.math = null;
+        state.blocks.push({
+          type: "mathematical_expression",
+          expression,
+        } as RichBlockMathematicalExpression);
+      } else {
+        state.math.lines.push(line);
+      }
+      continue;
+    }
+
+    // ── Inside a :::details fenced container ───────────────────────────────
+    if (state.details !== null) {
+      if (line === ":::") {
+        const { summary, lines: bodyLines } = state.details;
+        state.details = null;
+        // Recurse with allowDetails=false to prevent nesting (Phase 3 scope)
+        const bodyBlocks = _parseBlocks(bodyLines.join("\n"), false, false);
+        state.blocks.push({
+          type: "details",
+          summary: parseInline(summary),
+          blocks: bodyBlocks,
+        } as RichBlockDetails);
+      } else {
+        state.details.lines.push(line);
+      }
+      continue;
+    }
+
     // ── Fenced code block opening ──────────────────────────────────────────
     const fenceMatch = RE_FENCE_OPEN.exec(line);
     if (fenceMatch) {
       flushInline(state);
       state.code = { lang: fenceMatch[1] ?? "", lines: [] };
       continue;
+    }
+
+    // ── Display math block opening ($$ on its own line, or $$ expr $$ inline) ─
+    {
+      const trimmedLine = line.trim();
+      if (trimmedLine === "$$") {
+        // Multi-line display math: opening $$ delimiter
+        flushInline(state);
+        state.math = { lines: [] };
+        continue;
+      }
+      if (trimmedLine.startsWith("$$") && trimmedLine.endsWith("$$") && trimmedLine.length > 4) {
+        // Single-line display math: $$ expression $$
+        const expr = trimmedLine.slice(2, -2).trim();
+        if (expr.length > 0) {
+          flushInline(state);
+          state.blocks.push({
+            type: "mathematical_expression",
+            expression: expr,
+          } as RichBlockMathematicalExpression);
+          continue;
+        }
+      }
+    }
+
+    // ── :::details fenced container opening ───────────────────────────────
+    if (allowDetails) {
+      const detailsMatch = /^:::details(?: (.+))?$/.exec(line);
+      if (detailsMatch) {
+        flushInline(state);
+        state.details = {
+          summary: detailsMatch[1] ?? "Details",
+          lines: [],
+        };
+        continue;
+      }
     }
 
     // ── ATX heading ────────────────────────────────────────────────────────
@@ -480,6 +654,29 @@ function _parseBlocks(input: string, partial: boolean): RichBlock[] {
     // Unclosed fenced code block: emit as preformatted (graceful fallback;
     // this is also the correct behaviour in partial mode per assignment spec).
     flushCode(state);
+  }
+
+  if (state.math !== null) {
+    // Unclosed $$ math block: fall through to paragraph
+    const allLines = ["$$", ...state.math.lines];
+    state.math = null;
+    state.blocks.push({
+      type: "paragraph",
+      text: allLines.join("\n"),
+    } as RichBlockParagraph);
+  }
+
+  if (state.details !== null) {
+    // Unclosed :::details block: fall through to paragraph
+    const allLines = [
+      `:::details ${state.details.summary}`,
+      ...state.details.lines,
+    ];
+    state.details = null;
+    state.blocks.push({
+      type: "paragraph",
+      text: allLines.join("\n"),
+    } as RichBlockParagraph);
   }
 
   flushInline(state);
