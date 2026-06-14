@@ -12,9 +12,13 @@ import type {
   RichBlockPreformatted,
   RichBlockList,
   RichBlockBlockQuotation,
+  RichBlockTable,
+  RichBlockMathematicalExpression,
+  RichBlockDetails,
   RichTextBold,
   RichTextCode,
   RichTextAnchorLink,
+  RichTextMathematicalExpression,
 } from "./types/rich-message.js";
 
 describe("markdownToRichBlocks", () => {
@@ -144,38 +148,55 @@ describe("markdownToRichBlocks", () => {
     expect(block.type).toBe("blockquote");
   });
 
-  // ── 7. GFM table passthrough ─────────────────────────────────────────────
-  describe("7. GFM table passthrough", () => {
-    let debugSpy: ReturnType<typeof vi.spyOn>;
-
-    beforeEach(() => {
-      debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-    });
-
-    afterEach(() => {
-      debugSpy.mockRestore();
-    });
-
-    it("GFM table with separator row → RichBlockParagraph + debug log", () => {
+  // ── 7. GFM table — Phase 3 parser ────────────────────────────────────────
+  describe("7. GFM table", () => {
+    it("valid 2-column GFM table → RichBlockTable with header + data rows", () => {
       const md = "| Col A | Col B |\n| --- | --- |\n| val1 | val2 |";
       const result = markdownToRichBlocks(md);
-      // Emits as paragraph (passthrough)
       expect(result).toHaveLength(1);
-      expect(result[0].type).toBe("paragraph");
-      // Debug log must fire
-      expect(debugSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[10-3014]"),
-      );
+      const table = result[0] as RichBlockTable;
+      expect(table.type).toBe("table");
+      expect(table.is_bordered).toBe(true);
+      // 2 rows: header + 1 data
+      expect(table.cells).toHaveLength(2);
+      // Header cells
+      expect(table.cells[0][0].is_header).toBe(true);
+      expect(table.cells[0][0].text).toBe("Col A");
+      expect(table.cells[0][1].text).toBe("Col B");
+      // Data cells
+      expect(table.cells[1][0].is_header).toBeUndefined();
+      expect(table.cells[1][0].text).toBe("val1");
+      expect(table.cells[1][1].text).toBe("val2");
     });
 
-    it("pipes without separator row → treated as paragraph (not table)", () => {
+    it("alignment hints map to align fields", () => {
+      const md =
+        "| Left | Center | Right |\n| :--- | :---: | ---: |\n| a | b | c |";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const table = result[0] as RichBlockTable;
+      expect(table.cells[0][0].align).toBe("left");
+      expect(table.cells[0][1].align).toBe("center");
+      expect(table.cells[0][2].align).toBe("right");
+      // Data row inherits alignment too
+      expect(table.cells[1][0].align).toBe("left");
+    });
+
+    it("pipes without separator row → plain RichBlockParagraph (not table)", () => {
       const md = "| Col A | Col B |\n| val1 | val2 |";
       const result = markdownToRichBlocks(md);
-      // No separator → not a GFM table → plain paragraph
       expect(result).toHaveLength(1);
       expect(result[0].type).toBe("paragraph");
-      // Debug log must NOT fire
-      expect(debugSpy).not.toHaveBeenCalled();
+    });
+
+    it("empty cells → text omitted", () => {
+      const md = "| A | B |\n| --- | --- |\n|  |  |";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const table = result[0] as RichBlockTable;
+      // empty cells have no text property
+      expect(table.cells[1][0].text).toBeUndefined();
+      expect(table.cells[1][1].text).toBeUndefined();
     });
   });
 
@@ -370,5 +391,120 @@ describe("markdownToRichBlocks", () => {
     const bq = result[0] as RichBlockBlockQuotation;
     expect(bq.type).toBe("blockquote");
     expect(bq.blocks[0]?.type).toBe("heading");
+  });
+
+  // ── Phase 3: LaTeX Math ───────────────────────────────────────────────────
+
+  describe("LaTeX Math", () => {
+    it("$$...$$  multi-line block → RichBlockMathematicalExpression", () => {
+      const md = "$$\nE = mc^2\n$$";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const block = result[0] as RichBlockMathematicalExpression;
+      expect(block.type).toBe("mathematical_expression");
+      expect(block.expression).toBe("E = mc^2");
+    });
+
+    it("single-line $$ expr $$ → RichBlockMathematicalExpression", () => {
+      const md = "$$ E = mc^2 $$";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const block = result[0] as RichBlockMathematicalExpression;
+      expect(block.type).toBe("mathematical_expression");
+      expect(block.expression).toBe("E = mc^2");
+    });
+
+    it("$...$ inline inside paragraph → RichTextMathematicalExpression", () => {
+      const md = "The formula $x^2 + y^2 = r^2$ is classic.";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const para = result[0] as { type: string; text: RichText };
+      expect(para.type).toBe("paragraph");
+      const text = para.text as RichText[];
+      expect(Array.isArray(text)).toBe(true);
+      const mathNode = (text as RichText[]).find(
+        (t): t is RichTextMathematicalExpression =>
+          typeof t === "object" &&
+          !Array.isArray(t) &&
+          (t as { type: string }).type === "mathematical_expression",
+      );
+      expect(mathNode).toBeDefined();
+      expect(mathNode!.expression).toBe("x^2 + y^2 = r^2");
+    });
+
+    it("$100 (currency) → plain text, not math", () => {
+      const md = "Price is $100 today.";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const para = result[0] as { type: string; text: RichText };
+      expect(para.type).toBe("paragraph");
+      // No mathematical_expression node in the result
+      const flat = Array.isArray(para.text) ? para.text : [para.text];
+      const mathNode = flat.find(
+        (t) =>
+          typeof t === "object" &&
+          !Array.isArray(t) &&
+          (t as { type: string }).type === "mathematical_expression",
+      );
+      expect(mathNode).toBeUndefined();
+      // The full text should contain $100 as plain string
+      const joined = flat
+        .map((t) => (typeof t === "string" ? t : ""))
+        .join("");
+      expect(joined).toContain("$100");
+    });
+
+    it("$$ on a line without closing $$ → paragraph passthrough (no crash)", () => {
+      const md = "$$\nunclosed math";
+      const result = markdownToRichBlocks(md);
+      expect(Array.isArray(result)).toBe(true);
+      // Must not throw; emits as paragraph
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe("paragraph");
+    });
+  });
+
+  // ── Phase 3: Collapsible Details ─────────────────────────────────────────
+
+  describe("Collapsible Details", () => {
+    it(":::details Title / ::: → RichBlockDetails with correct summary", () => {
+      const md = ":::details My Title\nBody content here.\n:::";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const block = result[0] as RichBlockDetails;
+      expect(block.type).toBe("details");
+      expect(block.summary).toBe("My Title");
+      expect(Array.isArray(block.blocks)).toBe(true);
+      expect(block.blocks.length).toBeGreaterThan(0);
+      expect(block.is_open).toBeUndefined();
+    });
+
+    it(":::details with no title → summary defaults to 'Details'", () => {
+      const md = ":::details\nSome content.\n:::";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const block = result[0] as RichBlockDetails;
+      expect(block.type).toBe("details");
+      expect(block.summary).toBe("Details");
+    });
+
+    it("unclosed :::details → paragraph passthrough (no crash)", () => {
+      const md = ":::details Title\ncontent without closing";
+      const result = markdownToRichBlocks(md);
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe("paragraph");
+    });
+
+    it("body with a heading inside → nested RichBlockSectionHeading in blocks", () => {
+      const md = ":::details With Heading\n# Inner\nText.\n:::";
+      const result = markdownToRichBlocks(md);
+      expect(result).toHaveLength(1);
+      const block = result[0] as RichBlockDetails;
+      expect(block.type).toBe("details");
+      const headingBlock = block.blocks.find((b) => b.type === "heading");
+      expect(headingBlock).toBeDefined();
+      expect((headingBlock as { type: string; size: number }).size).toBe(1);
+    });
   });
 });
