@@ -130,3 +130,15 @@ Executor: Worker / Reviewer: Curator
 **Review type**: Adversarial (3-round; round 1 failed on design-gate AC1; round 2 failed because Objective section still TBD; round 3 PASS after Option A explicitly chosen)
 **Checked**: Convention choice concrete (Option A — extended image syntax), AC1 binary, scope additive, non-regression, delegation
 **Not checked**: Audio/video block types (deferred per spec notes)
+
+## Verification
+
+**Verifier**: Dispatch sub-agent (standard tier)
+**Date**: 2026-06-14
+**Verdict**: APPROVED (2nd pass — evidence files present)
+**Commit**: d806af57 — feat(rich-messages): Phase 4 compiler — inline media blocks (10-3015)
+**Tests**: 3552/3552 passing · tsc --noEmit clean · markdown.test.ts non-regression confirmed
+**Checked**: AC1 parseMediaBlock exported + ≥2 unit tests; AC2 Photo/Collage/Slideshow/Animation emitted; AC3 HTTPS/HTTP passthrough; AC4 pnpm test green; AC5 snapshot baseline; AC6 tsc; AC7 grep guard.
+**Note**: First pass NEEDS_REVISION on missing .temp/ evidence files; resolved by foreman evidence capture (pnpm test run in worktree, 3552/3552 confirmed).
+
+Sealed-By: Foreman
