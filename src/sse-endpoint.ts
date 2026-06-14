@@ -85,6 +85,14 @@ export function scheduleArmReminder(sid: number, command: string): void {
 }
 
 /**
+ * Returns true when an open SSE connection is registered for the given session.
+ * Used by health-check endpoints to distinguish "no SSE armed" from a write error.
+ */
+export function hasSseConnection(sid: number): boolean {
+  return _connections.has(sid);
+}
+
+/**
  * Fire `data: notify` to the open SSE connection for the given session, if any.
  * No-op when no connection is registered. No cooldown — the caller's dequeue
  * will be empty if there is nothing to read; extra notifications are harmless.
