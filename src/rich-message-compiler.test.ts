@@ -3,7 +3,7 @@
  * Task: 10-3013
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { markdownToRichBlocks } from "./rich-message-compiler.js";
+import { markdownToRichBlocks, parseMediaBlock } from "./rich-message-compiler.js";
 import type {
   RichBlock,
   RichText,
@@ -15,6 +15,10 @@ import type {
   RichBlockTable,
   RichBlockMathematicalExpression,
   RichBlockDetails,
+  RichBlockPhoto,
+  RichBlockCollage,
+  RichBlockSlideshow,
+  RichBlockAnimation,
   RichTextBold,
   RichTextCode,
   RichTextAnchorLink,
@@ -505,6 +509,116 @@ describe("markdownToRichBlocks", () => {
       const headingBlock = block.blocks.find((b) => b.type === "heading");
       expect(headingBlock).toBeDefined();
       expect((headingBlock as { type: string; size: number }).size).toBe(1);
+    });
+  });
+
+  // ── Phase 4: Inline Media Blocks ─────────────────────────────────────────
+
+  describe("Phase 4: Inline Media Blocks — parseMediaBlock()", () => {
+    it("P4-1. file_id → RichBlockPhoto with caption.text", () => {
+      const result = parseMediaBlock("![My photo](AgACAgI_some_file_id)");
+      expect(result).not.toBeNull();
+      const block = result as RichBlockPhoto;
+      expect(block.type).toBe("photo");
+      expect(block.photo).toHaveLength(1);
+      expect(block.photo[0].file_id).toBe("AgACAgI_some_file_id");
+      expect(block.caption?.text).toBe("My photo");
+    });
+
+    it("P4-2. HTTPS URL → null (pass-through)", () => {
+      const result = parseMediaBlock("![](https://example.com/img.png)");
+      expect(result).toBeNull();
+    });
+
+    it("P4-3. HTTP URL → null (pass-through)", () => {
+      const result = parseMediaBlock("![](http://example.com/img.jpg)");
+      expect(result).toBeNull();
+    });
+
+    it("P4-4. two space-separated file_ids → RichBlockCollage with 2 RichBlockPhoto blocks", () => {
+      const result = parseMediaBlock("![cats](file_id_1 file_id_2)");
+      expect(result).not.toBeNull();
+      const block = result as RichBlockCollage;
+      expect(block.type).toBe("collage");
+      expect(block.blocks).toHaveLength(2);
+      expect((block.blocks[0] as RichBlockPhoto).type).toBe("photo");
+      expect((block.blocks[0] as RichBlockPhoto).photo[0].file_id).toBe("file_id_1");
+      expect((block.blocks[1] as RichBlockPhoto).photo[0].file_id).toBe("file_id_2");
+      expect(block.caption?.text).toBe("cats");
+    });
+
+    it("P4-5. slideshow:id1 id2 id3 → RichBlockSlideshow with 3 blocks", () => {
+      const result = parseMediaBlock("![](slideshow:file_a file_b file_c)");
+      expect(result).not.toBeNull();
+      const block = result as RichBlockSlideshow;
+      expect(block.type).toBe("slideshow");
+      expect(block.blocks).toHaveLength(3);
+      expect((block.blocks[0] as RichBlockPhoto).photo[0].file_id).toBe("file_a");
+      expect((block.blocks[1] as RichBlockPhoto).photo[0].file_id).toBe("file_b");
+      expect((block.blocks[2] as RichBlockPhoto).photo[0].file_id).toBe("file_c");
+      expect(block.caption).toBeUndefined();
+    });
+
+    it("P4-6. animation:file_id → RichBlockAnimation", () => {
+      const result = parseMediaBlock("![anim](animation:file_id)");
+      expect(result).not.toBeNull();
+      const block = result as RichBlockAnimation;
+      expect(block.type).toBe("animation");
+      expect(block.animation.file_id).toBe("file_id");
+      expect(block.animation.duration).toBe(0);
+      expect(block.caption?.text).toBe("anim");
+    });
+
+    it("P4-7. *.gif → RichBlockAnimation", () => {
+      const result = parseMediaBlock("![gif](some_file.gif)");
+      expect(result).not.toBeNull();
+      const block = result as RichBlockAnimation;
+      expect(block.type).toBe("animation");
+      expect(block.animation.file_id).toBe("some_file.gif");
+      expect(block.caption?.text).toBe("gif");
+    });
+
+    it("P4-8. empty alt text on photo → caption omitted", () => {
+      const result = parseMediaBlock("![](some_file_id)");
+      expect(result).not.toBeNull();
+      const block = result as RichBlockPhoto;
+      expect(block.type).toBe("photo");
+      expect(block.caption).toBeUndefined();
+    });
+
+    it("P4-9. non-matching line → null", () => {
+      expect(parseMediaBlock("just a plain line")).toBeNull();
+      expect(parseMediaBlock("# Heading")).toBeNull();
+      expect(parseMediaBlock("[link](url)")).toBeNull();
+    });
+  });
+
+  describe("Phase 4: Inline Media Blocks — pipeline integration", () => {
+    it("P4-10. image on its own line → RichBlockPhoto in markdownToRichBlocks", () => {
+      const result = markdownToRichBlocks("![photo](file_id)");
+      expect(result).toHaveLength(1);
+      expect(result[0].type).toBe("photo");
+    });
+
+    it("P4-11. image line followed by heading → [RichBlockPhoto, RichBlockSectionHeading]", () => {
+      const result = markdownToRichBlocks("![photo](file_id)\n# Heading");
+      expect(result).toHaveLength(2);
+      expect(result[0].type).toBe("photo");
+      expect(result[1].type).toBe("heading");
+    });
+
+    it("P4-12. HTTPS image in pipeline → paragraph passthrough (not a media block)", () => {
+      const result = markdownToRichBlocks("![alt](https://example.com/img.png)");
+      expect(result).toHaveLength(1);
+      // Falls through to paragraph
+      expect(result[0].type).toBe("paragraph");
+    });
+
+    it("P4-13. heading then image → [RichBlockSectionHeading, RichBlockPhoto]", () => {
+      const result = markdownToRichBlocks("# Title\n![pic](file_xyz)");
+      expect(result).toHaveLength(2);
+      expect(result[0].type).toBe("heading");
+      expect(result[1].type).toBe("photo");
     });
   });
 });
