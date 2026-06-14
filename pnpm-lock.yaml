@@ -18,8 +18,8 @@ importers:
         specifier: ^1.3.2
         version: 1.3.2
       audio-decode:
-        specifier: ^3.10.1
-        version: 3.10.1
+        specifier: ^3.10.2
+        version: 3.10.2
       croner:
         specifier: ^10.0.1
         version: 10.0.1
@@ -67,8 +67,8 @@ packages:
     resolution: {integrity: sha512-emyA+pFa+o9N728t5HpcInT6FZZtaFtl68ex7UW7iBOTv6DrN4jxASj1D9KQO0S86cpu6t2u9hW9X/99Srfjog==}
     engines: {node: '>=16'}
 
-  '@audio/decode-aiff@1.1.1':
-    resolution: {integrity: sha512-Q4hH7tNtoTnVVwaT/XWUITfDeG9Y0KVRFkeWa1Ksl8FkUgutemVASiIoT7PvIchlhseq4haDdvQGu5cuLHdbNw==}
+  '@audio/decode-aiff@1.1.2':
+    resolution: {integrity: sha512-v1zfwv5qZc7qaShZmAwCMdiguXULbxKhwTlLTH3sxbWWtOMD3paqTFk7DtGcLR/YwRtE7TJPNMLET8ry5uV61g==}
     engines: {node: '>=16'}
 
   '@audio/decode-amr@1.1.1':
@@ -754,8 +754,8 @@ packages:
   ast-v8-to-istanbul@1.0.3:
     resolution: {integrity: sha512-jCMQ6ZylLPudp0CDfBmQBZUsrh1/8psbmu9ibeVWKuHWD0YrH9YABwlKu5kVEFoT0GCQQW9Z/SxfuEbbkGQCRg==}
 
-  audio-decode@3.10.1:
-    resolution: {integrity: sha512-aIMSNFtZaZeSq1mYFXga7ZRglguLQq8WpQv1CDiLmqnkIrtrTYUO56XrxfkwGdQ/+Ek0VJ91TKGRdpARa1NJaQ==}
+  audio-decode@3.10.2:
+    resolution: {integrity: sha512-F5nYZPpWn9n293E4cP54x/43h1Y0NK4nAefX26+DHUqza1jJhf5dC5VGxVYBiPj9nJcvRAmIrU1/kHkLgIaP6g==}
 
   audio-type@2.4.1:
     resolution: {integrity: sha512-dK9Z/P83C/rBfTrXXgPD3jZ+aXxx2o/P4rq8+H1JqxbXklitEeJw4CrcwMC5CkON3CX3yy2gaWnIEVYejYh0zQ==}
@@ -1737,7 +1737,7 @@ snapshots:
 
   '@audio/decode-aac@1.1.3': {}
 
-  '@audio/decode-aiff@1.1.1': {}
+  '@audio/decode-aiff@1.1.2': {}
 
   '@audio/decode-amr@1.1.1': {}
 
@@ -2388,10 +2388,10 @@ snapshots:
       estree-walker: 3.0.3
       js-tokens: 10.0.0
 
-  audio-decode@3.10.1:
+  audio-decode@3.10.2:
     dependencies:
       '@audio/decode-aac': 1.1.3
-      '@audio/decode-aiff': 1.1.1
+      '@audio/decode-aiff': 1.1.2
       '@audio/decode-amr': 1.1.1
       '@audio/decode-caf': 1.1.1
       '@audio/decode-flac': 1.1.0
