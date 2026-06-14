@@ -143,3 +143,15 @@ Executor: Worker / Reviewer: Curator
 **Review type**: Adversarial (2-round; round 1 failed on TBD collapsible convention; round 2 resolves with :::details fenced syntax as chosen default)
 **Checked**: Collapsible convention now concrete, LaTeX ambiguity mitigated, non-regression gate, snapshot dependency, additive-only scope
 **Not checked**: Exact RichBlock field names for math/details (depends on 10-3011 schema doc)
+
+## Verification
+
+**Verifier**: Dispatch sub-agent (standard tier)
+**Date**: 2026-06-14
+**Verdict**: APPROVED
+**Commit**: 77e1553 (squash of worker/10-3014 @ 18165a8f)
+**Tests**: 3539/3539 passing · tsc --noEmit clean · markdown.test.ts 69/69 (non-regression confirmed)
+**Checked**: All 10 AC criteria confirmed with citations. GFM table separator-row discriminant, display/inline math, :::details recursion, non-regression gate, grep guard.
+**Note**: Task spec cited "193 pre-existing markdown tests" — actual count is 69 (spec was stale); all existing tests pass, no regression.
+
+Sealed-By: Foreman
