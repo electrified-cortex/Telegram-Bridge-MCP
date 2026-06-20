@@ -597,10 +597,16 @@ export function deliverServiceMessage(
   };
 
   q.enqueue(event);
-  // Suppress SSE notify for behavior_nudge events — they only occur during active sessions
-  // so the agent is already in its dequeue loop and does not need a separate wake.
+  // Suppress SSE notify for events that do not require waking an idle agent:
+  //   behavior_nudge_*   — occur only during active sessions; agent already in dequeue loop.
+  //   agent_event        — fan-out lifecycle info (compacting/compacted) delivered to ALL sessions;
+  //                        the receiving session needs no wake — it reads it in its next dequeue.
+  //                        post_compact_monitor_recovery (separate event type) is NOT suppressed
+  //                        because the compacting session's own agent must re-arm its monitors.
   // persistent_animation_running is intentionally NOT suppressed: it must wake an idle agent.
-  const isSilentEvent = event.content?.event_type?.startsWith("behavior_nudge");
+  const isSilentEvent =
+    event.content.event_type?.startsWith("behavior_nudge") ||
+    event.content.event_type === "agent_event";
   if (!isSilentEvent) {
     notifySession(targetSid, "service", isDequeueActive(targetSid));
   }
