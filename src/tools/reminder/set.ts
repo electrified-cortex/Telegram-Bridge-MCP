@@ -4,6 +4,7 @@ import { toResult, toError } from "../../telegram.js";
 import { addReminder, MAX_REMINDERS_PER_SESSION, reminderContentHash } from "../../reminder-state.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
+import { deliverReminderConfirmation } from "./confirmation.js";
 
 const DESCRIPTION =
   "Schedule a reminder that fires as a synthetic event in dequeue. " +
@@ -43,6 +44,9 @@ export function handleSetReminder({ text, trigger = "time", delay_seconds = 0, r
       message: `${(err as Error).message}. Cancel an existing reminder with cancel_reminder before adding more.`,
     });
   }
+
+  // AC1: emit reminder_confirmation service message (after tool response is built, before return)
+  deliverReminderConfirmation(_sid, reminder);
 
   const result: Record<string, unknown> = {
     id: reminder.id,
