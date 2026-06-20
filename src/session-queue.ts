@@ -603,8 +603,8 @@ export function deliverServiceMessage(
   const isSilentEvent = event.content?.event_type?.startsWith("behavior_nudge");
   if (!isSilentEvent) {
     notifySession(targetSid, "service", isDequeueActive(targetSid));
+    notifyChannelSubscriber(targetSid, event);
   }
-  notifyChannelSubscriber(targetSid, event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
