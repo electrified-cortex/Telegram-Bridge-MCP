@@ -9,6 +9,7 @@ import {
   listReminders,
   MAX_REMINDERS_PER_SESSION,
 } from "../../reminder-state.js";
+import { deliverReminderConfirmation } from "./confirmation.js";
 
 /** Sanitize user input for safe interpolation into log/error messages. */
 function sanitize(s: string, maxLen = 64): string {
@@ -75,6 +76,9 @@ export function handleScheduleReminder({ token, text, cron, tz = "UTC", id }: {
       message: `Invalid cron expression: ${(err as Error).message}`,
     });
   }
+
+  // AC1: emit reminder_confirmation service message (before returning tool result)
+  deliverReminderConfirmation(_sid, reminder);
 
   const nextDate = new Date(reminder.next_fire_ms ?? 0);
   return toResult({
