@@ -64,14 +64,15 @@ export const SERVICE_MESSAGES = deepFreeze({
       "  ⚠ IMPORTANT: The SSE stream sends a `: keepalive` heartbeat every 30 s. Arming a raw\n" +
       "     curl -N makes EVERY heartbeat a wake event = token-burn spam. Use the filtered script.\n" +
       "  3. Arm the Monitor tool with: bash <path-to-script> '<sse_url>' and persistent: true.\n" +
-      "     You are participating once the monitor is live.\n\n" +
+      "     You are participating once the monitor is live.\n" +
+      "     On each SSE wake → call dequeue(); handle updates; loop until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
       "Monitor-capable runtime (Claude Code) — stdio / no HTTP:\n" +
       "  1. Call action(type: 'activity/file/create') → returns { file_path }.\n" +
       "  2. Replace <path> with file_path, then arm Monitor (persistent: true):\n" +
       "     " + ACTIVITY_FILE_MONITOR_RECIPE.replace(/\n/g, "\n     ") + "\n" +
-      "  3. On each kick → call dequeue(max_wait: 0); loop until pending = 0.\n\n" +
+      "  3. On each kick → call dequeue(); handle updates; loop until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
       "No Monitor tool (VS Code, other runtimes):\n" +
-      "  Call dequeue(max_wait: 30) on every turn.\n\n" +
+      "  Call dequeue() on every turn. timed_out: true means no message this window — call dequeue() again. You always end with dequeue().\n\n" +
       "Details: help('start'), help('dequeue'), help('activity/listen').",
   },
 
@@ -209,7 +210,7 @@ export const SERVICE_MESSAGES = deepFreeze({
       `Use this to guarantee a high quality file watch — run inside your harness's Monitor tool with persistent: true. Name it "Telegram message notifier" so you can recognize it after a compaction.\n\n` +
       `Windows:  \`"${_monitorPs1}" "${filePath}"\`\n` +
       `Linux/macOS:  \`"${_monitorSh}" "${filePath}"\`\n\n` +
-      `Loop pattern: When a wake signal arrives, call dequeue(token) and handle each message one at a time until pending = 0. Then call dequeue(token) once more.\n\n` +
+      `Loop pattern: call dequeue(); handle updates; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n` +
       `Note: If TMCP is in HTTP mode, prefer activity/listen (SSE) for push notifications — no filesystem access required. help('activity/listen').`,
     details: {
       script_path: {
