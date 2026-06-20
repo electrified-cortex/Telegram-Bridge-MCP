@@ -280,7 +280,7 @@ export function routeToSession(event: TimelineEvent): void {
     q.enqueue(event);
     // Phase-1 voice suppression: suppress SSE notify for not-ready voice events.
     // Phase-2 SSE wake is fired by notifySessionWaiters() after transcription.
-    if (isEventReady(event)) {
+    if (isEventReady(event) && event.event !== "reaction") {
       notifySession(sid, "operator", isDequeueActive(sid), broadcastOriginatorSid);
     }
     // Always notify channel subscriber regardless of voice readiness.
@@ -321,7 +321,7 @@ function enqueueToSession(
   // notifySessionWaiters() after patchVoiceText() completes. Firing here would
   // cause the agent to dequeue an empty batch and go back to sleep, missing the
   // real wake when transcription finishes.
-  if (isEventReady(event)) {
+  if (isEventReady(event) && event.event !== "reaction") {
     // Pass originatorSid so notifySession suppresses self-notifications (AC-1).
     const originatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
     notifySession(sid, "operator", isDequeueActive(sid), originatorSid);
