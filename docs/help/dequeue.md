@@ -10,7 +10,7 @@ dequeue
   → error      → notify superior → dequeue
 
 ## Rules
-1. Drain before acting. pending > 0 → call dequeue again before starting work.
+1. Loop exit is timed_out: true only. pending > 0 → call dequeue again; pending == 0 is NOT the exit — keep calling dequeue() until timed_out: true. After any send, call dequeue() again immediately.
 2. Stay responsive. Call dequeue between work chunks.
 3. After subagent returns: review result, DM superior, dequeue — do NOT stop.
 4. After error: notify superior, dequeue — do NOT stop.
