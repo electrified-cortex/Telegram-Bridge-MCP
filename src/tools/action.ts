@@ -660,7 +660,7 @@ export function register(server: McpServer): void {
         title: z
           .string()
           .optional()
-          .describe("checklist/update: Bold heading for the status block."),
+          .describe("checklist/update: Bold heading for the status block. Title is required for checklist/update."),
         steps: z
           .array(
             z.object({

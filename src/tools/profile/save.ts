@@ -77,6 +77,7 @@ export function handleSaveProfile({ key, token, autoload = false }: { key: strin
         recurring: r.recurring,
         ...(r.trigger !== "time" ? { trigger: r.trigger } : {}),
         ...(r.trigger === "last_received" ? { mode: r.mode ?? "all" } : {}),
+        ...(r.trigger === "last_received" && r.only_if_silent ? { only_if_silent: r.only_if_silent } : {}),
         // Persist disabled flag — intentional permanent mute survives restart.
         // sleep_until and last_fired_for are NOT persisted — transient state.
         ...(r.disabled ? { disabled: true } : {}),
