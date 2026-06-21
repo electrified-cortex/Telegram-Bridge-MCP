@@ -424,13 +424,13 @@ describe("SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN", () => {
     expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("activity/file/create");
   });
 
-  it("contains dequeue(max_wait: 0) for Monitor-driven drain", () => {
-    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("max_wait: 0");
+  it("contains Monitor-driven drain loop with timed_out guard", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("loop until timed_out: true");
   });
 
   it("contains non-Monitor runtime fallback path", () => {
     expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("No Monitor tool");
-    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("max_wait: 30");
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("Call dequeue() on every turn");
   });
 
   it("references canonical recipe — each recipe line appears verbatim (not duplicated inline)", () => {
