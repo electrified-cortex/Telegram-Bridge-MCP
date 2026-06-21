@@ -2960,3 +2960,55 @@ describe("session/start refresh flag", () => {
     expect(result.profile_autoloaded).toBe("Primary");
   });
 });
+
+// AC9 — pod-memory convention: save_token_to field in session/start and session/reconnect
+describe("pod-memory convention — save_token_to field (AC9)", () => {
+  const SAVE_TOKEN_PATH = "memory/telegram/session.token";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReminderStateForTest();
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.isPollerRunning.mockReturnValue(false);
+    mocks.readProfile.mockReturnValue(null);
+    mocks.applyProfile.mockReturnValue({ applied: {} });
+    mocks.deliverReminderEvent.mockReturnValue(true);
+    mocks.createSession.mockReturnValue({
+      sid: 1,
+      suffix: 123456,
+      name: "Primary",
+      color: "🟦",
+      sessionsActive: 1,
+    });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+  });
+
+  it("session/start response includes save_token_to = memory/telegram/session.token", async () => {
+    const result = parseResult(await handleSessionStart({ name: "Primary" }));
+
+    expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
+  });
+
+  it("session/reconnect response includes save_token_to = memory/telegram/session.token", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.checkAndConsumeAutoApprove.mockReturnValue(true);
+
+    const result = parseResult(await handleSessionReconnect({ name: "Primary" }));
+
+    expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
+  });
+
+  it("session/start with refresh: true (reuse path) includes save_token_to", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.validateSession.mockReturnValue(true);
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: true, token: 1123456 }));
+
+    expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
+    expect(result.reused).toBe(true);
+  });
+});
