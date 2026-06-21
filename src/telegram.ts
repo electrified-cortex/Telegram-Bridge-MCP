@@ -105,6 +105,9 @@ export type TelegramErrorCode =
   | "NOT_PENDING"
   | "INVALID_COLOR"
   | "UNKNOWN_PRESET"
+  | "RICH_MESSAGE_UNSUPPORTED"
+  | "STREAM_EXPIRED"
+  | "STREAM_OVERFLOW"
   | "UNKNOWN";
 
 export interface TelegramError {

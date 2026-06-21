@@ -38,7 +38,7 @@ vi.mock("../../session-manager.js", () => ({
   validateSession: mocks.validateSession,
 }));
 
-import { handleStreamStart, handleStreamChunk, handleStreamFlush, _resetStreamsForTest } from "./stream.js";
+import { handleStreamStart, handleStreamChunk, handleStreamFlush, _resetStreamsForTest, _getStreamTimeoutMsForTest } from "./stream.js";
 
 function parseResult(result: unknown): Record<string, unknown> {
   const r = result as { content: Array<{ text: string }> };
@@ -157,6 +157,115 @@ describe("stream/chunk handler", () => {
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("STREAM_FORBIDDEN");
   });
+
+  it("returns RATE_LIMITED with retryAfterMs on 429", async () => {
+    const { GrammyError } = await import("grammy");
+    mocks.sendMessage.mockResolvedValue({ message_id: 210 });
+    mocks.editMessageText.mockRejectedValue(
+      new GrammyError(
+        "Too Many Requests: retry after 30",
+        { ok: false, error_code: 429, description: "Too Many Requests: retry after 30", parameters: { retry_after: 30 } },
+        "editMessageText",
+        {},
+      ),
+    );
+    const startResult = await handleStreamStart({ token: 1_123_456 });
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
+    mocks.getMessage.mockReturnValue({ content: { type: "text", text: "⏳ ..." } });
+
+    const result = await handleStreamChunk({ stream_id, text: "chunk", token: 1_123_456 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("RATE_LIMITED");
+    const data = parseResult(result) as { retryAfterMs: number };
+    expect(data.retryAfterMs).toBe(30_000);
+  });
+
+  it("returns RATE_LIMITED with default retryAfterMs when retry_after is missing", async () => {
+    const { GrammyError } = await import("grammy");
+    mocks.sendMessage.mockResolvedValue({ message_id: 211 });
+    mocks.editMessageText.mockRejectedValue(
+      new GrammyError(
+        "Too Many Requests",
+        { ok: false, error_code: 429, description: "Too Many Requests" },
+        "editMessageText",
+        {},
+      ),
+    );
+    const startResult = await handleStreamStart({ token: 1_123_456 });
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
+    mocks.getMessage.mockReturnValue({ content: { type: "text", text: "⏳ ..." } });
+
+    const result = await handleStreamChunk({ stream_id, text: "chunk", token: 1_123_456 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("RATE_LIMITED");
+    // Default is 5 seconds
+    const data = parseResult(result) as { retryAfterMs: number };
+    expect(data.retryAfterMs).toBe(5_000);
+  });
+
+  it("returns STREAM_OVERFLOW when accumulated text exceeds 4096 chars", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 220 });
+    const startResult = await handleStreamStart({ token: 1_123_456 });
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
+
+    // Simulate existing text that's already near the limit
+    const nearLimitText = "x".repeat(4090);
+    mocks.getMessage.mockReturnValue({ content: { type: "text", text: nearLimitText } });
+
+    const result = await handleStreamChunk({ stream_id, text: "overflow chunk", token: 1_123_456 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("STREAM_OVERFLOW");
+    const data = parseResult(result) as { currentLength: number; maxLength: number };
+    expect(data.currentLength).toBe(nearLimitText.length + "overflow chunk".length);
+    expect(data.maxLength).toBe(4096);
+    // Should not have called editMessageText
+    expect(mocks.editMessageText).not.toHaveBeenCalled();
+  });
+
+  it("returns STREAM_OVERFLOW when accumulated text equals 4097 chars", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 221 });
+    const startResult = await handleStreamStart({ token: 1_123_456 });
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
+
+    // 4096 existing chars + 1 new = 4097, should overflow
+    const maxText = "y".repeat(4096);
+    mocks.getMessage.mockReturnValue({ content: { type: "text", text: maxText } });
+
+    const result = await handleStreamChunk({ stream_id, text: "!", token: 1_123_456 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("STREAM_OVERFLOW");
+  });
+
+  it("allows chunk that exactly fills 4096 chars", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 222 });
+    mocks.editMessageText.mockResolvedValue({ message_id: 222 });
+    const startResult = await handleStreamStart({ token: 1_123_456 });
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
+
+    const existingText = "z".repeat(4090);
+    mocks.getMessage.mockReturnValue({ content: { type: "text", text: existingText } });
+
+    const result = await handleStreamChunk({ stream_id, text: "z".repeat(6), token: 1_123_456 });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result) as { length: number };
+    expect(data.length).toBe(4096);
+  });
+
+  it("returns STREAM_EXPIRED after timeout", async () => {
+    vi.useFakeTimers();
+    mocks.sendMessage.mockResolvedValue({ message_id: 230 });
+    const startResult = await handleStreamStart({ token: 1_123_456 });
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
+
+    // Advance time past the stream timeout
+    vi.advanceTimersByTime(_getStreamTimeoutMsForTest() + 1);
+
+    const result = await handleStreamChunk({ stream_id, text: "too late", token: 1_123_456 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("STREAM_EXPIRED");
+
+    vi.useRealTimers();
+  });
 });
 
 describe("stream/flush handler", () => {
@@ -201,5 +310,21 @@ describe("stream/flush handler", () => {
     });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("STREAM_NOT_FOUND");
+  });
+
+  it("returns STREAM_EXPIRED when flushing an expired stream", async () => {
+    vi.useFakeTimers();
+    mocks.sendMessage.mockResolvedValue({ message_id: 310 });
+    const startResult = await handleStreamStart({ token: 1_123_456 });
+    const { stream_id } = parseResult(startResult) as { message_id: number; stream_id: string };
+
+    // Advance time past the timeout
+    vi.advanceTimersByTime(_getStreamTimeoutMsForTest() + 1);
+
+    const result = handleStreamFlush({ stream_id, token: 1_123_456 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("STREAM_EXPIRED");
+
+    vi.useRealTimers();
   });
 });
