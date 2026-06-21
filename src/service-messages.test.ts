@@ -73,6 +73,116 @@ describe("SERVICE_MESSAGES.SESSION_CLOSED_NEW_GOVERNOR layout", () => {
 });
 
 // ---------------------------------------------------------------------------
+// SESSION_RECONNECTED — governor-path notification to fellow sessions
+// ---------------------------------------------------------------------------
+describe("SERVICE_MESSAGES.SESSION_RECONNECTED layout", () => {
+  it("renders name and SID inline (non-governor path — governor gets plain prose)", () => {
+    const text = SERVICE_MESSAGES.SESSION_RECONNECTED.text("Worker", 3);
+    expect(text).toBe("Worker (SID 3) reconnected. You are the governor — route ambiguous messages.");
+  });
+
+  it("event type is session_reconnected", () => {
+    expect(SERVICE_MESSAGES.SESSION_RECONNECTED.eventType).toBe("session_reconnected");
+  });
+
+  it("contains session name and SID", () => {
+    const text = SERVICE_MESSAGES.SESSION_RECONNECTED.text("Alpha", 5);
+    expect(text).toContain("Alpha");
+    expect(text).toContain("5");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SESSION_RECONNECTED_FELLOW — peer-path notification to fellow sessions
+// ---------------------------------------------------------------------------
+describe("SERVICE_MESSAGES.SESSION_RECONNECTED_FELLOW layout", () => {
+  it("renders name, SID, and governor label", () => {
+    const text = SERVICE_MESSAGES.SESSION_RECONNECTED_FELLOW.text("Worker", 3, "'Curator' (SID 1)");
+    expect(text).toBe("Worker (SID 3) reconnected. Ambiguous messages go to 'Curator' (SID 1).");
+  });
+
+  it("event type is session_reconnected", () => {
+    expect(SERVICE_MESSAGES.SESSION_RECONNECTED_FELLOW.eventType).toBe("session_reconnected");
+  });
+
+  it("contains name, SID, and governor label", () => {
+    const text = SERVICE_MESSAGES.SESSION_RECONNECTED_FELLOW.text("Scout", 7, "SID 2");
+    expect(text).toContain("Scout");
+    expect(text).toContain("7");
+    expect(text).toContain("SID 2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SESSION_REORIENTATION_SINGLE — single-session reconnect orientation
+// ---------------------------------------------------------------------------
+describe("SERVICE_MESSAGES.SESSION_REORIENTATION_SINGLE layout", () => {
+  it("renders reconnect confirmation with SID and only-session note", () => {
+    const text = SERVICE_MESSAGES.SESSION_REORIENTATION_SINGLE.text(4);
+    expect(text).toBe(
+      "Reconnect authorized. You are SID 4. You are the only active session.",
+    );
+  });
+
+  it("event type is session_reconnected", () => {
+    expect(SERVICE_MESSAGES.SESSION_REORIENTATION_SINGLE.eventType).toBe("session_reconnected");
+  });
+
+  it("contains the SID", () => {
+    const text = SERVICE_MESSAGES.SESSION_REORIENTATION_SINGLE.text(9);
+    expect(text).toContain("9");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SESSION_REORIENTATION_GOVERNOR — governor reconnect orientation
+// ---------------------------------------------------------------------------
+describe("SERVICE_MESSAGES.SESSION_REORIENTATION_GOVERNOR layout", () => {
+  it("renders reconnect confirmation with governor role and SID", () => {
+    const text = SERVICE_MESSAGES.SESSION_REORIENTATION_GOVERNOR.text(2);
+    expect(text).toContain("Reconnect authorized");
+    expect(text).toContain("governor (SID 2)");
+    expect(text).toContain("Ambiguous messages will be routed to you");
+  });
+
+  it("event type is session_reconnected", () => {
+    expect(SERVICE_MESSAGES.SESSION_REORIENTATION_GOVERNOR.eventType).toBe("session_reconnected");
+  });
+
+  it("contains help guide reference", () => {
+    const text = SERVICE_MESSAGES.SESSION_REORIENTATION_GOVERNOR.text(1);
+    expect(text).toContain("help(topic: 'guide')");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SESSION_REORIENTATION_FELLOW — peer reconnect orientation
+// ---------------------------------------------------------------------------
+describe("SERVICE_MESSAGES.SESSION_REORIENTATION_FELLOW layout", () => {
+  it("renders reconnect confirmation with SID and governor label", () => {
+    const text = SERVICE_MESSAGES.SESSION_REORIENTATION_FELLOW.text(3, "'Curator' (SID 1)");
+    expect(text).toContain("Reconnect authorized");
+    expect(text).toContain("SID 3");
+    expect(text).toContain("'Curator' (SID 1)");
+    expect(text).toContain("first escalation point");
+  });
+
+  it("event type is session_reconnected", () => {
+    expect(SERVICE_MESSAGES.SESSION_REORIENTATION_FELLOW.eventType).toBe("session_reconnected");
+  });
+
+  it("contains help guide reference", () => {
+    const text = SERVICE_MESSAGES.SESSION_REORIENTATION_FELLOW.text(5, "SID 2");
+    expect(text).toContain("help(topic: 'guide')");
+  });
+
+  it("routes ambiguous messages to governor label", () => {
+    const text = SERVICE_MESSAGES.SESSION_REORIENTATION_FELLOW.text(5, "'Admin' (SID 1)");
+    expect(text).toContain("Ambiguous messages go to them");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // SESSION_JOINED — 2 attributes (name + SID) → vertical
 // ---------------------------------------------------------------------------
 describe("SERVICE_MESSAGES.SESSION_JOINED layout", () => {

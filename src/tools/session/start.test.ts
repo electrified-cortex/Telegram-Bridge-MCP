@@ -1978,7 +1978,7 @@ describe("session_start tool", () => {
     // eventType: "session_orientation" already verified by find predicate — reconnect authorized path
   });
 
-  it("reconnect: true + multi-session approved → sends session_joined to fellows", async () => {
+  it("reconnect: true + multi-session approved → sends session_reconnected to fellows", async () => {
     mocks.listSessions.mockReturnValue([
       { sid: 1, name: "Overseer", createdAt: "2026-03-17" },
       { sid: 2, name: "Worker", createdAt: "2026-03-17" },
@@ -1997,14 +1997,14 @@ describe("session_start tool", () => {
     await handleSessionReconnect({ name: "Overseer" });
 
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const toFellow = calls.find((c: unknown[]) => c[0] === 2 && c[2] === "session_joined");
+    const toFellow = calls.find((c: unknown[]) => c[0] === 2 && c[2] === "session_reconnected");
     expect(toFellow).toBeDefined();
-    // eventType: "session_joined" with reconnect flag — structural
+    // eventType: "session_reconnected" with reconnect flag — structural
     expect((toFellow![3] as Record<string, unknown>).reconnect).toBe(true);
 
-    const toSelf = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_orientation");
+    const toSelf = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_reconnected");
     expect(toSelf).toBeDefined();
-    // eventType: "session_orientation" already verified by find predicate
+    // eventType: "session_reconnected" for reconnect orientation (was "session_orientation")
   });
 
   it("reconnect: true + denial edits dialog to show denied (not deleted)", async () => {
