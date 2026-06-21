@@ -498,6 +498,8 @@ async function handleGovernorCommand(): Promise<void> {
   }
 
   const { text, keyboard } = buildGovernorPanel(sessions);
+  const _govErr = validateText(text);
+  if (_govErr) { dlog("tool", "panel handler failed", { err: _govErr.message }); return; }
   try {
     const msg = await api.sendMessage(chatId, text, {
       reply_markup: { inline_keyboard: keyboard },
@@ -563,11 +565,14 @@ async function handleGovernorCallback(
     // No-op if selecting the already-current governor
     if (newSid === oldSid) {
       _activePanels.delete(panelMsgId);
+      const _noopText = `${buildGovernorPanel(sessions).text}\n\n▸ ${newGovernor.color} ${newGovernor.name} is already the primary.`;
+      const _noopErr = validateText(_noopText);
+      if (_noopErr) { dlog("tool", "panel handler failed", { err: _noopErr.message }); return; }
       try {
         await runInSessionContext(0, () => api.editMessageText(
           chatId,
           panelMsgId,
-          `${buildGovernorPanel(sessions).text}\n\n▸ ${newGovernor.color} ${newGovernor.name} is already the primary.`,
+          _noopText,
           { reply_markup: { inline_keyboard: [] } },
         ));
       } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
@@ -593,11 +598,14 @@ async function handleGovernorCallback(
 
     // Confirm selection in the panel message and close it
     _activePanels.delete(panelMsgId);
+    const _confirmText = `${buildGovernorPanel(sessions).text}\n\n▸ ✅ Primary set to ${newLabel}`;
+    const _confirmErr = validateText(_confirmText);
+    if (_confirmErr) { dlog("tool", "panel handler failed", { err: _confirmErr.message }); return; }
     try {
       await runInSessionContext(0, () => api.editMessageText(
         chatId,
         panelMsgId,
-        `${buildGovernorPanel(sessions).text}\n\n▸ ✅ Primary set to ${newLabel}`,
+        _confirmText,
         { reply_markup: { inline_keyboard: [] } },
       ));
     } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
@@ -693,6 +701,8 @@ async function handleVoiceCommand(): Promise<void> {
   }
 
   const { text, keyboard } = await buildVoicePanel();
+  const _voiceErr = validateText(text);
+  if (_voiceErr) { dlog("tool", "panel handler failed", { err: _voiceErr.message }); return; }
   try {
     const msg = await api.sendMessage(chatId, text, {
       parse_mode: "Markdown",
@@ -737,6 +747,8 @@ async function handleVoiceCallback(
 
   // Refresh panel at the current wizard step
   const { text, keyboard } = await buildVoicePanel(step);
+  const _stepErr = validateText(text);
+  if (_stepErr) { dlog("tool", "panel handler failed", { err: _stepErr.message }); return; }
   try {
     await runInSessionContext(0, () => api.editMessageText(chatId, panelMsgId, text, {
       parse_mode: "Markdown",
