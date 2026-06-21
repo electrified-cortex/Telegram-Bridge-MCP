@@ -1,6 +1,6 @@
 import { Api, GrammyError, HttpError, InputFile } from "grammy";
 import type { ReactionTypeEmoji, Update } from "grammy/types";
-import type { InputRichMessage, RichMessage } from "./types/rich-message.js";
+import type { InputRichMessage } from "./types/rich-message.js";
 import { readFileSync, existsSync, realpathSync } from "fs";
 import path, { resolve } from "path";
 import { tmpdir } from "os";
@@ -695,7 +695,8 @@ export async function sendRichMessageDirect(
     throw Object.assign(new Error(desc), telegramErr);
   }
 
-  return { message_id: json.result!.message_id };
+  if (!json.result) throw new Error("Telegram API returned ok:true but no result");
+  return { message_id: json.result.message_id };
 }
 
 /**
@@ -705,7 +706,7 @@ export async function sendRichMessageDirect(
  * TODO(10-3012): updateRichMessageDraftDirect — draft update API not confirmed in schema.
  * Replace when Bot API draft-update endpoint is confirmed in docs/rich-message-schema.md.
  */
-export async function updateRichMessageDraftDirect(
+export function updateRichMessageDraftDirect(
   _chatId: number | string,
   _draftId: number,
   _richMessage: InputRichMessage,
@@ -725,7 +726,7 @@ export async function updateRichMessageDraftDirect(
  * TODO(10-3012): finalizeRichMessageDraftDirect — draft finalize API not confirmed in schema.
  * Replace when Bot API draft-finalize endpoint is confirmed in docs/rich-message-schema.md.
  */
-export async function finalizeRichMessageDraftDirect(
+export function finalizeRichMessageDraftDirect(
   _chatId: number | string,
   _draftId: number,
   _options: {

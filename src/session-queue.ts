@@ -605,8 +605,8 @@ export function deliverServiceMessage(
   //                        because the compacting session's own agent must re-arm its monitors.
   // persistent_animation_running is intentionally NOT suppressed: it must wake an idle agent.
   const isSilentEvent =
-    event.content.event_type?.startsWith("behavior_nudge") ||
-    event.content.event_type === "agent_event";
+    eventType.startsWith("behavior_nudge") ||
+    eventType === "agent_event";
   if (!isSilentEvent) {
     notifySession(targetSid, "service", isDequeueActive(targetSid));
   }
