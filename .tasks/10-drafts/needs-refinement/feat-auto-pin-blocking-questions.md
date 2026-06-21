@@ -1,9 +1,17 @@
 ---
+id: "feat-auto-pin"
 title: "Auto-pin blocking questions; auto-unpin on resolution"
 priority: 15
 status: needs-refinement
 created: 2026-04-26
-repo: Telegram MCP
+updated: 2026-06-20
+repo: electrified-cortex/Telegram-Bridge-MCP
+type: Feature
+agent_type: Worker
+model_class: sonnet-class
+reasoning_effort: medium
+branch: dev
+blocked_on: Curator must answer 4 scope questions before spec can be finalized
 ---
 
 # Auto-pin blocking questions; auto-unpin on resolution

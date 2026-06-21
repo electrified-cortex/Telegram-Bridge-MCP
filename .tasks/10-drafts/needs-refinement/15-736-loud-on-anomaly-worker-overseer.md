@@ -1,3 +1,18 @@
+---
+id: "15-736"
+created: 2026-04-19
+updated: 2026-06-20
+status: needs-refinement
+priority: 15
+repo: electrified-cortex/Telegram-Bridge-MCP
+type: Feature
+agent_type: Worker
+model_class: sonnet-class
+reasoning_effort: medium
+branch: dev
+blocked_on: Curator anomaly taxonomy spec
+---
+
 # 15-736 - Loud-on-anomaly for Worker/Overseer loops
 
 ## Context

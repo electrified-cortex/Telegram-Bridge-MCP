@@ -1,8 +1,22 @@
+---
+id: "10-0892"
+title: "Backfill v7.x git tags as Worker dogfood"
+type: chore
+priority: 30
+status: draft
+created: 2026-05-10
+repo: electrified-cortex/Telegram-Bridge-MCP
+agent_type: Worker
+model_class: sonnet-class
+delegation: Worker
+branch: master
+---
+
 # 10-0892 — Backfill v7.x git tags as Worker dogfood
 
 ## Priority
 
-10 (low — no rush per operator 2026-05-10)
+30 (low — no rush per operator 2026-05-10)
 
 ## Context
 
@@ -56,3 +70,15 @@ worktree, no external state, deterministic outcome.
 - verdict: REJECT — spec is a planning note, not executable
 - finding: No delegation assignment. "Tags pushed to origin" requires push access (violates sandbox). Optional GitHub releases AC is inside the AC block making definition-of-done ambiguous.
 - action: Add delegation, remove push-to-origin AC (sandbox can't push), clarify optional vs required ACs.
+
+## Refinement notes (2026-06-20)
+
+**Current tag state:** v7.4.1, v7.6.0, v7.6.1 exist. Still missing: v7.0.0-v7.3, v7.5.x, v7.7.x-v7.11.x.
+
+**Scope adjustment (Workers cannot push):**
+- Worker task: create local annotated tags at correct commits (verify each commit is the right release merge)
+- Push step: explicitly Foreman-gated or operator step — NOT worker AC
+
+**Commit hash list incomplete:** The Notes section only has hashes for v7.0.0-v7.2.2. Curator must provide hashes for v7.3, v7.5.x, v7.7.x-v7.11.x before this can be dispatched.
+
+**Blocking gap:** This task needs Curator to complete the commit hash list before it can be promoted to 40-queued.

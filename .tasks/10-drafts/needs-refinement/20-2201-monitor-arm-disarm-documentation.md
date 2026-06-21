@@ -33,3 +33,17 @@ Operator directive (voice 62948, distilled): documentation must clearly state ho
 - verdict: REJECT — ACs untestable, contradicts 30-2206
 - finding: No file list (scope subjective). Conflates two meanings of "re-arm". Final AC ("fresh agent follows docs through compaction") is a live integration test with no harness or pass criteria. Contradicts 30-2206 (which adds re-arm steps) — these must be reconciled first.
 - action: Enumerate specific files, clarify which "re-arm" concept is being simplified, add objective verification method, reconcile with 30-2206 before re-filing.
+
+## Overseer analysis (2026-06-20)
+30-2206 archived as resolved — `docs/help/compacted.md` already has comprehensive monitor recovery. Conflict resolved.
+
+Remaining gap: the task's premise "monitors survive compaction without re-arming" conflates two distinct things:
+- (a) **Watcher process**: survives compaction independently — `compacted.md` File-B/C correctly checks for this before deciding to restart
+- (b) **Monitor TaskCreate subscription**: dies at compaction — agent must ALWAYS re-run `Monitor()` after compaction
+
+The current docs are correct. "Nothing at compaction recovery" would be a regression. Curator must clarify:
+1. Is this task specifically about removing the watcher-restart step (currently already conditional, not always triggered)?
+2. Or is there a newer claim that even the Monitor TaskCreate subscription now survives compaction?
+3. Or has this been superseded by the post-compact auto-recovery bridge feature?
+
+Until Curator answers, this stays in needs-refinement.

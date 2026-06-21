@@ -1,3 +1,17 @@
+---
+id: "10-733"
+created: 2026-04-19
+updated: 2026-06-20
+status: needs-refinement
+priority: 10
+repo: electrified-cortex/Telegram-Bridge-MCP
+type: Bug
+agent_type: Worker
+model_class: sonnet-class
+reasoning_effort: high
+branch: dev
+---
+
 # 10-733 - Closed sessions must reject their own reconnect tickets
 
 ## Context
@@ -32,3 +46,8 @@ Worker (TMCP) after design review. Curator should spec this before worker claims
 - Memory `feedback_session_close_vs_shutdown.md`.
 - Memory `feedback_no_worker1_this_session.md` (the symptom we're treating).
 - 10-732 (false back-online after close - adjacent close-path work).
+
+## Overseer bounce (2026-06-20)
+- verdict: NEEDS CURATOR DESIGN SPEC
+- finding: AC1 requires "caller identity" definition — concretely: what constitutes a fingerprint? Process token hash? Name? Something in the HTTP headers? This is an architectural/security decision, not a worker decision. The spec itself says "Caller identity needs a concrete definition" and "Curator should spec this before worker claims."
+- action: Curator must design the anti-affinity mechanism (what is caller identity, where is the marker stored, what is the unblock API) before this can be promoted to 40-queued. Once Curator provides the design, worker can implement.

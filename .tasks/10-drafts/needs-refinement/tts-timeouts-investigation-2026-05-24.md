@@ -46,3 +46,14 @@ Current behavior: 45-second hard timeout. Messages ≥~40 words are at risk; ≥
 - Today's session hit timeouts at 38, 41, 42, 46 words. The 40-word rule is empirical from operator pain, not from spec.
 - TMCP returns `tts_timeout` and falls back to text-only delivery. Caller sees the fallback as a text-message-id; the audio is lost.
 - Bridge's claude logs format includes `tts_timeout: TTS synthesis timed out after 45000ms (~N words). Local model not responding.` — exact error string for tracing.
+
+## Implementation status (2026-06-20 update)
+
+The flat 45s timeout has been replaced with a **word-count-scaled timeout** in `src/tts.ts` (lines 226-227):
+- `TTS_SYNTHESIS_TIMEOUT_PER_100_WORDS_MS` (default 45000 = 45s per 100 words)
+- `TTS_SYNTHESIS_TIMEOUT_MIN_MS` (default 45000 minimum)
+- Both env vars are now configurable for operators running local models
+
+With 100 words: 45s. With 250 words: ~112s. With 300 words: ~135s.
+
+**Pre-investigation question for operator:** Is TTS still timing out at current settings (v7.11.1)? The scaled timeout may have resolved the original symptom. Operator confirmation needed before dispatching investigation.
