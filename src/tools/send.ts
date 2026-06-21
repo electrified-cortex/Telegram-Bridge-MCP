@@ -1,7 +1,7 @@
 // Never call 'send' from send.ts handler — use telegram.js primitives directly
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect } from "../telegram.js";
+import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect, RICH_MESSAGES_ENABLED, routeOutboundMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText, getTopic } from "../topic-state.js";
 import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
@@ -532,6 +532,37 @@ export function register(server: McpServer) {
             });
             return toResult({ ok: true, message_id_pending: pendingId, status: "queued_after_audio" });
           }
+
+          // ── Rich-message routing (Bot API 10.1 opt-in) ──────────────────
+          // Chunking-first policy: only route single-chunk Markdown messages to
+          // the rich path. Multi-chunk messages always use the existing split
+          // path. `parse_mode === undefined` is treated as Markdown (default).
+          // The queued-after-audio path above is left on the existing V2 path
+          // for simplicity — rich routing applies to the direct send only.
+          if (
+            RICH_MESSAGES_ENABLED &&
+            (parse_mode === "Markdown" || parse_mode === undefined) &&
+            chunks.length === 1
+          ) {
+            try {
+              const msg = await routeOutboundMessage(chatId, textWithTopic, {
+                parse_mode,
+                disable_notification,
+                reply_parameters: reply_to_message_id !== undefined
+                  ? { message_id: reply_to_message_id }
+                  : undefined,
+                _rawText: text,
+              } as Record<string, unknown>);
+              const hasTable = containsMarkdownTable(text ?? "");
+              warnUnrenderableChars(_sid, finalText);
+              return toResult(hasTable
+                ? { message_id: msg.message_id, ...(compact ? {} : { split_count: 1 }), info: TABLE_WARNING }
+                : { message_id: msg.message_id, ...(compact ? {} : { split_count: 1 }) });
+            } catch (err) {
+              return toError(err);
+            }
+          }
+          // ────────────────────────────────────────────────────────────────
 
           try {
             const message_ids: number[] = [];
