@@ -262,6 +262,40 @@ describe("help tool", () => {
     expect(content).toContain("persistent");
   });
 
+  // AC8 — pod-memory convention regression: literal path must appear in three topics
+  describe("pod-memory convention — literal path regression (AC8)", () => {
+    const POD_MEMORY_PATH = "memory/telegram/session.token";
+
+    it("help(topic: 'compacted') contains the literal token-save path", async () => {
+      const result = await call({ topic: "compacted" });
+      expect(isError(result)).toBe(false);
+      const { content } = parseResult<{ content: string }>(result);
+      expect(content).toContain(POD_MEMORY_PATH);
+    });
+
+    it("help(topic: 'quick_start') contains the literal token-save path", async () => {
+      const result = await call({ topic: "quick_start" });
+      expect(isError(result)).toBe(false);
+      const { content } = parseResult<{ content: string }>(result);
+      expect(content).toContain(POD_MEMORY_PATH);
+    });
+
+    it("help(topic: 'pod-memory') exists and contains the literal token-save path", async () => {
+      const result = await call({ topic: "pod-memory" });
+      expect(isError(result)).toBe(false);
+      const { content } = parseResult<{ content: string }>(result);
+      expect(content).toContain(POD_MEMORY_PATH);
+    });
+
+    it("help(topic: 'pod-memory') documents the rationale (compaction-survivable)", async () => {
+      const result = await call({ topic: "pod-memory" });
+      expect(isError(result)).toBe(false);
+      const { content } = parseResult<{ content: string }>(result);
+      expect(content).toContain("compaction");
+      expect(content).toContain("memory/");
+    });
+  });
+
   describe("topic: 'identity'", () => {
     const VALID_TOKEN = 1123456; // sid=1, suffix=123456
 

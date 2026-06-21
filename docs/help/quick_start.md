@@ -1,5 +1,8 @@
 Quick Start — Minimum to Operate
 
+## 0. Save your token
+Write your session token to `memory/telegram/session.token` as a plain integer — no JSON, no quotes. This path survives compaction. See `help('pod-memory')`.
+
 ## 1. Dequeue loop
 Your heartbeat. Call dequeue() to receive messages and events.
 - Block mode: dequeue() — waits up to 300s for next message. Returns { timed_out: true } on timeout — call again.

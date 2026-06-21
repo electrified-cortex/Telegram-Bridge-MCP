@@ -272,6 +272,7 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
                 token: sessionToken,
                 sid: fullSession.sid,
                 reused: true,
+                save_token_to: "memory/telegram/session.token",
                 hint: "Call dequeue(token) NOW — do not proceed without draining",
                 ...(warnings.length > 0 ? { warnings } : {}),
               };
@@ -341,6 +342,7 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
           token: sessionToken,
           sid: session.sid,
           ...(refresh ? { reused: false } : {}),
+          save_token_to: "memory/telegram/session.token",
           hint: "Call dequeue(token) NOW — do not proceed without draining",
         };
         if (isFirstSession) {
@@ -600,6 +602,7 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   return toResult({
     token: reconToken,
     sid: fullSession.sid,
+    save_token_to: "memory/telegram/session.token",
     hint: "Call dequeue(token) NOW — do not proceed without draining",
     ...(reconProfileAutoloaded !== undefined ? { profile_autoloaded: reconProfileAutoloaded } : {}),
   });
