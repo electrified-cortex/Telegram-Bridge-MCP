@@ -52,3 +52,16 @@ Source: 2026-05-27 refactor scan
 ### Verification
 - `pnpm build`: clean (0 TypeScript errors)
 - `pnpm test`: 3553 pass, 2 pre-existing failures in `service-messages.test.ts` (unrelated to this task)
+
+## Verification
+
+**Verifier:** Dispatch agent (independent) — 2 rounds  
+**Date:** 2026-06-21  
+**Verdict:** APPROVED
+
+All 3 acceptance criteria CONFIRMED:
+1. CONFIRMED — All sendMessage/editMessageText calls in panel handlers have validateText guards. Verified: requestOperatorApproval:84, handleGovernorCommand:501, handleGovernorCallback:569/602, handleVersionCommand:648, handleVoiceCommand:704, handleVoiceCallback:750, handleApproveCommand:1061, handleLoggingCommand:1148, handleSessionCommand:1293. Prior NEEDS_REVISION gaps (governor/voice) resolved in revision commit 661fd871.
+2. CONFIRMED — Zero `/* ignore */` strings remain in src/built-in-commands.ts; all 48 silent catch blocks replaced with `catch (err) { dlog("tool", ...) }`.
+3. CONFIRMED — 3553 tests pass; 2 pre-existing ONBOARDING_LOOP_PATTERN failures (unrelated to this task). Two new tests: dlog-on-throw, text-length-exceeded.
+
+Sealed-By: Foreman (fix/flush-pending-channel-notify-timeout)
