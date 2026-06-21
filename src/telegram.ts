@@ -11,6 +11,7 @@ import {
   resetRateLimiterForTest,
 } from "./rate-limiter.js";
 import { delay } from "./utils/timing.js";
+import { resolveParseMode } from "./markdown.js";
 
 /** Directory where downloaded files are stored — only local paths under this dir are allowed for file uploads. */
 export const SAFE_FILE_DIR = resolve(tmpdir(), "telegram-bridge-mcp");
@@ -828,6 +829,103 @@ export function validateCallbackData(data: string): TelegramError | null {
     code: "CALLBACK_DATA_TOO_LONG",
     message: `Callback data "${data}" is ${byteLen} bytes but the Telegram limit is ${LIMITS.CALLBACK_DATA} bytes.`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Rich-message routing (Bot API 10.1 feature gate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Feature gate for Bot API 10.1 rich-message sends.
+ * Read once at module init from `RICH_MESSAGES` env var — no hot-reload.
+ * Default `false` — all existing behaviour is unchanged unless opted in.
+ */
+export let RICH_MESSAGES_ENABLED: boolean = process.env.RICH_MESSAGES === "true";
+
+/** For testing only: override the rich-messages feature flag. */
+export function setRichMessagesEnabledForTest(enabled: boolean): void {
+  RICH_MESSAGES_ENABLED = enabled;
+}
+
+/**
+ * Routes a single outbound text message to the Bot API 10.1 rich-message path
+ * or the existing send path, based on the `RICH_MESSAGES` feature flag.
+ *
+ * **Chunking-first policy**: callers must split long text with `splitMessage`
+ * before calling this function. Only single-chunk messages are routed to rich.
+ *
+ * Routing rules (Epic 10-3001 §5):
+ * - `RICH_MESSAGES=true` AND `parse_mode` is `"Markdown"` or `undefined`
+ *   → `sendRichMessageDirect` with `{ markdown: text }`
+ * - All other cases (MarkdownV2, HTML, flag off, or error fallback)
+ *   → `resolveParseMode` → `getApi().sendMessage()` (existing proxy path)
+ *
+ * @param chatId   Target Telegram chat ID.
+ * @param text     Raw message text. For Markdown mode this is the original
+ *                 Markdown (NOT yet converted to MarkdownV2).
+ * @param options  Standard `sendMessage` options; `parse_mode` drives routing.
+ */
+export async function routeOutboundMessage(
+  chatId: number | string,
+  text: string,
+  options: {
+    parse_mode?: string;
+    disable_notification?: boolean;
+    reply_parameters?: { message_id: number };
+    _rawText?: string;
+    _skipHeader?: boolean;
+    [key: string]: unknown;
+  } = {},
+): Promise<{ message_id: number }> {
+  const parseMode = options.parse_mode;
+  const shouldUseRich =
+    RICH_MESSAGES_ENABLED &&
+    (parseMode === "Markdown" || parseMode === undefined);
+
+  if (shouldUseRich) {
+    try {
+      // Dynamic import mirrors the pattern used in sendVoiceDirect to avoid
+      // circular-import issues at module initialisation time.
+      const { notifyBeforeFileSend, notifyAfterFileSend, buildHeader } =
+        await import("./outbound-proxy.js");
+
+      // Session header injection: prepend `name_tag` as Markdown inline-code
+      // so multi-session context is visible in the rendered rich message.
+      const skipHeader = options._skipHeader === true;
+      const { plain: headerPlain } = buildHeader();
+      let richMarkdown = text;
+      if (headerPlain && !skipHeader) {
+        richMarkdown = `\`${headerPlain.trim()}\`\n${text}`;
+      }
+
+      // Fire outbound-proxy hooks so animation, temp-message cleanup, and
+      // message-store recording all work the same as for voice/file sends.
+      await notifyBeforeFileSend();
+      const result = await sendRichMessageDirect(chatId, { markdown: richMarkdown }, {
+        disable_notification: options.disable_notification,
+        reply_to_message_id: options.reply_parameters?.message_id,
+      });
+      const rawText = options._rawText ?? text;
+      await notifyAfterFileSend(result.message_id, "text", rawText);
+      return result;
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === "RICH_MESSAGE_UNSUPPORTED") {
+        process.stderr.write(`[rich-route] RICH_MESSAGE_UNSUPPORTED — falling back to existing send path\n`);
+      } else {
+        process.stderr.write(`[rich-route] rich path error, falling back: ${err instanceof Error ? err.message : String(err)}\n`);
+      }
+      // Fall through to the existing send path below.
+    }
+  }
+
+  // Existing send path — the outbound proxy handles header injection,
+  // animation, temp-message clearing, and message-store recording.
+  const resolved = resolveParseMode(text, parseMode);
+  return getApi().sendMessage(chatId, resolved.text, {
+    ...options,
+    parse_mode: resolved.parse_mode,
+  }) as Promise<{ message_id: number }>;
 }
 
 // ---------------------------------------------------------------------------
