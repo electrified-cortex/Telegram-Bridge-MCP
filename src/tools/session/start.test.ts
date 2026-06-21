@@ -1958,7 +1958,7 @@ describe("session_start tool", () => {
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
-  it("reconnect: true + single session approved → sends session_orientation with reconnect text", async () => {
+  it("reconnect: true + single session approved → sends session_reconnected with reconnect text", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, suffix: 111111, name: "Overseer", color: "🟦",
@@ -1973,9 +1973,9 @@ describe("session_start tool", () => {
     await handleSessionReconnect({ name: "Overseer" });
 
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const orientation = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_orientation");
-    expect(orientation).toBeDefined();
-    // eventType: "session_orientation" already verified by find predicate — reconnect authorized path
+    const reconnected = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_reconnected");
+    expect(reconnected).toBeDefined();
+    // eventType: "session_reconnected" already verified by find predicate — reconnect authorized path
   });
 
   it("reconnect: true + multi-session approved → sends session_reconnected to fellows", async () => {
