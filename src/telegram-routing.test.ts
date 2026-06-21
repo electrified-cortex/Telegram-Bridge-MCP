@@ -59,6 +59,7 @@ import {
   setRichMessagesEnabledForTest,
   resetApi,
   installOutboundProxy,
+  sendVoiceDirect,
 } from "./telegram.js";
 
 // ---------------------------------------------------------------------------
@@ -382,5 +383,59 @@ describe("session header injection (rich path)", () => {
 
     const richMsg = (capturedBody as unknown as { rich_message?: { markdown?: string } })?.rich_message;
     expect(richMsg?.markdown).toBe("hello world"); // header suppressed
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC5 — non-text sends (voice/file) are unaffected by RICH_MESSAGES flag
+// ---------------------------------------------------------------------------
+
+describe("non-text sends unaffected by RICH_MESSAGES flag (AC5)", () => {
+  beforeEach(() => {
+    setRichMessagesEnabledForTest(true);
+  });
+
+  it("sendVoiceDirect sends to sendVoice endpoint — not sendRichMessage — when RICH_MESSAGES=true", async () => {
+    const fetchedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) => {
+        fetchedUrls.push(url as string);
+        return Promise.resolve(
+          new Response(JSON.stringify({ ok: true, result: { message_id: 77 } })),
+        );
+      }),
+    );
+
+    const result = await sendVoiceDirect(123, "AgABCDEF_fake_file_id", {});
+
+    expect(result.message_id).toBe(77);
+    // Must call sendVoice — not the rich-message endpoint
+    expect(fetchedUrls.some((u) => u.includes("sendVoice"))).toBe(true);
+    expect(fetchedUrls.some((u) => u.includes("sendRichMessage"))).toBe(false);
+    // Grammy sendMessage path must not be touched
+    expect(fakeSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("sendVoiceDirect with a caption still bypasses sendRichMessage when RICH_MESSAGES=true", async () => {
+    const fetchedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) => {
+        fetchedUrls.push(url as string);
+        return Promise.resolve(
+          new Response(JSON.stringify({ ok: true, result: { message_id: 88 } })),
+        );
+      }),
+    );
+
+    const result = await sendVoiceDirect(123, "AgABCDEF_fake_file_id", {
+      caption: "Voice caption",
+      parse_mode: "Markdown",
+    });
+
+    expect(result.message_id).toBe(88);
+    expect(fetchedUrls.some((u) => u.includes("sendVoice"))).toBe(true);
+    expect(fetchedUrls.some((u) => u.includes("sendRichMessage"))).toBe(false);
   });
 });
