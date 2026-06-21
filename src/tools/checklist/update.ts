@@ -72,14 +72,9 @@ function completionBadge(steps: ChecklistStep[]): string {
   const failed = steps.filter(s => s.status === "failed").length;
   const skipped = steps.filter(s => s.status === "skipped").length;
 
-  let header: string;
-  if (failed > 0) {
-    header = "🔴 Failed";
-  } else if (skipped > 0) {
-    header = "🟡 Incomplete";
-  } else {
-    header = "✅ Complete";
-  }
+  // Skipped steps mean "not applicable" — not a failure. Only failures make the
+  // overall result non-complete.
+  const header = failed > 0 ? "🔴 Failed" : "✅ Complete";
 
   const parts: string[] = [];
   if (skipped > 0) parts.push(`${skipped} skipped`);

@@ -227,7 +227,7 @@ describe("update_checklist tool", () => {
     expect(badge).toMatch(/^🔴 Failed/);
   });
 
-  it("completion badge: some skipped (no failed) → starts with 🟡 Incomplete", async () => {
+  it("completion badge: some skipped (no failed) → starts with ✅ Complete", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 40 });
     mocks.sendMessage.mockResolvedValue({ message_id: 41 });
     const skippedSteps = [
@@ -236,7 +236,7 @@ describe("update_checklist tool", () => {
     ];
     await update({ title: "CI", steps: skippedSteps, message_id: 40, token: 1123456 });
     const badge = mocks.sendMessage.mock.calls[0][1] as string;
-    expect(badge).toMatch(/^🟡 Incomplete/);
+    expect(badge).toMatch(/^✅ Complete/);
   });
 
   it("completion badge: failed + skipped → starts with 🔴 Failed", async () => {
@@ -264,7 +264,7 @@ describe("update_checklist tool", () => {
     expect(badge).toBe("✅ Complete");
   });
 
-  it("completion badge: only skipped → '🟡 Incomplete\\n1 skipped'", async () => {
+  it("completion badge: only skipped → '✅ Complete\\n1 skipped' (skipped = not applicable, not a failure)", async () => {
     mocks.editMessageText.mockResolvedValue({ message_id: 70 });
     mocks.sendMessage.mockResolvedValue({ message_id: 71 });
     const skippedSteps = [
@@ -273,7 +273,19 @@ describe("update_checklist tool", () => {
     ];
     await update({ title: "CI", steps: skippedSteps, message_id: 70, token: 1123456 });
     const badge = mocks.sendMessage.mock.calls[0][1] as string;
-    expect(badge).toBe("🟡 Incomplete\n1 skipped");
+    expect(badge).toBe("✅ Complete\n1 skipped");
+  });
+
+  it("completion badge: all steps skipped → '✅ Complete\\nN skipped'", async () => {
+    mocks.editMessageText.mockResolvedValue({ message_id: 75 });
+    mocks.sendMessage.mockResolvedValue({ message_id: 76 });
+    const allSkippedSteps = [
+      { label: "Build", status: "skipped" },
+      { label: "Deploy", status: "skipped" },
+    ];
+    await update({ title: "CI", steps: allSkippedSteps, message_id: 75, token: 1123456 });
+    const badge = mocks.sendMessage.mock.calls[0][1] as string;
+    expect(badge).toBe("✅ Complete\n2 skipped");
   });
 
   it("completion badge: only failed → '🔴 Failed\\n1 failed'", async () => {
