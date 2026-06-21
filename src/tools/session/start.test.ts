@@ -183,7 +183,7 @@ describe("session_start tool", () => {
     expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
-      hint: "Call dequeue(token) NOW — do not proceed without draining",
+      hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
     });
   });
 
@@ -195,7 +195,7 @@ describe("session_start tool", () => {
     expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
-      hint: "Call dequeue(token) NOW — do not proceed without draining",
+      hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
     });
   });
 
@@ -2787,7 +2787,7 @@ describe("session/start refresh flag", () => {
     expect(result.reused).toBe(true);
     expect(result.token).toBe(1123456);
     expect(result.sid).toBe(1);
-    expect(result.hint).toBe("Call dequeue(token) NOW — do not proceed without draining");
+    expect(result.hint).toBe("Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
