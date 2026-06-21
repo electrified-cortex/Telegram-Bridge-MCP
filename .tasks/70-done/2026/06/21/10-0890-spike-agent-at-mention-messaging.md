@@ -10,6 +10,7 @@ delegation: Worker
 target_repo: Telegram MCP
 needs-curator-review: false
 target_branch: dev
+shipped: v7.11.1
 ---
 
 # Spike: @mention agent-to-agent messaging in Telegram

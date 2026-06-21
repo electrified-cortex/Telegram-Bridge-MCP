@@ -8,6 +8,7 @@ type: Feature
 agent_type: Worker
 model_class: sonnet-class
 reasoning_effort: medium
+shipped: v7.11.1
 ---
 
 # 15-0898 — Document pod-memory convention for compaction-survivable agent state

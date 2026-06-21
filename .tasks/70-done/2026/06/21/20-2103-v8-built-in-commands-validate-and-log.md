@@ -3,6 +3,7 @@ Created: 2026-05-27
 Status: backlog
 Priority: medium-high
 Source: 2026-05-27 refactor scan
+shipped: v7.11.1
 ---
 
 # built-in-commands.ts — Add validateText and dlog to catch blocks
