@@ -537,9 +537,8 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   if (allSessions.length === 1) {
     deliverServiceMessage(
       existing.sid,
-      `Reconnect authorized. You are SID ${existing.sid}. ` +
-        `You are the only active session.`,
-      "session_orientation",
+      SERVICE_MESSAGES.SESSION_REORIENTATION_SINGLE.text(existing.sid),
+      SERVICE_MESSAGES.SESSION_REORIENTATION_SINGLE.eventType,
       { sid: existing.sid, name: existing.name },
     );
   } else {
@@ -548,16 +547,14 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     const governorLabel = governorSession
       ? `'${governorSession.name}' (SID ${governorSid})`
       : `SID ${governorSid}`;
-    // TODO: reconnect path below still uses hardcoded inline strings — extract to SERVICE_MESSAGES pair (not in scope of this task)
     for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
       const isGovernorFellow = fellow.sid === governorSid;
-      const text = isGovernorFellow
-        ? `${existing.name} (SID ${existing.sid}) reconnected. You are the governor — route ambiguous messages.`
-        : `${existing.name} (SID ${existing.sid}) reconnected. Ambiguous messages go to ${governorLabel}.`;
       deliverServiceMessage(
         fellow.sid,
-        text,
-        SERVICE_MESSAGES.SESSION_JOINED.eventType,
+        isGovernorFellow
+          ? SERVICE_MESSAGES.SESSION_RECONNECTED.text(existing.name, existing.sid)
+          : SERVICE_MESSAGES.SESSION_RECONNECTED_FELLOW.text(existing.name, existing.sid, governorLabel),
+        SERVICE_MESSAGES.SESSION_RECONNECTED.eventType,
         {
           sid: existing.sid,
           name: existing.name,
@@ -567,17 +564,12 @@ export async function handleSessionReconnect({ name }: { name: string }) {
       );
     }
     const isGovernorReconnect = existing.sid === governorSid;
-    const roleNote = isGovernorReconnect
-      ? `You are the governor (SID ${existing.sid}). ` +
-        `Ambiguous messages will be routed to you. ` +
-        `Call help(topic: 'guide') for trust and routing guidance.`
-      : `You are SID ${existing.sid}. ${governorLabel} is your first escalation ` +
-        `point. Ambiguous messages go to them. ` +
-        `Call help(topic: 'guide') for trust and routing guidance.`;
     deliverServiceMessage(
       existing.sid,
-      `Reconnect authorized. Session state preserved. ${roleNote}`,
-      "session_orientation",
+      isGovernorReconnect
+        ? SERVICE_MESSAGES.SESSION_REORIENTATION_GOVERNOR.text(existing.sid)
+        : SERVICE_MESSAGES.SESSION_REORIENTATION_FELLOW.text(existing.sid, governorLabel),
+      SERVICE_MESSAGES.SESSION_REORIENTATION_GOVERNOR.eventType,
       { sid: existing.sid, name: existing.name, governor_sid: governorSid },
     );
   }

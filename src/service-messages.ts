@@ -166,6 +166,56 @@ export const SERVICE_MESSAGES = deepFreeze({
       `${name} (SID ${sid}) joined. Ambiguous messages go to ${governorLabel}.`,
   },
 
+  // NOTE: SESSION_RECONNECTED and SESSION_RECONNECTED_FELLOW both use
+  // eventType "session_reconnected" (not "session_joined") — reconnect is a
+  // distinct lifecycle event. They intentionally share the eventType; the
+  // distinction is only in message text (governor path vs. peer path).
+  /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session */
+  SESSION_RECONNECTED: {
+    eventType: "session_reconnected" as const,
+    /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session */
+    text: (name: string, sid: number) =>
+      `${name} (SID ${sid}) reconnected. You are the governor — route ambiguous messages.`,
+  },
+
+  /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor (e.g. "'Curator' (SID 1)") */
+  SESSION_RECONNECTED_FELLOW: {
+    eventType: "session_reconnected" as const,
+    /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
+    text: (name: string, sid: number, governorLabel: string) =>
+      `${name} (SID ${sid}) reconnected. Ambiguous messages go to ${governorLabel}.`,
+  },
+
+  /** @param sid SID of the reconnecting session (single-session path) */
+  SESSION_REORIENTATION_SINGLE: {
+    eventType: "session_reconnected" as const,
+    /** @param sid SID of the reconnecting session */
+    text: (sid: number) =>
+      `Reconnect authorized. You are SID ${sid}. You are the only active session.`,
+  },
+
+  /** @param sid SID of the reconnecting session (governor path) */
+  SESSION_REORIENTATION_GOVERNOR: {
+    eventType: "session_reconnected" as const,
+    /** @param sid SID of the reconnecting session */
+    text: (sid: number) =>
+      `Reconnect authorized. Session state preserved. ` +
+      `You are the governor (SID ${sid}). ` +
+      `Ambiguous messages will be routed to you. ` +
+      `Call help(topic: 'guide') for trust and routing guidance.`,
+  },
+
+  /** @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
+  SESSION_REORIENTATION_FELLOW: {
+    eventType: "session_reconnected" as const,
+    /** @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
+    text: (sid: number, governorLabel: string) =>
+      `Reconnect authorized. Session state preserved. ` +
+      `You are SID ${sid}. ${governorLabel} is your first escalation point. ` +
+      `Ambiguous messages go to them. ` +
+      `Call help(topic: 'guide') for trust and routing guidance.`,
+  },
+
   SESSION_CLOSED: {
     eventType: "session_closed" as const,
     /**
