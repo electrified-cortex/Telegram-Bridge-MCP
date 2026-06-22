@@ -395,6 +395,11 @@ export function unregisterSseMonitor(sid: number): void {
   }
 }
 
+/** Return true if the session currently has an active SSE (activity/listen) subscription. */
+export function isSseMonitorActive(sid: number): boolean {
+  return _state.get(sid)?.sseConnected === true;
+}
+
 /** Return true if the session currently has an in-flight dequeue. */
 export function isDequeueActive(sid: number): boolean {
   return _state.get(sid)?.inflightDequeue ?? false;
@@ -587,21 +592,14 @@ export async function clearActivityFile(sid: number): Promise<void> {
   const filePath = entry.filePath;
   const tmcpOwned = entry.tmcpOwned;
 
-  if (entry.sseConnected) {
-    // An SSE monitor is still active — keep the shared gate entry alive (its
-    // debounce + re-notify timer still govern the SSE stream); drop only the
-    // file registration.
-    entry.filePath = null;
-    entry.tmcpOwned = false;
-    entry.touchInFlight = false;
-  } else {
-    // No monitor left — tear down the gate entry and its re-notify timer.
-    if (entry.pendingReNotifyHandle !== null) {
-      clearTimeout(entry.pendingReNotifyHandle);
-      entry.pendingReNotifyHandle = null;
-    }
-    _state.delete(sid);
+  // Tear down the gate entry fully. If an SSE monitor was still active,
+  // cancelSseConnection() was already called by the session-teardown layer
+  // before this function is reached — cancel handled the SSE cleanup.
+  if (entry.pendingReNotifyHandle !== null) {
+    clearTimeout(entry.pendingReNotifyHandle);
+    entry.pendingReNotifyHandle = null;
   }
+  _state.delete(sid);
 
   if (tmcpOwned && filePath !== null) {
     try {
