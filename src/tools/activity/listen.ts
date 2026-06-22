@@ -37,8 +37,8 @@ export function handleActivityListen(args: Record<string, unknown>) {
   const sseUrl = `${baseUrl}/sse?token=${args.token as number}`;
   const downloadUrl = `${baseUrl}/tools/sse-monitor.sh`;
   // command uses a local path. Remote pods that don't have a repo checkout should
-  // download the script from download_url, save it to a local path of their choice
-  // (e.g. their pod root or memory/ dir), then arm:
+  // download the script from download_url, save it to a local path of their choice,
+  // then arm:
   //   Monitor tool, persistent: true, command: bash <saved-path> '<sse_url>'
   const command = `bash sse-monitor.sh '${sseUrl}'`;
 
@@ -56,6 +56,6 @@ export function handleActivityListen(args: Record<string, unknown>) {
     download_url: downloadUrl,
     arm_instructions:
       "If you have a repo checkout, run: bash <repo>/tools/sse-monitor.sh '<sse_url>'. " +
-      "Otherwise: download the script from download_url, save it to a local path (e.g. your pod root or memory/ dir), then arm the Monitor tool with: bash <saved-path> '<sse_url>' and persistent: true.",
+      "Otherwise: download the script from download_url, save it to a local path of your choice, then arm the Monitor tool with: bash <saved-path> '<sse_url>' and persistent: true.",
   });
 }
