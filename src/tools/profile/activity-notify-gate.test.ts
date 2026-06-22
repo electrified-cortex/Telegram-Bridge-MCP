@@ -33,7 +33,7 @@ vi.mock("../../telegram.js", async (importActual) => {
   return actual;
 });
 
-import { handleKickGate } from "./activity-kick-gate.js";
+import { handleNotifyGate } from "./activity-notify-gate.js";
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -49,9 +49,9 @@ beforeEach(() => {
   gateMocks.requireAuth.mockReturnValue(SID);
 });
 
-describe("handleKickGate — GET (ms omitted)", () => {
+describe("handleNotifyGate — GET (ms omitted)", () => {
   it("returns ok:true with current ms and default_ms when no ms provided", () => {
-    const result = handleKickGate({ token: TOKEN });
+    const result = handleNotifyGate({ token: TOKEN });
     expect(isError(result)).toBe(false);
     const parsed = parseResult(result);
     expect(parsed.ok).toBe(true);
@@ -61,22 +61,22 @@ describe("handleKickGate — GET (ms omitted)", () => {
 
   it("returns currently set ms if it was previously set", () => {
     _debounceStore.set(SID, 60_000);
-    const result = handleKickGate({ token: TOKEN });
+    const result = handleNotifyGate({ token: TOKEN });
     const parsed = parseResult(result);
     expect(parsed.ms).toBe(60_000);
   });
 
   it("returns error when auth fails", () => {
     gateMocks.requireAuth.mockReturnValue({ code: "AUTH_FAILED", message: "bad token" });
-    const result = handleKickGate({ token: 0 });
+    const result = handleNotifyGate({ token: 0 });
     expect(isError(result)).toBe(true);
   });
 });
 
-describe("handleKickGate — SET (ms provided)", () => {
-  it("sets kick gate ms and returns ok:true with previous value", () => {
+describe("handleNotifyGate — SET (ms provided)", () => {
+  it("sets notify gate ms and returns ok:true with previous value", () => {
     _debounceStore.set(SID, DEFAULT_MS);
-    const result = handleKickGate({ token: TOKEN, ms: 60_000 });
+    const result = handleNotifyGate({ token: TOKEN, ms: 60_000 });
     expect(isError(result)).toBe(false);
     const parsed = parseResult(result);
     expect(parsed.ok).toBe(true);
@@ -86,17 +86,17 @@ describe("handleKickGate — SET (ms provided)", () => {
   });
 
   it("rejects ms below minimum (1000)", () => {
-    const result = handleKickGate({ token: TOKEN, ms: 999 });
+    const result = handleNotifyGate({ token: TOKEN, ms: 999 });
     expect(isError(result)).toBe(true);
   });
 
   it("rejects ms above maximum (3600000)", () => {
-    const result = handleKickGate({ token: TOKEN, ms: 3_600_001 });
+    const result = handleNotifyGate({ token: TOKEN, ms: 3_600_001 });
     expect(isError(result)).toBe(true);
   });
 
   it("accepts minimum boundary (1000 ms)", () => {
-    const result = handleKickGate({ token: TOKEN, ms: 1_000 });
+    const result = handleNotifyGate({ token: TOKEN, ms: 1_000 });
     expect(isError(result)).toBe(false);
     const parsed = parseResult(result);
     expect(parsed.ok).toBe(true);
@@ -104,7 +104,7 @@ describe("handleKickGate — SET (ms provided)", () => {
   });
 
   it("accepts maximum boundary (3600000 ms)", () => {
-    const result = handleKickGate({ token: TOKEN, ms: 3_600_000 });
+    const result = handleNotifyGate({ token: TOKEN, ms: 3_600_000 });
     expect(isError(result)).toBe(false);
     const parsed = parseResult(result);
     expect(parsed.ok).toBe(true);
@@ -113,7 +113,7 @@ describe("handleKickGate — SET (ms provided)", () => {
 
   it("returns error when auth fails on SET", () => {
     gateMocks.requireAuth.mockReturnValue({ code: "AUTH_FAILED", message: "bad token" });
-    const result = handleKickGate({ token: 0, ms: 60_000 });
+    const result = handleNotifyGate({ token: 0, ms: 60_000 });
     expect(isError(result)).toBe(true);
   });
 });

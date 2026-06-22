@@ -13,7 +13,7 @@
 #   --help             Print this help and exit.
 #
 # Output:
-#   kick          — activity file mtime changed; call dequeue().
+#   notify        — activity file mtime changed; call dequeue().
 #   heartbeat     — no change in the last --heartbeat seconds (monitor is alive).
 #   timeout       — --timeout elapsed with no kick; exits 0.
 #
@@ -34,7 +34,7 @@ Watches a TMCP activity file for mtime changes and emits one kick line per chang
   --help                 Print this help and exit.
 
 Output lines:
-  kick        mtime changed — call dequeue()
+  notify      mtime changed — call dequeue()
   heartbeat   monitor is alive (emitted every --heartbeat seconds when idle)
   timeout     idle limit reached — exits 0
 EOF
@@ -116,7 +116,7 @@ while true; do
     if [[ -f "$ACTIVITY_FILE" ]]; then
         current_mtime=$(get_mtime "$ACTIVITY_FILE")
         if [[ "$current_mtime" != "$last_mtime" ]]; then
-            emit "kick"
+            emit "notify"
             last_mtime=$current_mtime
             last_event_ts=$now
             last_heartbeat_ts=$now
