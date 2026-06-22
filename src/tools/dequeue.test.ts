@@ -2578,3 +2578,122 @@ describe("unexpected subscription close — dequeue injection (10-3029 AC2+AC3)"
     );
   });
 });
+// AC2 + AC3: unexpected subscription close — dequeue injection (10-3029)
+// =============================================================================
+describe("unexpected subscription close — dequeue injection (10-3029 AC2+AC3)", () => {
+  const SID = 42;
+  const TOKEN = SID * 1_000_000 + 123_456;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    // getSession returns { name: "TestSession" } by default (no parent_sid) — not a child session
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    // Default: no unexpected close pending
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValue(false);
+  });
+
+  it("AC2: injects SUBSCRIPTION_CLOSED_UNEXPECTEDLY service message when unexpected close is pending", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Simulate an unexpected SSE or activity-file close
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValueOnce(true);
+    mocks.dequeueBatch.mockReturnValueOnce([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    // deliverServiceMessage should have been called with the bundled entry form
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.objectContaining({ eventType: "subscription_closed_unexpectedly" }),
+    );
+  });
+
+  it("AC2: service message text mentions re-arming the monitor", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValueOnce(true);
+    mocks.dequeueBatch.mockReturnValueOnce([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    const [, entry] = mocks.deliverServiceMessage.mock.calls.find(
+      ([, e]) => typeof e === "object" && (e as Record<string, string>).eventType === "subscription_closed_unexpectedly",
+    ) ?? [];
+    expect(entry).toBeDefined();
+    expect((entry as Record<string, string>).text).toBeTruthy();
+  });
+
+  it("AC3: second dequeue does NOT inject the message again when consume returns false", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // First dequeue: consumed flag
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValueOnce(true);
+    mocks.dequeueBatch.mockReturnValue([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    const afterFirst = mocks.deliverServiceMessage.mock.calls.filter(
+      ([, e]) => typeof e === "object" && (e as Record<string, string>).eventType === "subscription_closed_unexpectedly",
+    ).length;
+    expect(afterFirst).toBe(1);
+
+    vi.clearAllMocks();
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    // consume returns false on second call (already consumed)
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValue(false);
+    mocks.dequeueBatch.mockReturnValue([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.objectContaining({ eventType: "subscription_closed_unexpectedly" }),
+    );
+  });
+
+  it("AC3: no service message when consume returns false (no prior loss event)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValue(false);
+    mocks.dequeueBatch.mockReturnValue([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.objectContaining({ eventType: "subscription_closed_unexpectedly" }),
+    );
+  });
+});
