@@ -101,7 +101,7 @@ stream/flush(stream_id)
   remainder.
 - **Rate limit:** ~1 edit/second per message (Telegram enforces this). The bridge
   surfaces `RATE_LIMITED` with `retryAfterMs` instead of throwing.
-- **Stream timeout:** Streams expire after 10 minutes of inactivity by default.
+- **Stream timeout:** Streams expire 10 minutes from **creation time** by default (regardless of activity).
   Override with the `STREAM_TIMEOUT_MS` environment variable (milliseconds).
 - **Concurrent streams:** Multiple streams can be open simultaneously across sessions,
   but the global bot rate limit (~20 edits/sec burst, ~1/sec sustained) is shared.
