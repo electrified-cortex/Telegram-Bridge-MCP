@@ -12,17 +12,11 @@ Plain integer. No JSON wrapper. No quotes. Write the raw token number and nothin
 
 ## Rationale
 
-Claude Code context compaction erases in-memory state. Any value you need after a compaction must be written to a file before the compaction occurs. The `memory/` directory is the canonical location for pod-relative persistent state — it sits outside the context window and survives compaction unconditionally.
+Your agent runtime's context compaction erases in-memory state. Any value you need after a compaction must be written to a file before the compaction occurs. The `memory/` directory is the canonical location for persistent state — it sits outside the context window and survives compaction unconditionally.
 
-## Pod-relative paths
+## Relative paths
 
-The pod is the directory containing the agent's `CLAUDE.md` and `.claude/settings.local.json`. For example:
-
-```
-.agents/agents/curator/memory/telegram/session.token
-```
-
-All paths in this convention are pod-relative (relative to that directory), not repo-relative.
+All paths in this convention are relative to your agent's working directory (the root directory your agent runs from), not to the repository root.
 
 ## Rule
 
