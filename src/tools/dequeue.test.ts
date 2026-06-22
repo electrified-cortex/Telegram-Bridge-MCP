@@ -31,6 +31,7 @@ const fileStateMocks = vi.hoisted(() => ({
   getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
   releaseNotifyDebounce: vi.fn((_sid: number) => {}),
   notifyIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
+  consumeUnexpectedSubscriptionClose: vi.fn((_sid: number): boolean => false),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
@@ -38,6 +39,7 @@ vi.mock("./activity/file-state.js", () => ({
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
   releaseNotifyDebounce: (sid: number) => { fileStateMocks.releaseNotifyDebounce(sid); },
   notifyIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.notifyIfAllowed(sid, source, inflight); },
+  consumeUnexpectedSubscriptionClose: (sid: number) => fileStateMocks.consumeUnexpectedSubscriptionClose(sid),
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -117,6 +119,10 @@ vi.mock("../service-messages.js", () => ({
     DUPLICATE_SESSION_DETECTED: {
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
+    },
+    SUBSCRIPTION_CLOSED_UNEXPECTEDLY: {
+      eventType: "subscription_closed_unexpectedly",
+      text: "Your monitor subscription closed unexpectedly — re-arm your monitor.",
     },
   },
 }));
@@ -1701,6 +1707,792 @@ describe("checkDequeueRate (runaway-dequeue rate guard)", () => {
       SID,
       expect.stringContaining("RUNAWAY DEQUEUE"),
       "behavior_runaway_dequeue",
+    );
+  });
+});
+
+// =============================================================================
+// checkSubTimeoutDequeue — AC1: sub-timeout interval detection
+// =============================================================================
+describe("checkSubTimeoutDequeue (AC1 — sub-timeout interval detection)", () => {
+  const SID = 55;
+  const TOKEN = SID * 1_000_000 + 123_456;
+
+  // Helper: fake the clock so consecutive calls appear to be N ms apart
+  function makeTimedCall(
+    call: (args: Record<string, unknown>) => Promise<unknown>,
+    intervalMs: number,
+  ) {
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+    return async (n: number) => {
+      for (let i = 0; i < n; i++) {
+        if (i > 0) fakeNow += intervalMs;
+        await call({ timeout: 0, token: TOKEN });
+      }
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    _resetDequeueThrottleForTest();
+    _setBackoffSleepForTest(() => Promise.resolve()); // instant sleep — don't block sub-timeout tests
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("does not warn when only 9 consecutive sub-timeout dequeues (below threshold of 10)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+    const runTimed = makeTimedCall(call, 10_000); // 10s apart — below 60s reference
+
+    await runTimed(10); // 1 baseline + 9 intervals = 9 consecutive sub-timeout — still below 10
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("DEQUEUE TOO FAST"),
+      "behavior_dequeue_sub_timeout",
+    );
+  });
+
+  it("fires behavior_dequeue_sub_timeout after 10 consecutive sub-timeout intervals", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+    const runTimed = makeTimedCall(call, 10_000); // 10s apart — below 60s reference
+
+    await runTimed(11); // 1 baseline + 10 intervals = 10 consecutive sub-timeout → fires
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("DEQUEUE TOO FAST"),
+      "behavior_dequeue_sub_timeout",
+    );
+  });
+
+  it("does not warn when intervals are all >= 60s (above reference)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+    const runTimed = makeTimedCall(call, 65_000); // 65s apart — above 60s reference
+
+    await runTimed(10); // many calls, but all intervals above threshold
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("DEQUEUE TOO FAST"),
+      "behavior_dequeue_sub_timeout",
+    );
+  });
+
+  it("resets the consecutive count when a normal (>=60s) interval is observed", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+
+    // 4 consecutive sub-timeout calls (10s apart) — just below threshold
+    for (let i = 0; i < 5; i++) {
+      if (i > 0) fakeNow += 10_000;
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // One normal-interval call (70s later) — resets the count
+    fakeNow += 70_000;
+    await call({ timeout: 0, token: TOKEN });
+
+    // 4 more sub-timeout calls — counter starts fresh, still below threshold
+    for (let i = 0; i < 4; i++) {
+      fakeNow += 10_000;
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // Should NOT have warned — count was reset by the normal interval
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("DEQUEUE TOO FAST"),
+      "behavior_dequeue_sub_timeout",
+    );
+  });
+
+  it("does not repeat the warning within the 120s cooldown", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+
+    // Trigger the warning (11 calls at 10s each = 10 consecutive sub-timeout intervals)
+    for (let i = 0; i < 11; i++) {
+      if (i > 0) fakeNow += 10_000;
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    const warnCount1 = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_dequeue_sub_timeout",
+    ).length;
+    expect(warnCount1).toBe(1);
+
+    // More sub-timeout calls within the 120s cooldown window
+    for (let i = 0; i < 5; i++) {
+      fakeNow += 10_000;
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    const warnCount2 = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_dequeue_sub_timeout",
+    ).length;
+    expect(warnCount2).toBe(1); // still just 1 — cooldown suppresses repeat
+  });
+
+  it("normal dequeue (content returned) unaffected by sub-timeout guard", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    const evt = makeEvent(42, "normal content");
+    mocks.dequeueBatch.mockReturnValue([evt]);
+
+    // Many rapid calls, all returning content — no sub-timeout warning
+    for (let i = 0; i < 10; i++) {
+      const result = await call({ timeout: 0, token: TOKEN });
+      expect(isError(result)).toBe(false);
+      const data = parseResult<DequeueResult>(result);
+      expect(data.updates).toHaveLength(1);
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("DEQUEUE TOO FAST"),
+      "behavior_dequeue_sub_timeout",
+    );
+  });
+});
+
+// =============================================================================
+// checkZeroResultRapidFire — AC2: zero-result instant-poll detection
+// =============================================================================
+describe("checkZeroResultRapidFire (AC2 — zero-result instant-poll detection)", () => {
+  const SID = 66;
+  const TOKEN = SID * 1_000_000 + 123_456;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    _resetDequeueThrottleForTest();
+    _setBackoffSleepForTest(() => Promise.resolve()); // instant sleep — don't block zero-result tests
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.dequeueBatch.mockReturnValue([]);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("does not warn after 4 consecutive zero-result instant polls (below threshold)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 4 instant polls, all empty
+    for (let i = 0; i < 4; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("IDLE DEQUEUE LOOP"),
+      "behavior_dequeue_zero_result",
+    );
+  });
+
+  it("fires behavior_dequeue_zero_result on the 5th consecutive empty instant poll", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 5 instant polls, all empty → fires on 5th
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("IDLE DEQUEUE LOOP"),
+      "behavior_dequeue_zero_result",
+    );
+  });
+
+  it("resets zero-result counter when content is returned (AC3)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 4 empty polls
+    for (let i = 0; i < 4; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // One content-returning poll resets the counter
+    const evt = makeEvent(99, "content arrives");
+    mocks.dequeueBatch.mockReturnValueOnce([evt]);
+    await call({ timeout: 0, token: TOKEN });
+
+    // 4 more empty polls — counter was reset, still below threshold
+    mocks.dequeueBatch.mockReturnValue([]);
+    for (let i = 0; i < 4; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("IDLE DEQUEUE LOOP"),
+      "behavior_dequeue_zero_result",
+    );
+  });
+
+  it("does not warn for long-poll timeouts (timed_out: true is not rapid-fire)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Patient long-poll — returns timed_out after each wait.
+    // Use a very short timeout so the test completes quickly; the key is that
+    // timed_out exits do NOT count as zero-result rapid-fire events.
+    mocks.waitForEnqueue.mockImplementation(() => delay(50));
+
+    // 3 calls well above the threshold if timed_out counted — proves they don't.
+    for (let i = 0; i < 3; i++) {
+      const result = await call({ timeout: 1, token: TOKEN });
+      const data = parseResult(result);
+      expect(data.timed_out).toBe(true);
+    }
+
+    // Then 5 instant polls (which DO count) to reach the threshold
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // Warning fires from the 5 instant polls, NOT from the timed_out calls
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("IDLE DEQUEUE LOOP"),
+      "behavior_dequeue_zero_result",
+    );
+
+    // Confirm the warning fires only once (from the 5 instant polls)
+    const warnCount = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_dequeue_zero_result",
+    ).length;
+    expect(warnCount).toBe(1);
+  });
+
+  it("does not repeat the warning within the 120s cooldown", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Trigger the first warning (5 empty instant polls)
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    const warnCount1 = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_dequeue_zero_result",
+    ).length;
+    expect(warnCount1).toBe(1);
+
+    // More empty polls within cooldown — cooldown suppresses repeat
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    const warnCount2 = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_dequeue_zero_result",
+    ).length;
+    expect(warnCount2).toBe(1); // still just 1
+  });
+
+  it("normal dequeue behavior (content arrives) is entirely unaffected", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Content returns on every call — zero-result counter never accumulates
+    const evt = makeEvent(77, "always content");
+    mocks.dequeueBatch.mockReturnValue([evt]);
+
+    for (let i = 0; i < 20; i++) {
+      const result = await call({ timeout: 0, token: TOKEN });
+      expect(isError(result)).toBe(false);
+      const data = parseResult<DequeueResult>(result);
+      expect(data.updates).toHaveLength(1);
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("IDLE DEQUEUE LOOP"),
+      "behavior_dequeue_zero_result",
+    );
+  });
+
+  it("blocking-wait path (content arrives after wait) also resets zero-result counter", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 4 empty instant polls
+    for (let i = 0; i < 4; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // One blocking-wait call that returns content — should reset counter
+    const evt = makeEvent(88, "from blocking wait");
+    mocks.dequeueBatch
+      .mockReturnValueOnce([]) // empty on first check → triggers block wait
+      .mockReturnValueOnce([evt]); // arrives after wait
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    await call({ timeout: 1, token: TOKEN });
+
+    // 4 more empty instant polls — counter reset, no warning
+    mocks.dequeueBatch.mockReturnValue([]);
+    for (let i = 0; i < 4; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("IDLE DEQUEUE LOOP"),
+      "behavior_dequeue_zero_result",
+    );
+  });
+});
+
+// =============================================================================
+// Exponential backoff (AC3) — delay before honoring next dequeue on detection
+// =============================================================================
+describe("exponential backoff (AC3 — delay on detection event)", () => {
+  const SID = 77;
+  const TOKEN = SID * 1_000_000 + 123_456;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    _resetDequeueThrottleForTest();
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.dequeueBatch.mockReturnValue([]);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    // Use instant sleep so backoff doesn't slow tests
+    _setBackoffSleepForTest(() => Promise.resolve());
+  });
+
+  afterEach(() => {
+    _setBackoffSleepForTest(undefined);
+    vi.restoreAllMocks();
+  });
+
+  it("sets backoff to 5 s (initial) when zero-result detection fires", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 5 consecutive empty instant polls → fires zero-result detection
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(_getBackoffDelayForTest(SID)).toBe(5_000);
+  });
+
+  it("doubles backoff on second detection (5 s → 10 s)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+
+    // First detection: 5 consecutive zero-result instant polls → backoff = 5 s
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+    expect(_getBackoffDelayForTest(SID)).toBe(5_000);
+
+    // Advance past the 120s warning cooldown
+    fakeNow += 130_000;
+
+    // One more empty poll: count already at threshold (5), cooldown expired → second detection
+    await call({ timeout: 0, token: TOKEN });
+    expect(_getBackoffDelayForTest(SID)).toBe(10_000);
+  });
+
+  it("caps backoff at 60 s (does not exceed BACKOFF_MAX_MS)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+
+    // Trigger enough detection events to saturate the cap: 5→10→20→40→60
+    // Each detection requires 10 sub-timeout calls + passing 120s cooldown.
+    for (let trigger = 0; trigger < 5; trigger++) {
+      // Advance past cooldown before each trigger
+      fakeNow += 130_000;
+      for (let i = 0; i < 10; i++) {
+        fakeNow += 10_000;
+        await call({ timeout: 0, token: TOKEN });
+      }
+    }
+
+    // After 5 triggers the backoff should be capped at 60 s (5→10→20→40→60)
+    expect(_getBackoffDelayForTest(SID)).toBeLessThanOrEqual(60_000);
+    expect(_getBackoffDelayForTest(SID)).toBe(60_000);
+  });
+
+  it("resets backoff when a content-returning dequeue occurs", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Trigger detection → backoff = 5 s
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+    expect(_getBackoffDelayForTest(SID)).toBe(5_000);
+
+    // Content-returning dequeue → backoff resets to 0
+    const evt = makeEvent(1, "content");
+    mocks.dequeueBatch.mockReturnValueOnce([evt]);
+    await call({ timeout: 0, token: TOKEN });
+
+    expect(_getBackoffDelayForTest(SID)).toBe(0);
+  });
+
+  it("applies the backoff sleep before proceeding when backoff is active", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    const sleepCalls: number[] = [];
+    _setBackoffSleepForTest((ms) => { sleepCalls.push(ms); return Promise.resolve(); });
+
+    // Trigger detection
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // Next dequeue should invoke the backoff sleep
+    await call({ timeout: 0, token: TOKEN });
+    expect(sleepCalls.length).toBeGreaterThanOrEqual(1);
+    expect(sleepCalls[0]).toBe(5_000);
+  });
+});
+
+// =============================================================================
+// Outbound-send exemption (AC4) — notifyDequeueOutboundSend resets throttle
+// =============================================================================
+describe("outbound-send exemption (AC4 — notifyDequeueOutboundSend)", () => {
+  const SID = 88;
+  const TOKEN = SID * 1_000_000 + 123_456;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    _resetDequeueThrottleForTest();
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.dequeueBatch.mockReturnValue([]);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    _setBackoffSleepForTest(() => Promise.resolve());
+  });
+
+  afterEach(() => {
+    _setBackoffSleepForTest(undefined);
+    vi.restoreAllMocks();
+  });
+
+  it("resets sub-timeout counter when outbound send is notified", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    let fakeNow = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => fakeNow);
+
+    // 9 sub-timeout calls — just below threshold
+    for (let i = 0; i < 10; i++) {
+      if (i > 0) fakeNow += 10_000;
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // Simulate outbound send — resets the counter
+    notifyDequeueOutboundSend(SID);
+
+    // 9 more sub-timeout calls — counter starts from 0+1=1 and reaches 9 (still below 10)
+    for (let i = 0; i < 9; i++) {
+      fakeNow += 10_000;
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("DEQUEUE TOO FAST"),
+      "behavior_dequeue_sub_timeout",
+    );
+  });
+
+  it("resets zero-result counter when outbound send is notified", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 4 empty instant polls
+    for (let i = 0; i < 4; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    // Simulate outbound send — resets the counter
+    notifyDequeueOutboundSend(SID);
+
+    // 4 more empty polls — counter was reset, still below threshold
+    for (let i = 0; i < 4; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("IDLE DEQUEUE LOOP"),
+      "behavior_dequeue_zero_result",
+    );
+  });
+
+  it("clears active backoff when outbound send is notified", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Trigger detection → backoff = 5 s
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+    expect(_getBackoffDelayForTest(SID)).toBe(5_000);
+
+    // Outbound send → backoff clears
+    notifyDequeueOutboundSend(SID);
+    expect(_getBackoffDelayForTest(SID)).toBe(0);
+  });
+
+  it("ignores sid <= 0 (defensive guard)", () => {
+    // Should not throw, and should not affect any real session state
+    expect(() => notifyDequeueOutboundSend(0)).not.toThrow();
+    expect(() => notifyDequeueOutboundSend(-1)).not.toThrow();
+  });
+});
+
+// =============================================================================
+// AC2 + AC3: unexpected subscription close — dequeue injection (10-3029)
+// =============================================================================
+describe("unexpected subscription close — dequeue injection (10-3029 AC2+AC3)", () => {
+  const SID = 42;
+  const TOKEN = SID * 1_000_000 + 123_456;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    // getSession returns { name: "TestSession" } by default (no parent_sid) — not a child session
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    // Default: no unexpected close pending
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValue(false);
+  });
+
+  it("AC2: injects SUBSCRIPTION_CLOSED_UNEXPECTEDLY service message when unexpected close is pending", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Simulate an unexpected SSE or activity-file close
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValueOnce(true);
+    mocks.dequeueBatch.mockReturnValueOnce([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    // deliverServiceMessage should have been called with the bundled entry form
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.objectContaining({ eventType: "subscription_closed_unexpectedly" }),
+    );
+  });
+
+  it("AC2: service message text mentions re-arming the monitor", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValueOnce(true);
+    mocks.dequeueBatch.mockReturnValueOnce([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    const [, entry] = mocks.deliverServiceMessage.mock.calls.find(
+      ([, e]) => typeof e === "object" && (e as Record<string, string>).eventType === "subscription_closed_unexpectedly",
+    ) ?? [];
+    expect(entry).toBeDefined();
+    expect((entry as Record<string, string>).text).toBeTruthy();
+  });
+
+  it("AC3: second dequeue does NOT inject the message again when consume returns false", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // First dequeue: consumed flag
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValueOnce(true);
+    mocks.dequeueBatch.mockReturnValue([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    const afterFirst = mocks.deliverServiceMessage.mock.calls.filter(
+      ([, e]) => typeof e === "object" && (e as Record<string, string>).eventType === "subscription_closed_unexpectedly",
+    ).length;
+    expect(afterFirst).toBe(1);
+
+    vi.clearAllMocks();
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    // consume returns false on second call (already consumed)
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValue(false);
+    mocks.dequeueBatch.mockReturnValue([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.objectContaining({ eventType: "subscription_closed_unexpectedly" }),
+    );
+  });
+
+  it("AC3: no service message when consume returns false (no prior loss event)", async () => {
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    fileStateMocks.consumeUnexpectedSubscriptionClose.mockReturnValue(false);
+    mocks.dequeueBatch.mockReturnValue([]);
+
+    await call({ max_wait: 0, token: TOKEN });
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.objectContaining({ eventType: "subscription_closed_unexpectedly" }),
     );
   });
 });

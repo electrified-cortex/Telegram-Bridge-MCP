@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseNotifyDebounce } from "./activity/file-state.js";
+import { setDequeueActive, releaseNotifyDebounce, consumeUnexpectedSubscriptionClose } from "./activity/file-state.js";
 import { resetChannelCooldown, flushPendingChannelNotify } from "../channel.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -232,6 +232,16 @@ export async function runDrainLoop(
         SERVICE_MESSAGES.CHILD_FIRST_DEQUEUE_CONFIRMED.eventType,
       );
     }
+  }
+
+  // AC1-AC3 (10-3029): If a subscription closed unexpectedly since the last dequeue
+  // (SSE connection dropped without cancel, or activity-file retry exhausted), inject
+  // a one-shot SUBSCRIPTION_CLOSED_UNEXPECTEDLY service message so the agent can
+  // detect and recover from silent monitor loss.
+  // consumeUnexpectedSubscriptionClose is idempotent-safe: returns true exactly once
+  // per subscription-loss event, then false until another event is recorded.
+  if (consumeUnexpectedSubscriptionClose(sid)) {
+    deliverServiceMessage(sid, SERVICE_MESSAGES.SUBSCRIPTION_CLOSED_UNEXPECTEDLY);
   }
 
   // Mark this session as having an in-flight dequeue — suppresses activity-file notifications
