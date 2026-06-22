@@ -60,7 +60,7 @@ const mocks = vi.hoisted(() => ({
   checkConnectionToken: vi.fn((_sid: number, _token: string | undefined): "match" | "mismatch" | "absent" => "absent"),
   deliverServiceMessage: vi.fn((_targetSid: number, ..._args: unknown[]) => true),
   getGovernorSid: vi.fn((): number => 0),
-  getSession: vi.fn((_sid: number) => ({ name: "TestSession" })),
+  getSession: vi.fn((_sid: number): { name: string; suppress_pending_hint?: boolean } => ({ name: "TestSession" })),
   takeSilenceHint: vi.fn((_sid: number): string | undefined => undefined),
   setDequeueIdle: vi.fn((_sid: number, _idle: boolean) => {}),
 }));
