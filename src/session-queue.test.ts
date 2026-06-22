@@ -685,18 +685,17 @@ describe("session-queue", () => {
       expect(sseMock).not.toHaveBeenCalled();
     });
 
-    it("targeted route: externally originated reaction (no event.sid) → SSE suppressed (P2)", () => {
+    it("targeted route: externally originated event (no event.sid) → SSE fires", () => {
       createSessionQueue(SID);
       trackMessageOwner(70, SID);
       // User-generated reaction — event.sid is undefined (external user, not the bot).
-      // P2: reactions MUST NOT trigger a standalone SSE notification, regardless of origin.
       const evt = makeEvent({
         id: 702,
         event: "reaction",
         content: { type: "reaction", target: 70, added: ["❤️"] },
       });
       routeToSession(evt);
-      expect(sseMock).not.toHaveBeenCalled();
+      expect(sseMock).toHaveBeenCalledTimes(1);
     });
 
     it("broadcast: self-originated event suppressed for originating session, fires for others", () => {

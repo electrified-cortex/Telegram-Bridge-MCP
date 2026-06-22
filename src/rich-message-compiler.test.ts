@@ -2,7 +2,7 @@
  * Tests for markdownToRichBlocks — Phase 1 Markdown → RichBlocks compiler
  * Task: 10-3013
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { markdownToRichBlocks, parseMediaBlock } from "./rich-message-compiler.js";
 import type {
   RichBlock,
@@ -426,7 +426,7 @@ describe("markdownToRichBlocks", () => {
       expect(para.type).toBe("paragraph");
       const text = para.text as RichText[];
       expect(Array.isArray(text)).toBe(true);
-      const mathNode = (text).find(
+      const mathNode = (text as RichText[]).find(
         (t): t is RichTextMathematicalExpression =>
           typeof t === "object" &&
           !Array.isArray(t) &&

@@ -3,18 +3,16 @@
  *
  * Requires HTTP mode (--http flag). Returns HTTP_MODE_REQUIRED error otherwise.
  *
- * Side-effects:
- *   - First call only: delivers ACTIVITY_LISTEN_BREADCRUMB as a service message
- *     so the agent receives arm instructions in the chat without cluttering the
- *     tool response.
- *   - Schedules a one-shot ONBOARDING_ARM_REMINDER (~45 s) so the participant
- *     gets a gentle nudge if they receive this response but never arm the Monitor.
- *     The reminder is cancelled when the SSE connection opens.
+ * Side-effect: schedules a one-shot ONBOARDING_ARM_REMINDER (~45 s) so the
+ * participant gets a gentle nudge if they receive this response but never arm
+ * the Monitor. The reminder is cancelled when the SSE connection opens.
  *
  * Response: {
+ *   ok: true,
  *   sse_url: string,
  *   command: string,          — filtered sse-monitor.sh invocation (NOT raw curl)
  *   monitor_type: "sse",
+ *   heartbeat_warning: string,
  *   arm_with: string,
  *   download_url: string,     — GET this URL to download sse-monitor.sh
  * }
@@ -23,12 +21,6 @@ import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
 import { getSseBaseUrl } from "../../http-mode.js";
 import { scheduleArmReminder } from "../../sse-endpoint.js";
-import { markFirstUseHintSeen } from "../../first-use-hints.js";
-import { deliverServiceMessage } from "../../session-queue.js";
-import { SERVICE_MESSAGES } from "../../service-messages.js";
-
-/** Hint key for the activity/listen breadcrumb — fires once per session. */
-const HINT_KEY = "activity:listen";
 
 export function handleActivityListen(args: Record<string, unknown>) {
   const sid = requireAuth(args.token as number | undefined);
@@ -50,24 +42,20 @@ export function handleActivityListen(args: Record<string, unknown>) {
   //   Monitor tool, persistent: true, command: bash <saved-path> '<sse_url>'
   const command = `bash sse-monitor.sh '${sseUrl}'`;
 
-  // First-call breadcrumb: deliver setup instructions as a service message.
-  // markFirstUseHintSeen returns true the first time only; subsequent calls are no-ops.
-  if (markFirstUseHintSeen(sid, HINT_KEY)) {
-    deliverServiceMessage(
-      sid,
-      SERVICE_MESSAGES.ACTIVITY_LISTEN_BREADCRUMB.text(command, downloadUrl),
-      SERVICE_MESSAGES.ACTIVITY_LISTEN_BREADCRUMB.eventType,
-    );
-  }
-
   // Arm the one-shot reminder — cancelled if the SSE connection opens in time.
   scheduleArmReminder(sid, command);
 
   return toResult({
+    ok: true,
     sse_url: sseUrl,
     command,
     monitor_type: "sse",
+    heartbeat_warning:
+      "The SSE stream sends a `: keepalive` heartbeat every 30s. Arming a raw curl makes every heartbeat a wake event = spam. This script filters them — you wake only on real messages.",
     arm_with: "Monitor tool, persistent: true",
     download_url: downloadUrl,
+    arm_instructions:
+      "If you have a repo checkout, run: bash <repo>/tools/sse-monitor.sh '<sse_url>'. " +
+      "Otherwise: download the script from download_url, save it to a local path (e.g. your pod root or memory/ dir), then arm the Monitor tool with: bash <saved-path> '<sse_url>' and persistent: true.",
   });
 }

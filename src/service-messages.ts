@@ -60,19 +60,19 @@ export const SERVICE_MESSAGES = deepFreeze({
       "  2. Get sse-monitor.sh:\n" +
       "     - Repo checkout: use <repo>/tools/sse-monitor.sh directly.\n" +
       "     - No checkout: download from the returned download_url and save to a local path\n" +
-      "       of your choice.\n" +
+      "       of your choice (e.g. your pod root or memory/ dir).\n" +
       "  ⚠ IMPORTANT: The SSE stream sends a `: keepalive` heartbeat every 30 s. Arming a raw\n" +
       "     curl -N makes EVERY heartbeat a wake event = token-burn spam. Use the filtered script.\n" +
       "  3. Arm the Monitor tool with: bash <path-to-script> '<sse_url>' and persistent: true.\n" +
       "     You are participating once the monitor is live.\n" +
-      "     On each SSE wake → dequeue loop: call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
-      "Monitor-capable runtime — stdio / no HTTP:\n" +
+      "     On each SSE wake → call dequeue(); handle updates; loop until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
+      "Monitor-capable runtime (Claude Code) — stdio / no HTTP:\n" +
       "  1. Call action(type: 'activity/file/create') → returns { file_path }.\n" +
       "  2. Replace <path> with file_path, then arm Monitor (persistent: true):\n" +
       "     " + ACTIVITY_FILE_MONITOR_RECIPE.replace(/\n/g, "\n     ") + "\n" +
-      "  3. On each kick → dequeue loop: call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
-      "No Monitor tool (other runtimes):\n" +
-      "  Call dequeue() on every turn. timed_out: true means no messages — call dequeue() again. You always end with dequeue.\n\n" +
+      "  3. On each kick → call dequeue(); handle updates; loop until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
+      "No Monitor tool (VS Code, other runtimes):\n" +
+      "  Call dequeue() on every turn. timed_out: true means no message this window — call dequeue() again. You always end with dequeue().\n\n" +
       "Details: help('start'), help('dequeue'), help('activity/listen').",
   },
 
@@ -166,56 +166,6 @@ export const SERVICE_MESSAGES = deepFreeze({
       `${name} (SID ${sid}) joined. Ambiguous messages go to ${governorLabel}.`,
   },
 
-  // NOTE: SESSION_RECONNECTED and SESSION_RECONNECTED_FELLOW both use
-  // eventType "session_reconnected" (not "session_joined") — reconnect is a
-  // distinct lifecycle event. They intentionally share the eventType; the
-  // distinction is only in message text (governor path vs. peer path).
-  /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session */
-  SESSION_RECONNECTED: {
-    eventType: "session_reconnected" as const,
-    /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session */
-    text: (name: string, sid: number) =>
-      `${name} (SID ${sid}) reconnected. You are the governor — route ambiguous messages.`,
-  },
-
-  /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor (e.g. "'Curator' (SID 1)") */
-  SESSION_RECONNECTED_FELLOW: {
-    eventType: "session_reconnected" as const,
-    /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
-    text: (name: string, sid: number, governorLabel: string) =>
-      `${name} (SID ${sid}) reconnected. Ambiguous messages go to ${governorLabel}.`,
-  },
-
-  /** @param sid SID of the reconnecting session (single-session path) */
-  SESSION_REORIENTATION_SINGLE: {
-    eventType: "session_reconnected" as const,
-    /** @param sid SID of the reconnecting session */
-    text: (sid: number) =>
-      `Reconnect authorized. You are SID ${sid}. You are the only active session.`,
-  },
-
-  /** @param sid SID of the reconnecting session (governor path) */
-  SESSION_REORIENTATION_GOVERNOR: {
-    eventType: "session_reconnected" as const,
-    /** @param sid SID of the reconnecting session */
-    text: (sid: number) =>
-      `Reconnect authorized. Session state preserved. ` +
-      `You are the governor (SID ${sid}). ` +
-      `Ambiguous messages will be routed to you. ` +
-      `Call help(topic: 'guide') for trust and routing guidance.`,
-  },
-
-  /** @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
-  SESSION_REORIENTATION_FELLOW: {
-    eventType: "session_reconnected" as const,
-    /** @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
-    text: (sid: number, governorLabel: string) =>
-      `Reconnect authorized. Session state preserved. ` +
-      `You are SID ${sid}. ${governorLabel} is your first escalation point. ` +
-      `Ambiguous messages go to them. ` +
-      `Call help(topic: 'guide') for trust and routing guidance.`,
-  },
-
   SESSION_CLOSED: {
     eventType: "session_closed" as const,
     /**
@@ -268,29 +218,6 @@ export const SERVICE_MESSAGES = deepFreeze({
         posix: _monitorSh,
       },
     },
-  },
-
-  // ── activity/listen setup breadcrumb ────────────────────────────────────
-
-  /**
-   * Fired once on the first `activity/listen` call. Delivers the monitor arm
-   * instructions as a service message rather than inline response text.
-   */
-  ACTIVITY_LISTEN_BREADCRUMB: {
-    eventType: "activity_listen_breadcrumb" as const,
-    /**
-     * @param command  The arm command returned by activity/listen (e.g. `bash sse-monitor.sh '<url>'`)
-     * @param downloadUrl The URL to download sse-monitor.sh from
-     */
-    text: (command: string, downloadUrl: string) =>
-      `SSE monitor setup — arm this inside the Monitor tool with persistent: true:\n\n` +
-      `\`${command}\`\n\n` +
-      `⚠ Do NOT use raw \`curl -N\` — the SSE stream sends \`: keepalive\` heartbeats every 30 s that spam wake events. Use the filtered script above.\n\n` +
-      `No repo checkout? Download the script first:\n` +
-      `\`GET ${downloadUrl}\`\n` +
-      `Save to a local path of your choice, then arm:\n` +
-      `\`bash <saved-path> '<sse_url>'\` with persistent: true.\n\n` +
-      `Loop pattern: on each SSE wake → call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.`,
   },
 
   // ── SSE onboarding handshake ──────────────────────────────────────────────
@@ -403,66 +330,6 @@ export const SERVICE_MESSAGES = deepFreeze({
       `Investigate — one caller may be consuming events intended for the other.`,
   },
 
-  // ── Sub-session host onboarding breadcrumbs ──────────────────────────────
-
-  /**
-   * R1 — Fired to the unskilled host on first session/request-guidance call.
-   * Explains the orchestrator role for sub-session-based routing.
-   * Delivered paired with R2 in the same DQ batch. bridge_authoritative: true.
-   */
-  ONBOARDING_SUBSESSION_HOST_ROLE: {
-    eventType: "onboarding_subsession_host_role" as const,
-    text: "You are a host session (orchestrator). When an inbound message has no thread match " +
-      "in your registry, route it to a dedicated sub-session instead of handling it inline.\n\n" +
-      "Your role:\n" +
-      "• Spawn sub-sessions per topic via session/spawn-child.\n" +
-      "• Dispatch a background sub-agent to each child session.\n" +
-      "• Forward operator messages to the right child via child/forward.\n" +
-      "• Revoke child sessions when their topics resolve.\n\n" +
-      "You remain the governor — ambiguous messages route to you first.",
-  },
-
-  /**
-   * R2 — Fired to the unskilled host on first session/request-guidance call (same batch as R1).
-   * Explains the spawn-and-forward sequence with exact action signatures.
-   * bridge_authoritative: true.
-   */
-  ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB: {
-    eventType: "onboarding_subsession_spawn_breadcrumb" as const,
-    text: "Sub-session routing sequence (exact action signatures):\n\n" +
-      "1. Spawn:\n" +
-      "   action(type: 'session/spawn-child', token: <host_token>, name: '<topic>')\n" +
-      "   → { token: <child_token>, sid: <child_sid>, display_index, ... }\n\n" +
-      "2. Dispatch: launch a background sub-agent with <child_token>.\n" +
-      "   Sub-agent loop: dequeue(token: <child_token>) → handle → repeat.\n\n" +
-      "3. Forward operator message to the child:\n" +
-      "   action(type: 'child/forward', token: <host_token>, child_sid: <child_sid>, message: <text>)\n\n" +
-      "4. Exit: sub-agent emits EXIT_STATUS: <summary>, then self-revokes:\n" +
-      "   action(type: 'session/revoke-child', token: <child_token>, child_token: <child_token>)\n" +
-      "   (Host may also revoke: token: <host_token>, child_token: <child_token>.)\n\n" +
-      "Repeat from step 1 for each unroutable topic. " +
-      "Re-call session/request-guidance to re-read this.",
-  },
-
-  /**
-   * R3 — Fired to the unskilled host on the first sub-session terminal signal (revoke-child).
-   * Guides the host on how to respond after a child session ends.
-   * bridge_authoritative: true. Delivered once per session lifetime.
-   *
-   * @param childSid SID of the resolved child session
-   * @param childName display name of the resolved child session
-   */
-  ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB: {
-    eventType: "onboarding_subsession_resolve_breadcrumb" as const,
-    text: (childSid: number, childName: string) =>
-      `Sub-session sid=${childSid} (${childName}) has terminated. ` +
-      `Check the EXIT_STATUS in the accompanying child_session_resolved event ` +
-      `to determine whether the topic is fully resolved.\n\n` +
-      `If more work is needed: spawn a new sub-session for the same topic ` +
-      `(action(type: 'session/spawn-child', ...)) and dispatch a fresh sub-agent.\n` +
-      `If resolved: continue handling new inbound messages as they arrive.`,
-  },
-
   // ── Child-session onboarding (R4) ────────────────────────────────────────
 
   /** Fired on child session's first dequeue. Token save reminder. */
@@ -515,20 +382,6 @@ export const SERVICE_MESSAGES = deepFreeze({
       `Sub-agent on sid=\`${childSid}\` (\`${childName}\`) exited. Exit status: \`${exitStatus}\`.`,
   },
 
-  // ── Child session stale notification ─────────────────────────────────────
-
-  /**
-   * Fired to the parent SID when the health-check detects a child session has
-   * exceeded the inactivity threshold. Delivers lifecycle metadata only — no
-   * message content or routing information (isolation mandate).
-   */
-  CHILD_SESSION_STALE: {
-    eventType: "child_session_stale" as const,
-    /** @param childSid SID of the child session, @param childName child session name, @param lastActiveAt ISO string of last poll timestamp */
-    text: (childSid: number, childName: string, lastActiveAt: string) =>
-      `Sub-agent on sid=\`${childSid}\` (\`${childName}\`) appears stale — last active at ${lastActiveAt}.`,
-  },
-
   // ── Presence / silent-work nudges ─────────────────────────────────────────
 
   NUDGE_PRESENCE_RUNG1: {
@@ -549,33 +402,5 @@ export const SERVICE_MESSAGES = deepFreeze({
   NUDGE_CAPTION_DUPLICATION: {
     eventType: "behavior_nudge_caption_duplication" as const,
     text: "Caption appears to restate audio content. Keep it to a brief topic label — see help('audio') for the hybrid pattern.",
-  },
-
-  // ── Absolute-path safety override ─────────────────────────────────────────
-
-  /**
-   * Fired to the operator when an agent passes `safety: "disable"` to bypass
-   * the absolute-path block on an outbound message.
-   */
-  ABS_PATH_SAFETY_OVERRIDE: {
-    eventType: "abs_path_safety_override" as const,
-    text: "⚠️ Safety override: an absolute filesystem path was detected in an outbound message but the block was bypassed via `safety: \"disable\"`. Review the message for unintended path disclosure.",
-  },
-
-  // ── Subscription loss notification ────────────────────────────────────────
-
-  /**
-   * Fired on the agent's first dequeue after an unexpected subscription close
-   * (SSE connection dropped without cancel, or activity-file write retry
-   * exhausted) — i.e. without the agent calling activity/listen cancel,
-   * activity/file/delete, or session/close. Exactly one injection per
-   * subscription-loss event (consumed on dequeue).
-   */
-  SUBSCRIPTION_CLOSED_UNEXPECTEDLY: {
-    eventType: "subscription_closed_unexpectedly" as const,
-    text: "Your monitor subscription closed unexpectedly — the bridge lost your SSE or activity-file connection without you initiating teardown. " +
-      "Re-arm your monitor: call action(type: 'activity/listen') for SSE or action(type: 'activity/file/create') for an activity file, " +
-      "then re-arm your Monitor tool with persistent: true. " +
-      "See help('activity/listen') or help('activity/file/create') for details.",
   },
 });

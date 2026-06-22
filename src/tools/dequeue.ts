@@ -7,8 +7,8 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseNotifyDebounce, consumeUnexpectedSubscriptionClose } from "./activity/file-state.js";
-import { resetChannelCooldown, flushPendingChannelNotify } from "../channel.js";
+import { setDequeueActive, releaseNotifyDebounce } from "./activity/file-state.js";
+import { resetChannelCooldown } from "../channel.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -76,251 +76,12 @@ function checkDequeueRate(sid: number, now: number): void {
 export function removeDequeueRateState(sid: number): void {
   _dequeueAttempts.delete(sid);
   _lastRateWarnAt.delete(sid);
-  // Also clean up sub-timeout and zero-result throttle state.
-  _subTimeoutLastAt.delete(sid);
-  _subTimeoutCount.delete(sid);
-  _subTimeoutLastWarnAt.delete(sid);
-  _zeroResultCount.delete(sid);
-  _zeroResultLastWarnAt.delete(sid);
-  // Backoff and outbound-send state (AC3/AC4).
-  _backoffDelayMs.delete(sid);
-  _lastOutboundSendAt.delete(sid);
 }
 
 /** Exported for test reset only — do not call in production code. */
 export function _resetDequeueRateForTest(): void {
   _dequeueAttempts.clear();
   _lastRateWarnAt.clear();
-}
-
-// ---------------------------------------------------------------------------
-// Sub-timeout dequeue detection (AC1)
-// ---------------------------------------------------------------------------
-
-/**
- * Reference interval (ms) for sub-timeout detection.
- * Dequeues consistently faster than this gap prevent inactivity-based reminders
- * from ever accruing enough idle time to fire. 60 s matches the typical minimum
- * reminder delay_seconds and the spec example ("e.g. every 30s when reminders
- * fire after 60s idle").
- */
-const SUB_TIMEOUT_REF_MS = 60_000;
-
-/**
- * Number of consecutive sub-timeout intervals before warning.
- * AC1: spec example is "e.g. 10 dequeues all ~37s apart" → 10 consecutive.
- */
-const SUB_TIMEOUT_CONSECUTIVE_THRESHOLD = 10;
-
-/** Minimum gap (ms) between sub-timeout warning messages per session (anti-spam). */
-const SUB_TIMEOUT_WARN_COOLDOWN_MS = 120_000;
-
-/** Per-session: timestamp (ms) of the last dequeue, for interval measurement. */
-const _subTimeoutLastAt = new Map<number, number>();
-
-/** Per-session: number of consecutive dequeue intervals < SUB_TIMEOUT_REF_MS. */
-const _subTimeoutCount = new Map<number, number>();
-
-/** Per-session: last sub-timeout warning timestamp for cooldown enforcement. */
-const _subTimeoutLastWarnAt = new Map<number, number>();
-
-// ---------------------------------------------------------------------------
-// Exponential backoff (AC3) — delay before honoring next dequeue
-// ---------------------------------------------------------------------------
-
-/** Initial backoff delay (ms) on first detection event. */
-const BACKOFF_INITIAL_MS = 5_000;
-
-/** Maximum backoff delay (ms). Schedule caps here regardless of trigger count. */
-const BACKOFF_MAX_MS = 60_000;
-
-/** Per-session: current pending backoff delay in ms. 0 / absent = no active backoff. */
-const _backoffDelayMs = new Map<number, number>();
-
-/**
- * Enter or increase the exponential backoff for a session.
- * First trigger: delay = BACKOFF_INITIAL_MS (5 s).
- * Each subsequent trigger while still in backoff: delay doubles, capped at BACKOFF_MAX_MS (60 s).
- */
-function enterOrIncreaseBackoff(sid: number): void {
-  const current = _backoffDelayMs.get(sid) ?? 0;
-  const next = current === 0 ? BACKOFF_INITIAL_MS : Math.min(current * 2, BACKOFF_MAX_MS);
-  _backoffDelayMs.set(sid, next);
-}
-
-/** Reset the backoff state for a session. Called on content-returning dequeue or outbound send. */
-function resetBackoff(sid: number): void {
-  _backoffDelayMs.delete(sid);
-}
-
-/** Injected sleep function for unit tests (undefined = real setTimeout). */
-let _backoffSleepFn: ((ms: number) => Promise<void>) | undefined;
-
-/** For tests only: inject a custom sleep function to control backoff timing. */
-export function _setBackoffSleepForTest(fn: ((ms: number) => Promise<void>) | undefined): void {
-  _backoffSleepFn = fn;
-}
-
-/** For tests only: return the current backoff delay (ms) for a session. */
-export function _getBackoffDelayForTest(sid: number): number {
-  return _backoffDelayMs.get(sid) ?? 0;
-}
-
-/**
- * AC1 — Sub-timeout dequeue detection.
- *
- * Call this at each dequeue result path (not at call-start) so hasContent is known.
- *
- * hasContent = true  → agent is legitimately busy; reset counter (AC3 / exemption).
- * hasContent = false → empty poll; check interval and accumulate consecutive count.
- *
- * Tracks consecutive empty-poll intervals shorter than SUB_TIMEOUT_REF_MS.
- * When >= SUB_TIMEOUT_CONSECUTIVE_THRESHOLD consecutive short-interval empty polls
- * are observed, delivers a `behavior_dequeue_sub_timeout` service message
- * (rate-limited by SUB_TIMEOUT_WARN_COOLDOWN_MS).
- *
- * Resets the consecutive count when:
- *   - content is returned (agent is busy, not idle-polling)
- *   - the interval between empty polls is >= SUB_TIMEOUT_REF_MS (AC3)
- *
- * For timed_out exits (long blocking wait), the interval from the previous call
- * will be >= the timeout duration (typically >> 60 s), so the counter self-resets.
- *
- * Never throws. Never alters dequeue semantics or latency.
- */
-function checkSubTimeoutDequeue(sid: number, now: number, hasContent: boolean): void {
-  if (sid <= 0) return;
-  const lastAt = _subTimeoutLastAt.get(sid);
-  _subTimeoutLastAt.set(sid, now);
-
-  if (hasContent) {
-    // Content-returning dequeue — agent is legitimately active; reset counter (AC3).
-    _subTimeoutCount.set(sid, 0);
-    return;
-  }
-
-  if (lastAt === undefined) {
-    // First dequeue for this session — no interval to measure yet.
-    _subTimeoutCount.set(sid, 0);
-    return;
-  }
-
-  const interval = now - lastAt;
-  if (interval < SUB_TIMEOUT_REF_MS) {
-    // Short interval — accumulate consecutive count.
-    const count = (_subTimeoutCount.get(sid) ?? 0) + 1;
-    _subTimeoutCount.set(sid, count);
-
-    if (count >= SUB_TIMEOUT_CONSECUTIVE_THRESHOLD) {
-      const lastWarn = _subTimeoutLastWarnAt.get(sid) ?? 0;
-      if (now - lastWarn >= SUB_TIMEOUT_WARN_COOLDOWN_MS) {
-        _subTimeoutLastWarnAt.set(sid, now);
-        // AC3: insert exponential backoff penalty — next dequeue will be delayed.
-        enterOrIncreaseBackoff(sid);
-        deliverServiceMessage(
-          sid,
-          `DEQUEUE TOO FAST: ${count + 1} consecutive empty polls all under ${SUB_TIMEOUT_REF_MS / 1000}s apart — inactivity-based reminders require sustained idle time and will never fire at this rate. Switch to the activity-file/SSE wake pattern and use max_wait ≥ ${SUB_TIMEOUT_REF_MS / 1000}s, or call dequeue(max_wait: 300) once and let the server wake you.`,
-          "behavior_dequeue_sub_timeout",
-        );
-      }
-    }
-  } else {
-    // Normal (long enough) interval — reset consecutive sub-timeout count (AC3).
-    _subTimeoutCount.set(sid, 0);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Zero-result rapid-fire detection (AC2)
-// ---------------------------------------------------------------------------
-
-/**
- * Consecutive zero-result instant-poll threshold before warning (AC2).
- * "suggested threshold: ~5" → 5.
- */
-const ZERO_RESULT_CONSECUTIVE_THRESHOLD = 5;
-
-/** Minimum gap (ms) between zero-result warning messages per session (anti-spam). */
-const ZERO_RESULT_WARN_COOLDOWN_MS = 120_000;
-
-/** Per-session: count of consecutive instant polls (max_wait: 0) with no content returned. */
-const _zeroResultCount = new Map<number, number>();
-
-/** Per-session: last zero-result warning timestamp for cooldown enforcement. */
-const _zeroResultLastWarnAt = new Map<number, number>();
-
-/**
- * AC2 / AC3 — Zero-result rapid-fire detection.
- *
- * Call this after each instant poll (max_wait: 0) returns:
- *   hasContent = true  → content returned; reset consecutive counter (AC3).
- *   hasContent = false → no content; increment counter, warn at threshold.
- *
- * Long-poll exits (timed_out: true) are intentionally excluded — the agent
- * is correctly blocking and is not burning tokens with rapid polls.
- *
- * Never throws. Never alters dequeue semantics or latency.
- */
-function checkZeroResultRapidFire(sid: number, now: number, hasContent: boolean): void {
-  if (sid <= 0) return;
-
-  if (hasContent) {
-    // Content-returning dequeue — reset counter (AC3).
-    _zeroResultCount.set(sid, 0);
-    return;
-  }
-
-  const count = (_zeroResultCount.get(sid) ?? 0) + 1;
-  _zeroResultCount.set(sid, count);
-
-  if (count >= ZERO_RESULT_CONSECUTIVE_THRESHOLD) {
-    const lastWarn = _zeroResultLastWarnAt.get(sid) ?? 0;
-    if (now - lastWarn >= ZERO_RESULT_WARN_COOLDOWN_MS) {
-      _zeroResultLastWarnAt.set(sid, now);
-      // AC3: insert exponential backoff penalty — next dequeue will be delayed.
-      enterOrIncreaseBackoff(sid);
-      deliverServiceMessage(
-        sid,
-        `IDLE DEQUEUE LOOP: ${count} consecutive instant polls returned no content — you're burning tokens polling an empty queue. Use the SSE monitor or activity-file to wait for real messages. Call dequeue(max_wait: 300) once and let the server wake you when content arrives.`,
-        "behavior_dequeue_zero_result",
-      );
-    }
-  }
-}
-
-/** Exported for test reset only — do not call in production code. */
-export function _resetDequeueThrottleForTest(): void {
-  _subTimeoutLastAt.clear();
-  _subTimeoutCount.clear();
-  _subTimeoutLastWarnAt.clear();
-  _zeroResultCount.clear();
-  _zeroResultLastWarnAt.clear();
-  _backoffDelayMs.clear();
-  _lastOutboundSendAt.clear();
-  _backoffSleepFn = undefined;
-}
-
-// ---------------------------------------------------------------------------
-// Outbound-send exemption state (AC4)
-// ---------------------------------------------------------------------------
-
-/** Per-session: timestamp (ms) of the most recent confirmed outbound send. */
-const _lastOutboundSendAt = new Map<number, number>();
-
-/**
- * Called when this session has sent an outbound message (confirmed by the bridge).
- * Resets all throttle counters and clears any active backoff. An agent actively
- * sending messages is legitimately busy and must NOT be penalized for rapid-dequeue.
- *
- * Wired from index.ts via setOutboundSendCallback (session-queue.ts) at startup.
- */
-export function notifyDequeueOutboundSend(sid: number, now?: number): void {
-  if (sid <= 0) return;
-  const t = now ?? Date.now();
-  _lastOutboundSendAt.set(sid, t);
-  _subTimeoutCount.set(sid, 0);
-  _zeroResultCount.set(sid, 0);
-  resetBackoff(sid);
 }
 
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
@@ -365,6 +126,7 @@ function buildVoiceBacklogHint(batch: TimelineEvent[], sid: number): string | un
 const DESCRIPTION =
   "Consume queued updates. Non-content events drain first, then up to one content event (text, media, voice) is appended. " +
   "Returns: `{ updates, pending? }` with data; `{ timed_out: true }` on blocking-wait expiry (call again immediately); " +
+  "`{ pending? }` for instant polls (max_wait: 0); " +
   "`{ error: \"session_closed\", message }` (isError: false) when the session queue is gone — stop looping. " +
   "pending > 0 → call again. Omit max_wait to use session default (action(type: 'profile/dequeue-default'), fallback 300 s); max explicit: 300 s. " +
   "Pass connection_token (from session/start) to enable duplicate-session detection — the bridge alerts the governor if two callers share the same identity. " +
@@ -426,18 +188,6 @@ export async function runDrainLoop(
     };
   }
 
-  // AC3: Apply exponential backoff penalty if a prior detection event set a delay.
-  const _pendingBackoffMs = _backoffDelayMs.get(sid) ?? 0;
-  if (_pendingBackoffMs > 0) {
-    const sleepPromise = _backoffSleepFn
-      ? _backoffSleepFn(_pendingBackoffMs)
-      : new Promise<void>(r => { setTimeout(r, _pendingBackoffMs); });
-    await Promise.race([
-      sleepPromise,
-      new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); }),
-    ]);
-  }
-
   // Count every dequeue attempt (including idle/empty polls) for runaway-loop detection.
   checkDequeueRate(sid, Date.now());
 
@@ -482,16 +232,6 @@ export async function runDrainLoop(
         SERVICE_MESSAGES.CHILD_FIRST_DEQUEUE_CONFIRMED.eventType,
       );
     }
-  }
-
-  // AC1-AC3 (10-3029): If a subscription closed unexpectedly since the last dequeue
-  // (SSE connection dropped without cancel, or activity-file retry exhausted), inject
-  // a one-shot SUBSCRIPTION_CLOSED_UNEXPECTEDLY service message so the agent can
-  // detect and recover from silent monitor loss.
-  // consumeUnexpectedSubscriptionClose is idempotent-safe: returns true exactly once
-  // per subscription-loss event, then false until another event is recorded.
-  if (consumeUnexpectedSubscriptionClose(sid)) {
-    deliverServiceMessage(sid, SERVICE_MESSAGES.SUBSCRIPTION_CLOSED_UNEXPECTEDLY);
   }
 
   // Mark this session as having an in-flight dequeue — suppresses activity-file notifications
@@ -557,18 +297,15 @@ export async function runDrainLoop(
     const pending = pendingCountAny();
     const result: Record<string, unknown> = { updates: compactBatch(events, sid) };
     if (pending > 0) result.pending = pending;
-    // suppress_pending_hint profile flag: omit the entire hint field when set.
-    if (getSession(sid)?.suppress_pending_hint !== true) {
-      const hints: string[] = [];
-      const silenceHint = takeSilenceHint(sid);
-      if (silenceHint !== undefined) hints.push(silenceHint);
-      const voiceHint = buildVoiceBacklogHint(events, sid);
-      if (voiceHint !== undefined) hints.push(voiceHint);
-      // Pending-queue nudge: when more messages are waiting, suggest the
-      // processing preset so the operator knows the agent sees the backlog.
-      if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
-      if (hints.length > 0) result.hint = hints.join(" ");
-    }
+    const hints: string[] = [];
+    const silenceHint = takeSilenceHint(sid);
+    if (silenceHint !== undefined) hints.push(silenceHint);
+    const voiceHint = buildVoiceBacklogHint(events, sid);
+    if (voiceHint !== undefined) hints.push(voiceHint);
+    // Pending-queue nudge: when more messages are waiting, suggest the
+    // processing preset so the operator knows the agent sees the backlog.
+    if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
+    if (hints.length > 0) result.hint = hints.join(" ");
     return result;
   }
 
@@ -585,25 +322,15 @@ export async function runDrainLoop(
     const result = buildBatchResult(batch);
     resyncActiveSession();
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-    // AC1/AC2/AC3: content-returning path resets throttle counters and clears backoff.
-    const _contentNow = Date.now();
-    checkSubTimeoutDequeue(sid, _contentNow, true);
-    checkZeroResultRapidFire(sid, _contentNow, true);
-    resetBackoff(sid);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
-    // Content-returning exit: reset channel cooldown (agent consumed content, no re-notify needed).
-    // Do NOT release SSE notify debounce here — debounce persists through active drain cycles.
+    releaseNotifyDebounce(sid); // content-returning exit
     resetChannelCooldown(sid);
     return result;
   }
 
   if (timeout === 0) {
     // Timeout=0 empty-poll: not content-returning — do NOT release notify debounce.
-    // AC1/AC2: track consecutive fast empty polls; may warn if thresholds exceeded.
-    const _emptyNow = Date.now();
-    checkSubTimeoutDequeue(sid, _emptyNow, false);
-    checkZeroResultRapidFire(sid, _emptyNow, false);
     setDequeueActive(sid, false);
     return { pending: pendingCountAny() };
   }
@@ -614,10 +341,9 @@ export async function runDrainLoop(
   const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
   let _staleWarnSent = false;
   setDequeueIdle(sid, true);
-  // _contentDequeue: true when this call returns content → reset channel cooldown only.
-  // SSE notify debounce is NOT released on content returns; it persists through drain cycles.
-  // Only timed_out: true (agent went fully idle) cancels the debounce and re-arms notify.
-  let _contentDequeue = false;
+  // Tracks whether this dequeue call exits via a content-returning path.
+  // Only content-returning exits release the notify debounce; timeout exits skip.
+  let _debounceRelease = false;
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) break;
@@ -634,7 +360,7 @@ export async function runDrainLoop(
             _lastStaleWarningSentAt.set(sid, Date.now());
             resyncActiveSession();
             dlog("queue", `dequeue stale animation warning sid=${sid} message_id=${_animStatus.message_id}`);
-            _contentDequeue = true;
+            _debounceRelease = true;
             return {
               updates: [{
                 event: "animation_stale_warning",
@@ -672,12 +398,7 @@ export async function runDrainLoop(
           const result = buildBatchResult(batch);
           resyncActiveSession();
           dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-          // AC1/AC2/AC3: content-returning path resets throttle counters and clears backoff.
-          const _vwContentNow = Date.now();
-          checkSubTimeoutDequeue(sid, _vwContentNow, true);
-          checkZeroResultRapidFire(sid, _vwContentNow, true);
-          resetBackoff(sid);
-          _contentDequeue = true;
+          _debounceRelease = true;
           return result;
         }
       }
@@ -698,22 +419,14 @@ export async function runDrainLoop(
         const result = buildBatchResult(batch);
         resyncActiveSession();
         dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
-        // AC1/AC2/AC3: content-returning path resets throttle counters and clears backoff.
-        const _waitContentNow = Date.now();
-        checkSubTimeoutDequeue(sid, _waitContentNow, true);
-        checkZeroResultRapidFire(sid, _waitContentNow, true);
-        resetBackoff(sid);
-        _contentDequeue = true;
+        _debounceRelease = true;
         return result;
       }
     }
 
     resyncActiveSession();
     const pending = pendingCountAny();
-    // Timeout exit: agent went fully idle — cancel debounce so next inbound fires a fresh notify.
-    // Do NOT reset channel cooldown here; it expires naturally on its own (see channel.ts model).
-    releaseNotifyDebounce(sid);
-    flushPendingChannelNotify(sid);
+    _debounceRelease = true;  // Release debounce on timeout exits too
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {
     // Note: if two concurrent dequeue calls share the same sid (unusual but
@@ -722,10 +435,11 @@ export async function runDrainLoop(
     // that case. A refcount would be needed to handle it precisely.
     setDequeueIdle(sid, false);
     setDequeueActive(sid, false);
-    // Content-returning exit: reset channel cooldown so the agent isn't re-notified
-    // about content it just consumed. SSE notify debounce is NOT released here —
-    // it persists through active drain cycles and is only cancelled on timed_out: true.
-    if (_contentDequeue) resetChannelCooldown(sid);
+    // Release notify debounce on all dequeue exits (content-returning and timeout).
+    if (_debounceRelease) {
+      releaseNotifyDebounce(sid);
+      resetChannelCooldown(sid);
+    }
   }
 }
 
@@ -741,7 +455,7 @@ export function register(server: McpServer) {
           .min(0, { message: "max_wait must be ≥ 0. Call help(topic: 'dequeue') for usage." })
           .max(300, { message: "max_wait must be ≤ 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
           .optional()
-          .describe("Seconds to block when queue is empty. Omit to use your session default (fallback 300 s). Values above the session default require force: true. Use action(type: 'profile/dequeue-default') to raise your default."),
+          .describe("Seconds to block when queue is empty. Omit to use your session default (fallback 300 s). Pass 0 for an instant non-blocking poll (drain loops). Values above the session default require force: true. Use action(type: 'profile/dequeue-default') to raise your default."),
         timeout: z
           .number()
           .int()
@@ -761,7 +475,7 @@ export function register(server: McpServer) {
         response_format: z
           .enum(["default", "compact"])
           .optional()
-          .describe("Response format. \"compact\" suppresses inferrable fields; `timed_out: true` is always emitted regardless of compact mode. Defaults to \"default\"."),
+          .describe("Response format. \"compact\" only suppresses `empty: true` (inferrable from the caller's use of `max_wait: 0`); `timed_out: true` is always emitted regardless of compact mode. Defaults to \"default\"."),
       },
     },
     async ({ max_wait, timeout: timeoutAlias, force, token, connection_token, response_format }, { signal }) => {

@@ -85,8 +85,8 @@ export function scheduleArmReminder(sid: number, command: string): void {
 }
 
 /**
- * Returns true if the given session has an active SSE connection open.
- * Used by the activity/listen/check and activity/poke endpoints.
+ * Returns true when an open SSE connection is registered for the given session.
+ * Used by health-check endpoints to distinguish "no SSE armed" from a write error.
  */
 export function hasSseConnection(sid: number): boolean {
   return _connections.has(sid);
@@ -117,8 +117,7 @@ export function cancelSseConnection(sid: number): void {
   _connections.delete(sid);
   // Deleting from _connections above makes the req-close guard a no-op, so drop
   // this stream's gate membership here instead.
-  // expected=true: agent explicitly cancelled (activity/listen cancel) — AC4.
-  unregisterSseMonitor(sid, true);
+  unregisterSseMonitor(sid);
   // Clear the once-per-session participation guard so a genuinely new connection
   // after a real teardown re-sends the confirmation.
   _onboardingParticipatingFired.delete(sid);
