@@ -37,10 +37,11 @@
  *   On touch failure, debounce is rolled back and a bounded retry is scheduled.
  *
  * Debounce release:
- *   releaseNotifyDebounce() is called from content-returning dequeue exits.
+ *   releaseNotifyDebounce() is called ONLY on timed_out: true exits (agent went fully idle).
+ *   Content-returning dequeue exits do NOT release the debounce — it persists through
+ *   active drain cycles so the agent is not re-notified for messages it is already draining.
  *   If a notification was suppressed during debounce AND the queue still has pending
  *   content, a re-evaluation notify fires immediately after the debounce clears.
- *   Timeout-only dequeue exits do NOT call releaseNotifyDebounce.
  *
  * Stale debounce:
  *   If the debounce expires (notifyDebounceUntil elapsed) before the agent dequeues,
@@ -533,7 +534,8 @@ export function notifyIfAllowed(
 }
 
 /**
- * Release the notify debounce after any dequeue exit (content-returning or timeout).
+ * Release the notify debounce on timed_out: true exits only (agent went fully idle).
+ * Content-returning exits do NOT call this — debounce persists through active drain cycles.
  * If a notifiable event was suppressed during debounce AND the queue still has
  * pending content, fires one re-evaluation notify immediately.
  */
@@ -558,8 +560,8 @@ export function releaseNotifyDebounce(sid: number): void {
 /**
  * Set the in-flight dequeue flag for a session.
  * Call active=true when dequeue starts; active=false when it returns (any path).
- * Debounce release is handled separately — call releaseNotifyDebounce() from
- * content-returning exits only.
+ * Debounce release is handled separately — call releaseNotifyDebounce() on
+ * timed_out: true exits only (NOT from content-returning exits).
  */
 export function setDequeueActive(sid: number, active: boolean): void {
   const entry = _state.get(sid);

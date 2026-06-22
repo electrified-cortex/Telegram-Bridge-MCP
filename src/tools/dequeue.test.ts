@@ -1322,14 +1322,16 @@ describe("dequeue tool", () => {
       expect(fileStateMocks.releaseNotifyDebounce).toHaveBeenCalledWith(1);
     });
 
-    it("releaseNotifyDebounce is also called on content-returning paths (no regression)", async () => {
-      // Content-returning path: batch arrives immediately
+    it("releaseNotifyDebounce is NOT called on content-returning paths (debounce persists through drain)", async () => {
+      // Fix: debounce must persist through active drain cycles.
+      // Content-returning dequeue should NOT cancel the SSE notify debounce — only
+      // timed_out: true (agent went fully idle) should re-arm it.
       const evt = makeEvent(42, "content");
       mocks.dequeueBatch.mockReturnValueOnce([evt]);
 
       await call({ timeout: 300, token: 1_123_456 });
 
-      expect(fileStateMocks.releaseNotifyDebounce).toHaveBeenCalledWith(1);
+      expect(fileStateMocks.releaseNotifyDebounce).not.toHaveBeenCalled();
     });
 
     it("timeout=0 instant-poll does NOT call releaseNotifyDebounce (empty-poll guard preserved)", async () => {

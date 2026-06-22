@@ -281,7 +281,7 @@ function checkZeroResultRapidFire(sid: number, now: number, hasContent: boolean)
       enterOrIncreaseBackoff(sid);
       deliverServiceMessage(
         sid,
-        `IDLE DEQUEUE LOOP: ${count} consecutive instant polls returned no content — you're burning tokens polling an empty queue. Use the activity-file monitor or SSE subscription to wait for real messages, then drain with dequeue(max_wait: 0). Or call dequeue(max_wait: 300) once and let the server wake you when content arrives.`,
+        `IDLE DEQUEUE LOOP: ${count} consecutive instant polls returned no content — you're burning tokens polling an empty queue. Use the SSE monitor or activity-file to wait for real messages. Call dequeue(max_wait: 300) once and let the server wake you when content arrives.`,
         "behavior_dequeue_zero_result",
       );
     }
@@ -365,7 +365,6 @@ function buildVoiceBacklogHint(batch: TimelineEvent[], sid: number): string | un
 const DESCRIPTION =
   "Consume queued updates. Non-content events drain first, then up to one content event (text, media, voice) is appended. " +
   "Returns: `{ updates, pending? }` with data; `{ timed_out: true }` on blocking-wait expiry (call again immediately); " +
-  "`{ pending? }` for instant polls (max_wait: 0); " +
   "`{ error: \"session_closed\", message }` (isError: false) when the session queue is gone — stop looping. " +
   "pending > 0 → call again. Omit max_wait to use session default (action(type: 'profile/dequeue-default'), fallback 300 s); max explicit: 300 s. " +
   "Pass connection_token (from session/start) to enable duplicate-session detection — the bridge alerts the governor if two callers share the same identity. " +
@@ -593,7 +592,8 @@ export async function runDrainLoop(
     resetBackoff(sid);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
-    releaseNotifyDebounce(sid); // content-returning exit
+    // Content-returning exit: reset channel cooldown (agent consumed content, no re-notify needed).
+    // Do NOT release SSE notify debounce here — debounce persists through active drain cycles.
     resetChannelCooldown(sid);
     return result;
   }
@@ -614,9 +614,10 @@ export async function runDrainLoop(
   const abortPromise = new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); });
   let _staleWarnSent = false;
   setDequeueIdle(sid, true);
-  // Tracks whether this dequeue call exits via a content-returning path.
-  // Only content-returning exits release the notify debounce; timeout exits skip.
-  let _debounceRelease = false;
+  // _contentDequeue: true when this call returns content → reset channel cooldown only.
+  // SSE notify debounce is NOT released on content returns; it persists through drain cycles.
+  // Only timed_out: true (agent went fully idle) cancels the debounce and re-arms notify.
+  let _contentDequeue = false;
   try {
     while (Date.now() < deadline) {
       if (signal.aborted) break;
@@ -633,7 +634,7 @@ export async function runDrainLoop(
             _lastStaleWarningSentAt.set(sid, Date.now());
             resyncActiveSession();
             dlog("queue", `dequeue stale animation warning sid=${sid} message_id=${_animStatus.message_id}`);
-            _debounceRelease = true;
+            _contentDequeue = true;
             return {
               updates: [{
                 event: "animation_stale_warning",
@@ -676,7 +677,7 @@ export async function runDrainLoop(
           checkSubTimeoutDequeue(sid, _vwContentNow, true);
           checkZeroResultRapidFire(sid, _vwContentNow, true);
           resetBackoff(sid);
-          _debounceRelease = true;
+          _contentDequeue = true;
           return result;
         }
       }
@@ -702,14 +703,16 @@ export async function runDrainLoop(
         checkSubTimeoutDequeue(sid, _waitContentNow, true);
         checkZeroResultRapidFire(sid, _waitContentNow, true);
         resetBackoff(sid);
-        _debounceRelease = true;
+        _contentDequeue = true;
         return result;
       }
     }
 
     resyncActiveSession();
     const pending = pendingCountAny();
-    _debounceRelease = true;  // Release debounce on timeout exits too
+    // Timeout exit: agent went fully idle — cancel debounce so next inbound fires a fresh notify.
+    // Do NOT reset channel cooldown here; it expires naturally on its own (see channel.ts model).
+    releaseNotifyDebounce(sid);
     flushPendingChannelNotify(sid);
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {
@@ -719,11 +722,10 @@ export async function runDrainLoop(
     // that case. A refcount would be needed to handle it precisely.
     setDequeueIdle(sid, false);
     setDequeueActive(sid, false);
-    // Release notify debounce on all dequeue exits (content-returning and timeout).
-    if (_debounceRelease) {
-      releaseNotifyDebounce(sid);
-      resetChannelCooldown(sid);
-    }
+    // Content-returning exit: reset channel cooldown so the agent isn't re-notified
+    // about content it just consumed. SSE notify debounce is NOT released here —
+    // it persists through active drain cycles and is only cancelled on timed_out: true.
+    if (_contentDequeue) resetChannelCooldown(sid);
   }
 }
 
@@ -739,7 +741,7 @@ export function register(server: McpServer) {
           .min(0, { message: "max_wait must be ≥ 0. Call help(topic: 'dequeue') for usage." })
           .max(300, { message: "max_wait must be ≤ 300 s. Use action(type: 'profile/dequeue-default') to configure longer defaults." })
           .optional()
-          .describe("Seconds to block when queue is empty. Omit to use your session default (fallback 300 s). Pass 0 for an instant non-blocking poll (drain loops). Values above the session default require force: true. Use action(type: 'profile/dequeue-default') to raise your default."),
+          .describe("Seconds to block when queue is empty. Omit to use your session default (fallback 300 s). Values above the session default require force: true. Use action(type: 'profile/dequeue-default') to raise your default."),
         timeout: z
           .number()
           .int()
@@ -759,7 +761,7 @@ export function register(server: McpServer) {
         response_format: z
           .enum(["default", "compact"])
           .optional()
-          .describe("Response format. \"compact\" only suppresses `empty: true` (inferrable from the caller's use of `max_wait: 0`); `timed_out: true` is always emitted regardless of compact mode. Defaults to \"default\"."),
+          .describe("Response format. \"compact\" suppresses inferrable fields; `timed_out: true` is always emitted regardless of compact mode. Defaults to \"default\"."),
       },
     },
     async ({ max_wait, timeout: timeoutAlias, force, token, connection_token, response_format }, { signal }) => {
