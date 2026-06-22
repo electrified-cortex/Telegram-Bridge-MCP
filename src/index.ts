@@ -35,7 +35,8 @@ import { attachActivityListenCheckRoute } from "./activity-listen-check-endpoint
 import { attachActivitySelftestRoute } from "./activity-selftest-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
-import { initReminderFireCallback } from "./session-queue.js";
+import { initReminderFireCallback, setOutboundSendCallback } from "./session-queue.js";
+import { notifyDequeueOutboundSend } from "./tools/dequeue.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -49,6 +50,10 @@ initSseNotifyCallback((sid) => {
 // P1: wire reminder-fire callback so reminder-state.ts can deliver events through
 // session-queue.ts without a circular import (both modules are fully initialized here)
 initReminderFireCallback();
+
+// AC4: wire outbound-send callback so the dequeue throttle (dequeue.ts) learns
+// when a session sends a message and can exempt it from rapid-dequeue detection.
+setOutboundSendCallback(notifyDequeueOutboundSend);
 
 // Initialize security config early so warnings surface at startup
 getSecurityConfig();
