@@ -70,9 +70,9 @@ export const SERVICE_MESSAGES = deepFreeze({
       "  1. Call action(type: 'activity/file/create') → returns { file_path }.\n" +
       "  2. Replace <path> with file_path, then arm Monitor (persistent: true):\n" +
       "     " + ACTIVITY_FILE_MONITOR_RECIPE.replace(/\n/g, "\n     ") + "\n" +
-      "  3. On each kick → call dequeue(); handle updates; loop until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
+      "  3. On each kick → call dequeue(max_wait: 0); loop until pending = 0.\n\n" +
       "No Monitor tool (VS Code, other runtimes):\n" +
-      "  Call dequeue() on every turn. timed_out: true means no message this window — call dequeue() again. You always end with dequeue().\n\n" +
+      "  Call dequeue(max_wait: 30) on every turn.\n\n" +
       "Details: help('start'), help('dequeue'), help('activity/listen').",
   },
 

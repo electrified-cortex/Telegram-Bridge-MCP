@@ -117,8 +117,8 @@ export async function handleSendNewChecklist({
   }
 }
 
-export async function handleUpdateChecklist({ title = "", steps, message_id, token, response_format }: {
-  title?: string;
+export async function handleUpdateChecklist({ title, steps, message_id, token, response_format }: {
+  title: string;
   steps: ChecklistStep[];
   message_id: number;
   token: number;

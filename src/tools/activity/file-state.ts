@@ -649,16 +649,23 @@ export async function clearActivityFile(sid: number): Promise<void> {
   const filePath = entry.filePath;
   const tmcpOwned = entry.tmcpOwned;
 
-  // Tear down the gate entry fully. If an SSE monitor was still active,
-  // cancelSseConnection() was already called by the session-teardown layer
-  // before this function is reached — cancel handled the SSE cleanup.
-  if (entry.pendingReNotifyHandle !== null) {
-    clearTimeout(entry.pendingReNotifyHandle);
-    entry.pendingReNotifyHandle = null;
+  if (entry.sseConnected) {
+    // An SSE monitor is still active — keep the shared gate entry alive (its
+    // debounce + re-notify timer still govern the SSE stream); drop only the
+    // file registration.
+    entry.filePath = null;
+    entry.tmcpOwned = false;
+    entry.touchInFlight = false;
+  } else {
+    // No monitor left — tear down the gate entry and its re-notify timer.
+    if (entry.pendingReNotifyHandle !== null) {
+      clearTimeout(entry.pendingReNotifyHandle);
+      entry.pendingReNotifyHandle = null;
+    }
+    _state.delete(sid);
+    // Remove any pending unexpected-close notification for this session.
+    _unexpectedClosePending.delete(sid);
   }
-  _state.delete(sid);
-  // Remove any pending unexpected-close notification for this session.
-  _unexpectedClosePending.delete(sid);
 
   if (tmcpOwned && filePath !== null) {
     try {
@@ -678,6 +685,10 @@ export async function replaceActivityFile(
   sid: number,
   newState: ActivityFileState,
 ): Promise<void> {
+  // Clear any pending unexpected-close notification — agent is re-registering
+  // a file, so the subscription is being restored.
+  _unexpectedClosePending.delete(sid);
+
   const oldEntry = _state.get(sid);
 
   if (oldEntry) {
