@@ -29,3 +29,6 @@ notes/
 .session-id
 
 .scratch/
+
+# Session token — live credential, never committed
+memory/telegram/session.token

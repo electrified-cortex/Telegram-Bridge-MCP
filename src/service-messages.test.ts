@@ -305,9 +305,9 @@ describe("SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN", () => {
     expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.eventType).toBe("onboarding_loop_pattern");
   });
 
-  it("contains Monitor-capable runtime path for Claude Code", () => {
+  it("contains Monitor-capable runtime path without harness-specific brand names", () => {
     expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("Monitor-capable");
-    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("Claude Code");
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).not.toContain("Claude Code");
   });
 
   it("contains explicit activity/file/create step", () => {
