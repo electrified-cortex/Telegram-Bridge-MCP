@@ -3,6 +3,8 @@ title: Governor split — unskilled tier gets breadcrumb-service-message guidanc
 stage: 10-drafts
 author: Curator (synthesized from operator voice msgs 60091 + 59314-59335)
 date: 2026-05-23
+implementation_status: "AC1-AC9 committed on worker/governor-split-with-unskilled-breadcrumb-injection-2026-05-23 (8999fa9f, 2026-06-21). NOT yet merged to release/7.13.0. Overseer to review and merge."
+updated: 2026-06-22
 target_repo: electrified-cortex/Telegram-Bridge-MCP
 priority: PRI-1
 related:

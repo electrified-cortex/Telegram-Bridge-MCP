@@ -1,6 +1,9 @@
 ---
 created: 2026-06-22
-status: queued
+status: done
+resolved: 2026-06-22
+commit: d10345aa (release/7.13.0)
+note: "Implemented as 10-3026 in commit. Queued by Curator as 10-3027 but Overseer's foreman used 10-3026 numbering."
 priority: 26
 source: Curator dogfood session — operator approved 2026-06-22
 target-branch: dev/7.13.0

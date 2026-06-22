@@ -11,15 +11,22 @@ blocks: PR #219 (v7.11.1→master), PR #224 (v7.12.0→master)
 related: .tasks/00-ideas/v8-tmcp-no-pod-concepts-2026-05-27.md
 ---
 
-## Status — 2026-06-22
+## Status — 2026-06-22 (updated)
 
-**v7.11.1 (release/v7.11.1-clean)**: Pod-concept fixes APPLIED ✅
+**PRs #219 and #224**: MERGED ✅ (v7.11.1 and v7.12.0 landed in master)
+
+**pod-memory.md**: DELETED (not renamed) — commit `42ce3447` removed the file entirely. Open question about rename is RESOLVED: it was deleted.
+
+**Remaining violations in current codebase** (found 2026-06-22 dogfood audit):
+- `src/tools/activity/listen.ts` line 59 — "your pod root or memory/ dir" (runtime string) ← IN MASTER
+- `src/service-messages.ts` — same language, reintroduced by commit `3ad69ca2` on `release/7.13.0` ← NOT in master
+
+These need to be fixed before 7.13.0 ships. Overseer has been briefed.
+
+**v7.11.1 (merged via PR #225)**: Pod-concept fixes APPLIED ✅
 - Violations #6 ACTIVITY_LISTEN_BREADCRUMB ✅ (commit 90d94a05)
 - Violations #7 ONBOARDING_LOOP_PATTERN ✅ (commit 90d94a05)
-- pod-memory.md content fixed (Claude Code, pod-relative paths removed) ✅
-- Note: pod-memory.md file rename (→ agent-state.md) NOT done — operator hasn't confirmed new name. Topic key `pod-memory` still works. Content is now pod-concept-free.
-
-**v7.12.0 (PR #224)**: Still on HOLD — fixes not yet applied to that branch. Needs separate fix pass.
+- pod-memory.md DELETED (commit 42ce3447) ✅
 
 # Remove pod-concepts introduced by 15-0898
 

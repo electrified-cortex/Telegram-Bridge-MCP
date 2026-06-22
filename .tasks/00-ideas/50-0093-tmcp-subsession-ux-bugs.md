@@ -28,7 +28,14 @@ Operator framed these as TMCP-side bugs / feature misses — not agent-side. Cap
 
 5. **Sub-agent dequeue guidance missing from `spawn_child_subagent_hint` service message.** Operator's mental model: the dispatched sub-agent should default to a long dequeue (~1800s) since it's there to talk to the operator, not to coordinate with the parent. The current `spawn_child_subagent_hint` says "call `dequeue(token: <child>)` continuously" without specifying max_wait. The parent's profile default applies to the parent's own dequeues only; the sub-agent should be told (in the spawn hint) to call `profile/dequeue-default timeout: 1800` early in its lifecycle, or the hint should suggest passing `max_wait: 1800` (with `force: true` if needed). Today the sub-agent reuses whatever default it inherits, which is too short for human-paced interactions.
 
+## Audit 2026-06-22
+
+**Bug 3** (name tag): FIXED — commit `a55f0df8` v7.10.0 + `b47d73fb` merge(10-2307). In master ✅
+**Bug 4** (topic with number): PARTIALLY addressed — `13bfaa9f` adds slot index to subsession display name (session list). Announcement number still TBD.
+**Bugs 1, 2, 5**: No git evidence of fix. Still open.
+
 ## Disposition
 
 - Out of scope for the coordinating agent. Route to TMCP queue (`electrified-cortex/Telegram-Bridge-MCP/tasks/`).
 - Capture-only here; spec the fix when working on TMCP improvements.
+- **Bug 5 (dequeue guidance)**: Note — `max_wait` parameter is now forbidden footgun (2026-06-22). The spawn_child_subagent_hint should recommend `profile/dequeue-default timeout: 1800` instead of any per-call timing parameter.
