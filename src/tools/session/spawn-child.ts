@@ -85,17 +85,19 @@ export async function handleSpawnChild({
   setSessionParentSid(childSid, parentSid);
   setSessionCapability(childSid, cap);
 
-  // Inherit parent's name_tag so the child presents identically in Telegram.
-  if (parentSession?.name_tag !== undefined) {
-    const childSession = getSession(childSid);
-    if (childSession) {
-      childSession.name_tag = parentSession.name_tag;
-    }
-  }
-
   // Set the topic chip: "TopicName ①" — visible as **[TopicName ①]** in Telegram.
   const circleDigit = String.fromCodePoint(0x245F + displayIndex);
   runInSessionContext(childSid, () => { setTopic(`${name} ${circleDigit}`); });
+
+  // Apply the slot index marker to the subsession's session-list display name
+  // and inherit the parent's name_tag so the child presents identically in Telegram.
+  const childSession = getSession(childSid);
+  if (childSession) {
+    childSession.name = `${inheritedName} ${circleDigit}`;
+    if (parentSession?.name_tag !== undefined) {
+      childSession.name_tag = parentSession.name_tag;
+    }
+  }
 
   // Guide the parent (host) toward dispatching a background sub-agent for the
   // new sub-session. Lands in the parent's next dequeue, not the child's.
