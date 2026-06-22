@@ -1,7 +1,7 @@
 # TMCP Presence Nudge — Agent Contract Spec
 
-**Source:** Pilot (via Telegram, 2026-06-20)
-**Status:** Spec — to be incorporated into pod operating doctrine and agent behavior guidelines
+**Source:** Operator (via Telegram, 2026-06-20)
+**Status:** Spec — to be incorporated into agent operating doctrine and agent behavior guidelines
 
 ---
 

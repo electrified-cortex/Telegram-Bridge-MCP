@@ -17,9 +17,9 @@ rewrite is needed at all.
 
 - Eliminates the rewrite step from the telegram-participation skill entirely
 - Kills the footgun at the source — not a band-aid
-- Aligns with operator directive: "zero friction without band aids"
+- Aligns with operator directive: eliminate friction at the source rather than adding workarounds
 
-## Investigation scope (Curator's domain — TMCP codebase)
+## Investigation scope (TMCP codebase)
 
 1. Where does `activity/listen` construct the SSE command URL? (src/ in Telegram-Bridge-MCP)
 2. Is the advertised host configurable via env var? (e.g. BRIDGE_ADVERTISE_HOST)

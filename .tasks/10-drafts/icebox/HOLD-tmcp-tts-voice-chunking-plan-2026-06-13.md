@@ -4,7 +4,7 @@
 **Date**: 2026-06-13
 **Priority**: High
 **Status**: Draft
-**Origin**: Curator directive (pod inbox 2026-06-13)
+**Origin**: Coordinating agent directive (2026-06-13)
 
 ## Background
 
@@ -25,7 +25,7 @@ architecture (CPU Kokoro, existing voice.cortex.lan).
 **PLAN ONLY — no code changes in this task.**
 
 Analyze the voice send path in TMCP and produce a written implementation plan for
-client-side TTS chunking. Post the plan to the agent outbox; the Curator will
+client-side TTS chunking. Post the plan to the agent outbox; the coordinating agent will
 checkpoint before any implementation proceeds.
 
 ## Relevant Files (read-only)
@@ -82,8 +82,8 @@ checkpoint before any implementation proceeds.
 **Repo**: `electrified-cortex/Telegram-Bridge-MCP`
 **Foreman**: existing TMCP foreman (81dcc473) — queue after V8 Rich-Messages tasks
 **Language**: TypeScript (analysis only — no changes)
-**Note**: Foreman reads code, writes plan, posts to outbox. Agent forwards to Curator.
-Curator checkpoints before implementation task is created.
+**Note**: Foreman reads code, writes plan, posts to outbox. Agent forwards to the coordinating agent.
+The coordinating agent checkpoints before implementation task is created.
 
 ## Agent review
 
@@ -92,4 +92,4 @@ Curator checkpoints before implementation task is created.
 **Verdict**: PASS
 **Review type**: Adversarial dispatch (gate fail v1 — 4 blockers fixed: AC3 tilde ambiguity, AC4 threshold unspecified, AC6 vague "assessed", AC3 missing fallback clause)
 **Checked**: Binary ACs, bounded scope (plan-only, AC7 no-code gate), delegation, code references verified against src/tts.ts:74-75 and src/async-send-queue.ts:361, outbox mechanism explicit, threshold concrete (>100 words), fallback algorithm present
-**Origin**: Curator directive (pod inbox 2026-06-13) — Curator-authorized work
+**Origin**: Coordinating agent directive (2026-06-13) — operator-authorized work

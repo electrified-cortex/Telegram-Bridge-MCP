@@ -47,7 +47,7 @@ close-orphaned-session (not a runtime skill), dequeue-loop (fully redundant) as 
 
 Confirmed via `help(topic: 'sub-session')` → UNKNOWN_TOPIC.
 
-Operator directive: "make sure every skill topic is covered by help and properly indexed."
+Operator directive: ensure every skill topic is covered by help and properly indexed.
 
 **Resolution options:**
 A. Add harness-agnostic `help('sub-session')` topic to the bridge (bridge-side change)

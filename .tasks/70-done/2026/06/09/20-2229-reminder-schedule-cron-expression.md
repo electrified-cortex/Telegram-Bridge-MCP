@@ -452,7 +452,7 @@ existing reminders or schedule firing.
 
 ## Delegation / gates
 
-Worker implements; agent reviews; Curator stages; operator commits.
+Worker implements; agent reviews; coordinator stages; operator commits.
 
 ---
 
@@ -476,7 +476,7 @@ Worker implements; agent reviews; Curator stages; operator commits.
 
 - [x] Acceptance criteria are binary and testable (with additions below)
 - [x] Scope bounded — 8 files enumerated, dependency (`croner`) specified
-- [x] Delegation field correct — Worker implements, Agent gate, Curator stages, operator commits
+- [x] Delegation field correct — Worker implements, Agent gate, coordinator stages, operator commits
 - [x] Architecture sound — dual-mechanism rationale verified; in-loop check as source of truth is correct
 - [x] Regression guards explicit — §G-1 through §G-5 cover all closed-union sites
 - [x] DST spring-forward/fall-back ACs are exact (UTC timestamps provided)

@@ -4,7 +4,7 @@ title: "Epic: Telegram-specific skills library inside TMCP with Claude Code plug
 type: epic
 priority: 0
 created: 2026-05-15
-delegation: Curator
+delegation: Coordinating agent
 target_branch: dev
 ---
 
@@ -25,7 +25,7 @@ Create a Telegram-specific skills library that:
 3. **Ships as a Claude Code plugin** — so any agent with the plugin installed gets the full Telegram skill set without manual import or path-wrangling. Plugin registration follows the Claude Code plugin architecture.
 4. **Replaces the scattered skills** — once live, the skills in electrified-cortex/skills that are Telegram-specific should be deprecated or removed in favor of the TMCP-native versions.
 
-## Sub-tasks (to be specced by Curator)
+## Sub-tasks (to be specced by coordinating agent)
 
 - Audit which skills currently live in electrified-cortex/skills and are Telegram-specific
 - Design the `skills/` folder layout inside TMCP

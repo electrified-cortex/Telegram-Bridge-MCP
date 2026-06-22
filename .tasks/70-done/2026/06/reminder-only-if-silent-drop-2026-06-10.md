@@ -30,7 +30,7 @@ call `reminder/list` and inspect the live state.
 ## Bug 2 — recurring last_received fires too many times
 
 `recurring: true` + `last_received` trigger: fires every `delay_seconds` while the trigger
-state persists. Expected behavior per Pilot directive 4719: should fire ONCE per last_received
+state persists. Expected behavior per operator directive: should fire ONCE per last_received
 event, not repeatedly.
 
 The "once-per-event" semantic (fire once after the triggering event, then wait for the next
@@ -50,7 +50,7 @@ Workaround: reminder disabled by operator.
 - The §5-b unification (reminders enter the queue) may subsume or interact with these fixes
 - Suggest reviewing alongside 7.10 spec before assigning a standalone worker
 
-## Curator direction (2026-06-10)
+## Coordinating agent direction (2026-06-10)
 
 Fold into 7.10.0 §5-b (reminders-into-queue) work — one worker handles both the queue
 unification AND the only_if_silent / recurring semantic fixes together. Do not assign a

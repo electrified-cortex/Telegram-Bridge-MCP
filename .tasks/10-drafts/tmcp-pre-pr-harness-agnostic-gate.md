@@ -13,7 +13,7 @@ related: .tasks/00-ideas/v8-tmcp-no-pod-concepts-2026-05-27.md
 
 ## Root cause of 7.11.1 pod-concept violations
 
-Task 15-0898 specced "pod-memory" as the convention name and `memory/telegram/session.token` as a hardcoded path. The Curator wrote the spec using internal vocabulary. The worker implemented exactly what was specced. The foreman reviewed against the spec's own ACs — all passed. No cross-cutting harness-agnostic audit ran before the branch was pushed.
+Task 15-0898 specced "pod-memory" as the convention name and `memory/telegram/session.token` as a hardcoded path. The spec was written using internal vocabulary. The worker implemented exactly what was specced. The foreman reviewed against the spec's own ACs — all passed. No cross-cutting harness-agnostic audit ran before the branch was pushed.
 
 The `v8-tmcp-no-pod-concepts` directive (operator voice 62572, 2026-05-27) exists as an idea file but is **not enforced as a gate anywhere in the pipeline**.
 
@@ -32,15 +32,12 @@ git diff origin/dev... -- src/ docs/ | grep -E "pod[- ]|pod root|memory/telegram
 Wire into foreman push gate or as a pre-push hook.
 
 ### Option C — Spec-level constraint (upstream fix)
-Encode the no-pod-concepts directive as a constraint Curator must check at task-creation time for any TMCP task that touches `src/`, `docs/`, or service messages. Add to Curator's TMCP task template:
+Encode the no-pod-concepts directive as a constraint the coordinating agent must check at task-creation time for any TMCP task that touches `src/`, `docs/`, or service messages. Add to the TMCP task template:
 > ⚠️ TMCP CONSTRAINT: No pod-terminology (pod, pod-memory, pod root, pod-relative, CLAUDE.md, .agents/) in user-facing content. TMCP is harness-agnostic. Violates standing directive — operator voice 62572.
 
 ## OPERATOR DIRECTIVE (mandatory — 2026-06-22)
 
-> "There MUST be at LEAST 1 adversarial review of source and test changes before pushing."
-> "YOU are the PR gate. YOU do the final adversarial review." — operator directive
-
-This is a standing rule. Not optional. Not per-task. **the agent owns this gate** — the foreman only verifies task ACs; the Agent runs the adversarial review and approves push. This rule is now encoded in the agent's `050-your-rules.md.fragment`.
+The operator established (2026-06-22) that at least one adversarial review of source and test changes is required before pushing. The reviewing agent owns this gate — the foreman only verifies task ACs; the agent runs the adversarial review and approves push. This rule is encoded in the agent's `050-your-rules.md.fragment`.
 
 ## Recommendation
 
@@ -52,7 +49,7 @@ This is a standing rule. Not optional. Not per-task. **the agent owns this gate*
 ## Acceptance criteria
 
 1. TMCP foreman review checklist includes pod-concept grep check (Option A)
-2. Curator task template for TMCP-touching tasks includes the no-pod-concepts constraint (Option C)
+2. Coordinating agent task template for TMCP-touching tasks includes the no-pod-concepts constraint (Option C)
 3. Optional: pre-push hook or script added to TMCP (Option B)
 4. The v8-tmcp-no-pod-concepts idea file is either promoted to a formal constraint doc or closed with a pointer to where the constraint now lives
 

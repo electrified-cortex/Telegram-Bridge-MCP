@@ -5,9 +5,9 @@ source: operator voice (Telegram, msg 62572)
 
 # CRITICAL: TMCP Skills Must Be Harness-Agnostic
 
-## Operator statement (verbatim)
+## Operator directive (distilled)
 
-"Just a note, and I'm going to re-emphasize this, anything in-- when it comes to Telegram MCP, it has no notion of what we call pods. In fact, it might not even be Claude Code that's running. Okay, keep that in mind. There shouldn't be anything Claude Code specific in Telegram MCP. Telegram MCP is a tool that other agent harnesses use. I need to really emphasize that."
+The operator emphasized that TMCP has no notion of deployment-specific pod concepts. It may not be any particular agent harness running against it. TMCP is a generic tool that other agent harnesses use — nothing harness-specific should appear in its code, docs, or service messages.
 
 ## What this means for TMCP skills
 

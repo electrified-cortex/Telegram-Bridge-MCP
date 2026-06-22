@@ -5,9 +5,9 @@ source: operator voice (Telegram, msg 62566)
 
 # V8 Architectural Constraint: TMCP Skills Must Be Self-Sufficient
 
-## Operator statement (verbatim)
+## Operator directive (distilled)
 
-"Some of the Telegram skills could be very much reduced and cleaned up. And then even some of them could be done as a sub-agent dispatch as well. You know, it would be a good idea. But again, whoever's using Telegram MCP has to know about the sub-agent dispatching as best they can. They might not. We can frame it that way, but we can't expect them to have our electrified cortex skills installed. So..."
+The operator noted that Telegram skills could be reduced and cleaned up, and that some could be framed as sub-agent dispatch patterns. However, TMCP cannot assume the consuming agent has access to any external skill library — consumers may not have electrified-cortex skills installed. Skills should be self-contained or reference external patterns only as optional enhancements.
 
 ## Key constraint
 

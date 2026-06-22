@@ -14,7 +14,7 @@ type: maintenance + refactor
 
 This is a maintenance nightmare: the test is coupled to the exact wording of a service message, meaning any copy-edit to that message silently breaks tests, and vice versa — the test content risks leaking into agent context and being interpreted as instructions.
 
-Operator noted: "If the agent calls dequeue(token) don't we use a service message to tell them to save their token? ... It's a footgun."
+The operator noted that tests asserting on instructional service-message content create a footgun: the test wording can itself be interpreted as agent instructions when it appears in context.
 
 ## Scope
 

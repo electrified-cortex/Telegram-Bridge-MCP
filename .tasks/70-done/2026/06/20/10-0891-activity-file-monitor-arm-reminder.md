@@ -9,8 +9,7 @@
 Currently `action(type: "activity/file/create")` provisions an activity
 file at `<bridge>/data/activity/<id>` and returns the path. The
 agent is expected to know it should arm a Monitor tool against that
-path so file changes trigger dequeues. In practice agents (this
-Curator session 2026-05-09) skip the Monitor arming step because:
+path so file changes trigger dequeues. In practice agents (as observed in a 2026-05-09 session) skip the Monitor arming step because:
 
 - The response doesn't hint at the next action.
 - No service message follows up on the next dequeue to remind.
@@ -57,7 +56,7 @@ Two-prong reminder so the agent doesn't drop the watcher step:
 
 ## Notes
 
-- Filed 2026-05-09 from Curator session that omitted the Monitor
+- Filed 2026-05-09 from a session that omitted the Monitor
   arm and operator caught the gap on review.
 - The bridge already has the `service_message` plumbing; this is
   another event type plus tracking, not new infrastructure.

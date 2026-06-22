@@ -1,7 +1,7 @@
 ---
 title: BUG — host name tag not retained in subsessions (spawn-child)
 filed: 2026-06-10
-source: operator testing (relayed via subsession sid 3 → Curator)
+source: operator testing (relayed via subsession sid 3 → parent agent)
 relates: tasks/10-drafts/10-2100-threaded-conversations-prd.md
 status: draft / needs triage
 severity: bug
@@ -12,7 +12,7 @@ severity: bug
 When spawning a subsession via `session/spawn-child`, the **host agent's name tag is not carried into the child session**. The operator wants the host's name tag inherited by the subsession.
 
 ## Observed
-- Spawned child with `name: "subsessions"`; the child's onboarding reported topic **"Curator"** (parent inherited) rather than reflecting the requested name, and the host name-tag was not retained as expected.
+- Spawned child with `name: "subsessions"`; the child's onboarding reported the parent's topic name (inherited) rather than reflecting the requested name, and the host name-tag was not retained as expected.
 
 ## Code references (initial, unverified-deep)
 - `src/tools/session/spawn-child.ts:90` — `runInSessionContext(childSid, () => { setTopic(\`${name} ${circleDigit}\`); })` sets the topic chip from the `name` param + circle digit.

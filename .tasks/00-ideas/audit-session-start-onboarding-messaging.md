@@ -8,7 +8,7 @@ type: review + refactor
 
 ## Problem
 
-Operator noted (77758): "the session start is almost being overly redundant and aggressive."
+Operator noted (77758) that the session start messaging feels overly redundant and aggressive in tone.
 
 On `session/start`, the bridge currently sends multiple onboarding service messages in sequence:
 - `onboarding_token_save` — instructs to save token

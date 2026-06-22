@@ -1,5 +1,5 @@
 /**
- * HTTP endpoint: POST /activity/selftest
+ * HTTP endpoint: POST /activity/poke
  *
  * Injects a synthetic `data: notify` event into the caller's open SSE stream.
  * Lets an agent verify its own SSE registration is working solo — no operator
@@ -19,7 +19,7 @@ import { validateSession } from "./session-manager.js";
 import { hasSseConnection, notifySseSubscriber } from "./sse-endpoint.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
 
-interface SelftestBody {
+interface PokeBody {
   token?: unknown;
 }
 
@@ -31,13 +31,13 @@ function parseIntParam(val: unknown): number {
 }
 
 /**
- * Core logic for POST /activity/selftest.
+ * Core logic for POST /activity/poke.
  * Returns a tuple [statusCode, responseBody].
  * Exported for unit testing without spinning up HTTP.
  */
-export function handleActivitySelftest(
+export function handleActivityPoke(
   rawToken: unknown,
-  body: SelftestBody,
+  body: PokeBody,
 ): [number, Record<string, unknown>] {
   // Token resolution: query param takes precedence over body
   const tokenRaw = rawToken !== undefined ? rawToken : body.token;
@@ -64,17 +64,17 @@ export function handleActivitySelftest(
   return [200, { ok: true }];
 }
 
-export function attachActivitySelftestRoute(app: Express): void {
+export function attachActivityPokeRoute(app: Express): void {
   const handler = (req: Request, res: Response, next: NextFunction): void => {
     try {
       const rawToken = typeof req.query["token"] === "string" ? req.query["token"] : undefined;
-      const rawBody = (req.body ?? {}) as SelftestBody;
-      const [status, payload] = handleActivitySelftest(rawToken, rawBody);
+      const rawBody = (req.body ?? {}) as PokeBody;
+      const [status, payload] = handleActivityPoke(rawToken, rawBody);
       res.status(status).json(payload);
     } catch (err) {
       next(err);
     }
   };
 
-  app.post("/activity/selftest", handler);
+  app.post("/activity/poke", handler);
 }

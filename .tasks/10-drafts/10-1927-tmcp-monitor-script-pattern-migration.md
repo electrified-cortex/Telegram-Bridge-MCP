@@ -1,12 +1,12 @@
 # 10-1927 — TMCP monitor: migrate to pod-style `monitor.sh` pattern
 
-Priority: 10 (high — affects Curator's wake mechanism)
-Classification: Curator-only
+Priority: 10 (high — affects agent wake mechanism)
+Classification: Agent-coordinator only
 Status: Draft
 
 ## Background
 
-The Curator's TMCP wake monitor (`b2f8cx05d` — "curator TMCP activity-file kick") is currently configured to call the HTTP DQ endpoint as part of its kick behavior, surfacing kicks as `<task-notification>` events to the Curator. Operator flagged this 2026-05-13 as feeling wrong shape: monitor stdout is conflating "signal that something happened" with "now go dequeue."
+The agent's TMCP wake monitor (`b2f8cx05d` — "TMCP activity-file kick") is currently configured to call the HTTP DQ endpoint as part of its kick behavior, surfacing kicks as `<task-notification>` events to the coordinating agent. Operator flagged this 2026-05-13 as feeling wrong shape: monitor stdout is conflating "signal that something happened" with "now go dequeue."
 
 Meanwhile the pod architecture (task-engine `.foreman-pod/`, `.worker-pod/`, new `.Agent-pod/`) standardized on `monitor.sh` per box, sourced from `task-engine/.foreman-pod/outbox/monitor.sh`. The current pod-side pattern:
 
@@ -18,14 +18,14 @@ Meanwhile the pod architecture (task-engine `.foreman-pod/`, `.worker-pod/`, new
 
 ## What to figure out
 
-How to introduce the pod-style `monitor.sh` pattern into TMCP's Curator wake mechanism. Specifically:
+How to introduce the pod-style `monitor.sh` pattern into TMCP's agent wake mechanism. Specifically:
 
-1. **Where does the Curator's wake actually originate inside TMCP?** Identify the activity-file watcher service that currently fires `b2f8cx05d`-style kicks.
+1. **Where does the agent's wake actually originate inside TMCP?** Identify the activity-file watcher service that currently fires `b2f8cx05d`-style kicks.
 2. **What does "calls to HTTP DQ" actually do today?** Trace the path from file-change → HTTP DQ call → `<task-notification>` emission. Confirm the architectural gap.
 3. **Does the pod-style `monitor.sh` belong inside TMCP or alongside it?** Options:
-   - Replace the TMCP-internal watcher with a `monitor.sh` invocation that the Curator's pod owns.
+   - Replace the TMCP-internal watcher with a `monitor.sh` invocation that the agent's environment owns.
    - Adopt the pod's `.signal` file convention inside TMCP's activity-file emission path.
-   - Hybrid: TMCP emits, pod-side `monitor.sh` reads.
+   - Hybrid: TMCP emits, agent-side `monitor.sh` reads.
 4. **What's the migration cost?** Existing TMCP watcher logic, downstream consumers, profile/load coupling.
 
 ## Acceptance criteria
@@ -39,9 +39,9 @@ How to introduce the pod-style `monitor.sh` pattern into TMCP's Curator wake mec
 ## Notes
 
 - Pod-side `monitor.sh` lives at `task-engine/.foreman-pod/{inbox,outbox}/monitor.sh` (and `.worker-pod/` copies). Single canonical source.
-- `--prefix` flag added 2026-05-13; would let the Curator's wake distinguish "TMCP activity" from "pod-message" kicks once the Curator has multiple monitors armed.
-- Curator-only because it's the Curator's own infrastructure; no Worker should touch this.
-- Operator authority: 2026-05-13 voice (distilled — directed filing a curator-only follow-up task).
+- `--prefix` flag added 2026-05-13; would let the agent's wake distinguish "TMCP activity" from "pod-message" kicks once the agent has multiple monitors armed.
+- Coordinator-only because it's the coordinating agent's own infrastructure; no other worker should touch this.
+- Operator authority: 2026-05-13 voice (distilled — directed filing a coordinator-only follow-up task).
 
 ## Won't-do (for this spike)
 

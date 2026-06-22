@@ -39,4 +39,4 @@ Pasted by operator, message 62619 (the "from another agent review" result).
 lifecycle / loop / comms / shutdown / recovery / orphan / dumps / reminders / sub-session / file-watch
 
 ## Agent's question
-"Want me to implement these merges?" — NOT authorized. Operator approval required per change.
+Implementation of merges was proposed but not authorized. Operator approval required per change.

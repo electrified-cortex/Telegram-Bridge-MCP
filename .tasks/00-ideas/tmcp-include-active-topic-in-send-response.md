@@ -7,7 +7,7 @@ source: operator (TG 77791)
 
 ## Operator request
 
-"I think we need to have the topic in the send response if it's been set prior."
+The operator requested that the active topic be included in the send response whenever a topic has been previously set.
 
 ## Intent
 

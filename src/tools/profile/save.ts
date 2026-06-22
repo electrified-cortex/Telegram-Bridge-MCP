@@ -106,7 +106,6 @@ export function handleSaveProfile({ key, token, autoload = false, silent_lifecyc
     sections.push("silent_lifecycle");
   }
 
-
   let path: string;
   try {
     path = resolveProfilePath(key);

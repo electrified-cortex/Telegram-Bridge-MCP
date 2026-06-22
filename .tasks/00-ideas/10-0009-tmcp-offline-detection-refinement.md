@@ -2,7 +2,7 @@
 
 **Filed:** 2026-06-15 ~18:00 PT  
 **Source:** Operator voice msgs 75555-75556  
-**Owner:** Curator (TMCP domain)  
+**Owner:** TMCP domain agent  
 **Priority:** 10 (standard)
 
 ## Problem
@@ -30,6 +30,5 @@ An agent with an open SSE subscription and an empty queue = **online and idle, n
 
 ## Notes
 
-- Operator used agent as the example case
-- Grace window: operator said "5 minutes minimum, 10 minutes preferred"
-- This is a TMCP bridge-level change, not a pod-level change
+- Grace window: 5 minutes minimum, 10 minutes preferred (per operator)
+- This is a TMCP bridge-level change, not an agent-side change

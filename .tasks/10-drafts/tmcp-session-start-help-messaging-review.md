@@ -13,7 +13,7 @@ related: tmcp-remove-pod-concepts-from-15-0898.md
 
 ## Operator feedback
 
-TG 77758 (2026-06-21): "the session start is almost being overly redundant and aggressive. I'll likely merge 7.11.1 but this needs a revisit."
+TG 77758 (2026-06-21): The operator found the session start messaging overly redundant and aggressive in tone, and indicated 7.11.1 would likely be merged but that this area needs a revisit.
 
 ## Context
 
@@ -32,7 +32,7 @@ Note: this task is **downstream of** `tmcp-remove-pod-concepts-from-15-0898.md` 
 
 ## Acceptance criteria
 
-1. Curator reviews `docs/help/start.md` and `docs/help/quick_start.md` against the existing session/start response
+1. Review `docs/help/start.md` and `docs/help/quick_start.md` against the existing session/start response
 2. Redundant content removed or consolidated
 3. Tone is informational, not directive/urgent
 4. No regression on compaction-survival guidance (the intent of 15-0898 was valid — just the execution and naming were off)

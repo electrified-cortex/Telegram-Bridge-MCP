@@ -1,6 +1,6 @@
 # TMCP: Smart Reminder Confirmation Service Message
 
-> Source: operator voice msg 75128, 2026-06-15 ~11:00 PT. Directive: "scope that out, get a task going, pass it off to the agent."
+> Source: operator voice msg 75128, 2026-06-15 ~11:00 PT. Directive: scope out the feature, create a task, and pass it to the agent for implementation.
 
 ## Two Distinct Features (operator clarified 2026-06-15)
 
@@ -47,9 +47,9 @@ Always include persistence status:
 
 ## Routing
 
-Pass to agent for design + implementation spec. operator TMCP backlog file (far-future-reminder-warning-2026-06-15.md in operator context) covers the broader context — Agent should read it.
+Pass to the implementing agent for design + implementation spec. The broader context is in the TMCP backlog file (far-future-reminder-warning-2026-06-15.md).
 
 ## Related
 
 - Task #6: TMCP feature — reminder confirmation + impact summary
-- operator context: `memory/project/pass-off-to-fleet.md` (reliability defects — CronCreate durable:true bug is related)
+- operator context: reliability defects — CronCreate durable:true bug is related

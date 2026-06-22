@@ -5,13 +5,9 @@
 
 ---
 
-## Verbatim — msg 60945
+## Context — msgs 60945, 60947
 
-> Yeah, we have a problem there. There's supposed to be some sort of script that you run to make sure that all of the CRLFs are gone. So when the pods boot up, they actually succeed. I think we need to be careful about pre-start because pre-start is kind of one of those weird things that... What if there's something wrong, you know? But... Let's not do it. Let's just make it so that... Before we launch a pod, there's a PMPM build. Can you just do that? Yeah.
-
-## Verbatim — msg 60947
-
-> Right, sanitize. Okay. Well, we should definitely have that. Does that run before we start the pod or what?
+The operator flagged two concerns: (1) a sanitize script should run to strip CRLFs before pod boot to prevent startup failures, and (2) a build step (`pnpm build`) should run before launching a pod. The operator was cautious about adding a `prestart` hook due to potential failure modes but wanted the build step enforced before pod launch. A follow-up confirmed the sanitize step was already expected and asked whether it ran before pod start.
 
 ---
 
@@ -34,7 +30,7 @@ The `.mcp.json` at host root points at `http://127.0.0.1:3099/mcp`. No `start-br
 ## Gap analysis
 
 - **Container pods:** fully covered. sanitize runs before spawn AND before bridge; bridge rebuilds every start.
-- **Host pods (Curator, Agent):** rely on git autocrlf for CRLF safety, and on operator manually managing host TMCP lifecycle.
+- **Host pods:** rely on git autocrlf for CRLF safety, and on operator manually managing host TMCP lifecycle.
 
 ## What operator might still want
 
@@ -43,4 +39,4 @@ The `.mcp.json` at host root points at `http://127.0.0.1:3099/mcp`. No `start-br
 
 ## Recommendation
 
-Tell operator: containers already do what she's asking. If she wants host parity, propose a single host `start-bridge.sh` + a sanitize-call in host spawn.sh. Two small additions.
+Containers already do what the operator is asking. If host parity is desired, propose a single host `start-bridge.sh` + a sanitize-call in host spawn.sh. Two small additions.

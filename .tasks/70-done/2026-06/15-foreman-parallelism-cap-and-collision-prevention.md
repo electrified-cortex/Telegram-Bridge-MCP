@@ -2,7 +2,7 @@
 title: "Foreman agent: add Fleet Management section"
 priority: 15
 type: guideline-addition
-agent_type: Curator
+agent_type: Coordinator
 dispatch_ready: true
 needs_operator: false
 created: 2026-06-21
@@ -15,13 +15,11 @@ curator_review: approved-2026-06-21-final
 
 ## What
 
-Add a brief "Fleet Management" section to the foreman's core agent markdown. One short paragraph (or a few bullet points at most). This is a guideline addition — no code change, no worker needed. Curator authors directly.
+Add a brief "Fleet Management" section to the foreman's core agent markdown. One short paragraph (or a few bullet points at most). This is a guideline addition — no code change, no worker needed. The coordinating agent authors directly.
 
-## Operator direction (voice 77511, 2026-06-21 — verbatim intent)
+## Operator direction (voice 77511, 2026-06-21)
 
-> "It should be no more than a paragraph… a section in the markdown of its agent file… it talks about fleet management, right? And explains how it's supposed to scale and how it's supposed to distribute and partition."
-
-YAGNI — minimalist. Don't over-engineer.
+The section should be no more than a paragraph in the foreman's agent markdown — covering fleet management, how it scales, and how it distributes and partitions work. Keep it minimal; do not over-engineer.
 
 ## Model to encode (distilled from operator voices 77497–77511)
 
@@ -48,5 +46,5 @@ YAGNI — minimalist. Don't over-engineer.
 ## Notes
 
 - Target file: foreman's `core.agent.md` (or equivalent — confirm path before editing)
-- Curator authors, no worker dispatch
-- Agent stamps and closes once Curator confirms addition is in place
+- Coordinating agent authors, no worker dispatch
+- Agent stamps and closes once the coordinating agent confirms addition is in place

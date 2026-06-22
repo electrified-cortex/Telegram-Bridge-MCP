@@ -50,7 +50,7 @@ to rate-limit "wedged" agents (rationale thin: a polling-and-timing-out agent is
 
 Original finding (for the record):
 **Scheduled reminders fire (in-loop dequeue check works) but did NOT wake an agent parked on
-its activity-FILE monitor — which is how operator (the intended user) and Curator park.** The
+its activity-FILE monitor — which is how the operator (the intended user) and coordinating agents park.** The
 feature was effectively undelivered for file-parked agents.
 
 - Sweep (`reminder-state.ts:113`) calls ONLY `kickSseSubscriber(sid)` when due. SSE-only.
@@ -58,7 +58,7 @@ feature was effectively undelivered for file-parked agents.
 - The activity-file kick is `kickIfAllowed` (touches file via doTouchWithRollback). dequeue.ts
   calls it (`:358`, `:524`) but ONLY while the agent is already dequeuing — can't wake a parked agent.
 - operator parks on `bash monitor.sh` on the bridge activity FILE (operator handoff), not SSE.
-- Result: SSE-parked agents wake; activity-file-parked agents (operator, Curator) do NOT — reminder
+- Result: SSE-parked agents wake; activity-file-parked agents (operator, coordinating agents) do NOT — reminder
   only fires when they next dequeue for another reason.
 
 **FIX (one line):** in the sweep tick, also call `kickIfAllowed(sid, "reminder", false)`

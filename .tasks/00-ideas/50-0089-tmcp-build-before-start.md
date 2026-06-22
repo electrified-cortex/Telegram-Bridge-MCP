@@ -5,13 +5,13 @@
 
 ---
 
-## Verbatim — msg 60942
+## Context — msg 60942
 
-> Also, I think it's important that for our Telegram MCP, I think we triggered the startup, right? The pnpm start, but I think we should also do, I mean, it scares me a little bit, but shouldn't we do a pnpm on build? Probably not, right? It should have already been built.
+The operator raised a concern: TMCP startup runs `pnpm start` but does not automatically run `pnpm build` first. The worry is that launching from a pre-built dist without a fresh compile could run stale code if the source has changed. The operator leaned toward requiring an explicit build step before start, but was uncertain about the cost tradeoff.
 
 ---
 
-## Curator notes
+## Notes
 
 **TMCP package.json:**
 
@@ -33,6 +33,6 @@
 
 Option 1 (prestart hook). Simple, safe, ~3s cost. Stations + dev experience matters more than 3s start latency.
 
-## Open question for operator
+## Open question
 
-Want me to draft the prestart hook PR against Telegram-Bridge-MCP repo? Could land alongside v7.6 release notes work.
+Should the prestart hook PR be drafted against Telegram-Bridge-MCP repo? Could land alongside v7.6 release notes work.

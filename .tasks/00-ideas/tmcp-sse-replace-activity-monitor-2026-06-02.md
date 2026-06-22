@@ -11,7 +11,7 @@ TMCP could expose an **SSE notification endpoint** to replace the current **acti
 - Eliminates the recurring **Windows file-lock** issues (no file watching).
 - Validated by **simple-im's Monitor + curl-SSE** transport (just decided 2026-06-02): agent runs `Monitor(curl -N .../events)`, SSE event wakes it, then fetch.
 
-## Why this is attractive (Curator note)
+## Why this is attractive
 Directly retires a cluster of recurring frictions:
 - TMCP activity_file_monitor relative-path bug ([[feedback_tmcp_monitor_relative_path]] — the misplaced memory file scrubbed in the v7.8.0 release).
 - Monitor fragility ([[feedback_monitor_fragility_mindset]]).

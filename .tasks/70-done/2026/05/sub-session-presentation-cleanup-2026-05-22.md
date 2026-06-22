@@ -1,7 +1,7 @@
 ---
 title: Sub-sessions should present as threads of the parent, not as peer sessions
 stage: 10-drafts
-author: Curator (live-test 2026-05-22)
+author: Coordinating agent (live-test 2026-05-22)
 date: 2026-05-22
 target_repo: electrified-cortex/Telegram-Bridge-MCP
 priority: P2
@@ -16,7 +16,7 @@ related:
 
 `action(type: 'session/spawn-child')` today goes through the same code path as `session/start` (calling `handleSessionStart` internally). The result is that a sub-session is presented to the operator as a brand-new peer session: it gets the operator approval dialog (color picker), a new "Session N — Online" announcement message, an inline keyboard, an announcement pin, and the full onboarding firehose of service messages designed for a top-level session.
 
-Empirically verified by live test on 2026-05-22: the host spawned `TestThread`, the operator saw an approval dialog, then saw a new participant labeled `TestThread` alongside `Curator` — visually indistinguishable from any other peer session. Operator described this (distilled) as perceiving two separate participants — exactly the wrong mental model.
+Empirically verified by live test on 2026-05-22: the host spawned `TestThread`, the operator saw an approval dialog, then saw a new participant labeled `TestThread` alongside the parent — visually indistinguishable from any other peer session. The operator perceived two separate participants — exactly the wrong mental model.
 
 The intended model: a sub-session is the parent's own work-stream isolated by topic. The operator should see ONE participant (the parent) handling MANY topics, where each sub-session is a topic thread.
 
@@ -102,7 +102,7 @@ AC6. `session/revoke-child` continues to work and emits the existing `session_cl
 
 ## Evidence
 
-Live test 2026-05-22 (Curator session, sid=1, token=1601748):
+Live test 2026-05-22 (parent session, sid=1, token=1601748):
 - Called `action(type: 'session/spawn-child', name: 'TestThread', child_capability: 'gather')`
 - Approval dialog appeared (R1 fail)
 - Operator approved by clicking a color button
@@ -123,7 +123,7 @@ Verdict: NEEDS REFINEMENT
 Review type: swarm (5 personalities — Devil's Advocate, Architect, Designer, Engineer, Security Auditor — + arbitrator)
 Confidence: High
 
-**v0.2 re-vet note (2026-05-23):** Curator submitted v0.2 claiming all 7 gaps addressed with "Curator defaults." Re-vet finds: Gap 3 genuinely closed by code; Gap 7 substantially closed pending one wording fix. Gaps 1, 2, 4, 5, 6 remain structurally identical to v0.1 — no new decision text exists for any of them. 6 new critical findings added (see below). Returning for v0.3.
+**v0.2 re-vet note (2026-05-23):** v0.2 claimed all 7 gaps addressed with defaults. Re-vet finds: Gap 3 genuinely closed by code; Gap 7 substantially closed pending one wording fix. Gaps 1, 2, 4, 5, 6 remain structurally identical to v0.1 — no new decision text exists for any of them. 6 new critical findings added (see below). Returning for v0.3.
 
 ### What was checked
 - Requirements completeness and internal consistency
