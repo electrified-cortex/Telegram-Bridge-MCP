@@ -22,10 +22,10 @@ The operator identified this as a key blocker for smart reconnection: agents
 should be able to probe the bridge to see if their session is still alive
 before attempting to rejoin.
 
-Operator quote: "They should be able to probe to see which sessions are active.
-There's nothing wrong with that. It doesn't need a pin. They say session list
-and it'll say... if they don't provide a pin, then they actually just get the
-session IDs that are active."
+The operator noted that unauthenticated agents should be able to query which
+sessions are currently active. Providing a PIN is not required for this probe;
+without one, the response should return only the active session IDs, with no
+additional session details exposed.
 
 ## Goal
 

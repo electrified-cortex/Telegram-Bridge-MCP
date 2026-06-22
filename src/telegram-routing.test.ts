@@ -79,7 +79,7 @@ function makeFetchMock(
   richErrCode?: number,
   richDesc?: string,
 ) {
-  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+  return vi.fn().mockImplementation((url: string, _init?: RequestInit) => {
     if (url.includes("sendRichMessage")) {
       const body = richOk
         ? { ok: true, result: { message_id: richMsgId } }
@@ -237,7 +237,7 @@ describe("RICH_MESSAGES=true", () => {
     await routeOutboundMessage(123, "converted text", {
       parse_mode: "Markdown",
       _rawText: "original text",
-    } as Record<string, unknown>);
+    });
 
     expect(mocks.notifyAfterFileSend).toHaveBeenCalledWith(42, "text", "original text");
   });
@@ -379,7 +379,7 @@ describe("session header injection (rich path)", () => {
     await routeOutboundMessage(123, "hello world", {
       parse_mode: "Markdown",
       _skipHeader: true,
-    } as Record<string, unknown>);
+    });
 
     const richMsg = (capturedBody as unknown as { rich_message?: { markdown?: string } })?.rich_message;
     expect(richMsg?.markdown).toBe("hello world"); // header suppressed
@@ -400,7 +400,7 @@ describe("non-text sends unaffected by RICH_MESSAGES flag (AC5)", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((url: string) => {
-        fetchedUrls.push(url as string);
+        fetchedUrls.push(url);
         return Promise.resolve(
           new Response(JSON.stringify({ ok: true, result: { message_id: 77 } })),
         );
@@ -422,7 +422,7 @@ describe("non-text sends unaffected by RICH_MESSAGES flag (AC5)", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((url: string) => {
-        fetchedUrls.push(url as string);
+        fetchedUrls.push(url);
         return Promise.resolve(
           new Response(JSON.stringify({ ok: true, result: { message_id: 88 } })),
         );

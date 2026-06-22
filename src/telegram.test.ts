@@ -830,7 +830,7 @@ describe("sendRichMessageDirect", () => {
 
   it("success path: returns { message_id } when API responds ok", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      json: async () => ({ ok: true, result: { message_id: 42 } }),
+      json: () => Promise.resolve({ ok: true, result: { message_id: 42 } }),
     }));
 
     const result = await sendRichMessageDirect(123, { markdown: "**hello**" });
@@ -839,7 +839,7 @@ describe("sendRichMessageDirect", () => {
 
   it("non-2xx HTTP: throws when API returns ok: false (e.g. 500)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      json: async () => ({
+      json: () => Promise.resolve({
         ok: false,
         error_code: 500,
         description: "Internal Server Error",
@@ -853,7 +853,7 @@ describe("sendRichMessageDirect", () => {
 
   it("RICH_MESSAGE_UNSUPPORTED: sets code when API returns 400 with rich-message description", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      json: async () => ({
+      json: () => Promise.resolve({
         ok: false,
         error_code: 400,
         description: "rich message not supported",

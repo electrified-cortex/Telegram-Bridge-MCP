@@ -541,7 +541,7 @@ export function register(server: McpServer) {
           // for simplicity — rich routing applies to the direct send only.
           if (
             RICH_MESSAGES_ENABLED &&
-            (parse_mode === "Markdown" || parse_mode === undefined) &&
+            parse_mode === "Markdown" &&
             chunks.length === 1
           ) {
             try {
@@ -552,7 +552,7 @@ export function register(server: McpServer) {
                   ? { message_id: reply_to_message_id }
                   : undefined,
                 _rawText: text,
-              } as Record<string, unknown>);
+              });
               const hasTable = containsMarkdownTable(text ?? "");
               warnUnrenderableChars(_sid, finalText);
               return toResult(hasTable
