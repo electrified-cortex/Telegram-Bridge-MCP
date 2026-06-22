@@ -1,7 +1,7 @@
 Start — Post-Session Operational Guide
 
 ## Token Save (do this first)
-Write your session token to `memory/telegram/session.token` as a plain integer — no JSON, no quotes. This path survives compaction. See `help('pod-memory')` for the convention.
+Write your session token to `memory/telegram/session.token` as a plain integer — no JSON, no quotes. This path survives compaction.
 
 ## Profile
 

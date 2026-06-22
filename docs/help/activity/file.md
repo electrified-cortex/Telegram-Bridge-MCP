@@ -167,6 +167,6 @@ Your harness's watcher tool (Monitor or equivalent) must be in your agent's allo
 
 After a context compaction, your Monitor task is dead and the file path is no longer in your conversation context. Do **not** call `activity/file/create` — that creates a second registration. Instead, use `activity/file/get` to retrieve the existing path from TMCP and re-arm a fresh Monitor on it.
 
-Your **session token** must also survive the compaction. Save it to `memory/telegram/session.token` as a plain integer — this path is the canonical pod-memory location for TMCP token state. See `help('pod-memory')` for the full pod-memory convention.
+Your **session token** must also survive the compaction. Save it to `memory/telegram/session.token` as a plain integer before compaction occurs.
 
 See `help('compaction-recovery')` for the full recovery sequence.

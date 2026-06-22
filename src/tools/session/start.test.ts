@@ -2961,8 +2961,8 @@ describe("session/start refresh flag", () => {
   });
 });
 
-// AC9 — pod-memory convention: save_token_to field in session/start and session/reconnect
-describe("pod-memory convention — save_token_to field (AC9)", () => {
+// Token path convention: save_token_to field in session/start and session/reconnect
+describe("token path convention — save_token_to field", () => {
   const SAVE_TOKEN_PATH = "memory/telegram/session.token";
 
   beforeEach(() => {
