@@ -60,18 +60,19 @@ export const SERVICE_MESSAGES = deepFreeze({
       "  2. Get sse-monitor.sh:\n" +
       "     - Repo checkout: use <repo>/tools/sse-monitor.sh directly.\n" +
       "     - No checkout: download from the returned download_url and save to a local path\n" +
-      "       of your choice (e.g. your pod root or memory/ dir).\n" +
+      "       of your choice.\n" +
       "  ⚠ IMPORTANT: The SSE stream sends a `: keepalive` heartbeat every 30 s. Arming a raw\n" +
       "     curl -N makes EVERY heartbeat a wake event = token-burn spam. Use the filtered script.\n" +
       "  3. Arm the Monitor tool with: bash <path-to-script> '<sse_url>' and persistent: true.\n" +
-      "     You are participating once the monitor is live.\n\n" +
-      "Monitor-capable runtime (Claude Code) — stdio / no HTTP:\n" +
+      "     You are participating once the monitor is live.\n" +
+      "     On each SSE wake → dequeue loop: call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
+      "Monitor-capable runtime — stdio / no HTTP:\n" +
       "  1. Call action(type: 'activity/file/create') → returns { file_path }.\n" +
       "  2. Replace <path> with file_path, then arm Monitor (persistent: true):\n" +
       "     " + ACTIVITY_FILE_MONITOR_RECIPE.replace(/\n/g, "\n     ") + "\n" +
-      "  3. On each kick → call dequeue(max_wait: 0); loop until pending = 0.\n\n" +
-      "No Monitor tool (VS Code, other runtimes):\n" +
-      "  Call dequeue(max_wait: 30) on every turn.\n\n" +
+      "  3. On each kick → dequeue loop: call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
+      "No Monitor tool (other runtimes):\n" +
+      "  Call dequeue() on every turn. timed_out: true means no messages — call dequeue() again. You always end with dequeue.\n\n" +
       "Details: help('start'), help('dequeue'), help('activity/listen').",
   },
 
@@ -165,6 +166,56 @@ export const SERVICE_MESSAGES = deepFreeze({
       `${name} (SID ${sid}) joined. Ambiguous messages go to ${governorLabel}.`,
   },
 
+  // NOTE: SESSION_RECONNECTED and SESSION_RECONNECTED_FELLOW both use
+  // eventType "session_reconnected" (not "session_joined") — reconnect is a
+  // distinct lifecycle event. They intentionally share the eventType; the
+  // distinction is only in message text (governor path vs. peer path).
+  /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session */
+  SESSION_RECONNECTED: {
+    eventType: "session_reconnected" as const,
+    /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session */
+    text: (name: string, sid: number) =>
+      `${name} (SID ${sid}) reconnected. You are the governor — route ambiguous messages.`,
+  },
+
+  /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor (e.g. "'Curator' (SID 1)") */
+  SESSION_RECONNECTED_FELLOW: {
+    eventType: "session_reconnected" as const,
+    /** @param name display name of the reconnecting session, @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
+    text: (name: string, sid: number, governorLabel: string) =>
+      `${name} (SID ${sid}) reconnected. Ambiguous messages go to ${governorLabel}.`,
+  },
+
+  /** @param sid SID of the reconnecting session (single-session path) */
+  SESSION_REORIENTATION_SINGLE: {
+    eventType: "session_reconnected" as const,
+    /** @param sid SID of the reconnecting session */
+    text: (sid: number) =>
+      `Reconnect authorized. You are SID ${sid}. You are the only active session.`,
+  },
+
+  /** @param sid SID of the reconnecting session (governor path) */
+  SESSION_REORIENTATION_GOVERNOR: {
+    eventType: "session_reconnected" as const,
+    /** @param sid SID of the reconnecting session */
+    text: (sid: number) =>
+      `Reconnect authorized. Session state preserved. ` +
+      `You are the governor (SID ${sid}). ` +
+      `Ambiguous messages will be routed to you. ` +
+      `Call help(topic: 'guide') for trust and routing guidance.`,
+  },
+
+  /** @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
+  SESSION_REORIENTATION_FELLOW: {
+    eventType: "session_reconnected" as const,
+    /** @param sid SID of the reconnecting session, @param governorLabel formatted label for the governor */
+    text: (sid: number, governorLabel: string) =>
+      `Reconnect authorized. Session state preserved. ` +
+      `You are SID ${sid}. ${governorLabel} is your first escalation point. ` +
+      `Ambiguous messages go to them. ` +
+      `Call help(topic: 'guide') for trust and routing guidance.`,
+  },
+
   SESSION_CLOSED: {
     eventType: "session_closed" as const,
     /**
@@ -209,7 +260,7 @@ export const SERVICE_MESSAGES = deepFreeze({
       `Use this to guarantee a high quality file watch — run inside your harness's Monitor tool with persistent: true. Name it "Telegram message notifier" so you can recognize it after a compaction.\n\n` +
       `Windows:  \`"${_monitorPs1}" "${filePath}"\`\n` +
       `Linux/macOS:  \`"${_monitorSh}" "${filePath}"\`\n\n` +
-      `Loop pattern: When a wake signal arrives, call dequeue(token) and handle each message one at a time until pending = 0. Then call dequeue(token) once more.\n\n` +
+      `Loop pattern: call dequeue(); handle updates; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n` +
       `Note: If TMCP is in HTTP mode, prefer activity/listen (SSE) for push notifications — no filesystem access required. help('activity/listen').`,
     details: {
       script_path: {
@@ -217,6 +268,29 @@ export const SERVICE_MESSAGES = deepFreeze({
         posix: _monitorSh,
       },
     },
+  },
+
+  // ── activity/listen setup breadcrumb ────────────────────────────────────
+
+  /**
+   * Fired once on the first `activity/listen` call. Delivers the monitor arm
+   * instructions as a service message rather than inline response text.
+   */
+  ACTIVITY_LISTEN_BREADCRUMB: {
+    eventType: "activity_listen_breadcrumb" as const,
+    /**
+     * @param command  The arm command returned by activity/listen (e.g. `bash sse-monitor.sh '<url>'`)
+     * @param downloadUrl The URL to download sse-monitor.sh from
+     */
+    text: (command: string, downloadUrl: string) =>
+      `SSE monitor setup — arm this inside the Monitor tool with persistent: true:\n\n` +
+      `\`${command}\`\n\n` +
+      `⚠ Do NOT use raw \`curl -N\` — the SSE stream sends \`: keepalive\` heartbeats every 30 s that spam wake events. Use the filtered script above.\n\n` +
+      `No repo checkout? Download the script first:\n` +
+      `\`GET ${downloadUrl}\`\n` +
+      `Save to a local path of your choice, then arm:\n` +
+      `\`bash <saved-path> '<sse_url>'\` with persistent: true.\n\n` +
+      `Loop pattern: on each SSE wake → call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.`,
   },
 
   // ── SSE onboarding handshake ──────────────────────────────────────────────
@@ -401,5 +475,33 @@ export const SERVICE_MESSAGES = deepFreeze({
   NUDGE_CAPTION_DUPLICATION: {
     eventType: "behavior_nudge_caption_duplication" as const,
     text: "Caption appears to restate audio content. Keep it to a brief topic label — see help('audio') for the hybrid pattern.",
+  },
+
+  // ── Absolute-path safety override ─────────────────────────────────────────
+
+  /**
+   * Fired to the operator when an agent passes `safety: "disable"` to bypass
+   * the absolute-path block on an outbound message.
+   */
+  ABS_PATH_SAFETY_OVERRIDE: {
+    eventType: "abs_path_safety_override" as const,
+    text: "⚠️ Safety override: an absolute filesystem path was detected in an outbound message but the block was bypassed via `safety: \"disable\"`. Review the message for unintended path disclosure.",
+  },
+
+  // ── Subscription loss notification ────────────────────────────────────────
+
+  /**
+   * Fired on the agent's first dequeue after an unexpected subscription close
+   * (SSE connection dropped without cancel, or activity-file write retry
+   * exhausted) — i.e. without the agent calling activity/listen cancel,
+   * activity/file/delete, or session/close. Exactly one injection per
+   * subscription-loss event (consumed on dequeue).
+   */
+  SUBSCRIPTION_CLOSED_UNEXPECTEDLY: {
+    eventType: "subscription_closed_unexpectedly" as const,
+    text: "Your monitor subscription closed unexpectedly — the bridge lost your SSE or activity-file connection without you initiating teardown. " +
+      "Re-arm your monitor: call action(type: 'activity/listen') for SSE or action(type: 'activity/file/create') for an activity file, " +
+      "then re-arm your Monitor tool with persistent: true. " +
+      "See help('activity/listen') or help('activity/file/create') for details.",
   },
 });

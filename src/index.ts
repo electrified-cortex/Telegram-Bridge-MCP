@@ -17,7 +17,7 @@ import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from 
 import { startSilenceDetector } from "./silence-detector.js";
 import { startHealthCheck } from "./health-check.js";
 import { setAuthHook } from "./session-gate.js";
-import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "./session-manager.js";
+import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, sweepExpiredMarkers } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
 import { loadConfig, getSessionLogMode, isDebugConfig, getPreToolDenyPatterns, getSessionApproval } from "./config.js";
 import { setDelegationEnabled } from "./agent-approval.js";
@@ -31,6 +31,7 @@ import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
 import { attachHookRoutes } from "./hook-animation.js";
 import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
+import { attachActivityListenCheckRoute } from "./activity-listen-check-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 import { initReminderFireCallback } from "./session-queue.js";
@@ -162,6 +163,7 @@ if (mcpPort !== undefined) {
   attachDequeueRoute(app);
   attachHookRoutes(app);
   attachSseRoute(app);
+  attachActivityListenCheckRoute(app);
 
   /** Normalize header that may be string | string[] | undefined → string | undefined */
   const getSessionId = (req: Request): string | undefined => {
@@ -302,6 +304,13 @@ process.stderr.write("[info] health check started\n");
 
 // Best-effort: unpin stale session announcement messages from a prior crashed run
 void cleanupStalePins().catch(() => {});
+
+// Periodic sweep of expired closed-session markers every 10 minutes.
+// The lazy cleanup inside isClosedMarker() handles re-presented tokens; this
+// periodic sweep bounds map growth for tokens that are never re-presented.
+setInterval(() => {
+  sweepExpiredMarkers();
+}, 10 * 60 * 1_000).unref();
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
 const localLogStatus = isLoggingEnabled() ? "`Logging enabled`" : "Logging disabled";

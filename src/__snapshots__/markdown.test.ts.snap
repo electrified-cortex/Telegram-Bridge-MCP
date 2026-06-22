@@ -1,0 +1,153 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`regression baseline — 10-3010 > buildHeader — snapshots > multi-session HTML — formats name tag in code tag 1`] = `
+{
+  "formatted": "<code>TestBot</code>
+",
+  "plain": "TestBot
+",
+}
+`;
+
+exports[`regression baseline — 10-3010 > buildHeader — snapshots > multi-session MarkdownV2 — formats name tag in backticks 1`] = `
+{
+  "formatted": "\`TestBot\`
+",
+  "plain": "TestBot
+",
+}
+`;
+
+exports[`regression baseline — 10-3010 > buildHeader — snapshots > single-session context — returns empty strings 1`] = `
+{
+  "formatted": "",
+  "plain": "",
+}
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > ATX heading H1 1`] = `"*Heading One*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > ATX heading H2 1`] = `"*Heading Two*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > ATX heading H3 1`] = `"*Heading Three*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > ATX heading H4 1`] = `"*Heading Four*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > ATX heading H5 1`] = `"*Heading Five*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > ATX heading H6 1`] = `"*Heading Six*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > blockquote single line 1`] = `">hello world"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > bold double-asterisk 1`] = `"*hello world*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > bold single-asterisk 1`] = `"*hello world*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > fenced code block with language tag 1`] = `
+"\`\`\`js
+const x = 1;
+\`\`\`"
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > fenced code block without language tag 1`] = `
+"\`\`\`
+const x = 1;
+\`\`\`"
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > hyperlink 1`] = `"[click here](https://example.com)"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > inline code 1`] = `"\`hello world\`"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > italic underscore 1`] = `"_hello world_"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > markdown table pipe syntax — current escape-through behavior 1`] = `
+"\\| col1 \\| col2 \\|
+\\| \\-\\-\\- \\| \\-\\-\\- \\|
+\\| a \\| b \\|"
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > mixed content — heading paragraph code block list 1`] = `
+"*Title*
+
+Some *bold* and _italic_ text\\.
+
+\`\`\`js
+const x = 1;
+\`\`\`
+
+\\- item one
+\\- item two"
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > ordered list — current passthrough 1`] = `
+"1\\. item one
+2\\. item two
+3\\. item three"
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > plain text with all V2_SPECIAL chars 1`] = `"\\_ \\* \\[ \\] \\( \\) \\~ \` > # + - = | { } . ! \\\\\`"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > strikethrough 1`] = `"~hello world~"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > underline double-underscore 1`] = `"__hello world__"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > unordered list asterisk — current passthrough 1`] = `
+"\\* item one
+\\* item two"
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — construct snapshots > unordered list dash — current passthrough 1`] = `
+"\\- item one
+\\- item two
+\\- item three"
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — partial mode snapshots > partial mode unclosed bold 1`] = `"*unclosed bold*"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — partial mode snapshots > partial mode unclosed fenced code block 1`] = `
+"\`\`\`js
+unclosed block\`\`\`"
+`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — partial mode snapshots > partial mode unclosed inline code 1`] = `"\`unclosed code\`"`;
+
+exports[`regression baseline — 10-3010 > markdownToV2 — partial mode snapshots > partial mode unclosed italic 1`] = `"_unclosed italic_"`;
+
+exports[`regression baseline — 10-3010 > resolveParseMode — snapshots > HTML parse mode — passthrough 1`] = `
+{
+  "parse_mode": "HTML",
+  "text": "<b>hello</b>",
+}
+`;
+
+exports[`regression baseline — 10-3010 > resolveParseMode — snapshots > Markdown parse mode — converts to MarkdownV2 1`] = `
+{
+  "parse_mode": "MarkdownV2",
+  "text": "*hello*",
+}
+`;
+
+exports[`regression baseline — 10-3010 > resolveParseMode — snapshots > MarkdownV2 parse mode — passthrough 1`] = `
+{
+  "parse_mode": "MarkdownV2",
+  "text": "*hello*",
+}
+`;
+
+exports[`regression baseline — 10-3010 > resolveParseMode — snapshots > undefined parse mode — passthrough 1`] = `
+{
+  "parse_mode": undefined,
+  "text": "hello world",
+}
+`;
+
+exports[`regression baseline — 10-3010 > splitMessage — chunking snapshot > 5000-char input — split points are stable 1`] = `
+{
+  "count": 2,
+  "lengths": [
+    4000,
+    998,
+  ],
+}
+`;

@@ -45,6 +45,31 @@ export interface Session {
   /** SID of the parent session that spawned this one. Undefined for root sessions. */
   parent_sid?: number;
   /**
+   * When true, the hint field is omitted from dequeue responses.
+   * The pending count is unaffected. Set via profile/save + profile/load.
+   */
+  suppress_pending_hint?: boolean;
+  /**
+   * Subsession routing tier for this session.
+   * 'skilled-router' — host has opted out of breadcrumb injection (R1/R2/R3).
+   * undefined (default) — unskilled; bridge delivers breadcrumbs on request.
+   * Set via action(type: 'profile/tier', tier: 'skilled-router') on root sessions only.
+   * This is a breadcrumb-suppression-only signal (subset of PRD 10-2100 capability model).
+   */
+  tier?: 'skilled-router';
+  /**
+   * Set to true after R3 (ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB) has been delivered
+   * to this session. Prevents duplicate R3 fires within a single session lifetime.
+   */
+  r3_guidance_delivered?: boolean;
+  /**
+   * When true, the public Telegram chat announcements for session-start and
+   * session-close lifecycle events are suppressed. Set via profile/save
+   * { silent_lifecycle: true } + profile/load, or at emission time from the
+   * session's profile file.
+   */
+  silent_lifecycle?: boolean;
+  /**
    * Capability level for this session.
    * - `'full'` (default): no restrictions.
    * - `'gather'`: may not call session/start, session/spawn-child, or commit-class actions.
@@ -246,10 +271,90 @@ export function closeSession(sid: number): boolean {
   const session = _sessions.get(sid);
   const deleted = _sessions.delete(sid);
   if (deleted) {
+    // Record a closed-session marker keyed by connectionToken so reconnect
+    // attempts from this same caller are rejected without operator dialog.
+    if (session?.connectionToken) {
+      recordClosedMarker(session.connectionToken);
+    }
     dlog("session", `closed sid=${sid} remaining=${_sessions.size}`);
     recordNonToolEvent("session_close", sid, session?.name ?? "");
   }
   return deleted;
+}
+
+// ── Closed Session Markers ─────────────────────────────────
+
+/**
+ * TTL for closed-session markers in milliseconds.
+ * Prevents a closed session's caller from reconnecting for this duration.
+ * Default: 24 hours. Override via `CLOSED_SESSION_MARKER_TTL_MS` env var.
+ */
+export const CLOSED_SESSION_MARKER_TTL_MS =
+  Number(process.env.CLOSED_SESSION_MARKER_TTL_MS) || 24 * 60 * 60 * 1_000;
+
+/** connectionToken → Unix timestamp (ms) when that session was closed. */
+const _closedMarkers = new Map<string, number>();
+
+/**
+ * Record a closed-session marker for the given connection token.
+ * Called automatically by `closeSession()` when a session with a token is
+ * removed, so every close path (self-close, governor-close, force-close)
+ * automatically populates the marker store.
+ */
+export function recordClosedMarker(connectionToken: string): void {
+  _closedMarkers.set(connectionToken, Date.now());
+}
+
+/**
+ * Return true if the given connection token has an active (non-expired)
+ * closed-session marker. Performs lazy TTL cleanup on stale entries.
+ */
+export function isClosedMarker(connectionToken: string): boolean {
+  const closedAt = _closedMarkers.get(connectionToken);
+  if (closedAt === undefined) return false;
+  if (Date.now() - closedAt > CLOSED_SESSION_MARKER_TTL_MS) {
+    _closedMarkers.delete(connectionToken); // lazy cleanup
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Clear the closed-session marker for a single connection token.
+ * Called by the `session/unblock` governor action to permit a previously-closed
+ * caller to reconnect without operator intervention.
+ *
+ * @returns true if a marker was found and removed, false if no marker existed.
+ */
+export function clearClosedMarker(connectionToken: string): boolean {
+  return _closedMarkers.delete(connectionToken);
+}
+
+/** Clear all closed-session markers. Test-only helper (called by resetSessions). */
+export function resetClosedMarkers(): void {
+  _closedMarkers.clear();
+}
+
+/**
+ * Eagerly sweep expired closed-session markers.
+ *
+ * The lazy cleanup inside `isClosedMarker()` handles re-presented tokens, but
+ * tokens that are never re-presented would otherwise accumulate in memory for
+ * the full TTL window. Call this on a periodic timer (every 10 minutes in
+ * index.ts) to bound map growth.
+ *
+ * @returns the number of entries removed.
+ */
+export function sweepExpiredMarkers(): number {
+  const now = Date.now();
+  let swept = 0;
+  for (const [token, closedAt] of _closedMarkers) {
+    if (now - closedAt > CLOSED_SESSION_MARKER_TTL_MS) {
+      _closedMarkers.delete(token);
+      swept++;
+    }
+  }
+  return swept;
 }
 
 export function listSessions(): SessionInfo[] {
@@ -403,13 +508,14 @@ export function getActiveSession(): number {
   return _activeSessionId;
 }
 
-/** Clear all sessions, reset the ID counter, and reset the color LRU queue. Test-only. */
+/** Clear all sessions, reset the ID counter, reset the color LRU queue, and clear closed markers. Test-only. */
 export function resetSessions(): void {
   _sessions.clear();
   _nextId = 1;
   _activeSessionId = 0;
   _colorLRU = [...COLOR_PALETTE];
   _everUsedColors.clear();
+  resetClosedMarkers();
 }
 
 /** Store the message ID of the session's online announcement for later unpin. */

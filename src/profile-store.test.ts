@@ -189,6 +189,31 @@ describe("profile-store", () => {
       expect(result).toEqual(original);
     });
 
+    // AC1: silent_lifecycle round-trips correctly
+    it("AC1: silent_lifecycle: true round-trips through write/read", () => {
+      let stored = "";
+      mocks.mkdirSync.mockImplementation(() => undefined);
+      mocks.writeFileSync.mockImplementation((_p: string, content: string) => {
+        stored = content;
+      });
+      mocks.existsSync.mockReturnValue(true);
+      mocks.readFileSync.mockImplementation(() => stored);
+
+      writeProfile("SilentBot", { silent_lifecycle: true });
+      const result = readProfile("SilentBot");
+
+      expect(result?.silent_lifecycle).toBe(true);
+    });
+
+    it("AC1: silent_lifecycle is optional — profiles without it parse normally", () => {
+      mocks.existsSync.mockReturnValue(true);
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ voice: "nova" }));
+
+      const result = readProfile("normal");
+
+      expect(result?.silent_lifecycle).toBeUndefined();
+    });
+
     it("includes voice_speed in round-trip when set", () => {
       let stored = "";
       mocks.mkdirSync.mockImplementation(() => undefined);

@@ -1,5 +1,8 @@
 Start — Post-Session Operational Guide
 
+## Token Save (do this first)
+Write your session token to `memory/telegram/session.token` as a plain integer — no JSON, no quotes. This path survives compaction.
+
 ## Profile
 
 If you have a saved profile: action(type: 'profile/load', key: 'YourProfileKey', token)
@@ -8,7 +11,7 @@ Restores voice, animation presets, reminders. Skip if no profile exists.
 ## Dequeue Loop
 dequeue(token) IS the loop. Long-poll every cycle.
 Default timeout: 5 min. timed_out → call again. empty → block again.
-Pattern: drain (max_wait: 0) until empty → block (max_wait: 300) → handle → repeat.
+Pattern: dequeue() → handle → dequeue() immediately → repeat until timed_out: true. After any send, call dequeue() again immediately.
 To increase default: action(type: 'profile/dequeue-default', timeout: N, token)
 **Wake monitor — pick one:**
 1. **HTTP mode (preferred):** `action(type: 'activity/listen')` → arm `Monitor(command: <returned command>, persistent: true)`. See help('activity/listen').

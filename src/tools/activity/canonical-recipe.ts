@@ -5,7 +5,7 @@
  * with the value returned by action(type: "activity/file/create").
  *
  * Pass the filled-in command to Monitor(command: ..., persistent: true).
- * On each `kick` line call dequeue(max_wait: 0); loop until pending = 0.
+ * On each `kick` line call dequeue() (no max_wait); loop until timed_out: true.
  */
 export const ACTIVITY_FILE_MONITOR_RECIPE =
   'bash tools/monitor.sh "<path>"   # Linux / macOS / Git-Bash\n' +

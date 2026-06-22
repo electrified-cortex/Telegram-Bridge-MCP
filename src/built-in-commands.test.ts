@@ -57,6 +57,10 @@ const mocks = vi.hoisted(() => ({
   listLogs: vi.fn((..._args: unknown[]): string[] => []),
   getCurrentLogFilename: vi.fn((..._args: unknown[]): string | null => null),
   deleteLog: vi.fn((..._args: unknown[]) => {}),
+  // telegram validation
+  validateText: vi.fn((_text: string): { code: string; message: string } | null => null),
+  // debug-log
+  dlog: vi.fn(),
 }));
 
 vi.mock("./telegram.js", () => ({
@@ -75,6 +79,7 @@ vi.mock("./telegram.js", () => ({
   sendServiceMessage: mocks.sendServiceMessage,
   sendVoiceDirect: mocks.sendVoiceDirect,
   resolveChat: mocks.resolveChat,
+  validateText: (text: string) => mocks.validateText(text),
 }));
 
 vi.mock("./shutdown.js", () => ({
@@ -148,6 +153,10 @@ vi.mock("./local-log.js", () => ({
 
 vi.mock("./session-teardown.js", () => ({
   closeSessionById: (...args: unknown[]) => mocks.closeSessionById(...args),
+}));
+
+vi.mock("./debug-log.js", () => ({
+  dlog: (...args: unknown[]) => mocks.dlog(...args),
 }));
 
 
@@ -1556,6 +1565,31 @@ describe("built-in-commands", () => {
       const args = mocks.sendMessage.mock.calls[0];
       const text: string = args[1];
       expect(text).toContain("Logging");
+    });
+  });
+
+  // -- hardening: dlog on catch + validateText ----------------------------
+
+  describe("hardening", () => {
+    it("logs via dlog when sendMessage throws", async () => {
+      mocks.sendMessage.mockRejectedValue(new Error("network error"));
+      // /logging triggers a sendMessage — if it throws, dlog should be called
+      await handleIfBuiltIn(cmdUpdate("/logging"));
+      expect(mocks.dlog).toHaveBeenCalledWith(
+        "tool",
+        "panel handler failed",
+        expect.objectContaining({ err: expect.stringContaining("network error") }),
+      );
+    });
+
+    it("returns send_failed from requestOperatorApproval when text exceeds limit", async () => {
+      mocks.validateText.mockReturnValue({
+        code: "MESSAGE_TOO_LONG",
+        message: "text too long",
+      });
+      const result = await requestOperatorApproval("x".repeat(5000));
+      expect(result).toBe("send_failed");
+      expect(mocks.sendMessage).not.toHaveBeenCalled();
     });
   });
 

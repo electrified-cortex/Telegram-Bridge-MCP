@@ -42,9 +42,17 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 
 ## R5 — Activity monitor arm
 
-**SSE check (try first):** `action(type: 'activity/listen')`.
-- Returns `ok: true` → HTTP mode active. Arm: `Monitor(command: "<command from response>", persistent: true, description: "Telegram SSE notifier")`. Skip to R6.
-- Returns `HTTP_MODE_REQUIRED` → fall through to Branch A/B below (file-watch path).
+**SSE-primary transport.** Arm SSE as the SOLE transport when it is available. File-watch is a break-glass FALLBACK, armed ONLY when SSE is unavailable. Do NOT co-arm both — SSE is reliable (bridge >= v7.11.0), and arming both double-fires every event (one SSE notify + one file-watch kick). [Changed 2026-06-14 per operator: stop the double-kick; SSE proven, file-watch fallback only.]
+
+**Step 1 — SSE:** `action(type: 'activity/listen')`.
+- Returns `ok: true` → HTTP mode active. **Host-rewrite first:** inspect the `command` in the response — if it contains `0.0.0.0`, replace it based on your environment:
+  - **Container pod** (running inside Docker on agents host — BT, Zhu-Li, etc.): replace with `bridge`
+  - **Host pod** (running directly on host OS — Curator, Overseer, etc.): replace with `127.0.0.1`
+  - Rule of thumb: if your pod root is under `/opt/stacks/`, use `bridge`; if under a user home dir, use `127.0.0.1`.
+  Arm: `Monitor(command: "<rewritten command>", persistent: true, description: "Telegram SSE notifier")`. Retain the task ID. **SSE is now your SOLE transport — SKIP Step 2 and proceed to R6. Do NOT arm file-watch.**
+- Returns `HTTP_MODE_REQUIRED` (SSE unavailable) → skip Step 1 arm; continue to Step 2 (file-watch FALLBACK).
+
+**Step 2 — File-watch (FALLBACK ONLY — reach here only if Step 1 returned `HTTP_MODE_REQUIRED` / SSE unavailable):** proceed to Branch A/B below.
 
 **Branch A — compaction recovery (file-watch path):** `action(type: 'activity/file/get')`.
 - Returns a `file_path` → skip Branch B; proceed to path construction.
@@ -63,16 +71,30 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 
 ## R6 — Monitor verification
 
-1. Send a self-DM to trigger an activity file update.
-2. Wait up to 30s for the watcher to emit a signal.
-   - Signal received → monitor live; continue.
-   - No signal → re-arm: `action(type: 'activity/file/delete')`, then `action(type: 'activity/file/create')`; re-arm watcher.
+Retain the task ID from the Monitor() call (SSE in normal operation; file-watch only in fallback mode). In normal SSE-only operation there is a single monitor.
+
+**SSE verification (solo-capable):**
+```
+POST /activity/selftest   ?token=<your-token>
+```
+Returns `{ ok: true }` → SSE stream is live and notify was injected (your SSE monitor should fire within seconds).
+Returns `{ ok: false, error: "NO_SSE_CONNECTION" }` → SSE not armed; re-run Step 1.
+
+**File-watch re-arm (if no fire within expected window):** `action(type: 'activity/file/delete')`, then `action(type: 'activity/file/create')`; re-arm watcher.
+
+**SSE health (ongoing):** If SSE monitor fires keepalives (`: keepalive`) continuously but `data: notify` never arrives despite real messages → SSE registration was lost (bridge stopped routing to your subscription). Fix: re-call `action(type: 'activity/listen')` and re-arm the SSE monitor. File-watch is unaffected and continues delivering independently.
 
 ## R7 — Dequeue loop
 
-**When your monitor fires:** handle messages one at a time until there are no pending messages (`pending = 0`). Then stop — do not re-enter the dequeue loop. Your monitor will bring you back when the next message arrives.
+**When your monitor fires:** call `dequeue()`. Handle the returned updates. Call `dequeue()` again immediately. Repeat until `timed_out: true` — that is the only stop signal. Do not stop on `pending = 0`.
 
-**Without monitor (fallback only):** blocking dequeue loop (`dequeue(token)` with session default) is acceptable. Verify session default ≥ 90 s on startup. Never specify `max_wait` unless you have a clear reason — too-short values burn one full API turn per interval with no message processed.
+**After any outbound send:** call `dequeue()` again immediately — do not idle or wait for SSE. A send is not a loop exit; only `timed_out: true` is.
+
+While this loop is running, incoming messages (from any source — operator, peers, other monitors) arrive directly into the blocking `dequeue()` call. SSE notifies during an active loop are redundant and expected — the dequeue catches everything first. **SSE is only needed to wake the agent after the loop has timed out.**
+
+The session-default timeout (~90 s) is what allows other messages to arrive without extra SSE overhead, prevents excessive notifications, and maintains readiness.
+
+**Without monitor (fallback only):** same blocking loop pattern — `dequeue()` continuously. `timed_out: true` just means no message this window; call `dequeue()` again immediately. There is no SSE to wait for — you always end with `dequeue()`.
 
 ## R8 — Closeout
 

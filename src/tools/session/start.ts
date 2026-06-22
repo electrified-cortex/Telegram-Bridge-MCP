@@ -5,7 +5,7 @@ import { getApi, toResult, toError, resolveChat } from "../../telegram.js";
 import { markdownToV2 } from "../../markdown.js";
 import type { TimelineEvent } from "../../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, validateSession } from "../../session-manager.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, validateSession, isClosedMarker } from "../../session-manager.js";
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, deliverReminderEvent, getSessionQueue } from "../../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../../routing-mode.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
@@ -220,9 +220,20 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 const DESCRIPTION =
   "Start a named session and return its token. If you lost the token, use action(type: 'session/reconnect'). No args are reused.";
 
-export async function handleSessionStart({ name, color, refresh, token, autoload_profile, parentSid }: { name: string; color?: string; refresh?: boolean; token?: number; autoload_profile?: boolean; parentSid?: number }) {
+export async function handleSessionStart({ name, color, refresh, token, autoload_profile, parentSid, connection_token }: { name: string; color?: string; refresh?: boolean; token?: number; autoload_profile?: boolean; parentSid?: number; connection_token?: string }) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
+
+      // AC3: Reject before approval dialog if this caller's session was closed.
+      // Only enforced on refresh:true — the path used when "recovering" after a drop.
+      if (refresh && connection_token && isClosedMarker(connection_token)) {
+        return toError({
+          code: "CALLER_CLOSED",
+          message:
+            "This caller's session was closed and is not permitted to start a new session. " +
+            "Obtain a new approval ticket from the operator to re-establish access.",
+        });
+      }
 
       const isFirstSession = activeSessionCount() === 0;
 
@@ -272,7 +283,8 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
                 token: sessionToken,
                 sid: fullSession.sid,
                 reused: true,
-                hint: "Call dequeue(token) NOW — do not proceed without draining",
+                save_token_to: "memory/telegram/session.token",
+                hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
                 ...(warnings.length > 0 ? { warnings } : {}),
               };
               return toResult(res);
@@ -341,14 +353,25 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
           token: sessionToken,
           sid: session.sid,
           ...(refresh ? { reused: false } : {}),
-          hint: "Call dequeue(token) NOW — do not proceed without draining",
+          save_token_to: "memory/telegram/session.token",
+          hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
         };
+
+        // Read profile once for both silent_lifecycle check and later autoload.
+        // Only relevant for root sessions (parentSid === undefined) with a name.
+        const _startProfile = (effectiveName && parentSid === undefined)
+          ? (() => { try { return readProfile(effectiveName); } catch { return null; } })()
+          : null;
+        // When true, skip the public "🟢 Online" Telegram announcement.
+        const silentLifecycle = _startProfile?.silent_lifecycle === true;
+
         if (isFirstSession) {
           // First session is the governor by default
           setGovernorSid(session.sid);
           // Send visible announcement with name tag — same format as 2nd+ sessions.
           // buildHeader() intentionally skips single-session mode; compose inline.
-          const _announcement = await Promise.resolve(
+          // Suppressed when the session's profile has silent_lifecycle: true.
+          const _announcement = silentLifecycle ? undefined : await Promise.resolve(
             runInSessionContext(session.sid, () =>
               getApi().sendMessage(chatId, `${session.color} \`${markdownToV2(effectiveName)}\`\nSession ${session.sid} — 🟢 Online`, { parse_mode: "MarkdownV2" }),
             ),
@@ -386,7 +409,8 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
             // operator (and other sessions) can reply-to-address this session.
             // runInSessionContext sets the ALS SID so the proxy prepends the
             // correct name tag ("🟨 Worker 1\nSession 2 — 🟢 Online").
-            const _announcement = await Promise.resolve(
+            // Suppressed when the session's profile has silent_lifecycle: true.
+            const _announcement = silentLifecycle ? undefined : await Promise.resolve(
               runInSessionContext(session.sid, () =>
                 getApi().sendMessage(chatId, `Session ${session.sid} — 🟢 Online`),
               ),
@@ -457,10 +481,10 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
         }
 
         // Auto-load profile matching session name (opt-in; skipped for child sessions).
+        // Reuses _startProfile already read above for silent_lifecycle check.
         if (effectiveName && parentSid === undefined) {
-          const profile = readProfile(effectiveName);
-          if (profile && (autoload_profile === true || profile.autoload === true)) {
-            applyProfile(session.sid, profile);
+          if (_startProfile && (autoload_profile === true || _startProfile.autoload === true)) {
+            applyProfile(session.sid, _startProfile);
             res.profile_autoloaded = effectiveName;
           }
         }
@@ -475,7 +499,7 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
       }
 }
 
-export async function handleSessionReconnect({ name }: { name: string }) {
+export async function handleSessionReconnect({ name, connection_token }: { name: string; connection_token?: string }) {
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
 
@@ -484,6 +508,16 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     return toError({
       code: "NAME_REQUIRED",
       message: "A session name is required for reconnect. Pass the name of the session you wish to reclaim.",
+    });
+  }
+
+  // AC2: Reject before approval dialog if this caller's session was closed.
+  if (connection_token && isClosedMarker(connection_token)) {
+    return toError({
+      code: "CALLER_CLOSED",
+      message:
+        "This caller's session was closed and is not permitted to reconnect. " +
+        "Start a new session with action(type: 'session/start', ...) using a fresh name.",
     });
   }
 
@@ -535,9 +569,8 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   if (allSessions.length === 1) {
     deliverServiceMessage(
       existing.sid,
-      `Reconnect authorized. You are SID ${existing.sid}. ` +
-        `You are the only active session.`,
-      "session_orientation",
+      SERVICE_MESSAGES.SESSION_REORIENTATION_SINGLE.text(existing.sid),
+      SERVICE_MESSAGES.SESSION_REORIENTATION_SINGLE.eventType,
       { sid: existing.sid, name: existing.name },
     );
   } else {
@@ -546,16 +579,14 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     const governorLabel = governorSession
       ? `'${governorSession.name}' (SID ${governorSid})`
       : `SID ${governorSid}`;
-    // TODO: reconnect path below still uses hardcoded inline strings — extract to SERVICE_MESSAGES pair (not in scope of this task)
     for (const fellow of allSessions.filter(s => s.sid !== existing.sid)) {
       const isGovernorFellow = fellow.sid === governorSid;
-      const text = isGovernorFellow
-        ? `${existing.name} (SID ${existing.sid}) reconnected. You are the governor — route ambiguous messages.`
-        : `${existing.name} (SID ${existing.sid}) reconnected. Ambiguous messages go to ${governorLabel}.`;
       deliverServiceMessage(
         fellow.sid,
-        text,
-        SERVICE_MESSAGES.SESSION_JOINED.eventType,
+        isGovernorFellow
+          ? SERVICE_MESSAGES.SESSION_RECONNECTED.text(existing.name, existing.sid)
+          : SERVICE_MESSAGES.SESSION_RECONNECTED_FELLOW.text(existing.name, existing.sid, governorLabel),
+        SERVICE_MESSAGES.SESSION_RECONNECTED.eventType,
         {
           sid: existing.sid,
           name: existing.name,
@@ -565,17 +596,12 @@ export async function handleSessionReconnect({ name }: { name: string }) {
       );
     }
     const isGovernorReconnect = existing.sid === governorSid;
-    const roleNote = isGovernorReconnect
-      ? `You are the governor (SID ${existing.sid}). ` +
-        `Ambiguous messages will be routed to you. ` +
-        `Call help(topic: 'guide') for trust and routing guidance.`
-      : `You are SID ${existing.sid}. ${governorLabel} is your first escalation ` +
-        `point. Ambiguous messages go to them. ` +
-        `Call help(topic: 'guide') for trust and routing guidance.`;
     deliverServiceMessage(
       existing.sid,
-      `Reconnect authorized. Session state preserved. ${roleNote}`,
-      "session_orientation",
+      isGovernorReconnect
+        ? SERVICE_MESSAGES.SESSION_REORIENTATION_GOVERNOR.text(existing.sid)
+        : SERVICE_MESSAGES.SESSION_REORIENTATION_FELLOW.text(existing.sid, governorLabel),
+      SERVICE_MESSAGES.SESSION_REORIENTATION_GOVERNOR.eventType,
       { sid: existing.sid, name: existing.name, governor_sid: governorSid },
     );
   }
@@ -600,7 +626,8 @@ export async function handleSessionReconnect({ name }: { name: string }) {
   return toResult({
     token: reconToken,
     sid: fullSession.sid,
-    hint: "Call dequeue(token) NOW — do not proceed without draining",
+    save_token_to: "memory/telegram/session.token",
+    hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
     ...(reconProfileAutoloaded !== undefined ? { profile_autoloaded: reconProfileAutoloaded } : {}),
   });
 }
@@ -645,6 +672,15 @@ export function register(server: McpServer) {
             "Also applies if the matching profile has autoload: true, even when this flag is false or omitted. " +
             "No error if no profile exists — session starts normally. " +
             "session/reconnect also auto-loads when profile.autoload is true.",
+          ),
+        connection_token: z
+          .string()
+          .optional()
+          .describe(
+            "Connection token previously issued by this bridge to the caller. " +
+            "When provided with refresh: true, the bridge checks whether this caller's session " +
+            "was closed and rejects immediately with CALLER_CLOSED if so, " +
+            "without showing the operator approval dialog.",
           ),
       },
     },

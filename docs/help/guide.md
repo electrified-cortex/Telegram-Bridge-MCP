@@ -4,23 +4,22 @@
 
 ### `dequeue` loop pattern
 
-`dequeue` has two distinct modes:
+`dequeue` is the primary receive mechanism. Always use the default timeout:
 
 | Mode | Call | Behavior |
 | --- | --- | --- |
 | **Block** (normal loop) | `dequeue()` — no args | Waits up to 300 s for the next update. Returns `{ timed_out: true }` on timeout — call again immediately. |
-| **Instant poll** (drain) | `dequeue(max_wait: 0)` | Returns immediately — an update if one exists, or `{ empty: true }`. |
 | **Shorter wait** | `dequeue(max_wait: 60)` | Waits up to 60 s — only for shutdown sequences or specific short-lived events. |
 
-Normal drain-then-block sequence:
+> ⚠ `dequeue(max_wait: 0)` is a footgun. Use it only at specific lifecycle points (draining after reconnect/compaction, before a blocking confirm op, before session close). Never use it as the normal loop mechanism.
+
+Normal loop:
 
 ```text
-1. drain: call dequeue(max_wait: 0) until empty: true — handles any backlog
-2. block: call dequeue()           — waits up to 300 s for the next task
-3. On update: handle it, then go to step 1
+dequeue() → handle → dequeue()
 ```
 
-`pending` (included when more updates are queued) tells you how many items are still waiting. When `pending > 0`, skip straight to another `dequeue(max_wait: 0)` instead of blocking.
+Call `dequeue()` once, handle what it returns, then call `dequeue()` again. `timed_out: true` means no messages in the wait window — call `dequeue()` again. `pending > 0` means more updates are queued — call `dequeue()` and it returns immediately since the messages are already there; `max_wait` is irrelevant when work is pending.
 
 ### Compact mode (`response_format: "compact"`)
 
@@ -29,7 +28,7 @@ Pass `response_format: "compact"` to any `dequeue` call to reduce token usage (~
 - **Empty poll result:** `empty: true` is suppressed. Infer empty from the *absence* of an `updates` key.
 - **Timeout:** `timed_out: true` is **always** emitted (never suppressed) — so a `timed_out` key still signals the timeout case reliably.
 
-Compact mode drain-then-block pattern:
+Compact mode loop pattern:
 
 ```text
 Default:  if (result.empty) { /* empty */ } else if (result.timed_out) { /* timeout */ } else { /* process result.updates */ }
@@ -40,12 +39,10 @@ Compact:  if (!result.updates) { /* empty — no updates key means empty poll */
 
 ### Handling a full timeout
 
-When `dequeue()` returns `{ timed_out: true }` after a full blocking wait (not a `max_wait: 0` drain poll), 5 minutes have passed with no activity. Do not silently loop:
+When `dequeue()` returns `{ timed_out: true }`, 5 minutes have passed with no activity. Do not silently loop:
 
 1. Send a brief `send(type: "notification")` checking in (e.g. "Still listening — are you there?").
 2. Continue the `dequeue` loop as normal.
-
-Do **not** check in after `max_wait: 0` drain polls — those are expected to return immediately.
 
 ### Looking up prior messages
 

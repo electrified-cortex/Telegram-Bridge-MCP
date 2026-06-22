@@ -42,7 +42,7 @@ TMCP ships ready-to-run watcher scripts in `tools/`. Use these instead of rollin
 | `tools/monitor.sh` | Bash (Linux, macOS, Git-Bash on Windows) |
 | `tools/monitor.ps1` | PowerShell (Windows, cross-platform pwsh) |
 
-Both scripts take the activity file path as the first argument. On each mtime change they emit `kick` to stdout — your Monitor tool picks this up and you call `dequeue()`.
+Both scripts take the activity file path as the first argument. On each mtime change they emit `notify` to stdout — your Monitor tool picks this up and you call `dequeue()`.
 
 Both scripts delegate to the shared file-watching skill (`skills/file-watching/`):
 - `tools/monitor.ps1` calls `watch.ps1` (event-driven via `FileSystemWatcher`, zero idle CPU). Falls back to an inline `FileSystemWatcher` loop if the skill script is not found.
@@ -67,7 +67,7 @@ pwsh tools/monitor.ps1 $activityFilePath -Prefix MySession
 ```
 
 **Output lines:**
-- `kick` — mtime changed; call `dequeue()`.
+- `notify` — mtime changed; call `dequeue()`.
 - `heartbeat` — monitor is alive (emitted every `-Heartbeat`/`--heartbeat` seconds when idle).
 - `timeout` — idle limit reached; exits 0.
 
@@ -91,7 +91,7 @@ Pass the command to the Claude Code `Monitor` tool with `persistent: true` so it
 | `description` | e.g. `"activity-file mtime watcher for session <sid>"` |
 | `timeout_ms` | ignored when `persistent: true` — omit or set to any value |
 
-**How to use:** pass the command from the `monitor` field as the `command` parameter to `Monitor`. On each `kick` line, call `dequeue(token)` and re-enter your loop.
+**How to use:** pass the command from the `monitor` field as the `command` parameter to `Monitor`. On each `notify` line, call `dequeue(token)` and re-enter your loop.
 
 ---
 
@@ -106,7 +106,7 @@ prev=$(stat -c%Y "$f" 2>/dev/null)
 while true; do
   cur=$(stat -c%Y "$f" 2>/dev/null)
   if [ "$cur" != "$prev" ]; then
-    echo "kick"
+    echo "notify"
     prev=$cur
   fi
   sleep 1
@@ -119,7 +119,7 @@ $f = $activityFile
 $prev = (Get-Item $f -ErrorAction SilentlyContinue).LastWriteTimeUtc
 while ($true) {
   $cur = (Get-Item $f -ErrorAction SilentlyContinue).LastWriteTimeUtc
-  if ($cur -ne $prev) { Write-Output "kick"; $prev = $cur }
+  if ($cur -ne $prev) { Write-Output "notify"; $prev = $cur }
   Start-Sleep -Seconds 1
 }
 ```
@@ -127,7 +127,7 @@ while ($true) {
 **Linux — inotifywait (Linux only, not in git-bash):**
 ```bash
 inotifywait -e attrib -m "$ACTIVITY_FILE" | while read; do
-  echo "kick"
+  echo "notify"
 done
 ```
 
@@ -166,5 +166,7 @@ Your harness's watcher tool (Monitor or equivalent) must be in your agent's allo
 ## Compaction recovery
 
 After a context compaction, your Monitor task is dead and the file path is no longer in your conversation context. Do **not** call `activity/file/create` — that creates a second registration. Instead, use `activity/file/get` to retrieve the existing path from TMCP and re-arm a fresh Monitor on it.
+
+Your **session token** must also survive the compaction. Save it to `memory/telegram/session.token` as a plain integer before compaction occurs.
 
 See `help('compaction-recovery')` for the full recovery sequence.

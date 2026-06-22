@@ -203,5 +203,35 @@ describe("save_profile tool", () => {
     expect(written).not.toHaveProperty("name_tag");
   });
 
+  // ── AC6: silent_lifecycle persistence ──────────────────────────────────────
+
+  // AC6: persists silent_lifecycle: true when passed as parameter
+  it("AC6: persists silent_lifecycle: true in saved profile when parameter is true", async () => {
+    mocks.writeProfile.mockReset();
+    const result = await call({ key: "SilentBot", silent_lifecycle: true, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).toHaveProperty("silent_lifecycle", true);
+    const data = parseResult(result);
+    expect(data.sections).toContain("silent_lifecycle");
+  });
+
+  it("AC6: persists silent_lifecycle: false when parameter is false", async () => {
+    mocks.writeProfile.mockReset();
+    const result = await call({ key: "SilentBot", silent_lifecycle: false, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).toHaveProperty("silent_lifecycle", false);
+    const data = parseResult(result);
+    expect(data.sections).toContain("silent_lifecycle");
+  });
+
+  it("AC6: does NOT persist silent_lifecycle when parameter is omitted", async () => {
+    mocks.writeProfile.mockReset();
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).not.toHaveProperty("silent_lifecycle");
+  });
+
   testIdentityGate((args) => call(args), mocks.validateSession, {"key":"Test"}, false);
 });

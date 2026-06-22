@@ -183,7 +183,7 @@ describe("session_start tool", () => {
     expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
-      hint: "Call dequeue(token) NOW — do not proceed without draining",
+      hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
     });
   });
 
@@ -195,7 +195,7 @@ describe("session_start tool", () => {
     expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
-      hint: "Call dequeue(token) NOW — do not proceed without draining",
+      hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
     });
   });
 
@@ -1958,7 +1958,7 @@ describe("session_start tool", () => {
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
-  it("reconnect: true + single session approved → sends session_orientation with reconnect text", async () => {
+  it("reconnect: true + single session approved → sends session_reconnected with reconnect text", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Overseer", createdAt: "2026-03-17" }]);
     mocks.getSession.mockReturnValue({
       sid: 1, suffix: 111111, name: "Overseer", color: "🟦",
@@ -1973,12 +1973,12 @@ describe("session_start tool", () => {
     await handleSessionReconnect({ name: "Overseer" });
 
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const orientation = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_orientation");
-    expect(orientation).toBeDefined();
-    // eventType: "session_orientation" already verified by find predicate — reconnect authorized path
+    const reconnected = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_reconnected");
+    expect(reconnected).toBeDefined();
+    // eventType: "session_reconnected" already verified by find predicate — reconnect authorized path
   });
 
-  it("reconnect: true + multi-session approved → sends session_joined to fellows", async () => {
+  it("reconnect: true + multi-session approved → sends session_reconnected to fellows", async () => {
     mocks.listSessions.mockReturnValue([
       { sid: 1, name: "Overseer", createdAt: "2026-03-17" },
       { sid: 2, name: "Worker", createdAt: "2026-03-17" },
@@ -1997,14 +1997,14 @@ describe("session_start tool", () => {
     await handleSessionReconnect({ name: "Overseer" });
 
     const calls = mocks.deliverServiceMessage.mock.calls;
-    const toFellow = calls.find((c: unknown[]) => c[0] === 2 && c[2] === "session_joined");
+    const toFellow = calls.find((c: unknown[]) => c[0] === 2 && c[2] === "session_reconnected");
     expect(toFellow).toBeDefined();
-    // eventType: "session_joined" with reconnect flag — structural
+    // eventType: "session_reconnected" with reconnect flag — structural
     expect((toFellow![3] as Record<string, unknown>).reconnect).toBe(true);
 
-    const toSelf = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_orientation");
+    const toSelf = calls.find((c: unknown[]) => c[0] === 1 && c[2] === "session_reconnected");
     expect(toSelf).toBeDefined();
-    // eventType: "session_orientation" already verified by find predicate
+    // eventType: "session_reconnected" for reconnect orientation (was "session_orientation")
   });
 
   it("reconnect: true + denial edits dialog to show denied (not deleted)", async () => {
@@ -2787,7 +2787,7 @@ describe("session/start refresh flag", () => {
     expect(result.reused).toBe(true);
     expect(result.token).toBe(1123456);
     expect(result.sid).toBe(1);
-    expect(result.hint).toBe("Call dequeue(token) NOW — do not proceed without draining");
+    expect(result.hint).toBe("Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -2958,5 +2958,147 @@ describe("session/start refresh flag", () => {
 
     expect(mocks.applyProfile).toHaveBeenCalledWith(1, { voice: "shimmer", autoload: true });
     expect(result.profile_autoloaded).toBe("Primary");
+  });
+});
+
+// Token path convention: save_token_to field in session/start and session/reconnect
+describe("token path convention — save_token_to field", () => {
+  const SAVE_TOKEN_PATH = "memory/telegram/session.token";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReminderStateForTest();
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.isPollerRunning.mockReturnValue(false);
+    mocks.readProfile.mockReturnValue(null);
+    mocks.applyProfile.mockReturnValue({ applied: {} });
+    mocks.deliverReminderEvent.mockReturnValue(true);
+    mocks.createSession.mockReturnValue({
+      sid: 1,
+      suffix: 123456,
+      name: "Primary",
+      color: "🟦",
+      sessionsActive: 1,
+    });
+    mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
+  });
+
+  it("session/start response includes save_token_to = memory/telegram/session.token", async () => {
+    const result = parseResult(await handleSessionStart({ name: "Primary" }));
+
+    expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
+  });
+
+  it("session/reconnect response includes save_token_to = memory/telegram/session.token", async () => {
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.checkAndConsumeAutoApprove.mockReturnValue(true);
+
+    const result = parseResult(await handleSessionReconnect({ name: "Primary" }));
+
+    expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
+  });
+
+  it("session/start with refresh: true (reuse path) includes save_token_to", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
+    mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
+    mocks.validateSession.mockReturnValue(true);
+
+    const result = parseResult(await handleSessionStart({ name: "Primary", refresh: true, token: 1123456 }));
+
+    expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
+    expect(result.reused).toBe(true);
+  });
+
+  // =========================================================================
+  // silent_lifecycle — public announcement suppression (AC2 + AC5)
+  // =========================================================================
+
+  it("AC2: first session with silent_lifecycle: true does NOT send public announcement", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "SilentBot", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+
+    await handleSessionStart({ name: "SilentBot" });
+
+    const announceCalls = mocks.sendMessage.mock.calls.filter(
+      (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+    );
+    expect(announceCalls.length).toBe(0);
+  });
+
+  it("AC2: second session with silent_lifecycle: true does NOT send public announcement", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "SilentWorker", color: "🟩", sessionsActive: 2 });
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", color: "🟦" }]) // collision check
+      .mockReturnValue([{ sid: 1, name: "Primary", color: "🟦" }, { sid: 2, name: "SilentWorker", color: "🟩" }]);
+    mocks.checkAndConsumeAutoApprove.mockReturnValue(true); // bypass approval dialog
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+
+    await handleSessionStart({ name: "SilentWorker" });
+
+    const announceCalls = mocks.sendMessage.mock.calls.filter(
+      (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+    );
+    expect(announceCalls.length).toBe(0);
+  });
+
+  it("AC5: first session without silent_lifecycle flag DOES send public announcement", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue(null); // no profile
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 42 });
+
+    await handleSessionStart({ name: "Primary" });
+
+    const announceCalls = mocks.sendMessage.mock.calls.filter(
+      (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+    );
+    expect(announceCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("AC5: profile with silent_lifecycle: false DOES send public announcement", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: false });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 42 });
+
+    await handleSessionStart({ name: "Primary" });
+
+    const announceCalls = mocks.sendMessage.mock.calls.filter(
+      (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+    );
+    expect(announceCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("AC2: silent start does not pin announcement (no msgId to pin)", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "SilentWorker", color: "🟩", sessionsActive: 2 });
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", color: "🟦" }])
+      .mockReturnValue([{ sid: 1, name: "Primary", color: "🟦" }, { sid: 2, name: "SilentWorker", color: "🟩" }]);
+    mocks.checkAndConsumeAutoApprove.mockReturnValue(true);
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+
+    await handleSessionStart({ name: "SilentWorker" });
+
+    // No announcement msgId → pinChatMessage should not be called for this session
+    expect(mocks.pinChatMessage).not.toHaveBeenCalled();
+    // No trackMessageOwner either
+    expect(mocks.trackMessageOwner).not.toHaveBeenCalled();
+  });
+
+  it("AC2: silent start still delivers internal service messages (onboarding unaffected)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "SilentBot", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+
+    await handleSessionStart({ name: "SilentBot" });
+
+    // Internal service messages (onboarding) are NOT suppressed
+    expect(mocks.deliverServiceMessage).toHaveBeenCalled();
   });
 });

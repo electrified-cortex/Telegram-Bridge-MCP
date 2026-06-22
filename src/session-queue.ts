@@ -278,7 +278,12 @@ export function routeToSession(event: TimelineEvent): void {
   const broadcastOriginatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
   for (const [sid, q] of _queues.entries()) {
     q.enqueue(event);
-    notifySession(sid, "operator", isDequeueActive(sid), broadcastOriginatorSid);
+    // Phase-1 voice suppression: suppress SSE notify for not-ready voice events.
+    // Phase-2 SSE wake is fired by notifySessionWaiters() after transcription.
+    if (isEventReady(event)) {
+      notifySession(sid, "operator", isDequeueActive(sid), broadcastOriginatorSid);
+    }
+    // Always notify channel subscriber regardless of voice readiness.
     notifyChannelSubscriber(sid, event);
     // Do NOT call notifyLastReceived — broadcast/ambiguous routing does not
     // count as "received by this session" for last_received reminder tracking.
@@ -311,9 +316,18 @@ function enqueueToSession(
   const q = _queues.get(sid);
   if (!q) return;
   q.enqueue(event);
-  // Pass originatorSid so notifySession suppresses self-notifications (AC-1).
-  const originatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
-  notifySession(sid, "operator", isDequeueActive(sid), originatorSid);
+  // Phase-1 voice suppression: do NOT fire SSE notify for voice events that are
+  // not yet ready (transcription pending). The phase-2 SSE wake is fired by
+  // notifySessionWaiters() after patchVoiceText() completes. Firing here would
+  // cause the agent to dequeue an empty batch and go back to sleep, missing the
+  // real wake when transcription finishes.
+  if (isEventReady(event)) {
+    // Pass originatorSid so notifySession suppresses self-notifications (AC-1).
+    const originatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
+    notifySession(sid, "operator", isDequeueActive(sid), originatorSid);
+  }
+  // Always notify channel subscriber regardless of voice readiness — channel
+  // consumers handle not-ready events themselves.
   notifyChannelSubscriber(sid, event);
   // §5-b: Fire event-triggered reminders eagerly when events arrive for parked agents.
   // deliverReminderEvent calls q.enqueue directly (not via enqueueToSession) — no recursion risk.
@@ -347,10 +361,23 @@ export function broadcastOutbound(event: TimelineEvent, senderSid: number): void
 /**
  * Notify session queue waiters after a voice event is patched with text.
  * Called by patchVoiceText in message-store after mutating the event.
+ * Also called by shutdown and close-signal paths to unblock parked agents.
+ *
+ * Phase-2 SSE wake: after q.notifyWaiters() unblocks any agent blocked in
+ * dequeue, fire notifySession for sessions that have content that is now
+ * dequeue-able. This covers agents parked on SSE (not in dequeue) that missed
+ * the phase-1 notify because the voice event was not yet ready at enqueue time.
+ * Guard: only fire SSE if the session actually has pending dequeue-able content
+ * (hasAnyPendingContent) — avoids spurious wakes for sessions with empty queues
+ * or queues still blocked on a not-yet-ready heavyweight.
  */
 export function notifySessionWaiters(): void {
-  for (const q of _queues.values()) {
+  for (const [sid, q] of _queues.entries()) {
     q.notifyWaiters();
+    // Fire SSE phase-2 wake only for sessions with content ready to dequeue.
+    if (hasAnyPendingContent(sid)) {
+      notifySession(sid, "operator", isDequeueActive(sid));
+    }
   }
 }
 
@@ -570,7 +597,13 @@ export function deliverServiceMessage(
   };
 
   q.enqueue(event);
-  notifySession(targetSid, "service", isDequeueActive(targetSid));
+  // Suppress SSE notify for behavior_nudge events — they only occur during active sessions
+  // so the agent is already in its dequeue loop and does not need a separate wake.
+  // persistent_animation_running is intentionally NOT suppressed: it must wake an idle agent.
+  const isSilentEvent = event.content.event_type?.startsWith("behavior_nudge");
+  if (!isSilentEvent) {
+    notifySession(targetSid, "service", isDequeueActive(targetSid));
+  }
   notifyChannelSubscriber(targetSid, event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;

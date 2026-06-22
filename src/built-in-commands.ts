@@ -14,7 +14,7 @@
 
 import { createRequire } from "module";
 import type { Update } from "grammy/types";
-import { getApi, resolveChat, sendServiceMessage } from "./telegram.js";
+import { getApi, resolveChat, sendServiceMessage, validateText } from "./telegram.js";
 import { rollLog, isLoggingEnabled, enableLogging, disableLogging, listLogs, getCurrentLogFilename, deleteLog } from "./local-log.js";
 import { elegantShutdown, setShutdownDumpHook } from "./shutdown.js";
 
@@ -25,6 +25,7 @@ import { fetchVoiceList, isTtsEnabled } from "./tts.js";
 import { getSessionSpeed } from "./voice-state.js";
 import { activateAutoApproveOne, activateAutoApproveTimed, cancelAutoApprove, getAutoApproveState } from "./auto-approve.js";
 import { isDelegationEnabled, setDelegationEnabled } from "./agent-approval.js";
+import { dlog } from "./debug-log.js";
 
 
 const require = createRequire(import.meta.url);
@@ -80,6 +81,8 @@ export async function requestOperatorApproval(
   const api = getApi();
   const callerSid = getCallerSid();
 
+  const textErr = validateText(prompt);
+  if (textErr) return "send_failed";
   let msg: { message_id: number };
   try {
     msg = await api.sendMessage(chatId, prompt, {
@@ -131,7 +134,7 @@ async function handleApprovalCallback(
   panelMsgId: number,
   data: string,
 ): Promise<void> {
-  try { await getApi().answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+  try { await getApi().answerCallbackQuery(callbackQueryId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
   const resolve = _pendingApprovals.get(panelMsgId);
   if (resolve) {
     _pendingApprovals.delete(panelMsgId);
@@ -411,27 +414,27 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
     // Expired callback — panel no longer active but button was pressed late
     const data = update.callback_query.data ?? "";
     if (data.startsWith("approval:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This approval has expired." }); } catch { /* ignore */ }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This approval has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("governor:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch { /* ignore */ }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("approve:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch { /* ignore */ }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("logging:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch { /* ignore */ }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("session:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch { /* ignore */ }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("log:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch { /* ignore */ }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
   }
@@ -490,18 +493,20 @@ async function handleGovernorCommand(): Promise<void> {
     try {
       const msg = await api.sendMessage(chatId, "ℹ️ Primary selection requires 2 or more active sessions.");
       markInternalMessage(msg.message_id);
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
   const { text, keyboard } = buildGovernorPanel(sessions);
+  const _govErr = validateText(text);
+  if (_govErr) { dlog("tool", "panel handler failed", { err: _govErr.message }); return; }
   try {
     const msg = await api.sendMessage(chatId, text, {
       reply_markup: { inline_keyboard: keyboard },
     });
     _activePanels.set(msg.message_id, "governor");
     markInternalMessage(msg.message_id);
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 async function handleGovernorCallback(
@@ -513,11 +518,11 @@ async function handleGovernorCallback(
   if (typeof chatId !== "number") return;
   const api = getApi();
 
-  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+  try { await api.answerCallbackQuery(callbackQueryId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 
   if (data === "governor:dismiss") {
     _activePanels.delete(panelMsgId);
-    try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+    try { await api.deleteMessage(chatId, panelMsgId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -537,7 +542,7 @@ async function handleGovernorCallback(
           "ℹ️ Primary selection requires 2 or more active sessions.",
           { reply_markup: { inline_keyboard: [] } },
         ));
-      } catch { /* ignore */ }
+      } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return;
     }
 
@@ -551,7 +556,7 @@ async function handleGovernorCallback(
           "⚠️ The selected session is no longer active. Please reopen /primary to choose from the current list.",
           { reply_markup: { inline_keyboard: [] } },
         ));
-      } catch { /* ignore */ }
+      } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return;
     }
 
@@ -560,14 +565,17 @@ async function handleGovernorCallback(
     // No-op if selecting the already-current governor
     if (newSid === oldSid) {
       _activePanels.delete(panelMsgId);
+      const _noopText = `${buildGovernorPanel(sessions).text}\n\n▸ ${newGovernor.color} ${newGovernor.name} is already the primary.`;
+      const _noopErr = validateText(_noopText);
+      if (_noopErr) { dlog("tool", "panel handler failed", { err: _noopErr.message }); return; }
       try {
         await runInSessionContext(0, () => api.editMessageText(
           chatId,
           panelMsgId,
-          `${buildGovernorPanel(sessions).text}\n\n▸ ${newGovernor.color} ${newGovernor.name} is already the primary.`,
+          _noopText,
           { reply_markup: { inline_keyboard: [] } },
         ));
-      } catch { /* ignore */ }
+      } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return;
     }
 
@@ -590,14 +598,17 @@ async function handleGovernorCallback(
 
     // Confirm selection in the panel message and close it
     _activePanels.delete(panelMsgId);
+    const _confirmText = `${buildGovernorPanel(sessions).text}\n\n▸ ✅ Primary set to ${newLabel}`;
+    const _confirmErr = validateText(_confirmText);
+    if (_confirmErr) { dlog("tool", "panel handler failed", { err: _confirmErr.message }); return; }
     try {
       await runInSessionContext(0, () => api.editMessageText(
         chatId,
         panelMsgId,
-        `${buildGovernorPanel(sessions).text}\n\n▸ ✅ Primary set to ${newLabel}`,
+        _confirmText,
         { reply_markup: { inline_keyboard: [] } },
       ));
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
   }
 }
 
@@ -633,10 +644,13 @@ async function handleVersionCommand(): Promise<void> {
     `*Commit:* \`${_mcpCommit}\``,
     `*Built:* \`${buildTimeDisplay}\``,
   ];
+  const versionText = lines.join("\n");
+  const _vErr = validateText(versionText);
+  if (_vErr) { dlog("tool", "panel handler failed", { err: _vErr.message }); return; }
   try {
-    const msg = await getApi().sendMessage(chatId, lines.join("\n"), { parse_mode: "Markdown" });
+    const msg = await getApi().sendMessage(chatId, versionText, { parse_mode: "Markdown" });
     markInternalMessage(msg.message_id);
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 // ---------------------------------------------------------------------------
@@ -682,11 +696,13 @@ async function handleVoiceCommand(): Promise<void> {
         { parse_mode: "Markdown" },
       );
       markInternalMessage(msg.message_id);
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
   const { text, keyboard } = await buildVoicePanel();
+  const _voiceErr = validateText(text);
+  if (_voiceErr) { dlog("tool", "panel handler failed", { err: _voiceErr.message }); return; }
   try {
     const msg = await api.sendMessage(chatId, text, {
       parse_mode: "Markdown",
@@ -694,7 +710,7 @@ async function handleVoiceCommand(): Promise<void> {
     });
     _activePanels.set(msg.message_id, "voice");
     markInternalMessage(msg.message_id);
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 async function handleVoiceCallback(
@@ -706,11 +722,11 @@ async function handleVoiceCallback(
   if (typeof chatId !== "number") return;
   const api = getApi();
 
-  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+  try { await api.answerCallbackQuery(callbackQueryId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 
   if (data === "voice:dismiss") {
     _activePanels.delete(panelMsgId);
-    try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+    try { await api.deleteMessage(chatId, panelMsgId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -731,12 +747,14 @@ async function handleVoiceCallback(
 
   // Refresh panel at the current wizard step
   const { text, keyboard } = await buildVoicePanel(step);
+  const _stepErr = validateText(text);
+  if (_stepErr) { dlog("tool", "panel handler failed", { err: _stepErr.message }); return; }
   try {
     await runInSessionContext(0, () => api.editMessageText(chatId, panelMsgId, text, {
       parse_mode: "Markdown",
       reply_markup: { inline_keyboard: keyboard },
     }));
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 async function sendVoiceSample(
@@ -774,7 +792,7 @@ async function sendVoiceSample(
         `⚠️ Failed to generate sample for ${voiceName}: ${errMsg}`,
       );
       markInternalMessage(msg.message_id);
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
   }
 }
 
@@ -793,7 +811,7 @@ async function handleVoiceSampleCallback(
 
   if (!data.startsWith("voice:set:")) {
     try { await api.answerCallbackQuery(callbackQueryId); }
-    catch { /* ignore */ }
+    catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -805,7 +823,7 @@ async function handleVoiceSampleCallback(
     await api.answerCallbackQuery(callbackQueryId, {
       text: `Voice set to ${voiceName}`,
     });
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 type InlineButton = { text: string; callback_data: string };
@@ -1039,9 +1057,12 @@ async function handleApproveCommand(): Promise<void> {
     statusLine = "⚪ Governor-controlled";
   }
 
+  const approveText = `*Session Auto-Approve*\n${statusLine}`;
+  const _aErr = validateText(approveText);
+  if (_aErr) { dlog("tool", "panel handler failed", { err: _aErr.message }); return; }
   let msg: { message_id: number };
   try {
-    msg = await api.sendMessage(chatId, `*Session Auto-Approve*\n${statusLine}`, {
+    msg = await api.sendMessage(chatId, approveText, {
       parse_mode: "Markdown",
       _skipHeader: true,
       reply_markup: {
@@ -1074,7 +1095,7 @@ async function handleApproveCallback(
   if (typeof chatId !== "number") return;
   const api = getApi();
 
-  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+  try { await api.answerCallbackQuery(callbackQueryId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
   _activePanels.delete(panelMsgId);
 
   if (data === "approve:one") {
@@ -1124,6 +1145,8 @@ async function handleLoggingCommand(): Promise<void> {
   const api = getApi();
 
   const { text, keyboard } = buildLoggingPanel();
+  const _lErr = validateText(text);
+  if (_lErr) { dlog("tool", "panel handler failed", { err: _lErr.message }); return; }
   try {
     const msg = await api.sendMessage(chatId, text, {
       parse_mode: "Markdown",
@@ -1132,7 +1155,7 @@ async function handleLoggingCommand(): Promise<void> {
     } as Record<string, unknown>);
     _activePanels.set(msg.message_id, "logging");
     markInternalMessage(msg.message_id);
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 async function handleLoggingCallback(
@@ -1144,11 +1167,11 @@ async function handleLoggingCallback(
   if (typeof chatId !== "number") return;
   const api = getApi();
 
-  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+  try { await api.answerCallbackQuery(callbackQueryId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 
   if (data === "logging:dismiss") {
     _activePanels.delete(panelMsgId);
-    try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+    try { await api.deleteMessage(chatId, panelMsgId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -1180,14 +1203,14 @@ async function handleLoggingCallback(
             ]},
           } as Record<string, unknown>));
       }
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   } else if (data === "logging:flush-cancel") {
     // Just refresh the panel
   } else if (data === "logging:flush-confirm") {
     // Delete all archived logs
     for (const filename of listLogs()) {
-      try { deleteLog(filename); } catch { /* ignore */ }
+      try { deleteLog(filename); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     }
   }
 
@@ -1198,7 +1221,7 @@ async function handleLoggingCallback(
       parse_mode: "Markdown", _skipHeader: true,
       reply_markup: { inline_keyboard: keyboard },
     } as Record<string, unknown>));
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 function buildLoggingPanel(): { text: string; keyboard: { text: string; callback_data: string }[][] } {
@@ -1262,11 +1285,13 @@ async function handleSessionCommand(): Promise<void> {
     try {
       const msg = await api.sendMessage(chatId, "ℹ️ No active sessions.");
       markInternalMessage(msg.message_id);
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
   const { text, keyboard } = buildSessionListPanel(sessions);
+  const _sErr = validateText(text);
+  if (_sErr) { dlog("tool", "panel handler failed", { err: _sErr.message }); return; }
   try {
     const msg = await api.sendMessage(chatId, text, {
       _skipHeader: true,
@@ -1274,7 +1299,7 @@ async function handleSessionCommand(): Promise<void> {
     } as Record<string, unknown>);
     _activePanels.set(msg.message_id, "session");
     markInternalMessage(msg.message_id);
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 function buildSessionListPanel(
@@ -1299,11 +1324,11 @@ async function handleSessionCallback(
   if (typeof chatId !== "number") return;
   const api = getApi();
 
-  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+  try { await api.answerCallbackQuery(callbackQueryId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 
   if (data === "session:cancel") {
     _activePanels.delete(panelMsgId);
-    try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+    try { await api.deleteMessage(chatId, panelMsgId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -1311,7 +1336,7 @@ async function handleSessionCallback(
     const sessions = listSessions();
     if (sessions.length === 0) {
       _activePanels.delete(panelMsgId);
-      try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+      try { await api.deleteMessage(chatId, panelMsgId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return;
     }
     const { text, keyboard } = buildSessionListPanel(sessions);
@@ -1320,7 +1345,7 @@ async function handleSessionCallback(
         _skipHeader: true,
         reply_markup: { inline_keyboard: keyboard },
       } as Record<string, unknown>));
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -1354,7 +1379,7 @@ async function handleSessionCallback(
           },
         },
       ));
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -1374,7 +1399,7 @@ async function handleSessionCallback(
         closeMsg,
         { reply_markup: { inline_keyboard: [] } },
       ));
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -1399,7 +1424,7 @@ async function handleSessionCallback(
           "⚠️ Session no longer active.",
           { reply_markup: { inline_keyboard: [] } },
         ));
-      } catch { /* ignore */ }
+      } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return;
     }
 
@@ -1427,7 +1452,7 @@ async function handleSessionCallback(
         `✓ ${newLabel} is now the primary session.`,
         { reply_markup: { inline_keyboard: [] } },
       ));
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 }
@@ -1444,7 +1469,7 @@ async function renderSessionDetail(
     // Session gone — go back to list
     if (sessions.length === 0) {
       _activePanels.delete(panelMsgId);
-      try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+      try { await api.deleteMessage(chatId, panelMsgId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return;
     }
     const { text, keyboard } = buildSessionListPanel(sessions);
@@ -1452,7 +1477,7 @@ async function renderSessionDetail(
       await runInSessionContext(0, () => api.editMessageText(chatId, panelMsgId, text, {
         reply_markup: { inline_keyboard: keyboard },
       }));
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
     return;
   }
 
@@ -1498,7 +1523,7 @@ async function renderSessionDetail(
         reply_markup: { inline_keyboard: keyboard },
       },
     ));
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 // ---------------------------------------------------------------------------
@@ -1525,7 +1550,7 @@ async function _handleLogCommand(): Promise<void> {
     } as Record<string, unknown>);
     _activePanels.set(msg.message_id, "log");
     markInternalMessage(msg.message_id);
-  } catch { /* ignore */ }
+  } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
 }
 
 async function handleLogCallback(
@@ -1537,7 +1562,7 @@ async function handleLogCallback(
   if (typeof chatId !== "number") return;
   const api = getApi();
 
-  try { await api.answerCallbackQuery(callbackQueryId); } catch { /* ignore */ }
+  try { await api.answerCallbackQuery(callbackQueryId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
   _activePanels.delete(panelMsgId);
 
   if (data === "log:dump") {
@@ -1549,10 +1574,10 @@ async function handleLogCallback(
         "✓ Session record dumped.",
         { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>,
       ));
-    } catch { /* ignore */ }
+    } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
   } else {
     // cancel
-    try { await api.deleteMessage(chatId, panelMsgId); } catch { /* ignore */ }
+    try { await api.deleteMessage(chatId, panelMsgId); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
   }
 }
 

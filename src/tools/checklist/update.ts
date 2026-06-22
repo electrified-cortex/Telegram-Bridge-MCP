@@ -69,23 +69,22 @@ const UPDATE_DESCRIPTION =
 export type ChecklistStep = z.infer<typeof STEP_SCHEMA>;
 
 function completionBadge(steps: ChecklistStep[]): string {
+  const total = steps.length;
   const failed = steps.filter(s => s.status === "failed").length;
   const skipped = steps.filter(s => s.status === "skipped").length;
+  const done = steps.filter(s => s.status === "done").length;
 
-  let header: string;
-  if (failed > 0) {
-    header = "🔴 Failed";
-  } else if (skipped > 0) {
-    header = "🟡 Incomplete";
-  } else {
-    header = "✅ Complete";
+  // Any failure → Failed (regardless of skipped)
+  if (failed > 0) return "🔴 Failed";
+
+  // Defensive: called only when allTerminal, but guard against accounting mismatch
+  if (done + skipped < total) {
+    return `⚠️ Incomplete\n${done} done, ${skipped} skipped of ${total}`;
   }
 
-  const parts: string[] = [];
-  if (skipped > 0) parts.push(`${skipped} skipped`);
-  if (failed > 0) parts.push(`${failed} failed`);
-  if (parts.length === 0) return header;
-  return `${header}\n${parts.join(", ")}`;
+  // All terminal, no failures
+  if (skipped > 0) return `✅ Complete (${skipped} skipped)`;
+  return "✅ Complete";
 }
 
 // Note: the create path returns only { message_id } — there are no compact-suppressible

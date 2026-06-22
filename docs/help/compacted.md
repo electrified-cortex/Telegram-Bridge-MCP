@@ -2,7 +2,7 @@
 
 You just lost conversational context. This help topic covers Telegram/MCP recovery only — your agent harness injects the agent-specific checklist on startup.
 
-1. **Session token**: read it from your memory file if previously saved.
+1. **Session token**: read it from `memory/telegram/session.token` (plain integer, no JSON). Save your token there immediately after every `session/start` or `session/reconnect` so it survives compaction. If the file is empty or missing, proceed to step 3.
 2. **If token present**: `dequeue(max_wait: 0, token)` to drain pending messages and confirm the bridge link.
 3. **If token missing or `dequeue` returns `session_closed`**: call `action(type: 'session/reconnect', name: '<your_name>')` to rejoin, or `action(type: 'session/start', name: '<your_name>')` for a fresh session.
 4. **Monitor**: If your harness doesn't support file monitoring (e.g. VS Code), skip this step entirely — **keep dequeuing at the end of every turn, that's all you need.** Otherwise, re-arm your wake monitor. **SSE path (HTTP mode):**

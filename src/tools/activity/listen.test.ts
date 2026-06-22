@@ -2,12 +2,14 @@
  * Unit tests for activity/listen and activity/listen/cancel handlers.
  *
  * Covers:
- *   TC1. activity/listen — HTTP mode active → returns ok:true with filtered command and guidance fields
+ *   TC1. activity/listen — HTTP mode active → returns SSE fields without ok:true
  *   TC2. activity/listen — HTTP mode not active → HTTP_MODE_REQUIRED error
  *   TC3. activity/listen — auth failure → AUTH_FAILED error
  *   TC4. activity/listen/cancel — connection open → ok:true, connection cancelled
  *   TC5. activity/listen/cancel — no connection open → ok:true (idempotent)
  *   TC6. activity/listen/cancel — auth failure → AUTH_FAILED error
+ *   TC7. activity/listen — first call → breadcrumb delivered as service message
+ *   TC8. activity/listen — second call → breadcrumb NOT re-delivered
  */
 
 import { vi, describe, it, expect, beforeEach } from "vitest";
@@ -27,6 +29,14 @@ const sseEndpointMocks = vi.hoisted(() => ({
   scheduleArmReminder: vi.fn((_sid: number, _command: string): void => {}),
 }));
 
+const firstUseHintsMocks = vi.hoisted(() => ({
+  markFirstUseHintSeen: vi.fn((_sid: number, _key: string): boolean => true),
+}));
+
+const sessionQueueMocks = vi.hoisted(() => ({
+  deliverServiceMessage: vi.fn((_sid: number, _text: string, _eventType: string): void => {}),
+}));
+
 vi.mock("../../session-gate.js", () => ({
   requireAuth: (token: number | undefined) => gateMocks.requireAuth(token),
 }));
@@ -38,6 +48,16 @@ vi.mock("../../http-mode.js", () => ({
 vi.mock("../../sse-endpoint.js", () => ({
   cancelSseConnection: (sid: number) => { sseEndpointMocks.cancelSseConnection(sid); },
   scheduleArmReminder: (sid: number, command: string) => { sseEndpointMocks.scheduleArmReminder(sid, command); },
+}));
+
+vi.mock("../../first-use-hints.js", () => ({
+  markFirstUseHintSeen: (sid: number, key: string) => firstUseHintsMocks.markFirstUseHintSeen(sid, key),
+}));
+
+vi.mock("../../session-queue.js", () => ({
+  deliverServiceMessage: (sid: number, text: string, eventType: string) => {
+    sessionQueueMocks.deliverServiceMessage(sid, text, eventType);
+  },
 }));
 
 import { handleActivityListen } from "./listen.js";
@@ -65,22 +85,25 @@ beforeEach(() => {
   httpModeMocks.getSseBaseUrl.mockReturnValue("http://127.0.0.1:3099");
   sseEndpointMocks.cancelSseConnection.mockReturnValue(undefined);
   sseEndpointMocks.scheduleArmReminder.mockReturnValue(undefined);
+  // Default: first call (new agent)
+  firstUseHintsMocks.markFirstUseHintSeen.mockReturnValue(true);
+  sessionQueueMocks.deliverServiceMessage.mockReturnValue(undefined);
 });
 
 // ── TC1: activity/listen — HTTP mode active ───────────────────────────────────
 
 describe("TC1: activity/listen — HTTP mode active", () => {
-  it("returns ok:true with filtered command and guidance fields", () => {
+  it("returns filtered command and guidance fields WITHOUT ok:true", () => {
     const result = handleActivityListen({ token: TOKEN });
     expect(isError(result as { isError?: boolean })).toBe(false);
     const body = parseResult(result);
-    expect(body.ok).toBe(true);
+    // AC1: ok field must not be present
+    expect(body).not.toHaveProperty("ok");
     expect(typeof body.sse_url).toBe("string");
     expect((body.sse_url as string)).toContain(`/sse?token=${TOKEN}`);
     // command must use the filtered script, NOT raw curl -N
     expect(body.command).toBe(`bash sse-monitor.sh '${body.sse_url as string}'`);
     expect(body.monitor_type).toBe("sse");
-    expect(typeof body.heartbeat_warning).toBe("string");
     expect(body.arm_with).toBe("Monitor tool, persistent: true");
     expect(typeof body.download_url).toBe("string");
     expect((body.download_url as string)).toContain("/tools/sse-monitor.sh");
@@ -94,6 +117,43 @@ describe("TC1: activity/listen — HTTP mode active", () => {
     const body = parseResult(result);
     expect(body.sse_url).toBe(`http://192.168.1.10:5000/sse?token=${TOKEN}`);
     expect(body.download_url).toBe(`http://192.168.1.10:5000/tools/sse-monitor.sh`);
+  });
+});
+
+// ── TC7: activity/listen — first call delivers breadcrumb as service message ──
+
+describe("TC7: activity/listen — first call delivers breadcrumb as service message", () => {
+  it("delivers service message with breadcrumb text on first call (new agent)", () => {
+    firstUseHintsMocks.markFirstUseHintSeen.mockReturnValue(true);
+    const result = handleActivityListen({ token: TOKEN });
+    expect(isError(result as { isError?: boolean })).toBe(false);
+    // AC2: service message must have been delivered
+    expect(sessionQueueMocks.deliverServiceMessage).toHaveBeenCalledTimes(1);
+    const [callSid, callText, callEventType] = sessionQueueMocks.deliverServiceMessage.mock.calls[0];
+    expect(callSid).toBe(SID);
+    expect(callEventType).toBe("activity_listen_breadcrumb");
+    // breadcrumb text must reference the command
+    const body = parseResult(result);
+    expect(callText).toContain(body.command as string);
+    expect(callText).toContain(body.download_url as string);
+  });
+
+  it("passes the correct hint key to markFirstUseHintSeen", () => {
+    handleActivityListen({ token: TOKEN });
+    expect(firstUseHintsMocks.markFirstUseHintSeen).toHaveBeenCalledWith(SID, "activity:listen");
+  });
+});
+
+// ── TC8: activity/listen — second call does NOT re-deliver breadcrumb ─────────
+
+describe("TC8: activity/listen — second call does not re-deliver breadcrumb", () => {
+  it("does not deliver service message when markFirstUseHintSeen returns false", () => {
+    // Simulate agent that has already called activity/listen before
+    firstUseHintsMocks.markFirstUseHintSeen.mockReturnValue(false);
+    const result = handleActivityListen({ token: TOKEN });
+    expect(isError(result as { isError?: boolean })).toBe(false);
+    // AC2: service message must NOT be delivered on subsequent calls
+    expect(sessionQueueMocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 });
 

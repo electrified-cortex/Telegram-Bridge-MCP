@@ -262,6 +262,25 @@ describe("help tool", () => {
     expect(content).toContain("persistent");
   });
 
+  // Token save path regression: literal path must appear in compacted + quick_start
+  describe("token save path — literal path regression", () => {
+    const TOKEN_SAVE_PATH = "memory/telegram/session.token";
+
+    it("help(topic: 'compacted') contains the literal token-save path", async () => {
+      const result = await call({ topic: "compacted" });
+      expect(isError(result)).toBe(false);
+      const { content } = parseResult<{ content: string }>(result);
+      expect(content).toContain(TOKEN_SAVE_PATH);
+    });
+
+    it("help(topic: 'quick_start') contains the literal token-save path", async () => {
+      const result = await call({ topic: "quick_start" });
+      expect(isError(result)).toBe(false);
+      const { content } = parseResult<{ content: string }>(result);
+      expect(content).toContain(TOKEN_SAVE_PATH);
+    });
+  });
+
   describe("topic: 'identity'", () => {
     const VALID_TOKEN = 1123456; // sid=1, suffix=123456
 

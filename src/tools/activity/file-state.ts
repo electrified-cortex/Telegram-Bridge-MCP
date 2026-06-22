@@ -135,6 +135,12 @@ export interface ActivityFileState {
 
 const _state = new Map<number, ActivityFileState>();
 
+/**
+ * Sessions with a pending unexpected-subscription-close notification.
+ * Consumed once on the agent's next dequeue (AC2, AC3).
+ */
+const _unexpectedClosePending = new Set<number>();
+
 let _activityDirReady = false;
 
 // ---------------------------------------------------------------------------
@@ -162,6 +168,44 @@ export function validateFilePath(filePath: string): string | null {
     return "file_path must be an absolute path";
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Unexpected subscription close tracking (AC1-AC5 of task 10-3029)
+// ---------------------------------------------------------------------------
+
+/**
+ * Record that the subscription for this session closed unexpectedly —
+ * i.e. without the agent calling activity/listen cancel, activity/file/delete,
+ * or session/close. The next dequeue call injects a
+ * SUBSCRIPTION_CLOSED_UNEXPECTEDLY service message (consumed exactly once).
+ *
+ * Idempotent: calling multiple times for the same sid before a consume has
+ * no extra effect — the message fires once per consume call.
+ */
+export function recordUnexpectedSubscriptionClose(sid: number): void {
+  _unexpectedClosePending.add(sid);
+}
+
+/**
+ * Consume the pending unexpected-close notification for a session.
+ *
+ * Returns true exactly once per subscription-loss event. All subsequent
+ * calls return false until another unexpected close is recorded. Called by
+ * runDrainLoop at dequeue time (AC2, AC3).
+ */
+export function consumeUnexpectedSubscriptionClose(sid: number): boolean {
+  if (!_unexpectedClosePending.has(sid)) return false;
+  _unexpectedClosePending.delete(sid);
+  return true;
+}
+
+/**
+ * Remove any pending unexpected-close notification for a session.
+ * Called on session teardown to avoid orphaned Set entries.
+ */
+export function clearUnexpectedCloseForSession(sid: number): void {
+  _unexpectedClosePending.delete(sid);
 }
 
 /**
@@ -243,6 +287,9 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
 
   if (attempt >= RETRY_DELAYS.length) {
     dlog("tool", `activity/file: touch retry exhausted for sid=${sid}; next inbound retries fresh`);
+    // Activity-file subscription is effectively dead — agent's monitor can no longer
+    // receive wake notifications. Record as unexpected close (AC1, AC5).
+    recordUnexpectedSubscriptionClose(sid);
     return;
   }
 
@@ -339,6 +386,11 @@ export function isActivityFileActive(sid: number): boolean {
   return _state.get(sid)?.filePath != null;
 }
 
+/** Return true if the session currently has an active SSE (activity/listen) subscription. */
+export function isSseMonitorActive(sid: number): boolean {
+  return _state.get(sid)?.sseConnected === true;
+}
+
 /**
  * Register that an SSE (activity/listen) monitor connected for this session.
  *
@@ -353,6 +405,11 @@ export function isActivityFileActive(sid: number): boolean {
  * connection), it just marks SSE present without disturbing the debounce.
  */
 export function registerSseMonitor(sid: number): void {
+  // Clear any pending unexpected-close notification — the monitor is re-arming
+  // (either first connect or reconnect). No need to alert the agent since they
+  // already have a live subscription again.
+  _unexpectedClosePending.delete(sid);
+
   const entry = _state.get(sid);
   if (entry) {
     entry.sseConnected = true;
@@ -378,9 +435,23 @@ export function registerSseMonitor(sid: number): void {
  * left, so the gate entry and its pending timers are torn down. Idempotent and
  * safe when no entry exists.
  */
-export function unregisterSseMonitor(sid: number): void {
+/**
+ * Unregister the SSE monitor for this session (connection closed/cancelled).
+ *
+ * @param expected Pass `true` when the agent initiated the teardown
+ *   (activity/listen cancel → cancelSseConnection). Pass `false` (default) for
+ *   organic closes — req 'close' event or keepalive failure — which trigger a
+ *   SUBSCRIPTION_CLOSED_UNEXPECTEDLY service message on the agent's next dequeue.
+ */
+export function unregisterSseMonitor(sid: number, expected: boolean = false): void {
   const entry = _state.get(sid);
   if (!entry) return;
+
+  // Record unexpected close BEFORE clearing sseConnected so the flag check is accurate.
+  if (!expected && entry.sseConnected) {
+    recordUnexpectedSubscriptionClose(sid);
+  }
+
   entry.sseConnected = false;
   if (entry.filePath === null) {
     if (entry.pendingRetryHandle !== null) {
@@ -578,6 +649,10 @@ export async function clearActivityFile(sid: number): Promise<void> {
   const entry = _state.get(sid);
   if (!entry) return;
 
+  // Remove any pending unexpected-close notification — session is tearing down
+  // and no future dequeue will be able to deliver it anyway.
+  _unexpectedClosePending.delete(sid);
+
   // The file-touch retry targets the file path — meaningless once it is gone.
   if (entry.pendingRetryHandle !== null) {
     clearTimeout(entry.pendingRetryHandle);
@@ -621,6 +696,10 @@ export async function replaceActivityFile(
   sid: number,
   newState: ActivityFileState,
 ): Promise<void> {
+  // Clear any pending unexpected-close notification — agent is re-registering
+  // a file, so the subscription is being restored.
+  _unexpectedClosePending.delete(sid);
+
   const oldEntry = _state.get(sid);
 
   if (oldEntry) {
@@ -697,5 +776,6 @@ export function resetActivityFileStateForTest(): void {
     }
   }
   _state.clear();
+  _unexpectedClosePending.clear();
   _activityDirReady = false;
 }

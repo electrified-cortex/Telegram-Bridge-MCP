@@ -356,4 +356,66 @@ describe("session/spawn-child", () => {
       parentSid: PARENT_SID,
     });
   });
+
+  // ── Display name includes slot index (session-list fix) ───────────────────
+
+  it("subsession display name includes the circle-digit slot index", async () => {
+    const childSession: { name?: string } = {};
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === CHILD_SID) return childSession;
+      return undefined;
+    });
+
+    await handleSpawnChild({ token: 1123456, name: "Helper" });
+
+    // inheritedName falls back to "Helper" (no parent session); slot 1 → "①"
+    expect(childSession.name).toBe("Helper ①");
+  });
+
+  it("display name uses inherited parent name when parent has a name", async () => {
+    const childSession: { name?: string } = {};
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { sid: PARENT_SID, name: "Curator", color: "🔵" };
+      if (sid === CHILD_SID) return childSession;
+      return undefined;
+    });
+
+    await handleSpawnChild({ token: 1123456, name: "Research" });
+
+    // inheritedName comes from parent: "Curator"; slot 1 → "①"
+    expect(childSession.name).toBe("Curator ①");
+  });
+
+  it("host (parent) session display name is unchanged after subsession spawn", async () => {
+    const parentSession = { sid: PARENT_SID, name: "Curator", color: "🔵" };
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return parentSession;
+      return {};
+    });
+
+    await handleSpawnChild({ token: 1123456, name: "Research" });
+
+    expect(parentSession.name).toBe("Curator");
+  });
+
+  it("display name for second subsession uses slot index 2", async () => {
+    const child1Session: { name?: string } = {};
+    const child2Session: { name?: string } = {};
+
+    mocks.handleSessionStart
+      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ token: 2_123_456, sid: 2, hint: "" }) }] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ token: 3_123_456, sid: 3, hint: "" }) }] });
+
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === 2) return child1Session;
+      if (sid === 3) return child2Session;
+      return undefined;
+    });
+
+    await handleSpawnChild({ token: 1123456, name: "First" });
+    await handleSpawnChild({ token: 1123456, name: "Second" });
+
+    expect(child1Session.name).toBe("First ①");
+    expect(child2Session.name).toBe("Second ②");
+  });
 });
