@@ -20,9 +20,10 @@ older tool references as design intent only and revalidate them against the
 current `action(...)` dispatcher before implementation. This story is partly a
 cleanup/fix artifact, not just a fresh feature spec.
 
-Operator quote: "Hot reload, like, you know, restarting and reloading the MCP
-bridge or bounce — something that allows it to restart, right? Because we tried...
-the DI container and it didn't work."
+The operator requested a mechanism to restart the MCP bridge — whether as a
+hot reload, a graceful bounce (stop + restart), or a fast-restart protocol that
+minimizes agent downtime. A prior attempt using a DI container approach did not
+succeed and a different implementation strategy is needed.
 
 ## Goal
 

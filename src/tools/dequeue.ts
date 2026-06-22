@@ -435,7 +435,7 @@ export async function runDrainLoop(
       : new Promise<void>(r => { setTimeout(r, _pendingBackoffMs); });
     await Promise.race([
       sleepPromise,
-      new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => r(), { once: true }); }),
+      new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener("abort", () => { r(); }, { once: true }); }),
     ]);
   }
 

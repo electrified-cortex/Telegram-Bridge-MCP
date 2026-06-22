@@ -16,8 +16,9 @@ Operator identified that agents currently lack a clean way to drop and reconnect
 to the bridge. When the bridge restarts, or when an agent's context compacts,
 the reconnect flow is fragile and undocumented as a formal protocol.
 
-Operator quote: "A reconnect protocol. Maybe, you know, bots being able to drop
-and then reconnect would be good."
+The operator identified the need for a formal reconnect protocol that would
+allow agents to gracefully drop their connection and re-establish it without
+losing session state or identity.
 
 ## Goal
 

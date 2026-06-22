@@ -120,7 +120,7 @@ describe("unexpected subscription close — file-state layer (10-3029)", () => {
   // ── AC1 + AC5: Activity-file unexpected close (retry exhaustion) ──────────
 
   describe("AC1 + AC5: activity-file subscription unexpected close via retry exhaustion", () => {
-    it("records unexpected close when touch retry exhausts after 2 attempts", async () => {
+    it("records unexpected close when touch retry exhausts after 2 attempts", () => {
       // Make appendFile fail persistently
       vi.mocked(appendFile).mockRejectedValue(Object.assign(new Error("EACCES"), { code: "EACCES" }));
 

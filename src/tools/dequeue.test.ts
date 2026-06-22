@@ -60,7 +60,7 @@ const mocks = vi.hoisted(() => ({
   checkConnectionToken: vi.fn((_sid: number, _token: string | undefined): "match" | "mismatch" | "absent" => "absent"),
   deliverServiceMessage: vi.fn((_targetSid: number, ..._args: unknown[]) => true),
   getGovernorSid: vi.fn((): number => 0),
-  getSession: vi.fn((_sid: number) => ({ name: "TestSession" }) as { name: string; suppress_pending_hint?: boolean }),
+  getSession: vi.fn((_sid: number) => ({ name: "TestSession" })),
   takeSilenceHint: vi.fn((_sid: number): string | undefined => undefined),
   setDequeueIdle: vi.fn((_sid: number, _idle: boolean) => {}),
 }));
@@ -2455,8 +2455,8 @@ describe("outbound-send exemption (AC4 — notifyDequeueOutboundSend)", () => {
 
   it("ignores sid <= 0 (defensive guard)", () => {
     // Should not throw, and should not affect any real session state
-    expect(() => notifyDequeueOutboundSend(0)).not.toThrow();
-    expect(() => notifyDequeueOutboundSend(-1)).not.toThrow();
+    expect(() => { notifyDequeueOutboundSend(0); }).not.toThrow();
+    expect(() => { notifyDequeueOutboundSend(-1); }).not.toThrow();
   });
 });
 // AC2 + AC3: unexpected subscription close — dequeue injection (10-3029)

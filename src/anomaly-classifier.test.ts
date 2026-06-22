@@ -11,7 +11,7 @@
  *   AC6 — all existing tests passing (enforced by the pnpm test gate)
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   classifyAnomalyEvent,
   reportAnomaly,
@@ -46,8 +46,9 @@ function makeDeps(): {
       governorCalls.push({ text, details });
       return true;
     },
-    alertOperator: async (text) => {
+    alertOperator: (text) => {
       operatorCalls.push(text);
+      return Promise.resolve();
     },
     log: (text) => logLines.push(text),
   };

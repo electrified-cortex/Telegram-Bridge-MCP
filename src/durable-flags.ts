@@ -60,7 +60,7 @@ function readFlags(name: string): Record<string, boolean> {
  * Returns false if the flag does not exist or on any I/O error.
  */
 export function hasDurableFlag(name: string, flag: string): boolean {
-  return readFlags(name)[flag] === true;
+  return readFlags(name)[flag];
 }
 
 /**

@@ -129,7 +129,7 @@ describe("TC7: activity/listen — first call delivers breadcrumb as service mes
     expect(isError(result as { isError?: boolean })).toBe(false);
     // AC2: service message must have been delivered
     expect(sessionQueueMocks.deliverServiceMessage).toHaveBeenCalledTimes(1);
-    const [callSid, callText, callEventType] = sessionQueueMocks.deliverServiceMessage.mock.calls[0] as [number, string, string];
+    const [callSid, callText, callEventType] = sessionQueueMocks.deliverServiceMessage.mock.calls[0];
     expect(callSid).toBe(SID);
     expect(callEventType).toBe("activity_listen_breadcrumb");
     // breadcrumb text must reference the command

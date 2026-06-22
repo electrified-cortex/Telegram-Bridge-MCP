@@ -29,14 +29,14 @@ const hoisted = vi.hoisted(() => ({
   editMessageText: vi.fn().mockResolvedValue(undefined),
   editMessageReplyMarkup: vi.fn().mockResolvedValue(undefined),
   answerCallbackQuery: vi.fn().mockResolvedValue(true),
-  resolveChat: vi.fn(() => 42 as number | string),
+  resolveChat: vi.fn(() => 42),
   replaceSessionCallbackHooks: vi.fn().mockReturnValue([]),
   refreshGovernorCommand: vi.fn(),
   stopPoller: vi.fn(),
   startPoller: vi.fn(),
   isPollerRunning: vi.fn().mockReturnValue(false),
   readProfile: vi.fn((_key: string): Record<string, unknown> | null => null),
-  applyProfile: vi.fn((_sid: number, _profile: unknown) => ({ applied: {} as Record<string, unknown> })),
+  applyProfile: vi.fn((_sid: number, _profile: unknown) => ({ applied: {} })),
   resetNotifyGateState: vi.fn(),
 }));
 
@@ -224,7 +224,7 @@ describe("AC8 — closeSessionById() teardown path marks connectionToken", () =>
     (vi.mocked(registerCallbackHook) as unknown as { mockImplementationOnce: (fn: unknown) => void })
       .mockImplementationOnce((_id: number, fn: (evt: TimelineEvent) => void) => {
         void Promise.resolve().then(() =>
-          fn({ content: { data: "reconnect_no", qid: "q1" } } as unknown as TimelineEvent),
+          { fn({ content: { data: "reconnect_no", qid: "q1" } } as unknown as TimelineEvent); },
         );
       });
 

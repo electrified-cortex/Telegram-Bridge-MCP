@@ -195,6 +195,7 @@ export function classifyAnomalyEvent(event: AnomalyEvent): AnomalyCategory | nul
   // Exclude normal-flow error codes supplied by the caller
   if (
     event.details?.errorCode !== undefined &&
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     NORMAL_FLOW_CODES.has(String(event.details.errorCode))
   ) {
     return null;
