@@ -4,7 +4,7 @@
  * AC1: Three new service-message templates exist (tested in service-messages.test.ts)
  * AC2: session/request-guidance routes to R1+R2 enqueue for unskilled host (first call only)
  * AC3: R1 and R2 enqueued as a pair in same DQ batch
- * AC5: Breadcrumbs delivered EXACTLY ONCE per session name within the bridge process lifetime
+ * AC5: Breadcrumbs delivered EXACTLY ONCE per SID within the bridge process lifetime
  * AC6: Skilled-tier opt-out: profile/tier: skilled-router → no breadcrumbs
  * AC8: bridge_authoritative: true on R1/R2 deliveries
  * AC9: Default tier = unskilled; new hosts get breadcrumbs on first request
@@ -157,29 +157,31 @@ describe("session/request-guidance — AC5: exactly-once delivery", () => {
     expect(result.delivered).toBeUndefined();
   });
 
-  it("AC5: keyed by session name — a different name gets its own first delivery", () => {
-    // Deliver for "Orchestrator"
+  it("AC5: keyed by SID — same SID with a different session name does NOT re-deliver", () => {
+    // First delivery for SID=1
     handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
 
-    // Different session name should still get breadcrumbs
+    // Change the session name but keep the same SID — must NOT re-deliver
     mocks.getSession.mockReturnValue({ sid: SID, name: "OtherAgent", color: "🟩" });
     mocks.deliverServiceMessage.mockClear();
 
     handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
 
-    expect(mocks.deliverServiceMessage).toHaveBeenCalledTimes(2);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 
-  it("AC5: uses empty string for session name when session is not found", () => {
-    mocks.getSession.mockReturnValue(undefined);
-
-    // First call with no session → delivers (empty-string key)
+  it("AC5: keyed by SID — different SID gets its own first delivery", () => {
+    const SID2 = 2;
+    // First delivery for SID=1
     handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
     mocks.deliverServiceMessage.mockClear();
 
-    // Second call with no session → should NOT re-deliver
+    // Different SID — must deliver independently (same name is fine)
+    mocks.requireAuth.mockReturnValue(SID2);
+    mocks.getSessionTier.mockReturnValue(undefined);
     handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
-    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledTimes(2);
   });
 });
 

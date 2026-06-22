@@ -305,7 +305,7 @@ describe("RICH_MESSAGES=true — graceful fallback", () => {
     expect(mocks.resolveParseMode).toHaveBeenCalledWith("hello", "Markdown");
   });
 
-  it("does NOT call notifyAfterFileSend when rich path fails", async () => {
+  it("calls notifyAfterFileSend(0) to balance the before hook when rich path fails", async () => {
     vi.stubGlobal(
       "fetch",
       makeFetchMock(false, null, 400, "rich message not supported"),
@@ -313,9 +313,10 @@ describe("RICH_MESSAGES=true — graceful fallback", () => {
 
     await routeOutboundMessage(123, "hello", { parse_mode: "Markdown" });
 
-    // notifyBeforeFileSend was fired before the attempt; notifyAfterFileSend not fired
+    // notifyBeforeFileSend was fired; notifyAfterFileSend(0) balances it on failure
+    // so animation and proxy state are correctly restored without recording a non-existent message.
     expect(mocks.notifyBeforeFileSend).toHaveBeenCalledOnce();
-    expect(mocks.notifyAfterFileSend).not.toHaveBeenCalled();
+    expect(mocks.notifyAfterFileSend).toHaveBeenCalledWith(0, "text");
   });
 });
 

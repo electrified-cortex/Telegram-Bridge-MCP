@@ -240,7 +240,15 @@ async function runHealthCheck(thresholdMs: number): Promise<void> {
       if (_flaggedSids.has(session.sid)) continue; // already handled
       if (hasActiveAnimation(session.sid)) continue; // animation = proof of life
       const activityEntry = getActivityFile(session.sid);
-      if (activityEntry !== undefined && existsSync(activityEntry.filePath)) continue; // file-watcher is alive
+      if (activityEntry !== undefined) {
+        // Wrap existsSync: filesystem errors (permission denied, path too long, etc.)
+        // must not suppress a legitimate health alert. Treat errors as file-absent.
+        try {
+          if (existsSync(activityEntry.filePath)) continue; // file-watcher is alive
+        } catch {
+          // Filesystem error — treat file as absent and proceed with health check.
+        }
+      }
       if (isSseMonitorActive(session.sid)) continue; // SSE subscriber is alive
       _flaggedSids.add(session.sid);
       markUnhealthy(session.sid);

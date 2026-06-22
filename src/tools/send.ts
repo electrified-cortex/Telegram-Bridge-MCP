@@ -1,7 +1,7 @@
 // Never call 'send' from send.ts handler — use telegram.js primitives directly
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect, RICH_MESSAGES_ENABLED, routeOutboundMessage } from "../telegram.js";
+import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect, isRichMessagesEnabled, routeOutboundMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText, getTopic } from "../topic-state.js";
 import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
@@ -540,7 +540,7 @@ export function register(server: McpServer) {
           // The queued-after-audio path above is left on the existing V2 path
           // for simplicity — rich routing applies to the direct send only.
           if (
-            RICH_MESSAGES_ENABLED &&
+            isRichMessagesEnabled() &&
             parse_mode === "Markdown" &&
             chunks.length === 1
           ) {

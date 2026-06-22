@@ -698,7 +698,7 @@ export async function sendRichMessageDirect(
     throw Object.assign(new Error(desc), telegramErr);
   }
 
-  if (!json.result) throw Object.assign(new Error("Telegram API: ok=true but missing result"), { code: "UNEXPECTED" as const });
+  if (!json.result) throw Object.assign(new Error("Telegram API: ok=true but missing result"), { code: "UNKNOWN" as const });
   return { message_id: json.result.message_id };
 }
 
@@ -840,12 +840,19 @@ export function validateCallbackData(data: string): TelegramError | null {
  * Feature gate for Bot API 10.1 rich-message sends.
  * Read once at module init from `RICH_MESSAGES` env var — no hot-reload.
  * Default `false` — all existing behaviour is unchanged unless opted in.
+ *
+ * Private to prevent external mutation; use `isRichMessagesEnabled()` to read.
  */
-export let RICH_MESSAGES_ENABLED: boolean = process.env.RICH_MESSAGES === "true";
+let _richMessagesEnabled: boolean = process.env.RICH_MESSAGES === "true";
+
+/** Returns true when Bot API 10.1 rich-message sends are enabled. */
+export function isRichMessagesEnabled(): boolean {
+  return _richMessagesEnabled;
+}
 
 /** For testing only: override the rich-messages feature flag. */
 export function setRichMessagesEnabledForTest(enabled: boolean): void {
-  RICH_MESSAGES_ENABLED = enabled;
+  _richMessagesEnabled = enabled;
 }
 
 /**
@@ -880,15 +887,21 @@ export async function routeOutboundMessage(
 ): Promise<{ message_id: number }> {
   const parseMode = options.parse_mode;
   const shouldUseRich =
-    RICH_MESSAGES_ENABLED &&
+    isRichMessagesEnabled() &&
     (parseMode === "Markdown" || parseMode === undefined);
 
   if (shouldUseRich) {
+    // Track notifyAfterFileSend so the before/after pair is always balanced,
+    // even if sendRichMessageDirect throws after notifyBeforeFileSend was called.
+    let _notifyAfterFileSend:
+      | ((id: number, type: string, text?: string) => Promise<void>)
+      | undefined;
     try {
       // Dynamic import mirrors the pattern used in sendVoiceDirect to avoid
       // circular-import issues at module initialisation time.
       const { notifyBeforeFileSend, notifyAfterFileSend, buildHeader } =
         await import("./outbound-proxy.js");
+      _notifyAfterFileSend = notifyAfterFileSend;
 
       // Session header injection: prepend `name_tag` as Markdown inline-code
       // so multi-session context is visible in the rendered rich message.
@@ -907,9 +920,15 @@ export async function routeOutboundMessage(
         reply_to_message_id: options.reply_parameters?.message_id,
       });
       const rawText = options._rawText ?? text;
+      // Clear before calling so a throw inside notifyAfterFileSend doesn't
+      // double-call it from the catch block.
+      _notifyAfterFileSend = undefined;
       await notifyAfterFileSend(result.message_id, "text", rawText);
       return result;
     } catch (err) {
+      // Balance the before hook — restores animation state without recording a
+      // non-existent message or triggering one-shot notifiers (messageId=0 guard).
+      await _notifyAfterFileSend?.(0, "text").catch(() => {});
       const code = (err as { code?: string }).code;
       if (code === "RICH_MESSAGE_UNSUPPORTED") {
         process.stderr.write(`[rich-route] RICH_MESSAGE_UNSUPPORTED — falling back to existing send path\n`);

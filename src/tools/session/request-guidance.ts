@@ -15,7 +15,7 @@
 import { z } from "zod";
 import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
-import { getSession, getSessionTier } from "../../session-manager.js";
+import { getSessionTier } from "../../session-manager.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { deliverServiceMessage } from "../../session-queue.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
@@ -23,10 +23,11 @@ import { SERVICE_MESSAGES } from "../../service-messages.js";
 const SUBSESSION_ROUTING = "subsession-routing" as const;
 
 /**
- * In-process set of session names that have already received subsession routing breadcrumbs.
+ * In-process set of session IDs (SIDs) that have already received subsession routing breadcrumbs.
+ * Keyed by SID so two sessions sharing the same name each get their own first delivery.
  * Clears on bridge restart — sessions are equally non-durable, so this is the right scope.
  */
-const _guidanceDelivered = new Set<string>();
+const _guidanceDelivered = new Set<number>();
 
 /** Reset in-process guidance state — for use in tests only. */
 export function _resetGuidanceDeliveredForTest(): void {
@@ -60,11 +61,10 @@ export function handleRequestGuidance({
     return toResult({ acknowledged: true, guidance_type, tier: "skilled-router" });
   }
 
-  // Unskilled host: deliver breadcrumbs exactly once per session name within this process lifetime.
-  // (Keyed by session name; clears on bridge restart, same as sessions.) (AC5, AC9)
-  const session = getSession(sid);
-  const sessionName = session?.name ?? "";
-  if (_guidanceDelivered.has(sessionName)) {
+  // Unskilled host: deliver breadcrumbs exactly once per SID within this process lifetime.
+  // Keyed by SID so two sessions sharing the same name each get their own delivery.
+  // Clears on bridge restart, same as sessions. (AC5, AC9)
+  if (_guidanceDelivered.has(sid)) {
     return toResult({ acknowledged: true, guidance_type, already_delivered: true });
   }
 
@@ -82,8 +82,8 @@ export function handleRequestGuidance({
     BRIDGE_AUTH_DETAIL,
   );
 
-  // Record that breadcrumbs were delivered for this session name (AC5)
-  _guidanceDelivered.add(sessionName);
+  // Record that breadcrumbs were delivered for this SID (AC5)
+  _guidanceDelivered.add(sid);
 
   return toResult({ acknowledged: true, guidance_type, delivered: true });
 }
@@ -96,7 +96,7 @@ export const REQUEST_GUIDANCE_SCHEMA = {
       "Type of guidance to request. Currently only 'subsession-routing' is supported.\n" +
         "Returns R1 (host role explanation) and R2 (spawn-and-forward action sequence) " +
         "as a paired batch in the next dequeue.\n" +
-        "Delivered exactly once per session name within the current bridge process — " +
+        "Delivered exactly once per session ID within the current bridge process — " +
         "subsequent calls return acknowledged: true without re-sending breadcrumbs.\n" +
         "Skilled-router hosts receive silent acknowledgment only (no breadcrumbs).",
     ),

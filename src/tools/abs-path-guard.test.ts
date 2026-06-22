@@ -90,7 +90,7 @@ vi.mock("../telegram.js", async (importActual) => {
     splitMessage: (t: string) => mocks.splitMessage(t),
     callApi: (fn: () => unknown) => mocks.callApi(fn),
     resolveMediaSource: (s: string) => mocks.resolveMediaSource(s),
-    RICH_MESSAGES_ENABLED: false,
+    isRichMessagesEnabled: () => false,
   };
 });
 

@@ -60,13 +60,13 @@ export function handleRevokeChild({
       getSessionTier(registeredParent) !== "skilled-router" &&
       !isR3GuidanceDelivered(registeredParent)
     ) {
-      markR3GuidanceDelivered(registeredParent);
       deliverServiceMessage(
         registeredParent,
         SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.text(childSid, childSession.name),
         SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.eventType,
         { child_sid: childSid, child_name: childSession.name, bridge_authoritative: true },
       );
+      markR3GuidanceDelivered(registeredParent);
     }
   }
 

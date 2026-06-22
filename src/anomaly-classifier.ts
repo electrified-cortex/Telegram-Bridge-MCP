@@ -108,7 +108,7 @@ export interface AnomalyEscalationDeps {
  *   - STREAM_EXPIRED: SSE stream naturally expired on reconnect — expected.
  *   - NAME_CONFLICT: session name collision on start — normal on concurrent retry.
  */
-export const NORMAL_FLOW_CODES = new Set<string>([
+export const NORMAL_FLOW_CODES: ReadonlySet<string> = new Set<string>([
   "LAST_SESSION",
   "NOT_PENDING",
   "SESSION_NOT_FOUND",
@@ -125,9 +125,17 @@ let _taxonomy: Map<string, AnomalyCategory> | undefined;
 function loadTaxonomy(): Map<string, AnomalyCategory> {
   if (_taxonomy) return _taxonomy;
   const path = resolve(__dirname, "anomaly-taxonomy.json");
-  const raw = readFileSync(path, "utf-8");
-  const categories = JSON.parse(raw) as AnomalyCategory[];
-  _taxonomy = new Map(categories.map((c) => [c.slug, c]));
+  try {
+    const raw = readFileSync(path, "utf-8");
+    const categories = JSON.parse(raw) as AnomalyCategory[];
+    _taxonomy = new Map(categories.map((c) => [c.slug, c]));
+  } catch (err) {
+    process.stderr.write(
+      `[anomaly-classifier] failed to load taxonomy from ${path}: ` +
+      `${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    _taxonomy = new Map();
+  }
   return _taxonomy;
 }
 

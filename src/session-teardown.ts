@@ -64,21 +64,29 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   if (sessionInfo?.parent_sid === undefined) {
     const childSids = getChildSids(sid);
     for (const childSid of childSids) {
-      // Capture child info before closeSessionById removes it from the session map.
-      // Emit child_session_resolved to the parent (sid) so any agent draining
-      // the parent's dequeue during teardown receives the lifecycle signal.
-      const childSession = getSession(childSid);
-      if (childSession) {
-        const exitStatus = childSession.exit_status ?? "";
-        deliverServiceMessage(
-          sid,
-          SERVICE_MESSAGES.CHILD_SESSION_RESOLVED.text(childSid, childSession.name, exitStatus),
-          SERVICE_MESSAGES.CHILD_SESSION_RESOLVED.eventType,
-          { child_sid: childSid, child_name: childSession.name, exit_status: exitStatus },
+      try {
+        // Capture child info before closeSessionById removes it from the session map.
+        // Emit child_session_resolved to the parent (sid) so any agent draining
+        // the parent's dequeue during teardown receives the lifecycle signal.
+        const childSession = getSession(childSid);
+        if (childSession) {
+          const exitStatus = childSession.exit_status ?? "";
+          deliverServiceMessage(
+            sid,
+            SERVICE_MESSAGES.CHILD_SESSION_RESOLVED.text(childSid, childSession.name, exitStatus),
+            SERVICE_MESSAGES.CHILD_SESSION_RESOLVED.eventType,
+            { child_sid: childSid, child_name: childSession.name, exit_status: exitStatus },
+          );
+        }
+        closeSessionById(childSid);
+        unregisterChild(childSid);
+      } catch (err) {
+        // Best-effort: a failing child teardown must not abort teardown of remaining children.
+        process.stderr.write(
+          `[session-teardown] cascade teardown failed for child sid=${childSid}: ` +
+          `${err instanceof Error ? err.message : String(err)}\n`,
         );
       }
-      closeSessionById(childSid);
-      unregisterChild(childSid);
     }
   }
 

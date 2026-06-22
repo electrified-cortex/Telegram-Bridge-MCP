@@ -173,8 +173,13 @@ export async function notifyAfterFileSend(
 ): Promise<void> {
   if (isBypassing()) return;
   const sid = getCallerSid();
-  recordOutgoing(messageId, contentType, text, caption);
-  fireSendNotifier(sid);
+  // Only record and notify on a successful send (messageId > 0).
+  // messageId === 0 signals a cancelled/failed send (e.g. rich-path fallback cleanup)
+  // — we still restore interceptor state but skip recording a non-existent message.
+  if (messageId > 0) {
+    recordOutgoing(messageId, contentType, text, caption);
+    fireSendNotifier(sid);
+  }
   const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
   if (interceptor) await interceptor.afterFileSend();
 }

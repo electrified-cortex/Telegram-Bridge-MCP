@@ -617,8 +617,10 @@ export function deliverServiceMessage(
   const isSilentEvent = event.content.event_type?.startsWith("behavior_nudge");
   if (!isSilentEvent) {
     notifySession(targetSid, "service", isDequeueActive(targetSid));
-    notifyChannelSubscriber(targetSid, event);
   }
+  // Channel subscribers always receive service messages regardless of SSE suppression —
+  // they handle their own wake logic and must not miss any enqueued event.
+  notifyChannelSubscriber(targetSid, event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
