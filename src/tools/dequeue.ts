@@ -191,8 +191,15 @@ export async function runDrainLoop(
   // Count every dequeue attempt (including idle/empty polls) for runaway-loop detection.
   checkDequeueRate(sid, Date.now());
 
+  // Mark this session as having an in-flight dequeue — suppresses activity-file notifications
+  // while the agent is actively waiting for messages.
+  // Set here: after session existence confirmed, before any deliverServiceMessage calls,
+  // so onboarding messages do not fire spurious SSE wakeup notifications.
+  // Every path through the try/finally below is guaranteed to call setDequeueActive(sid, false).
+  setDequeueActive(sid, true);
+
   // R5: First-dequeue detection for child sessions — inject onboarding before any content drain.
-  // Checked here: after session existence confirmed, before setDequeueActive or content reads.
+  // Checked here: after setDequeueActive(true), before content reads.
   const _childSession = getSession(sid);
   if (_childSession?.parent_sid && !_childSession.firstDequeueOccurred) {
     _childSession.firstDequeueOccurred = true;
@@ -233,12 +240,6 @@ export async function runDrainLoop(
       );
     }
   }
-
-  // Mark this session as having an in-flight dequeue — suppresses activity-file notifications
-  // while the agent is actively waiting for messages.
-  // Only set after confirming the session exists so every path through the
-  // try/finally below is guaranteed to call setDequeueActive(sid, false).
-  setDequeueActive(sid, true);
 
   // ONBOARDING_LOOP_PATTERN already covers the activity-file guidance at session
   // start. The redundant activity-file hint on first dequeue is intentionally

@@ -148,6 +148,12 @@ Before the PR is opened, the executor must perform a live verification run with
 
 Executor: Worker / Reviewer: Curator
 
+## Overseer stamp
+
+- Reviewer: Overseer
+- Date: 2026-06-20
+- Verdict: PASS — All deps (10-3010, 10-3012, 10-3013, 10-3014) confirmed in 70-done. ACs are binary and testable (env flag, route assertions, test coverage, live verification). Scope is precisely bounded (telegram.ts + outbound-proxy.ts only; explicit "does not modify" list). Delegation correct (Worker + Curator review). Chunking ambiguity explicitly resolved to "document in PR" — not a blocking open question. Bailout timer (4h) defined. PASS.
+
 ## Bailout
 
 4 hours. If session header injection into `sendRichMessageDirect` requires
