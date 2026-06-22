@@ -95,6 +95,11 @@ export function handleSaveProfile({ key, token, autoload = false }: { key: strin
     sections.push("autoload");
   }
 
+  if (sessionObj?.suppress_pending_hint !== undefined) {
+    data.suppress_pending_hint = sessionObj.suppress_pending_hint;
+    sections.push("suppress_pending_hint");
+  }
+
   let path: string;
   try {
     path = resolveProfilePath(key);

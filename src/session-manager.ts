@@ -45,6 +45,11 @@ export interface Session {
   /** SID of the parent session that spawned this one. Undefined for root sessions. */
   parent_sid?: number;
   /**
+   * When true, the hint field is omitted from dequeue responses.
+   * The pending count is unaffected. Set via profile/save + profile/load.
+   */
+  suppress_pending_hint?: boolean;
+  /**
    * Capability level for this session.
    * - `'full'` (default): no restrictions.
    * - `'gather'`: may not call session/start, session/spawn-child, or commit-class actions.

@@ -58,7 +58,7 @@ const mocks = vi.hoisted(() => ({
   checkConnectionToken: vi.fn((_sid: number, _token: string | undefined): "match" | "mismatch" | "absent" => "absent"),
   deliverServiceMessage: vi.fn((_targetSid: number, ..._args: unknown[]) => true),
   getGovernorSid: vi.fn((): number => 0),
-  getSession: vi.fn((_sid: number) => ({ name: "TestSession" })),
+  getSession: vi.fn((_sid: number) => ({ name: "TestSession" }) as { name: string; suppress_pending_hint?: boolean }),
   takeSilenceHint: vi.fn((_sid: number): string | undefined => undefined),
   setDequeueIdle: vi.fn((_sid: number, _idle: boolean) => {}),
 }));
@@ -1582,6 +1582,88 @@ describe("dequeue tool", () => {
   // ONBOARDING_LOOP_PATTERN at session start now covers the activity-file
   // guidance once; the redundant hint on first dequeue was deleted.
   // =========================================================================
+
+  // =========================================================================
+  // suppress_pending_hint profile flag (AC1–AC5)
+  // =========================================================================
+
+  describe("suppress_pending_hint profile flag", () => {
+    // AC2: hint field is omitted when suppress_pending_hint is true, even with pending > 0
+    it("omits hint field when session suppress_pending_hint is true and pending > 0", async () => {
+      mocks.getSession.mockReturnValue({ name: "TestSession", suppress_pending_hint: true });
+      const evt = makeEvent(300, "has backlog");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(3);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      // AC3: pending count is still present
+      expect(data.pending).toBe(3);
+      // AC2: hint is suppressed
+      expect(data.hint).toBeUndefined();
+    });
+
+    // AC3: pending count is unaffected by the flag
+    it("leaves pending count intact when suppress_pending_hint is true", async () => {
+      mocks.getSession.mockReturnValue({ name: "TestSession", suppress_pending_hint: true });
+      const evt = makeEvent(301, "pending check");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(5);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.pending).toBe(5);
+    });
+
+    // AC5: removing the flag (suppress_pending_hint: false) restores hint display
+    it("restores hint field when suppress_pending_hint is false", async () => {
+      mocks.getSession.mockReturnValue({ name: "TestSession", suppress_pending_hint: false });
+      const evt = makeEvent(302, "hint restored");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(2);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.pending).toBe(2);
+      expect(data.hint).toBeDefined();
+      expect(data.hint).toContain("pending=2");
+    });
+
+    // AC5: undefined suppress_pending_hint (default) shows hint
+    it("shows hint field when suppress_pending_hint is undefined (default behavior)", async () => {
+      mocks.getSession.mockReturnValue({ name: "TestSession" }); // no suppress_pending_hint
+      const evt = makeEvent(303, "default behavior");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(1);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toBeDefined();
+      expect(data.hint).toContain("pending=1");
+    });
+
+    // AC2: voice backlog hint is also suppressed when flag is true
+    it("suppresses voice backlog hint along with pending hint when flag is true", async () => {
+      mocks.getSession.mockReturnValue({ name: "TestSession", suppress_pending_hint: true });
+      const evt = makeVoiceEvent(304);
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(2);
+      mocks.peekSessionCategories.mockReturnValue({ voice: 2 });
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toBeUndefined();
+      // pending count still present
+      expect(data.pending).toBe(2);
+    });
+
+    // suppress_pending_hint has no effect when pending is 0 (hint would be absent anyway)
+    it("hint remains absent when pending is 0 regardless of suppress_pending_hint", async () => {
+      mocks.getSession.mockReturnValue({ name: "TestSession", suppress_pending_hint: true });
+      const evt = makeEvent(305, "no backlog");
+      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+      mocks.pendingCount.mockReturnValue(0);
+      const result = await call({ timeout: 0, token: 1_123_456 });
+      const data = parseResult<DequeueResult>(result);
+      expect(data.hint).toBeUndefined();
+      expect(data.pending).toBeUndefined();
+    });
+  });
 });
 
 // =============================================================================

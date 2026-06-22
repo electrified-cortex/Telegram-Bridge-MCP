@@ -379,3 +379,50 @@ describe("applyProfile — name_tag application", () => {
     expect((result as { applied: Record<string, unknown> }).applied.name_tag).toBeUndefined();
   });
 });
+
+describe("applyProfile — suppress_pending_hint (AC1, AC4, AC5)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listReminders.mockReturnValue([]);
+  });
+
+  // AC1: field is accepted by ProfileData (type-level; runtime: applyProfile handles it)
+  // AC4: setting suppress_pending_hint: true persists to session
+  it("applies suppress_pending_hint: true from profile to session", () => {
+    const session: Record<string, unknown> = { name: "TestSession" };
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { suppress_pending_hint: true });
+    expect("applied" in result).toBe(true);
+    expect(session.suppress_pending_hint).toBe(true);
+    expect((result as { applied: Record<string, unknown> }).applied.suppress_pending_hint).toBe(true);
+  });
+
+  // AC5: setting suppress_pending_hint: false clears the flag
+  it("applies suppress_pending_hint: false from profile to session", () => {
+    const session: Record<string, unknown> = { name: "TestSession", suppress_pending_hint: true };
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { suppress_pending_hint: false });
+    expect("applied" in result).toBe(true);
+    expect(session.suppress_pending_hint).toBe(false);
+    expect((result as { applied: Record<string, unknown> }).applied.suppress_pending_hint).toBe(false);
+  });
+
+  // When flag is absent from profile, session field is untouched
+  it("leaves session suppress_pending_hint untouched when not in profile", () => {
+    const session: Record<string, unknown> = { name: "TestSession", suppress_pending_hint: true };
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { voice: "alloy" }); // no suppress_pending_hint
+    expect("applied" in result).toBe(true);
+    // Flag should be unchanged on the session
+    expect(session.suppress_pending_hint).toBe(true);
+    expect((result as { applied: Record<string, unknown> }).applied.suppress_pending_hint).toBeUndefined();
+  });
+
+  // When getSession returns undefined, silently skips
+  it("skips silently when getSession returns undefined", () => {
+    mocks.getSession.mockReturnValue(undefined);
+    const result = applyProfile(42, { suppress_pending_hint: true });
+    expect("applied" in result).toBe(true);
+    expect((result as { applied: Record<string, unknown> }).applied.suppress_pending_hint).toBeUndefined();
+  });
+});

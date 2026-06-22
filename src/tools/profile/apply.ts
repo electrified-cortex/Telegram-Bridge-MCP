@@ -171,6 +171,14 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
         }
       }
     }
+    if (profile.suppress_pending_hint !== undefined) {
+      const session = getSession(sid);
+      if (session) {
+        session.suppress_pending_hint = profile.suppress_pending_hint;
+        applied.suppress_pending_hint = profile.suppress_pending_hint;
+      }
+    }
+
     if (addedReminders.length > 0 || updatedReminders.length > 0) {
       const reminderSummary: Record<string, unknown> = {
         added: addedReminders,

@@ -35,6 +35,8 @@ export interface ProfileData {
   reminders?: ReminderDef[];
   name_tag?: string;
   autoload?: boolean;
+  /** When true, the hint field is omitted from dequeue responses (pending count is unaffected). */
+  suppress_pending_hint?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -297,15 +297,18 @@ export async function runDrainLoop(
     const pending = pendingCountAny();
     const result: Record<string, unknown> = { updates: compactBatch(events, sid) };
     if (pending > 0) result.pending = pending;
-    const hints: string[] = [];
-    const silenceHint = takeSilenceHint(sid);
-    if (silenceHint !== undefined) hints.push(silenceHint);
-    const voiceHint = buildVoiceBacklogHint(events, sid);
-    if (voiceHint !== undefined) hints.push(voiceHint);
-    // Pending-queue nudge: when more messages are waiting, suggest the
-    // processing preset so the operator knows the agent sees the backlog.
-    if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
-    if (hints.length > 0) result.hint = hints.join(" ");
+    // suppress_pending_hint profile flag: omit the entire hint field when set.
+    if (getSession(sid)?.suppress_pending_hint !== true) {
+      const hints: string[] = [];
+      const silenceHint = takeSilenceHint(sid);
+      if (silenceHint !== undefined) hints.push(silenceHint);
+      const voiceHint = buildVoiceBacklogHint(events, sid);
+      if (voiceHint !== undefined) hints.push(voiceHint);
+      // Pending-queue nudge: when more messages are waiting, suggest the
+      // processing preset so the operator knows the agent sees the backlog.
+      if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
+      if (hints.length > 0) result.hint = hints.join(" ");
+    }
     return result;
   }
 
