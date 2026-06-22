@@ -57,6 +57,10 @@ const mocks = vi.hoisted(() => ({
 
   // animation-state.js
   cancelAnimation: vi.fn().mockResolvedValue(undefined),
+
+  // child-registry.js
+  getChildSids: vi.fn().mockReturnValue([]),
+  unregisterChild: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -128,8 +132,8 @@ vi.mock("./tools/activity/file-state.js", () => ({ clearActivityFile: vi.fn().mo
 vi.mock("./channel.js", () => ({ unregisterChannelSubscriber: vi.fn() }));
 vi.mock("./tools/dequeue.js", () => ({ removeDequeueRateState: vi.fn() }));
 vi.mock("./tools/session/child-registry.js", () => ({
-  getChildSids: vi.fn().mockReturnValue([]),
-  unregisterChild: vi.fn(),
+  getChildSids: (...args: unknown[]) => mocks.getChildSids(...args),
+  unregisterChild: (...args: unknown[]) => mocks.unregisterChild(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -162,6 +166,7 @@ describe("session-teardown: silent_lifecycle profile flag", () => {
     mocks.getGovernorSid.mockReturnValue(0);
     mocks.drainQueue.mockReturnValue([]);
     mocks.getSessionAnnouncementMessage.mockReturnValue(undefined);
+    mocks.getChildSids.mockReturnValue([]);
     setupRootSession();
   });
 
@@ -276,5 +281,138 @@ describe("session-teardown: silent_lifecycle profile flag", () => {
     // readProfile is guarded behind the parent_sid check — should NOT be called
     // (since the whole block is gated on !sessionInfo?.parent_sid)
     expect(mocks.readProfile).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC1: Cascade teardown emits child_session_resolved to parent
+// ---------------------------------------------------------------------------
+
+describe("session-teardown: cascade close emits child_session_resolved (AC1)", () => {
+  const PARENT_SID = 10;
+  const CHILD_SID = 20;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.closeSession.mockReturnValue(true);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.getActiveSession.mockReturnValue(0);
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.drainQueue.mockReturnValue([]);
+    mocks.getSessionAnnouncementMessage.mockReturnValue(undefined);
+    mocks.readProfile.mockReturnValue(null);
+    mocks.sendServiceMessage.mockResolvedValue(undefined);
+    mocks.cancelAnimation.mockResolvedValue(undefined);
+    // Default: no children
+    mocks.getChildSids.mockReturnValue([]);
+    // Default: parent session (root, no parent_sid)
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { name: "Parent", parent_sid: undefined };
+      return undefined;
+    });
+  });
+
+  it("AC1: emits child_session_resolved to parent for each child in cascade", () => {
+    mocks.getChildSids.mockImplementation((sid: number) => sid === PARENT_SID ? [CHILD_SID] : []);
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { name: "Parent", parent_sid: undefined };
+      if (sid === CHILD_SID) return { name: "ChildBot", parent_sid: PARENT_SID, exit_status: "resolved" };
+      return undefined;
+    });
+
+    closeSessionById(PARENT_SID);
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      PARENT_SID,
+      expect.stringContaining("ChildBot"),
+      "child_session_resolved",
+      expect.objectContaining({ child_sid: CHILD_SID, child_name: "ChildBot", exit_status: "resolved" }),
+    );
+  });
+
+  it("AC1: payload uses empty exit_status when child has no exit_status field", () => {
+    mocks.getChildSids.mockImplementation((sid: number) => sid === PARENT_SID ? [CHILD_SID] : []);
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { name: "Parent", parent_sid: undefined };
+      if (sid === CHILD_SID) return { name: "ChildBot", parent_sid: PARENT_SID };  // no exit_status
+      return undefined;
+    });
+
+    closeSessionById(PARENT_SID);
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      PARENT_SID,
+      expect.any(String),
+      "child_session_resolved",
+      expect.objectContaining({ exit_status: "" }),
+    );
+  });
+
+  it("AC1: no emission when child session is not found (already closed)", () => {
+    // Only the parent has a child; the child itself has no sub-children
+    mocks.getChildSids.mockImplementation((sid: number) => sid === PARENT_SID ? [CHILD_SID] : []);
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { name: "Parent", parent_sid: undefined };
+      return undefined; // child not found — session already gone
+    });
+
+    closeSessionById(PARENT_SID);
+
+    const childResolvedCalls = (mocks.deliverServiceMessage.mock.calls as unknown[]).filter(
+      (c) => (c as unknown[])[2] === "child_session_resolved",
+    );
+    expect(childResolvedCalls).toHaveLength(0);
+  });
+
+  it("AC1: emits for each child when parent has multiple children", () => {
+    const CHILD_SID_2 = 21;
+    mocks.getChildSids.mockImplementation((sid: number) => sid === PARENT_SID ? [CHILD_SID, CHILD_SID_2] : []);
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { name: "Parent", parent_sid: undefined };
+      if (sid === CHILD_SID) return { name: "ChildA", parent_sid: PARENT_SID };
+      if (sid === CHILD_SID_2) return { name: "ChildB", parent_sid: PARENT_SID };
+      return undefined;
+    });
+
+    closeSessionById(PARENT_SID);
+
+    const childResolvedCalls = (mocks.deliverServiceMessage.mock.calls as unknown[]).filter(
+      (c) => (c as unknown[])[2] === "child_session_resolved",
+    );
+    expect(childResolvedCalls).toHaveLength(2);
+  });
+
+  it("AC1: emits child_session_resolved BEFORE closing child session (call ordering)", () => {
+    const callOrder: string[] = [];
+    mocks.deliverServiceMessage.mockImplementation(() => { callOrder.push("deliver"); return true; });
+    mocks.closeSession.mockImplementation(() => { callOrder.push("close"); return true; });
+
+    mocks.getChildSids.mockImplementation((sid: number) => sid === PARENT_SID ? [CHILD_SID] : []);
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { name: "Parent", parent_sid: undefined };
+      if (sid === CHILD_SID) return { name: "ChildBot", parent_sid: PARENT_SID };
+      return undefined;
+    });
+
+    closeSessionById(PARENT_SID);
+
+    const deliverIdx = callOrder.indexOf("deliver");
+    const firstCloseIdx = callOrder.indexOf("close");
+    expect(deliverIdx).not.toBe(-1);
+    expect(firstCloseIdx).not.toBe(-1);
+    // The deliver call for the child must come before the first closeSession call
+    expect(deliverIdx).toBeLessThan(firstCloseIdx);
+  });
+
+  it("AC1: does not emit child_session_resolved for sessions without children", () => {
+    mocks.getChildSids.mockReturnValue([]);
+
+    closeSessionById(PARENT_SID);
+
+    const childResolvedCalls = (mocks.deliverServiceMessage.mock.calls as unknown[]).filter(
+      (c) => (c as unknown[])[2] === "child_session_resolved",
+    );
+    expect(childResolvedCalls).toHaveLength(0);
   });
 });

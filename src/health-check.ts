@@ -185,8 +185,10 @@ async function runHealthCheck(thresholdMs: number): Promise<void> {
       }
 
       const name = session.name;
+      const isChildSession = session.parent_sid !== undefined;
 
-      // Delete the "unresponsive" warning if we tracked its message_id
+      // Delete the "unresponsive" warning if we tracked its message_id.
+      // (No-op for child sessions — their stale event went to parent dequeue, not Telegram.)
       const warningMsgId = _unresponsiveMsgIds.get(sid);
       _unresponsiveMsgIds.delete(sid);
       if (warningMsgId !== undefined) {
@@ -210,22 +212,25 @@ async function runHealthCheck(thresholdMs: number): Promise<void> {
         }
       }
 
-      // Post "back online" and track its message_id for later deletion
-      const backOnlineMsgId = await sendServiceMessage(`✅ ${name} is back online.`).catch(() => undefined);
-      if (backOnlineMsgId !== undefined) {
-        _backOnlineMsgIds.set(sid, backOnlineMsgId);
-        // Delete "back online" on the session's first real outbound send
-        registerOnceOnSend(sid, () => {
-          const msgId = _backOnlineMsgIds.get(sid);
-          _backOnlineMsgIds.delete(sid);
-          if (msgId !== undefined) {
-            const chatId = resolveChat();
-            if (typeof chatId === "number") {
-              void getRawApi().deleteMessage(chatId, msgId).catch(() => {});
+      if (!isChildSession) {
+        // Root session recovered: post "back online" to operator Telegram and track for deletion.
+        const backOnlineMsgId = await sendServiceMessage(`✅ ${name} is back online.`).catch(() => undefined);
+        if (backOnlineMsgId !== undefined) {
+          _backOnlineMsgIds.set(sid, backOnlineMsgId);
+          // Delete "back online" on the session's first real outbound send
+          registerOnceOnSend(sid, () => {
+            const msgId = _backOnlineMsgIds.get(sid);
+            _backOnlineMsgIds.delete(sid);
+            if (msgId !== undefined) {
+              const chatId = resolveChat();
+              if (typeof chatId === "number") {
+                void getRawApi().deleteMessage(chatId, msgId).catch(() => {});
+              }
             }
-          }
-        });
+          });
+        }
       }
+      // Child session recovery: no Telegram alert (isolation mandate — stale event went to parent dequeue).
 
       dlog("health", `session recovered sid=${sid} name=${name}`);
     }
@@ -256,10 +261,26 @@ async function runHealthCheck(thresholdMs: number): Promise<void> {
           if (msgId !== undefined) _unresponsiveMsgIds.set(session.sid, msgId);
         }
       } else {
-        const msgId = await sendServiceMessage(
-          `🟡 ${session.name} appears unresponsive.`,
-        ).catch(() => undefined);
-        if (msgId !== undefined) _unresponsiveMsgIds.set(session.sid, msgId);
+        const fullSession = getSession(session.sid);
+        if (fullSession?.parent_sid !== undefined) {
+          // Child session: emit stale event to parent's dequeue only (not Telegram).
+          // Isolation mandate: operator channel is for root sessions; parent gets lifecycle metadata.
+          const lastActiveAt = fullSession.lastPollAt
+            ? new Date(fullSession.lastPollAt).toISOString()
+            : fullSession.createdAt;
+          deliverServiceMessage(
+            fullSession.parent_sid,
+            SERVICE_MESSAGES.CHILD_SESSION_STALE.text(session.sid, session.name, lastActiveAt),
+            SERVICE_MESSAGES.CHILD_SESSION_STALE.eventType,
+            { child_sid: session.sid, child_name: session.name, last_active_at: lastActiveAt },
+          );
+        } else {
+          // Root non-governor session: operator Telegram alert (existing behavior).
+          const msgId = await sendServiceMessage(
+            `🟡 ${session.name} appears unresponsive.`,
+          ).catch(() => undefined);
+          if (msgId !== undefined) _unresponsiveMsgIds.set(session.sid, msgId);
+        }
       }
     }
   } finally {
