@@ -403,6 +403,66 @@ export const SERVICE_MESSAGES = deepFreeze({
       `Investigate — one caller may be consuming events intended for the other.`,
   },
 
+  // ── Sub-session host onboarding breadcrumbs ──────────────────────────────
+
+  /**
+   * R1 — Fired to the unskilled host on first session/request-guidance call.
+   * Explains the orchestrator role for sub-session-based routing.
+   * Delivered paired with R2 in the same DQ batch. bridge_authoritative: true.
+   */
+  ONBOARDING_SUBSESSION_HOST_ROLE: {
+    eventType: "onboarding_subsession_host_role" as const,
+    text: "You are a host session (orchestrator). When an inbound message has no thread match " +
+      "in your registry, route it to a dedicated sub-session instead of handling it inline.\n\n" +
+      "Your role:\n" +
+      "• Spawn sub-sessions per topic via session/spawn-child.\n" +
+      "• Dispatch a background sub-agent to each child session.\n" +
+      "• Forward operator messages to the right child via child/forward.\n" +
+      "• Revoke child sessions when their topics resolve.\n\n" +
+      "You remain the governor — ambiguous messages route to you first.",
+  },
+
+  /**
+   * R2 — Fired to the unskilled host on first session/request-guidance call (same batch as R1).
+   * Explains the spawn-and-forward sequence with exact action signatures.
+   * bridge_authoritative: true.
+   */
+  ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB: {
+    eventType: "onboarding_subsession_spawn_breadcrumb" as const,
+    text: "Sub-session routing sequence (exact action signatures):\n\n" +
+      "1. Spawn:\n" +
+      "   action(type: 'session/spawn-child', token: <host_token>, name: '<topic>')\n" +
+      "   → { token: <child_token>, sid: <child_sid>, display_index, ... }\n\n" +
+      "2. Dispatch: launch a background sub-agent with <child_token>.\n" +
+      "   Sub-agent loop: dequeue(token: <child_token>) → handle → repeat.\n\n" +
+      "3. Forward operator message to the child:\n" +
+      "   action(type: 'child/forward', token: <host_token>, child_sid: <child_sid>, message: <text>)\n\n" +
+      "4. Exit: sub-agent emits EXIT_STATUS: <summary>, then self-revokes:\n" +
+      "   action(type: 'session/revoke-child', token: <child_token>, child_token: <child_token>)\n" +
+      "   (Host may also revoke: token: <host_token>, child_token: <child_token>.)\n\n" +
+      "Repeat from step 1 for each unroutable topic. " +
+      "Re-call session/request-guidance to re-read this.",
+  },
+
+  /**
+   * R3 — Fired to the unskilled host on the first sub-session terminal signal (revoke-child).
+   * Guides the host on how to respond after a child session ends.
+   * bridge_authoritative: true. Delivered once per session lifetime.
+   *
+   * @param childSid SID of the resolved child session
+   * @param childName display name of the resolved child session
+   */
+  ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB: {
+    eventType: "onboarding_subsession_resolve_breadcrumb" as const,
+    text: (childSid: number, childName: string) =>
+      `Sub-session sid=${childSid} (${childName}) has terminated. ` +
+      `Check the EXIT_STATUS in the accompanying child_session_resolved event ` +
+      `to determine whether the topic is fully resolved.\n\n` +
+      `If more work is needed: spawn a new sub-session for the same topic ` +
+      `(action(type: 'session/spawn-child', ...)) and dispatch a fresh sub-agent.\n` +
+      `If resolved: continue handling new inbound messages as they arrive.`,
+  },
+
   // ── Child-session onboarding (R4) ────────────────────────────────────────
 
   /** Fired on child session's first dequeue. Token save reminder. */

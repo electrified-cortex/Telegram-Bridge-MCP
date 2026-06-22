@@ -19,6 +19,8 @@ import { handleSessionStart, handleSessionReconnect } from "./session/start.js";
 import { handleSpawnChild } from "./session/spawn-child.js";
 import { handleRevokeChild } from "./session/revoke-child.js";
 import { handleChildForward } from "./session/forward-child.js";
+import { handleRequestGuidance } from "./session/request-guidance.js";
+import { handleProfileTier } from "./profile/tier.js";
 import { handleChildNotify } from "./session/child-notify.js";
 import { handleRenameSession } from "./session/rename.js";
 import { handleSessionIdle } from "./session/idle.js";
@@ -144,6 +146,7 @@ export function setupActionRegistry(): void {
   registerAction("session/unblock", toActionHandler(handleSessionUnblock), { governor: true });
   registerAction("session/spawn-child", toActionHandler(handleSpawnChild));
   registerAction("session/revoke-child", toActionHandler(handleRevokeChild));
+  registerAction("session/request-guidance", toActionHandler(handleRequestGuidance));
   registerAction("child/forward", toActionHandler(handleChildForward));
   registerAction("child/notify", toActionHandler(handleChildNotify));
   registerAction("session/list", toActionHandler(handleListSessions));
@@ -172,6 +175,7 @@ export function setupActionRegistry(): void {
 
   // profile/*, reminder/*, logging/*, commands/*
   registerAction("profile/topic", toActionHandler(handleSetTopic));
+  registerAction("profile/tier", toActionHandler(handleProfileTier));
   registerAction("profile/save", toActionHandler(handleSaveProfile));
   registerAction("profile/load", toActionHandler(handleLoadProfile));
   registerAction("profile/import", toActionHandler(handleImportProfile));
@@ -756,6 +760,25 @@ export function register(server: McpServer): void {
             "When provided, the bridge checks whether this caller's session was closed and rejects immediately " +
             "with CALLER_CLOSED if so, without showing the operator approval dialog. " +
             "session/unblock (governor only): Clear the closed-session marker for this token so the caller may reconnect.",
+          ),
+        // session/request-guidance params
+        guidance_type: z
+          .string()
+          .optional()
+          .describe(
+            "session/request-guidance: Type of guidance to request. " +
+            "Currently only 'subsession-routing' is supported. " +
+            "Delivers R1 (host role) + R2 (spawn-and-forward sequence) as a paired batch. " +
+            "Exactly-once delivery per session name — subsequent calls are silently acknowledged.",
+          ),
+        // profile/tier params
+        tier: z
+          .string()
+          .optional()
+          .describe(
+            "profile/tier: Routing tier for this session. Only 'skilled-router' is accepted. " +
+            "Suppresses breadcrumb injection (R1/R2/R3) for the current session lifetime. " +
+            "Root sessions only — child sessions receive PERMISSION_DENIED.",
           ),
       },
     },

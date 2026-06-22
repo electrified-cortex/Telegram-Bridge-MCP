@@ -50,6 +50,19 @@ export interface Session {
    */
   suppress_pending_hint?: boolean;
   /**
+   * Subsession routing tier for this session.
+   * 'skilled-router' — host has opted out of breadcrumb injection (R1/R2/R3).
+   * undefined (default) — unskilled; bridge delivers breadcrumbs on request.
+   * Set via action(type: 'profile/tier', tier: 'skilled-router') on root sessions only.
+   * This is a breadcrumb-suppression-only signal (subset of PRD 10-2100 capability model).
+   */
+  tier?: 'skilled-router';
+  /**
+   * Set to true after R3 (ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB) has been delivered
+   * to this session. Prevents duplicate R3 fires within a single session lifetime.
+   */
+  r3_guidance_delivered?: boolean;
+  /**
    * Capability level for this session.
    * - `'full'` (default): no restrictions.
    * - `'gather'`: may not call session/start, session/spawn-child, or commit-class actions.
@@ -632,6 +645,45 @@ export function setSessionCapability(
 ): void {
   const s = _sessions.get(sid);
   if (s) s.child_capability = capability;
+}
+
+// ── Subsession guidance tier ───────────────────────────────
+
+/**
+ * Get the subsession routing tier for a session.
+ * Returns 'skilled-router' if the session has opted out of breadcrumb injection.
+ * Returns undefined (unskilled, default) for all other sessions.
+ */
+export function getSessionTier(sid: number): 'skilled-router' | undefined {
+  return _sessions.get(sid)?.tier;
+}
+
+/**
+ * Set the subsession routing tier for a session.
+ * Gating (root-only check) is enforced in the profile/tier action handler.
+ * No-op if the session does not exist.
+ */
+export function setSessionTier(sid: number, tier: 'skilled-router'): void {
+  const s = _sessions.get(sid);
+  if (s) s.tier = tier;
+}
+
+/**
+ * Return true if R3 (ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB) has already
+ * been delivered to this session. Prevents duplicate R3 fires within a single
+ * session lifetime. Resets when the session closes (in-memory, not persisted).
+ */
+export function isR3GuidanceDelivered(sid: number): boolean {
+  return !!_sessions.get(sid)?.r3_guidance_delivered;
+}
+
+/**
+ * Mark R3 as delivered for a session. Called by revoke-child after delivering R3.
+ * No-op if the session does not exist.
+ */
+export function markR3GuidanceDelivered(sid: number): void {
+  const s = _sessions.get(sid);
+  if (s) s.r3_guidance_delivered = true;
 }
 
 // ── Name Tag ───────────────────────────────────────────────
