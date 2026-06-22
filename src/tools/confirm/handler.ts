@@ -18,6 +18,7 @@ import { isTtsEnabled, stripForTts, synthesizeToOgg } from "../../tts.js";
 import { getSessionVoice, getSessionSpeed } from "../../voice-state.js";
 import { getDefaultVoice } from "../../config.js";
 import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../../typing-state.js";
+import { tryPinQuestion, untrackAndUnpinQuestion } from "../../question-pin-state.js";
 
 const DESCRIPTION_CONFIRM =
   "Sends an OK/Cancel confirmation message and waits until the user presses a " +
@@ -174,6 +175,13 @@ export async function confirmHandler(
     // Create a proxy so the rest of the function can reference sent.message_id uniformly
     const sent = { message_id: sentMessageId };
 
+    // Auto-pin for non-DM chats (AC1, AC5).
+    // DM chats (chatId > 0) are excluded — pin semantics in DMs are irrelevant.
+    let questionPinned = false;
+    if (chatId < 0) {
+      questionPinned = await tryPinQuestion(chatId, sent.message_id, _sid);
+    }
+
     // Register callback hook — handles button clicks even after poll timeout.
     // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue.
     // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
@@ -196,76 +204,83 @@ export async function confirmHandler(
       editWithSkipped(chatId, sent.message_id, text, !!audio).catch(() => {/* non-fatal */});
     };
 
-    const result = await pollButtonOrTextOrVoice(
-      chatId, sent.message_id, timeout_seconds,
-      onVoiceDetected, signal, _sid,
-    );
+    try {
+      const result = await pollButtonOrTextOrVoice(
+        chatId, sent.message_id, timeout_seconds,
+        onVoiceDetected, signal, _sid,
+      );
 
-    if (!result) {
-      // Timeout or abort — immediately remove the buttons and show "Timed out".
-      // Run in the tool's session context so the session header is consistent.
-      void runInSessionContext(_sid, () =>
-        editWithTimedOut(chatId, sent.message_id, text, !!audio),
-      ).catch(() => {/* non-fatal */});
-      // Replace the callback hook with an ack-only version: if a late button
-      // press arrives, we still acknowledge it (removes the Telegram spinner)
-      // but skip the re-edit since the message was already cleaned up above.
-      clearCallbackHook(sent.message_id);
-      registerCallbackHook(sent.message_id, (evt) => {
-        const qid = evt.content.qid;
-        clearMessageHook(sent.message_id);
-        if (qid) {
-          void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
-        }
-      }, _sid);
-      // Also register a message hook: if a late click still comes in before
-      // the callback hook processes it, the next message will clear up anything
-      // that remains (buttons already gone, but hook cleans the callback hook).
-      registerMessageHook(sent.message_id, () => {
+      if (!result) {
+        // Timeout or abort — immediately remove the buttons and show "Timed out".
+        // Run in the tool's session context so the session header is consistent.
+        void runInSessionContext(_sid, () =>
+          editWithTimedOut(chatId, sent.message_id, text, !!audio),
+        ).catch(() => {/* non-fatal */});
+        // Replace the callback hook with an ack-only version: if a late button
+        // press arrives, we still acknowledge it (removes the Telegram spinner)
+        // but skip the re-edit since the message was already cleaned up above.
         clearCallbackHook(sent.message_id);
-      });
-      return toResult({ timed_out: true, message_id: sent.message_id });
-    }
-
-    // User typed or spoke instead of pressing a button
-    if (result.kind === "text" || result.kind === "voice") {
-      clearCallbackHook(sent.message_id);
-      if (result.reply_to === sent.message_id) {
-        // Operator explicitly replied to this question — resolved as "replied", not "skipped"
-        await editWithReplied(chatId, sent.message_id, text, !!audio);
-        return toResult({ resolution: "replied", text: result.text ?? "", message_id: result.message_id });
+        registerCallbackHook(sent.message_id, (evt) => {
+          const qid = evt.content.qid;
+          clearMessageHook(sent.message_id);
+          if (qid) {
+            void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
+          }
+        }, _sid);
+        // Also register a message hook: if a late click still comes in before
+        // the callback hook processes it, the next message will clear up anything
+        // that remains (buttons already gone, but hook cleans the callback hook).
+        registerMessageHook(sent.message_id, () => {
+          clearCallbackHook(sent.message_id);
+        });
+        return toResult({ timed_out: true, message_id: sent.message_id });
       }
-      if (!editState.done) await editWithSkipped(chatId, sent.message_id, text, !!audio);
+
+      // User typed or spoke instead of pressing a button
+      if (result.kind === "text" || result.kind === "voice") {
+        clearCallbackHook(sent.message_id);
+        if (result.reply_to === sent.message_id) {
+          // Operator explicitly replied to this question — resolved as "replied", not "skipped"
+          await editWithReplied(chatId, sent.message_id, text, !!audio);
+          return toResult({ resolution: "replied", text: result.text ?? "", message_id: result.message_id });
+        }
+        if (!editState.done) await editWithSkipped(chatId, sent.message_id, text, !!audio);
+        return toResult({
+          skipped: true,
+          text_response: result.text,
+          text_message_id: result.message_id,
+          message_id: sent.message_id,
+        });
+      }
+
+      // Slash command interrupted the confirmation — mark as skipped
+      if (result.kind === "command") {
+        clearCallbackHook(sent.message_id);
+        await editWithSkipped(chatId, sent.message_id, text, !!audio);
+        return toResult({
+          skipped: true,
+          command: result.command,
+          args: result.args,
+          message_id: sent.message_id,
+        });
+      }
+
+      // Button was pressed — hook already acked + edited.
+      const confirmed = result.data === yes_data;
+      const compact = response_format === "compact";
+
       return toResult({
-        skipped: true,
-        text_response: result.text,
-        text_message_id: result.message_id,
+        ...(compact ? {} : { timed_out: false }),
+        confirmed,
+        value: result.data,
         message_id: sent.message_id,
       });
+    } finally {
+      // Auto-unpin on resolution — button press, timeout, or cancellation (AC2, AC3).
+      if (questionPinned) {
+        await untrackAndUnpinQuestion(chatId, sent.message_id);
+      }
     }
-
-    // Slash command interrupted the confirmation — mark as skipped
-    if (result.kind === "command") {
-      clearCallbackHook(sent.message_id);
-      await editWithSkipped(chatId, sent.message_id, text, !!audio);
-      return toResult({
-        skipped: true,
-        command: result.command,
-        args: result.args,
-        message_id: sent.message_id,
-      });
-    }
-
-    // Button was pressed — hook already acked + edited.
-    const confirmed = result.data === yes_data;
-    const compact = response_format === "compact";
-
-    return toResult({
-      ...(compact ? {} : { timed_out: false }),
-      confirmed,
-      value: result.data,
-      message_id: sent.message_id,
-    });
   } catch (err) {
     return toError(err);
   }
