@@ -871,4 +871,156 @@ describe("health-check", () => {
       expect(mocks.sendServiceMessage).toHaveBeenCalledTimes(2);
     });
   });
+
+  // ── AC2: child session stale → parent dequeue (not operator Telegram) ──────
+
+  describe("AC2: child session stale — emits child_session_stale to parent dequeue", () => {
+    const PARENT_SID = 1;
+    const CHILD_SID = 2;
+    const LAST_POLL = new Date("2026-06-21T12:00:00.000Z").getTime();
+
+    function makeChildSession(sid: number, name: string, parentSid: number, lastPollAt?: number) {
+      return {
+        sid,
+        name,
+        color: "🟩",
+        createdAt: "2026-06-21T11:00:00.000Z",
+        healthy: false,
+        parent_sid: parentSid,
+        lastPollAt,
+        connectionToken: "tok",
+      };
+    }
+
+    it("AC2a: emits child_session_stale to parent dequeue via deliverServiceMessage", async () => {
+      const child = makeSession(CHILD_SID, "ChildBot");
+      mocks.getUnhealthySessions.mockReturnValue([child]);
+      mocks.getGovernorSid.mockReturnValue(PARENT_SID); // parent is governor
+      mocks.getSession.mockReturnValue(makeChildSession(CHILD_SID, "ChildBot", PARENT_SID, LAST_POLL));
+
+      await _runHealthCheckNow();
+
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        PARENT_SID,
+        expect.stringContaining("ChildBot"),
+        "child_session_stale",
+        expect.objectContaining({ child_sid: CHILD_SID, child_name: "ChildBot" }),
+      );
+    });
+
+    it("AC2b: payload contains last_active_at derived from lastPollAt", async () => {
+      const child = makeSession(CHILD_SID, "ChildBot");
+      mocks.getUnhealthySessions.mockReturnValue([child]);
+      mocks.getGovernorSid.mockReturnValue(0);
+      mocks.getSession.mockReturnValue(makeChildSession(CHILD_SID, "ChildBot", PARENT_SID, LAST_POLL));
+
+      await _runHealthCheckNow();
+
+      const call = mocks.deliverServiceMessage.mock.calls.find(
+        (c: unknown[]) => c[2] === "child_session_stale",
+      );
+      expect(call).toBeDefined();
+      expect((call as unknown[])[3]).toMatchObject({
+        child_sid: CHILD_SID,
+        child_name: "ChildBot",
+        last_active_at: new Date(LAST_POLL).toISOString(),
+      });
+    });
+
+    it("AC2c: does NOT call sendServiceMessage for child sessions (no operator Telegram)", async () => {
+      const child = makeSession(CHILD_SID, "ChildBot");
+      mocks.getUnhealthySessions.mockReturnValue([child]);
+      mocks.getGovernorSid.mockReturnValue(0);
+      mocks.getSession.mockReturnValue(makeChildSession(CHILD_SID, "ChildBot", PARENT_SID, LAST_POLL));
+
+      await _runHealthCheckNow();
+
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    });
+
+    it("AC2d: root non-governor sessions still use operator Telegram (no regression)", async () => {
+      const rootSession = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([rootSession]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      // Root session has no parent_sid
+      mocks.getSession.mockReturnValue({ sid: 2, name: "Worker", healthy: false, lastPollAt: LAST_POLL, createdAt: "2026-06-21T11:00:00.000Z", connectionToken: "tok" });
+
+      await _runHealthCheckNow();
+
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+      const childStaleCalls = mocks.deliverServiceMessage.mock.calls.filter(
+        (c: unknown[]) => c[2] === "child_session_stale",
+      );
+      expect(childStaleCalls).toHaveLength(0);
+    });
+
+    it("AC2e: last_active_at falls back to createdAt when lastPollAt is undefined", async () => {
+      const child = makeSession(CHILD_SID, "ChildBot");
+      mocks.getUnhealthySessions.mockReturnValue([child]);
+      mocks.getGovernorSid.mockReturnValue(0);
+      mocks.getSession.mockReturnValue(makeChildSession(CHILD_SID, "ChildBot", PARENT_SID, undefined));
+
+      await _runHealthCheckNow();
+
+      const call = mocks.deliverServiceMessage.mock.calls.find(
+        (c: unknown[]) => c[2] === "child_session_stale",
+      );
+      expect((call as unknown[])[3]).toMatchObject({
+        last_active_at: "2026-06-21T11:00:00.000Z", // createdAt fallback
+      });
+    });
+  });
+
+  // ── AC2: recovery path — child sessions suppress Telegram "back online" ────
+
+  describe("AC2: child session recovery — suppresses operator Telegram back-online", () => {
+    const PARENT_SID = 1;
+    const CHILD_SID = 2;
+
+    function makeChildSession(sid: number, name: string, parentSid: number) {
+      return { sid, name, color: "🟩", createdAt: "2026-06-21T11:00:00.000Z", healthy: true, parent_sid: parentSid, connectionToken: "tok" };
+    }
+
+    it("suppresses Telegram back-online for child sessions on recovery", async () => {
+      const child = makeSession(CHILD_SID, "ChildBot");
+      mocks.getUnhealthySessions.mockReturnValue([child]);
+      mocks.getGovernorSid.mockReturnValue(PARENT_SID);
+      mocks.getSession.mockReturnValue(makeChildSession(CHILD_SID, "ChildBot", PARENT_SID));
+
+      await _runHealthCheckNow(); // tick 1 — flag child session
+
+      // Child recovers
+      mocks.getUnhealthySessions.mockReturnValue([]);
+      mocks.getSession.mockReturnValue(makeChildSession(CHILD_SID, "ChildBot", PARENT_SID));
+      mocks.sendServiceMessage.mockClear();
+
+      await _runHealthCheckNow(); // tick 2 — recovery
+
+      // No back-online message for child session
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    });
+
+    it("still sends Telegram back-online for root sessions on recovery (no regression)", async () => {
+      const rootSession = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([rootSession]);
+      mocks.getGovernorSid.mockReturnValue(1); // governor is sid 1
+      mocks.getSession.mockReturnValue({ sid: 2, name: "Worker", color: "🟩", createdAt: "2026-06-21T11:00:00.000Z", healthy: false, connectionToken: "tok" });
+
+      await _runHealthCheckNow(); // tick 1 — flag root session
+
+      // Root session recovers
+      mocks.getUnhealthySessions.mockReturnValue([]);
+      mocks.getSession.mockReturnValue({ sid: 2, name: "Worker", color: "🟩", createdAt: "2026-06-21T11:00:00.000Z", healthy: true, connectionToken: "tok" });
+      mocks.sendServiceMessage.mockClear();
+      mocks.sendServiceMessage.mockResolvedValue(55);
+
+      await _runHealthCheckNow(); // tick 2 — recovery
+
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("back online"),
+      );
+    });
+  });
 });

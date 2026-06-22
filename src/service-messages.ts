@@ -515,6 +515,20 @@ export const SERVICE_MESSAGES = deepFreeze({
       `Sub-agent on sid=\`${childSid}\` (\`${childName}\`) exited. Exit status: \`${exitStatus}\`.`,
   },
 
+  // ── Child session stale notification ─────────────────────────────────────
+
+  /**
+   * Fired to the parent SID when the health-check detects a child session has
+   * exceeded the inactivity threshold. Delivers lifecycle metadata only — no
+   * message content or routing information (isolation mandate).
+   */
+  CHILD_SESSION_STALE: {
+    eventType: "child_session_stale" as const,
+    /** @param childSid SID of the child session, @param childName child session name, @param lastActiveAt ISO string of last poll timestamp */
+    text: (childSid: number, childName: string, lastActiveAt: string) =>
+      `Sub-agent on sid=\`${childSid}\` (\`${childName}\`) appears stale — last active at ${lastActiveAt}.`,
+  },
+
   // ── Presence / silent-work nudges ─────────────────────────────────────────
 
   NUDGE_PRESENCE_RUNG1: {
