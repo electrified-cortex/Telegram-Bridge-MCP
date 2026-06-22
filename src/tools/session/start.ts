@@ -356,12 +356,22 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
           save_token_to: "memory/telegram/session.token",
           hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
         };
+
+        // Read profile once for both silent_lifecycle check and later autoload.
+        // Only relevant for root sessions (parentSid === undefined) with a name.
+        const _startProfile = (effectiveName && parentSid === undefined)
+          ? (() => { try { return readProfile(effectiveName); } catch { return null; } })()
+          : null;
+        // When true, skip the public "🟢 Online" Telegram announcement.
+        const silentLifecycle = _startProfile?.silent_lifecycle === true;
+
         if (isFirstSession) {
           // First session is the governor by default
           setGovernorSid(session.sid);
           // Send visible announcement with name tag — same format as 2nd+ sessions.
           // buildHeader() intentionally skips single-session mode; compose inline.
-          const _announcement = await Promise.resolve(
+          // Suppressed when the session's profile has silent_lifecycle: true.
+          const _announcement = silentLifecycle ? undefined : await Promise.resolve(
             runInSessionContext(session.sid, () =>
               getApi().sendMessage(chatId, `${session.color} \`${markdownToV2(effectiveName)}\`\nSession ${session.sid} — 🟢 Online`, { parse_mode: "MarkdownV2" }),
             ),
@@ -399,7 +409,8 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
             // operator (and other sessions) can reply-to-address this session.
             // runInSessionContext sets the ALS SID so the proxy prepends the
             // correct name tag ("🟨 Worker 1\nSession 2 — 🟢 Online").
-            const _announcement = await Promise.resolve(
+            // Suppressed when the session's profile has silent_lifecycle: true.
+            const _announcement = silentLifecycle ? undefined : await Promise.resolve(
               runInSessionContext(session.sid, () =>
                 getApi().sendMessage(chatId, `Session ${session.sid} — 🟢 Online`),
               ),
@@ -470,10 +481,10 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
         }
 
         // Auto-load profile matching session name (opt-in; skipped for child sessions).
+        // Reuses _startProfile already read above for silent_lifecycle check.
         if (effectiveName && parentSid === undefined) {
-          const profile = readProfile(effectiveName);
-          if (profile && (autoload_profile === true || profile.autoload === true)) {
-            applyProfile(session.sid, profile);
+          if (_startProfile && (autoload_profile === true || _startProfile.autoload === true)) {
+            applyProfile(session.sid, _startProfile);
             res.profile_autoloaded = effectiveName;
           }
         }

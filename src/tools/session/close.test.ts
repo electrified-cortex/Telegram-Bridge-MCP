@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   requestOperatorApproval: vi.fn().mockResolvedValue("approved"),
   refreshGovernorCommand: vi.fn(),
   cancelAnimation: vi.fn().mockResolvedValue({ cancelled: true }),
+  readProfile: vi.fn((_key: string): Record<string, unknown> | null => null),
 }));
 
 vi.mock("../../session-manager.js", () => ({
@@ -96,6 +97,10 @@ vi.mock("../../animation-state.js", () => ({
   cancelAnimation: (...args: unknown[]) => mocks.cancelAnimation(...args),
 }));
 
+vi.mock("../../profile-store.js", () => ({
+  readProfile: (key: string) => mocks.readProfile(key),
+}));
+
 import { register } from "./close.js";
 
 describe("close_session tool", () => {
@@ -113,6 +118,7 @@ describe("close_session tool", () => {
     mocks.drainQueue.mockReturnValue([]);
     mocks.resolveChat.mockReturnValue(1001);
     mocks.requestOperatorApproval.mockResolvedValue("approved");
+    mocks.readProfile.mockReturnValue(null); // default: no profile → announcements shown
     const server = createMockServer();
     register(server);
     call = server.getHandler("close_session");
@@ -742,6 +748,77 @@ describe("close_session tool", () => {
     await call({ token: 1123456 });
 
     expect(mocks.cancelAnimation).not.toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // AC3: silent_lifecycle — suppress "has disconnected" on session close
+  // =========================================================================
+
+  it("AC3: suppresses disconnect sendServiceMessage when profile has silent_lifecycle: true", async () => {
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+    mocks.listSessions.mockReturnValue([]);
+    mocks.getSession.mockReturnValue({ name: "Overseer", createdAt: "2026-03-17" });
+
+    await call({ token: 1123456 });
+
+    // sendServiceMessage should NOT have been called with the disconnect message
+    const disconnectCalls = mocks.sendServiceMessage.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("has disconnected"),
+    );
+    expect(disconnectCalls).toHaveLength(0);
+  });
+
+  it("AC5 (close): sends disconnect message when profile does NOT have silent_lifecycle (default false)", async () => {
+    mocks.readProfile.mockReturnValue(null); // no profile → default behavior
+    mocks.listSessions.mockReturnValue([]);
+    mocks.getSession.mockReturnValue({ name: "Alpha", createdAt: "2026-03-17" });
+
+    await call({ token: 1123456 });
+
+    // sendServiceMessage SHOULD have been called with the disconnect message
+    const disconnectCalls = mocks.sendServiceMessage.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("has disconnected"),
+    );
+    expect(disconnectCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("AC5 (close): sends disconnect message when profile has silent_lifecycle: false", async () => {
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: false });
+    mocks.listSessions.mockReturnValue([]);
+    mocks.getSession.mockReturnValue({ name: "Alpha", createdAt: "2026-03-17" });
+
+    await call({ token: 1123456 });
+
+    const disconnectCalls = mocks.sendServiceMessage.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("has disconnected"),
+    );
+    expect(disconnectCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("AC4: deliverServiceMessage (dequeue-side session_closed) is NOT suppressed by silent_lifecycle", async () => {
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+    mocks.listSessions.mockReturnValue([{ sid: 2, name: "Governor", createdAt: "2026-03-17" }]);
+    mocks.getSession.mockReturnValue({ name: "Overseer", createdAt: "2026-03-17" });
+    mocks.getGovernorSid.mockReturnValue(0);
+
+    await call({ token: 1123456 });
+
+    // deliverServiceMessage to remaining sessions should still be called (not suppressed)
+    expect(mocks.deliverServiceMessage).toHaveBeenCalled();
+  });
+
+  it("AC3: sub-session close does NOT call sendServiceMessage even without silent_lifecycle (parent_sid present)", async () => {
+    mocks.readProfile.mockReturnValue(null); // no profile
+    mocks.listSessions.mockReturnValue([]);
+    // Sub-session: parent_sid is set
+    mocks.getSession.mockReturnValue({ name: "Child", createdAt: "2026-03-17", parent_sid: 1 });
+
+    await call({ token: 1123456 });
+
+    const disconnectCalls = mocks.sendServiceMessage.mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("has disconnected"),
+    );
+    expect(disconnectCalls).toHaveLength(0);
   });
 });
 

@@ -45,6 +45,7 @@ import { handleSleepReminder } from "./reminder/sleep.js";
 import { handleScheduleReminder } from "./reminder/schedule.js";
 import { handleReminderUnschedule } from "./reminder/unschedule.js";
 import { handleSetDequeueDefault } from "./profile/dequeue-default.js";
+import { handleSilentLifecycle } from "./profile/silent-lifecycle.js";
 import { handleNotifyDebounce, handleKickDebounce } from "./profile/notify-debounce.js";
 import { handleKickGate } from "./profile/activity-kick-gate.js";
 import { handleSetDefaultAnimation } from "./animation/default.js";
@@ -200,6 +201,7 @@ export function setupActionRegistry(): void {
   registerAction("reminder/schedule", toActionHandler(handleScheduleReminder));
   registerAction("reminder/unschedule", toActionHandler(handleReminderUnschedule));
   registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
+  registerAction("profile/silent-lifecycle", toActionHandler(handleSilentLifecycle));
   registerAction("profile/kick-gate", toActionHandler(handleKickGate));
   registerAction("profile/notify-debounce", toActionHandler(handleNotifyDebounce));
   registerAction("profile/kick-lockout", toActionHandler(handleNotifyDebounce)); // backward-compat alias for profile/notify-debounce
@@ -580,11 +582,11 @@ export function register(server: McpServer): void {
           .boolean()
           .optional()
           .describe("animation/default: Reset to built-in default animation."),
-        // logging/toggle params
+        // logging/toggle and profile/silent-lifecycle params
         enabled: z
           .boolean()
           .optional()
-          .describe("logging/toggle: true to enable logging, false to disable."),
+          .describe("logging/toggle: true to enable logging, false to disable. profile/silent-lifecycle: true to suppress public lifecycle announcements, false to restore them. Omit for GET (returns current value)."),
         // message/history params
         count: z
           .number()

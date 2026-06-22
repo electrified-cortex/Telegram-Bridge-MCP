@@ -45,6 +45,31 @@ export interface Session {
   /** SID of the parent session that spawned this one. Undefined for root sessions. */
   parent_sid?: number;
   /**
+   * When true, the hint field is omitted from dequeue responses.
+   * The pending count is unaffected. Set via profile/save + profile/load.
+   */
+  suppress_pending_hint?: boolean;
+  /**
+   * Subsession routing tier for this session.
+   * 'skilled-router' — host has opted out of breadcrumb injection (R1/R2/R3).
+   * undefined (default) — unskilled; bridge delivers breadcrumbs on request.
+   * Set via action(type: 'profile/tier', tier: 'skilled-router') on root sessions only.
+   * This is a breadcrumb-suppression-only signal (subset of PRD 10-2100 capability model).
+   */
+  tier?: 'skilled-router';
+  /**
+   * Set to true after R3 (ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB) has been delivered
+   * to this session. Prevents duplicate R3 fires within a single session lifetime.
+   */
+  r3_guidance_delivered?: boolean;
+  /**
+   * When true, the public Telegram chat announcements for session-start and
+   * session-close lifecycle events are suppressed. Set via profile/save
+   * { silent_lifecycle: true } + profile/load, or at emission time from the
+   * session's profile file.
+   */
+  silent_lifecycle?: boolean;
+  /**
    * Capability level for this session.
    * - `'full'` (default): no restrictions.
    * - `'gather'`: may not call session/start, session/spawn-child, or commit-class actions.

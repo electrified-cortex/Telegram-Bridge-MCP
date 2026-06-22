@@ -203,5 +203,68 @@ describe("save_profile tool", () => {
     expect(written).not.toHaveProperty("name_tag");
   });
 
+  // AC4: persist suppress_pending_hint when set on session
+  it("includes suppress_pending_hint: true in saved profile when session has it set", async () => {
+    mocks.writeProfile.mockReset();
+    mocks.getSession.mockReturnValue({ suppress_pending_hint: true });
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).toHaveProperty("suppress_pending_hint", true);
+    const data = parseResult(result);
+    expect(data.sections).toContain("suppress_pending_hint");
+  });
+
+  // AC5: persist suppress_pending_hint: false (explicit disable)
+  it("includes suppress_pending_hint: false in saved profile when session has it explicitly false", async () => {
+    mocks.writeProfile.mockReset();
+    mocks.getSession.mockReturnValue({ suppress_pending_hint: false });
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).toHaveProperty("suppress_pending_hint", false);
+    const data = parseResult(result);
+    expect(data.sections).toContain("suppress_pending_hint");
+  });
+
+  // Default: suppress_pending_hint not serialized when undefined
+  it("does NOT include suppress_pending_hint in saved profile when session field is undefined", async () => {
+    mocks.writeProfile.mockReset();
+    mocks.getSession.mockReturnValue({ name_tag: undefined });
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).not.toHaveProperty("suppress_pending_hint");
+  });
+
+  // ── AC6: silent_lifecycle persistence ──────────────────────────────────────
+
+  // AC6: persists silent_lifecycle: true when passed as parameter
+  it("AC6: persists silent_lifecycle: true in saved profile when parameter is true", async () => {
+    mocks.writeProfile.mockReset();
+    const result = await call({ key: "SilentBot", silent_lifecycle: true, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).toHaveProperty("silent_lifecycle", true);
+    const data = parseResult(result);
+    expect(data.sections).toContain("silent_lifecycle");
+  });
+
+  it("AC6: persists silent_lifecycle: false when parameter is false", async () => {
+    mocks.writeProfile.mockReset();
+    const result = await call({ key: "SilentBot", silent_lifecycle: false, token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).toHaveProperty("silent_lifecycle", false);
+    const data = parseResult(result);
+    expect(data.sections).toContain("silent_lifecycle");
+  });
+
+  it("AC6: does NOT persist silent_lifecycle when parameter is omitted", async () => {
+    mocks.writeProfile.mockReset();
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).not.toHaveProperty("silent_lifecycle");
+  });
+
   testIdentityGate((args) => call(args), mocks.validateSession, {"key":"Test"}, false);
 });

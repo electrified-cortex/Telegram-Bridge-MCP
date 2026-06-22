@@ -35,6 +35,15 @@ export interface ProfileData {
   reminders?: ReminderDef[];
   name_tag?: string;
   autoload?: boolean;
+  /** When true, the hint field is omitted from dequeue responses (pending count is unaffected). */
+  suppress_pending_hint?: boolean;
+  /**
+   * When `true`, suppresses the public Telegram chat announcement on session
+   * start (the "🟢 Online" post) and the "has disconnected" post on session
+   * close. Approval-prompt dialogs, agent `send` posts, and governance
+   * notifications are unaffected. Default `false`/undefined — no change.
+   */
+  silent_lifecycle?: boolean;
 }
 
 // ---------------------------------------------------------------------------
