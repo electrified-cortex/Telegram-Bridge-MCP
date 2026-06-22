@@ -65,9 +65,9 @@ not a force-stop.
 - Consider whether this should be configurable (`PERSISTENT_ANIMATION_WARN_MS`,
   default 600_000) or hardcoded
 
-## Overseer review
+## Agent review
 
-- **Reviewer:** Overseer
+- **Reviewer:** Agent
 - **Date:** 2026-06-12
 - **Verdict:** APPROVED — operator explicit sign-off ("dispatch anytime, fine to start working")
 - **Review type:** adversarial-manual

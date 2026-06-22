@@ -40,7 +40,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireAuth.mockReturnValue(SID);
   // Default: root session (no parent_sid)
-  mocks.getSession.mockReturnValue({ sid: SID, name: "Overseer", color: "🟦" });
+  mocks.getSession.mockReturnValue({ sid: SID, name: "Agent", color: "🟦" });
   mocks.setSessionTier.mockImplementation(() => {});
 });
 

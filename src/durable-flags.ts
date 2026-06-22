@@ -5,9 +5,9 @@
  * Each file contains a flat record of flag names to boolean values.
  *
  * Usage:
- *   hasDurableFlag("Overseer", "subsession_guidance_delivered") → false
- *   setDurableFlag("Overseer", "subsession_guidance_delivered")
- *   hasDurableFlag("Overseer", "subsession_guidance_delivered") → true
+ *   hasDurableFlag("MyAgent", "subsession_guidance_delivered") → false
+ *   setDurableFlag("MyAgent", "subsession_guidance_delivered")
+ *   hasDurableFlag("MyAgent", "subsession_guidance_delivered") → true
  *
  * In-process write-through cache avoids repeated disk reads per request.
  * All I/O is best-effort — errors are swallowed so flag checks never crash the bridge.

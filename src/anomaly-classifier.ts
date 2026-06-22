@@ -1,5 +1,5 @@
 /**
- * Anomaly classifier and escalation router for Worker/Overseer loops.
+ * Anomaly classifier and escalation router for agent monitoring loops.
  *
  * Loads anomaly categories from `src/anomaly-taxonomy.json` (data file — do not
  * hardcode categories here). On each `reportAnomaly()` call:

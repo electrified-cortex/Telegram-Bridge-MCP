@@ -1,14 +1,14 @@
 ---
 id: 20-1903-bt2229-swarm-review-open-findings
-title: "BT-2229 v7.9.0 swarm-review — open findings (post-PR #206 follow-up)"
+title: "v7.9.0 swarm-review — open findings (post-PR #206 follow-up)"
 Created: 2026-06-09
 Status: queued
 Priority: 20
 type: followup
-Source: Overseer swarm review of dev-7.9 (6 reviewers + arbitrator), foreman outbox swarm-review-dev-7.9.md
+Source: agent swarm review of dev-7.9 (6 reviewers + arbitrator), foreman outbox swarm-review-dev-7.9.md
 ---
 
-# BT-2229 v7.9.0 — open swarm-review findings (captured so nothing is lost)
+# v7.9.0 — open swarm-review findings (captured so nothing is lost)
 
 Full report (durable copy this captures from):
 `.foreman-pod/messages/outbox/swarm-review-dev-7.9.md`
@@ -50,21 +50,21 @@ to rate-limit "wedged" agents (rationale thin: a polling-and-timing-out agent is
 
 Original finding (for the record):
 **Scheduled reminders fire (in-loop dequeue check works) but did NOT wake an agent parked on
-its activity-FILE monitor — which is how BT (the intended user) and Curator park.** The
+its activity-FILE monitor — which is how operator (the intended user) and Curator park.** The
 feature was effectively undelivered for file-parked agents.
 
 - Sweep (`reminder-state.ts:113`) calls ONLY `kickSseSubscriber(sid)` when due. SSE-only.
 - `kickSseSubscriber` (`sse-endpoint.ts`) = `res.write("data: kick")`, does NOT touch the activity file.
 - The activity-file kick is `kickIfAllowed` (touches file via doTouchWithRollback). dequeue.ts
   calls it (`:358`, `:524`) but ONLY while the agent is already dequeuing — can't wake a parked agent.
-- BT parks on `bash monitor.sh` on the bridge activity FILE (BT handoff), not SSE.
-- Result: SSE-parked agents wake; activity-file-parked agents (BT, Curator) do NOT — reminder
+- operator parks on `bash monitor.sh` on the bridge activity FILE (operator handoff), not SSE.
+- Result: SSE-parked agents wake; activity-file-parked agents (operator, Curator) do NOT — reminder
   only fires when they next dequeue for another reason.
 
 **FIX (one line):** in the sweep tick, also call `kickIfAllowed(sid, "reminder", false)`
 alongside `kickSseSubscriber(sid)`, so a due reminder touches the activity file and wakes
 file-parked agents. Add a test. (Flagged in spec §R-5 — "also call kickIfAllowed to wake
-activity-file-parked agents" — but impl did SSE-only. MUST fix before deploying to BT.)
+activity-file-parked agents" — but impl did SSE-only. MUST fix before deploying to operator.)
 
 ## Status of the 5 critical blockers
 
@@ -115,7 +115,7 @@ STILL OPEN:
 ## Minimalist cleanup (low priority)
 
 - Dead code `r.cron ?? ""` in save.ts; duplicated §G-3 / §G-A comments; duplicated cron example
-  in action.ts; redundant §R-6 comment; BT-7274 scar-tissue comment.
+  in action.ts; redundant §R-6 comment; scar-tissue comment.
 
 ## Test-infra (caught during v7.9.0 verification)
 
