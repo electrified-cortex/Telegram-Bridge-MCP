@@ -33,7 +33,6 @@ import { attachHookRoutes } from "./hook-animation.js";
 import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
 import { attachActivityListenCheckRoute } from "./activity-listen-check-endpoint.js";
 import { attachActivitySelftestRoute } from "./activity-selftest-endpoint.js";
-import { attachActivityListenCheckRoute } from "./activity-listen-check-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 import { initReminderFireCallback, setOutboundSendCallback } from "./session-queue.js";
@@ -172,7 +171,6 @@ if (mcpPort !== undefined) {
   attachSseRoute(app);
   attachActivityListenCheckRoute(app);
   attachActivitySelftestRoute(app);
-  attachActivityListenCheckRoute(app);
 
   /** Normalize header that may be string | string[] | undefined → string | undefined */
   const getSessionId = (req: Request): string | undefined => {

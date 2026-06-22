@@ -16,11 +16,6 @@ function sanitize(s: string, maxLen = 64): string {
   return s.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, maxLen);
 }
 
-/** Sanitize user input for safe interpolation into log/error messages. */
-function sanitize(s: string, maxLen = 64): string {
-  return s.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, maxLen);
-}
-
 export function handleScheduleReminder({ token, text, cron, tz = "UTC", id }: {
   token: number;
   text: string;
