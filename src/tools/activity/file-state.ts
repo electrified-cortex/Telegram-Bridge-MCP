@@ -339,6 +339,11 @@ export function isActivityFileActive(sid: number): boolean {
   return _state.get(sid)?.filePath != null;
 }
 
+/** Return true if the session currently has an active SSE (activity/listen) subscription. */
+export function isSseMonitorActive(sid: number): boolean {
+  return _state.get(sid)?.sseConnected === true;
+}
+
 /**
  * Register that an SSE (activity/listen) monitor connected for this session.
  *
