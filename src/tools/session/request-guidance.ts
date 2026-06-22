@@ -7,9 +7,9 @@
  *
  * Delivery rules:
  * - Skilled hosts (profile/tier: 'skilled-router'): acknowledged silently, no breadcrumbs.
- * - Unskilled hosts, first call: R1 + R2 delivered as a pair; durable flag set so they
- *   are not re-sent after a bridge restart.
- * - Unskilled hosts, subsequent calls (durable flag already set): acknowledged silently.
+ * - Unskilled hosts, first call: R1 + R2 delivered as a pair; in-memory flag set so they
+ *   are not re-sent within the same bridge process lifetime.
+ * - Unskilled hosts, subsequent calls (flag already set): acknowledged silently.
  */
 
 import { z } from "zod";
@@ -19,11 +19,19 @@ import { getSession, getSessionTier } from "../../session-manager.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { deliverServiceMessage } from "../../session-queue.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
-import { hasDurableFlag, setDurableFlag } from "../../durable-flags.js";
 
 const SUBSESSION_ROUTING = "subsession-routing" as const;
-/** Durable flag name that marks R1+R2 as delivered for a given session name. */
-export const SUBSESSION_GUIDANCE_FLAG = "subsession_guidance_delivered";
+
+/**
+ * In-process set of session names that have already received subsession routing breadcrumbs.
+ * Clears on bridge restart — sessions are equally non-durable, so this is the right scope.
+ */
+const _guidanceDelivered = new Set<string>();
+
+/** Reset in-process guidance state — for use in tests only. */
+export function _resetGuidanceDeliveredForTest(): void {
+  _guidanceDelivered.clear();
+}
 const BRIDGE_AUTH_DETAIL = { bridge_authoritative: true };
 
 export function handleRequestGuidance({
@@ -52,11 +60,11 @@ export function handleRequestGuidance({
     return toResult({ acknowledged: true, guidance_type, tier: "skilled-router" });
   }
 
-  // Unskilled host: check durable flag — deliver breadcrumbs exactly once per session name
-  // (survives bridge restart, keyed by session name) (AC5, AC9)
+  // Unskilled host: deliver breadcrumbs exactly once per session name within this process lifetime.
+  // (Keyed by session name; clears on bridge restart, same as sessions.) (AC5, AC9)
   const session = getSession(sid);
   const sessionName = session?.name ?? "";
-  if (hasDurableFlag(sessionName, SUBSESSION_GUIDANCE_FLAG)) {
+  if (_guidanceDelivered.has(sessionName)) {
     return toResult({ acknowledged: true, guidance_type, already_delivered: true });
   }
 
@@ -74,9 +82,8 @@ export function handleRequestGuidance({
     BRIDGE_AUTH_DETAIL,
   );
 
-  // Persist the durable flag so this host name does not receive breadcrumbs again
-  // after a bridge restart (AC5)
-  setDurableFlag(sessionName, SUBSESSION_GUIDANCE_FLAG);
+  // Record that breadcrumbs were delivered for this session name (AC5)
+  _guidanceDelivered.add(sessionName);
 
   return toResult({ acknowledged: true, guidance_type, delivered: true });
 }
@@ -89,8 +96,8 @@ export const REQUEST_GUIDANCE_SCHEMA = {
       "Type of guidance to request. Currently only 'subsession-routing' is supported.\n" +
         "Returns R1 (host role explanation) and R2 (spawn-and-forward action sequence) " +
         "as a paired batch in the next dequeue.\n" +
-        "Delivered exactly once per session name — subsequent calls (including after " +
-        "bridge restart) return acknowledged: true without re-sending breadcrumbs.\n" +
+        "Delivered exactly once per session name within the current bridge process — " +
+        "subsequent calls return acknowledged: true without re-sending breadcrumbs.\n" +
         "Skilled-router hosts receive silent acknowledgment only (no breadcrumbs).",
     ),
 };

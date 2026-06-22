@@ -4,7 +4,7 @@
  * AC1: Three new service-message templates exist (tested in service-messages.test.ts)
  * AC2: session/request-guidance routes to R1+R2 enqueue for unskilled host (first call only)
  * AC3: R1 and R2 enqueued as a pair in same DQ batch
- * AC5: Breadcrumbs delivered EXACTLY ONCE per session lifetime, surviving bridge restart
+ * AC5: Breadcrumbs delivered EXACTLY ONCE per session name within the bridge process lifetime
  * AC6: Skilled-tier opt-out: profile/tier: skilled-router → no breadcrumbs
  * AC8: bridge_authoritative: true on R1/R2 deliveries
  * AC9: Default tier = unskilled; new hosts get breadcrumbs on first request
@@ -26,8 +26,6 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   getSessionTier: vi.fn(),
   deliverServiceMessage: vi.fn(),
-  hasDurableFlag: vi.fn(),
-  setDurableFlag: vi.fn(),
 }));
 
 vi.mock("../../session-gate.js", () => ({
@@ -43,26 +41,20 @@ vi.mock("../../session-queue.js", () => ({
   deliverServiceMessage: mocks.deliverServiceMessage,
 }));
 
-vi.mock("../../durable-flags.js", () => ({
-  hasDurableFlag: mocks.hasDurableFlag,
-  setDurableFlag: mocks.setDurableFlag,
-}));
-
-import { handleRequestGuidance, SUBSESSION_GUIDANCE_FLAG } from "./request-guidance.js";
+import { handleRequestGuidance, _resetGuidanceDeliveredForTest } from "./request-guidance.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _resetGuidanceDeliveredForTest();
 
   // Default: valid auth, unskilled session, flag not yet set
   mocks.requireAuth.mockReturnValue(SID);
   mocks.getSession.mockReturnValue({ sid: SID, name: "Orchestrator", color: "🟦" });
   mocks.getSessionTier.mockReturnValue(undefined); // unskilled by default (AC9)
-  mocks.hasDurableFlag.mockReturnValue(false); // not yet delivered
   mocks.deliverServiceMessage.mockReturnValue(true);
-  mocks.setDurableFlag.mockImplementation(() => {});
 });
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
@@ -140,31 +132,23 @@ describe("session/request-guidance — AC2: unskilled host first call", () => {
     expect(result.guidance_type).toBe("subsession-routing");
     expect(result.delivered).toBe(true);
   });
-
-  it("AC5: sets the durable flag after delivery", () => {
-    handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
-
-    expect(mocks.setDurableFlag).toHaveBeenCalledWith(
-      "Orchestrator",
-      SUBSESSION_GUIDANCE_FLAG,
-    );
-  });
 });
 
-// ── AC5: Exactly-once delivery (durable flag already set) ─────────────────────
+// ── AC5: Exactly-once delivery (in-process memory) ───────────────────────────
 
 describe("session/request-guidance — AC5: exactly-once delivery", () => {
-  it("AC5: does NOT re-deliver when durable flag is already set (bridge restart survivor)", () => {
-    mocks.hasDurableFlag.mockReturnValue(true); // already delivered
-
+  it("AC5: does NOT re-deliver on a second call with the same session name", () => {
+    // First call — delivers
     handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
+    mocks.deliverServiceMessage.mockClear();
 
+    // Second call — must NOT deliver
+    handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
     expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
-    expect(mocks.setDurableFlag).not.toHaveBeenCalled();
   });
 
-  it("AC5: returns { acknowledged: true, already_delivered: true } when flag is set", () => {
-    mocks.hasDurableFlag.mockReturnValue(true);
+  it("AC5: returns { acknowledged: true, already_delivered: true } on the second call", () => {
+    handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
 
     const result = parseResult(handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" }));
 
@@ -173,22 +157,29 @@ describe("session/request-guidance — AC5: exactly-once delivery", () => {
     expect(result.delivered).toBeUndefined();
   });
 
-  it("AC5: checks durable flag using the session name as key", () => {
-    mocks.hasDurableFlag.mockReturnValue(false);
+  it("AC5: keyed by session name — a different name gets its own first delivery", () => {
+    // Deliver for "Orchestrator"
+    handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
+
+    // Different session name should still get breadcrumbs
+    mocks.getSession.mockReturnValue({ sid: SID, name: "OtherAgent", color: "🟩" });
+    mocks.deliverServiceMessage.mockClear();
 
     handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
 
-    expect(mocks.hasDurableFlag).toHaveBeenCalledWith("Orchestrator", SUBSESSION_GUIDANCE_FLAG);
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledTimes(2);
   });
 
   it("AC5: uses empty string for session name when session is not found", () => {
     mocks.getSession.mockReturnValue(undefined);
-    mocks.hasDurableFlag.mockReturnValue(false);
 
+    // First call with no session → delivers (empty-string key)
     handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
+    mocks.deliverServiceMessage.mockClear();
 
-    expect(mocks.hasDurableFlag).toHaveBeenCalledWith("", SUBSESSION_GUIDANCE_FLAG);
-    expect(mocks.setDurableFlag).toHaveBeenCalledWith("", SUBSESSION_GUIDANCE_FLAG);
+    // Second call with no session → should NOT re-deliver
+    handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -205,10 +196,11 @@ describe("session/request-guidance — AC6: skilled-router suppression", () => {
     expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 
-  it("AC6: does NOT check durable flag for skilled-router sessions", () => {
+  it("AC6: does NOT check in-process guidance flag for skilled-router sessions", () => {
+    // Skilled-router sessions bypass the flag entirely; deliver is never attempted
     handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
 
-    expect(mocks.hasDurableFlag).not.toHaveBeenCalled();
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalled();
   });
 
   it("AC6: returns { acknowledged: true, tier: skilled-router } for skilled hosts", () => {
@@ -217,12 +209,6 @@ describe("session/request-guidance — AC6: skilled-router suppression", () => {
     expect(result.acknowledged).toBe(true);
     expect(result.tier).toBe("skilled-router");
     expect(result.delivered).toBeUndefined();
-  });
-
-  it("AC6: does NOT set durable flag for skilled-router sessions", () => {
-    handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" });
-
-    expect(mocks.setDurableFlag).not.toHaveBeenCalled();
   });
 });
 
@@ -261,7 +247,6 @@ describe("session/request-guidance — AC9: default tier is unskilled", () => {
 
   it("AC9: only tier=undefined (unskilled) triggers breadcrumb delivery", () => {
     mocks.getSessionTier.mockReturnValue(undefined);
-    mocks.hasDurableFlag.mockReturnValue(false);
 
     const result = parseResult(handleRequestGuidance({ token: TOKEN, guidance_type: "subsession-routing" }));
     expect(result.delivered).toBe(true);
