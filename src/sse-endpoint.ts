@@ -117,7 +117,8 @@ export function cancelSseConnection(sid: number): void {
   _connections.delete(sid);
   // Deleting from _connections above makes the req-close guard a no-op, so drop
   // this stream's gate membership here instead.
-  unregisterSseMonitor(sid);
+  // Pass expected=true — this is an intentional cancel, not an unexpected drop.
+  unregisterSseMonitor(sid, true);
   // Clear the once-per-session participation guard so a genuinely new connection
   // after a real teardown re-sends the confirmation.
   _onboardingParticipatingFired.delete(sid);
