@@ -763,7 +763,7 @@ describe("close_session tool", () => {
 
     // sendServiceMessage should NOT have been called with the disconnect message
     const disconnectCalls = mocks.sendServiceMessage.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("has disconnected"),
+      (c: unknown[]) => typeof c[0] === "string" && (c[0]).includes("has disconnected"),
     );
     expect(disconnectCalls).toHaveLength(0);
   });
@@ -777,7 +777,7 @@ describe("close_session tool", () => {
 
     // sendServiceMessage SHOULD have been called with the disconnect message
     const disconnectCalls = mocks.sendServiceMessage.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("has disconnected"),
+      (c: unknown[]) => typeof c[0] === "string" && (c[0]).includes("has disconnected"),
     );
     expect(disconnectCalls.length).toBeGreaterThanOrEqual(1);
   });
@@ -790,7 +790,7 @@ describe("close_session tool", () => {
     await call({ token: 1123456 });
 
     const disconnectCalls = mocks.sendServiceMessage.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("has disconnected"),
+      (c: unknown[]) => typeof c[0] === "string" && (c[0]).includes("has disconnected"),
     );
     expect(disconnectCalls.length).toBeGreaterThanOrEqual(1);
   });
@@ -816,7 +816,7 @@ describe("close_session tool", () => {
     await call({ token: 1123456 });
 
     const disconnectCalls = mocks.sendServiceMessage.mock.calls.filter(
-      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("has disconnected"),
+      (c: unknown[]) => typeof c[0] === "string" && (c[0]).includes("has disconnected"),
     );
     expect(disconnectCalls).toHaveLength(0);
   });

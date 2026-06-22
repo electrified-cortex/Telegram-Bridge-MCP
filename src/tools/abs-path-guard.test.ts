@@ -130,7 +130,7 @@ vi.mock("../session-manager.js", () => ({
   activeSessionCount: () => 0,
   getActiveSession: () => 0,
   validateSession: (sid: number, suffix: number) => mocks.validateSession(sid, suffix),
-  getSession: () => mocks.getSession(),
+  getSession: () => { mocks.getSession(); },
 }));
 
 vi.mock("../session-queue.js", () => ({

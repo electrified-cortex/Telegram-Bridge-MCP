@@ -600,7 +600,7 @@ export function deliverServiceMessage(
   // Suppress SSE notify for behavior_nudge events — they only occur during active sessions
   // so the agent is already in its dequeue loop and does not need a separate wake.
   // persistent_animation_running is intentionally NOT suppressed: it must wake an idle agent.
-  const isSilentEvent = event.content?.event_type?.startsWith("behavior_nudge");
+  const isSilentEvent = event.content.event_type?.startsWith("behavior_nudge");
   if (!isSilentEvent) {
     notifySession(targetSid, "service", isDequeueActive(targetSid));
   }

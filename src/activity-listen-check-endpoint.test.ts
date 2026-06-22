@@ -53,7 +53,7 @@ describe("TC-CHK1: missing token", () => {
   it("returns 401 when token is undefined", () => {
     const [status, body] = handleHttpActivityListenCheck(undefined);
     expect(status).toBe(401);
-    expect((body as Record<string, unknown>).error).toBe("token is required");
+    expect((body).error).toBe("token is required");
   });
 
   it("returns 401 when token is null", () => {
@@ -71,7 +71,7 @@ describe("TC-CHK2: non-numeric token", () => {
   it("returns 401 when token is non-numeric string", () => {
     const [status, body] = handleHttpActivityListenCheck("notanumber");
     expect(status).toBe(401);
-    expect((body as Record<string, unknown>).error).toBe("invalid token");
+    expect((body).error).toBe("invalid token");
   });
 
   it("returns 401 when token is zero", () => {
@@ -85,7 +85,7 @@ describe("TC-CHK3: invalid session token", () => {
     sessionManagerMocks.validateSession.mockReturnValue(false);
     const [status, body] = handleHttpActivityListenCheck(VALID_TOKEN);
     expect(status).toBe(401);
-    expect((body as Record<string, unknown>).error).toBe("AUTH_FAILED");
+    expect((body).error).toBe("AUTH_FAILED");
   });
 });
 
@@ -94,14 +94,14 @@ describe("TC-CHK4: subscribed: true when SSE connection is open (AC3)", () => {
     sseEndpointMocks.hasSseConnection.mockReturnValue(true);
     const [status, body] = handleHttpActivityListenCheck(VALID_TOKEN);
     expect(status).toBe(200);
-    expect((body as Record<string, unknown>).subscribed).toBe(true);
+    expect((body).subscribed).toBe(true);
   });
 
   it("returns 200 { subscribed: true } when token is given as digit string", () => {
     sseEndpointMocks.hasSseConnection.mockReturnValue(true);
     const [status, body] = handleHttpActivityListenCheck(String(VALID_TOKEN));
     expect(status).toBe(200);
-    expect((body as Record<string, unknown>).subscribed).toBe(true);
+    expect((body).subscribed).toBe(true);
   });
 });
 
@@ -110,7 +110,7 @@ describe("TC-CHK5: subscribed: false when no SSE connection (AC4)", () => {
     sseEndpointMocks.hasSseConnection.mockReturnValue(false);
     const [status, body] = handleHttpActivityListenCheck(VALID_TOKEN);
     expect(status).toBe(200);
-    expect((body as Record<string, unknown>).subscribed).toBe(false);
+    expect((body).subscribed).toBe(false);
   });
 });
 

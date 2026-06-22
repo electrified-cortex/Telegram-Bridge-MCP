@@ -425,7 +425,7 @@ describe("SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN", () => {
   });
 
   it("contains Monitor-driven drain loop with timed_out guard", () => {
-    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("loop until timed_out: true");
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("repeat until timed_out: true");
   });
 
   it("contains non-Monitor runtime fallback path", () => {

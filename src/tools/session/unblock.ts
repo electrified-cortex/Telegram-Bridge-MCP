@@ -17,7 +17,7 @@
 import { toResult, toError } from "../../telegram.js";
 import { clearClosedMarker } from "../../session-manager.js";
 
-export async function handleSessionUnblock({
+export function handleSessionUnblock({
   connection_token,
 }: {
   connection_token?: string;
