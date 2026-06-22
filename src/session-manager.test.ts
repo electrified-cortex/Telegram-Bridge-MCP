@@ -22,6 +22,10 @@ import {
   clearHasCompacted,
   getHasCompacted,
   defaultNameTag,
+  recordClosedMarker,
+  isClosedMarker,
+  resetClosedMarkers,
+  CLOSED_SESSION_MARKER_TTL_MS,
 } from "./session-manager.js";
 
 interface SessionWithoutSuffix {
@@ -659,6 +663,87 @@ describe("defaultNameTag", () => {
 
   it("handles a different color emoji", () => {
     expect(defaultNameTag({ color: "🟥", name: "Sentinel" })).toBe("🟥 Sentinel");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Closed Session Markers (AC1)
+// ---------------------------------------------------------------------------
+
+describe("closed session markers", () => {
+  beforeEach(() => {
+    resetClosedMarkers();
+  });
+
+  it("isClosedMarker returns false for unknown token", () => {
+    expect(isClosedMarker("unknown-token")).toBe(false);
+  });
+
+  it("recordClosedMarker + isClosedMarker round-trips correctly", () => {
+    recordClosedMarker("tok-abc");
+    expect(isClosedMarker("tok-abc")).toBe(true);
+  });
+
+  it("isClosedMarker returns false for a different token even if another was recorded", () => {
+    recordClosedMarker("tok-abc");
+    expect(isClosedMarker("tok-xyz")).toBe(false);
+  });
+
+  it("resetClosedMarkers clears all markers", () => {
+    recordClosedMarker("tok-1");
+    recordClosedMarker("tok-2");
+    resetClosedMarkers();
+    expect(isClosedMarker("tok-1")).toBe(false);
+    expect(isClosedMarker("tok-2")).toBe(false);
+  });
+
+  it("closeSession automatically records a marker for the session's connectionToken", () => {
+    const { connectionToken, sid } = createSession("Worker");
+    closeSession(sid);
+    expect(isClosedMarker(connectionToken)).toBe(true);
+  });
+
+  it("closeSession does not affect markers for other sessions", () => {
+    const a = createSession("Alpha");
+    const b = createSession("Beta");
+    closeSession(a.sid);
+    expect(isClosedMarker(a.connectionToken)).toBe(true);
+    expect(isClosedMarker(b.connectionToken)).toBe(false);
+  });
+
+  it("TTL expiry: isClosedMarker returns false after TTL elapses", () => {
+    vi.useFakeTimers();
+    try {
+      recordClosedMarker("tok-ttl");
+      expect(isClosedMarker("tok-ttl")).toBe(true);
+      // Advance clock past the TTL
+      vi.advanceTimersByTime(CLOSED_SESSION_MARKER_TTL_MS + 1);
+      expect(isClosedMarker("tok-ttl")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("TTL expiry: lazy cleanup removes expired entry from the map", () => {
+    vi.useFakeTimers();
+    try {
+      recordClosedMarker("tok-lazy");
+      vi.advanceTimersByTime(CLOSED_SESSION_MARKER_TTL_MS + 1);
+      // First check triggers lazy cleanup (returns false + deletes)
+      expect(isClosedMarker("tok-lazy")).toBe(false);
+      // Second check also returns false (entry was deleted)
+      expect(isClosedMarker("tok-lazy")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resetSessions clears closed markers", () => {
+    const { connectionToken, sid } = createSession("Temp");
+    closeSession(sid);
+    expect(isClosedMarker(connectionToken)).toBe(true);
+    resetSessions(); // should also clear markers
+    expect(isClosedMarker(connectionToken)).toBe(false);
   });
 });
 

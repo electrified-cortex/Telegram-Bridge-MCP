@@ -69,6 +69,7 @@ import { handleApproveAgent } from "./approve/agent.js";
 import { handleShutdown } from "./shutdown/handler.js";
 import { handleNotifyShutdownWarning } from "./shutdown/warn.js";
 import { handleCloseSessionSignal } from "./session/close-signal.js";
+import { handleSessionUnblock } from "./session/unblock.js";
 import { handleTranscribeVoice } from "./transcribe/voice.js";
 import { handleDownloadFile } from "./download/file.js";
 import { handleUpdateChecklist } from "./checklist/update.js";
@@ -140,6 +141,7 @@ export function setupActionRegistry(): void {
   registerAction("session/reconnect", toActionHandler(handleSessionReconnect));
   registerAction("session/close", toActionHandler(handleCloseSession));
   registerAction("session/close/signal", toActionHandler(handleCloseSessionSignal), { governor: true });
+  registerAction("session/unblock", toActionHandler(handleSessionUnblock), { governor: true });
   registerAction("session/spawn-child", toActionHandler(handleSpawnChild));
   registerAction("session/revoke-child", toActionHandler(handleRevokeChild));
   registerAction("child/forward", toActionHandler(handleChildForward));
@@ -745,6 +747,16 @@ export function register(server: McpServer): void {
           .enum(["read-only", "gather", "full"])
           .optional()
           .describe("session/spawn-child: Capability level for the spawned child session (default: 'gather')."),
+        // session/reconnect and session/start (refresh:true) closed-caller guard; session/unblock operator lift
+        connection_token: z
+          .string()
+          .optional()
+          .describe(
+            "session/reconnect, session/start (with refresh:true): Connection token previously issued by this bridge. " +
+            "When provided, the bridge checks whether this caller's session was closed and rejects immediately " +
+            "with CALLER_CLOSED if so, without showing the operator approval dialog. " +
+            "session/unblock (governor only): Clear the closed-session marker for this token so the caller may reconnect.",
+          ),
       },
     },
     async (args) => {

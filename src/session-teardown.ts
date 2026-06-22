@@ -184,6 +184,22 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   }
   // Non-governor closes with 0 or 2+ remaining: no routing change needed
 
+  // AC7: Notify the (potentially new) governor of the closed session's connection token.
+  // This lets the governor call action(type: 'session/unblock', connection_token: ...) to
+  // allow the caller to reconnect without needing a new operator approval from scratch.
+  // Only delivered when there is a live governor session after teardown.
+  const finalGovernorSid = getGovernorSid();
+  if (finalGovernorSid && sessionInfo?.connectionToken) {
+    const closedToken = sessionInfo.connectionToken;
+    deliverServiceMessage(
+      finalGovernorSid,
+      `🔒 Session **${sessionName}** closed. Connection token: \`${closedToken}\`.\n` +
+      `To allow this caller to reconnect, call: action(type: 'session/unblock', connection_token: '${closedToken}')`,
+      "session_closed_token",
+      { closed_sid: sid, closed_name: sessionName, connection_token: closedToken },
+    );
+  }
+
   // Reroute orphaned queue items to remaining sessions
   if (orphaned.length > 0 && remaining.length > 0) {
     for (const event of orphaned) {
