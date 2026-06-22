@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
   ackVoiceMessage: vi.fn(),
+  pinChatMessage: vi.fn(),
+  resolveChat: vi.fn((): number => 42),
   pendingCount: vi.fn().mockReturnValue(0),
   _storeQueue: [] as TimelineEvent[],
   _waitResolvers: [] as (() => void)[],
@@ -31,8 +33,8 @@ vi.mock("../../telegram.js", async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
   return {
     ...actual,
-    getApi: () => ({ sendMessage: mocks.sendMessage }),
-    resolveChat: () => 42,
+    getApi: () => ({ sendMessage: mocks.sendMessage, pinChatMessage: mocks.pinChatMessage }),
+    resolveChat: () => mocks.resolveChat(),
     ackVoiceMessage: mocks.ackVoiceMessage,
   };
 });
@@ -116,6 +118,7 @@ describe("ask tool", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     mocks.pendingCount.mockReturnValue(0);
+    mocks.resolveChat.mockReturnValue(42);
     mocks._storeQueue.length = 0;
     mocks._waitResolvers.length = 0;
     const server = createMockServer();
@@ -400,5 +403,23 @@ describe("cross-session isolation", () => {
     expect(mocks.sessionQueue1.dequeueMatch).not.toHaveBeenCalled();
   });
 });
+
+  // ---------------------------------------------------------------------------
+  // AC4: ask-mode questions are never pinned (even in group chats)
+  // ---------------------------------------------------------------------------
+
+  it("AC4: ask-mode question in group chat does NOT pin the message", async () => {
+    // Simulate a group chat (chatId < 0)
+    mocks.resolveChat.mockReturnValue(-100123);
+    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    // Resolve immediately with a text reply so the tool returns
+    mocks._storeQueue.push(makeTextEvent(11, "my reply"));
+    mocks.sessionQueue1.dequeueMatch.mockImplementationOnce(
+      (predicate: (e: TimelineEvent) => unknown) => predicate(makeTextEvent(11, "my reply")),
+    );
+    await call({ question: "What do you think?", timeout_seconds: 1, token: 1_123_456 });
+    // ask mode must NEVER call pinChatMessage, regardless of chat type
+    expect(mocks.pinChatMessage).not.toHaveBeenCalled();
+  });
 
 });

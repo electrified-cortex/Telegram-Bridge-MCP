@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
   editMessageCaption: vi.fn(),
+  pinChatMessage: vi.fn(),
+  unpinChatMessage: vi.fn(),
   pollButtonOrTextOrVoice: vi.fn(),
   ackAndEditSelection: vi.fn(),
   editWithSkipped: vi.fn(),
@@ -54,6 +56,8 @@ vi.mock("../../telegram.js", async (importActual) => {
       answerCallbackQuery: mocks.answerCallbackQuery,
       editMessageText: mocks.editMessageText,
       editMessageCaption: mocks.editMessageCaption,
+      pinChatMessage: mocks.pinChatMessage,
+      unpinChatMessage: mocks.unpinChatMessage,
     }),
     resolveChat: () => mocks.resolveChat(),
     // Keep actual validateText and validateCallbackData so error-path tests work
@@ -127,6 +131,7 @@ vi.mock("../../config.js", () => ({
 }));
 
 import { register } from "./choose.js";
+import { resetQuestionPinsForTest } from "../../question-pin-state.js";
 
 const SENT_MSG = { message_id: 7, chat: { id: 42 }, date: 0 };
 
@@ -152,6 +157,7 @@ describe("choose tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetQuestionPinsForTest();
     mocks.validateSession.mockReturnValue(true);
     mocks.ackAndEditSelection.mockResolvedValue(undefined);
     mocks.editWithSkipped.mockResolvedValue(undefined);
@@ -162,6 +168,8 @@ describe("choose tool", () => {
     mocks.validateButtonSymbolParity.mockReturnValue({ ok: true, withEmoji: [], withoutEmoji: [] });
     mocks.pendingCount.mockReturnValue(0);
     mocks.sessionQueue.pendingCount.mockReturnValue(0);
+    mocks.pinChatMessage.mockResolvedValue(true);
+    mocks.unpinChatMessage.mockResolvedValue(true);
     const server = createMockServer();
     register(server);
     call = server.getHandler("choose");
@@ -615,6 +623,85 @@ testIdentityGate((args) => call(args), mocks.validateSession, {"text":"x","optio
       const data = parseResult(result);
       expect(data.skipped).toBe(true);
       expect(mocks.editWithSkipped).toHaveBeenCalledWith(42, 8, "Which option?", true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Auto-pin tests (AC1–AC7)
+  // ---------------------------------------------------------------------------
+
+  describe("auto-pin blocking questions", () => {
+    it("AC1: pins message in group chat (chatId < 0) after send", async () => {
+      mocks.resolveChat.mockReturnValue(-100123);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_a"));
+      await call({ text: "Pick", options: OPTIONS, token: 1123456 });
+      expect(mocks.pinChatMessage).toHaveBeenCalledWith(-100123, 7, { disable_notification: true });
+    });
+
+    it("AC5: does NOT pin in DM chat (chatId > 0)", async () => {
+      mocks.resolveChat.mockReturnValue(42); // positive = DM
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_a"));
+      await call({ text: "Pick", options: OPTIONS, token: 1123456 });
+      expect(mocks.pinChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("AC2: unpins after button press (before returning result)", async () => {
+      mocks.resolveChat.mockReturnValue(-100123);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_a"));
+      const result = await call({ text: "Pick", options: OPTIONS, token: 1123456 });
+      expect(isError(result)).toBe(false);
+      expect(mocks.unpinChatMessage).toHaveBeenCalledWith(-100123, 7);
+    });
+
+    it("AC3: unpins after timeout", async () => {
+      mocks.resolveChat.mockReturnValue(-100123);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
+      const result = await call({ text: "Pick", options: OPTIONS, timeout_seconds: 1, token: 1123456 });
+      expect((parseResult(result)).timed_out).toBe(true);
+      expect(mocks.unpinChatMessage).toHaveBeenCalledWith(-100123, 7);
+    });
+
+    it("AC3: unpins after text-skip cancellation", async () => {
+      mocks.resolveChat.mockReturnValue(-100123);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeTextResult(20, "never mind"));
+      await call({ text: "Pick", options: OPTIONS, token: 1123456 });
+      expect(mocks.unpinChatMessage).toHaveBeenCalledWith(-100123, 7);
+    });
+
+    it("AC6: pin failure is silent — choose still returns normally", async () => {
+      mocks.resolveChat.mockReturnValue(-100123);
+      mocks.pinChatMessage.mockRejectedValue(new Error("FORBIDDEN: bot is not an administrator"));
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_a"));
+      const result = await call({ text: "Pick", options: OPTIONS, token: 1123456 });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.value).toBe("opt_a");
+      // No unpin call — pin failed so nothing was tracked
+      expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("does NOT unpin when pin was not attempted (DM chat)", async () => {
+      mocks.resolveChat.mockReturnValue(42); // DM
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_a"));
+      await call({ text: "Pick", options: OPTIONS, token: 1123456 });
+      expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("AC8: pins with disable_notification:true (no pin alert)", async () => {
+      mocks.resolveChat.mockReturnValue(-100123);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("opt_a"));
+      await call({ text: "Pick", options: OPTIONS, token: 1123456 });
+      expect(mocks.pinChatMessage).toHaveBeenCalledWith(
+        -100123, 7, expect.objectContaining({ disable_notification: true }),
+      );
     });
   });
 

@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
   editMessageCaption: vi.fn(),
+  pinChatMessage: vi.fn(),
+  unpinChatMessage: vi.fn(),
   pollButtonOrTextOrVoice: vi.fn(),
   ackAndEditSelection: vi.fn(),
   editWithSkipped: vi.fn(),
@@ -52,6 +54,8 @@ vi.mock("../../telegram.js", async (importActual) => {
       answerCallbackQuery: mocks.answerCallbackQuery,
       editMessageText: mocks.editMessageText,
       editMessageCaption: mocks.editMessageCaption,
+      pinChatMessage: mocks.pinChatMessage,
+      unpinChatMessage: mocks.unpinChatMessage,
     }),
     resolveChat: () => mocks.resolveChat(),
     // Keep actual validateText and validateCallbackData so error-path tests work
@@ -122,6 +126,7 @@ vi.mock("../../config.js", () => ({
 }));
 
 import { register } from "./handler.js";
+import { resetQuestionPinsForTest } from "../../question-pin-state.js";
 
 const SENT_MSG = { message_id: 5, chat: { id: 42 }, date: 0 };
 
@@ -134,6 +139,7 @@ describe("confirm tool", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetQuestionPinsForTest();
     mocks.validateSession.mockReturnValue(true);
     mocks.ackAndEditSelection.mockResolvedValue(undefined);
     mocks.editWithSkipped.mockResolvedValue(undefined);
@@ -144,6 +150,8 @@ describe("confirm tool", () => {
     mocks.validateButtonSymbolParity.mockReturnValue({ ok: true, withEmoji: [], withoutEmoji: [] });
     mocks.pendingCount.mockReturnValue(0);
     mocks.sessionQueue.pendingCount.mockReturnValue(0);
+    mocks.pinChatMessage.mockResolvedValue(true);
+    mocks.unpinChatMessage.mockResolvedValue(true);
     const server = createMockServer();
     register(server);
     call = server.getHandler("confirm");
@@ -596,6 +604,86 @@ testIdentityGate((args) => call(args), mocks.validateSession, {"text":"x"});
       await delay(0);
       expect(mocks.editWithTimedOut).toHaveBeenCalledWith(42, 7, "Proceed?", true);
       expect(mocks.editWithSkipped).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Auto-pin tests (AC1–AC7)
+  // ---------------------------------------------------------------------------
+
+  describe("auto-pin blocking questions", () => {
+    it("AC1: pins message in group chat (chatId < 0) after send", async () => {
+      mocks.resolveChat.mockReturnValue(-100456);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+      await call({ text: "Proceed?", token: 1123456 });
+      expect(mocks.pinChatMessage).toHaveBeenCalledWith(-100456, 5, { disable_notification: true });
+    });
+
+    it("AC5: does NOT pin in DM chat (chatId > 0)", async () => {
+      mocks.resolveChat.mockReturnValue(42); // positive = DM
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+      await call({ text: "Proceed?", token: 1123456 });
+      expect(mocks.pinChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("AC2: unpins after button press (before returning result)", async () => {
+      mocks.resolveChat.mockReturnValue(-100456);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+      const result = await call({ text: "Proceed?", token: 1123456 });
+      expect(isError(result)).toBe(false);
+      expect(mocks.unpinChatMessage).toHaveBeenCalledWith(-100456, 5);
+    });
+
+    it("AC3: unpins after timeout", async () => {
+      mocks.resolveChat.mockReturnValue(-100456);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);
+      const result = await call({ text: "Proceed?", token: 1123456 });
+      const data = parseResult(result);
+      expect(data.timed_out).toBe(true);
+      expect(mocks.unpinChatMessage).toHaveBeenCalledWith(-100456, 5);
+    });
+
+    it("AC3: unpins after text-skip cancellation", async () => {
+      mocks.resolveChat.mockReturnValue(-100456);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue({ kind: "text", message_id: 10, text: "never mind" });
+      await call({ text: "Proceed?", token: 1123456 });
+      expect(mocks.unpinChatMessage).toHaveBeenCalledWith(-100456, 5);
+    });
+
+    it("AC6: pin failure is silent — confirm still returns normally", async () => {
+      mocks.resolveChat.mockReturnValue(-100456);
+      mocks.pinChatMessage.mockRejectedValue(new Error("FORBIDDEN: bot is not an administrator"));
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+      const result = await call({ text: "Proceed?", token: 1123456 });
+      expect(isError(result)).toBe(false);
+      const data = parseResult(result);
+      expect(data.confirmed).toBe(true);
+      // No unpin call — pin failed so nothing was tracked
+      expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("does NOT unpin when pin was not attempted (DM chat)", async () => {
+      mocks.resolveChat.mockReturnValue(42); // DM
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+      await call({ text: "Proceed?", token: 1123456 });
+      expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("AC8: pins with disable_notification:true (no pin alert)", async () => {
+      mocks.resolveChat.mockReturnValue(-100456);
+      mocks.sendMessage.mockResolvedValue(SENT_MSG);
+      mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+      await call({ text: "Proceed?", token: 1123456 });
+      expect(mocks.pinChatMessage).toHaveBeenCalledWith(
+        -100456, 5, expect.objectContaining({ disable_notification: true }),
+      );
     });
   });
 
