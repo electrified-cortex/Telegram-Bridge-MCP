@@ -31,7 +31,7 @@ All acceptance criteria met:
 
 ## Context
 
-Operator directive (2026-06-22): "Treat 7.11.1 as one big regression until proven otherwise."
+Audit direction (2026-06-22): treat v7.11.1 as a regression until each commit is individually verified — nothing passes by default.
 
 `master` is at v7.11.0 + 7 Dependabot dep bumps (v7.11.0 squash-merged as 9129309c).
 `release/v7.11.1` is 83 commits ahead of master. This is NOT a patch release — it includes

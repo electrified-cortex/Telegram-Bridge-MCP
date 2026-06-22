@@ -25,9 +25,7 @@ related: .tasks/00-ideas/v8-tmcp-no-pod-concepts-2026-05-27.md
 
 ## Background
 
-Task 15-0898 ("define pod-memory convention for agent state") introduced pod-terminology violations into TMCP. These violate the standing directive from operator voice 62572 (2026-05-27):
-
-> "TMCP has no notion of what we call pods."
+Task 15-0898 ("define pod-memory convention for agent state") introduced pod-terminology violations into TMCP. These violate the standing harness-agnostic requirement: TMCP must not reference pod-specific concepts in any user-facing content, API responses, or runtime service messages.
 
 Both `release/v7.11.1` and `release/v7.12.0` carry these violations. **Both PRs should be held until fixed.**
 
