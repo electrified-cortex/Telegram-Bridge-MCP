@@ -11,7 +11,7 @@
 #   -Help                Print usage and exit.
 #
 # Output:
-#   kick          — activity file mtime changed; call dequeue().
+#   notify        — activity file mtime changed; call dequeue().
 #   heartbeat     — no change in the last -Heartbeat seconds (monitor is alive).
 #   timeout       — -Timeout elapsed with no kick; exits with code 0.
 
@@ -37,7 +37,7 @@ Watches a TMCP activity file for mtime changes and emits one kick line per chang
   -Help                  Print this help and exit.
 
 Output lines:
-  kick        mtime changed — call dequeue()
+  notify      mtime changed — call dequeue()
   heartbeat   monitor is alive (emitted every -Heartbeat seconds when idle)
   timeout     idle limit reached — exits 0
 '@
@@ -104,7 +104,7 @@ while ($true) {
     if (Test-Path $fullPath) {
         $currentMTime = Get-MTime $fullPath
         if ($currentMTime -ne $lastMTime) {
-            Write-Token "kick"
+            Write-Token "notify"
             $lastMTime         = $currentMTime
             $lastEventTime     = $now
             $lastHeartbeatTime = $now

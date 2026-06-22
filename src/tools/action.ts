@@ -49,7 +49,7 @@ import { handleReminderUnschedule } from "./reminder/unschedule.js";
 import { handleSetDequeueDefault } from "./profile/dequeue-default.js";
 import { handleSilentLifecycle } from "./profile/silent-lifecycle.js";
 import { handleNotifyDebounce, handleKickDebounce } from "./profile/notify-debounce.js";
-import { handleKickGate } from "./profile/activity-kick-gate.js";
+import { handleNotifyGate } from "./profile/activity-notify-gate.js";
 import { handleSetDefaultAnimation } from "./animation/default.js";
 import { handleToggleLogging } from "./logging/toggle.js";
 // Phase 2 imports — message/history, message/get
@@ -206,7 +206,8 @@ export function setupActionRegistry(): void {
   registerAction("reminder/unschedule", toActionHandler(handleReminderUnschedule));
   registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
   registerAction("profile/silent-lifecycle", toActionHandler(handleSilentLifecycle));
-  registerAction("profile/kick-gate", toActionHandler(handleKickGate));
+  registerAction("profile/notify-gate", toActionHandler(handleNotifyGate));
+  registerAction("profile/kick-gate", toActionHandler(handleNotifyGate)); // deprecated alias for profile/notify-gate
   registerAction("profile/notify-debounce", toActionHandler(handleNotifyDebounce));
   registerAction("profile/kick-lockout", toActionHandler(handleNotifyDebounce)); // backward-compat alias for profile/notify-debounce
   registerAction("profile/kick-debounce", toActionHandler(handleKickDebounce));
@@ -569,9 +570,9 @@ export function register(server: McpServer): void {
           .max(NOTIFY_DEBOUNCE_MAX_MS)
           .optional()
           .describe(
-            `profile/kick-gate: Post-kick lockout window in milliseconds (${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}). Omit to get current value. ` +
+            `profile/notify-gate: Post-notify lockout window in milliseconds (${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}). Omit to get current value. ` +
             `profile/notify-debounce: Post-notify debounce window in milliseconds (${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}). Omit to get current value. ` +
-            `profile/kick-debounce (deprecated): Accepted range 1000–600000; use profile/kick-gate instead.`,
+            `profile/kick-debounce (deprecated): Accepted range 1000–600000; use profile/notify-gate instead.`,
           ),
         // animation/default params
         frames: z

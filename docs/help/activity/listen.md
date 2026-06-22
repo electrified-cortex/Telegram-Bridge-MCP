@@ -1,6 +1,6 @@
 # activity/listen — SSE Notification Stream
 
-Opens a server-sent events stream so agents can receive push notifications without polling. TMCP emits `data: kick` on each dequeue event; your curl process wakes up and you call `dequeue()`.
+Opens a server-sent events stream so agents can receive push notifications without polling. TMCP emits `data: notify` on each dequeue event; your curl process wakes up and you call `dequeue()`.
 
 **Requires HTTP mode.** Start TMCP with `--http` (or set `MCP_PORT`). Returns `HTTP_MODE_REQUIRED` if TMCP is in stdio mode.
 
@@ -36,7 +36,7 @@ Monitor(
 )
 ```
 
-On each `data: kick` notification from Monitor, call `dequeue(token)`.
+On each `data: notify` notification from Monitor, call `dequeue(token)`.
 
 ## activity/listen/cancel
 
