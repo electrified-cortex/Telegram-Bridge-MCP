@@ -63,6 +63,13 @@ export interface Session {
    */
   r3_guidance_delivered?: boolean;
   /**
+   * When true, the public Telegram chat announcements for session-start and
+   * session-close lifecycle events are suppressed. Set via profile/save
+   * { silent_lifecycle: true } + profile/load, or at emission time from the
+   * session's profile file.
+   */
+  silent_lifecycle?: boolean;
+  /**
    * Capability level for this session.
    * - `'full'` (default): no restrictions.
    * - `'gather'`: may not call session/start, session/spawn-child, or commit-class actions.

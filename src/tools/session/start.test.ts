@@ -3011,4 +3011,94 @@ describe("pod-memory convention — save_token_to field (AC9)", () => {
     expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
     expect(result.reused).toBe(true);
   });
+
+  // =========================================================================
+  // silent_lifecycle — public announcement suppression (AC2 + AC5)
+  // =========================================================================
+
+  it("AC2: first session with silent_lifecycle: true does NOT send public announcement", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "SilentBot", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+
+    await handleSessionStart({ name: "SilentBot" });
+
+    const announceCalls = mocks.sendMessage.mock.calls.filter(
+      (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+    );
+    expect(announceCalls.length).toBe(0);
+  });
+
+  it("AC2: second session with silent_lifecycle: true does NOT send public announcement", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "SilentWorker", color: "🟩", sessionsActive: 2 });
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", color: "🟦" }]) // collision check
+      .mockReturnValue([{ sid: 1, name: "Primary", color: "🟦" }, { sid: 2, name: "SilentWorker", color: "🟩" }]);
+    mocks.checkAndConsumeAutoApprove.mockReturnValue(true); // bypass approval dialog
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+
+    await handleSessionStart({ name: "SilentWorker" });
+
+    const announceCalls = mocks.sendMessage.mock.calls.filter(
+      (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+    );
+    expect(announceCalls.length).toBe(0);
+  });
+
+  it("AC5: first session without silent_lifecycle flag DOES send public announcement", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue(null); // no profile
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 42 });
+
+    await handleSessionStart({ name: "Primary" });
+
+    const announceCalls = mocks.sendMessage.mock.calls.filter(
+      (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+    );
+    expect(announceCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("AC5: profile with silent_lifecycle: false DOES send public announcement", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: false });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 42 });
+
+    await handleSessionStart({ name: "Primary" });
+
+    const announceCalls = mocks.sendMessage.mock.calls.filter(
+      (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+    );
+    expect(announceCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("AC2: silent start does not pin announcement (no msgId to pin)", async () => {
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 222222, name: "SilentWorker", color: "🟩", sessionsActive: 2 });
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", color: "🟦" }])
+      .mockReturnValue([{ sid: 1, name: "Primary", color: "🟦" }, { sid: 2, name: "SilentWorker", color: "🟩" }]);
+    mocks.checkAndConsumeAutoApprove.mockReturnValue(true);
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+
+    await handleSessionStart({ name: "SilentWorker" });
+
+    // No announcement msgId → pinChatMessage should not be called for this session
+    expect(mocks.pinChatMessage).not.toHaveBeenCalled();
+    // No trackMessageOwner either
+    expect(mocks.trackMessageOwner).not.toHaveBeenCalled();
+  });
+
+  it("AC2: silent start still delivers internal service messages (onboarding unaffected)", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "SilentBot", color: "🟦", sessionsActive: 1 });
+    mocks.readProfile.mockReturnValue({ silent_lifecycle: true });
+
+    await handleSessionStart({ name: "SilentBot" });
+
+    // Internal service messages (onboarding) are NOT suppressed
+    expect(mocks.deliverServiceMessage).toHaveBeenCalled();
+  });
 });

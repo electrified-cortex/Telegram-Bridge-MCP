@@ -14,7 +14,7 @@ const DESCRIPTION =
   "to a profile file for later restoration via load_profile. " +
   "Saves to data/profiles/{key}.json (gitignored). Use load_profile with a path key to load from a checked-in profile.";
 
-export function handleSaveProfile({ key, token, autoload = false }: { key: string; token: number; autoload?: boolean }) {
+export function handleSaveProfile({ key, token, autoload = false, silent_lifecycle }: { key: string; token: number; autoload?: boolean; silent_lifecycle?: boolean }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
 
@@ -100,6 +100,11 @@ export function handleSaveProfile({ key, token, autoload = false }: { key: strin
     sections.push("suppress_pending_hint");
   }
 
+  if (silent_lifecycle !== undefined) {
+    data.silent_lifecycle = silent_lifecycle;
+    sections.push("silent_lifecycle");
+  }
+
   let path: string;
   try {
     path = resolveProfilePath(key);
@@ -131,6 +136,15 @@ export function register(server: McpServer) {
           .describe(
             "When true, marks this profile for automatic application whenever a session with the same name starts. " +
             "Profile-level opt-in takes precedence over session-level autoload_profile: false.",
+          ),
+        silent_lifecycle: z
+          .boolean()
+          .optional()
+          .describe(
+            "When true, suppresses the public Telegram chat announcement on session start " +
+            "(the '🟢 Online' post) and the 'has disconnected' post on session close. " +
+            "Approval-prompt dialogs and governance notifications are unaffected. " +
+            "Default false/omitted — no change to existing behavior.",
           ),
         token: TOKEN_SCHEMA,
       },

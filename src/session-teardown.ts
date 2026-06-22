@@ -6,6 +6,7 @@
  */
 
 import { getApi, sendServiceMessage, resolveChat } from "./telegram.js";
+import { readProfile } from "./profile-store.js";
 import {
   closeSession,
   getSession,
@@ -97,8 +98,12 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
 
   // Notify the operator that this session disconnected.
   // Suppressed for sub-sessions — they are not visible as separate participants.
+  // Also suppressed when the session's profile has silent_lifecycle: true.
   if (!sessionInfo?.parent_sid) {
-    sendServiceMessage(`${sessionName} has disconnected.`).catch(() => {});
+    const lifecycleProfile = (() => { try { return readProfile(sessionName); } catch { return null; } })();
+    if (lifecycleProfile?.silent_lifecycle !== true) {
+      sendServiceMessage(`${sessionName} has disconnected.`).catch(() => {});
+    }
   }
 
   // Unpin the session's announcement message, if one was pinned

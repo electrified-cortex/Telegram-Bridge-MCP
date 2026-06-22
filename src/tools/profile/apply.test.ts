@@ -426,3 +426,52 @@ describe("applyProfile — suppress_pending_hint (AC1, AC4, AC5)", () => {
     expect((result as { applied: Record<string, unknown> }).applied.suppress_pending_hint).toBeUndefined();
   });
 });
+
+// =============================================================================
+// AC1: applyProfile — silent_lifecycle flag
+// =============================================================================
+
+describe("applyProfile — silent_lifecycle (AC1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listReminders.mockReturnValue([]);
+  });
+
+  // AC1: setting silent_lifecycle: true persists to session
+  it("AC1: applies silent_lifecycle: true from profile to session", () => {
+    const session: Record<string, unknown> = { name: "SilentBot" };
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { silent_lifecycle: true });
+    expect("applied" in result).toBe(true);
+    expect(session.silent_lifecycle).toBe(true);
+    expect((result as { applied: Record<string, unknown> }).applied.silent_lifecycle).toBe(true);
+  });
+
+  // AC1: setting silent_lifecycle: false clears the flag
+  it("AC1: applies silent_lifecycle: false from profile to session (explicit disable)", () => {
+    const session: Record<string, unknown> = { name: "SilentBot", silent_lifecycle: true };
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { silent_lifecycle: false });
+    expect("applied" in result).toBe(true);
+    expect(session.silent_lifecycle).toBe(false);
+    expect((result as { applied: Record<string, unknown> }).applied.silent_lifecycle).toBe(false);
+  });
+
+  // When flag is absent from profile, session field is untouched
+  it("leaves session silent_lifecycle untouched when not in profile", () => {
+    const session: Record<string, unknown> = { name: "SilentBot", silent_lifecycle: true };
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { voice: "alloy" }); // no silent_lifecycle
+    expect("applied" in result).toBe(true);
+    expect(session.silent_lifecycle).toBe(true);
+    expect((result as { applied: Record<string, unknown> }).applied.silent_lifecycle).toBeUndefined();
+  });
+
+  // When getSession returns undefined, silently skips
+  it("skips silently when getSession returns undefined for silent_lifecycle", () => {
+    mocks.getSession.mockReturnValue(undefined);
+    const result = applyProfile(42, { silent_lifecycle: true });
+    expect("applied" in result).toBe(true);
+    expect((result as { applied: Record<string, unknown> }).applied.silent_lifecycle).toBeUndefined();
+  });
+});
