@@ -31,6 +31,8 @@ import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
 import { attachHookRoutes } from "./hook-animation.js";
 import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
+import { attachActivitySelftestRoute } from "./activity-selftest-endpoint.js";
+import { attachActivityListenCheckRoute } from "./activity-listen-check-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 import { initReminderFireCallback } from "./session-queue.js";
@@ -162,6 +164,8 @@ if (mcpPort !== undefined) {
   attachDequeueRoute(app);
   attachHookRoutes(app);
   attachSseRoute(app);
+  attachActivitySelftestRoute(app);
+  attachActivityListenCheckRoute(app);
 
   /** Normalize header that may be string | string[] | undefined → string | undefined */
   const getSessionId = (req: Request): string | undefined => {

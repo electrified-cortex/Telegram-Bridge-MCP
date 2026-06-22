@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   registerOnceOnSend: vi.fn(),
   clearOnceOnSend: vi.fn(),
   getActivityFile: vi.fn((_sid: number) => undefined as { filePath: string } | undefined),
+  isSseMonitorActive: vi.fn((_sid: number) => false),
   existsSync: vi.fn((_path: string) => false),
 }));
 
@@ -74,6 +75,7 @@ vi.mock("./outbound-proxy.js", () => ({
 
 vi.mock("./tools/activity/file-state.js", () => ({
   getActivityFile: (sid: number) => mocks.getActivityFile(sid),
+  isSseMonitorActive: (sid: number) => mocks.isSseMonitorActive(sid),
 }));
 
 vi.mock("fs", () => ({
@@ -134,6 +136,7 @@ describe("health-check", () => {
     mocks.getUnhealthySessions.mockReturnValue([]);
     mocks.listSessions.mockReturnValue([]);
     mocks.getActivityFile.mockReturnValue(undefined);
+    mocks.isSseMonitorActive.mockReturnValue(false);
     mocks.existsSync.mockReturnValue(false);
   });
 
@@ -713,6 +716,109 @@ describe("health-check", () => {
       expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
         expect.stringContaining("Worker"),
       );
+    });
+  });
+
+  // ── AC1–AC5: dequeue-gap offline notification suppression ──
+
+  describe("AC1: suppress notification when SSE subscription is active", () => {
+    it("does not send notification when session has an active SSE monitor", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.isSseMonitorActive.mockReturnValue(true);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
+    });
+
+    it("does not flag the session when SSE is connected even if activity file is absent", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue(undefined);
+      mocks.isSseMonitorActive.mockReturnValue(true);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("AC2: suppress notification when activity-file subscription is active", () => {
+    it("does not send notification when session has an activity file that exists on disk", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/activity-ac2" });
+      mocks.existsSync.mockReturnValue(true);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("AC3: fires normally when no active subscription exceeds threshold", () => {
+    it("sends notification when session has no SSE monitor and no activity file", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue(undefined);
+      mocks.isSseMonitorActive.mockReturnValue(false);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+    });
+  });
+
+  describe("AC4: fires when subscription is lost/expired and threshold exceeded", () => {
+    it("sends notification when activity file was registered but no longer exists on disk", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue({ filePath: "/tmp/deleted-file-ac4" });
+      mocks.existsSync.mockReturnValue(false); // file deleted
+      mocks.isSseMonitorActive.mockReturnValue(false);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+    });
+
+    it("sends notification when SSE subscription was disconnected (isSseMonitorActive returns false)", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue(undefined);
+      mocks.isSseMonitorActive.mockReturnValue(false); // SSE was disconnected
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+    });
+  });
+
+  describe("AC5: dequeue-only agents (no monitor) retain existing behavior", () => {
+    it("sends notification for a dequeue-only agent that exceeds the threshold", async () => {
+      const s = makeSession(3, "DequeueOnly");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      // No activity file, no SSE — pure dequeue-loop agent
+      mocks.getActivityFile.mockReturnValue(undefined);
+      mocks.isSseMonitorActive.mockReturnValue(false);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("DequeueOnly"),
+      );
+    });
+
+    it("does not suppress for dequeue-only agents when both guards return falsy", async () => {
+      const s = makeSession(3, "DequeueOnly");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue(undefined);
+      mocks.isSseMonitorActive.mockReturnValue(false);
+      await _runHealthCheckNow();
+      expect(mocks.markUnhealthy).toHaveBeenCalledWith(3);
     });
   });
 
