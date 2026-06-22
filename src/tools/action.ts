@@ -19,6 +19,8 @@ import { handleSessionStart, handleSessionReconnect } from "./session/start.js";
 import { handleSpawnChild } from "./session/spawn-child.js";
 import { handleRevokeChild } from "./session/revoke-child.js";
 import { handleChildForward } from "./session/forward-child.js";
+import { handleRequestGuidance } from "./session/request-guidance.js";
+import { handleProfileTier } from "./profile/tier.js";
 import { handleChildNotify } from "./session/child-notify.js";
 import { handleRenameSession } from "./session/rename.js";
 import { handleSessionIdle } from "./session/idle.js";
@@ -161,6 +163,7 @@ export function setupActionRegistry(): void {
   registerAction("session/unblock", toActionHandler(handleSessionUnblock), { governor: true });
   registerAction("session/spawn-child", toActionHandler(handleSpawnChild));
   registerAction("session/revoke-child", toActionHandler(handleRevokeChild));
+  registerAction("session/request-guidance", toActionHandler(handleRequestGuidance));
   registerAction("child/forward", toActionHandler(handleChildForward));
   registerAction("child/notify", toActionHandler(handleChildNotify));
   registerAction("session/list", toActionHandler(handleListSessions));
@@ -189,6 +192,7 @@ export function setupActionRegistry(): void {
 
   // profile/*, reminder/*, logging/*, commands/*
   registerAction("profile/topic", toActionHandler(handleSetTopic));
+  registerAction("profile/tier", toActionHandler(handleProfileTier));
   registerAction("profile/save", toActionHandler(handleSaveProfile));
   registerAction("profile/load", toActionHandler(handleLoadProfile));
   registerAction("profile/import", toActionHandler(handleImportProfile));

@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   closeSessionById: vi.fn(),
   deliverServiceMessage: vi.fn(),
+  // R3 guard functions (new)
+  getSessionTier: vi.fn(),
+  isR3GuidanceDelivered: vi.fn(),
+  markR3GuidanceDelivered: vi.fn(),
 }));
 
 vi.mock("../../session-gate.js", () => ({
@@ -21,6 +25,9 @@ vi.mock("../../session-gate.js", () => ({
 
 vi.mock("../../session-manager.js", () => ({
   getSession: mocks.getSession,
+  getSessionTier: mocks.getSessionTier,
+  isR3GuidanceDelivered: mocks.isR3GuidanceDelivered,
+  markR3GuidanceDelivered: mocks.markR3GuidanceDelivered,
 }));
 
 vi.mock("../../session-teardown.js", () => ({
@@ -42,6 +49,10 @@ describe("session/revoke-child", () => {
     mocks.closeSessionById.mockReturnValue({ closed: true, sid: CHILD_SID, name: "Helper" });
     mocks.deliverServiceMessage.mockReturnValue(true);
     registerChild(PARENT_SID, CHILD_SID);
+    // R3 guard defaults: suppress R3 so existing tests are not affected by new behavior
+    mocks.getSessionTier.mockReturnValue(undefined); // unskilled
+    mocks.isR3GuidanceDelivered.mockReturnValue(true); // already delivered → R3 suppressed
+    mocks.markR3GuidanceDelivered.mockImplementation(() => {});
   });
 
   // ── AC2: closes the child and returns success ────────────────────────────
@@ -249,5 +260,108 @@ describe("session/revoke-child", () => {
 
     expect(result.closed).toBe(false);
     expect(result.sid).toBe(CHILD_SID);
+  });
+});
+
+// ── AC4: R3 (ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB) delivery ───────────────
+
+describe("session/revoke-child — AC4: R3 breadcrumb on first terminal signal", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearChildRegistry();
+    registerChild(PARENT_SID, CHILD_SID);
+    mocks.requireAuth.mockReturnValue(PARENT_SID);
+    mocks.getSession.mockReturnValue({ sid: CHILD_SID, name: "Helper", color: "🟩", parent_sid: PARENT_SID });
+    mocks.closeSessionById.mockReturnValue({ closed: true, sid: CHILD_SID, name: "Helper" });
+    mocks.deliverServiceMessage.mockReturnValue(true);
+    // R3 NOT yet delivered for parent (first terminal signal)
+    mocks.getSessionTier.mockReturnValue(undefined); // unskilled
+    mocks.isR3GuidanceDelivered.mockReturnValue(false); // not yet delivered
+    mocks.markR3GuidanceDelivered.mockImplementation(() => {});
+  });
+
+  it("AC4: fires R3 to parent on first terminal signal (unskilled host)", () => {
+    handleRevokeChild({ token: PARENT_TOKEN, child_token: CHILD_TOKEN });
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      PARENT_SID,
+      expect.stringContaining("Helper"),
+      "onboarding_subsession_resolve_breadcrumb",
+      expect.objectContaining({ child_sid: CHILD_SID, child_name: "Helper", bridge_authoritative: true }),
+    );
+  });
+
+  it("AC4: marks R3 as delivered after firing", () => {
+    handleRevokeChild({ token: PARENT_TOKEN, child_token: CHILD_TOKEN });
+
+    expect(mocks.markR3GuidanceDelivered).toHaveBeenCalledWith(PARENT_SID);
+  });
+
+  it("AC4: does NOT fire R3 when parent is skilled-router", () => {
+    mocks.getSessionTier.mockReturnValue("skilled-router");
+
+    handleRevokeChild({ token: PARENT_TOKEN, child_token: CHILD_TOKEN });
+
+    const r3Calls = mocks.deliverServiceMessage.mock.calls.filter(
+      c => c[2] === "onboarding_subsession_resolve_breadcrumb",
+    );
+    expect(r3Calls).toHaveLength(0);
+    expect(mocks.markR3GuidanceDelivered).not.toHaveBeenCalled();
+  });
+
+  it("AC4: does NOT fire R3 when R3 was already delivered to parent", () => {
+    mocks.isR3GuidanceDelivered.mockReturnValue(true); // already done
+
+    handleRevokeChild({ token: PARENT_TOKEN, child_token: CHILD_TOKEN });
+
+    const r3Calls = mocks.deliverServiceMessage.mock.calls.filter(
+      c => c[2] === "onboarding_subsession_resolve_breadcrumb",
+    );
+    expect(r3Calls).toHaveLength(0);
+    expect(mocks.markR3GuidanceDelivered).not.toHaveBeenCalled();
+  });
+
+  it("AC4: R3 fires on self-revocation too (child calls revoke with own token)", () => {
+    mocks.requireAuth.mockReturnValue(CHILD_SID);
+
+    handleRevokeChild({ token: CHILD_TOKEN, child_token: CHILD_TOKEN });
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      PARENT_SID,
+      expect.any(String),
+      "onboarding_subsession_resolve_breadcrumb",
+      expect.objectContaining({ bridge_authoritative: true }),
+    );
+  });
+
+  it("AC4: R3 is not fired when no registeredParent (no parent_sid, no registry)", () => {
+    clearChildRegistry();
+    mocks.getSession.mockReturnValue({ sid: CHILD_SID, name: "Helper", color: "🟩" }); // no parent_sid
+
+    handleRevokeChild({ token: PARENT_TOKEN, child_token: CHILD_TOKEN });
+
+    const r3Calls = mocks.deliverServiceMessage.mock.calls.filter(
+      c => c[2] === "onboarding_subsession_resolve_breadcrumb",
+    );
+    expect(r3Calls).toHaveLength(0);
+  });
+
+  it("AC8: R3 delivery includes bridge_authoritative: true in details", () => {
+    handleRevokeChild({ token: PARENT_TOKEN, child_token: CHILD_TOKEN });
+
+    const r3Call = mocks.deliverServiceMessage.mock.calls.find(
+      c => c[2] === "onboarding_subsession_resolve_breadcrumb",
+    );
+    expect(r3Call?.[3]).toMatchObject({ bridge_authoritative: true });
+  });
+
+  it("AC4: R3 text references the child session name", () => {
+    handleRevokeChild({ token: PARENT_TOKEN, child_token: CHILD_TOKEN });
+
+    const r3Call = mocks.deliverServiceMessage.mock.calls.find(
+      c => c[2] === "onboarding_subsession_resolve_breadcrumb",
+    );
+    expect(typeof r3Call?.[1]).toBe("string");
+    expect(r3Call?.[1]).toContain("Helper");
   });
 });
