@@ -5,7 +5,7 @@ import { getApi, toResult, toError, resolveChat } from "../../telegram.js";
 import { markdownToV2 } from "../../markdown.js";
 import type { TimelineEvent } from "../../message-store.js";
 import { dequeue, registerCallbackHook, clearCallbackHook } from "../../message-store.js";
-import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, validateSession } from "../../session-manager.js";
+import { createSession, closeSession, setActiveSession, listSessions, activeSessionCount, getSession, getAvailableColors, COLOR_PALETTE, setSessionAnnouncementMessage, getSessionAnnouncementMessage, setSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, validateSession, isClosedMarker } from "../../session-manager.js";
 import { createSessionQueue, removeSessionQueue, deliverServiceMessage, trackMessageOwner, deliverReminderEvent, getSessionQueue } from "../../session-queue.js";
 import { setGovernorSid, getGovernorSid } from "../../routing-mode.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
@@ -220,9 +220,20 @@ async function requestReconnectApproval(chatId: number, name: string, sid: numbe
 const DESCRIPTION =
   "Start a named session and return its token. If you lost the token, use action(type: 'session/reconnect'). No args are reused.";
 
-export async function handleSessionStart({ name, color, refresh, token, autoload_profile, parentSid }: { name: string; color?: string; refresh?: boolean; token?: number; autoload_profile?: boolean; parentSid?: number }) {
+export async function handleSessionStart({ name, color, refresh, token, autoload_profile, parentSid, connection_token }: { name: string; color?: string; refresh?: boolean; token?: number; autoload_profile?: boolean; parentSid?: number; connection_token?: string }) {
       const chatId = resolveChat();
       if (typeof chatId !== "number") return toError(chatId);
+
+      // AC3: Reject before approval dialog if this caller's session was closed.
+      // Only enforced on refresh:true — the path used when "recovering" after a drop.
+      if (refresh && connection_token && isClosedMarker(connection_token)) {
+        return toError({
+          code: "CALLER_CLOSED",
+          message:
+            "This caller's session was closed and is not permitted to start a new session. " +
+            "Obtain a new approval ticket from the operator to re-establish access.",
+        });
+      }
 
       const isFirstSession = activeSessionCount() === 0;
 
@@ -477,7 +488,7 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
       }
 }
 
-export async function handleSessionReconnect({ name }: { name: string }) {
+export async function handleSessionReconnect({ name, connection_token }: { name: string; connection_token?: string }) {
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
 
@@ -486,6 +497,16 @@ export async function handleSessionReconnect({ name }: { name: string }) {
     return toError({
       code: "NAME_REQUIRED",
       message: "A session name is required for reconnect. Pass the name of the session you wish to reclaim.",
+    });
+  }
+
+  // AC2: Reject before approval dialog if this caller's session was closed.
+  if (connection_token && isClosedMarker(connection_token)) {
+    return toError({
+      code: "CALLER_CLOSED",
+      message:
+        "This caller's session was closed and is not permitted to reconnect. " +
+        "Start a new session with action(type: 'session/start', ...) using a fresh name.",
     });
   }
 
@@ -640,6 +661,15 @@ export function register(server: McpServer) {
             "Also applies if the matching profile has autoload: true, even when this flag is false or omitted. " +
             "No error if no profile exists — session starts normally. " +
             "session/reconnect also auto-loads when profile.autoload is true.",
+          ),
+        connection_token: z
+          .string()
+          .optional()
+          .describe(
+            "Connection token previously issued by this bridge to the caller. " +
+            "When provided with refresh: true, the bridge checks whether this caller's session " +
+            "was closed and rejects immediately with CALLER_CLOSED if so, " +
+            "without showing the operator approval dialog.",
           ),
       },
     },

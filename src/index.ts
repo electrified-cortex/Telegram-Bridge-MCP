@@ -17,7 +17,7 @@ import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from 
 import { startSilenceDetector } from "./silence-detector.js";
 import { startHealthCheck } from "./health-check.js";
 import { setAuthHook } from "./session-gate.js";
-import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "./session-manager.js";
+import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, sweepExpiredMarkers } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
 import { loadConfig, getSessionLogMode, isDebugConfig, getPreToolDenyPatterns, getSessionApproval } from "./config.js";
 import { setDelegationEnabled } from "./agent-approval.js";
@@ -304,6 +304,13 @@ process.stderr.write("[info] health check started\n");
 
 // Best-effort: unpin stale session announcement messages from a prior crashed run
 void cleanupStalePins().catch(() => {});
+
+// Periodic sweep of expired closed-session markers every 10 minutes.
+// The lazy cleanup inside isClosedMarker() handles re-presented tokens; this
+// periodic sweep bounds map growth for tokens that are never re-presented.
+setInterval(() => {
+  sweepExpiredMarkers();
+}, 10 * 60 * 1_000).unref();
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
 const localLogStatus = isLoggingEnabled() ? "`Logging enabled`" : "Logging disabled";
