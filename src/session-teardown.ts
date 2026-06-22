@@ -34,7 +34,8 @@ import { clearSessionReminders } from "./reminder-state.js";
 import { cancelAnimation } from "./animation-state.js";
 import { removeSession as removeBehaviorTrackerSession } from "./behavior-tracker.js";
 import { removeSilenceState } from "./silence-detector.js";
-import { clearActivityFile } from "./tools/activity/file-state.js";
+import { clearActivityFile, isSseMonitorActive } from "./tools/activity/file-state.js";
+import { cancelSseConnection } from "./sse-endpoint.js";
 import { unregisterChannelSubscriber } from "./channel.js";
 import { removeDequeueRateState } from "./tools/dequeue.js";
 import { getChildSids, unregisterChild } from "./tools/session/child-registry.js";
@@ -104,6 +105,9 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   clearSessionReminders(sid);
   // Cancel any active animation owned by this session
   cancelAnimation(sid).catch(() => {});
+  // Cancel the SSE connection before clearing the activity file so that
+  // the subscriber receives a proper 'data: cancelled' event instead of EOF.
+  if (isSseMonitorActive(sid)) cancelSseConnection(sid);
   // Clean up activity file registration; deletes file if TMCP-owned
   clearActivityFile(sid).catch(() => {});
   // Unpin any blocking questions that were never answered (AC7)
