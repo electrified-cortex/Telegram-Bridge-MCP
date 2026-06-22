@@ -217,6 +217,17 @@ export function sessionQueueCount(): number {
 // Message ownership (outbound tracking)
 // ---------------------------------------------------------------------------
 
+/** AC4: callback invoked when a session confirms an outbound send. */
+let _outboundSendCb: ((sid: number, now: number) => void) | undefined;
+
+/**
+ * Register a callback to be notified when a session sends an outbound message.
+ * Called from index.ts during startup to wire the dequeue throttle (AC4 exemption).
+ */
+export function setOutboundSendCallback(cb: (sid: number, now: number) => void): void {
+  _outboundSendCb = cb;
+}
+
 /**
  * Record that a bot message was sent by a specific session.
  * Called by outbound recording so inbound replies can route back.
@@ -225,7 +236,10 @@ export function sessionQueueCount(): number {
 export function trackMessageOwner(messageId: number, sid: number): void {
   if (sid > 0) {
     _messageOwnership.set(messageId, sid);
-    recordLastSentAt(sid, Date.now());
+    const now = Date.now();
+    recordLastSentAt(sid, now);
+    // AC4: notify dequeue throttle that this session is actively sending.
+    _outboundSendCb?.(sid, now);
   }
 }
 
