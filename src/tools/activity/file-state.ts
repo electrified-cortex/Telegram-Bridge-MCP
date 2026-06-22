@@ -1,23 +1,5 @@
 /**
- * Per-session monitor notify gate (file-touch + SSE).
- *
- * Holds ONE gate state machine per session that has ANY monitor — an activity
- * file, an SSE/listen stream, or both. The gate (debounce / 5-min
- * re-kick) is monitor-agnostic; the file touch is a side-effect that runs only
- * when a file is registered (`filePath !== null`), and the SSE kick is delivered
- * by the caller (notifySession) / the injected `_sseNotifyCallback`. This is the
- * "monitor = file OR listen; behavior MUST be the same" contract: a gate entry
- * is created when EITHER monitor appears and torn down when the last one leaves.
- *
- * GOTCHA — shared gate when a session runs BOTH channels at once:
- *   File and SSE share ONE debounce / re-notify timer (deliberately simplest;
- *   a session using both at the same time is a near-zero case). Consequence:
- *   the channels are NOT fully isolated when both are active. Most notably, a
- *   file-touch FAILURE rolls back the shared `notifyDebounceUntil` (see
- *   doTouchWithRollback), which also clears the SSE channel's debounce, so the
- *   next event can re-kick SSE earlier than its own window would allow. Each
- *   channel still works standalone; only the both-active overlap is coupled. If
- *   simultaneous use ever becomes real, split this into per-channel gates.
+ * Per-session activity file state and notify gate.
  *
  * Tracks whether a session has opted into the file-touch feature.
  * On inbound messages, TMCP appends "\n" to the registered file so
@@ -27,26 +9,25 @@
  *   tmcpOwned = true  → TMCP created the file; deletes on clear/close.
  *   tmcpOwned = false → agent supplied path; TMCP never touches lifecycle.
  *
- * Notify gate (post-notify debounce):
+ * Notify gate (post-notify lockout):
  *   notifyIfAllowed() is the sole entry point for notifying. It:
  *     1. Classifies the event by source + inflightAtEnqueue.
  *     2. Suppresses if dequeue is in-flight (agent reads inline).
- *     3. Suppresses if the notify debounce is active (notifyDebounceUntil > now).
- *     4. If suppressed, sets notifyPendingBecauseDebounce for re-evaluation.
- *     5. Otherwise: touches the activity file, sets debounce for NOTIFY_DEBOUNCE_MS.
- *   On touch failure, debounce is rolled back and a bounded retry is scheduled.
+ *     3. Suppresses if the notify lockout is active (notifyLockedUntil > now).
+ *     4. If suppressed, sets notifyPendingBecauseLocked for re-evaluation.
+ *     5. Otherwise: touches the activity file, sets lockout for LOCKOUT_MS.
+ *   On touch failure, lockout is rolled back and a bounded retry is scheduled.
  *
- * Debounce release:
- *   releaseNotifyDebounce() is called ONLY on timed_out: true exits (agent went fully idle).
- *   Content-returning dequeue exits do NOT release the debounce — it persists through
- *   active drain cycles so the agent is not re-notified for messages it is already draining.
- *   If a notification was suppressed during debounce AND the queue still has pending
- *   content, a re-evaluation notify fires immediately after the debounce clears.
+ * Lockout release:
+ *   releaseNotifyLockout() is called from content-returning dequeue exits.
+ *   If a notification was suppressed during lockout AND the queue still has pending
+ *   content, a re-evaluation notify fires immediately after the lockout clears.
+ *   Timeout-only dequeue exits do NOT call releaseNotifyLockout.
  *
- * Stale debounce:
- *   If the debounce expires (notifyDebounceUntil elapsed) before the agent dequeues,
+ * Stale lockout:
+ *   If the lockout expires (notifyLockedUntil elapsed) before the agent dequeues,
  *   the next inbound fires a fresh notify. Wedged agents get at most one notify
- *   per NOTIFY_DEBOUNCE_MS.
+ *   per LOCKOUT_MS.
  *
  * Classification (A.3):
  *   source          | inflightAtEnqueue | notifies?
@@ -60,8 +41,8 @@
  *   bridge-internal | *                 | no
  *
  * Reset points:
- *   handleSessionStopped — clears debounce, notifies if queue has pending.
- *   resetNotifyGateState   — clears debounce state only (reconnect path).
+ *   handleSessionStopped — clears lockout, notifies if queue has pending.
+ *   resetNotifyGateState   — clears lockout state only (reconnect path).
  *   clearActivityFile    — cancels retry handle.
  *   replaceActivityFile  — cancels retry handle of old entry, carries gate state.
  */
@@ -70,15 +51,9 @@ import { appendFile, unlink, mkdir, open } from "fs/promises";
 import { dirname, isAbsolute, resolve } from "path";
 import { randomBytes } from "crypto";
 import { fileURLToPath } from "url";
-import { getNotifyDebounceMs } from "../../session-manager.js";
+import { getNotifyLockoutMs } from "../../session-manager.js";
 import { hasPendingUserContent } from "../../session-queue.js";
 import { dlog } from "../../debug-log.js";
-
-let _sseNotifyCallback: ((sid: number) => void) | null = null;
-
-export function initSseNotifyCallback(fn: (sid: number) => void): void {
-  _sseNotifyCallback = fn;
-}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** data/activity/ lives at repo_root/data/activity/ */
@@ -88,14 +63,19 @@ const ACTIVITY_DIR = resolve(__dirname, "../../../", "data", "activity");
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Default post-notify debounce window (ms). */
-export const NOTIFY_DEBOUNCE_MS = 300_000;
+/** Default post-notify lockout window (ms). */
+export const LOCKOUT_DEFAULT_MS = 300_000;
 
-/** Minimum allowed debounce window (ms). */
+/** Minimum allowed lockout window (ms). */
+export const LOCKOUT_MIN_MS = 1_000;
+
+/** Maximum allowed lockout window (ms). */
+export const LOCKOUT_MAX_MS = 3_600_000;
+
+// Kept for deprecated profile/kick-debounce migration response only.
+export const NOTIFY_DEBOUNCE_DEFAULT_MS = 60_000;
 export const NOTIFY_DEBOUNCE_MIN_MS = 1_000;
-
-/** Maximum allowed debounce window (ms). */
-export const NOTIFY_DEBOUNCE_MAX_MS = 3_600_000;
+export const NOTIFY_DEBOUNCE_MAX_MS = 600_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -110,18 +90,16 @@ export type NotifySource =
   | "bridge-internal";
 
 export interface ActivityFileState {
-  /** Absolute path to the registered file; null when this is an SSE-only gate. */
-  filePath: string | null;
+  /** Absolute path to the registered file. */
+  filePath: string;
   /** True if TMCP created and owns this file. */
   tmcpOwned: boolean;
-  /** True while an SSE/listen monitor is connected for this session. */
-  sseConnected?: boolean;
   /** True while a dequeue call is being processed for this session. */
   inflightDequeue: boolean;
-  /** UTC ms when debounce expires; null = not debouncing. */
-  notifyDebounceUntil: number | null;
-  /** True when a notifiable inbound was suppressed during debounce. */
-  notifyPendingBecauseDebounce: boolean;
+  /** UTC ms when lockout expires; null = not locked. */
+  notifyLockedUntil: number | null;
+  /** True when a notifiable inbound was suppressed during lockout. */
+  notifyPendingBecauseLocked: boolean;
   /** True while appendNewline is in flight (including retries). */
   touchInFlight: boolean;
   /** setTimeout handle for the next bounded retry; null if none. */
@@ -135,12 +113,6 @@ export interface ActivityFileState {
 // ---------------------------------------------------------------------------
 
 const _state = new Map<number, ActivityFileState>();
-
-/**
- * Sessions with a pending unexpected-subscription-close notification.
- * Consumed once on the agent's next dequeue (AC2, AC3).
- */
-const _unexpectedClosePending = new Set<number>();
 
 let _activityDirReady = false;
 
@@ -169,44 +141,6 @@ export function validateFilePath(filePath: string): string | null {
     return "file_path must be an absolute path";
   }
   return null;
-}
-
-// ---------------------------------------------------------------------------
-// Unexpected subscription close tracking (AC1-AC5 of task 10-3029)
-// ---------------------------------------------------------------------------
-
-/**
- * Record that the subscription for this session closed unexpectedly —
- * i.e. without the agent calling activity/listen cancel, activity/file/delete,
- * or session/close. The next dequeue call injects a
- * SUBSCRIPTION_CLOSED_UNEXPECTEDLY service message (consumed exactly once).
- *
- * Idempotent: calling multiple times for the same sid before a consume has
- * no extra effect — the message fires once per consume call.
- */
-export function recordUnexpectedSubscriptionClose(sid: number): void {
-  _unexpectedClosePending.add(sid);
-}
-
-/**
- * Consume the pending unexpected-close notification for a session.
- *
- * Returns true exactly once per subscription-loss event. All subsequent
- * calls return false until another unexpected close is recorded. Called by
- * runDrainLoop at dequeue time (AC2, AC3).
- */
-export function consumeUnexpectedSubscriptionClose(sid: number): boolean {
-  if (!_unexpectedClosePending.has(sid)) return false;
-  _unexpectedClosePending.delete(sid);
-  return true;
-}
-
-/**
- * Remove any pending unexpected-close notification for a session.
- * Called on session teardown to avoid orphaned Set entries.
- */
-export function clearUnexpectedCloseForSession(sid: number): void {
-  _unexpectedClosePending.delete(sid);
 }
 
 /**
@@ -240,7 +174,7 @@ async function appendNewline(filePath: string): Promise<boolean> {
 }
 
 /**
- * Touch the activity file and roll back the debounce if the touch fails.
+ * Touch the activity file and roll back the lockout if the touch fails.
  * The lockedEntry parameter is a generation guard — if _state no longer holds
  * this exact entry object, the touch is abandoned (file was replaced).
  */
@@ -251,14 +185,7 @@ async function doTouchWithRollback(sid: number, lockedEntry: ActivityFileState):
     return;
   }
 
-  // SSE-only gate (no file) — nothing to touch.
-  const filePath = lockedEntry.filePath;
-  if (filePath === null) {
-    lockedEntry.touchInFlight = false;
-    return;
-  }
-
-  const ok = await appendNewline(filePath);
+  const ok = await appendNewline(lockedEntry.filePath);
 
   // Post-await generation check (entry may have been replaced during the await)
   const recheck = _state.get(sid);
@@ -270,11 +197,8 @@ async function doTouchWithRollback(sid: number, lockedEntry: ActivityFileState):
   recheck.touchInFlight = false;
 
   if (!ok) {
-    // Touch failed — roll back debounce so next inbound retries.
-    // GOTCHA: when an SSE stream is ALSO attached to this session, this rollback
-    // clears the debounce that channel shares, briefly un-debouncing SSE. Benign
-    // (an extra kick is harmless) and near-zero in practice — see module header.
-    recheck.notifyDebounceUntil = null;
+    // Touch failed — roll back lockout so next inbound retries
+    recheck.notifyLockedUntil = null;
     scheduleRetry(sid, recheck, 0);
   }
 }
@@ -288,9 +212,6 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
 
   if (attempt >= RETRY_DELAYS.length) {
     dlog("tool", `activity/file: touch retry exhausted for sid=${sid}; next inbound retries fresh`);
-    // Activity-file subscription is effectively dead — agent's monitor can no longer
-    // receive wake notifications. Record as unexpected close (AC1, AC5).
-    recordUnexpectedSubscriptionClose(sid);
     return;
   }
 
@@ -299,12 +220,10 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
       entry.pendingRetryHandle = null;
 
       if (_state.get(sid) !== entry) return;
-      const filePath = entry.filePath;
-      if (filePath === null) return; // SSE-only — no file retry
       if (!hasPendingUserContent(sid)) return;
 
       entry.touchInFlight = true;
-      const ok = await appendNewline(filePath);
+      const ok = await appendNewline(entry.filePath);
 
       const recheck = _state.get(sid);
       if (!recheck || recheck !== entry) {
@@ -315,7 +234,7 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
       recheck.touchInFlight = false;
 
       if (ok) {
-        recheck.notifyDebounceUntil = Date.now() + getNotifyDebounceMs(sid);
+        recheck.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
       } else {
         scheduleRetry(sid, recheck, attempt + 1);
       }
@@ -333,7 +252,7 @@ function classify(source: NotifySource, inflightAtEnqueue: boolean): boolean {
 }
 
 /**
- * Fire a re-evaluation notify after debounce clears when a notifiable event was suppressed.
+ * Fire a re-evaluation notify after lockout clears when a notifiable event was suppressed.
  * Direct touch path — does not re-enter notifyIfAllowed (no classification, never declines).
  */
 function fireRevaluationNotify(sid: number): void {
@@ -341,17 +260,14 @@ function fireRevaluationNotify(sid: number): void {
   if (!entry) return;
 
   if (entry.touchInFlight) {
-    entry.notifyPendingBecauseDebounce = true;
+    entry.notifyPendingBecauseLocked = true;
     return;
   }
 
-  entry.notifyDebounceUntil = Date.now() + getNotifyDebounceMs(sid);
-  entry.notifyPendingBecauseDebounce = false;
-  if (entry.filePath !== null) {
-    entry.touchInFlight = true;
-    void doTouchWithRollback(sid, entry);
-  }
-  _sseNotifyCallback?.(sid);
+  entry.touchInFlight = true;
+  entry.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
+  entry.notifyPendingBecauseLocked = false;
+  void doTouchWithRollback(sid, entry);
 }
 
 // ---------------------------------------------------------------------------
@@ -363,108 +279,14 @@ export function setActivityFile(sid: number, state: ActivityFileState): void {
   _state.set(sid, state);
 }
 
-/**
- * Get the activity FILE registration for a session.
- *
- * Returns the entry only when a file is actually registered (`filePath !==
- * null`). A session with only an SSE monitor has a gate entry in `_state` but no
- * file; this returns `undefined` for it, so the file-oriented tools
- * (create/edit/get/delete/touch) and liveness checks see "no file registered"
- * exactly as before. Gate-internal code reads `_state` directly and is
- * unaffected by this filter. The return type narrows `filePath` to `string` so
- * callers need no null handling.
- */
-export function getActivityFile(
-  sid: number,
-): (ActivityFileState & { filePath: string }) | undefined {
-  const entry = _state.get(sid);
-  if (!entry || entry.filePath === null) return undefined;
-  return entry as ActivityFileState & { filePath: string };
+/** Get the activity file state for a session (undefined if not registered). */
+export function getActivityFile(sid: number): ActivityFileState | undefined {
+  return _state.get(sid);
 }
 
-/** Return true if the session has an active activity FILE registration. */
+/** Return true if the session has an active activity file registration. */
 export function isActivityFileActive(sid: number): boolean {
-  return _state.get(sid)?.filePath != null;
-}
-
-/** Return true if the session currently has an active SSE (activity/listen) subscription. */
-export function isSseMonitorActive(sid: number): boolean {
-  return _state.get(sid)?.sseConnected === true;
-}
-
-/**
- * Register that an SSE (activity/listen) monitor connected for this session.
- *
- * The notify gate (debounce / 5-min re-kick) lives in `_state` and was
- * historically created only when an activity FILE was registered. An SSE-only
- * agent has no file, so without this it would have no gate entry and every kick
- * would be suppressed by notifyIfAllowed's `!entry` guard. Creating a fileless
- * gate entry on connect brings the SSE path under the exact same gate as the
- * file path — one kick, debounced, re-kicked at 5 min.
- *
- * Idempotent: if a gate entry already exists (file monitor, or a prior SSE
- * connection), it just marks SSE present without disturbing the debounce.
- */
-export function registerSseMonitor(sid: number): void {
-  // Clear any pending unexpected-close notification — the monitor is re-arming
-  // (either first connect or reconnect). No need to alert the agent since they
-  // already have a live subscription again.
-  _unexpectedClosePending.delete(sid);
-
-  const entry = _state.get(sid);
-  if (entry) {
-    entry.sseConnected = true;
-    return;
-  }
-  _state.set(sid, {
-    filePath: null,
-    tmcpOwned: false,
-    sseConnected: true,
-    inflightDequeue: false,
-    notifyDebounceUntil: null,
-    notifyPendingBecauseDebounce: false,
-    touchInFlight: false,
-    pendingRetryHandle: null,
-    pendingReNotifyHandle: null,
-  });
-}
-
-/**
- * Unregister the SSE monitor for this session (connection closed/cancelled).
- *
- * Clears the SSE flag. If no activity file remains, the session has no monitor
- * left, so the gate entry and its pending timers are torn down. Idempotent and
- * safe when no entry exists.
- */
-/**
- * Unregister the SSE monitor for this session (connection closed/cancelled).
- *
- * @param expected Pass `true` when the agent initiated the teardown
- *   (activity/listen cancel → cancelSseConnection). Pass `false` (default) for
- *   organic closes — req 'close' event or keepalive failure — which trigger a
- *   SUBSCRIPTION_CLOSED_UNEXPECTEDLY service message on the agent's next dequeue.
- */
-export function unregisterSseMonitor(sid: number, expected: boolean = false): void {
-  const entry = _state.get(sid);
-  if (!entry) return;
-
-  // Record unexpected close BEFORE clearing sseConnected so the flag check is accurate.
-  if (!expected && entry.sseConnected) {
-    recordUnexpectedSubscriptionClose(sid);
-  }
-
-  entry.sseConnected = false;
-  if (entry.filePath === null) {
-    if (entry.pendingRetryHandle !== null) {
-      clearTimeout(entry.pendingRetryHandle);
-      entry.pendingRetryHandle = null;
-    }
-    if (entry.pendingReNotifyHandle !== null) {
-      clearTimeout(entry.pendingReNotifyHandle);
-      entry.pendingReNotifyHandle = null;
-    }
-    _state.delete(sid);
-  }
+  return _state.has(sid);
 }
 
 /** Return true if the session currently has an in-flight dequeue. */
@@ -484,73 +306,65 @@ export function notifyIfAllowed(
   sid: number,
   source: NotifySource,
   inflightAtEnqueue: boolean,
-): boolean {
+): void {
   const entry = _state.get(sid);
-  if (!entry) return false;
+  if (!entry) return;
 
   // 1. Source classification
-  if (!classify(source, inflightAtEnqueue)) return false;
+  if (!classify(source, inflightAtEnqueue)) return;
 
   // 2. In-flight suppression: agent is blocked in dequeue, event delivered inline
-  if (entry.inflightDequeue) return false;
+  if (entry.inflightDequeue) return;
 
   // 3. Touch-in-flight: another notify is already executing
   if (entry.touchInFlight) {
-    entry.notifyPendingBecauseDebounce = true;
-    return false;
+    entry.notifyPendingBecauseLocked = true;
+    return;
   }
 
-  // 4. Debounce check
+  // 4. Lockout check
   const now = Date.now();
-  if (entry.notifyDebounceUntil !== null && entry.notifyDebounceUntil > now) {
-    entry.notifyPendingBecauseDebounce = true;
-    return false;
+  if (entry.notifyLockedUntil !== null && entry.notifyLockedUntil > now) {
+    entry.notifyPendingBecauseLocked = true;
+    return;
   }
 
-  // 5. Notify — arm the shared gate (debounce + 5-min re-notify timer) for every
-  //    monitor. The file touch runs only when a file is registered; for an
-  //    SSE-only gate the kick is delivered by the caller (notifySession) on the
-  //    `true` return. Both monitors are debounced by the same window.
+  // 5. Notify — synchronous reservation before async touch
+  entry.touchInFlight = true;
   // Cancel any existing re-notify timer before registering a new one
   if (entry.pendingReNotifyHandle !== null) {
     clearTimeout(entry.pendingReNotifyHandle);
   }
-  const debounceMs = getNotifyDebounceMs(sid);
-  entry.notifyDebounceUntil = now + debounceMs;
+  const lockoutMs = getNotifyLockoutMs(sid);
+  entry.notifyLockedUntil = now + lockoutMs;
   entry.pendingReNotifyHandle = setTimeout(() => {
     entry.pendingReNotifyHandle = null;
     // TODO §5-b: include reminder types once §5-b lands
     if (hasPendingUserContent(sid)) {
       fireRevaluationNotify(sid);
     }
-  }, debounceMs);
-  entry.notifyPendingBecauseDebounce = false;
-  if (entry.filePath !== null) {
-    // Synchronous reservation before the async touch (atomic in single-thread).
-    entry.touchInFlight = true;
-    void doTouchWithRollback(sid, entry);
-  }
-  return true;
+  }, lockoutMs);
+  entry.notifyPendingBecauseLocked = false;
+  void doTouchWithRollback(sid, entry);
 }
 
 /**
- * Release the notify debounce on timed_out: true exits only (agent went fully idle).
- * Content-returning exits do NOT call this — debounce persists through active drain cycles.
- * If a notifiable event was suppressed during debounce AND the queue still has
+ * Release the notify lockout after any dequeue exit (content-returning or timeout).
+ * If a notifiable event was suppressed during lockout AND the queue still has
  * pending content, fires one re-evaluation notify immediately.
  */
-export function releaseNotifyDebounce(sid: number): void {
+export function releaseNotifyLockout(sid: number): void {
   const entry = _state.get(sid);
   if (!entry) return;
-  if (entry.notifyDebounceUntil === null && !entry.notifyPendingBecauseDebounce) return;
+  if (entry.notifyLockedUntil === null && !entry.notifyPendingBecauseLocked) return;
 
-  const pending = entry.notifyPendingBecauseDebounce;
+  const pending = entry.notifyPendingBecauseLocked;
   if (entry.pendingReNotifyHandle !== null) {
     clearTimeout(entry.pendingReNotifyHandle);
     entry.pendingReNotifyHandle = null;
   }
-  entry.notifyDebounceUntil = null;
-  entry.notifyPendingBecauseDebounce = false;
+  entry.notifyLockedUntil = null;
+  entry.notifyPendingBecauseLocked = false;
 
   if (pending && hasPendingUserContent(sid)) {
     fireRevaluationNotify(sid);
@@ -560,8 +374,8 @@ export function releaseNotifyDebounce(sid: number): void {
 /**
  * Set the in-flight dequeue flag for a session.
  * Call active=true when dequeue starts; active=false when it returns (any path).
- * Debounce release is handled separately — call releaseNotifyDebounce() on
- * timed_out: true exits only (NOT from content-returning exits).
+ * Lockout release is handled separately — call releaseNotifyLockout() from
+ * content-returning exits only.
  */
 export function setDequeueActive(sid: number, active: boolean): void {
   const entry = _state.get(sid);
@@ -571,7 +385,7 @@ export function setDequeueActive(sid: number, active: boolean): void {
 
 /**
  * Reset only the notify gate state for a session (reconnect path).
- * Clears debounce and pending flags without touching the file path or notifying.
+ * Clears lockout and pending flags without touching the file path or notifying.
  * The next inbound will fire a fresh notify.
  */
 export function resetNotifyGateState(sid: number): void {
@@ -588,17 +402,17 @@ export function resetNotifyGateState(sid: number): void {
     entry.pendingReNotifyHandle = null;
   }
 
-  entry.notifyDebounceUntil = null;
-  entry.notifyPendingBecauseDebounce = false;
+  entry.notifyLockedUntil = null;
+  entry.notifyPendingBecauseLocked = false;
   entry.touchInFlight = false;
 }
 
 /**
  * Notify the activity file system that the agent made a tool call.
- * No-op in the debounce model — kept for call-site compatibility with server.ts.
+ * No-op in the lockout model — kept for call-site compatibility with server.ts.
  */
 export function recordActivityTouch(_sid: number): void {
-  // No-op: the debounce model does not track per-tool-call activity.
+  // No-op: the lockout model does not track per-tool-call activity.
 }
 
 /**
@@ -623,21 +437,16 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
   }
 
   // Reset all gate state
-  entry.notifyDebounceUntil = null;
-  entry.notifyPendingBecauseDebounce = false;
+  entry.notifyLockedUntil = null;
+  entry.notifyPendingBecauseLocked = false;
   entry.touchInFlight = false;
   entry.inflightDequeue = false;
 
-  // Notify if queue has pending content so the new agent gets a wake-up signal.
-  // Parity: touch the file when one is registered AND kick the SSE stream when
-  // one is connected — both monitors wake identically.
+  // Notify if queue has pending content so the new agent gets a wake-up signal
   if (hasPendingUserContent(sid)) {
-    entry.notifyDebounceUntil = Date.now() + getNotifyDebounceMs(sid);
-    if (entry.filePath !== null) {
-      entry.touchInFlight = true;
-      void doTouchWithRollback(sid, entry);
-    }
-    _sseNotifyCallback?.(sid);
+    entry.touchInFlight = true;
+    entry.notifyLockedUntil = Date.now() + getNotifyLockoutMs(sid);
+    void doTouchWithRollback(sid, entry);
   }
 
   return { noOp: false };
@@ -651,38 +460,21 @@ export async function clearActivityFile(sid: number): Promise<void> {
   const entry = _state.get(sid);
   if (!entry) return;
 
-  // Remove any pending unexpected-close notification — session is tearing down
-  // and no future dequeue will be able to deliver it anyway.
-  _unexpectedClosePending.delete(sid);
-
-  // The file-touch retry targets the file path — meaningless once it is gone.
   if (entry.pendingRetryHandle !== null) {
     clearTimeout(entry.pendingRetryHandle);
     entry.pendingRetryHandle = null;
   }
 
-  const filePath = entry.filePath;
-  const tmcpOwned = entry.tmcpOwned;
-
-  if (entry.sseConnected) {
-    // An SSE monitor is still active — keep the shared gate entry alive (its
-    // debounce + re-notify timer still govern the SSE stream); drop only the
-    // file registration.
-    entry.filePath = null;
-    entry.tmcpOwned = false;
-    entry.touchInFlight = false;
-  } else {
-    // No monitor left — tear down the gate entry and its re-notify timer.
-    if (entry.pendingReNotifyHandle !== null) {
-      clearTimeout(entry.pendingReNotifyHandle);
-      entry.pendingReNotifyHandle = null;
-    }
-    _state.delete(sid);
+  if (entry.pendingReNotifyHandle !== null) {
+    clearTimeout(entry.pendingReNotifyHandle);
+    entry.pendingReNotifyHandle = null;
   }
 
-  if (tmcpOwned && filePath !== null) {
+  _state.delete(sid);
+
+  if (entry.tmcpOwned) {
     try {
-      await unlink(filePath);
+      await unlink(entry.filePath);
     } catch {
       // best-effort — file may already be gone
     }
@@ -698,21 +490,14 @@ export async function replaceActivityFile(
   sid: number,
   newState: ActivityFileState,
 ): Promise<void> {
-  // Clear any pending unexpected-close notification — agent is re-registering
-  // a file, so the subscription is being restored.
-  _unexpectedClosePending.delete(sid);
-
   const oldEntry = _state.get(sid);
 
   if (oldEntry) {
-    // Carry over in-flight gate state so a file swap does not reset an active debounce
+    // Carry over in-flight gate state so a file swap does not reset an active lockout
     newState.inflightDequeue = oldEntry.inflightDequeue;
-    newState.notifyDebounceUntil = oldEntry.notifyDebounceUntil;
-    newState.notifyPendingBecauseDebounce = oldEntry.notifyPendingBecauseDebounce;
+    newState.notifyLockedUntil = oldEntry.notifyLockedUntil;
+    newState.notifyPendingBecauseLocked = oldEntry.notifyPendingBecauseLocked;
     newState.touchInFlight = oldEntry.touchInFlight;
-    // Carry over the SSE monitor flag — registering/swapping a file must not
-    // drop an already-connected SSE stream's gate membership.
-    newState.sseConnected = oldEntry.sseConnected;
     // Do not carry over pendingRetryHandle — old retry targets old file path
     newState.pendingRetryHandle = null;
     // Do not carry over pendingReNotifyHandle — cancel old timer, new entry starts fresh
@@ -737,7 +522,7 @@ export async function replaceActivityFile(
   }
 
   // Delete old TMCP-owned file (best-effort, after new path is registered)
-  if (oldEntry.tmcpOwned && oldEntry.filePath !== null && oldEntry.filePath !== newState.filePath) {
+  if (oldEntry.tmcpOwned && oldEntry.filePath !== newState.filePath) {
     try {
       await unlink(oldEntry.filePath);
     } catch {
@@ -778,6 +563,5 @@ export function resetActivityFileStateForTest(): void {
     }
   }
   _state.clear();
-  _unexpectedClosePending.clear();
   _activityDirReady = false;
 }
