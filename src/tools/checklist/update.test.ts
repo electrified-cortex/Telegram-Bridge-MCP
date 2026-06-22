@@ -31,8 +31,7 @@ vi.mock("../../session-manager.js", () => ({
   validateSession: mocks.validateSession,
 }));
 
-import { register } from "./update.js";
-import { resetCompletionTrackingForTest } from "./update.js";
+import { register, resetCompletionTrackingForTest, handleUpdateChecklist } from "./update.js";
 
 const STEPS = [
   { label: "Install deps", status: "done" },
@@ -356,6 +355,12 @@ describe("update_checklist tool", () => {
     ];
     await update({ title: "CI", steps: mixedSteps, message_id: 10, token: 1123456 });
     expect(mocks.unpinChatMessage).not.toHaveBeenCalled();
+  });
+
+  it("returns MISSING_REQUIRED_FIELD when title is undefined", async () => {
+    const result = await handleUpdateChecklist({ title: undefined as unknown as string, message_id: 123, steps: [], token: 1123456 });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_REQUIRED_FIELD");
   });
 
   describe("response_format: compact", () => {

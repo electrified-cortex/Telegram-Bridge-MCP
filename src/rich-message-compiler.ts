@@ -19,8 +19,6 @@ import type {
   RichBlockBlockQuotation,
   RichBlockTable,
   RichBlockTableCell,
-  RichBlockMathematicalExpression,
-  RichBlockDetails,
   RichBlockPhoto,
   RichBlockCollage,
   RichBlockSlideshow,
@@ -418,7 +416,7 @@ function flushList(state: ParseState): void {
     const li: RichBlockListItem = {
       label,
       blocks: [
-        { type: "paragraph", text: parseInline(item.text) } as RichBlockParagraph,
+        { type: "paragraph", text: parseInline(item.text) },
       ],
     };
     if (ordered) {
@@ -525,7 +523,7 @@ export function parseMediaBlock(line: string): RichBlock | null {
     const fileIds = token.slice("slideshow:".length).trim().split(/\s+/).filter(Boolean);
     const blocks: RichBlock[] = fileIds.map((id): RichBlockPhoto => ({
       type: "photo",
-      photo: [{ file_id: id, file_unique_id: "", width: 0, height: 0 } as TgPhotoSize],
+      photo: [{ file_id: id, file_unique_id: "", width: 0, height: 0 }],
     }));
     const result: RichBlockSlideshow = { type: "slideshow", blocks };
     if (caption) result.caption = caption;
@@ -566,7 +564,7 @@ export function parseMediaBlock(line: string): RichBlock | null {
   if (parts.length >= 2) {
     const blocks: RichBlock[] = parts.map((id): RichBlockPhoto => ({
       type: "photo",
-      photo: [{ file_id: id, file_unique_id: "", width: 0, height: 0 } as TgPhotoSize],
+      photo: [{ file_id: id, file_unique_id: "", width: 0, height: 0 }],
     }));
     const result: RichBlockCollage = { type: "collage", blocks };
     if (caption) result.caption = caption;
@@ -612,7 +610,7 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
         state.blocks.push({
           type: "mathematical_expression",
           expression,
-        } as RichBlockMathematicalExpression);
+        });
       } else {
         state.math.lines.push(line);
       }
@@ -630,7 +628,7 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
           type: "details",
           summary: parseInline(summary),
           blocks: bodyBlocks,
-        } as RichBlockDetails);
+        });
       } else {
         state.details.lines.push(line);
       }
@@ -641,7 +639,7 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
     const fenceMatch = RE_FENCE_OPEN.exec(line);
     if (fenceMatch) {
       flushInline(state);
-      state.code = { lang: fenceMatch[1] ?? "", lines: [] };
+      state.code = { lang: fenceMatch[1], lines: [] };
       continue;
     }
 
@@ -662,7 +660,7 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
           state.blocks.push({
             type: "mathematical_expression",
             expression: expr,
-          } as RichBlockMathematicalExpression);
+          });
           continue;
         }
       }
@@ -673,8 +671,9 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
       const detailsMatch = /^:::details(?: (.+))?$/.exec(line);
       if (detailsMatch) {
         flushInline(state);
+        const [, detailsTitle = "Details"] = detailsMatch;
         state.details = {
-          summary: detailsMatch[1] ?? "Details",
+          summary: detailsTitle,
           lines: [],
         };
         continue;
@@ -787,7 +786,7 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
     state.blocks.push({
       type: "paragraph",
       text: allLines.join("\n"),
-    } as RichBlockParagraph);
+    });
   }
 
   if (state.details !== null) {
@@ -800,7 +799,7 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
     state.blocks.push({
       type: "paragraph",
       text: allLines.join("\n"),
-    } as RichBlockParagraph);
+    });
   }
 
   flushInline(state);
@@ -831,10 +830,10 @@ export function markdownToRichBlocks(
   partial = false,
 ): RichBlock[] {
   try {
-    return _parseBlocks(input ?? "", partial);
+    return _parseBlocks(input, partial);
   } catch {
     // Absolute safety net — should never be reached in practice.
-    const raw = (input ?? "").trim();
-    return raw ? [{ type: "paragraph", text: raw } as RichBlockParagraph] : [];
+    const raw = input.trim();
+    return raw ? [{ type: "paragraph", text: raw }] : [];
   }
 }
