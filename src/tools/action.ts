@@ -88,10 +88,26 @@ import { NOTIFY_DEBOUNCE_MIN_MS, NOTIFY_DEBOUNCE_MAX_MS } from "./activity/file-
 import { handleNameTag } from "./name-tag.js";
 import { decodeToken } from "./identity-schema.js";
 import { getSession } from "../session-manager.js";
+import { findAbsolutePath, absPathBlockedError } from "../abs-path-guard.js";
+import { deliverServiceMessage } from "../session-queue.js";
+import { SERVICE_MESSAGES } from "../service-messages.js";
 type ToolResult = ReturnType<typeof toResult>;
 
 /** Action paths explicitly permitted for `read-only` child sessions. */
 const READ_ONLY_ALLOWED = new Set(["child/notify"]);
+
+/**
+ * Action paths whose `text` param is rendered as an outbound Telegram message
+ * body and therefore subject to the absolute-path guard.
+ */
+const TEXT_CONTENT_ACTIONS = new Set([
+  "message/edit",        // edits an existing Telegram message
+  "animation/cancel",    // sends replacement text when cancelling an animation
+  "confirm/ok",          // prompt shown above OK button
+  "confirm/ok-cancel",   // prompt shown above OK / Cancel buttons
+  "confirm/yn",          // prompt shown above Yes / No buttons
+  "reminder/set",        // reminder message text (sent to Telegram when the reminder fires)
+]);
 
 /** Action paths that are blocked for `gather`-capability sessions. */
 const GATHER_BLOCKED = new Set([
@@ -780,6 +796,13 @@ export function register(server: McpServer): void {
             "Suppresses breadcrumb injection (R1/R2/R3) for the current session lifetime. " +
             "Root sessions only — child sessions receive PERMISSION_DENIED.",
           ),
+        // Safety override — bypasses the absolute-path block for text content
+        safety: z
+          .enum(["disable"])
+          .optional()
+          .describe(
+            'Safety override. Pass `safety: "disable"` to bypass the absolute-path block on text content (message/edit, confirm/*, reminder/set, animation/cancel) and send anyway. An operator notification is emitted when this override is used.',
+          ),
       },
     },
     async (args) => {
@@ -826,6 +849,21 @@ export function register(server: McpServer): void {
               code: "CAPABILITY_DENIED",
               message: `Action '${type}' is not permitted for gather-capability sessions.`,
             });
+          }
+        }
+
+        // ── Absolute-path guard for text content ──────────────────────────
+        if (type && TEXT_CONTENT_ACTIONS.has(type) && typeof args.text === "string" && args.text.length > 0) {
+          const hit = findAbsolutePath(args.text);
+          if (hit) {
+            if (args.safety !== "disable") {
+              return toError(absPathBlockedError(hit));
+            }
+            // Safety override acknowledged — notify the operator.
+            const _sid = requireAuth(args.token);
+            if (typeof _sid === "number") {
+              deliverServiceMessage(_sid, SERVICE_MESSAGES.ABS_PATH_SAFETY_OVERRIDE);
+            }
           }
         }
 
