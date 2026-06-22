@@ -1,6 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
-import { delay } from "../utils/timing.js";
 import type { TimelineEvent } from "../message-store.js";
 
 interface CompactEvent {
@@ -29,15 +28,15 @@ interface SessionQueue {
 const fileStateMocks = vi.hoisted(() => ({
   setDequeueActive: vi.fn(),
   getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
-  releaseNotifyDebounce: vi.fn((_sid: number) => {}),
-  notifyIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
+  releaseKickLockout: vi.fn((_sid: number) => {}),
+  kickIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
   setDequeueActive: (sid: number, active: boolean) => fileStateMocks.setDequeueActive(sid, active),
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
-  releaseNotifyDebounce: (sid: number) => { fileStateMocks.releaseNotifyDebounce(sid); },
-  notifyIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.notifyIfAllowed(sid, source, inflight); },
+  releaseKickLockout: (sid: number) => { fileStateMocks.releaseKickLockout(sid); },
+  kickIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.kickIfAllowed(sid, source, inflight); },
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -133,8 +132,6 @@ const reminderMocks = vi.hoisted(() => ({
   getSoonestDeferredMs: vi.fn((_sid: number): number | null => null),
   popFireableEventReminders: vi.fn((_sid: number): unknown[] => []),
   getSoonestEventReminderMs: vi.fn((_sid: number): number | null => null),
-  popFireableScheduleReminders: vi.fn((_sid: number): unknown[] => []),
-  getSoonestScheduleFireMs: vi.fn((_sid: number): number | null => null),
   buildReminderEvent: vi.fn((r: unknown) => ({
     id: -1,
     event: "reminder",
@@ -151,8 +148,6 @@ vi.mock("../reminder-state.js", () => ({
   getSoonestDeferredMs: (sid: number) => reminderMocks.getSoonestDeferredMs(sid),
   popFireableEventReminders: (sid: number) => reminderMocks.popFireableEventReminders(sid),
   getSoonestEventReminderMs: (sid: number) => reminderMocks.getSoonestEventReminderMs(sid),
-  popFireableScheduleReminders: (sid: number) => reminderMocks.popFireableScheduleReminders(sid),
-  getSoonestScheduleFireMs: (sid: number) => reminderMocks.getSoonestScheduleFireMs(sid),
   buildReminderEvent: (r: unknown) => reminderMocks.buildReminderEvent(r),
 }));
 
@@ -209,8 +204,6 @@ describe("dequeue tool", () => {
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
     reminderMocks.popFireableEventReminders.mockReturnValue([]);
     reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
-    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
-    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     mocks.peekSessionCategories.mockReturnValue(undefined);
@@ -294,7 +287,7 @@ describe("dequeue tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     // waitForEnqueue resolves but dequeue still returns nothing
     mocks.waitForEnqueue.mockImplementation(
-      () => delay(50),
+      () => new Promise<void>((r) => setTimeout(r, 50)),
     );
     const result = await call({ timeout: 1, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
@@ -305,7 +298,7 @@ describe("dequeue tool", () => {
   it("calls waitForEnqueue when queue is empty and timeout > 0", async () => {
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.waitForEnqueue.mockImplementation(
-      () => delay(50),
+      () => new Promise<void>((r) => setTimeout(r, 50)),
     );
     await call({ timeout: 1, token: 1_123_456 });
     expect(mocks.waitForEnqueue).toHaveBeenCalled();
@@ -321,7 +314,7 @@ describe("dequeue tool", () => {
     mocks.dequeueBatch.mockReturnValue([]);
     mocks.pendingCount.mockReturnValue(3);
     mocks.waitForEnqueue.mockImplementation(
-      () => delay(50),
+      () => new Promise<void>((r) => setTimeout(r, 50)),
     );
     const result = await call({ timeout: 1, token: 1_123_456 });
     const data = parseResult<DequeueResult>(result);
@@ -873,7 +866,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(1);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => delay(50),
+        () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 2, force: true, token: 1_123_456 });
       // Should NOT return TIMEOUT_EXCEEDS_DEFAULT — actual poll behavior fires
@@ -886,7 +879,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(2);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => delay(50),
+        () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult(result);
@@ -899,7 +892,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(5);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => delay(50),
+        () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 3, token: 1_123_456 });
       const data = parseResult(result);
@@ -943,7 +936,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(1);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => delay(50),
+        () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ token: 1_123_456 }); // no timeout param
       const data = parseResult(result);
@@ -957,7 +950,7 @@ describe("dequeue tool", () => {
       mocks.getDequeueDefault.mockReturnValue(2);
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => delay(50),
+        () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult(result);
@@ -1258,94 +1251,94 @@ describe("dequeue tool", () => {
   });
 
   describe("reminder fire path", () => {
-    it("does NOT return reminder updates — reminders now delivered via session-queue", async () => {
-      const fakeStart = Date.now();
-      const fakeReminder = { id: "rem-1", text: "test reminder", recurring: false,
-        delay_seconds: 0, created_at: fakeStart, activated_at: fakeStart, state: "active" as const };
-      reminderMocks.getActiveReminders.mockReturnValue([fakeReminder]);
-      reminderMocks.popActiveReminders.mockReturnValue([fakeReminder]);
+    it("fires reminder events and returns updates with no hint fields", async () => {
+      // Strategy: mock Date.now so that idleDuration immediately exceeds
+      // REMINDER_IDLE_THRESHOLD_MS (60_000 ms) on the first loop iteration.
+      // This lets us test the reminder-fire return path without real delays
+      // or fake timers (which cause V8 heap issues in this test runner).
+      const realDateNow = Date.now;
+      const fakeStart = realDateNow();
+      let dateNowCallCount = 0;
+      Date.now = () => {
+        // Calls in dequeue.ts (in order):
+        //   0: deadline = Date.now() + timeout * 1000   → fakeStart (normal)
+        //   1: reminderIdleStart = Date.now()           → fakeStart (normal)
+        //   2: while (Date.now() < deadline)            → fakeStart (enters loop)
+        //   3: const now = Date.now()                   → fakeStart + 61_000 (idleDuration >= threshold)
+        const callIdx = dateNowCallCount++;
+        return callIdx < 3 ? fakeStart : fakeStart + 61_000;
+      };
 
-      const result = await call({ timeout: 0, token: 1_123_456 });  // timeout:0 to avoid spin
-      const data = parseResult(result);
+      try {
+        const fakeReminder = { id: "rem-1", text: "test reminder", recurring: false, delay_seconds: 0, created_at: fakeStart, activated_at: fakeStart, state: "active" as const };
+        reminderMocks.getActiveReminders.mockReturnValue([fakeReminder]);
+        reminderMocks.popActiveReminders.mockReturnValue([fakeReminder]);
 
-      // Dequeue should return an empty response (pending-only), NOT reminder updates
-      // timeout:0 returns { pending: N } not { timed_out: true }
-      expect(data.updates ?? []).toHaveLength(0);
-      expect(data.timed_out).toBeUndefined();
-      // popActiveReminders NOT called by dequeue (§5-b moved delivery to session-queue)
-      expect(reminderMocks.popActiveReminders).not.toHaveBeenCalled();
+        const result = await call({ timeout: 300, token: 1_123_456 });
+        const data = parseResult(result);
+
+        // The reminder-fire path should have fired
+        expect(data.updates).toBeDefined();
+        expect(Array.isArray(data.updates)).toBe(true);
+        // No hint field in lean response
+        expect(data.hint).toBeUndefined();
+      } finally {
+        Date.now = realDateNow;
+      }
     });
   });
 
   // =========================================================================
-  // Reminder notify — activity file monitor wakeup on reminder return
+  // Reminder kick — activity file monitor wakeup on reminder return
   // =========================================================================
 
-  describe("reminder notify (activity monitor wakeup)", () => {
-    it("P1-P3 (§5-b): dequeue does NOT call notifyIfAllowed for reminder delivery — moved to session-queue", async () => {
-      // Reminder content exists but dequeue should not deliver it
-      reminderMocks.popFireableEventReminders.mockReturnValue([{ text: "event reminder" }]);
-      reminderMocks.getActiveReminders.mockReturnValue([{ text: "active reminder" }]);
-
-      await call({ timeout: 0, token: 1_123_456 });
-
-      // notifyIfAllowed should NOT be called — delivery is now via deliverReminderEvent in session-queue
-      expect(fileStateMocks.notifyIfAllowed).not.toHaveBeenCalled();
-    });
-
-    it("timeout=0 empty-poll does NOT call notifyIfAllowed", async () => {
-      await call({ timeout: 0, token: 1_123_456 });
-
-      expect(fileStateMocks.notifyIfAllowed).not.toHaveBeenCalled();
-    });
-  });
-
-  // =========================================================================
-  // timeout-exit releases notify debounce
-  // =========================================================================
-
-  describe("timeout-exit debounce release", () => {
-    it("releaseNotifyDebounce is called after a blocking wait that times out", async () => {
-      // Arrange: dequeue blocks, no content ever arrives, times out
-      mocks.dequeueBatch.mockReturnValue([]);
-      mocks.waitForEnqueue.mockImplementation(() => delay(50));
-
-      await call({ timeout: 1, token: 1_123_456 });
-
-      // Primary assertion: releaseNotifyDebounce MUST be called on timeout exit
-      expect(fileStateMocks.releaseNotifyDebounce).toHaveBeenCalledWith(1);
-    });
-
-    it("releaseNotifyDebounce is also called on content-returning paths (no regression)", async () => {
-      // Content-returning path: batch arrives immediately
-      const evt = makeEvent(42, "content");
-      mocks.dequeueBatch.mockReturnValueOnce([evt]);
+  describe("reminder kick (activity monitor wakeup)", () => {
+    it("P1: pre-loop event reminder calls kickIfAllowed", async () => {
+      const fakeReminder = { text: "event reminder pre-loop" };
+      reminderMocks.popFireableEventReminders.mockReturnValueOnce([fakeReminder]);
 
       await call({ timeout: 300, token: 1_123_456 });
 
-      expect(fileStateMocks.releaseNotifyDebounce).toHaveBeenCalledWith(1);
+      expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
     });
 
-    it("timeout=0 instant-poll does NOT call releaseNotifyDebounce (empty-poll guard preserved)", async () => {
-      // timeout=0 takes a different early-return path — debounce not released
-      mocks.dequeueBatch.mockReturnValue([]);
+    it("P2: in-loop event reminder calls kickIfAllowed via finally block", async () => {
+      const fakeReminder = { text: "event reminder in-loop" };
+      reminderMocks.popFireableEventReminders
+        .mockReturnValueOnce([]) // pre-loop check: skip P1
+        .mockReturnValueOnce([fakeReminder]); // first loop iteration: P2 fires
 
+      await call({ timeout: 300, token: 1_123_456 });
+
+      expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
+    });
+
+    it("P3: idle-threshold reminder calls kickIfAllowed via finally block", async () => {
+      const realDateNow = Date.now;
+      const fakeStart = realDateNow();
+      let dateNowCallCount = 0;
+      Date.now = () => {
+        const callIdx = dateNowCallCount++;
+        return callIdx < 3 ? fakeStart : fakeStart + 61_000;
+      };
+
+      try {
+        const fakeReminder = { id: "rem-1", text: "idle reminder", recurring: false, delay_seconds: 0, created_at: fakeStart, activated_at: fakeStart, state: "active" as const };
+        reminderMocks.getActiveReminders.mockReturnValue([fakeReminder]);
+        reminderMocks.popActiveReminders.mockReturnValue([fakeReminder]);
+
+        await call({ timeout: 300, token: 1_123_456 });
+
+        expect(fileStateMocks.kickIfAllowed).toHaveBeenCalledWith(1, "reminder", false);
+      } finally {
+        Date.now = realDateNow;
+      }
+    });
+
+    it("timeout=0 empty-poll does NOT call kickIfAllowed", async () => {
       await call({ timeout: 0, token: 1_123_456 });
 
-      expect(fileStateMocks.releaseNotifyDebounce).not.toHaveBeenCalled();
-    });
-
-    it("subsequent notifyIfAllowed fires after timeout exit (end-to-end AC1)", async () => {
-      // Verify that after a timeout exit releases the debounce, the next notify is not suppressed.
-      // This requires the real file-state module (not the mock), so we verify via
-      // the dequeue mock: releaseNotifyDebounce was called → debounce is cleared → notify allowed.
-      mocks.dequeueBatch.mockReturnValue([]);
-      mocks.waitForEnqueue.mockImplementation(() => delay(50));
-
-      await call({ timeout: 1, token: 1_123_456 });
-
-      // releaseNotifyDebounce was called — a file-parked agent would now accept a notify
-      expect(fileStateMocks.releaseNotifyDebounce).toHaveBeenCalledWith(1);
+      expect(fileStateMocks.kickIfAllowed).not.toHaveBeenCalled();
     });
   });
 
@@ -1510,7 +1503,7 @@ describe("dequeue tool", () => {
     it("compact: timed_out:true is present when blocking wait expires (always emitted)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => delay(50),
+        () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 1, token: 1_123_456, response_format: "compact" });
       expect(isError(result)).toBe(false);
@@ -1529,7 +1522,7 @@ describe("dequeue tool", () => {
     it("default: timed_out:true is present when blocking wait expires (response_format: default)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => delay(50),
+        () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 1, token: 1_123_456, response_format: "default" });
       const data = parseResult<DequeueResult>(result);
@@ -1547,7 +1540,7 @@ describe("dequeue tool", () => {
     it("omitted response_format: timed_out:true is present (backward compat)", async () => {
       mocks.dequeueBatch.mockReturnValue([]);
       mocks.waitForEnqueue.mockImplementation(
-        () => delay(50),
+        () => new Promise<void>((r) => setTimeout(r, 50)),
       );
       const result = await call({ timeout: 1, token: 1_123_456 });
       const data = parseResult<DequeueResult>(result);
@@ -1602,8 +1595,6 @@ describe("checkDequeueRate (runaway-dequeue rate guard)", () => {
     reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
     reminderMocks.popFireableEventReminders.mockReturnValue([]);
     reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
-    reminderMocks.popFireableScheduleReminders.mockReturnValue([]);
-    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
     mocks.pendingCount.mockReturnValue(0);
     mocks.waitForEnqueue.mockResolvedValue(undefined);
     mocks.peekSessionCategories.mockReturnValue(undefined);
