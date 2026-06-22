@@ -187,7 +187,6 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
       }
     }
 
-
     if (addedReminders.length > 0 || updatedReminders.length > 0) {
       const reminderSummary: Record<string, unknown> = {
         added: addedReminders,
