@@ -85,6 +85,14 @@ export function scheduleArmReminder(sid: number, command: string): void {
 }
 
 /**
+ * Returns true if the given session has an active SSE connection open.
+ * Used by the activity/listen/check endpoint to report subscription status.
+ */
+export function hasSseConnection(sid: number): boolean {
+  return _connections.has(sid);
+}
+
+/**
  * Fire `data: notify` to the open SSE connection for the given session, if any.
  * No-op when no connection is registered. No cooldown — the caller's dequeue
  * will be empty if there is nothing to read; extra notifications are harmless.
