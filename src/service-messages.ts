@@ -65,12 +65,12 @@ export const SERVICE_MESSAGES = deepFreeze({
       "     curl -N makes EVERY heartbeat a wake event = token-burn spam. Use the filtered script.\n" +
       "  3. Arm the Monitor tool with: bash <path-to-script> '<sse_url>' and persistent: true.\n" +
       "     You are participating once the monitor is live.\n" +
-      "     On each SSE wake → drain: call dequeue(max_wait: 0); loop until timed_out: true. After any send, call dequeue(max_wait: 0) again immediately.\n\n" +
+      "     On each SSE wake → dequeue loop: call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
       "Monitor-capable runtime — stdio / no HTTP:\n" +
       "  1. Call action(type: 'activity/file/create') → returns { file_path }.\n" +
       "  2. Replace <path> with file_path, then arm Monitor (persistent: true):\n" +
       "     " + ACTIVITY_FILE_MONITOR_RECIPE.replace(/\n/g, "\n     ") + "\n" +
-      "  3. On each kick → drain: call dequeue(max_wait: 0); loop until timed_out: true. After any send, call dequeue(max_wait: 0) again immediately.\n\n" +
+      "  3. On each kick → dequeue loop: call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
       "No Monitor tool (other runtimes):\n" +
       "  Call dequeue() on every turn. timed_out: true means no messages — call dequeue() again. You always end with dequeue.\n\n" +
       "Details: help('start'), help('dequeue'), help('activity/listen').",
@@ -290,7 +290,7 @@ export const SERVICE_MESSAGES = deepFreeze({
       `\`GET ${downloadUrl}\`\n` +
       `Save to a local path of your choice, then arm:\n` +
       `\`bash <saved-path> '<sse_url>'\` with persistent: true.\n\n` +
-      `Loop pattern: on each SSE wake → call dequeue(max_wait: 0); repeat until empty: true. After any send, call dequeue(max_wait: 0) again immediately.`,
+      `Loop pattern: on each SSE wake → call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.`,
   },
 
   // ── SSE onboarding handshake ──────────────────────────────────────────────

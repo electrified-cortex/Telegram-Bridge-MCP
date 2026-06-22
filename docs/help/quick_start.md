@@ -5,8 +5,7 @@ Write your session token to `memory/telegram/session.token` as a plain integer �
 
 ## 1. Dequeue loop
 Your heartbeat. Call dequeue() to receive messages and events.
-- Block mode: dequeue() — waits up to 300s for next message. Returns { timed_out: true } on timeout — call again.
-- Drain mode: dequeue(max_wait: 0) — instant poll. Returns { empty: true } if nothing queued.
+dequeue() waits up to 300s for the next message. Returns { timed_out: true } on timeout — call again.
 Pattern: dequeue() → handle → dequeue() immediately → repeat until timed_out: true.
 After any send, call dequeue() again immediately — do not idle or wait for SSE.
 
