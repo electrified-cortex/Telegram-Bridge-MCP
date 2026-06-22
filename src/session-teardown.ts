@@ -38,6 +38,7 @@ import { clearActivityFile } from "./tools/activity/file-state.js";
 import { unregisterChannelSubscriber } from "./channel.js";
 import { removeDequeueRateState } from "./tools/dequeue.js";
 import { getChildSids, unregisterChild } from "./tools/session/child-registry.js";
+import { cleanupSessionQuestionPins } from "./question-pin-state.js";
 
 /**
  * Perform the full teardown for a session identified by `sid`.
@@ -63,8 +64,29 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   if (sessionInfo?.parent_sid === undefined) {
     const childSids = getChildSids(sid);
     for (const childSid of childSids) {
-      closeSessionById(childSid);
-      unregisterChild(childSid);
+      try {
+        // Capture child info before closeSessionById removes it from the session map.
+        // Emit child_session_resolved to the parent (sid) so any agent draining
+        // the parent's dequeue during teardown receives the lifecycle signal.
+        const childSession = getSession(childSid);
+        if (childSession) {
+          const exitStatus = childSession.exit_status ?? "";
+          deliverServiceMessage(
+            sid,
+            SERVICE_MESSAGES.CHILD_SESSION_RESOLVED.text(childSid, childSession.name, exitStatus),
+            SERVICE_MESSAGES.CHILD_SESSION_RESOLVED.eventType,
+            { child_sid: childSid, child_name: childSession.name, exit_status: exitStatus },
+          );
+        }
+        closeSessionById(childSid);
+        unregisterChild(childSid);
+      } catch (err) {
+        // Best-effort: a failing child teardown must not abort teardown of remaining children.
+        process.stderr.write(
+          `[session-teardown] cascade teardown failed for child sid=${childSid}: ` +
+          `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
     }
   }
 
@@ -84,6 +106,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   cancelAnimation(sid).catch(() => {});
   // Clean up activity file registration; deletes file if TMCP-owned
   clearActivityFile(sid).catch(() => {});
+  // Unpin any blocking questions that were never answered (AC7)
+  cleanupSessionQuestionPins(sid);
   // Cancel any pending channel subscription and debounce timers
   unregisterChannelSubscriber(sid);
   revokeAllForSession(sid);

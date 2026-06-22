@@ -34,4 +34,24 @@ No animations when idle — silence is correct signal.
 Before exiting: DM superior "Do you still need me?" Only shutdown signal triggers
 action(type: "session/close"). Full procedure: help(topic: 'shutdown').
 
+## suppress_pending_hint flag
+
+When the `suppress_pending_hint` flag is set on a session, the `hint` field is omitted from all dequeue responses. Affected hints include:
+- Pending-queue nudge (`pending=N; use processing preset.`)
+- Voice backlog hint (`N voice msg pending — react with processing preset.`)
+- Silence hint
+
+The `pending` count is **never** affected — only the advisory `hint` field is suppressed.
+
+**Default behavior:** Hints are shown when relevant (flag absent or `false`).
+
+**Persisting the flag via profile/save:**
+1. Load a profile that includes `"suppress_pending_hint": true` (set via `profile/load`).
+   - Or manually add the field to the profile JSON file: `data/profiles/{key}.json`.
+2. Once the flag is on the session, `profile/save` will persist it along with all other settings.
+
+**Removing the flag:** Load a profile with `"suppress_pending_hint": false`, or manually set the field to `false` in the profile JSON. Omitting the field from a profile leaves the session value unchanged (sparse merge).
+
+Related: profile/load, profile/save, profile/import
+
 Full reference: skills/telegram-mcp-dequeue-loop/SKILL.md

@@ -86,7 +86,7 @@ export function scheduleArmReminder(sid: number, command: string): void {
 
 /**
  * Returns true if the given session has an active SSE connection open.
- * Used by the activity/listen/check endpoint to report subscription status.
+ * Used by the activity/listen/check and activity/poke endpoints.
  */
 export function hasSseConnection(sid: number): boolean {
   return _connections.has(sid);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
-import { getSession } from "../../session-manager.js";
+import { getSession, getSessionTier, isR3GuidanceDelivered, markR3GuidanceDelivered } from "../../session-manager.js";
 import { TOKEN_SCHEMA, decodeToken } from "../identity-schema.js";
 import { getParent, unregisterChild } from "./child-registry.js";
 import { closeSessionById } from "../../session-teardown.js";
@@ -51,6 +51,23 @@ export function handleRevokeChild({
       SERVICE_MESSAGES.CHILD_SESSION_RESOLVED.eventType,
       { child_sid: childSid, child_name: childSession.name, exit_status: exitStatus },
     );
+
+    // Fire R3 (ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB) to unskilled hosts on their
+    // first sub-session terminal signal — teaches them how to respond after a child ends. (AC4)
+    // Gated: unskilled hosts only (tier !== 'skilled-router') and exactly once per session
+    // lifetime (r3_guidance_delivered flag). bridge_authoritative: true (AC8).
+    if (
+      getSessionTier(registeredParent) !== "skilled-router" &&
+      !isR3GuidanceDelivered(registeredParent)
+    ) {
+      deliverServiceMessage(
+        registeredParent,
+        SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.text(childSid, childSession.name),
+        SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.eventType,
+        { child_sid: childSid, child_name: childSession.name, bridge_authoritative: true },
+      );
+      markR3GuidanceDelivered(registeredParent);
+    }
   }
 
   const result = closeSessionById(childSid);

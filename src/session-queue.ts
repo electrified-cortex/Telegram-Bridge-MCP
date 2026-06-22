@@ -217,6 +217,17 @@ export function sessionQueueCount(): number {
 // Message ownership (outbound tracking)
 // ---------------------------------------------------------------------------
 
+/** AC4: callback invoked when a session confirms an outbound send. */
+let _outboundSendCb: ((sid: number, now: number) => void) | undefined;
+
+/**
+ * Register a callback to be notified when a session sends an outbound message.
+ * Called from index.ts during startup to wire the dequeue throttle (AC4 exemption).
+ */
+export function setOutboundSendCallback(cb: (sid: number, now: number) => void): void {
+  _outboundSendCb = cb;
+}
+
 /**
  * Record that a bot message was sent by a specific session.
  * Called by outbound recording so inbound replies can route back.
@@ -225,7 +236,10 @@ export function sessionQueueCount(): number {
 export function trackMessageOwner(messageId: number, sid: number): void {
   if (sid > 0) {
     _messageOwnership.set(messageId, sid);
-    recordLastSentAt(sid, Date.now());
+    const now = Date.now();
+    recordLastSentAt(sid, now);
+    // AC4: notify dequeue throttle that this session is actively sending.
+    _outboundSendCb?.(sid, now);
   }
 }
 
@@ -280,7 +294,7 @@ export function routeToSession(event: TimelineEvent): void {
     q.enqueue(event);
     // Phase-1 voice suppression: suppress SSE notify for not-ready voice events.
     // Phase-2 SSE wake is fired by notifySessionWaiters() after transcription.
-    if (isEventReady(event)) {
+    if (isEventReady(event) && event.event !== "reaction") {
       notifySession(sid, "operator", isDequeueActive(sid), broadcastOriginatorSid);
     }
     // Always notify channel subscriber regardless of voice readiness.
@@ -321,7 +335,7 @@ function enqueueToSession(
   // notifySessionWaiters() after patchVoiceText() completes. Firing here would
   // cause the agent to dequeue an empty batch and go back to sleep, missing the
   // real wake when transcription finishes.
-  if (isEventReady(event)) {
+  if (isEventReady(event) && event.event !== "reaction") {
     // Pass originatorSid so notifySession suppresses self-notifications (AC-1).
     const originatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
     notifySession(sid, "operator", isDequeueActive(sid), originatorSid);
@@ -604,6 +618,8 @@ export function deliverServiceMessage(
   if (!isSilentEvent) {
     notifySession(targetSid, "service", isDequeueActive(targetSid));
   }
+  // Channel subscribers always receive service messages regardless of SSE suppression —
+  // they handle their own wake logic and must not miss any enqueued event.
   notifyChannelSubscriber(targetSid, event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;

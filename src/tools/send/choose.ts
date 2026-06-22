@@ -21,6 +21,7 @@ import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../.
 import { applyTopicToText } from "../../topic-state.js";
 import { markdownToV2 } from "../../markdown.js";
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../../utils/timing.js";
+import { tryPinQuestion, untrackAndUnpinQuestion } from "../../question-pin-state.js";
 
 const DESCRIPTION =
   "Send a prompt with 2–8 buttons and wait for the user to press one. " +
@@ -178,6 +179,13 @@ export async function handleChoose(
       });
     }
 
+    // Auto-pin for non-DM chats (AC1, AC5).
+    // DM chats (chatId > 0) are excluded — pin semantics in DMs are irrelevant.
+    let questionPinned = false;
+    if (chatId < 0) {
+      questionPinned = await tryPinQuestion(chatId, messageId, _sid);
+    }
+
     // Register callback hook — handles button clicks even after poll timeout.
     // One-shot: acks, shows selection, removes buttons. Event still queues for dequeue.
     // ownerSid tracks the session so teardown can replace the hook with a "Session closed" ack.
@@ -198,95 +206,102 @@ export async function handleChoose(
       editWithSkipped(chatId, messageId, text, !!audio).catch(() => {/* non-fatal */});
     };
 
-    const match = await pollButtonOrTextOrVoice(
-      chatId, messageId, timeout_seconds,
-      onVoiceDetected, signal, getCallerSid(),
-    );
+    try {
+      const match = await pollButtonOrTextOrVoice(
+        chatId, messageId, timeout_seconds,
+        onVoiceDetected, signal, getCallerSid(),
+      );
 
-    if (!match) {
-      // Timeout or abort — immediately remove the buttons and show "Timed out".
-      // Run in the tool's session context so the session header is consistent.
-      void runInSessionContext(_sid, () =>
-        editWithTimedOut(chatId, messageId, text, !!audio),
-      ).catch(() => {/* non-fatal */});
-      // Replace the callback hook with an ack-only version: if a late button
-      // press arrives, we still acknowledge it (removes the Telegram spinner)
-      // but skip the re-edit since the message was already cleaned up above.
-      clearCallbackHook(messageId);
-      registerCallbackHook(messageId, (evt) => {
-        const qid = evt.content.qid;
-        clearMessageHook(messageId);
-        if (qid) {
-          void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
-        }
-      }, _sid);
-      // Also register a message hook: if a late click still comes in before
-      // the callback hook processes it, the next message will clear up anything
-      // that remains (buttons already gone, but hook cleans the callback hook).
-      registerMessageHook(messageId, () => {
+      if (!match) {
+        // Timeout or abort — immediately remove the buttons and show "Timed out".
+        // Run in the tool's session context so the session header is consistent.
+        void runInSessionContext(_sid, () =>
+          editWithTimedOut(chatId, messageId, text, !!audio),
+        ).catch(() => {/* non-fatal */});
+        // Replace the callback hook with an ack-only version: if a late button
+        // press arrives, we still acknowledge it (removes the Telegram spinner)
+        // but skip the re-edit since the message was already cleaned up above.
         clearCallbackHook(messageId);
-      });
-      return toResult({
-        timed_out: true,
-        message_id: messageId,
-      });
-    }
-
-    if (match.kind === "text") {
-      clearCallbackHook(messageId);
-      if (match.reply_to === messageId) {
-        await editWithReplied(chatId, messageId, text, !!audio);
-        return toResult({ resolution: "replied", text: match.text, message_id: match.message_id });
+        registerCallbackHook(messageId, (evt) => {
+          const qid = evt.content.qid;
+          clearMessageHook(messageId);
+          if (qid) {
+            void getApi().answerCallbackQuery(qid).catch(() => {/* non-fatal */});
+          }
+        }, _sid);
+        // Also register a message hook: if a late click still comes in before
+        // the callback hook processes it, the next message will clear up anything
+        // that remains (buttons already gone, but hook cleans the callback hook).
+        registerMessageHook(messageId, () => {
+          clearCallbackHook(messageId);
+        });
+        return toResult({
+          timed_out: true,
+          message_id: messageId,
+        });
       }
-      await editWithSkipped(chatId, messageId, text, !!audio);
-      return toResult({
-        skipped: true,
-        text_response: match.text,
-        text_message_id: match.message_id,
-        message_id: messageId,
-      });
-    }
 
-    if (match.kind === "voice") {
-      clearCallbackHook(messageId);
-      if (match.reply_to === messageId) {
-        // Override any early "Skipped" edit that onVoiceDetected may have applied
-        await editWithReplied(chatId, messageId, text, !!audio);
-        return toResult({ resolution: "replied", text: match.text ?? "[no transcription]", message_id: match.message_id });
+      if (match.kind === "text") {
+        clearCallbackHook(messageId);
+        if (match.reply_to === messageId) {
+          await editWithReplied(chatId, messageId, text, !!audio);
+          return toResult({ resolution: "replied", text: match.text, message_id: match.message_id });
+        }
+        await editWithSkipped(chatId, messageId, text, !!audio);
+        return toResult({
+          skipped: true,
+          text_response: match.text,
+          text_message_id: match.message_id,
+          message_id: messageId,
+        });
       }
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
-      if (!skippedEditDone) await editWithSkipped(chatId, messageId, text, !!audio);
+
+      if (match.kind === "voice") {
+        clearCallbackHook(messageId);
+        if (match.reply_to === messageId) {
+          // Override any early "Skipped" edit that onVoiceDetected may have applied
+          await editWithReplied(chatId, messageId, text, !!audio);
+          return toResult({ resolution: "replied", text: match.text ?? "[no transcription]", message_id: match.message_id });
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- skippedEditDone may be true if onVoiceDetected fired before poll returned
+        if (!skippedEditDone) await editWithSkipped(chatId, messageId, text, !!audio);
+        return toResult({
+          skipped: true,
+          text_response: match.text ?? "[no transcription]",
+          text_message_id: match.message_id,
+          message_id: messageId,
+          voice: true,
+        });
+      }
+
+      if (match.kind === "command") {
+        clearCallbackHook(messageId);
+        await editWithSkipped(chatId, messageId, text, !!audio);
+        return toResult({
+          skipped: true,
+          command: match.command,
+          args: match.args,
+          message_id: messageId,
+        });
+      }
+
+      // Button was pressed — hook already acked + edited.
+      const chosen = options.find((o) => o.value === match.data);
+      const chosenLabel = chosen?.label ?? match.data;
+      const compact = response_format === "compact";
+
       return toResult({
-        skipped: true,
-        text_response: match.text ?? "[no transcription]",
-        text_message_id: match.message_id,
-        message_id: messageId,
-        voice: true,
-      });
-    }
-
-    if (match.kind === "command") {
-      clearCallbackHook(messageId);
-      await editWithSkipped(chatId, messageId, text, !!audio);
-      return toResult({
-        skipped: true,
-        command: match.command,
-        args: match.args,
+        ...(compact ? {} : { timed_out: false }),
+        label: chosenLabel,
+        value: match.data,
         message_id: messageId,
       });
+    } finally {
+      // Auto-unpin on resolution — button press, timeout, or cancellation (AC2, AC3).
+      if (questionPinned) {
+        await untrackAndUnpinQuestion(chatId, messageId);
+      }
     }
-
-    // Button was pressed — hook already acked + edited.
-    const chosen = options.find((o) => o.value === match.data);
-    const chosenLabel = chosen?.label ?? match.data;
-    const compact = response_format === "compact";
-
-    return toResult({
-      ...(compact ? {} : { timed_out: false }),
-      label: chosenLabel,
-      value: match.data,
-      message_id: messageId,
-    });
   } catch (err) {
     return toError(err);
   }

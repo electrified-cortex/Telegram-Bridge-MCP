@@ -2,7 +2,7 @@
  * HTTP endpoint: GET /activity/listen/check?token=<num>
  *
  * Returns the current SSE subscription status for the authenticated agent.
- * Unlike POST /activity/selftest, this is a pure read — it does not inject
+ * Unlike POST /activity/poke, this is a pure read — it does not inject
  * any notification.
  *
  * Auth: session token integer via ?token=<num> query param.

@@ -454,3 +454,92 @@ describe("single-attribute events stay inline", () => {
     expect(SERVICE_MESSAGES.ONBOARDING_TOKEN_SAVE.text).not.toMatch(/^\*\*/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC1: Sub-session breadcrumb service message templates
+// ---------------------------------------------------------------------------
+
+describe("SERVICE_MESSAGES.ONBOARDING_SUBSESSION_HOST_ROLE (R1)", () => {
+  it("AC1: R1 exists in SERVICE_MESSAGES", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_HOST_ROLE).toBeDefined();
+  });
+
+  it("AC1: R1 has static text string (not a function)", () => {
+    expect(typeof SERVICE_MESSAGES.ONBOARDING_SUBSESSION_HOST_ROLE.text).toBe("string");
+  });
+
+  it("AC1: R1 event type is onboarding_subsession_host_role", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_HOST_ROLE.eventType).toBe("onboarding_subsession_host_role");
+  });
+
+  it("AC1: R1 text mentions orchestrator role", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_HOST_ROLE.text).toContain("orchestrator");
+  });
+
+  it("AC1: R1 text mentions session/spawn-child", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_HOST_ROLE.text).toContain("session/spawn-child");
+  });
+
+  it("AC1: R1 text mentions child/forward", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_HOST_ROLE.text).toContain("child/forward");
+  });
+});
+
+describe("SERVICE_MESSAGES.ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB (R2)", () => {
+  it("AC1: R2 exists in SERVICE_MESSAGES", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB).toBeDefined();
+  });
+
+  it("AC1: R2 has static text string (not a function)", () => {
+    expect(typeof SERVICE_MESSAGES.ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB.text).toBe("string");
+  });
+
+  it("AC1: R2 event type is onboarding_subsession_spawn_breadcrumb", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB.eventType).toBe("onboarding_subsession_spawn_breadcrumb");
+  });
+
+  it("AC1: R2 text contains spawn-child action signature", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB.text).toContain("session/spawn-child");
+  });
+
+  it("AC1: R2 text contains child/forward action signature", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB.text).toContain("child/forward");
+  });
+
+  it("AC1: R2 text contains session/revoke-child action signature", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB.text).toContain("session/revoke-child");
+  });
+
+  it("AC1: R2 text contains EXIT_STATUS reference", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_SPAWN_BREADCRUMB.text).toContain("EXIT_STATUS");
+  });
+});
+
+describe("SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB (R3)", () => {
+  it("AC1: R3 exists in SERVICE_MESSAGES", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB).toBeDefined();
+  });
+
+  it("AC1: R3 text is a function (dynamic — parameterized by childSid and childName)", () => {
+    expect(typeof SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.text).toBe("function");
+  });
+
+  it("AC1: R3 event type is onboarding_subsession_resolve_breadcrumb", () => {
+    expect(SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.eventType).toBe("onboarding_subsession_resolve_breadcrumb");
+  });
+
+  it("AC1: R3 text includes childSid in output", () => {
+    const text = SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.text(42, "Worker");
+    expect(text).toContain("42");
+  });
+
+  it("AC1: R3 text includes childName in output", () => {
+    const text = SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.text(42, "Worker");
+    expect(text).toContain("Worker");
+  });
+
+  it("AC1: R3 text mentions sub-session spawn-child for follow-up", () => {
+    const text = SERVICE_MESSAGES.ONBOARDING_SUBSESSION_RESOLVE_BREADCRUMB.text(1, "Helper");
+    expect(text).toContain("session/spawn-child");
+  });
+});

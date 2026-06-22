@@ -22,6 +22,7 @@ vi.mock("../../session-manager.js", () => ({
 }));
 
 import { register } from "./notify.js";
+import { setRichMessagesEnabledForTest } from "../../telegram.js";
 
 describe("notify tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
@@ -133,6 +134,26 @@ describe("notify tool", () => {
     const [, text] = mocks.sendMessage.mock.calls[0];
     expect(text).toContain("explicit text");
     expect(text).not.toContain("message alias");
+  });
+
+  // AC6: notification format (severity emoji + bold title) is preserved when RICH_MESSAGES=true.
+  // handleNotify calls getApi().sendMessage() directly — it does not go through routeOutboundMessage —
+  // so the RICH_MESSAGES flag must have no effect on the notification output format.
+  it("severity emoji and bold title preserved with RICH_MESSAGES=true (AC6)", async () => {
+    setRichMessagesEnabledForTest(true);
+    try {
+      mocks.sendMessage.mockResolvedValue({ message_id: 7, chat: { id: 99 }, date: 0, text: "" });
+      await call({ title: "Build done", severity: "success", token: 1123456 });
+      const [, msgText, opts] = mocks.sendMessage.mock.calls[0] as [unknown, string, { parse_mode: string }];
+      // Severity emoji and bold title must be present — identical to flag-off behaviour
+      expect(msgText).toContain("✅");
+      expect(msgText).toContain("*Build done*");
+      expect(opts.parse_mode).toBe("MarkdownV2");
+      // Rich-message path (routeOutboundMessage → sendRichMessage) must not be involved
+      expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      setRichMessagesEnabledForTest(false);
+    }
   });
 
 testIdentityGate((args) => call(args), mocks.validateSession, {"title":"x"});

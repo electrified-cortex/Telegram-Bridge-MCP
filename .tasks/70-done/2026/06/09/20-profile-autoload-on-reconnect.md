@@ -1,6 +1,6 @@
 # 20 - Profile autoload missing on session/reconnect
 
-**Source:** BT-7274 via S-IM 2026-06-08 (Pilot wants this confirmed). Code-grounded by BT + Curator ground-truth verification against `src/tools/session/start.ts`.
+**Source:** Operator-reported via S-IM 2026-06-08. Code-grounded by agent verification against `src/tools/session/start.ts`.
 
 ## Problem (verified)
 
@@ -17,7 +17,7 @@ Verified in `src/tools/session/start.ts`:
   ```
 - `handleSessionReconnect` (L478) restores the session: validates name, finds `existing`, reconnect-approval dialog, resets health markers (L525-528), `setActiveSession` (L530), delivers service messages (L532+) — but has **NO `readProfile`/`applyProfile` call** anywhere. (`readProfile`/`applyProfile` are imported at L20-21 and used only inside `handleSessionStart`.)
 
-**Repro (BT):** BT pod did `session/reconnect` last night with an `autoload: true` profile; `reminder/list` came back empty until a manual `profile/load`.
+**Repro:** An agent did `session/reconnect` with an `autoload: true` profile; `reminder/list` came back empty until a manual `profile/load`.
 
 ## Fix
 
@@ -40,8 +40,8 @@ Note: `handleSessionReconnect` currently takes only `{ name }` (no `autoload_pro
 
 ## Delegation / gates
 
-- Small, well-bounded (few-line add + test). Worker/Overseer implements; Curator stages; **operator commits**.
+- Small, well-bounded (few-line add + test). Agent implements; coordinator stages; **operator commits**.
 
 ## Related
 
-- Relevant to participant skills that assume "profile survives reconnect" (it does NOT, currently) — e.g. Curator/BT telegram-participation reconnect flow.
+- Relevant to participant skills that assume "profile survives reconnect" (it does NOT, currently) — e.g. Curator/operator telegram-participation reconnect flow.

@@ -75,7 +75,7 @@ the dequeue path, exactly like `popActiveReminders`).
 **Behavior by agent state (the reliability goal):**
 - Agent **idle / parked on SSE monitor**: timer kicks the SSE subscriber at the wall-clock
   time -> agent wakes -> dequeues -> in-loop check fires it. **The win over CronCreate.**
-- Agent **busy in a hot DQ loop** (e.g. BT @ 90–120s): in-loop check fires it on the next
+- Agent **busy in a hot DQ loop** (e.g. operator @ 90–120s): in-loop check fires it on the next
   dequeue pass after `next_fire_ms`. Timer kick is a harmless no-op (already dequeuing). No
   regression, no dependence on the timer at all.
 
@@ -226,7 +226,7 @@ timeoutHandle?: NodeJS.Timeout;  // armed timer (schedule only) — transient, N
 6. **`src/tools/profile/save.ts:62`** — serialize `cron` + `tz` for schedule reminders (do
    NOT serialize `delay_seconds`, `next_fire_ms`, or `timeoutHandle`).
 7. **`src/tools/profile/apply.ts`** — restore schedule reminders: recompute `next_fire_ms`,
-   arm the wake timer. **Honor the BT-7274 dedup guard** — skip re-add if a reminder with the
+   arm the wake timer. **Honor the profile-apply dedup guard** — skip re-add if a reminder with the
    same id already exists (apply.ts already does this for last_sent/last_received; extend to
    schedule).
 8. **Session-end / disable** — ensure `clearTimeout` is called so wake timers don't leak
@@ -261,7 +261,7 @@ timeoutHandle?: NodeJS.Timeout;  // armed timer (schedule only) — transient, N
 
 ## Timezone
 
-**Agents must never be required to calculate UTC offsets** (operator: BT will complain).
+**Agents must never be required to calculate UTC offsets** (operator: operator will complain).
 
 - Default: `resolveIana(process.env.TZ ?? "UTC")` — apply the alias map to the env var too
   (a container `TZ=EST` must NOT become a fixed UTC-5; see below).
@@ -365,7 +365,7 @@ existing reminders or schedule firing.
   dequeue, but document: an agent parked with neither SSE nor a pending dequeue fires late.
   Optionally also call `kickIfAllowed(sid,"reminder",false)` (activity-file kick) in the wake
   callback to cover activity-file-parked agents.
-- **§R-7 (design simplification — for operator/Overseer)** Given §R-6 already wakes any
+- **§R-7 (design simplification — for operator/agent)** Given §R-6 already wakes any
   *dequeuing* agent exactly on time via the existing wait path, the only job left for a
   separate timer is waking an **SSE-parked, not-currently-dequeuing** agent. Options: (a) keep
   per-reminder wake `setTimeout` + lazy 24h far-future tick (precise, zero idle cost, but more
@@ -452,15 +452,15 @@ existing reminders or schedule firing.
 
 ## Delegation / gates
 
-Worker implements; Overseer reviews; Curator stages; operator commits.
+Worker implements; agent reviews; coordinator stages; operator commits.
 
 ---
 
-## Overseer review
+## Agent review
 
-**Reviewer:** Overseer | **Date:** 2026-06-09 | **Verdict:** PASS
+**Reviewer:** Agent | **Date:** 2026-06-09 | **Verdict:** PASS
 
-**Review type:** Adversarial (independent sub-agent + Overseer resolution of open questions)
+**Review type:** Adversarial (independent sub-agent + Agent resolution of open questions)
 
 ### Open question decisions (binding)
 
@@ -476,7 +476,7 @@ Worker implements; Overseer reviews; Curator stages; operator commits.
 
 - [x] Acceptance criteria are binary and testable (with additions below)
 - [x] Scope bounded — 8 files enumerated, dependency (`croner`) specified
-- [x] Delegation field correct — Worker implements, Overseer gate, Curator stages, operator commits
+- [x] Delegation field correct — Worker implements, Agent gate, coordinator stages, operator commits
 - [x] Architecture sound — dual-mechanism rationale verified; in-loop check as source of truth is correct
 - [x] Regression guards explicit — §G-1 through §G-5 cover all closed-union sites
 - [x] DST spring-forward/fall-back ACs are exact (UTC timestamps provided)
@@ -494,7 +494,7 @@ Add AC: `reminder/cancel` called directly on a schedule reminder leaves no orpha
 
 **G-B: `next_fire_ms` and `timeoutHandle` must NOT appear in `ReminderDef`** (`profile-store.ts`). These are runtime-only fields on the live `Reminder` interface. The `ReminderDef` union type (used for JSON persistence) must not include them — TypeScript will then catch any accidental serialization at compile time.
 
-**G-C: apply.ts dedup guard cross-reference.** The BT-7274 guard lives at `apply.ts:84` — the `alreadyExists` check before calling `addReminder`. The `"schedule"` branch in `apply.ts` must use the same guard (check for existing reminder by id before re-adding). This prevents double-arming the wake sweep on reconnect.
+**G-C: apply.ts dedup guard cross-reference.** The The dedup guard lives at `apply.ts:84` — the `alreadyExists` check before calling `addReminder`. The `"schedule"` branch in `apply.ts` must use the same guard (check for existing reminder by id before re-adding). This prevents double-arming the wake sweep on reconnect.
 
 **G-D: Tighten vague AC.** "within a few seconds of due" (§R-6 AC) → **"fires within 5 seconds of `next_fire_ms`"** for a long-polling agent with no inbound traffic. The 5s bound is conservative given the sweep tick is 5s and dequeue turnaround is <1s.
 
@@ -570,7 +570,7 @@ The acceptance criteria require specific UTC timestamps for §T-2 DST spring-for
 
 ### Verdict
 
-**NEEDS_REVISION: BT-2229 — test execution evidence missing in `.worker-pod/.temp/test-results.md` — re-run tests and capture output; optional: add DST exact-UTC timestamp assertions for §T-2 ACs**
+**NEEDS_REVISION: #2229 — test execution evidence missing in `.worker-pod/.temp/test-results.md` — re-run tests and capture output; optional: add DST exact-UTC timestamp assertions for §T-2 ACs**
 
 ## Verification (pass 2)
 
@@ -600,4 +600,4 @@ All other CONFIRMED citations from pass 1 carry forward unchanged (§G-1 through
 
 ### Verdict
 
-**APPROVED: BT-2229**
+**APPROVED: #2229**
