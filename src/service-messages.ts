@@ -476,4 +476,15 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "behavior_nudge_caption_duplication" as const,
     text: "Caption appears to restate audio content. Keep it to a brief topic label — see help('audio') for the hybrid pattern.",
   },
+
+  // ── Absolute-path safety override ─────────────────────────────────────────
+
+  /**
+   * Fired to the operator when an agent passes `safety: "disable"` to bypass
+   * the absolute-path block on an outbound message.
+   */
+  ABS_PATH_SAFETY_OVERRIDE: {
+    eventType: "abs_path_safety_override" as const,
+    text: "⚠️ Safety override: an absolute filesystem path was detected in an outbound message but the block was bypassed via `safety: \"disable\"`. Review the message for unintended path disclosure.",
+  },
 });

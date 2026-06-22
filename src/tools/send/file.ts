@@ -9,6 +9,9 @@ import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../.
 import { extname } from "path";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
+import { findAbsolutePath, absPathBlockedError } from "../../abs-path-guard.js";
+import { deliverServiceMessage } from "../../session-queue.js";
+import { SERVICE_MESSAGES } from "../../service-messages.js";
 
 // ---------------------------------------------------------------------------
 // Auto-detection
@@ -49,7 +52,7 @@ const DESCRIPTION =
 
 export async function handleSendFile({
   file, type = "auto", caption, parse_mode = "Markdown", duration, performer, title,
-  width, height, disable_notification, reply_to, token,
+  width, height, disable_notification, reply_to, token, safety,
 }: {
   file: string;
   type?: "auto" | "photo" | "document" | "video" | "audio" | "voice";
@@ -63,11 +66,23 @@ export async function handleSendFile({
   disable_notification?: boolean;
   reply_to?: number;
   token: number;
+  safety?: "disable";
 }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
+
+  // ── Absolute-path guard for caption ────────────────────────────────────────
+  if (caption) {
+    const hit = findAbsolutePath(caption);
+    if (hit) {
+      if (safety !== "disable") {
+        return toError(absPathBlockedError(hit));
+      }
+      deliverServiceMessage(_sid, SERVICE_MESSAGES.ABS_PATH_SAFETY_OVERRIDE);
+    }
+  }
 
   if (caption) {
     const capErr = validateCaption(caption);
@@ -265,6 +280,12 @@ export function register(server: McpServer) {
           .optional()
           .describe("Reply to this message ID"),
         token: TOKEN_SCHEMA,
+        safety: z
+          .enum(["disable"])
+          .optional()
+          .describe(
+            'Safety override. Pass `safety: "disable"` to bypass the absolute-path block on the caption and send anyway. An operator notification is emitted when this override is used.',
+          ),
       },
     },
     handleSendFile,

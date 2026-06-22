@@ -11,11 +11,16 @@ import { getDefaultVoice } from "../config.js";
 import { requireAuth } from "../session-gate.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
 import { findUnrenderableChars } from "../unrenderable-chars.js";
+import { findAbsolutePath, absPathBlockedError } from "../abs-path-guard.js";
 import { deliverServiceMessage, deliverAsyncSendCallback } from "../session-queue.js";
 import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator, hasInflightAudio, enqueueTextSend } from "../async-send-queue.js";
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { getSession } from "../session-manager.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
+// Safety field accepted on all send paths
+const SAFETY_SCHEMA = z.enum(["disable"]).optional().describe(
+  'Safety override. Pass `safety: "disable"` to bypass the absolute-path block and send the message anyway. An operator notification is emitted when this override is used.',
+);
 // Type-routing handlers (v6 Phase 2)
 import { handleSendFile } from "./send/file.js";
 import { handleNotify } from "./send/notify.js";
@@ -243,6 +248,7 @@ export function register(server: McpServer) {
           .enum(["default", "compact"])
           .optional()
           .describe("Response format. \"compact\" omits inferrable fields (split: true, split_count, timed_out: false, voice: true) to reduce token usage. Defaults to \"default\"."),
+        safety: SAFETY_SCHEMA,
       },
     },
     async (args, { signal }) => {
@@ -260,6 +266,23 @@ export function register(server: McpServer) {
         return toResult({
           available_types: SEND_TYPES,
         });
+      }
+
+      // ── Absolute-path guard ─────────────────────────────────────────────────
+      // Inspect text and audio fields for absolute filesystem paths before any
+      // send is dispatched. Applies to all non-discovery modes where text or
+      // audio is present (file captions are checked inside handleSendFile).
+      {
+        const textHit = text ? findAbsolutePath(text) : null;
+        const audioHit = !textHit && audio ? findAbsolutePath(audio) : null;
+        const hit = textHit ?? audioHit;
+        if (hit) {
+          if (args.safety !== "disable") {
+            return toError(absPathBlockedError(hit));
+          }
+          // Safety override acknowledged — notify the operator.
+          deliverServiceMessage(_sid, SERVICE_MESSAGES.ABS_PATH_SAFETY_OVERRIDE);
+        }
       }
 
       // Validate type against the known enum before entering the switch
@@ -552,6 +575,7 @@ export function register(server: McpServer) {
             disable_notification: args.disable_notification,
             reply_to: args.reply_to,
             token: args.token,
+            safety: args.safety,
           });
 
         case "notification":
