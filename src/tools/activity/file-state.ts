@@ -179,6 +179,45 @@ export function clearUnexpectedCloseForSession(sid: number): void {
 }
 
 // ---------------------------------------------------------------------------
+// First-notify timestamp tracking (AC3/AC4 of offline detection, task 10-0011)
+// ---------------------------------------------------------------------------
+
+/**
+ * sid → timestamp (Date.now()) of the first SSE notification fired for the
+ * current pending message batch.  Reset by releaseNotifyDebounce() when the
+ * batch is fully consumed (no pending content remains after the dequeue).
+ * Preserved on timeout exits and synthetic returns (animation_stale_warning)
+ * so the 10-minute grace window keeps counting from the original notification.
+ * Also cleaned up when the last monitor for a session is torn down.
+ */
+const _firstNotifyTs = new Map<number, number>();
+
+/**
+ * Record the first SSE notification timestamp for a session's current batch.
+ * Idempotent — only the very first notification for a given batch is captured;
+ * subsequent notifications (re-notify timer, etc.) leave the timestamp alone.
+ */
+function recordFirstNotify(sid: number): void {
+  if (!_firstNotifyTs.has(sid)) {
+    _firstNotifyTs.set(sid, Date.now());
+  }
+}
+
+/**
+ * Returns the timestamp (Date.now()) of the first SSE notification sent for
+ * the current pending message batch, or null if no notification has fired
+ * since the last content-returning dequeue.
+ *
+ * Used by the health check to implement the 10-minute SSE-notification grace
+ * window (AC3/AC4 of task 10-0011): "appears offline" is only raised after
+ * a notification was sent AND the session still has not dequeued for
+ * DEQUEUE_GAP_GRACE_MS since that notification.
+ */
+export function getFirstNotifyTimestamp(sid: number): number | null {
+  return _firstNotifyTs.get(sid) ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -344,6 +383,8 @@ function fireRevaluationNotify(sid: number): void {
     entry.touchInFlight = true;
     void doTouchWithRollback(sid, entry);
   }
+  // Record first-notify timestamp for offline-detection grace window (AC3/AC4).
+  recordFirstNotify(sid);
   _sseNotifyCallback?.(sid);
 }
 
@@ -449,6 +490,7 @@ export function unregisterSseMonitor(sid: number, expected: boolean = false): vo
       entry.pendingReNotifyHandle = null;
     }
     _state.delete(sid);
+    _firstNotifyTs.delete(sid); // no monitor left — clean up first-notify tracking
   }
 }
 
@@ -522,6 +564,8 @@ export function notifyIfAllowed(
     entry.touchInFlight = true;
     void doTouchWithRollback(sid, entry);
   }
+  // Record the first SSE notification timestamp for offline-detection grace window (AC3/AC4).
+  recordFirstNotify(sid);
   return true;
 }
 
@@ -531,6 +575,16 @@ export function notifyIfAllowed(
  * pending content, fires one re-evaluation notify immediately.
  */
 export function releaseNotifyDebounce(sid: number): void {
+  // Reset the first-notify clock only when the session truly has no more
+  // pending content after the dequeue.  On timeout exits or synthetic returns
+  // (e.g. animation_stale_warning) the user's messages are still queued, so
+  // the clock must keep running from the original first SSE notification (AC4,
+  // task 10-0011).  hasPendingUserContent/hasPendingReminderContent are also
+  // called later in this function — the circular dep is handled via ESM lazy
+  // binding, same as the existing call below.
+  if (!hasPendingUserContent(sid) && !hasPendingReminderContent(sid)) {
+    _firstNotifyTs.delete(sid);
+  }
   const entry = _state.get(sid);
   if (!entry) return;
   if (entry.notifyDebounceUntil === null && !entry.notifyPendingBecauseDebounce) return;
@@ -628,6 +682,8 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
       entry.touchInFlight = true;
       void doTouchWithRollback(sid, entry);
     }
+    // Record first-notify timestamp for offline-detection grace window (AC3/AC4).
+    recordFirstNotify(sid);
     _sseNotifyCallback?.(sid);
   }
 
@@ -667,6 +723,8 @@ export async function clearActivityFile(sid: number): Promise<void> {
     _state.delete(sid);
     // Remove any pending unexpected-close notification for this session.
     _unexpectedClosePending.delete(sid);
+    // Clean up first-notify tracking — no monitor left, entry is gone.
+    _firstNotifyTs.delete(sid);
   }
 
   if (tmcpOwned && filePath !== null) {
@@ -768,5 +826,6 @@ export function resetActivityFileStateForTest(): void {
   }
   _state.clear();
   _unexpectedClosePending.clear();
+  _firstNotifyTs.clear();
   _activityDirReady = false;
 }

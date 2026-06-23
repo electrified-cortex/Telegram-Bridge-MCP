@@ -80,6 +80,7 @@ import {
   registerSseMonitor,
   unregisterSseMonitor,
   clearActivityFile,
+  getFirstNotifyTimestamp,
   type ActivityFileState,
 } from "./file-state.js";
 
@@ -993,5 +994,182 @@ describe("SSE-only monitor gate (no activity file)", () => {
     // File monitor still registered → gate persists.
     expect(getActivityFile(SID)).toBeDefined();
     expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getFirstNotifyTimestamp — AC3/AC4 of offline detection (task 10-0011)
+// ---------------------------------------------------------------------------
+
+describe("getFirstNotifyTimestamp — offline-detection first-notify tracking", () => {
+  let sseSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    sessionMocks.getNotifyDebounceMs.mockReturnValue(DEBOUNCE_MS);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+    vi.mocked(appendFile).mockResolvedValue(undefined);
+    sseSpy = vi.fn();
+    initSseNotifyCallback(sseSpy as (sid: number) => void);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns null for an unknown session (no gate entry)", () => {
+    expect(getFirstNotifyTimestamp(SID)).toBeNull();
+  });
+
+  it("returns null for a session with a gate entry that has not yet been notified", () => {
+    setActivityFile(SID, makeState({ notifyDebounceUntil: Date.now() + DEBOUNCE_MS }));
+    // No notifyIfAllowed call yet → still null
+    expect(getFirstNotifyTimestamp(SID)).toBeNull();
+  });
+
+  it("records a timestamp when notifyIfAllowed returns true", () => {
+    const before = Date.now();
+    setActivityFile(SID, makeState());
+    notifyIfAllowed(SID, "operator", false);
+    const after = Date.now();
+
+    const ts = getFirstNotifyTimestamp(SID);
+    expect(ts).not.toBeNull();
+    expect(ts!).toBeGreaterThanOrEqual(before);
+    expect(ts!).toBeLessThanOrEqual(after);
+  });
+
+  it("does NOT overwrite the first timestamp on subsequent notifications", () => {
+    setActivityFile(SID, makeState());
+    notifyIfAllowed(SID, "operator", false); // first notify
+    const first = getFirstNotifyTimestamp(SID);
+
+    // Advance time so the debounce expires and a second notify can fire
+    vi.advanceTimersByTime(DEBOUNCE_MS + 1);
+    notifyIfAllowed(SID, "operator", false); // second notify
+
+    // Timestamp must not change — first-notify semantics
+    expect(getFirstNotifyTimestamp(SID)).toBe(first);
+  });
+
+  it("stays null when notifyIfAllowed is debounced (returns false)", () => {
+    // Pre-arm the debounce so the first call is suppressed
+    setActivityFile(SID, makeState({ notifyDebounceUntil: Date.now() + DEBOUNCE_MS }));
+
+    const result = notifyIfAllowed(SID, "operator", false);
+    expect(result).toBe(false); // debounced
+    expect(getFirstNotifyTimestamp(SID)).toBeNull(); // no timestamp set for suppressed notify
+  });
+
+  it("records a timestamp when fireRevaluationNotify fires (re-notify path)", async () => {
+    setActivityFile(SID, makeState());
+
+    // First notify — sets debounce and arms re-notify timer
+    notifyIfAllowed(SID, "operator", false);
+    // Flush the async file touch so touchInFlight resets before the timer fires
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    const firstTs = getFirstNotifyTimestamp(SID);
+    expect(firstTs).not.toBeNull();
+
+    // Advance past debounce window → timer fires → fireRevaluationNotify → sseSpy called
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Timestamp must still be the first one (re-notify does not overwrite)
+    expect(getFirstNotifyTimestamp(SID)).toBe(firstTs);
+    expect(sseSpy).toHaveBeenCalledTimes(1); // re-notify fired
+  });
+
+  it("preserves timestamp on timeout/animation_stale_warning exit (content still pending)", () => {
+    // When releaseNotifyDebounce is called by dequeue.ts on timeout exits or
+    // animation_stale_warning returns, hasPendingUserContent is still true because
+    // no user content was consumed.  The first-notify clock must be preserved so
+    // the 10-minute grace window keeps counting from the original notification (AC4).
+    setActivityFile(SID, makeState());
+    notifyIfAllowed(SID, "operator", false);
+    const ts = getFirstNotifyTimestamp(SID);
+    expect(ts).not.toBeNull();
+
+    // hasPendingUserContent = true (beforeEach default) — content NOT consumed
+    releaseNotifyDebounce(SID); // called by finally block on timeout/synthetic exit
+    expect(getFirstNotifyTimestamp(SID)).toBe(ts); // clock preserved
+  });
+
+  it("resets to null after a content-returning dequeue (releaseNotifyDebounce)", () => {
+    setActivityFile(SID, makeState());
+    notifyIfAllowed(SID, "operator", false);
+    expect(getFirstNotifyTimestamp(SID)).not.toBeNull();
+
+    // Simulate content-returning exit: agent consumed the batch → queue empty.
+    // releaseNotifyDebounce only deletes _firstNotifyTs when no pending content
+    // remains, so we must reflect the post-dequeue state (AC4 fix).
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+    releaseNotifyDebounce(SID);
+    expect(getFirstNotifyTimestamp(SID)).toBeNull();
+  });
+
+  it("after reset, records a fresh timestamp on the next notification", async () => {
+    setActivityFile(SID, makeState());
+    notifyIfAllowed(SID, "operator", false);
+    // Flush async file touch so touchInFlight resets to false before the next notify
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    const first = getFirstNotifyTimestamp(SID);
+
+    // Simulate content-returning exit: queue is now empty → _firstNotifyTs cleared.
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+    releaseNotifyDebounce(SID);
+    expect(getFirstNotifyTimestamp(SID)).toBeNull();
+
+    // New message arrives → debounce cleared → fresh notification allowed
+    notifyIfAllowed(SID, "operator", false);
+    const second = getFirstNotifyTimestamp(SID);
+    expect(second).not.toBeNull();
+    expect(second).toBeGreaterThanOrEqual(first!); // monotonically non-decreasing
+  });
+
+  it("cleans up when SSE-only gate is torn down via unregisterSseMonitor", () => {
+    registerSseMonitor(SID);
+    notifyIfAllowed(SID, "operator", false);
+    expect(getFirstNotifyTimestamp(SID)).not.toBeNull();
+
+    unregisterSseMonitor(SID); // tears down gate (no file registered)
+    expect(getFirstNotifyTimestamp(SID)).toBeNull();
+  });
+
+  it("cleans up when last monitor is cleared via clearActivityFile", async () => {
+    setActivityFile(SID, makeState());
+    notifyIfAllowed(SID, "operator", false);
+    expect(getFirstNotifyTimestamp(SID)).not.toBeNull();
+
+    await clearActivityFile(SID); // no SSE connected → gate torn down
+    expect(getFirstNotifyTimestamp(SID)).toBeNull();
+  });
+
+  it("records timestamp for SSE-only gate (registerSseMonitor path)", () => {
+    registerSseMonitor(SID);
+    expect(getFirstNotifyTimestamp(SID)).toBeNull();
+
+    notifyIfAllowed(SID, "operator", false);
+    expect(getFirstNotifyTimestamp(SID)).not.toBeNull();
+  });
+
+  it("handleSessionStopped records first-notify when content is pending", () => {
+    registerSseMonitor(SID);
+    queueMocks.hasPendingUserContent.mockReturnValue(true);
+
+    expect(getFirstNotifyTimestamp(SID)).toBeNull(); // no prior notify
+    handleSessionStopped(SID);
+    // handleSessionStopped fires _sseNotifyCallback when content is pending
+    expect(getFirstNotifyTimestamp(SID)).not.toBeNull();
+  });
+
+  it("handleSessionStopped does NOT record timestamp when queue is empty", () => {
+    registerSseMonitor(SID);
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+
+    handleSessionStopped(SID);
+    expect(getFirstNotifyTimestamp(SID)).toBeNull();
   });
 });
