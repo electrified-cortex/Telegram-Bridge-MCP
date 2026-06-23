@@ -89,6 +89,14 @@ if [[ -z "$ACTIVITY_FILE" ]]; then
     exit 1
 fi
 
+ACTIVITY_DIR="$(dirname "$ACTIVITY_FILE")"
+if [[ ! -d "$ACTIVITY_DIR" ]]; then
+    echo "monitor.sh: parent directory does not exist: $ACTIVITY_DIR" >&2
+    exit 1
+fi
+
+trap 'exit 0' INT TERM
+
 # Cross-platform mtime: GNU stat (Linux/Git-Bash) then BSD stat (macOS).
 get_mtime() {
     stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0

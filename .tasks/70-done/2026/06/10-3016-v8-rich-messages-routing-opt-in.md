@@ -164,3 +164,12 @@ proceeding — the scope may need to be split.
   this must be verified by auditing the call graph.
 - The `RICH_MESSAGES` env var should be read once at module initialisation and
   cached, not read on every call. Hot-reload is out of scope.
+
+---
+
+## Verification
+
+**Verdict**: APPROVED (archived)
+**Note**: Task sealed in prior session per children.json (spawn 208d51ee). Cherry-picked into release. AC10 deferred per note. Task file was never archived — relocated to 70-done by pipeline cleanup (2026-06-23).
+
+**Sealed-By**: foreman (2026-06-23)
