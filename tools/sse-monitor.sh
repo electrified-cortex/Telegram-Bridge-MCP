@@ -74,6 +74,11 @@ fi
 # Configuration
 # ---------------------------------------------------------------------------
 SSE_URL="${1:?Usage: sse-monitor.sh <sse_url>}"
+# Validate URL to prevent flag injection
+if [[ ! "$SSE_URL" =~ ^https?:// ]]; then
+    echo "data: MONITOR_EXIT reason=setup_failed detail=invalid_url action=check_environment"
+    exit 3
+fi
 SILENCE_TIMEOUT=75      # seconds of silence = dead connection (2 missed keepalives + grace)
 MAX_RETRIES=8           # max consecutive reconnect attempts before permanent exit
 BACKOFF_INITIAL=2       # first retry delay (seconds)
@@ -152,7 +157,7 @@ while true; do
          --connect-timeout 10 \
          -H 'Accept: text/event-stream' \
          -w '\n%{http_code}\n' \
-         "$SSE_URL" \
+         -- "$SSE_URL" \
          > "$fifo" 2>/dev/null &
     curl_pid=$!          # real curl PID — curl is the backgrounded command, not a subshell
 
