@@ -685,17 +685,33 @@ describe("session-queue", () => {
       expect(sseMock).not.toHaveBeenCalled();
     });
 
-    it("targeted route: externally originated event (no event.sid) → SSE fires", () => {
+    it("targeted route: externally originated text reply (no event.sid) → SSE fires", () => {
       createSessionQueue(SID);
       trackMessageOwner(70, SID);
-      // User-generated reaction — event.sid is undefined (external user, not the bot).
+      // User-generated text reply — event.sid is undefined (external user, not the bot).
+      // Non-reaction externally-originated events must still fire SSE.
       const evt = makeEvent({
         id: 702,
+        content: { type: "text", text: "hey", reply_to: 70 },
+      });
+      routeToSession(evt);
+      expect(sseMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("targeted route: reaction (no event.sid) → SSE NOT fired, event still enqueued (AC-4)", () => {
+      createSessionQueue(SID);
+      trackMessageOwner(70, SID);
+      // User-generated reaction — externally originated but reactions must NOT wake a parked agent.
+      const evt = makeEvent({
+        id: 709,
         event: "reaction",
         content: { type: "reaction", target: 70, added: ["❤️"] },
       });
       routeToSession(evt);
-      expect(sseMock).toHaveBeenCalledTimes(1);
+      // AC-4: no SSE notify for reactions (reaction suppression)
+      expect(sseMock).not.toHaveBeenCalled();
+      // AC-2: reaction IS enqueued — it appears in dequeue batches
+      expect(getSessionQueue(SID)?.pendingCount()).toBe(1);
     });
 
     it("broadcast: self-originated event suppressed for originating session, fires for others", () => {
