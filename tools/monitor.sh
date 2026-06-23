@@ -83,6 +83,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+emit() {
+    if [[ -n "$PREFIX" ]]; then
+        echo "${PREFIX}: $1"
+    else
+        echo "$1"
+    fi
+}
+
 if [[ -z "$ACTIVITY_FILE" ]]; then
     echo "monitor.sh: activity_file_path is required" >&2
     usage >&2
@@ -92,7 +100,7 @@ fi
 ACTIVITY_DIR="$(dirname "$ACTIVITY_FILE")"
 if [[ ! -d "$ACTIVITY_DIR" ]]; then
     echo "monitor.sh: parent directory does not exist: $ACTIVITY_DIR" >&2
-    echo "error"
+    emit "error"
     exit 1
 fi
 
@@ -101,14 +109,6 @@ trap 'exit 0' INT TERM
 # Cross-platform mtime: GNU stat (Linux/Git-Bash) then BSD stat (macOS).
 get_mtime() {
     stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
-}
-
-emit() {
-    if [[ -n "$PREFIX" ]]; then
-        echo "${PREFIX}: $1"
-    else
-        echo "$1"
-    fi
 }
 
 # Establish baseline so startup does not produce a spurious kick.
