@@ -28,7 +28,9 @@ const mocks = vi.hoisted(() => ({
   clearOnceOnSend: vi.fn(),
   getActivityFile: vi.fn((_sid: number) => undefined as { filePath: string } | undefined),
   isSseMonitorActive: vi.fn((_sid: number) => false),
+  getFirstNotifyTimestamp: vi.fn((_sid: number) => null as number | null), // null = no SSE notify yet (safe default)
   existsSync: vi.fn((_path: string) => false),
+  hasPendingUserContent: vi.fn((_sid: number) => true), // queue has content by default
 }));
 
 vi.mock("./session-manager.js", () => ({
@@ -46,6 +48,7 @@ vi.mock("./routing-mode.js", () => ({
 vi.mock("./session-queue.js", () => ({
   deliverDirectMessage: mocks.deliverDirectMessage,
   deliverServiceMessage: mocks.deliverServiceMessage,
+  hasPendingUserContent: (sid: number) => mocks.hasPendingUserContent(sid),
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
@@ -76,6 +79,7 @@ vi.mock("./outbound-proxy.js", () => ({
 vi.mock("./tools/activity/file-state.js", () => ({
   getActivityFile: (sid: number) => mocks.getActivityFile(sid),
   isSseMonitorActive: (sid: number) => mocks.isSseMonitorActive(sid),
+  getFirstNotifyTimestamp: (sid: number) => mocks.getFirstNotifyTimestamp(sid),
 }));
 
 vi.mock("fs", () => ({
@@ -137,7 +141,12 @@ describe("health-check", () => {
     mocks.listSessions.mockReturnValue([]);
     mocks.getActivityFile.mockReturnValue(undefined);
     mocks.isSseMonitorActive.mockReturnValue(false);
+    mocks.getFirstNotifyTimestamp.mockReturnValue(0); // epoch = very old, grace window elapsed
+    mocks.hasPendingUserContent.mockReturnValue(true); // queue has content by default
     mocks.existsSync.mockReturnValue(false);
+    // Reset getSession: vi.clearAllMocks() does not reset mockReturnValue; tests that need
+    // a specific return value must set it explicitly. Default: undefined (root session, no parent).
+    mocks.getSession.mockReset();
   });
 
   describe("no-op when all sessions healthy", () => {
@@ -797,28 +806,42 @@ describe("health-check", () => {
     });
   });
 
-  describe("AC5: dequeue-only agents (no monitor) retain existing behavior", () => {
-    it("sends notification for a dequeue-only agent that exceeds the threshold", async () => {
+  describe("dequeue-only agents (no activity monitor) — updated for AC1/AC3/AC4", () => {
+    it("sends notification when dequeue-only agent has content + old first-notify", async () => {
       const s = makeSession(3, "DequeueOnly");
       mocks.getUnhealthySessions.mockReturnValue([s]);
       mocks.getGovernorSid.mockReturnValue(1);
       // No activity file, no SSE — pure dequeue-loop agent
       mocks.getActivityFile.mockReturnValue(undefined);
       mocks.isSseMonitorActive.mockReturnValue(false);
+      // Default: hasPendingUserContent=true, getFirstNotifyTimestamp=0 (epoch, very old)
       await _runHealthCheckNow();
       expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
         expect.stringContaining("DequeueOnly"),
       );
     });
 
-    it("does not suppress for dequeue-only agents when both guards return falsy", async () => {
+    it("marks unhealthy when dequeue-only agent has content + old first-notify", async () => {
       const s = makeSession(3, "DequeueOnly");
       mocks.getUnhealthySessions.mockReturnValue([s]);
       mocks.getGovernorSid.mockReturnValue(1);
       mocks.getActivityFile.mockReturnValue(undefined);
       mocks.isSseMonitorActive.mockReturnValue(false);
+      // Default: hasPendingUserContent=true, getFirstNotifyTimestamp=0 (epoch, very old)
       await _runHealthCheckNow();
       expect(mocks.markUnhealthy).toHaveBeenCalledWith(3);
+    });
+
+    it("does NOT alert dequeue-only agent when first-notify is null (no SSE notify sent)", async () => {
+      const s = makeSession(3, "DequeueOnly");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getActivityFile.mockReturnValue(undefined);
+      mocks.isSseMonitorActive.mockReturnValue(false);
+      mocks.getFirstNotifyTimestamp.mockReturnValue(null); // no SSE notify for pure dequeue-loop agents
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
     });
   });
 
@@ -970,6 +993,154 @@ describe("health-check", () => {
       expect((call as unknown[])[3]).toMatchObject({
         last_active_at: "2026-06-21T11:00:00.000Z", // createdAt fallback
       });
+    });
+  });
+
+  // ── New offline-detection guards (task 10-0011): AC1, AC3, AC4 ────────────
+
+  describe("AC1 (new): suppress notification when session queue is empty", () => {
+    it("does not send notification when session has no pending user content", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(false); // empty queue
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    });
+
+    it("does not mark unhealthy when queue is empty", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(false);
+      await _runHealthCheckNow();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
+    });
+
+    it("does not add session to flagged set when queue is empty", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(false);
+      await _runHealthCheckNow();
+      // If flagged, a second tick would NOT call sendServiceMessage (already flagged).
+      // If NOT flagged, the second tick can potentially fire — but queue is still empty.
+      // Confirm first tick produced no notification.
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
+    });
+
+    it("fires notification when session transitions from empty to having content (new defaults)", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true); // queue has content
+      mocks.getFirstNotifyTimestamp.mockReturnValue(0); // old notify
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+    });
+  });
+
+  describe("AC3 (new): suppress when no SSE notification has fired for current batch", () => {
+    it("does not send notification when getFirstNotifyTimestamp returns null", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true);
+      mocks.getFirstNotifyTimestamp.mockReturnValue(null); // no SSE notify yet
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    });
+
+    it("does not mark unhealthy when first-notify is null", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true);
+      mocks.getFirstNotifyTimestamp.mockReturnValue(null);
+      await _runHealthCheckNow();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("AC4 (new): 10-minute grace window from first SSE notification", () => {
+    it("does not send notification when within 10-minute grace window", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true);
+      // First notify was 9 minutes ago — inside the grace window
+      mocks.getFirstNotifyTimestamp.mockReturnValue(Date.now() - 540_000);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
+    });
+
+    it("does not mark unhealthy when still inside grace window", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true);
+      mocks.getFirstNotifyTimestamp.mockReturnValue(Date.now() - 1_000); // just 1 second ago
+      await _runHealthCheckNow();
+      expect(mocks.markUnhealthy).not.toHaveBeenCalled();
+    });
+
+    it("sends notification when grace window has elapsed (>10 minutes since first notify)", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true);
+      // First notify was 11 minutes ago — grace window elapsed
+      mocks.getFirstNotifyTimestamp.mockReturnValue(Date.now() - 660_000);
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+    });
+
+    it("marks unhealthy when grace window has elapsed", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true);
+      mocks.getFirstNotifyTimestamp.mockReturnValue(Date.now() - 660_000);
+      await _runHealthCheckNow();
+      expect(mocks.markUnhealthy).toHaveBeenCalledWith(2);
+    });
+
+    it("sends notification when first notify was at epoch (0) — very old timestamp", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true);
+      mocks.getFirstNotifyTimestamp.mockReturnValue(0); // epoch = definitely elapsed
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Worker"),
+      );
+    });
+
+    it("all three conditions required simultaneously — no alert when queue empty even with old notify", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(false); // queue empty — AC1 blocks
+      mocks.getFirstNotifyTimestamp.mockReturnValue(0); // old notify
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
+    });
+
+    it("all three conditions required — no alert when notify null even with content", async () => {
+      const s = makeSession(2, "Worker");
+      mocks.getUnhealthySessions.mockReturnValue([s]);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.hasPendingUserContent.mockReturnValue(true); // has content
+      mocks.getFirstNotifyTimestamp.mockReturnValue(null); // no notify yet — AC3 blocks
+      await _runHealthCheckNow();
+      expect(mocks.sendServiceMessage).not.toHaveBeenCalled();
     });
   });
 

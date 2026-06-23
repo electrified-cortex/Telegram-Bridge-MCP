@@ -21,7 +21,6 @@ import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
 import { getSseBaseUrl } from "../../http-mode.js";
 import { scheduleArmReminder } from "../../sse-endpoint.js";
-
 export function handleActivityListen(args: Record<string, unknown>) {
   const sid = requireAuth(args.token as number | undefined);
   if (typeof sid !== "number") return toError(sid);

@@ -59,10 +59,10 @@ action(type: 'reminder/list', token: <stored token>)
 Before post-connect setup, drain the queue for any messages that arrived during startup:
 
 ```mcp
-dequeue(max_wait: 0)
+dequeue()
 ```
 
-This is a single non-blocking call — do not loop. If a `post_compact_monitor_recovery` event is in the batch, your context was recently compacted — call `help('compacted')` before proceeding to R4. The compaction recovery topic handles monitor re-arm and verification.
+Call once at startup; handle any queued updates. If a `post_compact_monitor_recovery` event is in the batch, your context was recently compacted — call `help('compacted')` before proceeding to R4. The compaction recovery topic handles monitor re-arm and verification.
 
 ## R4 — Post-connect setup
 
@@ -108,7 +108,7 @@ If the response includes a `file_path`, a prior registration survives — use it
 action(type: 'activity/file/create')
 ```
 
-Then call `dequeue(max_wait: 10)` and scan the batch for an event with `event_type: 'ACTIVITY_FILE_MONITOR_INSTRUCTIONS'`. Extract `file_path` from that event.
+Then call `dequeue()` and scan the batch for an event with `event_type: 'ACTIVITY_FILE_MONITOR_INSTRUCTIONS'`. Extract `file_path` from that event.
 
 **ALREADY_REGISTERED response (either branch):**
 
@@ -140,7 +140,7 @@ End every agent turn with a dequeue call:
 dequeue(token)
 ```
 
-Use no explicit `max_wait` — the session default applies (loaded via `profile/load` in R4 Step 1, confirmed by `help('startup')`). Do not override the session default via `profile/dequeue-default`. Drain polls (`max_wait: 0`) are permitted when needed.
+Session default applies (loaded via `profile/load` in R4 Step 1, confirmed by `help('startup')`). Do not override the session default via `profile/dequeue-default`.
 
 ## R8 — Closeout
 
@@ -149,8 +149,8 @@ R8 MUST run on ALL shutdown paths — planned exit, shutdown directive, forced s
 **Step 1 — Stop watcher:**
 Stop the file watcher using the retained handle (from R5). If the handle is unavailable (e.g., after a compaction that didn't preserve it), call `action(type: 'activity/file/delete')` instead.
 
-**Step 2 — Drain queue (capped at 10):**
-Call `dequeue(max_wait: 0)` up to 10 iterations until the queue is empty. The cap prevents a deadlock if the queue keeps receiving messages during shutdown.
+**Step 2 — Drain queue:**
+Call `dequeue()` and handle any remaining messages before closing.
 
 **Step 3 — Clear token:**
 Capture the stored session token into a local variable, then clear it from state. This ensures the token is available for the close call but is not retained afterward.

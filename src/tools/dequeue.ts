@@ -7,8 +7,8 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseNotifyDebounce } from "./activity/file-state.js";
-import { resetChannelCooldown } from "../channel.js";
+import { setDequeueActive, releaseNotifyDebounce, isSseMonitorActive, isActivityFileActive } from "./activity/file-state.js";
+import { resetChannelCooldown, flushPendingChannelNotify } from "../channel.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -191,8 +191,15 @@ export async function runDrainLoop(
   // Count every dequeue attempt (including idle/empty polls) for runaway-loop detection.
   checkDequeueRate(sid, Date.now());
 
+  // Mark this session as having an in-flight dequeue — suppresses activity-file notifications
+  // while the agent is actively waiting for messages.
+  // Set here: after session existence confirmed, before any deliverServiceMessage calls,
+  // so onboarding messages do not fire spurious SSE wakeup notifications.
+  // Every path through the try/finally below is guaranteed to call setDequeueActive(sid, false).
+  setDequeueActive(sid, true);
+
   // R5: First-dequeue detection for child sessions — inject onboarding before any content drain.
-  // Checked here: after session existence confirmed, before setDequeueActive or content reads.
+  // Checked here: after setDequeueActive(true), before content reads.
   const _childSession = getSession(sid);
   if (_childSession?.parent_sid && !_childSession.firstDequeueOccurred) {
     _childSession.firstDequeueOccurred = true;
@@ -233,12 +240,6 @@ export async function runDrainLoop(
       );
     }
   }
-
-  // Mark this session as having an in-flight dequeue — suppresses activity-file notifications
-  // while the agent is actively waiting for messages.
-  // Only set after confirming the session exists so every path through the
-  // try/finally below is guaranteed to call setDequeueActive(sid, false).
-  setDequeueActive(sid, true);
 
   // ONBOARDING_LOOP_PATTERN already covers the activity-file guidance at session
   // start. The redundant activity-file hint on first dequeue is intentionally
@@ -324,7 +325,7 @@ export async function runDrainLoop(
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
-    releaseNotifyDebounce(sid); // content-returning exit
+    releaseNotifyDebounce(sid, true); // content-returning exit
     resetChannelCooldown(sid);
     return result;
   }
@@ -427,6 +428,7 @@ export async function runDrainLoop(
     resyncActiveSession();
     const pending = pendingCountAny();
     _debounceRelease = true;  // Release debounce on timeout exits too
+    flushPendingChannelNotify(sid);
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {
     // Note: if two concurrent dequeue calls share the same sid (unusual but
@@ -437,7 +439,7 @@ export async function runDrainLoop(
     setDequeueActive(sid, false);
     // Release notify debounce on all dequeue exits (content-returning and timeout).
     if (_debounceRelease) {
-      releaseNotifyDebounce(sid);
+      releaseNotifyDebounce(sid, true); // content-returning or timeout exit
       resetChannelCooldown(sid);
     }
   }

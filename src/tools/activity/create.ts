@@ -27,7 +27,6 @@ import {
   getActivityFile,
   clearActivityFile,
 } from "./file-state.js";
-
 /**
  * One-time event: when an activity file is registered, set the session's
  * dequeue default to this value (seconds) so the agent's loop interleaves

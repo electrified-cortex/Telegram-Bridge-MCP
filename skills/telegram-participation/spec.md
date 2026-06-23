@@ -45,7 +45,7 @@ flowchart TD
     R2F -->|No / Timeout| STOP3([Notify operator — stop])
 
     subgraph R3["R3 — Startup Drain"]
-        R3A["dequeue(max_wait: 0)"]
+        R3A["dequeue()"]
         R3B{POST_COMPACT_MONITOR\n_RECOVERY in batch?}
         R3C["help('compacted')"]
     end
@@ -107,7 +107,7 @@ flowchart TD
 
 ### R3 — Startup drain
 
-Single call: `dequeue(max_wait: 0)`. Do not loop. If a `post_compact_monitor_recovery` event is in the batch, call `help('compacted')` before proceeding to R4.
+Single call: `dequeue()`. Handle any queued updates. If a `post_compact_monitor_recovery` event is in the batch, call `help('compacted')` before proceeding to R4.
 
 ### R4 — Post-connect setup
 
@@ -119,11 +119,11 @@ All three MUST run after R2 (and after R3's compaction-recovery branch if taken)
 
 ### R5 — Dequeue loop
 
-`dequeue(token)` with no explicit `max_wait` — session default applies. End every turn with dequeue. Do not override session default via `profile/dequeue-default`. Drain polls (`max_wait: 0`) are permitted.
+`dequeue(token)` — session default applies. End every turn with dequeue. Do not override session default via `profile/dequeue-default`.
 
 ### R6 — Closeout
 
-Before any shutdown path: drain the queue with `dequeue(max_wait: 0)`, then `action(type: 'session/close', token)`. On `LAST_SESSION` error: retry with `force: true`.
+Before any shutdown path: call `dequeue()` and handle any remaining messages, then `action(type: 'session/close', token)`. On `LAST_SESSION` error: retry with `force: true`.
 
 ## Help Breadcrumbs
 

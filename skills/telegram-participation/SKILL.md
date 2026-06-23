@@ -30,7 +30,7 @@ Operator approval dialog (up to 120s). Approved → store token; R3. Denied/time
 
 ## R3 — Startup drain
 
-`dequeue(max_wait: 0)` — single non-blocking call. If a `post_compact_monitor_recovery` event is in the batch, call `help('compacted')` before continuing.
+`dequeue()` — call once at startup; handle any queued updates. If a `post_compact_monitor_recovery` event is in the batch, call `help('compacted')` before continuing.
 
 ## R4 — Post-connect setup
 
@@ -58,7 +58,7 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 - Returns a `file_path` → skip Branch B; proceed to path construction.
 - Returns no `file_path` → fall through to Branch B.
 
-**Branch B — fresh start (file-watch path):** `action(type: 'activity/file/create')`, then `dequeue(max_wait: 10)` scanning for `event_type: 'ACTIVITY_FILE_MONITOR_INSTRUCTIONS'`. Extract `file_path` from that event.
+**Branch B — fresh start (file-watch path):** `action(type: 'activity/file/create')`, then `dequeue()` scanning for `event_type: 'ACTIVITY_FILE_MONITOR_INSTRUCTIONS'`. Extract `file_path` from that event.
 
 **ALREADY_REGISTERED response (either branch):**
 - `details.file_path` non-empty → use it; proceed to path construction.
@@ -101,7 +101,7 @@ The session-default timeout (~90 s) is what allows other messages to arrive with
 R8 MUST run on ALL shutdown paths (planned exit, shutdown directive, forced stop).
 
 1. **Stop watcher:** by retained handle; if handle unavailable, `action(type: 'activity/file/delete')`.
-2. **Drain (capped at 10):** `dequeue(max_wait: 0)` up to 10 iterations until empty.
+2. **Drain:** `dequeue()` and handle any remaining messages before closing.
 3. **Clear token:** capture stored token, then clear it from state.
 4. **Close session:** `action(type: 'session/close', token: <captured>)`. On `LAST_SESSION` error: retry with `force: true`.
 

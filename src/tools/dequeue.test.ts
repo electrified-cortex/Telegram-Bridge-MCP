@@ -30,6 +30,8 @@ const fileStateMocks = vi.hoisted(() => ({
   getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
   releaseNotifyDebounce: vi.fn((_sid: number) => {}),
   notifyIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
+  isSseMonitorActive: vi.fn((_sid: number): boolean => false),
+  isActivityFileActive: vi.fn((_sid: number): boolean => false),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
@@ -37,6 +39,8 @@ vi.mock("./activity/file-state.js", () => ({
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
   releaseNotifyDebounce: (sid: number) => { fileStateMocks.releaseNotifyDebounce(sid); },
   notifyIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.notifyIfAllowed(sid, source, inflight); },
+  isSseMonitorActive: (sid: number) => fileStateMocks.isSseMonitorActive(sid),
+  isActivityFileActive: (sid: number) => fileStateMocks.isActivityFileActive(sid),
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -1705,3 +1709,4 @@ describe("checkDequeueRate (runaway-dequeue rate guard)", () => {
     );
   });
 });
+
