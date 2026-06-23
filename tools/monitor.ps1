@@ -97,69 +97,93 @@ if (Test-Path $fullPath) {
 $lastEventTime     = [DateTimeOffset]::UtcNow
 $lastHeartbeatTime = $lastEventTime
 
-while ($true) {
-    $now = [DateTimeOffset]::UtcNow
+# Create FileSystemWatcher once before the loop — avoids missing events during
+# the gap between per-iteration dispose and re-create.
+# If the file doesn't exist yet, watcher is left null and created lazily in
+# the loop when the file first appears (see lazy-creation block below).
+$watcher = $null
+if (Test-Path $fullPath) {
+    $watcher = [System.IO.FileSystemWatcher]::new($fileDir, $fileName)
+    $watcher.InternalBufferSize = 65536    # default 4096 can silently drop events under load
+    $watcher.NotifyFilter = [System.IO.NotifyFilters]::LastWrite
+    $watcher.EnableRaisingEvents = $true
+}
 
-    # Mtime check — handles races on watcher startup and detects pre-existing changes.
-    if (Test-Path $fullPath) {
-        $currentMTime = Get-MTime $fullPath
-        if ($currentMTime -ne $lastMTime) {
-            Write-Token "notify"
-            $lastMTime         = $currentMTime
-            $lastEventTime     = $now
-            $lastHeartbeatTime = $now
-            continue
+try {
+    while ($true) {
+        $now = [DateTimeOffset]::UtcNow
+
+        # Mtime check — handles races on watcher startup and detects pre-existing changes.
+        if (Test-Path $fullPath) {
+            $currentMTime = Get-MTime $fullPath
+            if ($currentMTime -ne $lastMTime) {
+                Write-Token "notify"
+                $lastMTime         = $currentMTime
+                $lastEventTime     = $now
+                $lastHeartbeatTime = $now
+                continue
+            }
+        }
+
+        # Timeout check.
+        if ($Timeout -gt 0) {
+            $idleSecs = ($now - $lastEventTime).TotalSeconds
+            if ($idleSecs -ge $Timeout) {
+                Write-Token "timeout"
+                exit 0
+            }
+        }
+
+        # Heartbeat check (emit if overdue, reset timer).
+        if ($Heartbeat -gt 0) {
+            $sinceBeat = ($now - $lastHeartbeatTime).TotalSeconds
+            if ($sinceBeat -ge $Heartbeat) {
+                Write-Token "heartbeat"
+                $lastHeartbeatTime = [DateTimeOffset]::UtcNow
+            }
+        }
+
+        # Calculate maximum wait (ms) for this iteration.
+        $waitMs = 30000
+        if ($Timeout -gt 0) {
+            $idleSecs  = ([DateTimeOffset]::UtcNow - $lastEventTime).TotalSeconds
+            $remaining = [int](($Timeout - $idleSecs) * 1000)
+            if ($remaining -lt 100) { $remaining = 100 }
+            if ($remaining -lt $waitMs) { $waitMs = $remaining }
+        }
+        if ($Heartbeat -gt 0) {
+            $sinceBeat     = ([DateTimeOffset]::UtcNow - $lastHeartbeatTime).TotalSeconds
+            $remainingBeat = [int](($Heartbeat - $sinceBeat) * 1000)
+            if ($remainingBeat -lt 100) { $remainingBeat = 100 }
+            if ($remainingBeat -lt $waitMs) { $waitMs = $remainingBeat }
+        }
+
+        # Lazy watcher creation — handles files that appear after script startup.
+        if (-not $watcher -and (Test-Path $fullPath)) {
+            $watcher = [System.IO.FileSystemWatcher]::new($fileDir, $fileName)
+            $watcher.InternalBufferSize = 65536
+            $watcher.NotifyFilter = [System.IO.NotifyFilters]::LastWrite
+            $watcher.EnableRaisingEvents = $true
+        }
+
+        # Block using FileSystemWatcher (NotifyFilter = LastWriteTime).
+        # Watcher is created once (or lazily); catch handles file-deleted races.
+        if ($watcher -and (Test-Path $fullPath)) {
+            try {
+                $null = $watcher.WaitForChanged([System.IO.WatcherChangeTypes]::Changed, $waitMs)
+            }
+            catch {
+                # File deleted or race condition — fall through to next iteration.
+                Start-Sleep -Milliseconds $waitMs
+            }
+        }
+        else {
+            Start-Sleep -Milliseconds $waitMs
         }
     }
-
-    # Timeout check.
-    if ($Timeout -gt 0) {
-        $idleSecs = ($now - $lastEventTime).TotalSeconds
-        if ($idleSecs -ge $Timeout) {
-            Write-Token "timeout"
-            exit 0
-        }
-    }
-
-    # Heartbeat check (emit if overdue, reset timer).
-    if ($Heartbeat -gt 0) {
-        $sinceBeat = ($now - $lastHeartbeatTime).TotalSeconds
-        if ($sinceBeat -ge $Heartbeat) {
-            Write-Token "heartbeat"
-            $lastHeartbeatTime = [DateTimeOffset]::UtcNow
-        }
-    }
-
-    # Calculate maximum wait (ms) for this iteration.
-    $waitMs = 30000
-    if ($Timeout -gt 0) {
-        $idleSecs  = ([DateTimeOffset]::UtcNow - $lastEventTime).TotalSeconds
-        $remaining = [int](($Timeout - $idleSecs) * 1000)
-        if ($remaining -lt 100) { $remaining = 100 }
-        if ($remaining -lt $waitMs) { $waitMs = $remaining }
-    }
-    if ($Heartbeat -gt 0) {
-        $sinceBeat     = ([DateTimeOffset]::UtcNow - $lastHeartbeatTime).TotalSeconds
-        $remainingBeat = [int](($Heartbeat - $sinceBeat) * 1000)
-        if ($remainingBeat -lt 100) { $remainingBeat = 100 }
-        if ($remainingBeat -lt $waitMs) { $waitMs = $remainingBeat }
-    }
-
-    # Block using FileSystemWatcher (NotifyFilter = LastWriteTime).
-    if (Test-Path $fullPath) {
-        $watcher = [System.IO.FileSystemWatcher]::new($fileDir, $fileName)
-        $watcher.NotifyFilter = [System.IO.NotifyFilters]::LastWrite
-        $watcher.EnableRaisingEvents = $true
-        try {
-            $null = $watcher.WaitForChanged([System.IO.WatcherChangeTypes]::Changed, $waitMs)
-        }
-        finally {
-            $watcher.Dispose()
-        }
-    }
-    else {
-        Start-Sleep -Milliseconds $waitMs
-    }
+}
+finally {
+    if ($watcher) { $watcher.Dispose() }
 }
 
 exit 0
