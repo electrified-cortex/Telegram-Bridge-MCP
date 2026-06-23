@@ -426,7 +426,7 @@ describe("markdownToRichBlocks", () => {
       expect(para.type).toBe("paragraph");
       const text = para.text as RichText[];
       expect(Array.isArray(text)).toBe(true);
-      const mathNode = (text).find(
+      const mathNode = text.find(
         (t): t is RichTextMathematicalExpression =>
           typeof t === "object" &&
           !Array.isArray(t) &&

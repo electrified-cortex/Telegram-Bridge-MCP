@@ -7,6 +7,7 @@ node_modules
 temp/
 .temp/
 data/
+.trash/
 # Runtime log files
 *.log
 # Session state files — regenerated each session by the agent
@@ -29,3 +30,6 @@ notes/
 .session-id
 
 .scratch/
+
+# Session token — live credential, never committed
+memory/telegram/session.token

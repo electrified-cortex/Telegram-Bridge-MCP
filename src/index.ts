@@ -17,7 +17,7 @@ import { startPoller, stopPoller, drainPendingUpdates, waitForPollerExit } from 
 import { startSilenceDetector } from "./silence-detector.js";
 import { startHealthCheck } from "./health-check.js";
 import { setAuthHook } from "./session-gate.js";
-import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId, sweepExpiredMarkers } from "./session-manager.js";
+import { touchSession, getSessionReauthDialogMsgId, clearSessionReauthDialogMsgId } from "./session-manager.js";
 import { createOutboundProxy } from "./outbound-proxy.js";
 import { loadConfig, getSessionLogMode, isDebugConfig, getPreToolDenyPatterns, getSessionApproval } from "./config.js";
 import { setDelegationEnabled } from "./agent-approval.js";
@@ -31,12 +31,10 @@ import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
 import { attachHookRoutes } from "./hook-animation.js";
 import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
-import { attachActivityListenCheckRoute } from "./activity-listen-check-endpoint.js";
-import { attachActivityPokeRoute } from "./activity-poke-endpoint.js";
+import { attachActivitySelftestRoute } from "./activity-selftest-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
-import { initReminderFireCallback, setOutboundSendCallback } from "./session-queue.js";
-import { notifyDequeueOutboundSend } from "./tools/dequeue.js";
+import { initReminderFireCallback } from "./session-queue.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")) as { name: string; version: string };
@@ -50,10 +48,6 @@ initSseNotifyCallback((sid) => {
 // P1: wire reminder-fire callback so reminder-state.ts can deliver events through
 // session-queue.ts without a circular import (both modules are fully initialized here)
 initReminderFireCallback();
-
-// AC4: wire outbound-send callback so the dequeue throttle (dequeue.ts) learns
-// when a session sends a message and can exempt it from rapid-dequeue detection.
-setOutboundSendCallback(notifyDequeueOutboundSend);
 
 // Initialize security config early so warnings surface at startup
 getSecurityConfig();
@@ -169,8 +163,7 @@ if (mcpPort !== undefined) {
   attachDequeueRoute(app);
   attachHookRoutes(app);
   attachSseRoute(app);
-  attachActivityListenCheckRoute(app);
-  attachActivityPokeRoute(app);
+  attachActivitySelftestRoute(app);
 
   /** Normalize header that may be string | string[] | undefined → string | undefined */
   const getSessionId = (req: Request): string | undefined => {
@@ -311,13 +304,6 @@ process.stderr.write("[info] health check started\n");
 
 // Best-effort: unpin stale session announcement messages from a prior crashed run
 void cleanupStalePins().catch(() => {});
-
-// Periodic sweep of expired closed-session markers every 10 minutes.
-// The lazy cleanup inside isClosedMarker() handles re-presented tokens; this
-// periodic sweep bounds map growth for tokens that are never re-presented.
-setInterval(() => {
-  sweepExpiredMarkers();
-}, 10 * 60 * 1_000).unref();
 
 // Best-effort startup notification — bypasses proxy (operational, not agent content)
 const localLogStatus = isLoggingEnabled() ? "`Logging enabled`" : "Logging disabled";

@@ -19,8 +19,6 @@ import { handleSessionStart, handleSessionReconnect } from "./session/start.js";
 import { handleSpawnChild } from "./session/spawn-child.js";
 import { handleRevokeChild } from "./session/revoke-child.js";
 import { handleChildForward } from "./session/forward-child.js";
-import { handleRequestGuidance } from "./session/request-guidance.js";
-import { handleProfileTier } from "./profile/tier.js";
 import { handleChildNotify } from "./session/child-notify.js";
 import { handleRenameSession } from "./session/rename.js";
 import { handleSessionIdle } from "./session/idle.js";
@@ -47,7 +45,6 @@ import { handleSleepReminder } from "./reminder/sleep.js";
 import { handleScheduleReminder } from "./reminder/schedule.js";
 import { handleReminderUnschedule } from "./reminder/unschedule.js";
 import { handleSetDequeueDefault } from "./profile/dequeue-default.js";
-import { handleSilentLifecycle } from "./profile/silent-lifecycle.js";
 import { handleNotifyDebounce, handleKickDebounce } from "./profile/notify-debounce.js";
 import { handleNotifyGate } from "./profile/activity-notify-gate.js";
 import { handleSetDefaultAnimation } from "./animation/default.js";
@@ -72,7 +69,6 @@ import { handleApproveAgent } from "./approve/agent.js";
 import { handleShutdown } from "./shutdown/handler.js";
 import { handleNotifyShutdownWarning } from "./shutdown/warn.js";
 import { handleCloseSessionSignal } from "./session/close-signal.js";
-import { handleSessionUnblock } from "./session/unblock.js";
 import { handleTranscribeVoice } from "./transcribe/voice.js";
 import { handleDownloadFile } from "./download/file.js";
 import { handleUpdateChecklist } from "./checklist/update.js";
@@ -89,26 +85,10 @@ import { NOTIFY_DEBOUNCE_MIN_MS, NOTIFY_DEBOUNCE_MAX_MS } from "./activity/file-
 import { handleNameTag } from "./name-tag.js";
 import { decodeToken } from "./identity-schema.js";
 import { getSession } from "../session-manager.js";
-import { findAbsolutePath, absPathBlockedError } from "../abs-path-guard.js";
-import { deliverServiceMessage } from "../session-queue.js";
-import { SERVICE_MESSAGES } from "../service-messages.js";
 type ToolResult = ReturnType<typeof toResult>;
 
 /** Action paths explicitly permitted for `read-only` child sessions. */
 const READ_ONLY_ALLOWED = new Set(["child/notify"]);
-
-/**
- * Action paths whose `text` param is rendered as an outbound Telegram message
- * body and therefore subject to the absolute-path guard.
- */
-const TEXT_CONTENT_ACTIONS = new Set([
-  "message/edit",        // edits an existing Telegram message
-  "animation/cancel",    // sends replacement text when cancelling an animation
-  "confirm/ok",          // prompt shown above OK button
-  "confirm/ok-cancel",   // prompt shown above OK / Cancel buttons
-  "confirm/yn",          // prompt shown above Yes / No buttons
-  "reminder/set",        // reminder message text (sent to Telegram when the reminder fires)
-]);
 
 /** Action paths that are blocked for `gather`-capability sessions. */
 const GATHER_BLOCKED = new Set([
@@ -160,10 +140,8 @@ export function setupActionRegistry(): void {
   registerAction("session/reconnect", toActionHandler(handleSessionReconnect));
   registerAction("session/close", toActionHandler(handleCloseSession));
   registerAction("session/close/signal", toActionHandler(handleCloseSessionSignal), { governor: true });
-  registerAction("session/unblock", toActionHandler(handleSessionUnblock), { governor: true });
   registerAction("session/spawn-child", toActionHandler(handleSpawnChild));
   registerAction("session/revoke-child", toActionHandler(handleRevokeChild));
-  registerAction("session/request-guidance", toActionHandler(handleRequestGuidance));
   registerAction("child/forward", toActionHandler(handleChildForward));
   registerAction("child/notify", toActionHandler(handleChildNotify));
   registerAction("session/list", toActionHandler(handleListSessions));
@@ -192,7 +170,6 @@ export function setupActionRegistry(): void {
 
   // profile/*, reminder/*, logging/*, commands/*
   registerAction("profile/topic", toActionHandler(handleSetTopic));
-  registerAction("profile/tier", toActionHandler(handleProfileTier));
   registerAction("profile/save", toActionHandler(handleSaveProfile));
   registerAction("profile/load", toActionHandler(handleLoadProfile));
   registerAction("profile/import", toActionHandler(handleImportProfile));
@@ -205,9 +182,7 @@ export function setupActionRegistry(): void {
   registerAction("reminder/schedule", toActionHandler(handleScheduleReminder));
   registerAction("reminder/unschedule", toActionHandler(handleReminderUnschedule));
   registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
-  registerAction("profile/silent-lifecycle", toActionHandler(handleSilentLifecycle));
-  registerAction("profile/notify-gate", toActionHandler(handleNotifyGate));
-  registerAction("profile/kick-gate", toActionHandler(handleNotifyGate)); // deprecated alias for profile/notify-gate
+  registerAction("profile/kick-gate", toActionHandler(handleNotifyGate));
   registerAction("profile/notify-debounce", toActionHandler(handleNotifyDebounce));
   registerAction("profile/kick-lockout", toActionHandler(handleNotifyDebounce)); // backward-compat alias for profile/notify-debounce
   registerAction("profile/kick-debounce", toActionHandler(handleKickDebounce));
@@ -570,9 +545,9 @@ export function register(server: McpServer): void {
           .max(NOTIFY_DEBOUNCE_MAX_MS)
           .optional()
           .describe(
-            `profile/notify-gate: Post-notify lockout window in milliseconds (${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}). Omit to get current value. ` +
+            `profile/kick-gate: Post-kick lockout window in milliseconds (${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}). Omit to get current value. ` +
             `profile/notify-debounce: Post-notify debounce window in milliseconds (${NOTIFY_DEBOUNCE_MIN_MS}–${NOTIFY_DEBOUNCE_MAX_MS}). Omit to get current value. ` +
-            `profile/kick-debounce (deprecated): Accepted range 1000–600000; use profile/notify-gate instead.`,
+            `profile/kick-debounce (deprecated): Accepted range 1000–600000; use profile/kick-gate instead.`,
           ),
         // animation/default params
         frames: z
@@ -587,11 +562,11 @@ export function register(server: McpServer): void {
           .boolean()
           .optional()
           .describe("animation/default: Reset to built-in default animation."),
-        // logging/toggle and profile/silent-lifecycle params
+        // logging/toggle params
         enabled: z
           .boolean()
           .optional()
-          .describe("logging/toggle: true to enable logging, false to disable. profile/silent-lifecycle: true to suppress public lifecycle announcements, false to restore them. Omit for GET (returns current value)."),
+          .describe("logging/toggle: true to enable logging, false to disable."),
         // message/history params
         count: z
           .number()
@@ -689,7 +664,7 @@ export function register(server: McpServer): void {
         title: z
           .string()
           .optional()
-          .describe("checklist/update: Bold heading for the status block. Title is required for checklist/update."),
+          .describe("checklist/update: Bold heading for the status block."),
         steps: z
           .array(
             z.object({
@@ -770,42 +745,6 @@ export function register(server: McpServer): void {
           .enum(["read-only", "gather", "full"])
           .optional()
           .describe("session/spawn-child: Capability level for the spawned child session (default: 'gather')."),
-        // session/reconnect and session/start (refresh:true) closed-caller guard; session/unblock operator lift
-        connection_token: z
-          .string()
-          .optional()
-          .describe(
-            "session/reconnect, session/start (with refresh:true): Connection token previously issued by this bridge. " +
-            "When provided, the bridge checks whether this caller's session was closed and rejects immediately " +
-            "with CALLER_CLOSED if so, without showing the operator approval dialog. " +
-            "session/unblock (governor only): Clear the closed-session marker for this token so the caller may reconnect.",
-          ),
-        // session/request-guidance params
-        guidance_type: z
-          .string()
-          .optional()
-          .describe(
-            "session/request-guidance: Type of guidance to request. " +
-            "Currently only 'subsession-routing' is supported. " +
-            "Delivers R1 (host role) + R2 (spawn-and-forward sequence) as a paired batch. " +
-            "Exactly-once delivery per session name — subsequent calls are silently acknowledged.",
-          ),
-        // profile/tier params
-        tier: z
-          .string()
-          .optional()
-          .describe(
-            "profile/tier: Routing tier for this session. Only 'skilled-router' is accepted. " +
-            "Suppresses breadcrumb injection (R1/R2/R3) for the current session lifetime. " +
-            "Root sessions only — child sessions receive PERMISSION_DENIED.",
-          ),
-        // Safety override — bypasses the absolute-path block for text content
-        safety: z
-          .enum(["disable"])
-          .optional()
-          .describe(
-            'Safety override. Pass `safety: "disable"` to bypass the absolute-path block on text content (message/edit, confirm/*, reminder/set, animation/cancel) and send anyway. An operator notification is emitted when this override is used.',
-          ),
       },
     },
     async (args) => {
@@ -852,21 +791,6 @@ export function register(server: McpServer): void {
               code: "CAPABILITY_DENIED",
               message: `Action '${type}' is not permitted for gather-capability sessions.`,
             });
-          }
-        }
-
-        // ── Absolute-path guard for text content ──────────────────────────
-        if (type && TEXT_CONTENT_ACTIONS.has(type) && typeof args.text === "string" && args.text.length > 0) {
-          const hit = findAbsolutePath(args.text);
-          if (hit) {
-            if (args.safety !== "disable") {
-              return toError(absPathBlockedError(hit));
-            }
-            // Safety override acknowledged — notify the operator.
-            const _sid = requireAuth(args.token);
-            if (typeof _sid === "number") {
-              deliverServiceMessage(_sid, SERVICE_MESSAGES.ABS_PATH_SAFETY_OVERRIDE);
-            }
           }
         }
 

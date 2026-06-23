@@ -65,14 +65,14 @@ export const SERVICE_MESSAGES = deepFreeze({
       "     curl -N makes EVERY heartbeat a wake event = token-burn spam. Use the filtered script.\n" +
       "  3. Arm the Monitor tool with: bash <path-to-script> '<sse_url>' and persistent: true.\n" +
       "     You are participating once the monitor is live.\n" +
-      "     On each SSE wake → dequeue loop: call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
+      "     On each SSE wake → call dequeue(); handle updates; loop until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
       "Monitor-capable runtime — stdio / no HTTP:\n" +
       "  1. Call action(type: 'activity/file/create') → returns { file_path }.\n" +
       "  2. Replace <path> with file_path, then arm Monitor (persistent: true):\n" +
       "     " + ACTIVITY_FILE_MONITOR_RECIPE.replace(/\n/g, "\n     ") + "\n" +
-      "  3. On each kick → dequeue loop: call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.\n\n" +
+      "  3. On each kick → call dequeue(max_wait: 0); loop until pending = 0.\n\n" +
       "No Monitor tool (other runtimes):\n" +
-      "  Call dequeue() on every turn. timed_out: true means no messages — call dequeue() again. You always end with dequeue.\n\n" +
+      "  Call dequeue(max_wait: 30) on every turn.\n\n" +
       "Details: help('start'), help('dequeue'), help('activity/listen').",
   },
 
@@ -270,29 +270,6 @@ export const SERVICE_MESSAGES = deepFreeze({
     },
   },
 
-  // ── activity/listen setup breadcrumb ────────────────────────────────────
-
-  /**
-   * Fired once on the first `activity/listen` call. Delivers the monitor arm
-   * instructions as a service message rather than inline response text.
-   */
-  ACTIVITY_LISTEN_BREADCRUMB: {
-    eventType: "activity_listen_breadcrumb" as const,
-    /**
-     * @param command  The arm command returned by activity/listen (e.g. `bash sse-monitor.sh '<url>'`)
-     * @param downloadUrl The URL to download sse-monitor.sh from
-     */
-    text: (command: string, downloadUrl: string) =>
-      `SSE monitor setup — arm this inside the Monitor tool with persistent: true:\n\n` +
-      `\`${command}\`\n\n` +
-      `⚠ Do NOT use raw \`curl -N\` — the SSE stream sends \`: keepalive\` heartbeats every 30 s that spam wake events. Use the filtered script above.\n\n` +
-      `No repo checkout? Download the script first:\n` +
-      `\`GET ${downloadUrl}\`\n` +
-      `Save to a local path of your choice, then arm:\n` +
-      `\`bash <saved-path> '<sse_url>'\` with persistent: true.\n\n` +
-      `Loop pattern: on each SSE wake → call dequeue(); handle messages; repeat until timed_out: true. After any send, call dequeue() again immediately.`,
-  },
-
   // ── SSE onboarding handshake ──────────────────────────────────────────────
 
   /** Fired once when the participant's SSE monitor actually connects (filtered path confirmed). */
@@ -403,6 +380,8 @@ export const SERVICE_MESSAGES = deepFreeze({
       `Investigate — one caller may be consuming events intended for the other.`,
   },
 
+  // ── Child-session onboarding (R4) ────────────────────────────────────────
+
   // ── Sub-session host onboarding breadcrumbs ──────────────────────────────
 
   /**
@@ -462,8 +441,6 @@ export const SERVICE_MESSAGES = deepFreeze({
       `(action(type: 'session/spawn-child', ...)) and dispatch a fresh sub-agent.\n` +
       `If resolved: continue handling new inbound messages as they arrive.`,
   },
-
-  // ── Child-session onboarding (R4) ────────────────────────────────────────
 
   /** Fired on child session's first dequeue. Token save reminder. */
   ONBOARDING_CHILD_TOKEN: {

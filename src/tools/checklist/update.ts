@@ -117,8 +117,8 @@ export async function handleSendNewChecklist({
   }
 }
 
-export async function handleUpdateChecklist({ title = "", steps, message_id, token, response_format }: {
-  title?: string;
+export async function handleUpdateChecklist({ title, steps, message_id, token, response_format }: {
+  title: string;
   steps: ChecklistStep[];
   message_id: number;
   token: number;
@@ -128,6 +128,9 @@ export async function handleUpdateChecklist({ title = "", steps, message_id, tok
   if (typeof _sid !== "number") return toError(_sid);
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
+  if (typeof title !== "string") {
+    return toError({ code: "MISSING_REQUIRED_FIELD", message: "title is required for checklist/update" });
+  }
   try {
     const text = renderStatus(applyTopicToTitle(title), steps);
     const textErr = validateText(text);

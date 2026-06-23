@@ -61,6 +61,12 @@ const mocks = vi.hoisted(() => ({
   // child-registry.js
   getChildSids: vi.fn().mockReturnValue([]),
   unregisterChild: vi.fn(),
+
+  // sse-endpoint.js
+  cancelSseConnection: vi.fn(),
+
+  // tools/activity/file-state.js (additional)
+  isSseMonitorActive: vi.fn().mockReturnValue(false),
 }));
 
 // ---------------------------------------------------------------------------
@@ -128,7 +134,13 @@ vi.mock("./animation-state.js", () => ({
 vi.mock("./async-send-queue.js", () => ({ cancelSessionJobs: vi.fn() }));
 vi.mock("./behavior-tracker.js", () => ({ removeSession: vi.fn() }));
 vi.mock("./silence-detector.js", () => ({ removeSilenceState: vi.fn() }));
-vi.mock("./tools/activity/file-state.js", () => ({ clearActivityFile: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("./tools/activity/file-state.js", () => ({
+  clearActivityFile: vi.fn().mockResolvedValue(undefined),
+  isSseMonitorActive: (...args: unknown[]) => mocks.isSseMonitorActive(...args),
+}));
+vi.mock("./sse-endpoint.js", () => ({
+  cancelSseConnection: (...args: unknown[]) => mocks.cancelSseConnection(...args),
+}));
 vi.mock("./channel.js", () => ({ unregisterChannelSubscriber: vi.fn() }));
 vi.mock("./tools/dequeue.js", () => ({ removeDequeueRateState: vi.fn() }));
 vi.mock("./tools/session/child-registry.js", () => ({
@@ -414,5 +426,50 @@ describe("session-teardown: cascade close emits child_session_resolved (AC1)", (
       (c) => (c as unknown[])[2] === "child_session_resolved",
     );
     expect(childResolvedCalls).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10-3026: Cancel SSE connection on session close
+// ---------------------------------------------------------------------------
+
+describe("session-teardown: SSE cancel on session close (10-3026)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.closeSession.mockReturnValue(true);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.getActiveSession.mockReturnValue(0);
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.drainQueue.mockReturnValue([]);
+    mocks.getChildSids.mockReturnValue([]);
+    mocks.getSessionAnnouncementMessage.mockReturnValue(undefined);
+    mocks.readProfile.mockReturnValue(null);
+    mocks.isSseMonitorActive.mockReturnValue(false);
+    mocks.getSession.mockReturnValue({ name: "TestBot", parent_sid: undefined });
+  });
+
+  it("calls cancelSseConnection when isSseMonitorActive returns true", () => {
+    mocks.isSseMonitorActive.mockReturnValue(true);
+
+    closeSessionById(42);
+
+    expect(mocks.cancelSseConnection).toHaveBeenCalledWith(42);
+  });
+
+  it("does NOT call cancelSseConnection when isSseMonitorActive returns false", () => {
+    mocks.isSseMonitorActive.mockReturnValue(false);
+
+    closeSessionById(42);
+
+    expect(mocks.cancelSseConnection).not.toHaveBeenCalled();
+  });
+
+  it("isSseMonitorActive is checked with the correct sid", () => {
+    mocks.isSseMonitorActive.mockReturnValue(false);
+
+    closeSessionById(99);
+
+    expect(mocks.isSseMonitorActive).toHaveBeenCalledWith(99);
   });
 });

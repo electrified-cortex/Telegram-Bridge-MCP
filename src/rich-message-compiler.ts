@@ -639,8 +639,7 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
     const fenceMatch = RE_FENCE_OPEN.exec(line);
     if (fenceMatch) {
       flushInline(state);
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      state.code = { lang: fenceMatch[1] ?? "", lines: [] };
+      state.code = { lang: fenceMatch[1], lines: [] };
       continue;
     }
 
@@ -672,9 +671,9 @@ function _parseBlocks(input: string, partial: boolean, allowDetails = true): Ric
       const detailsMatch = /^:::details(?: (.+))?$/.exec(line);
       if (detailsMatch) {
         flushInline(state);
+        const [, detailsTitle = "Details"] = detailsMatch;
         state.details = {
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          summary: detailsMatch[1] ?? "Details",
+          summary: detailsTitle,
           lines: [],
         };
         continue;

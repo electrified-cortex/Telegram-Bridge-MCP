@@ -9,7 +9,7 @@ import { resolveParseMode } from "../../markdown.js";
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 
 /**
- * Inactivity / abandonment timeout for open streams.
+ * Creation-time timeout (stream expires 10 minutes after stream/start, regardless of activity).
  * Override with STREAM_TIMEOUT_MS env var (milliseconds).
  * Default: 10 minutes.
  */
@@ -92,7 +92,7 @@ export async function handleStreamChunk({
   // Expiry check — remove the dead entry and signal the caller
   if (isExpired(entry)) {
     activeStreams.delete(stream_id);
-    return toError({ code: "STREAM_EXPIRED" as const, message: `Stream "${stream_id}" expired after ${STREAM_TIMEOUT_MS / 1000}s of inactivity. Call stream/start to open a new stream.` });
+    return toError({ code: "STREAM_EXPIRED" as const, message: `Stream "${stream_id}" expired after ${STREAM_TIMEOUT_MS / 1000}s after creation. Call stream/start to open a new stream.` });
   }
 
   const chatId = resolveChat();
@@ -156,7 +156,7 @@ export function handleStreamFlush({
   // Expiry check — expired streams cannot be flushed
   if (isExpired(entry)) {
     activeStreams.delete(stream_id);
-    return toError({ code: "STREAM_EXPIRED" as const, message: `Stream "${stream_id}" expired after ${STREAM_TIMEOUT_MS / 1000}s of inactivity. The partial message remains in Telegram as-is.` });
+    return toError({ code: "STREAM_EXPIRED" as const, message: `Stream "${stream_id}" expired after ${STREAM_TIMEOUT_MS / 1000}s after creation. The partial message remains in Telegram as-is.` });
   }
 
   activeStreams.delete(stream_id);

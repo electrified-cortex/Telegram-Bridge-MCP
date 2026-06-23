@@ -37,11 +37,10 @@
  *   On touch failure, debounce is rolled back and a bounded retry is scheduled.
  *
  * Debounce release:
- *   releaseNotifyDebounce() is called ONLY on timed_out: true exits (agent went fully idle).
- *   Content-returning dequeue exits do NOT release the debounce — it persists through
- *   active drain cycles so the agent is not re-notified for messages it is already draining.
+ *   releaseNotifyDebounce() is called from content-returning dequeue exits.
  *   If a notification was suppressed during debounce AND the queue still has pending
  *   content, a re-evaluation notify fires immediately after the debounce clears.
+ *   Timeout-only dequeue exits do NOT call releaseNotifyDebounce.
  *
  * Stale debounce:
  *   If the debounce expires (notifyDebounceUntil elapsed) before the agent dequeues,
@@ -136,44 +135,14 @@ export interface ActivityFileState {
 
 const _state = new Map<number, ActivityFileState>();
 
-/**
- * Sessions with a pending unexpected-subscription-close notification.
- * Consumed once on the agent's next dequeue (AC2, AC3).
- */
-const _unexpectedClosePending = new Set<number>();
-
 let _activityDirReady = false;
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-async function ensureActivityDir(): Promise<void> {
-  if (_activityDirReady) return;
-  await mkdir(ACTIVITY_DIR, { recursive: true });
-  _activityDirReady = true;
-}
-
-/** Validate an agent-supplied absolute path. Returns an error string or null. */
-export function validateFilePath(filePath: string): string | null {
-  if (!filePath || typeof filePath !== "string") {
-    return "file_path must be a non-empty string";
-  }
-  if (filePath.includes("\0")) {
-    return "file_path must not contain null bytes";
-  }
-  if (filePath.split(/[/\\]/).includes("..")) {
-    return "file_path must not contain path traversal (..)";
-  }
-  if (!isAbsolute(filePath)) {
-    return "file_path must be an absolute path";
-  }
-  return null;
-}
 
 // ---------------------------------------------------------------------------
 // Unexpected subscription close tracking (AC1-AC5 of task 10-3029)
 // ---------------------------------------------------------------------------
+
+/** Set of session IDs with a pending unexpected-close notification. */
+const _unexpectedClosePending = new Set<number>();
 
 /**
  * Record that the subscription for this session closed unexpectedly —
@@ -207,6 +176,33 @@ export function consumeUnexpectedSubscriptionClose(sid: number): boolean {
  */
 export function clearUnexpectedCloseForSession(sid: number): void {
   _unexpectedClosePending.delete(sid);
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+async function ensureActivityDir(): Promise<void> {
+  if (_activityDirReady) return;
+  await mkdir(ACTIVITY_DIR, { recursive: true });
+  _activityDirReady = true;
+}
+
+/** Validate an agent-supplied absolute path. Returns an error string or null. */
+export function validateFilePath(filePath: string): string | null {
+  if (!filePath || typeof filePath !== "string") {
+    return "file_path must be a non-empty string";
+  }
+  if (filePath.includes("\0")) {
+    return "file_path must not contain null bytes";
+  }
+  if (filePath.split(/[/\\]/).includes("..")) {
+    return "file_path must not contain path traversal (..)";
+  }
+  if (!isAbsolute(filePath)) {
+    return "file_path must be an absolute path";
+  }
+  return null;
 }
 
 /**
@@ -288,9 +284,6 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
 
   if (attempt >= RETRY_DELAYS.length) {
     dlog("tool", `activity/file: touch retry exhausted for sid=${sid}; next inbound retries fresh`);
-    // Activity-file subscription is effectively dead — agent's monitor can no longer
-    // receive wake notifications. Record as unexpected close (AC1, AC5).
-    recordUnexpectedSubscriptionClose(sid);
     return;
   }
 
@@ -387,11 +380,6 @@ export function isActivityFileActive(sid: number): boolean {
   return _state.get(sid)?.filePath != null;
 }
 
-/** Return true if the session currently has an active SSE (activity/listen) subscription. */
-export function isSseMonitorActive(sid: number): boolean {
-  return _state.get(sid)?.sseConnected === true;
-}
-
 /**
  * Register that an SSE (activity/listen) monitor connected for this session.
  *
@@ -435,9 +423,6 @@ export function registerSseMonitor(sid: number): void {
  * Clears the SSE flag. If no activity file remains, the session has no monitor
  * left, so the gate entry and its pending timers are torn down. Idempotent and
  * safe when no entry exists.
- */
-/**
- * Unregister the SSE monitor for this session (connection closed/cancelled).
  *
  * @param expected Pass `true` when the agent initiated the teardown
  *   (activity/listen cancel → cancelSseConnection). Pass `false` (default) for
@@ -465,6 +450,11 @@ export function unregisterSseMonitor(sid: number, expected: boolean = false): vo
     }
     _state.delete(sid);
   }
+}
+
+/** Return true if the session currently has an active SSE (activity/listen) subscription. */
+export function isSseMonitorActive(sid: number): boolean {
+  return _state.get(sid)?.sseConnected === true;
 }
 
 /** Return true if the session currently has an in-flight dequeue. */
@@ -534,8 +524,7 @@ export function notifyIfAllowed(
 }
 
 /**
- * Release the notify debounce on timed_out: true exits only (agent went fully idle).
- * Content-returning exits do NOT call this — debounce persists through active drain cycles.
+ * Release the notify debounce after any dequeue exit (content-returning or timeout).
  * If a notifiable event was suppressed during debounce AND the queue still has
  * pending content, fires one re-evaluation notify immediately.
  */
@@ -560,8 +549,8 @@ export function releaseNotifyDebounce(sid: number): void {
 /**
  * Set the in-flight dequeue flag for a session.
  * Call active=true when dequeue starts; active=false when it returns (any path).
- * Debounce release is handled separately — call releaseNotifyDebounce() on
- * timed_out: true exits only (NOT from content-returning exits).
+ * Debounce release is handled separately — call releaseNotifyDebounce() from
+ * content-returning exits only.
  */
 export function setDequeueActive(sid: number, active: boolean): void {
   const entry = _state.get(sid);
@@ -651,10 +640,6 @@ export async function clearActivityFile(sid: number): Promise<void> {
   const entry = _state.get(sid);
   if (!entry) return;
 
-  // Remove any pending unexpected-close notification — session is tearing down
-  // and no future dequeue will be able to deliver it anyway.
-  _unexpectedClosePending.delete(sid);
-
   // The file-touch retry targets the file path — meaningless once it is gone.
   if (entry.pendingRetryHandle !== null) {
     clearTimeout(entry.pendingRetryHandle);
@@ -678,6 +663,8 @@ export async function clearActivityFile(sid: number): Promise<void> {
       entry.pendingReNotifyHandle = null;
     }
     _state.delete(sid);
+    // Remove any pending unexpected-close notification for this session.
+    _unexpectedClosePending.delete(sid);
   }
 
   if (tmcpOwned && filePath !== null) {

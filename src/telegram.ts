@@ -108,8 +108,6 @@ export type TelegramErrorCode =
   | "INVALID_COLOR"
   | "UNKNOWN_PRESET"
   | "RICH_MESSAGE_UNSUPPORTED"
-  | "STREAM_EXPIRED"
-  | "STREAM_OVERFLOW"
   | "UNKNOWN";
 
 export interface TelegramError {
@@ -698,7 +696,7 @@ export async function sendRichMessageDirect(
     throw Object.assign(new Error(desc), telegramErr);
   }
 
-  if (!json.result) throw Object.assign(new Error("Telegram API: ok=true but missing result"), { code: "UNKNOWN" as const });
+  if (!json.result) throw new Error("Telegram API returned ok:true but no result");
   return { message_id: json.result.message_id };
 }
 
@@ -833,8 +831,35 @@ export function validateCallbackData(data: string): TelegramError | null {
 }
 
 // ---------------------------------------------------------------------------
-// Rich-message routing (Bot API 10.1 feature gate)
+// MCP response helpers
 // ---------------------------------------------------------------------------
+
+export function toResult(data: unknown) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
+  };
+}
+
+export function toError(err: unknown) {
+  let telegramError: TelegramError;
+
+  if (err instanceof GrammyError) {
+    telegramError = classifyGrammyError(err);
+  } else if (err instanceof HttpError) {
+    telegramError = { code: "UNKNOWN", message: `Network error reaching Telegram API: ${err.message}` };
+  } else if (err && typeof err === "object" && "code" in err && "message" in err) {
+    // Already a TelegramError (from pre-validation)
+    telegramError = err as TelegramError;
+  } else {
+    telegramError = { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) };
+  }
+
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(telegramError, null, 2) }],
+    isError: true as const,
+  };
+}
+
 
 /**
  * Feature gate for Bot API 10.1 rich-message sends.
@@ -946,35 +971,5 @@ export async function routeOutboundMessage(
     ...options,
     parse_mode: resolved.parse_mode,
   });
-}
-
-// ---------------------------------------------------------------------------
-// MCP response helpers
-// ---------------------------------------------------------------------------
-
-export function toResult(data: unknown) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
-  };
-}
-
-export function toError(err: unknown) {
-  let telegramError: TelegramError;
-
-  if (err instanceof GrammyError) {
-    telegramError = classifyGrammyError(err);
-  } else if (err instanceof HttpError) {
-    telegramError = { code: "UNKNOWN", message: `Network error reaching Telegram API: ${err.message}` };
-  } else if (err && typeof err === "object" && "code" in err && "message" in err) {
-    // Already a TelegramError (from pre-validation)
-    telegramError = err as TelegramError;
-  } else {
-    telegramError = { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err) };
-  }
-
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(telegramError, null, 2) }],
-    isError: true as const,
-  };
 }
 
