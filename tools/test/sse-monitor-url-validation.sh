@@ -54,6 +54,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Test 4: URL with embedded whitespace is rejected — passes ^https?:// but contains space
+# ---------------------------------------------------------------------------
+output4=$(bash "$MONITOR" "http://example.com -x evil" 2>/dev/null | head -1)
+if echo "$output4" | grep -q "MONITOR_EXIT reason=setup_failed"; then
+    check "URL with embedded whitespace rejected with MONITOR_EXIT setup_failed" "PASS"
+else
+    check "URL with embedded whitespace rejected with MONITOR_EXIT setup_failed (got: '$output4')" "FAIL"
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""

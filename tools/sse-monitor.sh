@@ -79,6 +79,10 @@ if [[ ! "$SSE_URL" =~ ^https?:// ]]; then
     echo "data: MONITOR_EXIT reason=setup_failed detail=invalid_url action=check_environment"
     exit 3
 fi
+if [[ "$SSE_URL" =~ [[:space:]] ]] || [[ "$SSE_URL" =~ [[:cntrl:]] ]]; then
+    echo "data: MONITOR_EXIT reason=setup_failed detail=invalid_url_whitespace action=check_environment"
+    exit 3
+fi
 SILENCE_TIMEOUT=75      # seconds of silence = dead connection (2 missed keepalives + grace)
 MAX_RETRIES=8           # max consecutive reconnect attempts before permanent exit
 BACKOFF_INITIAL=2       # first retry delay (seconds)

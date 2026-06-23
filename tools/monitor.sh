@@ -92,7 +92,7 @@ fi
 ACTIVITY_DIR="$(dirname "$ACTIVITY_FILE")"
 if [[ ! -d "$ACTIVITY_DIR" ]]; then
     echo "monitor.sh: parent directory does not exist: $ACTIVITY_DIR" >&2
-    echo "error"
+    emit "error"
     exit 1
 fi
 

@@ -456,6 +456,24 @@ describe("notify-debounce gate — ACs 1-10", () => {
     expect(entry.notifyDebounceUntil).toBeNull(); // debounce reset, not notified
   });
 
+  it("handleSessionStopped is idempotent across multiple calls", async () => {
+    setActivityFile(SID, makeState({ notifyDebounceUntil: Date.now() + 300_000 }));
+    queueMocks.hasPendingUserContent.mockReturnValue(false);
+
+    // First call acts (resets gate, no notify since queue empty)
+    const result1 = handleSessionStopped(SID);
+    // Second call on same sid — entry still exists (no file, SSE-only scenario has no entry)
+    // but with a file-registered session, entry persists and second call is still a no-op
+    // in terms of notification (queue still empty, debounce already null)
+    const result2 = handleSessionStopped(SID);
+
+    expect(result1.noOp).toBe(false); // first call acted on an existing entry
+    expect(result2.noOp).toBe(false); // second call also finds the entry (it's not deleted)
+    // Neither call should have triggered a notification (queue empty)
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+  });
+
   // ── replaceActivityFile ────────────────────────────────────────────────────
   it("replaceActivityFile: carries over gate state from old entry", async () => {
     const oldState = makeState({ notifyDebounceUntil: Date.now() + 300_000 });

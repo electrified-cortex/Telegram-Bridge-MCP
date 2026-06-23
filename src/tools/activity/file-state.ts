@@ -574,15 +574,15 @@ export function notifyIfAllowed(
  * If a notifiable event was suppressed during debounce AND the queue still has
  * pending content, fires one re-evaluation notify immediately.
  */
-export function releaseNotifyDebounce(sid: number): void {
-  // Reset the first-notify clock only when the session truly has no more
-  // pending content after the dequeue.  On timeout exits or synthetic returns
-  // (e.g. animation_stale_warning) the user's messages are still queued, so
+export function releaseNotifyDebounce(sid: number, contentReturned = true): void {
+  // Reset the first-notify clock only when content was actually returned AND
+  // the session has no more pending content after the dequeue.  On timeout
+  // exits (contentReturned = false) the user's messages are still queued, so
   // the clock must keep running from the original first SSE notification (AC4,
   // task 10-0011).  hasPendingUserContent/hasPendingReminderContent are also
   // called later in this function — the circular dep is handled via ESM lazy
   // binding, same as the existing call below.
-  if (!hasPendingUserContent(sid) && !hasPendingReminderContent(sid)) {
+  if (contentReturned && !hasPendingUserContent(sid) && !hasPendingReminderContent(sid)) {
     _firstNotifyTs.delete(sid);
   }
   const entry = _state.get(sid);

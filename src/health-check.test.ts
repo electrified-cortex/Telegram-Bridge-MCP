@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
   clearOnceOnSend: vi.fn(),
   getActivityFile: vi.fn((_sid: number) => undefined as { filePath: string } | undefined),
   isSseMonitorActive: vi.fn((_sid: number) => false),
-  getFirstNotifyTimestamp: vi.fn((_sid: number) => 0 as number | null), // epoch = very old by default
+  getFirstNotifyTimestamp: vi.fn((_sid: number) => null as number | null), // null = no SSE notify yet (safe default)
   existsSync: vi.fn((_path: string) => false),
   hasPendingUserContent: vi.fn((_sid: number) => true), // queue has content by default
 }));

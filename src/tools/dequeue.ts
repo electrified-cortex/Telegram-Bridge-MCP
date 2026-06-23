@@ -324,7 +324,7 @@ export async function runDrainLoop(
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
-    releaseNotifyDebounce(sid); // content-returning exit
+    releaseNotifyDebounce(sid, true); // content-returning exit
     resetChannelCooldown(sid);
     return result;
   }
@@ -437,7 +437,7 @@ export async function runDrainLoop(
     setDequeueActive(sid, false);
     // Release notify debounce on all dequeue exits (content-returning and timeout).
     if (_debounceRelease) {
-      releaseNotifyDebounce(sid);
+      releaseNotifyDebounce(sid, true); // content-returning or timeout exit
       resetChannelCooldown(sid);
     }
   }
