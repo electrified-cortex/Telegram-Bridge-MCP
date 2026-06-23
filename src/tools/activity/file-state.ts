@@ -333,7 +333,7 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
       if (_state.get(sid) !== entry) return;
       const filePath = entry.filePath;
       if (filePath === null) return; // SSE-only — no file retry
-      if (!hasPendingUserContent(sid)) return;
+      if (!hasPendingUserContent(sid) && !hasPendingReminderContent(sid)) return;
 
       entry.touchInFlight = true;
       const ok = await appendNewline(filePath);
@@ -676,7 +676,7 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
   // Notify if queue has pending content so the new agent gets a wake-up signal.
   // Parity: touch the file when one is registered AND kick the SSE stream when
   // one is connected — both monitors wake identically.
-  if (hasPendingUserContent(sid)) {
+  if (hasPendingUserContent(sid) || hasPendingReminderContent(sid)) {
     entry.notifyDebounceUntil = Date.now() + getNotifyDebounceMs(sid);
     if (entry.filePath !== null) {
       entry.touchInFlight = true;
