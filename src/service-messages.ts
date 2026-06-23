@@ -48,7 +48,7 @@ export const SERVICE_MESSAGES = deepFreeze({
 
   ONBOARDING_TOKEN_SAVE: {
     eventType: "onboarding_token_save" as const,
-    text: "Session token returned by session/start. Save it now — required for every tool call; must survive compaction.\n\nFile access: write to a private agent file (e.g. a private file in your workspace) — zero token cost, compaction-safe.\nNo file access: save via memory tool to a dedicated key.\n\nDo not rely on in-context memory — compaction erases it.",
+    text: "Session token returned by session/start. Save it now — required for every tool call; must survive compaction.\n\nFile access: write to a private agent file (e.g. `memory/telegram/session.token`) — zero token cost, compaction-safe.\nNo file access: save via memory tool to a dedicated key.\n\nDo not rely on in-context memory — compaction erases it.",
   },
 
   ONBOARDING_LOOP_PATTERN: {

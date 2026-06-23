@@ -2963,7 +2963,7 @@ describe("session/start refresh flag", () => {
 
 // Token path convention: save_token_to field in session/start and session/reconnect
 describe("token path convention — save_token_to field", () => {
-  const SAVE_TOKEN_PATH = "<private-file-in-your-workspace>";
+  const SAVE_TOKEN_PATH = "memory/telegram/session.token";
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -2984,13 +2984,13 @@ describe("token path convention — save_token_to field", () => {
     mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
   });
 
-  it("session/start response includes save_token_to = <private-file-in-your-workspace>", async () => {
+  it("session/start response includes save_token_to = memory/telegram/session.token", async () => {
     const result = parseResult(await handleSessionStart({ name: "Primary" }));
 
     expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
   });
 
-  it("session/reconnect response includes save_token_to = <private-file-in-your-workspace>", async () => {
+  it("session/reconnect response includes save_token_to = memory/telegram/session.token", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
     mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
     mocks.checkAndConsumeAutoApprove.mockReturnValue(true);
