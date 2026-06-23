@@ -1,6 +1,7 @@
 ---
 created: 2026-06-20
-status: draft
+resolved: 2026-06-22
+status: done
 priority: 10
 source: comms-hardening-tomorrow.md R4 (BT-7274 analysis)
 repo: electrified-cortex/Telegram-Bridge-MCP
@@ -8,6 +9,8 @@ type: Chore
 agent_type: Curator
 model_class: sonnet-class
 reasoning_effort: medium
+executor: Helper (2026-06-22T23:42Z)
+result: "Files were identical — no merge needed. TMCP local copy replaced with stub pointing to canonical stations path. All 4 pods (Curator, Overseer, ZL, BT) confirmed pointing to stations canonical. TMCP stub staged in git."
 ---
 
 # 10-0007 — Reconcile divergent telegram-participation SKILL.md

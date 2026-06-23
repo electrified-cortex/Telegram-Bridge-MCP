@@ -1,8 +1,13 @@
 ---
 created: 2026-06-22
-status: draft
-priority: P2
+status: queued
+priority: 25
+type: Chore
 source: Overseer directive 2026-06-22 (voice 62572) — grandfathered violations, post-7.13
+gate: "After release/7.13.0 merges to master — apply to master branch only"
+agent_type: Worker
+model_class: sonnet-class
+reasoning_effort: low
 ---
 
 # fix: remove grandfathered pod-concept violations from master
@@ -14,6 +19,8 @@ in user-facing content (service messages, docs, help text, onboarding strings).
 
 The following violations predate the directive and were grandfathered for release/7.13.0.
 They must be cleaned up in a follow-up commit to master.
+
+**Gate:** Do NOT apply until after `release/7.13.0` merges to master. This targets master branch only.
 
 ## Violation sites (5)
 

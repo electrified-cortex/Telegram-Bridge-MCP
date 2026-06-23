@@ -1,6 +1,8 @@
 ---
 name: tmcp-monitor-relative-path-bug
 description: "TMCP's activity_file_monitor_instructions service message ships `tools/monitor.ps1` as a RELATIVE path; agent CWD has no `tools/` dir, so first arm exits 127. Use absolute TMCP path until upstream fixed."
+status: RESOLVED — 2026-06-22 audit confirms fix is live
+resolution: "src/service-messages.ts uses resolve(__dirname, '..', 'tools', 'monitor.ps1') which produces absolute paths at runtime. Candidate 1 in 'Real fix candidates' is implemented."
 metadata: 
   node_type: memory
   type: feedback

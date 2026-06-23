@@ -36,3 +36,19 @@ Source: 2026-05-27 refactor scan
 - verdict: REJECT — 3 structural gaps
 - finding: (1) dlog not imported in built-in-commands.ts — worker has no import guidance or DebugCategory values. (2) validateText utility referenced but does not exist in codebase. (3) No automated way to enforce catch-block dlog AC. Missing agent_type and model_class.
 - action: Add dlog import guidance + DebugCategory values, clarify whether to create validateText or use inline comparison, add lint rule or test strategy for catch-block AC, add frontmatter.
+
+## Worker summary (2026-06-21)
+
+**Branch:** `worker/20-2103-v8-built-in-commands-validate-and-log`
+
+### What was done
+
+- **validateText calls added:** 6 (in `requestOperatorApproval`, `handleVersionCommand`, `handleApproveCommand`, `handleLoggingCommand`, `handleSessionCommand`, plus import)
+- **catch blocks replaced:** 48 silent `catch { /* ignore */ }` → `catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }`
+- **Tests added:** 2
+  - `"logs via dlog when sendMessage throws"` — integration test verifying dlog is called on network error
+  - `"returns send_failed from requestOperatorApproval when text exceeds limit"` — text-length-exceeded path test
+
+### Verification
+- `pnpm build`: clean (0 TypeScript errors)
+- `pnpm test`: 3553 pass, 2 pre-existing failures in `service-messages.test.ts` (unrelated to this task)
