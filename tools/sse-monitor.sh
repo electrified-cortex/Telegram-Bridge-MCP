@@ -59,14 +59,14 @@
 set -uo pipefail
 
 # ---------------------------------------------------------------------------
-# Bash preflight — EPOCHSECONDS requires bash 4.2+.
+# Bash preflight — EPOCHSECONDS requires bash 5.0+.
 # ---------------------------------------------------------------------------
 if [ -z "${BASH_VERSION:-}" ]; then
     echo "data: MONITOR_EXIT reason=not_bash action=run_with_bash"
     exit 3
 fi
-if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 2) )); then
-    echo "data: MONITOR_EXIT reason=bash_too_old action=run_with_bash_4_2_or_later"
+if (( BASH_VERSINFO[0] < 5 )); then
+    echo "data: MONITOR_EXIT reason=bash_too_old action=run_with_bash_5_0_or_later"
     exit 3
 fi
 
@@ -85,6 +85,7 @@ MIN_STABLE_SECS=15      # connection must be up this long before fails/backoff r
 # ---------------------------------------------------------------------------
 curl_pid=""
 fifo=""
+fifo_dir=""
 _cleaned=0
 fails=0
 backoff=$BACKOFF_INITIAL
@@ -104,6 +105,7 @@ terminate_curl() {
         rm -f "$fifo"
         fifo=""
     fi
+    # fifo_dir is NOT removed here — cleanup() owns the directory teardown.
 }
 
 # ---------------------------------------------------------------------------
@@ -114,18 +116,29 @@ cleanup() {
     [[ $_cleaned -eq 1 ]] && return
     _cleaned=1
     terminate_curl
+    [[ -n "${fifo_dir:-}" ]] && rm -rf "$fifo_dir"
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
 # ---------------------------------------------------------------------------
+# FIFO setup — create a private temp directory once. The same FIFO path is
+# recreated each reconnect iteration; the directory lives until cleanup() on exit.
+# Using mktemp -d avoids the TOCTOU race inherent in mktemp -u + mkfifo.
+# ---------------------------------------------------------------------------
+fifo_dir="$(mktemp -d)" || {
+    echo "data: MONITOR_EXIT reason=setup_failed detail=mktemp_d_failed action=check_environment"
+    exit 3
+}
+
+# ---------------------------------------------------------------------------
 # Main reconnect loop
 # ---------------------------------------------------------------------------
 while true; do
 
-    # Create a fresh FIFO for this connection attempt.
-    fifo="$(mktemp -u)"
+    # Create a fresh FIFO for this connection attempt inside the persistent temp dir.
+    fifo="${fifo_dir}/fifo"
     if ! mkfifo "$fifo" 2>/dev/null; then
         echo "data: MONITOR_EXIT reason=setup_failed detail=mkfifo_failed action=check_environment"
         fifo=""
@@ -136,13 +149,17 @@ while true; do
     # -w '\n%{http_code}\n' appends the HTTP status code as a bare line after EOF.
     # curl writes to the FIFO; we open the read end on fd 3.
     curl -sS -N \
+         --connect-timeout 10 \
          -H 'Accept: text/event-stream' \
          -w '\n%{http_code}\n' \
          "$SSE_URL" \
          > "$fifo" 2>/dev/null &
     curl_pid=$!          # real curl PID — curl is the backgrounded command, not a subshell
 
-    exec 3< "$fifo"      # open FIFO read end; this unblocks curl's open of the write end
+    exec 3<>"$fifo"     # open FIFO r/w — non-blocking open avoids deadlock if curl exits
+                        # before opening the write end. Our write ref is never used for
+                        # writing; terminate_curl closes fd 3 entirely via exec 3<&-.
+                        # EOF detection falls back to the 75s SILENCE_TIMEOUT path.
 
     # --- Inner read loop ---
     # H1/H2 fix (empirically verified): `$?` after `while read; done` is the loop
