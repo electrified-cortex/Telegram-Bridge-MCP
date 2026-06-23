@@ -187,7 +187,7 @@ async function main() {
 
         printConfig("VS Code (.vscode/mcp.json or settings.json → mcp.servers)", '"type": "stdio",');
         printConfig("Claude Desktop (claude_desktop_config.json → mcpServers)");
-        printConfig("MCP client (.mcp.json in project root → mcpServers)");
+        printConfig("Claude Code (.mcp.json in project root → mcpServers)");
 
         console.log("    • Or run  " + bold("pnpm start") + "  to start the server manually.");
         console.log("");
