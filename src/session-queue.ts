@@ -623,8 +623,8 @@ export function deliverServiceMessage(
     eventType === "agent_event";
   if (!isSilentEvent) {
     notifySession(targetSid, "service", isDequeueActive(targetSid));
+    notifyChannelSubscriber(targetSid, event);  // ← FIXED: inside guard
   }
-  notifyChannelSubscriber(targetSid, event);
   dlog("service", `service message → sid=${targetSid}`, { eventType, eventId: event.id });
   return true;
 }
