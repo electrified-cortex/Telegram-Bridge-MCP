@@ -84,70 +84,6 @@ export function _resetDequeueRateForTest(): void {
   _lastRateWarnAt.clear();
 }
 
-// ---------------------------------------------------------------------------
-// Max-wait:0 drain-and-idle nudge
-// ---------------------------------------------------------------------------
-
-/** Per-session state for the max_wait:0-with-active-subscription nudge. */
-interface MaxWait0State {
-  /** Number of max_wait:0 calls since the subscription was last armed. */
-  count: number;
-  /** Whether the nudge has already fired this subscription lifetime (no spam). */
-  nudgeFired: boolean;
-}
-
-/** Per-session nudge tracking Map. */
-const _maxWait0State = new Map<number, MaxWait0State>();
-
-/**
- * Reset the per-session max_wait:0 nudge state.
- * Call this when a subscription is armed (activity/listen or activity/file/create)
- * to give the agent a fresh grace window on each new subscription lifetime.
- */
-export function resetMaxWait0NudgeState(sid: number): void {
-  _maxWait0State.delete(sid);
-}
-
-/** Remove per-session nudge state on session close (prevents unbounded Map growth). */
-export function removeMaxWait0State(sid: number): void {
-  _maxWait0State.delete(sid);
-}
-
-/** Exported for test reset only — do not call in production code. */
-export function _resetMaxWait0StateForTest(): void {
-  _maxWait0State.clear();
-}
-
-/**
- * Detect the drain-and-idle anti-pattern: dequeue(max_wait: 0) called while
- * an activity subscription (SSE or file-watch) is active.
- *
- * - 1st call per subscription lifetime: increment counter, no nudge (startup drain grace).
- * - 2nd+ call, nudge not yet fired: inject behavior_nudge and mark as fired.
- * - Nudge already fired: no-op (no spam).
- * - No active subscription: no-op (instant polls are valid without a subscription).
- *
- * Never throws. Never alters dequeue semantics or latency.
- */
-function checkMaxWait0Nudge(sid: number): void {
-  if (sid <= 0) return;
-  if (!isSseMonitorActive(sid) && !isActivityFileActive(sid)) return;
-
-  const existing = _maxWait0State.get(sid) ?? { count: 0, nudgeFired: false };
-  const state: MaxWait0State = { count: existing.count + 1, nudgeFired: existing.nudgeFired };
-  _maxWait0State.set(sid, state);
-
-  if (state.count <= 1) return; // First call — startup drain grace
-  if (state.nudgeFired) return; // Already nudged this subscription lifetime
-
-  state.nudgeFired = true;
-  deliverServiceMessage(
-    sid,
-    SERVICE_MESSAGES.BEHAVIOR_NUDGE_MAX_WAIT_ZERO_WITH_SUBSCRIPTION.text,
-    SERVICE_MESSAGES.BEHAVIOR_NUDGE_MAX_WAIT_ZERO_WITH_SUBSCRIPTION.eventType,
-  );
-}
-
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
 function ackVoice(event: TimelineEvent): void {
   if (event.from !== "user" || event.content.type !== "voice") return;
@@ -372,12 +308,6 @@ export async function runDrainLoop(
     if (pending > 0) hints.push(`pending=${pending}; use processing preset.`);
     if (hints.length > 0) result.hint = hints.join(" ");
     return result;
-  }
-
-  // Drain-and-idle nudge: when max_wait:0 is called with an active subscription,
-  // inject a behavior_nudge after the first grace call (AC1–AC4 of 10-3030).
-  if (timeout === 0) {
-    checkMaxWait0Nudge(sid);
   }
 
   // Promote deferred reminders whose delay has elapsed before any early return.

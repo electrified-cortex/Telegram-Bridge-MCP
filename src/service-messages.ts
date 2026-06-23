@@ -354,11 +354,6 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: `You've sent 10+ questions without buttons. Use action(type: "confirm/ok-cancel", ...), action(type: "confirm/yn", ...), or send(type: "question", choose: [...]) for any predictable-answer question.`,
   },
 
-  BEHAVIOR_NUDGE_MAX_WAIT_ZERO_WITH_SUBSCRIPTION: {
-    eventType: "behavior_nudge_max_wait_zero_with_subscription" as const,
-    text: "⚠️ You called dequeue(max_wait: 0) while an activity subscription is active. This is the drain-and-idle anti-pattern: it bypasses the blocking loop and prevents idle detection. Correct pattern: call dequeue() with no max_wait → handle updates → repeat until timed_out: true. Your subscription wakes you for the next cycle — instant polls are not needed.",
-  },
-
   // ── Modality hints ────────────────────────────────────────────────────────
 
   NUDGE_VOICE_MODALITY: {
