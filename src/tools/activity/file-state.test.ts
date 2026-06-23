@@ -46,11 +46,13 @@ vi.mock("../../session-manager.js", () => ({
 // Mock session-queue
 const queueMocks = vi.hoisted(() => ({
   hasPendingUserContent: vi.fn((_sid: number): boolean => true),
+  hasPendingReminderContent: vi.fn((_sid: number): boolean => false),
   deliverServiceMessage: vi.fn((..._args: unknown[]): boolean => true),
 }));
 
 vi.mock("../../session-queue.js", () => ({
   hasPendingUserContent: (sid: number) => queueMocks.hasPendingUserContent(sid),
+  hasPendingReminderContent: (sid: number) => queueMocks.hasPendingReminderContent(sid),
   deliverServiceMessage: (...args: unknown[]) => queueMocks.deliverServiceMessage(...args),
 }));
 
@@ -160,15 +162,14 @@ describe("notify-debounce gate — ACs 1-10", () => {
 
   // ── AC 3: Stale-debounce safety net ────────────────────────────────────────
   it("AC3: after DEBOUNCE_MS expires, next inbound fires another notify", async () => {
-    sessionMocks.getNotifyDebounceMs.mockReturnValue(5_000); // short debounce for test
     setActivityFile(SID, makeState());
 
     notifyIfAllowed(SID, "operator", false);
     for (let _f = 0; _f < 10; _f++) await Promise.resolve();
     expect(vi.mocked(appendFile)).toHaveBeenCalledTimes(1);
 
-    // Advance past debounce
-    vi.advanceTimersByTime(6_000);
+    // Advance past debounce (idle path = 300_000ms hardcoded)
+    vi.advanceTimersByTime(DEBOUNCE_MS);
 
     // Next inbound should fire a fresh notify (debounce expired)
     notifyIfAllowed(SID, "operator", false);
