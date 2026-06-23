@@ -442,7 +442,7 @@ export function createServer(): McpServer {
   });
 
   // Reading the inbox resource acts as an implicit subscribe — clients that
-  // call resources/read (e.g. Claude Code's ReadMcpResourceTool) get wired
+  // call resources/read (e.g. via an MCP resource-read tool) get wired
   // up for push notifications without needing to send resources/subscribe.
   server.server.setRequestHandler(ReadResourceRequestSchema, (request) => {
     const { uri } = request.params;

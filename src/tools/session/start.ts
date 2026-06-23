@@ -283,8 +283,8 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
                 token: sessionToken,
                 sid: fullSession.sid,
                 reused: true,
-                save_token_to: "memory/telegram/session.token",
-                hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
+                save_token_to: "<private-file-in-your-workspace>",
+                hint: "Save token to a private file in your workspace first, then call dequeue(token) NOW — do not proceed without draining",
                 ...(warnings.length > 0 ? { warnings } : {}),
               };
               return toResult(res);
@@ -353,8 +353,8 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
           token: sessionToken,
           sid: session.sid,
           ...(refresh ? { reused: false } : {}),
-          save_token_to: "memory/telegram/session.token",
-          hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
+          save_token_to: "<private-file-in-your-workspace>",
+          hint: "Save token to a private file in your workspace first, then call dequeue(token) NOW — do not proceed without draining",
         };
 
         // Read profile once for both silent_lifecycle check and later autoload.
@@ -626,8 +626,8 @@ export async function handleSessionReconnect({ name, connection_token }: { name:
   return toResult({
     token: reconToken,
     sid: fullSession.sid,
-    save_token_to: "memory/telegram/session.token",
-    hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
+    save_token_to: "<private-file-in-your-workspace>",
+    hint: "Save token to a private file in your workspace first, then call dequeue(token) NOW — do not proceed without draining",
     ...(reconProfileAutoloaded !== undefined ? { profile_autoloaded: reconProfileAutoloaded } : {}),
   });
 }
