@@ -46,7 +46,7 @@ import { handleScheduleReminder } from "./reminder/schedule.js";
 import { handleReminderUnschedule } from "./reminder/unschedule.js";
 import { handleSetDequeueDefault } from "./profile/dequeue-default.js";
 import { handleNotifyDebounce, handleKickDebounce } from "./profile/notify-debounce.js";
-import { handleKickGate } from "./profile/activity-kick-gate.js";
+import { handleNotifyGate } from "./profile/activity-notify-gate.js";
 import { handleSetDefaultAnimation } from "./animation/default.js";
 import { handleToggleLogging } from "./logging/toggle.js";
 // Phase 2 imports — message/history, message/get
@@ -182,7 +182,7 @@ export function setupActionRegistry(): void {
   registerAction("reminder/schedule", toActionHandler(handleScheduleReminder));
   registerAction("reminder/unschedule", toActionHandler(handleReminderUnschedule));
   registerAction("profile/dequeue-default", toActionHandler(handleSetDequeueDefault));
-  registerAction("profile/kick-gate", toActionHandler(handleKickGate));
+  registerAction("profile/kick-gate", toActionHandler(handleNotifyGate));
   registerAction("profile/notify-debounce", toActionHandler(handleNotifyDebounce));
   registerAction("profile/kick-lockout", toActionHandler(handleNotifyDebounce)); // backward-compat alias for profile/notify-debounce
   registerAction("profile/kick-debounce", toActionHandler(handleKickDebounce));
