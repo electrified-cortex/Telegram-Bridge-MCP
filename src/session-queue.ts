@@ -34,6 +34,11 @@ function isEventReady(event: TimelineEvent): boolean {
   return !(c.type === "voice" && c.text === undefined);
 }
 
+/** Returns true if this event should wake a parked agent (fire SSE notify). */
+function isNotifyTriggerEvent(event: TimelineEvent): boolean {
+  return event.event !== "reaction";
+}
+
 /**
  * Heavyweight events are temporal batch delimiters — user text and voice
  * messages. Reactions, callbacks, files, DMs, and service messages are
@@ -280,7 +285,8 @@ export function routeToSession(event: TimelineEvent): void {
     q.enqueue(event);
     // Phase-1 voice suppression: suppress SSE notify for not-ready voice events.
     // Phase-2 SSE wake is fired by notifySessionWaiters() after transcription.
-    if (isEventReady(event)) {
+    // Reaction suppression: reactions enqueue but must NOT wake a parked agent.
+    if (isEventReady(event) && isNotifyTriggerEvent(event)) {
       notifySession(sid, "operator", isDequeueActive(sid), broadcastOriginatorSid);
     }
     // Always notify channel subscriber regardless of voice readiness.
@@ -321,7 +327,8 @@ function enqueueToSession(
   // notifySessionWaiters() after patchVoiceText() completes. Firing here would
   // cause the agent to dequeue an empty batch and go back to sleep, missing the
   // real wake when transcription finishes.
-  if (isEventReady(event)) {
+  // Reaction suppression: reactions enqueue but must NOT wake a parked agent.
+  if (isEventReady(event) && isNotifyTriggerEvent(event)) {
     // Pass originatorSid so notifySession suppresses self-notifications (AC-1).
     const originatorSid = (event.sid !== undefined && event.sid > 0) ? event.sid : undefined;
     notifySession(sid, "operator", isDequeueActive(sid), originatorSid);
