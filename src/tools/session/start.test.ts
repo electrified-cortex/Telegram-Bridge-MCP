@@ -183,7 +183,7 @@ describe("session_start tool", () => {
     expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
-      hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
+      hint: "Save token to a private file in your workspace first, then call dequeue(token) NOW — do not proceed without draining",
     });
   });
 
@@ -195,7 +195,7 @@ describe("session_start tool", () => {
     expect(result).toMatchObject({
       token: 1123456,
       sid: 1,
-      hint: "Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining",
+      hint: "Save token to a private file in your workspace first, then call dequeue(token) NOW — do not proceed without draining",
     });
   });
 
@@ -2787,7 +2787,7 @@ describe("session/start refresh flag", () => {
     expect(result.reused).toBe(true);
     expect(result.token).toBe(1123456);
     expect(result.sid).toBe(1);
-    expect(result.hint).toBe("Save token to memory/telegram/session.token first, then call dequeue(token) NOW — do not proceed without draining");
+    expect(result.hint).toBe("Save token to a private file in your workspace first, then call dequeue(token) NOW — do not proceed without draining");
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
@@ -2963,7 +2963,7 @@ describe("session/start refresh flag", () => {
 
 // Token path convention: save_token_to field in session/start and session/reconnect
 describe("token path convention — save_token_to field", () => {
-  const SAVE_TOKEN_PATH = "memory/telegram/session.token";
+  const SAVE_TOKEN_PATH = "<private-file-in-your-workspace>";
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -2984,13 +2984,13 @@ describe("token path convention — save_token_to field", () => {
     mocks.getSessionQueue.mockReturnValue({ pendingCount: () => 0 });
   });
 
-  it("session/start response includes save_token_to = memory/telegram/session.token", async () => {
+  it("session/start response includes save_token_to = <private-file-in-your-workspace>", async () => {
     const result = parseResult(await handleSessionStart({ name: "Primary" }));
 
     expect(result.save_token_to).toBe(SAVE_TOKEN_PATH);
   });
 
-  it("session/reconnect response includes save_token_to = memory/telegram/session.token", async () => {
+  it("session/reconnect response includes save_token_to = <private-file-in-your-workspace>", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", color: "🟦", createdAt: "2026-01-01" }]);
     mocks.getSession.mockReturnValue({ sid: 1, suffix: 123456, name: "Primary", color: "🟦", healthy: true });
     mocks.checkAndConsumeAutoApprove.mockReturnValue(true);

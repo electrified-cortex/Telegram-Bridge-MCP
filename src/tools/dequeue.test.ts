@@ -30,6 +30,8 @@ const fileStateMocks = vi.hoisted(() => ({
   getActivityFile: vi.fn((_sid: number): { filePath: string } | undefined => ({ filePath: "/mock/activity.txt" })),
   releaseNotifyDebounce: vi.fn((_sid: number) => {}),
   notifyIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
+  isSseMonitorActive: vi.fn((_sid: number): boolean => false),
+  isActivityFileActive: vi.fn((_sid: number): boolean => false),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
@@ -37,6 +39,8 @@ vi.mock("./activity/file-state.js", () => ({
   getActivityFile: (sid: number) => fileStateMocks.getActivityFile(sid),
   releaseNotifyDebounce: (sid: number) => { fileStateMocks.releaseNotifyDebounce(sid); },
   notifyIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.notifyIfAllowed(sid, source, inflight); },
+  isSseMonitorActive: (sid: number) => fileStateMocks.isSseMonitorActive(sid),
+  isActivityFileActive: (sid: number) => fileStateMocks.isActivityFileActive(sid),
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -117,6 +121,10 @@ vi.mock("../service-messages.js", () => ({
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
     },
+    BEHAVIOR_NUDGE_MAX_WAIT_ZERO_WITH_SUBSCRIPTION: {
+      eventType: "behavior_nudge_max_wait_zero_with_subscription",
+      text: "⚠️ drain-and-idle anti-pattern nudge",
+    },
   },
 }));
 
@@ -159,7 +167,7 @@ vi.mock("../reminder-state.js", () => ({
 
 
 
-import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest, _resetDequeueRateForTest } from "./dequeue.js";
+import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest, _resetDequeueRateForTest, _resetMaxWait0StateForTest } from "./dequeue.js";
 
 function makeEvent(id: number, text: string, event = "message" as string): TimelineEvent {
   return {
@@ -1702,6 +1710,141 @@ describe("checkDequeueRate (runaway-dequeue rate guard)", () => {
       SID,
       expect.stringContaining("RUNAWAY DEQUEUE"),
       "behavior_runaway_dequeue",
+    );
+  });
+});
+
+// =============================================================================
+// checkMaxWait0Nudge — drain-and-idle anti-pattern detection (10-3030)
+// =============================================================================
+describe("checkMaxWait0Nudge (drain-and-idle anti-pattern nudge)", () => {
+  const SID = 42;
+  const TOKEN = SID * 1_000_000 + 123_456;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetMaxWait0StateForTest();
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    // Default: no active subscription
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(false);
+  });
+
+  // AC1: Session with SSE active, 2nd max_wait:0 call → nudge injected
+  it("AC1: injects nudge on 2nd max_wait:0 call when SSE subscription is active", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 1st call — grace (no nudge)
+    await call({ timeout: 0, token: TOKEN });
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+
+    // 2nd call — nudge fires
+    await call({ timeout: 0, token: TOKEN });
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("drain-and-idle"),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // AC2: 1st max_wait:0 after session start → NO nudge (grace period)
+  it("AC2: does not inject nudge on 1st max_wait:0 call (startup drain grace)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Only one call
+    await call({ timeout: 0, token: TOKEN });
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // AC3: Session WITHOUT active subscription, max_wait:0 → NO nudge
+  it("AC3: does not inject nudge when no subscription is active", async () => {
+    // Both isSseMonitorActive and isActivityFileActive return false (default)
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 3 calls — would trigger nudge if subscription were active
+    for (let i = 0; i < 3; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // AC4 (via AC1): nudge fires at most once per subscription lifetime
+  it("AC4: nudge fires exactly once even on subsequent max_wait:0 calls", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 5 calls — nudge should fire exactly once (on the 2nd)
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    const nudgeCalls = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_nudge_max_wait_zero_with_subscription",
+    );
+    expect(nudgeCalls).toHaveLength(1);
+  });
+
+  // file-watch path: nudge fires for active file-watch subscription (not just SSE)
+  it("also nudges when activity file subscription is active (not SSE)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    await call({ timeout: 0, token: TOKEN }); // grace
+    await call({ timeout: 0, token: TOKEN }); // nudge
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
     );
   });
 });

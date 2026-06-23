@@ -142,7 +142,7 @@ vi.mock("./sse-endpoint.js", () => ({
   cancelSseConnection: (...args: unknown[]) => mocks.cancelSseConnection(...args),
 }));
 vi.mock("./channel.js", () => ({ unregisterChannelSubscriber: vi.fn() }));
-vi.mock("./tools/dequeue.js", () => ({ removeDequeueRateState: vi.fn() }));
+vi.mock("./tools/dequeue.js", () => ({ removeDequeueRateState: vi.fn(), removeMaxWait0State: vi.fn() }));
 vi.mock("./tools/session/child-registry.js", () => ({
   getChildSids: (...args: unknown[]) => mocks.getChildSids(...args),
   unregisterChild: (...args: unknown[]) => mocks.unregisterChild(...args),
