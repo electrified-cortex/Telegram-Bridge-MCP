@@ -8,7 +8,7 @@ import {
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
 import { setDequeueActive, releaseNotifyDebounce } from "./activity/file-state.js";
-import { resetChannelCooldown } from "../channel.js";
+import { resetChannelCooldown, flushPendingChannelNotify } from "../channel.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
 import { TOKEN_SCHEMA } from "./identity-schema.js";
@@ -427,6 +427,7 @@ export async function runDrainLoop(
     resyncActiveSession();
     const pending = pendingCountAny();
     _debounceRelease = true;  // Release debounce on timeout exits too
+    flushPendingChannelNotify(sid);
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {
     // Note: if two concurrent dequeue calls share the same sid (unusual but
