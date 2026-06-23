@@ -20,7 +20,7 @@ import {
   getUnhealthySessions,
 } from "./session-manager.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
-import { deliverDirectMessage, deliverServiceMessage } from "./session-queue.js";
+import { deliverDirectMessage, deliverServiceMessage, hasPendingUserContent } from "./session-queue.js";
 import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getRawApi, resolveChat, sendServiceMessage } from "./telegram.js";
 import { markdownToV2 } from "./markdown.js";
@@ -28,7 +28,7 @@ import { dlog } from "./debug-log.js";
 import { hasActiveAnimation } from "./animation-state.js";
 import { registerOnceOnSend, clearOnceOnSend } from "./outbound-proxy.js";
 import { existsSync } from "fs";
-import { getActivityFile, isSseMonitorActive } from "./tools/activity/file-state.js";
+import { getActivityFile, isSseMonitorActive, getFirstNotifyTimestamp } from "./tools/activity/file-state.js";
 
 // ── Constants ──────────────────────────────────────────────
 
@@ -40,6 +40,14 @@ export const CHECK_INTERVAL_MS = 60_000;
  * unhealthy. Set to 15 minutes to allow room for long-running local operations.
  */
 export const HEALTH_THRESHOLD_MS = 900_000;
+
+/**
+ * After a session is notified via SSE of a pending message, allow this much
+ * time for the agent to dequeue before raising an "appears offline" alert.
+ * The clock starts from the FIRST SSE notification for the current batch —
+ * not from when the message was enqueued (AC4, task 10-0011).
+ */
+export const DEQUEUE_GAP_GRACE_MS = 600_000; // 10 minutes
 
 const CB_REROUTE_NOW  = "hc_reroute_now";
 const CB_MAKE_PRIMARY = "hc_make_primary";
@@ -249,7 +257,19 @@ async function runHealthCheck(thresholdMs: number): Promise<void> {
           // Filesystem error — treat file as absent and proceed with health check.
         }
       }
-      if (isSseMonitorActive(session.sid)) continue; // SSE subscriber is alive
+      if (isSseMonitorActive(session.sid)) continue; // SSE subscriber is alive — AC2
+
+      // AC1: queue is empty → session is not truly offline (no pending work to respond to)
+      if (!hasPendingUserContent(session.sid)) continue;
+
+      // AC3/AC4: an SSE notification must have fired for this batch, AND the
+      // 10-minute grace window since that first notification must have elapsed.
+      // If no notification was sent yet (SSE dropped before notify, or pure
+      // dequeue-loop agent) the clock has not started — do not alert.
+      const firstNotify = getFirstNotifyTimestamp(session.sid);
+      if (firstNotify === null) continue; // no SSE notify sent for current batch
+      if (Date.now() - firstNotify < DEQUEUE_GAP_GRACE_MS) continue; // still in grace window
+
       _flaggedSids.add(session.sid);
       markUnhealthy(session.sid);
       dlog("health", `session unhealthy sid=${session.sid} name=${session.name}`);
