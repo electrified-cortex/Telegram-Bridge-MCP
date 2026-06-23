@@ -172,6 +172,13 @@ export function hasPendingUserContent(sid: number): boolean {
   return [...OPERATOR_MESSAGE_TYPES].some(t => (cats[t] ?? 0) > 0);
 }
 
+/** Returns true if the session has at least one pending reminder event. */
+export function hasPendingReminderContent(sid: number): boolean {
+  const cats = peekSessionCategories(sid);
+  if (!cats) return false;
+  return (cats["reminder"] ?? 0) > 0;
+}
+
 /**
  * Returns true iff a call to /dequeue would drain at least one item from this
  * session's queue (i.e. dequeueBatch() would return a non-empty batch).

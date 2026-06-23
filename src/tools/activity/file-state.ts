@@ -70,7 +70,7 @@ import { dirname, isAbsolute, resolve } from "path";
 import { randomBytes } from "crypto";
 import { fileURLToPath } from "url";
 import { getNotifyDebounceMs } from "../../session-manager.js";
-import { hasPendingUserContent } from "../../session-queue.js";
+import { hasPendingUserContent, hasPendingReminderContent } from "../../session-queue.js";
 import { dlog } from "../../debug-log.js";
 
 let _sseNotifyCallback: ((sid: number) => void) | null = null;
@@ -505,12 +505,14 @@ export function notifyIfAllowed(
   if (entry.pendingReNotifyHandle !== null) {
     clearTimeout(entry.pendingReNotifyHandle);
   }
-  const debounceMs = getNotifyDebounceMs(sid);
+  // Two-tier debounce: shorter when dequeue is active (agent is reading),
+  // longer when idle (agent is parked).
+  const debounceMs = inflightAtEnqueue ? 60_000 : 300_000;
   entry.notifyDebounceUntil = now + debounceMs;
   entry.pendingReNotifyHandle = setTimeout(() => {
     entry.pendingReNotifyHandle = null;
-    // TODO §5-b: include reminder types once §5-b lands
-    if (hasPendingUserContent(sid)) {
+    entry.notifyDebounceUntil = null; // clear gate so next message fires immediately
+    if (hasPendingUserContent(sid) || hasPendingReminderContent(sid)) {
       fireRevaluationNotify(sid);
     }
   }, debounceMs);
@@ -541,7 +543,7 @@ export function releaseNotifyDebounce(sid: number): void {
   entry.notifyDebounceUntil = null;
   entry.notifyPendingBecauseDebounce = false;
 
-  if (pending && hasPendingUserContent(sid)) {
+  if (pending && (hasPendingUserContent(sid) || hasPendingReminderContent(sid))) {
     fireRevaluationNotify(sid);
   }
 }

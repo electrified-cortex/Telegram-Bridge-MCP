@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # corepack was removed from Node.js distributions in v25+; install pnpm directly.
 # Version pinned to match package.json "packageManager".
-RUN npm install -g pnpm@11.5.0
+RUN npm install -g pnpm@11.7.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # corepack was removed from Node.js distributions in v25+; install pnpm directly.
 # Version pinned to match package.json "packageManager".
-RUN npm install -g pnpm@11.5.0
+RUN npm install -g pnpm@11.7.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
