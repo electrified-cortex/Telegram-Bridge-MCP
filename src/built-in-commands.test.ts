@@ -61,6 +61,8 @@ const mocks = vi.hoisted(() => ({
   validateText: vi.fn((_text: string): { code: string; message: string } | null => null),
   // debug-log
   dlog: vi.fn(),
+  // shutdown.js
+  elegantShutdown: vi.fn((_cause?: string): Promise<never> => new Promise(() => {})),
 }));
 
 vi.mock("./telegram.js", () => ({
@@ -84,7 +86,7 @@ vi.mock("./telegram.js", () => ({
 
 vi.mock("./shutdown.js", () => ({
   clearCommandsOnShutdown: mocks.clearCommandsOnShutdown,
-  elegantShutdown: vi.fn((): Promise<never> => new Promise(() => {})),
+  elegantShutdown: (cause: "operator" | "agent") => mocks.elegantShutdown(cause),
   setShutdownDumpHook: vi.fn(),
 }));
 
@@ -281,8 +283,27 @@ describe("built-in-commands", () => {
     } as unknown as Update;
     // Should return true (consumed) but NOT trigger shutdown
     expect(await handleIfBuiltIn(staleUpdate)).toBe(true);
-    // stopPoller is imported from poller — if shutdown ran it would be called.
-    // Since this is mocked, we verify it was NOT called.
+    // Flush the setImmediate queue; elegantShutdown must NOT have been called.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(mocks.elegantShutdown).not.toHaveBeenCalled();
+  });
+
+  // AC1 regression: /shutdown must fire elegantShutdown even when roster is empty.
+  // Root cause was session-teardown.ts calling stopPoller() on last-session-close,
+  // which killed the poll loop and silenced /shutdown in the empty-roster state.
+  it("AC1-regression: /shutdown fires elegantShutdown('operator') with zero active sessions (empty roster)", async () => {
+    // Ensure roster is empty (default in this describe, but explicit for clarity)
+    mocks.listSessions.mockReturnValue([]);
+    mocks.activeSessionCount.mockReturnValue(0);
+
+    const result = await handleIfBuiltIn(cmdUpdate("/shutdown"));
+    expect(result).toBe(true);
+
+    // handleShutdownCommand defers elegantShutdown via setImmediate so the poller
+    // can complete its current update cycle. Awaiting one setImmediate turn is
+    // sufficient to let it fire.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(mocks.elegantShutdown).toHaveBeenCalledWith("operator");
   });
 
   // -- /logging command ----------------------------------------------------
