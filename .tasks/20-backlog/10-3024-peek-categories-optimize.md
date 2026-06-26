@@ -1,6 +1,6 @@
 ---
 created: 2026-06-20
-status: queued
+status: backlog
 priority: 30
 source: epic 10-3020, audit finding 7 (agent abd67ab1210375674)
 repo: electrified-cortex/Telegram-Bridge-MCP

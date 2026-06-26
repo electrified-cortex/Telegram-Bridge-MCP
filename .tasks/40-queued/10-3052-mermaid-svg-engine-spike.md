@@ -3,7 +3,7 @@ id: "10-3052"
 title: "Story: mermaid→SVG engine — spike & select (lib vs build)"
 type: story
 created: 2026-06-26
-status: draft
+status: queued
 priority: 15
 epic: 10-3050
 repo: electrified-cortex/Telegram-Bridge-MCP

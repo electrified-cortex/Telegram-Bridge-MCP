@@ -25,4 +25,4 @@ Related to `30-2205-detect-cold-dequeue-after-nudge.md` but scoped to the instan
 ---
 _Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
 
-**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.
+**Signed-off-by:** Claude Opus 4.8 — closure verified via task-board audit (subagent-assisted) against `src/` + `git log` on 2026-06-26.

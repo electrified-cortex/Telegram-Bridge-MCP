@@ -14,6 +14,7 @@ stories:
   - 10-3052   # mermaid→SVG engine: spike & select
   - 10-3053   # companion-render pass: any .mmd → .svg (serves b + c)
   - 10-3054   # (conditional) build our own renderer
+  - 10-3056   # local chart rendering: send(type:"chart") → SVG/PNG (companion)
 ---
 
 # Epic 10-3050 — Visual content attachments (SVG & mermaid)
@@ -65,6 +66,16 @@ Pipeline: detect / normalize → placeholder → write to `SAFE_FILE_DIR` →
 companion-render pass → `sendDocument`. Delivery reuses `handleSendFile` /
 `SAFE_FILE_DIR`; no new transport.
 
+**Two delivery modes.** (a)/(b)/(c) above are **embedded** content — detected in
+the agent's message and attached. The epic also covers **explicitly-requested**
+visuals:
+
+- **(d) Charts** (Story 10-3056) — the agent calls `send(type:"chart")` with data;
+  TMCP renders a chart **locally** (Chart.js on a native canvas — *no browser*,
+  unlike mermaid) and attaches it. Replaces a third-party quickchart.io dependency
+  (data-egress red flag). Shares the same render → responsive → attach back half
+  and the local-only constraint; the trigger and engine differ.
+
 ## Engine strategy (the crux of the epic)
 
 **Target: pure-JS, browserless, in-process — no Chromium, no container.** Puppeteer-
@@ -93,9 +104,12 @@ Decision ladder (Story 10-3052 runs it):
 | **10-3052** | **Mermaid→SVG engine**: spike & select (lib vs build) | — | decision artifact |
 | **10-3053** | **Companion-render pass**: any `.mmd` → `.svg` (serves **b + c**) | 10-3051, 10-3052 | completes b + c |
 | **10-3054** | *(conditional)* **Build our own** renderer | 10-3052 | only if 10-3052 says libs fall short |
+| **10-3056** | **Local chart rendering (d)** — `send(type:"chart")` → SVG/PNG | 10-3051 (pipeline) | yes — native canvas, no browser; parallel to mermaid |
 
 Sequencing: 10-3051 and 10-3052 run in parallel. 10-3053 needs both. 10-3054 exists
-only if 10-3052's verdict is "build."
+only if 10-3052's verdict is "build." 10-3056 (charts) only needs the 10-3051
+pipeline — its native-canvas engine is independent of the mermaid engine work, so
+it can proceed in parallel.
 
 ## Styling / CSS
 
@@ -148,6 +162,8 @@ the machine. Do NOT use third-party renderers (mermaid.ink / public kroki).
 - [ ] (b) mermaid: placeholder + `.mmd` source + rendered responsive `.svg`.
 - [ ] (c) `.mmd` file attachment with no companion `.svg` → companion `.svg`
       auto-rendered and attached; if the agent already supplied an `.svg`, no dup.
+- [ ] (d) `send(type:"chart")` renders a chart locally (no third-party, no browser)
+      from a simplified shape or a full Chart.js config, and attaches it.
 - [ ] mermaid→SVG engine is pure-JS / in-process (no Chromium, no container) — a
       chosen lib or our own renderer.
 - [ ] Graceful fallback throughout — a render failure still ships the source +

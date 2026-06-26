@@ -46,4 +46,4 @@ Curator must revise: either clarify the task is about production `server.ts` sur
 ---
 _Closed 2026-06-26 by audit: WONT-FIX — premise refuted (register() are live test fixtures, not dead code)._
 
-**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.
+**Signed-off-by:** Claude Opus 4.8 — closure verified via task-board audit (subagent-assisted) against `src/` + `git log` on 2026-06-26.

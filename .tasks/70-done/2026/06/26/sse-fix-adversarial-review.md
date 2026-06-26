@@ -65,4 +65,4 @@ The EC-1 and EC-2 fixes are structurally sound and close the original missed-wak
 ---
 _Archived 2026-06-26 by audit — shipped (v7.13–7.18) or promoted into epics 10-3001/10-3017._
 
-**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.
+**Signed-off-by:** Claude Opus 4.8 — closure verified via task-board audit (subagent-assisted) against `src/` + `git log` on 2026-06-26.

@@ -25,4 +25,4 @@ TMCP uses "kick" for the activity-file mtime touch signal (e.g. `kickDebounce`, 
 ---
 _Closed 2026-06-26 by audit: SUPERSEDED by 10-2302 (kick→notify rename shipped v7.9.1)._
 
-**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.
+**Signed-off-by:** Claude Opus 4.8 — closure verified via task-board audit (subagent-assisted) against `src/` + `git log` on 2026-06-26.

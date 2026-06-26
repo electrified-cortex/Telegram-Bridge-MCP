@@ -3,7 +3,7 @@ id: "10-3051"
 title: "Story: detection + attachment pipeline + SVG path (a)"
 type: story
 created: 2026-06-26
-status: draft
+status: queued
 priority: 15
 epic: 10-3050
 repo: electrified-cortex/Telegram-Bridge-MCP
