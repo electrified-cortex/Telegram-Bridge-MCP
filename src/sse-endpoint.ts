@@ -105,6 +105,9 @@ export function notifySseSubscriber(sid: number): void {
     res.write("data: notify\n\n");
   } catch {
     _connections.delete(sid);
+    // Emit fail-hard exit signal before dropping — agent wakes immediately
+    try { res.write("data: MONITOR_EXIT reason=subscription_closed_unexpectedly action=re-arm\n\n"); } catch {}
+    unregisterSseMonitor(sid);
   }
 }
 
@@ -223,6 +226,8 @@ export function attachSseRoute(app: Express): void {
         res.write("data: notify\n\n");
       } catch {
         _connections.delete(sid);
+        // Emit fail-hard exit signal before dropping — agent wakes immediately
+        try { res.write("data: MONITOR_EXIT reason=subscription_closed_unexpectedly action=re-arm\n\n"); } catch {}
         unregisterSseMonitor(sid);
         return;
       }
@@ -237,6 +242,8 @@ export function attachSseRoute(app: Express): void {
         } catch {
           clearInterval(keepaliveTimer);
           _connections.delete(sid);
+          // Emit fail-hard exit signal before dropping — agent wakes immediately
+          try { res.write("data: MONITOR_EXIT reason=subscription_closed_unexpectedly action=re-arm\n\n"); } catch {}
           unregisterSseMonitor(sid);
         }
       } else {
@@ -245,6 +252,8 @@ export function attachSseRoute(app: Express): void {
         // rather than waiting for req 'close' to fire (half-open socket guard).
         clearInterval(keepaliveTimer);
         _connections.delete(sid);
+        // Emit fail-hard exit signal before dropping — agent wakes immediately
+        try { res.write("data: MONITOR_EXIT reason=subscription_closed_unexpectedly action=re-arm\n\n"); } catch {}
         unregisterSseMonitor(sid);
       }
     }, 30_000);
@@ -260,6 +269,8 @@ export function attachSseRoute(app: Express): void {
       clearInterval(keepaliveTimer);
       if (_connections.get(sid) === res) {
         _connections.delete(sid);
+        // Emit fail-hard exit signal before dropping — agent wakes immediately
+        try { res.write("data: MONITOR_EXIT reason=subscription_closed_unexpectedly action=re-arm\n\n"); } catch {}
         unregisterSseMonitor(sid);
         // dequeueDefault stays at 90 — operator-directed: once SSE sets it, it stays.
         process.stderr.write(`[sse] connection closed sid=${sid}\n`);

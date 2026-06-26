@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# monitor.sh — watch a TMCP activity file for changes; emit kick / heartbeat / timeout.
+# monitor.sh — watch a TMCP activity file for changes; emit notify / heartbeat / timeout / closed.
 #
 # Usage: monitor.sh <activity_file_path> [options]
 #
@@ -14,10 +14,11 @@
 #
 # Output:
 #   notify        — activity file mtime changed; call dequeue().
+#   closed        — activity file content starts with MONITOR_EXIT; re-arm your monitor.
 #   heartbeat     — no change in the last --heartbeat seconds (monitor is alive).
 #   timeout       — --timeout elapsed with no kick; exits 0.
 #
-# Exit code: 0 on timeout or normal termination; non-zero on argument error.
+# Exit code: 0 on timeout, closed, or normal termination; non-zero on argument error.
 
 set -euo pipefail
 
@@ -25,7 +26,7 @@ usage() {
     cat <<'EOF'
 Usage: monitor.sh <activity_file_path> [--heartbeat <seconds>] [--timeout <seconds>] [--prefix <string>] [--help]
 
-Watches a TMCP activity file for mtime changes and emits one kick line per change.
+Watches a TMCP activity file for mtime changes and emits one line per change.
 
   <activity_file_path>   Path returned by action(type: "activity/file/create").
   --heartbeat <s>        Emit `heartbeat` every <s> idle seconds (monitor liveness signal).
@@ -35,6 +36,7 @@ Watches a TMCP activity file for mtime changes and emits one kick line per chang
 
 Output lines:
   notify      mtime changed — call dequeue()
+  closed      MONITOR_EXIT detected in file — re-arm your monitor; exits 0
   heartbeat   monitor is alive (emitted every --heartbeat seconds when idle)
   timeout     idle limit reached — exits 0
 EOF
@@ -125,10 +127,17 @@ while true; do
     if [[ -f "$ACTIVITY_FILE" ]]; then
         current_mtime=$(get_mtime "$ACTIVITY_FILE")
         if [[ "$current_mtime" != "$last_mtime" ]]; then
-            emit "notify"
             last_mtime=$current_mtime
             last_event_ts=$now
             last_heartbeat_ts=$now
+            # Read content to detect MONITOR_EXIT signal.
+            content=""
+            [[ -f "$ACTIVITY_FILE" ]] && content=$(cat "$ACTIVITY_FILE" 2>/dev/null || true)
+            if [[ "$content" == MONITOR_EXIT* ]]; then
+                emit "closed"
+                exit 0
+            fi
+            emit "notify"
             continue
         fi
     fi

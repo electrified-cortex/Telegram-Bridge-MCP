@@ -560,20 +560,4 @@ export const SERVICE_MESSAGES = deepFreeze({
       "help('dequeue') for the correct loop pattern.",
   },
 
-  // ── Subscription loss notification ────────────────────────────────────────
-
-  /**
-   * Fired on the agent's first dequeue after an unexpected subscription close
-   * (SSE connection dropped without cancel, or activity-file write retry
-   * exhausted) — i.e. without the agent calling activity/listen cancel,
-   * activity/file/delete, or session/close. Exactly one injection per
-   * subscription-loss event (consumed on dequeue).
-   */
-  SUBSCRIPTION_CLOSED_UNEXPECTEDLY: {
-    eventType: "subscription_closed_unexpectedly" as const,
-    text: "Your monitor subscription closed unexpectedly — the bridge lost your SSE or activity-file connection without you initiating teardown. " +
-      "Re-arm your monitor: call action(type: 'activity/listen') for SSE or action(type: 'activity/file/create') for an activity file, " +
-      "then re-arm your Monitor tool with persistent: true. " +
-      "See help('activity/listen') or help('activity/file/create') for details.",
-  },
 });
