@@ -42,3 +42,7 @@ Curator authors the hook patch directly (hooks are Curator trust boundary). Not 
 
 - Memory `feedback_dont_add_scripts_where_plain_ops_work.md` (the incident driving this).
 - Memory `project_task_pipeline_architecture.md`.
+
+
+---
+> ⚠️ **AUDIT 2026-06-26:** SCOPE — targets the workspace/hooks repo (.agents pretooluse-permissions.ps1), NOT TMCP. Belongs on the workspace task board.

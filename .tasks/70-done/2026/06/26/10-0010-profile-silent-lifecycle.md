@@ -65,3 +65,9 @@ Executor: Worker / Reviewer: Curator
 - Reviewer: Overseer
 - Date: 2026-06-20
 - Verdict: PASS — 5 ACs are binary and testable (chat transcript, regression, dequeue observation, round-trip unit test, approval test). Scope is bounded (per-profile flag only, out-of-scope list clear). Delegation correct (Worker + Curator review). Open questions all have proposed defaults in the spec — Worker implements per spec defaults; Curator/operator review at PR. No blocking open questions. PASS.
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

@@ -10,6 +10,21 @@ Target: V8 (flexible — may slip to 7.11)
 
 # V8 Rich Messages Markup — Bot API 10.1 Auto-Translation
 
+> ⚠️ **SUPERSEDED ASSUMPTIONS (2026-06-26) — read [10-3017](../10-drafts/10-3017-v8-rich-messages-native-pivot-spikes.md) before acting on this epic.**
+> Two foundational premises below are now disproven:
+> 1. **§2 "grammY gap" / §3 raw-fetch** — `grammy@1.44.0` + `@grammyjs/types@3.28.0`
+>    expose `sendRichMessage`/`sendRichMessageDraft`/`InputRichMessage` natively.
+>    The raw-fetch `sendRichMessageDirect` is no longer required.
+> 2. **§4 `markdownToRichBlocks` compiler** — `InputRichMessage` takes a `markdown`
+>    field parsed **server-side by Telegram**, so the hand-rolled compiler is
+>    likely unnecessary for the default path (confirm via 10-3017 Spike A).
+> Also changed by operator direction: rich becomes the **default** (not the
+> `RICH_MESSAGES` opt-in of §4/§6), the contract moves to format-by-param-name
+> (`text`/`html`/`string`, **no `parse_mode`**), inline keyboards are **in** scope
+> (`sendRichMessage` supports `reply_markup`), and the §3/§7 draft `update→finalize`
+> lifecycle is wrong (real API: `sendRichMessageDraft({draft_id})` → persist via
+> `sendRichMessage`). 10-3017 runs the spikes and re-specs this epic.
+
 ## Objective
 
 TMCP auto-translates the Markdown that agents already write into Telegram's

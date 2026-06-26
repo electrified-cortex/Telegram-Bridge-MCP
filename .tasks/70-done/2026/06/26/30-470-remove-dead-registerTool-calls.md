@@ -41,3 +41,9 @@ calls") is incorrect as written.
 
 Curator must revise: either clarify the task is about production `server.ts` surface only
 (leaving test-facing `register()` functions intact), or close this as won't-fix.
+
+
+---
+_Closed 2026-06-26 by audit: WONT-FIX — premise refuted (register() are live test fixtures, not dead code)._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

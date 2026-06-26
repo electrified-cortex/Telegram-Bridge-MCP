@@ -20,3 +20,9 @@ Companion to the **dequeue-throttle** (7.10.1, `dequeue-throttle-backoff-2026-06
 
 ## Target
 Backlog (post-7.10).
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

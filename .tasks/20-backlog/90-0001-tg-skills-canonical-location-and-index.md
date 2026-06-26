@@ -1,8 +1,8 @@
 ---
-id: "00-0001"
+id: "90-0001"
 title: "Epic: Telegram-specific skills library inside TMCP with Claude Code plugin"
 type: epic
-priority: 0
+priority: 90
 created: 2026-05-15
 delegation: Curator
 target_branch: dev

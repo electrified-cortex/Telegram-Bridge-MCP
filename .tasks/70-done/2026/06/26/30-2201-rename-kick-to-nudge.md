@@ -20,3 +20,9 @@ TMCP uses "kick" for the activity-file mtime touch signal (e.g. `kickDebounce`, 
 - [ ] If "kick" appears in any public-facing API surface (MCP action paths), design a deprecation path and surface for review before renaming — do not silently break callers.
 - [ ] All tests pass after rename.
 - [ ] No renames touch "session close / disconnect" terminology (different concept).
+
+
+---
+_Closed 2026-06-26 by audit: SUPERSEDED by 10-2302 (kick→notify rename shipped v7.9.1)._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

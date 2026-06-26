@@ -180,3 +180,9 @@ nothing regressed during the consolidation refactor.
 - **Unchanged smoke tests:** 29 rows
 - **Total:** 99 verification rows
 - **Release gate:** All rows must be `PASS`
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

@@ -39,3 +39,9 @@ This is a research AND innovation session — not just investigation, but design
 ## Notes
 
 Operator called this an "innovation session" — expect to have an async design discussion after research returns, not just a dump of findings.
+
+
+---
+_Archived 2026-06-26 by audit — shipped (v7.13–7.18) or promoted into epics 10-3001/10-3017._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

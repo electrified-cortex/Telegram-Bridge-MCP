@@ -147,3 +147,9 @@ Purpose: Dogfood test results — tracking pass/fail for each row
 - Pass with finding: 6
 - Fail: 5 (row 17 MarkdownV2 on edit, row 23 animation timeout, row 32 preset-to-default, row 51 debug category, row 99 get_chat missing)
 - Remaining: 5 (multi-session 93-95, destructive 96-97)
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

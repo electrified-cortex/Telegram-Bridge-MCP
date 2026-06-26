@@ -37,3 +37,9 @@ Agent received a message → dequeued it → did nothing visible to the operator
 ## Implementation Note
 
 Any agent that calls `dequeue` must follow the dequeue immediately with one of the presence signals listed above. Failure to do so will trigger `behavior_nudge_presence_rung2`. The correct response to receiving this nudge is to emit a presence signal — not to investigate why the nudge fired.
+
+
+---
+_Archived 2026-06-26 by audit — shipped (v7.13–7.18) or promoted into epics 10-3001/10-3017._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

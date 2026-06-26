@@ -20,3 +20,9 @@ Related to `30-2205-detect-cold-dequeue-after-nudge.md` but scoped to the instan
 - [ ] One nudge per session (or per configurable cooldown window); no spam.
 - [ ] Service message text is specific enough to be actionable (cites the corrective pattern explicitly).
 - [ ] Coordinate with `activity-aware-kick-timing` work to avoid conflicting guidance.
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

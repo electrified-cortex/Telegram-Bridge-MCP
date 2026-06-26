@@ -314,3 +314,7 @@ and `pnpm lint`.
 - [ ] No `console.*` in hot paths.
 - [ ] Security audit findings document produced (`notes/2026-06-13-v8-security-audit.md`).
 - [ ] All Critical and High security findings resolved or triaged with documented rationale.
+
+
+---
+> ⚠️ **AUDIT 2026-06-26:** Several line-items shipped (dead-code _retired/ removed in v7.8.0; test-hygiene overlaps the now-done 10-3020 sub-tasks) — tick those off. Remaining workstreams still valid. Minor: duplicate '### 9' heading to dedupe.

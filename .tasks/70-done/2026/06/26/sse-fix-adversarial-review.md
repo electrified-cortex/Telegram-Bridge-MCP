@@ -60,3 +60,9 @@
 ## Bottom Line
 
 The EC-1 and EC-2 fixes are structurally sound and close the original missed-wake race. No finding confirmed as a blocker; the most severe confirmed finding is missing keepalive test coverage (major) and the keepalive write lacking the `writableEnded` guard already present in `index.ts` (minor). The dequeueDefault restore on close is a safe dead-code removal the operator already intended. Production correctness is not in question — the PR is safe to ship after adding keepalive tests and the `writableEnded` guard. All remaining items are minor hygiene or documentation nits that can land in a fast-follow.
+
+
+---
+_Archived 2026-06-26 by audit — shipped (v7.13–7.18) or promoted into epics 10-3001/10-3017._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

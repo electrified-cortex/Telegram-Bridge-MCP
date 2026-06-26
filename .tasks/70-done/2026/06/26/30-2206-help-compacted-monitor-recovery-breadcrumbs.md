@@ -23,3 +23,9 @@ After compaction, agents lose their Monitor task (the harness task ID dies; the 
 - verdict: REJECT — may already be done; contradicts 20-2201
 - finding: docs/help/compacted.md already has a monitor recovery section (lines 8-12). First AC is a discovery step, not a gate. Contradicts 20-2201 (which wants to simplify re-arm guidance) — adding explicit re-arm steps here would immediately conflict. These two tasks need reconciliation before either can proceed.
 - action: Read docs/help/compacted.md first — verify what's actually missing. Reconcile with 20-2201 on whether re-arm guidance should be added or simplified. File one unified task after alignment.
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

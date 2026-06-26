@@ -59,3 +59,7 @@ Executor: Worker / Reviewer: Curator
 - Reviewer: Overseer
 - Date: 2026-06-20
 - Verdict: PASS — naming confirmed by operator ("notify" locked). ACs binary (grep count + test pass + tsc). Scope: pure rename, no behavior change. Deprecated aliases specified. Delegation correct. No blocking open questions ("lockout"/"cooldown" is explicitly optional/separate). PASS.
+
+
+---
+> ⚠️ **AUDIT 2026-06-26:** Substantially SHIPPED (kick→notify; tracked done as 10-2302, v7.9.1). 'kick' count down from 363 to ~42 — mostly intentional deprecated aliases + code comments. Residual = comment-only cleanup; consider closing.

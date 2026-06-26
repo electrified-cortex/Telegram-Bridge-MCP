@@ -55,3 +55,9 @@ Following the existing `profile/<kebab-noun>` convention (`profile/voice`, `prof
 2. **Ungraceful close (crash/timeout) announcements:** if a silent-lifecycle session is reaped by the unresponsive-session detector rather than closed gracefully, should the unresponsive-warning + back-online dance also be suppressed, or do those count as "errors" and stay visible? Current draft: keep visible (operator wants to know if a silent pod actually died).
 3. **Default rollout per pod class:** ship as opt-in only (every profile starts `false`, operator toggles per pod), or seed Zhu-Li / future containerized-assistant profiles with `true` at provisioning time? Current draft: opt-in only; provisioning scripts set `true` for known high-churn classes.
 4. **Visibility audit:** should there be a way for the operator to list which loaded profiles currently have `silent_lifecycle: true` (e.g. via `session/list` showing a `silent` flag), so a silenced pod is not invisible by accident? Current draft: yes, surface in `session/list`.
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

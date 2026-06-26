@@ -175,3 +175,9 @@ Executor: Curator / Reviewer: Overseer (then operator for open-question answers)
 - Verdict: PASS — scope bounded (spec only), AC are concrete and enumerated,
   open questions are the work not blockers, blocks 10-3021 through 10-3025
   explicitly. Operator-sourced directly from voice 76211.
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.

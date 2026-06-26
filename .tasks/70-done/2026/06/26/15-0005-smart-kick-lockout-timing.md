@@ -301,3 +301,9 @@ End of appendix.
 ## Delegation
 
 Executor: Worker / Reviewer: Curator
+
+
+---
+_Closed 2026-06-26 by task-board audit — shipped/complete (or v6 historical); moved from active lane to 70-done._
+
+**Signed-off-by:** Claude Opus 4.8 — closure verified against `src/` + `git log` on 2026-06-26.
