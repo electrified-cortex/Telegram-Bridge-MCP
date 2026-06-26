@@ -72,7 +72,13 @@ This story implements the pivot the spikes prove out.
 ### P5 — Migrate auxiliary send/edit paths
 - Move to rich (all confirmed supported via `reply_markup` / `rich_message` edits):
   `notify`, `append`, `progress`, `choice`/`choose`/`confirm`/`ask`,
-  `stream/*` (use `sendRichMessageDraft` for live updates), button-collapse edits.
+  button-collapse edits.
+- **Streaming — see [10-3026](10-3026-auto-thinking-on-dequeue.md) (the keeper).**
+  The streaming investigation concluded: ship **auto-Thinking on dequeue** (native
+  draft presence). The `stream:true` *reveal* is PARKED (cosmetic) and true
+  token-streaming was rejected (noise / breaks curation). So do NOT migrate
+  `stream/*` to drafts here; the only draft use that survives is the Thinking
+  presence in 10-3026.
 - **Stay legacy (permanent):** `send_file` and `sendVoiceDirect` captions —
   `caption`+`parse_mode`, no `rich_message` field on those methods.
 - Session-close cleanup: cancel any open draft (`draft_id`) so it doesn't linger.
