@@ -70,7 +70,7 @@ export const SERVICE_MESSAGES = deepFreeze({
       "  1. Call action(type: 'activity/file/create') → returns { file_path }.\n" +
       "  2. Replace <path> with file_path, then arm Monitor (persistent: true):\n" +
       "     " + ACTIVITY_FILE_MONITOR_RECIPE.replace(/\n/g, "\n     ") + "\n" +
-      "  3. On each kick → call dequeue(max_wait: 0); loop until pending = 0.\n\n" +
+      "  3. On each notify → call dequeue(max_wait: 0); loop until pending = 0.\n\n" +
       "No Monitor tool (other runtimes):\n" +
       "  Call dequeue(max_wait: 30) on every turn.\n\n" +
       "Details: help('start'), help('dequeue'), help('activity/listen').",
@@ -555,7 +555,7 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "behavior_nudge_dequeue_pattern" as const,
     text: "DEQUEUE PATTERN: You are re-polling immediately after `timed_out: true` while " +
       "your monitor subscription is active. " +
-      "Do NOT loop on timed_out — wait for the monitor event (SSE `notify` or activity-file kick), " +
+      "Do NOT loop on timed_out — wait for the monitor event (SSE or activity-file `notify`), " +
       "THEN call dequeue(). Polling here burns tokens without purpose. " +
       "help('dequeue') for the correct loop pattern.",
   },
