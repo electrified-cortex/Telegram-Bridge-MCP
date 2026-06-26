@@ -32,3 +32,29 @@ Place tests in `tools/test/` or a similar location. Tests must be runnable stand
 - [ ] pwsh test for file-deletion mid-wait graceful handling (MAJOR-ps1-AC3)
 - [ ] Both tests pass in CI on Windows (Git Bash + pwsh available)
 - [ ] pnpm test passes with no regressions
+
+---
+
+## Overseer review
+
+- **Reviewer:** Overseer (SID 2)
+- **Date:** 2026-06-25
+- **Verdict:** PASS — cleared for foreman
+- **Review type:** Adversarial spec gate (close read)
+- **Checked:** 4 ACs binary + testable (200ms timing on `timeout` token, monitor.ps1 file-deletion graceful handling, CI-on-Windows pass, no pnpm regressions); scope bounded (S — test harness only, no external services); no open questions; validates the two ACs waived from 10-0012.
+- **Not checked:** implementation correctness — covered by the post-implementation PR gate.
+- **Note:** Pure test-harness task; no overlap with the nudge tasks — safe to interleave but the single-worker plan runs it sequentially anyway.
+- **Delegation:** worker implements → foreman verifies ACs (per operator directive 2026-06-25).
+
+---
+
+## Verification
+
+- **Verifier:** Foreman (adversarial review — Overseer gate)
+- **Date:** 2026-06-26
+- **Verdict:** APPROVED
+- **Overseer review:** PASS (2026-06-26) — gate-bounce fix (CI portability) also reviewed and passed
+- **Tests:** 3926/3926 pass, lint clean
+- **Commits:** `9aff8f5f` (test harness), `840b335e` (vendor fixture — CI portability fixup)
+- **Squash on dev:** `2c34349`
+- **Notes:** bash test FIFO timing ≤200ms (delta 8ms observed); pwsh test file-deletion grace; fixture vendored to tools/test/fixtures/outbox-monitor.sh for CI-clean path.
