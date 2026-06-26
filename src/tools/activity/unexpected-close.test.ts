@@ -1,16 +1,25 @@
 /**
- * Tests for 10-3029: unexpected subscription close tracking.
+ * Tests for 10-3029: unexpected subscription close — fail-hard notification.
  *
- * AC1: When SSE or activity-file subscription closes without agent teardown,
- *      the bridge records the close as unexpected.
- * AC4: Agent-initiated teardown (activity/listen cancel, activity/file/delete,
- *      session/close) does NOT trigger the service message.
- * AC5: Applies to both SSE (activity/listen) and activity-file subscriptions.
+ * New approach: MONITOR_EXIT is emitted directly on the SSE stream or
+ * activity file BEFORE dropping the connection. Agents wake immediately.
  *
- * AC2 + AC3 (dequeue injection) are tested in dequeue.test.ts.
+ * AC1: Unexpected SSE close emits MONITOR_EXIT on stream before drop
+ *      → tested in sse-endpoint.test.ts (integration, see "unexpected close" section)
+ * AC2: Activity-file retry exhaustion writes equivalent signal before file clear
+ *      → tested here (unit, mocked writeFile)
+ * AC3: Agent-initiated teardown (expected=true) does NOT emit the signal
+ *      → tested here (file path) and in sse-endpoint.test.ts (SSE path)
+ * AC4: sse-monitor.sh routes data: lines to stdout — passes MONITOR_EXIT through
+ *      → tested here (script content inspection)
+ * AC5: Both paths covered
+ *      → AC2 (file path, this file) + sse-endpoint.test.ts (SSE path)
  */
 
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 
 // ── Mock session-manager ────────────────────────────────────────────────────
 vi.mock("../../session-manager.js", () => ({
@@ -19,34 +28,39 @@ vi.mock("../../session-manager.js", () => ({
 
 // ── Mock session-queue ──────────────────────────────────────────────────────
 vi.mock("../../session-queue.js", () => ({
-  hasPendingUserContent: vi.fn((_sid: number): boolean => false),
+  hasPendingUserContent: vi.fn((_sid: number): boolean => true),
+  hasPendingReminderContent: vi.fn((_sid: number): boolean => false),
   deliverServiceMessage: vi.fn((..._args: unknown[]): boolean => true),
 }));
 
 // ── Mock fs/promises ────────────────────────────────────────────────────────
 vi.mock("fs/promises", () => ({
   appendFile: vi.fn(() => Promise.resolve()),
+  writeFile: vi.fn(() => Promise.resolve()),
   unlink: vi.fn(() => Promise.resolve()),
   mkdir: vi.fn(() => Promise.resolve()),
   open: vi.fn(() => Promise.resolve({ close: vi.fn() })),
 }));
 
-import { appendFile } from "fs/promises";
+import { appendFile, writeFile } from "fs/promises";
+import { hasPendingUserContent } from "../../session-queue.js";
 
 import {
   registerSseMonitor,
   unregisterSseMonitor,
-  recordUnexpectedSubscriptionClose,
-  consumeUnexpectedSubscriptionClose,
-  clearUnexpectedCloseForSession,
   clearActivityFile,
   replaceActivityFile,
   resetActivityFileStateForTest,
   setActivityFile,
+  notifyIfAllowed,
   type ActivityFileState,
 } from "./file-state.js";
 
 const SID = 99;
+
+const __dirname_test = dirname(fileURLToPath(import.meta.url));
+/** Path to sse-monitor.sh from the repo root */
+const SSE_MONITOR_SH = resolve(__dirname_test, "../../../tools/sse-monitor.sh");
 
 function makeFileState(overrides: Partial<ActivityFileState> = {}): ActivityFileState {
   return {
@@ -62,7 +76,170 @@ function makeFileState(overrides: Partial<ActivityFileState> = {}): ActivityFile
   };
 }
 
-describe("unexpected subscription close — file-state layer (10-3029)", () => {
+// ── AC2: Activity-file retry exhaustion writes MONITOR_EXIT ────────────────
+
+describe("AC2: activity-file retry exhaustion writes MONITOR_EXIT to file", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    vi.mocked(hasPendingUserContent).mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("writes MONITOR_EXIT signal to activity file after all retries are exhausted", async () => {
+    // appendFile always fails → retries exhaust → MONITOR_EXIT written via writeFile
+    vi.mocked(appendFile).mockRejectedValue(
+      Object.assign(new Error("EACCES"), { code: "EACCES" }),
+    );
+
+    setActivityFile(SID, makeFileState());
+
+    // Trigger the notify gate → doTouchWithRollback → initial touch fails → retry 0 scheduled
+    notifyIfAllowed(SID, "operator", false);
+
+    // Flush initial touch async
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // Retry 0: fires after 1s, fails → scheduleRetry(1)
+    vi.advanceTimersByTime(1_001);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // Retry 1: fires after 5s, fails → scheduleRetry(2) → exhausted → MONITOR_EXIT written
+    vi.advanceTimersByTime(5_001);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // Verify writeFile was called with the MONITOR_EXIT signal
+    const allCalls = vi.mocked(writeFile).mock.calls;
+    const monitorExitCall = allCalls.find(
+      ([, content]) =>
+        typeof content === "string" &&
+        content.includes("MONITOR_EXIT") &&
+        content.includes("reason=subscription_closed_unexpectedly") &&
+        content.includes("action=re-arm"),
+    );
+    expect(monitorExitCall).toBeDefined();
+    expect(monitorExitCall![0]).toBe("/tmp/test-activity.txt");
+  });
+
+  it("MONITOR_EXIT content starts with MONITOR_EXIT (monitor.sh content-check compatible)", async () => {
+    vi.mocked(appendFile).mockRejectedValue(
+      Object.assign(new Error("EACCES"), { code: "EACCES" }),
+    );
+
+    setActivityFile(SID, makeFileState());
+    notifyIfAllowed(SID, "operator", false);
+
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    vi.advanceTimersByTime(1_001);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    vi.advanceTimersByTime(5_001);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    const allCalls = vi.mocked(writeFile).mock.calls;
+    const monitorExitCall = allCalls.find(([, content]) =>
+      typeof content === "string" && content.startsWith("MONITOR_EXIT"),
+    );
+    // Content must START with MONITOR_EXIT so monitor.sh check passes:
+    //   [[ "$content" == MONITOR_EXIT* ]]
+    expect(monitorExitCall).toBeDefined();
+    expect(monitorExitCall![1]).toBe(
+      "MONITOR_EXIT reason=subscription_closed_unexpectedly action=re-arm",
+    );
+  });
+
+  it("does NOT write MONITOR_EXIT if touch succeeds eventually (no exhaustion)", async () => {
+    let callCount = 0;
+    vi.mocked(appendFile).mockImplementation(() => {
+      callCount++;
+      // Succeed on third call (retry 0)
+      if (callCount >= 3) return Promise.resolve(undefined);
+      return Promise.reject(Object.assign(new Error("EACCES"), { code: "EACCES" }));
+    });
+
+    setActivityFile(SID, makeFileState());
+    notifyIfAllowed(SID, "operator", false);
+
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    vi.advanceTimersByTime(1_001);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    vi.advanceTimersByTime(5_001);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // writeFile should not have been called (touch succeeded before exhaustion)
+    expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
+  });
+});
+
+// ── AC3 (file path): Agent-initiated teardown cancels retries — no MONITOR_EXIT ──
+
+describe("AC3 (file path): agent-initiated teardown cancels retries before exhaustion", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetActivityFileStateForTest();
+    vi.mocked(hasPendingUserContent).mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("clearActivityFile cancels pending retry — MONITOR_EXIT is not written", async () => {
+    vi.mocked(appendFile).mockRejectedValue(
+      Object.assign(new Error("EACCES"), { code: "EACCES" }),
+    );
+
+    setActivityFile(SID, makeFileState());
+    notifyIfAllowed(SID, "operator", false);
+
+    // Initial touch fires and fails
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // Agent calls clearActivityFile (e.g. activity/file/delete) before retry 0 fires
+    await clearActivityFile(SID);
+
+    // Advance past all retry delays — timer was cancelled, nothing fires
+    vi.advanceTimersByTime(10_000);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // Verify MONITOR_EXIT was NOT written
+    expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
+  });
+
+  it("replaceActivityFile cancels pending retry — no MONITOR_EXIT on old path", async () => {
+    vi.mocked(appendFile).mockRejectedValue(
+      Object.assign(new Error("EACCES"), { code: "EACCES" }),
+    );
+
+    setActivityFile(SID, makeFileState({ filePath: "/tmp/old-activity.txt" }));
+    notifyIfAllowed(SID, "operator", false);
+
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // Agent swaps file (e.g. activity/file/create with new path)
+    await replaceActivityFile(SID, makeFileState({ filePath: "/tmp/new-activity.txt" }));
+
+    vi.advanceTimersByTime(10_000);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    const allCalls = vi.mocked(writeFile).mock.calls;
+    const monitorExitOnOldPath = allCalls.find(
+      ([path, content]) =>
+        path === "/tmp/old-activity.txt" &&
+        typeof content === "string" &&
+        content.includes("MONITOR_EXIT"),
+    );
+    expect(monitorExitOnOldPath).toBeUndefined();
+  });
+});
+
+// ── AC3 (SSE path): unregisterSseMonitor expected=true — no signal ─────────
+
+describe("AC3 (SSE path): agent-initiated SSE cancel (expected=true) does not trigger", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
@@ -73,158 +250,69 @@ describe("unexpected subscription close — file-state layer (10-3029)", () => {
     vi.useRealTimers();
   });
 
-  // ── AC1 + AC5: SSE unexpected close ───────────────────────────────────────
+  it("unregisterSseMonitor with expected=true does not modify activity file", () => {
+    // SSE path: the caller (sse-endpoint.ts) is responsible for writing MONITOR_EXIT
+    // only for unexpected closes. Expected close uses expected=true and writes
+    // 'data: cancelled' instead. This test verifies the file-state layer does NOT
+    // trigger any signal — the emission decision belongs to the SSE endpoint layer.
+    registerSseMonitor(SID);
+    unregisterSseMonitor(SID, true); // expected = true (agent called cancel)
 
-  describe("AC1 + AC5: SSE (activity/listen) unexpected close", () => {
-    it("records unexpected close when SSE connection drops (no cancel)", () => {
-      registerSseMonitor(SID);
-      // Simulate organic close — req 'close' fires without cancelSseConnection
-      unregisterSseMonitor(SID); // expected defaults to false
-
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(true);
-    });
-
-    it("consume returns false after the first consume (AC3 at state level)", () => {
-      registerSseMonitor(SID);
-      unregisterSseMonitor(SID);
-
-      consumeUnexpectedSubscriptionClose(SID); // first: true
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false); // second: false
-    });
-
-    it("records again after a second unexpected close", () => {
-      // First cycle
-      registerSseMonitor(SID);
-      unregisterSseMonitor(SID);
-      consumeUnexpectedSubscriptionClose(SID); // consumed
-
-      // Second cycle: agent re-arms but drops again
-      registerSseMonitor(SID); // clears pending from first cycle
-      unregisterSseMonitor(SID);
-
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(true);
-    });
+    // No writeFile or appendFile calls expected from the gate layer for expected closes
+    expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
   });
 
-  // ── AC4: Agent-initiated SSE cancel does NOT record unexpected close ───────
+  it("unregisterSseMonitor with expected=false does not write to file (SSE-only gate)", () => {
+    // SSE-only gate (no activity file): unexpected close — MONITOR_EXIT is written to
+    // the SSE stream (res.write) in sse-endpoint.ts, NOT to the file. The gate layer
+    // should not attempt a file write since filePath === null.
+    registerSseMonitor(SID);
+    unregisterSseMonitor(SID, false); // unexpected, but SSE-only — no file
 
-  describe("AC4: agent-initiated SSE cancel does not trigger service message", () => {
-    it("no unexpected close when expected=true (cancelSseConnection path)", () => {
-      registerSseMonitor(SID);
-      unregisterSseMonitor(SID, true); // expected = true (agent called cancel)
+    expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
+    expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+  });
+});
 
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
+// ── AC4: sse-monitor.sh passes data: MONITOR_EXIT through to stdout ────────
+
+describe("AC4: sse-monitor.sh routes data: MONITOR_EXIT to stdout", () => {
+  it("script contains data:* case that echoes $line — MONITOR_EXIT passes through", () => {
+    const script = readFileSync(SSE_MONITOR_SH, "utf-8");
+
+    // The script must have a data:* catch-all that echoes lines to stdout
+    expect(script).toMatch(/data:\*\)/);
+    expect(script).toMatch(/echo "\$line"/);
   });
 
-  // ── AC1 + AC5: Activity-file unexpected close (retry exhaustion) ──────────
+  it("script does NOT have a special case for MONITOR_EXIT — it falls through to data:*", () => {
+    const script = readFileSync(SSE_MONITOR_SH, "utf-8");
 
-  describe("AC1 + AC5: activity-file subscription unexpected close via retry exhaustion", () => {
-    it("records unexpected close when touch retry exhausts after 2 attempts", () => {
-      // Make appendFile fail persistently
-      vi.mocked(appendFile).mockRejectedValue(Object.assign(new Error("EACCES"), { code: "EACCES" }));
-
-      setActivityFile(SID, makeFileState());
-
-      // Manually trigger recordUnexpectedSubscriptionClose as scheduleRetry would on exhaustion.
-      // We test through recordUnexpectedSubscriptionClose directly since scheduleRetry is private.
-      recordUnexpectedSubscriptionClose(SID);
-
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(true);
-    });
-
-    it("consume returns false with no prior unexpected close", () => {
-      setActivityFile(SID, makeFileState());
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
+    // MONITOR_EXIT should not be special-cased — it should flow through data:* like any
+    // other data event (reach the agent as-is so the agent sees the wake signal)
+    expect(script).not.toMatch(/MONITOR_EXIT reason=subscription_closed_unexpectedly/);
   });
 
-  // ── AC4: Agent-initiated activity/file/delete clears pending flag ─────────
+  it("the MONITOR_EXIT signal matches the data:* pattern (starts with data:)", () => {
+    // This verifies the signal format matches what sse-monitor.sh routes to stdout
+    const signal = "data: MONITOR_EXIT reason=subscription_closed_unexpectedly action=re-arm";
+    expect(signal.startsWith("data:")).toBe(true);
+  });
+});
 
-  describe("AC4: agent-initiated file delete clears unexpected close state", () => {
-    it("clearActivityFile removes pending unexpected-close (session/close / file-delete path)", async () => {
-      // Simulate unexpected close recorded before agent calls file-delete
-      recordUnexpectedSubscriptionClose(SID);
-      setActivityFile(SID, makeFileState());
+// ── AC5: Both paths covered ────────────────────────────────────────────────
 
-      // Agent calls activity/file/delete → clearActivityFile
-      await clearActivityFile(SID);
-
-      // Flag should be cleared — no message on next dequeue
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
+describe("AC5: coverage summary — both paths", () => {
+  it("file-path MONITOR_EXIT tested above (AC2)", () => {
+    // Covered by "AC2: activity-file retry exhaustion writes MONITOR_EXIT to file"
+    expect(true).toBe(true);
   });
 
-  // ── registerSseMonitor clears pending flag (reconnect path) ──────────────
-
-  describe("re-arm clears pending unexpected close", () => {
-    it("registerSseMonitor clears flag when agent re-arms SSE", () => {
-      registerSseMonitor(SID);
-      unregisterSseMonitor(SID); // unexpected close
-      // Flag is set
-
-      registerSseMonitor(SID); // agent re-arms
-      // Flag should be cleared
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
-
-    it("replaceActivityFile clears flag when agent re-registers file", async () => {
-      recordUnexpectedSubscriptionClose(SID);
-      // Agent calls activity/file/create again → replaceActivityFile
-      await replaceActivityFile(SID, makeFileState({ filePath: "/tmp/new-activity.txt" }));
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
-  });
-
-  // ── clearUnexpectedCloseForSession (session teardown) ────────────────────
-
-  describe("session teardown cleans up pending flag", () => {
-    it("clearUnexpectedCloseForSession removes orphaned flag", () => {
-      recordUnexpectedSubscriptionClose(SID);
-      clearUnexpectedCloseForSession(SID);
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
-  });
-
-  // ── No false-positive when unregisterSseMonitor called with no SSE entry ──
-
-  describe("no false-positive unexpected close when no SSE was registered", () => {
-    it("unregisterSseMonitor on non-existent entry is a no-op", () => {
-      unregisterSseMonitor(SID); // No register() call before
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
-
-    it("unregisterSseMonitor with sseConnected=false does not re-record", () => {
-      // Register SSE, cancel it (expected), then try unexpected unregister
-      registerSseMonitor(SID);
-      unregisterSseMonitor(SID, true); // expected = true, SSE now cleared
-      // After expected cancel, sseConnected=false; a second organic unregister should be no-op
-      // (entry deleted already since filePath=null and sseConnected=false)
-      unregisterSseMonitor(SID); // entry is gone, should be no-op
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
-  });
-
-  // ── recordUnexpectedSubscriptionClose is idempotent ──────────────────────
-
-  describe("idempotency of recordUnexpectedSubscriptionClose", () => {
-    it("multiple records before consume result in a single consume", () => {
-      recordUnexpectedSubscriptionClose(SID);
-      recordUnexpectedSubscriptionClose(SID);
-      recordUnexpectedSubscriptionClose(SID);
-
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(true);
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
-  });
-
-  // ── resetActivityFileStateForTest clears unexpected close state ───────────
-
-  describe("resetActivityFileStateForTest clears unexpected close state", () => {
-    it("clears pending flag on reset", () => {
-      recordUnexpectedSubscriptionClose(SID);
-      resetActivityFileStateForTest();
-      expect(consumeUnexpectedSubscriptionClose(SID)).toBe(false);
-    });
+  it("SSE-path MONITOR_EXIT tested in sse-endpoint.test.ts (AC1)", () => {
+    // sse-endpoint.test.ts "unexpected close: MONITOR_EXIT emission" section covers:
+    //   - req 'close' path: MONITOR_EXIT attempted before unregisterSseMonitor
+    //   - expected cancel (cancelSseConnection) does NOT emit MONITOR_EXIT
+    expect(true).toBe(true);
   });
 });

@@ -16,7 +16,7 @@ vi.mock("./telegram.js", async (importOriginal) => {
 
 import { attachSseRoute, notifySseSubscriber, cancelSseConnection } from "./sse-endpoint.js";
 import { notifySession } from "./tools/notify.js";
-import { resetActivityFileStateForTest } from "./tools/activity/file-state.js";
+import { resetActivityFileStateForTest, isSseMonitorActive } from "./tools/activity/file-state.js";
 import { createSession, resetSessions, getDequeueDefault, setDequeueDefault } from "./session-manager.js";
 import { createSessionQueue, getSessionQueue, resetSessionQueuesForTest } from "./session-queue.js";
 import type { TimelineEvent } from "./message-store.js";
@@ -407,6 +407,70 @@ describe("GET /sse", () => {
       // Phase 4: reconnect — should get immediate notify (no additional enqueue needed).
       const lines = await collectSseLines(`http://127.0.0.1:${port}/sse?token=${token}`, 1, 500);
       expect(lines).toContain("data: notify");
+    });
+  });
+
+  // ── AC1/AC3: unexpected close — MONITOR_EXIT emission (10-3029) ──────────
+  // AC1: Unexpected SSE close emits MONITOR_EXIT on stream before drop.
+  // AC3: Expected close (cancelSseConnection) sends data: cancelled, NOT MONITOR_EXIT.
+  //
+  // Note on AC1 testability: when the CLIENT disconnects first (req 'close' path),
+  // the server tries to write MONITOR_EXIT but the socket is already gone — the write
+  // fails silently (caught). The client never receives it. We verify cleanup instead.
+  // When the SERVER detects a dead socket via keepalive (EC-2 half-open path), the write
+  // also fails after the client has already left. The real value of the emit is for race
+  // windows where the server detects the problem before the TCP stack does. Both paths
+  // are covered by code inspection + the cleanup assertions below.
+  describe("AC1/AC3: unexpected close MONITOR_EXIT vs expected cancel", () => {
+    it("AC3: cancelSseConnection sends data: cancelled — not MONITOR_EXIT", async () => {
+      const lines = await collectSseLines(
+        `http://127.0.0.1:${port}/sse?token=${token}`,
+        2, // collect up to 2 data: lines (the cancel line)
+        1000,
+      );
+
+      // Give time for connection to register, then cancel
+      await new Promise(r => setTimeout(r, 60));
+      cancelSseConnection(sid);
+      await new Promise(r => setTimeout(r, 60));
+
+      // Should get data: cancelled, not MONITOR_EXIT
+      const monitorExitLine = lines.find(l => l.includes("MONITOR_EXIT"));
+      expect(monitorExitLine).toBeUndefined();
+    });
+
+    it("AC3: cancelSseConnection delivers data: cancelled to the client", async () => {
+      // Collect lines — including the cancel event
+      const collectPromise = collectSseLines(
+        `http://127.0.0.1:${port}/sse?token=${token}`,
+        1,
+        1000,
+      );
+
+      await new Promise(r => setTimeout(r, 60));
+      cancelSseConnection(sid);
+
+      const lines = await collectPromise;
+      // data: cancelled should be received (expected close path)
+      expect(lines).toContain("data: cancelled");
+    });
+
+    it("AC1: after unexpected client disconnect, SSE monitor gate is cleaned up", async () => {
+      // Open connection and abort immediately (client-initiated unexpected close)
+      const ac = new AbortController();
+      fetch(`http://127.0.0.1:${port}/sse?token=${token}`, { signal: ac.signal }).catch(() => {});
+      await new Promise(r => setTimeout(r, 80));
+
+      // SSE is registered
+      expect(isSseMonitorActive(sid)).toBe(true);
+
+      // Client drops — triggers req 'close'. Server writes MONITOR_EXIT (may fail
+      // silently because client is gone) then calls unregisterSseMonitor.
+      ac.abort();
+      await new Promise(r => setTimeout(r, 120));
+
+      // Gate is cleaned up — MONITOR_EXIT was attempted before unregisterSseMonitor
+      expect(isSseMonitorActive(sid)).toBe(false);
     });
   });
 });

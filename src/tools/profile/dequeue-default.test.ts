@@ -55,7 +55,6 @@ vi.mock("../activity/file-state.js", () => ({
   releaseNotifyDebounce: vi.fn(),
   resetChannelCooldown: vi.fn(),
   notifyIfAllowed: vi.fn(),
-  consumeUnexpectedSubscriptionClose: vi.fn((_sid: number): boolean => false),
   isSseMonitorActive: vi.fn((_sid: number): boolean => false),
   isActivityFileActive: vi.fn((_sid: number): boolean => false),
 }));
@@ -65,10 +64,6 @@ vi.mock("../../service-messages.js", () => ({
     DUPLICATE_SESSION_DETECTED: {
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
-    },
-    SUBSCRIPTION_CLOSED_UNEXPECTEDLY: {
-      eventType: "subscription_closed_unexpectedly",
-      text: "Your monitor subscription closed unexpectedly — re-arm your monitor.",
     },
     BEHAVIOR_NUDGE_DEQUEUE_PATTERN: {
       eventType: "behavior_nudge_dequeue_pattern",
