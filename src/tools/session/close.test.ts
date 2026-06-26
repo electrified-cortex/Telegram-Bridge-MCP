@@ -572,21 +572,25 @@ describe("close_session tool", () => {
   });
 
   // =========================================================================
-  // Lazy poller lifecycle (task 055)
+  // Poller lifecycle — poller is NEVER stopped on session close (10-3031 fix)
+  //
+  // The poller runs unconditionally from server start. Stopping it on last-
+  // session-close caused /shutdown to silently no-op in the empty-roster state.
+  // The fix removed the stopPoller() call from session-teardown entirely.
   // =========================================================================
 
-  it("stops poller when last session closes", async () => {
+  it("does NOT stop poller when last session closes (poller must stay alive for /shutdown)", async () => {
     mocks.listSessions.mockReturnValue([]);
     mocks.activeSessionCount.mockReturnValue(0);
 
     await call({ token: 1123456 });
 
-    expect(mocks.stopPoller).toHaveBeenCalledOnce();
+    expect(mocks.stopPoller).not.toHaveBeenCalled();
   });
 
   it("does not stop poller when sessions remain after close", async () => {
     mocks.listSessions.mockReturnValue([{ sid: 2, name: "Worker", createdAt: "2026-03-22" }]);
-    mocks.activeSessionCount.mockReturnValue(1); // 1 remains after close — poller stays up
+    mocks.activeSessionCount.mockReturnValue(1);
 
     await call({ token: 1123456 });
 
@@ -698,15 +702,15 @@ describe("close_session tool", () => {
   });
 
   it("closes normally when it is the last session and force is true", async () => {
-    // force=true short-circuits the guard (no activeSessionCount call there).
-    // The only call is in session-teardown after close, where 0 triggers stopPoller.
+    // force=true short-circuits the LAST_SESSION guard.
+    // The poller is NOT stopped on session-teardown (10-3031 fix).
     mocks.activeSessionCount.mockReturnValueOnce(0);
 
     const result = parseResult(await call({ token: 1123456, force: true }));
 
     expect(result.closed).toBe(true);
     expect(mocks.closeSession).toHaveBeenCalledWith(1);
-    expect(mocks.stopPoller).toHaveBeenCalled();
+    expect(mocks.stopPoller).not.toHaveBeenCalled();
   });
 
   it("closes normally without force when sessions remain (non-last session)", async () => {

@@ -13,7 +13,6 @@ import {
   getActiveSession,
   setActiveSession,
   listSessions,
-  activeSessionCount,
   getSessionAnnouncementMessage,
 } from "./session-manager.js";
 import {
@@ -29,7 +28,6 @@ import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getGovernorSid, setGovernorSid } from "./routing-mode.js";
 import { replaceSessionCallbackHooks } from "./message-store.js";
 import { dlog } from "./debug-log.js";
-import { stopPoller } from "./poller.js";
 import { clearSessionReminders } from "./reminder-state.js";
 import { cancelAnimation } from "./animation-state.js";
 import { removeSession as removeBehaviorTrackerSession } from "./behavior-tracker.js";
@@ -265,7 +263,11 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
     }
   });
 
-  if (activeSessionCount() === 0) stopPoller();
+  // NOTE: The poller is intentionally NOT stopped here even when the session
+  // count reaches zero. Operator-facing built-in commands (e.g. /shutdown)
+  // must remain functional in an empty-roster state. The poller is started
+  // unconditionally at server boot (see index.ts) and is stopped only by the
+  // shutdown sequence itself (elegantShutdown / SIGTERM handler).
   return { closed: true, sid, name: sessionName };
 }
 

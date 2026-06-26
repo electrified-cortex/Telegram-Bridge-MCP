@@ -525,3 +525,43 @@ describe("session-teardown — 10-3028 cleanup on session close", () => {
     expect(mocks.removeDequeuePatternNudgeState).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC3-regression: poller must NOT be stopped when last session closes
+//
+// Root cause (10-3031): session-teardown.ts called stopPoller() when
+// activeSessionCount() reached 0. This killed the Telegram poll loop, making
+// /shutdown a silent no-op in the empty-roster state — the update was never
+// received. Fix: removed the stopPoller() call; the poller is lifecycle-owned
+// by index.ts (started unconditionally, stopped only by the shutdown sequence).
+// ---------------------------------------------------------------------------
+
+describe("session-teardown: poller is NOT stopped when last session closes (AC3-regression 10-3031)", () => {
+  const TEST_SID = 42;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.closeSession.mockReturnValue(true);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.activeSessionCount.mockReturnValue(0); // last session just closed
+    mocks.getActiveSession.mockReturnValue(0);
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.drainQueue.mockReturnValue([]);
+    mocks.getChildSids.mockReturnValue([]);
+    mocks.getSessionAnnouncementMessage.mockReturnValue(undefined);
+    mocks.readProfile.mockReturnValue(null);
+    mocks.sendServiceMessage.mockResolvedValue(undefined);
+    mocks.cancelAnimation.mockResolvedValue(undefined);
+    mocks.isSseMonitorActive.mockReturnValue(false);
+    mocks.getSession.mockReturnValue({ name: "LastSession", parent_sid: undefined });
+  });
+
+  it("does not call stopPoller when the last session closes (empty roster must keep poller alive for /shutdown)", () => {
+    closeSessionById(TEST_SID);
+
+    // stopPoller must NOT be called — the poller is the only path through which
+    // the operator can send /shutdown to an otherwise-idle bridge. Stopping it
+    // on last-session-close caused /shutdown to silently no-op (AC1 regression).
+    expect(mocks.stopPoller).not.toHaveBeenCalled();
+  });
+});
