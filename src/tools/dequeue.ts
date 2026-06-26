@@ -48,6 +48,28 @@ const _dequeueAttempts = new Map<number, number[]>();
 /** Per-session last-warn timestamp to rate-limit warning delivery. */
 const _lastRateWarnAt = new Map<number, number>();
 
+// ---------------------------------------------------------------------------
+// Dequeue-pattern behavioral nudge (10-3028)
+// ---------------------------------------------------------------------------
+
+/** Window (ms) after a `timed_out` response within which a re-poll is considered rapid. */
+const RAPID_REPOLL_WINDOW_MS = 5_000;
+
+/** Number of rapid re-polls (no messages, monitor active) before the nudge fires. */
+const REPOLL_THRESHOLD = 2;
+
+/** Per-session count of rapid dequeue re-polls after `timed_out` with no messages. */
+const _dequeueAfterTimeoutCount = new Map<number, number>();
+
+/** Per-session timestamp (ms) when the last `timed_out: true` was returned. */
+const _lastTimeoutAt = new Map<number, number>();
+
+/**
+ * Per-session flag indicating the nudge has already fired for this subscription
+ * lifetime. Cleared when the agent re-establishes a monitor subscription.
+ */
+const _nudgeFiredForSession = new Set<number>();
+
 /**
  * Count every dequeue attempt in a per-session 60-second sliding window.
  * When the count meets or exceeds RATE_THRESHOLD, deliver a rate-limited
@@ -82,6 +104,159 @@ export function removeDequeueRateState(sid: number): void {
 export function _resetDequeueRateForTest(): void {
   _dequeueAttempts.clear();
   _lastRateWarnAt.clear();
+}
+
+/** Remove per-session dequeue-pattern nudge state on session close. */
+export function removeDequeuePatternNudgeState(sid: number): void {
+  _dequeueAfterTimeoutCount.delete(sid);
+  _lastTimeoutAt.delete(sid);
+  _nudgeFiredForSession.delete(sid);
+}
+
+/**
+ * Re-arm the dequeue-pattern nudge for a session.
+ * Call when the agent re-establishes a monitor subscription (SSE connect or
+ * activity-file re-create) so the nudge can fire again if the pattern recurs.
+ */
+export function resetDequeuePatternNudgeForSession(sid: number): void {
+  _dequeueAfterTimeoutCount.delete(sid);
+  _lastTimeoutAt.delete(sid);
+  _nudgeFiredForSession.delete(sid);
+}
+
+/** Exported for test reset only — do not call in production code. */
+export function _resetDequeuePatternNudgeForTest(): void {
+  _dequeueAfterTimeoutCount.clear();
+  _lastTimeoutAt.clear();
+  _nudgeFiredForSession.clear();
+}
+
+/** Exported for test seeding only — do not call in production code. */
+export function _seedDequeuePatternNudgeForTest(sid: number): void {
+  _dequeueAfterTimeoutCount.set(sid, 1);
+  _lastTimeoutAt.set(sid, Date.now());
+  _nudgeFiredForSession.add(sid);
+}
+
+/** Exported for test inspection only — returns true if any per-session state exists for sid. */
+export function hasDequeuePatternNudgeStateForSession(sid: number): boolean {
+  return _dequeueAfterTimeoutCount.has(sid) || _lastTimeoutAt.has(sid) || _nudgeFiredForSession.has(sid);
+}
+
+/**
+ * Check if this dequeue call is a rapid re-poll after `timed_out: true`.
+ *
+ * Fires a `behavior_nudge_dequeue_pattern` service message when ALL hold:
+ *   1. The session returned `timed_out: true` within RAPID_REPOLL_WINDOW_MS
+ *   2. The session has an active monitor subscription (SSE or activity file)
+ *   3. The rapid-repoll count reaches REPOLL_THRESHOLD (grace for single misfire)
+ *   4. The nudge has not already fired for this subscription lifetime (AC5)
+ *
+ * "Messages delivered in the window" is handled organically: when a call returns
+ * a batch, the batch-return paths delete `_lastTimeoutAt` and reset the counter,
+ * so the nudge cannot fire on any call that follows a message-delivering call.
+ *
+ * No active monitor suppresses the nudge — polling without a subscription is valid.
+ *
+ * Never throws. Never alters dequeue semantics.
+ */
+function checkDequeuePatternNudge(sid: number, now: number): void {
+  if (sid <= 0) return;
+
+  const lastTimeout = _lastTimeoutAt.get(sid);
+
+  // No recent timed_out → clear stale counter and return
+  if (!lastTimeout || now - lastTimeout >= RAPID_REPOLL_WINDOW_MS) {
+    _dequeueAfterTimeoutCount.delete(sid);
+    return;
+  }
+
+  // No active monitor → polling without a subscription is valid; do not nudge
+  if (!isSseMonitorActive(sid) && !isActivityFileActive(sid)) {
+    return;
+  }
+
+  // Increment rapid re-poll count and check threshold
+  const count = (_dequeueAfterTimeoutCount.get(sid) ?? 0) + 1;
+  _dequeueAfterTimeoutCount.set(sid, count);
+
+  if (count < REPOLL_THRESHOLD) return; // grace: single misfire allowed
+
+  // Already warned for this subscription lifetime (AC5)
+  if (_nudgeFiredForSession.has(sid)) return;
+
+  // Threshold reached → warn once per subscription
+  _nudgeFiredForSession.add(sid);
+  _dequeueAfterTimeoutCount.set(sid, 0);
+  deliverServiceMessage(
+    sid,
+    SERVICE_MESSAGES.BEHAVIOR_NUDGE_DEQUEUE_PATTERN.text,
+    SERVICE_MESSAGES.BEHAVIOR_NUDGE_DEQUEUE_PATTERN.eventType,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Max-wait:0 drain-and-idle nudge
+// ---------------------------------------------------------------------------
+
+/** Per-session state for the max_wait:0-with-active-subscription nudge. */
+interface MaxWait0State {
+  /** Number of max_wait:0 calls since the subscription was last armed. */
+  count: number;
+  /** Whether the nudge has already fired this subscription lifetime (no spam). */
+  nudgeFired: boolean;
+}
+
+/** Per-session nudge tracking Map. */
+const _maxWait0State = new Map<number, MaxWait0State>();
+
+/**
+ * Reset the per-session max_wait:0 nudge state.
+ * Call this when a subscription is armed (activity/listen or activity/file/create)
+ * to give the agent a fresh grace window on each new subscription lifetime.
+ */
+export function resetMaxWait0NudgeState(sid: number): void {
+  _maxWait0State.delete(sid);
+}
+
+/** Remove per-session nudge state on session close (prevents unbounded Map growth). */
+export function removeMaxWait0State(sid: number): void {
+  _maxWait0State.delete(sid);
+}
+
+/** Exported for test reset only — do not call in production code. */
+export function _resetMaxWait0StateForTest(): void {
+  _maxWait0State.clear();
+}
+
+/**
+ * Detect the drain-and-idle anti-pattern: dequeue(max_wait: 0) called while
+ * an activity subscription (SSE or file-watch) is active.
+ *
+ * - 1st call per subscription lifetime: increment counter, no nudge (startup drain grace).
+ * - 2nd+ call, nudge not yet fired: inject behavior_nudge and mark as fired.
+ * - Nudge already fired: no-op (no spam).
+ * - No active subscription: no-op (instant polls are valid without a subscription).
+ *
+ * Never throws. Never alters dequeue semantics or latency.
+ */
+function checkMaxWait0Nudge(sid: number): void {
+  if (sid <= 0) return;
+  if (!isSseMonitorActive(sid) && !isActivityFileActive(sid)) return;
+
+  const existing = _maxWait0State.get(sid) ?? { count: 0, nudgeFired: false };
+  const state: MaxWait0State = { count: existing.count + 1, nudgeFired: existing.nudgeFired };
+  _maxWait0State.set(sid, state);
+
+  if (state.count <= 1) return; // First call — startup drain grace
+  if (state.nudgeFired) return; // Already nudged this subscription lifetime
+
+  state.nudgeFired = true;
+  deliverServiceMessage(
+    sid,
+    SERVICE_MESSAGES.BEHAVIOR_NUDGE_MAX_WAIT_ZERO_WITH_SUBSCRIPTION.text,
+    SERVICE_MESSAGES.BEHAVIOR_NUDGE_MAX_WAIT_ZERO_WITH_SUBSCRIPTION.eventType,
+  );
 }
 
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
@@ -310,6 +485,19 @@ export async function runDrainLoop(
     return result;
   }
 
+  // Check dequeue-pattern behavioral nudge (10-3028): fires when the session
+  // rapid-polls after timed_out with a live monitor subscription. The "messages
+  // delivered in window" suppress case is handled organically — when a call
+  // returns a batch, the batch-return paths delete _lastTimeoutAt so the next
+  // call cannot be in a rapid-repoll window.
+  checkDequeuePatternNudge(sid, Date.now());
+
+  // Drain-and-idle nudge: when max_wait:0 is called with an active subscription,
+  // inject a behavior_nudge after the first grace call (AC1–AC4 of 10-3030).
+  if (timeout === 0) {
+    checkMaxWait0Nudge(sid);
+  }
+
   // Promote deferred reminders whose delay has elapsed before any early return.
   // Without this, a busy session (always has immediate messages) or an agent
   // using max_wait:0 exclusively would never call promoteDeferred, leaving a
@@ -325,6 +513,9 @@ export async function runDrainLoop(
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
+    _lastTimeoutAt.delete(sid);        // messages delivered — reset rapid-repoll window
+    _dequeueAfterTimeoutCount.delete(sid);
+    _maxWait0State.delete(sid);        // drain counter resets — not an idle poll anymore
     releaseNotifyDebounce(sid, true); // content-returning exit
     resetChannelCooldown(sid);
     return result;
@@ -400,6 +591,9 @@ export async function runDrainLoop(
           resyncActiveSession();
           dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
           _debounceRelease = true;
+          _lastTimeoutAt.delete(sid);        // messages delivered — reset rapid-repoll window
+          _dequeueAfterTimeoutCount.delete(sid);
+          _maxWait0State.delete(sid);        // drain counter resets — not an idle poll anymore
           return result;
         }
       }
@@ -421,6 +615,9 @@ export async function runDrainLoop(
         resyncActiveSession();
         dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
         _debounceRelease = true;
+        _lastTimeoutAt.delete(sid);        // messages delivered — reset rapid-repoll window
+        _dequeueAfterTimeoutCount.delete(sid);
+        _maxWait0State.delete(sid);        // drain counter resets — not an idle poll anymore
         return result;
       }
     }
@@ -428,6 +625,7 @@ export async function runDrainLoop(
     resyncActiveSession();
     const pending = pendingCountAny();
     _debounceRelease = true;  // Release debounce on timeout exits too
+    _lastTimeoutAt.set(sid, Date.now());   // record for rapid-repoll detection (10-3028)
     flushPendingChannelNotify(sid);
     return { timed_out: true, ...(pending > 0 ? { pending } : {}) };
   } finally {

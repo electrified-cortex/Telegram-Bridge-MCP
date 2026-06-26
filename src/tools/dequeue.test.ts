@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createMockServer, parseResult, isError, errorCode } from "./test-utils.js";
 import type { TimelineEvent } from "../message-store.js";
 
@@ -121,6 +121,14 @@ vi.mock("../service-messages.js", () => ({
       eventType: "duplicate_session_detected",
       text: (sid: number, name: string) => `Duplicate session detected: SID ${sid} Name ${name}`,
     },
+    BEHAVIOR_NUDGE_DEQUEUE_PATTERN: {
+      eventType: "behavior_nudge_dequeue_pattern",
+      text: "DEQUEUE PATTERN: re-poll detected.",
+    },
+    BEHAVIOR_NUDGE_MAX_WAIT_ZERO_WITH_SUBSCRIPTION: {
+      eventType: "behavior_nudge_max_wait_zero_with_subscription",
+      text: "⚠️ drain-and-idle anti-pattern nudge",
+    },
   },
 }));
 
@@ -163,7 +171,7 @@ vi.mock("../reminder-state.js", () => ({
 
 
 
-import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest, _resetDequeueRateForTest } from "./dequeue.js";
+import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest, _resetDequeueRateForTest, _resetDequeuePatternNudgeForTest, resetDequeuePatternNudgeForSession, _resetMaxWait0StateForTest } from "./dequeue.js";
 
 function makeEvent(id: number, text: string, event = "message" as string): TimelineEvent {
   return {
@@ -1710,3 +1718,454 @@ describe("checkDequeueRate (runaway-dequeue rate guard)", () => {
   });
 });
 
+// =============================================================================
+// Dequeue-pattern behavioral nudge (10-3028)
+// =============================================================================
+describe("dequeue-pattern behavioral nudge (10-3028)", () => {
+  // Shared setup: fresh server + handler per test
+  let call: (args: Record<string, unknown>, extra?: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    _resetDequeuePatternNudgeForTest();
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.getDequeueDefault.mockReturnValue(300);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    // Default: no monitor active
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(false);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    // waitForEnqueue blocks via fake-timer setTimeout so the loop actually waits
+    mocks.waitForEnqueue.mockImplementation(
+      () => new Promise<void>((r) => setTimeout(r, 100)),
+    );
+    mocks.dequeueBatch.mockReturnValue([]);
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("dequeue");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Helper: runs a dequeue call with timeout:1 and advances fake timers past it
+  async function dequeueTimedOut(token = 1_123_456): Promise<unknown> {
+    const p = call({ timeout: 1, token });
+    await vi.advanceTimersByTimeAsync(1200); // advance 1.2s past the 1s timeout
+    return p;
+  }
+
+  it("AC1: nudge fires on 2nd rapid re-poll after timed_out with SSE active", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    // First call → timed_out
+    const r1 = await dequeueTimedOut();
+    expect(parseResult(r1).timed_out).toBe(true);
+
+    // Advance 1s (still within 5s rapid window)
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // First rapid re-poll (count=1 — grace, no nudge yet)
+    const r2 = await dequeueTimedOut();
+    expect(parseResult(r2).timed_out).toBe(true);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+
+    // Advance 1s (still within 5s window from the LAST timed_out)
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // Second rapid re-poll (count=2 → nudge fires)
+    const r3 = await dequeueTimedOut();
+    expect(parseResult(r3).timed_out).toBe(true);
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+  });
+
+  it("AC1 (activity file): nudge fires with activity file monitor active (not SSE)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(true);
+
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+  });
+
+  it("AC2: no nudge on only 1 rapid re-poll (single-misfire grace)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    // First call → timed_out
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+
+    // Only 1 rapid re-poll — must NOT nudge
+    await dequeueTimedOut();
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+  });
+
+  it("AC3: no nudge when no active monitor subscription", async () => {
+    // Both monitors inactive → polling is valid; no nudge even after 3 calls
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(false);
+
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+  });
+
+  it("AC4: no nudge when messages are delivered in the rapid-poll window", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    // First call → timed_out
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+
+    // A message arrives — dequeueBatch returns it on the next call
+    const evt = makeEvent(99, "arrived message");
+    mocks.dequeueBatch.mockReturnValueOnce([evt]);
+
+    // Call returns a batch (message delivered) — count never reaches threshold;
+    // batch-return paths clear _lastTimeoutAt + counter, so window resets
+    const p = call({ timeout: 1, token: 1_123_456 });
+    await vi.advanceTimersByTimeAsync(100);
+    const rBatch = await p;
+    expect(parseResult<{ updates: unknown[] }>(rBatch).updates).toHaveLength(1);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+
+    // Even after the batch is returned, next rapid re-poll window should be reset
+    // (messages were delivered → no more rapid-repoll state)
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    // Only 1 rapid re-poll in the new window (no prior timed_out), still no nudge
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+  });
+
+  it("AC5: nudge fires at most once per subscription lifetime", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    // Trigger the nudge
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+
+    const firstNudgeCount = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_nudge_dequeue_pattern",
+    ).length;
+    expect(firstNudgeCount).toBe(1);
+
+    // Continue rapid-polling — nudge must NOT fire again
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+
+    const afterMorePolls = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_nudge_dequeue_pattern",
+    ).length;
+    expect(afterMorePolls).toBe(1); // still exactly 1
+  });
+
+  it("AC5: nudge re-arms after resetDequeuePatternNudgeForSession (subscription re-established)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    // Trigger the nudge once
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+    mocks.deliverServiceMessage.mockClear();
+
+    // Simulate subscription re-establishment (SSE reconnect)
+    resetDequeuePatternNudgeForSession(1);
+
+    // Now the nudge should fire again after 2 more rapid re-polls
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    await dequeueTimedOut();
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+  });
+
+  it("rapid re-poll window expires — no nudge after 5s gap", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    // First call → timed_out
+    await dequeueTimedOut();
+
+    // Let more than 5s pass (window expires)
+    await vi.advanceTimersByTimeAsync(6000);
+
+    // Now two rapid re-polls — but the window from the FIRST timed_out is gone
+    // (the second timed_out was within the new call's timeout=1 → new window starts)
+    await dequeueTimedOut();
+    await vi.advanceTimersByTimeAsync(500);
+    // Only 1 re-poll in this new window → no nudge yet (grace)
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_dequeue_pattern",
+    );
+  });
+});
+
+// =============================================================================
+// checkMaxWait0Nudge — drain-and-idle anti-pattern detection (10-3030)
+// =============================================================================
+describe("checkMaxWait0Nudge (drain-and-idle anti-pattern nudge)", () => {
+  const SID = 42;
+  const TOKEN = SID * 1_000_000 + 123_456;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetMaxWait0StateForTest();
+    _resetDequeueRateForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    mocks.validateSession.mockReturnValue(true);
+    reminderMocks.getActiveReminders.mockReturnValue([]);
+    reminderMocks.popActiveReminders.mockReturnValue([]);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.popFireableEventReminders.mockReturnValue([]);
+    reminderMocks.getSoonestEventReminderMs.mockReturnValue(null);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.waitForEnqueue.mockResolvedValue(undefined);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    // Default: no active subscription
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(false);
+  });
+
+  // AC1: Session with SSE active, 2nd max_wait:0 call → nudge injected
+  it("AC1: injects nudge on 2nd max_wait:0 call when SSE subscription is active", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 1st call — grace (no nudge)
+    await call({ timeout: 0, token: TOKEN });
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+
+    // 2nd call — nudge fires
+    await call({ timeout: 0, token: TOKEN });
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("drain-and-idle"),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // AC2: 1st max_wait:0 after session start → NO nudge (grace period)
+  it("AC2: does not inject nudge on 1st max_wait:0 call (startup drain grace)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Only one call
+    await call({ timeout: 0, token: TOKEN });
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // AC3: Session WITHOUT active subscription, max_wait:0 → NO nudge
+  it("AC3: does not inject nudge when no subscription is active", async () => {
+    // Both isSseMonitorActive and isActivityFileActive return false (default)
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 3 calls — would trigger nudge if subscription were active
+    for (let i = 0; i < 3; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // AC4 (via AC1): nudge fires at most once per subscription lifetime
+  it("AC4: nudge fires exactly once even on subsequent max_wait:0 calls", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // 5 calls — nudge should fire exactly once (on the 2nd)
+    for (let i = 0; i < 5; i++) {
+      await call({ timeout: 0, token: TOKEN });
+    }
+
+    const nudgeCalls = mocks.deliverServiceMessage.mock.calls.filter(
+      (c: unknown[]) => c[2] === "behavior_nudge_max_wait_zero_with_subscription",
+    );
+    expect(nudgeCalls).toHaveLength(1);
+  });
+
+  // file-watch path: nudge fires for active file-watch subscription (not just SSE)
+  it("also nudges when activity file subscription is active (not SSE)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    await call({ timeout: 0, token: TOKEN }); // grace
+    await call({ timeout: 0, token: TOKEN }); // nudge
+
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // AC-grace-B: max_wait:0 calls that deliver messages reset the drain counter —
+  // nudge does NOT fire while the agent is actively draining a backlog (SSE).
+  it("AC-grace-B: counter resets when batch returned — no nudge during active drain (SSE)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    const makeEvts = (n: number) => Array.from({ length: n }, (_, i) => makeEvent(i + 1, `msg${i}`));
+
+    // Call 1: max_wait:0, returns 3 messages → counter resets (was count=1 before return)
+    mocks.dequeueBatch.mockReturnValueOnce(makeEvts(3));
+    await call({ timeout: 0, token: TOKEN });
+
+    // Call 2: max_wait:0, returns 2 messages → counter resets again
+    mocks.dequeueBatch.mockReturnValueOnce(makeEvts(2));
+    await call({ timeout: 0, token: TOKEN });
+
+    // Call 3: max_wait:0, no messages → count=1 (fresh after each reset)
+    await call({ timeout: 0, token: TOKEN });
+
+    // No nudge — each message-returning call reset the counter, so count never reached 2
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // AC-grace-C: same counter-reset behaviour with activity file subscription
+  it("AC-grace-C: counter resets when batch returned — no nudge during active drain (file-watch)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    const makeEvts = (n: number) => Array.from({ length: n }, (_, i) => makeEvent(i + 10, `msg${i}`));
+
+    // Deliver messages twice, then empty — still no nudge
+    mocks.dequeueBatch.mockReturnValueOnce(makeEvts(2));
+    await call({ timeout: 0, token: TOKEN }); // resets counter
+
+    mocks.dequeueBatch.mockReturnValueOnce(makeEvts(1));
+    await call({ timeout: 0, token: TOKEN }); // resets counter
+
+    await call({ timeout: 0, token: TOKEN }); // count=1 — grace, no nudge
+
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+
+  // True-positive: 2 consecutive empty max_wait:0 calls (no messages) → nudge fires
+  it("true-positive: nudge fires on 2nd empty max_wait:0 call (no messages)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+
+    const server = createMockServer();
+    register(server);
+    const call = server.getHandler("dequeue");
+
+    // Both calls return empty (default dequeueBatch mock returns [])
+    await call({ timeout: 0, token: TOKEN }); // count=1 — grace
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      SID,
+      expect.anything(),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+
+    await call({ timeout: 0, token: TOKEN }); // count=2 — nudge fires
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      SID,
+      expect.stringContaining("drain-and-idle"),
+      "behavior_nudge_max_wait_zero_with_subscription",
+    );
+  });
+});

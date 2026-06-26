@@ -63,3 +63,35 @@ When a session with an **active activity subscription** (SSE or file-watch) call
 ## Companion cleanup
 
 Once this is implemented, the standing memory fix (2026-06-22) in `feedback_never_explicit_max_wait.md` remains as the agent-side guard. Bridge-side + memory-side = belt and suspenders.
+
+---
+
+## Overseer review
+
+- **Reviewer:** Overseer (SID 2)
+- **Date:** 2026-06-25
+- **Verdict:** PASS — **RESTORE APPROVED by operator 2026-06-25** (cleared for foreman as the 3rd sequential task).
+- **Review type:** Adversarial spec gate + git-history check + operator decision
+- **History:** Implemented on release/7.15.0 as commit `b6d2f52a`, then reverted by `6332e11a` (10-3033, "surgically remove max_wait:0 drain-and-idle nudge"). Revert reason was **UNDOCUMENTED** (no 10-3033 task file). Operator's call: the revert was a mistake; the nudge belongs in the product. Verified the revert was CLEAN — only the nudge was removed (8 files plumbing + logic + ~145 test lines); no collateral; the unrelated 10-3031 start.test.ts change was preserved.
+- **Restore approach (BINDING):**
+  1. Re-apply `b6d2f52a` (revert-the-revert / cherry-pick) onto dev as the starting point — full implementation + tests are recoverable there.
+  2. **HARDEN the grace rules** so the nudge NEVER false-fires on LEGITIMATE max_wait:0 usage (most-likely original revert cause):
+     - startup drain (first call after session/start) — already exempt; keep.
+     - post-kick BACKLOG DRAIN: after a Monitor/SSE kick, an agent legitimately calls dequeue(max_wait:0) repeatedly until pending=0. MUST NOT nudge while a drain is actively returning messages. (Verify the spec's "messages delivered in window" grace fully covers a multi-call drain.)
+     - file-watch fallback loop ("on each kick → dequeue(max_wait:0) until pending=0") — MUST NOT nudge.
+  3. Add explicit tests proving NO false-fire on each legitimate case above, PLUS the true-positive (idle busy-poll with active subscription → nudge once).
+- **Not checked:** implementation correctness — post-impl PR gate (Overseer adversarial review before any push).
+- **Delegation:** worker implements → foreman verifies ACs (operator directive 2026-06-25).
+
+---
+
+## Verification
+
+- **Verifier:** Foreman (adversarial review — Overseer gate)
+- **Date:** 2026-06-26
+- **Verdict:** APPROVED
+- **Overseer review:** PASS (2026-06-26, re-gate after grace-B defect fix)
+- **Tests:** 3926/3926 pass, lint clean
+- **Commits:** `982564dd` (cherry-pick b6d2f52a + conflict resolution), `4f27a9fe` (grace-B/C fix + tests)
+- **Squash on dev:** `2c34349`
+- **Notes:** Cherry-pick b6d2f52a applied cleanly with 10-3028 conflict resolved. Grace hardening: _maxWait0State.delete(sid) on all batch-return paths prevents false-fire on post-kick drains. AC-grace-B, AC-grace-C, and true-positive tests added. resetMaxWait0NudgeState re-arms on activity subscription re-establish.

@@ -21,6 +21,8 @@ import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
 import { getSseBaseUrl } from "../../http-mode.js";
 import { scheduleArmReminder } from "../../sse-endpoint.js";
+import { resetMaxWait0NudgeState } from "../dequeue.js";
+
 export function handleActivityListen(args: Record<string, unknown>) {
   const sid = requireAuth(args.token as number | undefined);
   if (typeof sid !== "number") return toError(sid);
@@ -40,6 +42,9 @@ export function handleActivityListen(args: Record<string, unknown>) {
   // then arm:
   //   Monitor tool, persistent: true, command: bash <saved-path> '<sse_url>'
   const command = `bash sse-monitor.sh '${sseUrl}'`;
+
+  // Reset per-session max_wait:0 nudge state — fresh grace window for the new subscription.
+  resetMaxWait0NudgeState(sid);
 
   // Arm the one-shot reminder — cancelled if the SSE connection opens in time.
   scheduleArmReminder(sid, command);

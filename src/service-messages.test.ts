@@ -314,8 +314,11 @@ describe("SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN", () => {
     expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("activity/file/create");
   });
 
-  it("contains dequeue(max_wait: 0) for Monitor-driven drain", () => {
-    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("max_wait: 0");
+  it("Monitor-driven drain uses blocking dequeue() — no max_wait:0 footgun", () => {
+    // File-watch/Monitor path must NOT prescribe max_wait:0 (the drain-and-idle footgun);
+    // it uses the same blocking loop as SSE: dequeue() → loop until timed_out: true.
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).not.toContain("max_wait: 0");
+    expect(SERVICE_MESSAGES.ONBOARDING_LOOP_PATTERN.text).toContain("timed_out: true");
   });
 
   it("contains non-Monitor runtime fallback path", () => {
