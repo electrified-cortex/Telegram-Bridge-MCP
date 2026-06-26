@@ -37,7 +37,7 @@ import { removeSilenceState } from "./silence-detector.js";
 import { clearActivityFile, isSseMonitorActive } from "./tools/activity/file-state.js";
 import { cancelSseConnection } from "./sse-endpoint.js";
 import { unregisterChannelSubscriber } from "./channel.js";
-import { removeDequeueRateState } from "./tools/dequeue.js";
+import { removeDequeueRateState, removeMaxWait0State, removeDequeuePatternNudgeState } from "./tools/dequeue.js";
 import { getChildSids, unregisterChild } from "./tools/session/child-registry.js";
 import { cleanupSessionQuestionPins } from "./question-pin-state.js";
 
@@ -116,6 +116,8 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   unregisterChannelSubscriber(sid);
   revokeAllForSession(sid);
   removeDequeueRateState(sid);
+  removeMaxWait0State(sid);
+  removeDequeuePatternNudgeState(sid);
   if (getActiveSession() === sid) setActiveSession(0);
 
   const wasGovernor = sid === getGovernorSid();

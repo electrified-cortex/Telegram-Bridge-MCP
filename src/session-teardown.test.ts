@@ -67,6 +67,9 @@ const mocks = vi.hoisted(() => ({
 
   // tools/activity/file-state.js (additional)
   isSseMonitorActive: vi.fn().mockReturnValue(false),
+
+  // tools/dequeue.js (additional — 10-3028)
+  removeDequeuePatternNudgeState: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -142,7 +145,11 @@ vi.mock("./sse-endpoint.js", () => ({
   cancelSseConnection: (...args: unknown[]) => mocks.cancelSseConnection(...args),
 }));
 vi.mock("./channel.js", () => ({ unregisterChannelSubscriber: vi.fn() }));
-vi.mock("./tools/dequeue.js", () => ({ removeDequeueRateState: vi.fn() }));
+vi.mock("./tools/dequeue.js", () => ({
+  removeDequeueRateState: vi.fn(),
+  removeMaxWait0State: vi.fn(),
+  removeDequeuePatternNudgeState: (...args: unknown[]) => mocks.removeDequeuePatternNudgeState(...args),
+}));
 vi.mock("./tools/session/child-registry.js", () => ({
   getChildSids: (...args: unknown[]) => mocks.getChildSids(...args),
   unregisterChild: (...args: unknown[]) => mocks.unregisterChild(...args),
@@ -471,5 +478,50 @@ describe("session-teardown: SSE cancel on session close (10-3026)", () => {
     closeSessionById(99);
 
     expect(mocks.isSseMonitorActive).toHaveBeenCalledWith(99);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10-3028: dequeue-pattern nudge state cleared on session close
+// ---------------------------------------------------------------------------
+
+describe("session-teardown — 10-3028 cleanup on session close", () => {
+  const TEST_SID = 55;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.closeSession.mockReturnValue(true);
+    mocks.listSessions.mockReturnValue([]);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.getActiveSession.mockReturnValue(0);
+    mocks.getGovernorSid.mockReturnValue(0);
+    mocks.drainQueue.mockReturnValue([]);
+    mocks.getChildSids.mockReturnValue([]);
+    mocks.getSessionAnnouncementMessage.mockReturnValue(undefined);
+    mocks.readProfile.mockReturnValue(null);
+    mocks.sendServiceMessage.mockResolvedValue(undefined);
+    mocks.cancelAnimation.mockResolvedValue(undefined);
+    mocks.isSseMonitorActive.mockReturnValue(false);
+    mocks.getSession.mockReturnValue({ name: "TestBot", parent_sid: undefined });
+  });
+
+  it("calls removeDequeuePatternNudgeState with the correct sid on session teardown", () => {
+    closeSessionById(TEST_SID);
+
+    expect(mocks.removeDequeuePatternNudgeState).toHaveBeenCalledWith(TEST_SID);
+  });
+
+  it("calls removeDequeuePatternNudgeState exactly once per closeSessionById call", () => {
+    closeSessionById(TEST_SID);
+
+    expect(mocks.removeDequeuePatternNudgeState).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call removeDequeuePatternNudgeState when session does not exist (closeSession returns false)", () => {
+    mocks.closeSession.mockReturnValue(false);
+
+    closeSessionById(TEST_SID);
+
+    expect(mocks.removeDequeuePatternNudgeState).not.toHaveBeenCalled();
   });
 });

@@ -354,6 +354,11 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: `You've sent 10+ questions without buttons. Use action(type: "confirm/ok-cancel", ...), action(type: "confirm/yn", ...), or send(type: "question", choose: [...]) for any predictable-answer question.`,
   },
 
+  BEHAVIOR_NUDGE_MAX_WAIT_ZERO_WITH_SUBSCRIPTION: {
+    eventType: "behavior_nudge_max_wait_zero_with_subscription" as const,
+    text: "⚠️ You called dequeue(max_wait: 0) while an activity subscription is active. This is the drain-and-idle anti-pattern: it bypasses the blocking loop and prevents idle detection. Correct pattern: call dequeue() with no max_wait → handle updates → repeat until timed_out: true. Your subscription wakes you for the next cycle — instant polls are not needed.",
+  },
+
   // ── Modality hints ────────────────────────────────────────────────────────
 
   NUDGE_VOICE_MODALITY: {
@@ -537,6 +542,22 @@ export const SERVICE_MESSAGES = deepFreeze({
   ABS_PATH_SAFETY_OVERRIDE: {
     eventType: "abs_path_safety_override" as const,
     text: "⚠️ Safety override: an absolute filesystem path was detected in an outbound message but the block was bypassed via `safety: \"disable\"`. Review the message for unintended path disclosure.",
+  },
+
+  // ── Dequeue pattern behavioral nudge ─────────────────────────────────────
+
+  /**
+   * Fired when an agent with an active monitor subscription (SSE or file) calls
+   * dequeue() immediately after receiving `timed_out: true` without waiting for
+   * a monitor event. Warns once per subscription lifetime; re-armed on reconnect.
+   */
+  BEHAVIOR_NUDGE_DEQUEUE_PATTERN: {
+    eventType: "behavior_nudge_dequeue_pattern" as const,
+    text: "DEQUEUE PATTERN: You are re-polling immediately after `timed_out: true` while " +
+      "your monitor subscription is active. " +
+      "Do NOT loop on timed_out — wait for the monitor event (SSE `notify` or activity-file kick), " +
+      "THEN call dequeue(). Polling here burns tokens without purpose. " +
+      "help('dequeue') for the correct loop pattern.",
   },
 
   // ── Subscription loss notification ────────────────────────────────────────
