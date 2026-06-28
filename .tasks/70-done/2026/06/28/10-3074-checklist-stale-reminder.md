@@ -69,7 +69,7 @@ send(type: "checklist", title: "...", steps: [...], stale_after: 7200)
 
 ## Verification
 
-- verifier: task-verification agent (ad9d9ba32197d1d9e)
+- verifier: task-verification agent
 - date: 2026-06-28
 - verdict: APPROVED
 - squash_commit: 7963f237

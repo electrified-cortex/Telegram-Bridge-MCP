@@ -84,7 +84,7 @@ After landing, manually send a `type: "text"` message containing `List<T>` and v
 
 ## Verification
 
-- verifier: task-verification agent (ad9d9ba32197d1d9e) — covered via bundled 10-3074 review + foreman AC check
+- verifier: task-verification agent — covered via bundled 10-3074 review + foreman AC check
 - date: 2026-06-28
 - verdict: APPROVED
 - squash_commit: 7963f237
