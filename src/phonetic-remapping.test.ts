@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { applyPhoneticRemapping } from "./phonetic-remapping.js";
+import { dlog } from "./debug-log.js";
 
 // ---------------------------------------------------------------------------
 // Mock dlog so tests don't need debug mode enabled and produce no stderr output
@@ -13,6 +14,10 @@ vi.mock("./debug-log.js", () => ({
 // ---------------------------------------------------------------------------
 
 describe("applyPhoneticRemapping", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   // ── No-op cases ─────────────────────────────────────────────────────────
 
   it("returns input unchanged when map is undefined", () => {
@@ -32,6 +37,26 @@ describe("applyPhoneticRemapping", () => {
   it("replaces a matching key with its replacement", () => {
     expect(
       applyPhoneticRemapping("Say hello to Zhu-Li", { "Zhu-Li": "Joo-Lee" }),
+    ).toBe("Say hello to Joo-Lee");
+  });
+
+  it("logs each substitution at debug level (AC5)", () => {
+    applyPhoneticRemapping("Say hello to Zhu-Li", { "Zhu-Li": "Joo-Lee" });
+    expect(vi.mocked(dlog)).toHaveBeenCalledWith(
+      "phonetic-remapping",
+      "'Zhu-Li' → 'Joo-Lee'",
+    );
+  });
+
+  it("returns input unchanged when map has only empty-string keys", () => {
+    expect(
+      applyPhoneticRemapping("hello world", { "": "should-not-match" }),
+    ).toBe("hello world");
+  });
+
+  it("skips empty-string keys but applies valid keys in same map", () => {
+    expect(
+      applyPhoneticRemapping("Say hello to Zhu-Li", { "": "boom", "Zhu-Li": "Joo-Lee" }),
     ).toBe("Say hello to Joo-Lee");
   });
 

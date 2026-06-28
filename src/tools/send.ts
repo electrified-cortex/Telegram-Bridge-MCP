@@ -493,7 +493,7 @@ export function register(server: McpServer) {
               if (chunkErr) return toError(chunkErr);
             }
             // Initial typing budget: generous estimate; extended per-chunk below.
-            const typingSeconds = Math.max(5, Math.ceil(plainText.length / 20));
+            const typingSeconds = Math.max(5, Math.ceil(ttsText.length / 20));
             // RECORD_VOICE_EXTEND_SECS: how far ahead to push the deadline before
             // each synthesis+upload so the indicator never drops mid-operation.
             const RECORD_VOICE_EXTEND_SECS = 30;

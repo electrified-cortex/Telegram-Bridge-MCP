@@ -34,12 +34,19 @@ export function applyPhoneticRemapping(
   text: string,
   map: Record<string, string> | undefined,
 ): string {
-  if (!map || Object.keys(map).length === 0) return text;
+  if (!map) return text;
 
+  // Filter out empty-string keys before building the regex — an empty-string
+  // key produces new RegExp("", "gi") which matches every position and explodes
+  // the output.  Callers should never pass empty keys, but we guard defensively.
   // Sort descending by key length so that longer alternatives appear first in
   // the regex alternation.  JavaScript regex engines pick the first alternative
   // that matches at a given position, so longer keys always beat shorter ones.
-  const entries = Object.entries(map).sort(([a], [b]) => b.length - a.length);
+  const entries = Object.entries(map)
+    .filter(([k]) => k.length > 0)
+    .sort(([a], [b]) => b.length - a.length);
+
+  if (entries.length === 0) return text;
 
   // Build a single alternation regex from all keys (each escaped for literals).
   // A single-pass replacement means no key ever matches inside a replacement
