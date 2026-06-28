@@ -100,3 +100,11 @@ place to correct if Telegram changes the constants.
 
 - grammY 1.43 `sendMessage` options include `message_effect_id` (Bot API 7.4).
 - Lowest-stakes item in the audit triage — treat as a small polish PR.
+
+## Overseer review
+
+- reviewer: Overseer
+- date: 2026-06-28
+- verdict: PASS
+- review type: inline gate (polish feature, low risk)
+- checked: ACs binary (effect plays in private chat, all 6 presets verified live, stale-id fallback, last-chunk-only, plain-path forced when rich enabled, build+test clean, PR staged not merged), scope = send.ts text path + new constants module, delegation correct, no open questions; effect ID verification is worker responsibility during impl

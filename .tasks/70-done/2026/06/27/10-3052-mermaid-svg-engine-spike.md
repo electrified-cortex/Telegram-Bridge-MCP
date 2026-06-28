@@ -136,3 +136,15 @@ Package: zero-DOM, from-scratch SVG renderer, uses ELK.js for layout.
 **This unblocks 10-3053** (companion render pass).
 
 Spike artifacts: `.scratch/spike-beautiful.mjs`, `.scratch/beautiful-flowchart.svg`, `.scratch/beautiful-sequence.svg`
+
+## Verification
+
+- Verifier: Dispatch sub-agent (a43cc068594a3e592)
+- Date: 2026-06-27
+- Verdict: **APPROVED**
+- All 4 acceptance criteria confirmed:
+  1. Both libs evaluated; SVG outputs verified on disk (flowchart + sequence)
+  2. Pure-JS/in-process constraint honored — no Chromium, no container
+  3. Clear decision: `beautiful-mermaid @ 1.1.3` with known limits documented
+  4. Throwaway script (`spike-beautiful.mjs`) proves `mermaid → .svg` locally
+- Git diff: task files only — no product code changed

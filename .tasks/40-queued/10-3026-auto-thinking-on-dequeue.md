@@ -198,3 +198,12 @@ a bot can. Captured here as a **related future item**, not built in this story.
 
 - Reuses `showTyping`/presence infra and the async/draft machinery; the 30s cap is
   free (native). The win is large (universal dead-air fix) for a small surface.
+
+## Overseer review
+
+- reviewer: Overseer
+- date: 2026-06-28
+- verdict: PASS
+- review type: inline gate (Stage 1 independently shippable)
+- checked: ACs binary (auto-Thinking on actionable dequeue, NOT on empty/timeout/service, 30s natural expiry, floor-not-cap refresh semantics, supersession taxonomy, agent extension contract, help topic deliverable, build+test), Stage 1 has no rich-pivot dependency — ships now; Stage 2 rides 10-3018
+- note: two spikes (draft early-dismissal, precedence integration) are worker-resolvable during impl — not blocking open questions

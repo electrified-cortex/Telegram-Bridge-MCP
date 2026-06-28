@@ -126,3 +126,12 @@ attachments array).
 - Business-account-only features (checklists — 20-0013, blocked).
 - SVG/vector rendering — not supported by rich messages (rasterize to PNG).
 - Embedding local images in rich messages — URL-only media; stays legacy (above).
+
+## Overseer review
+
+- reviewer: Overseer
+- date: 2026-06-28
+- verdict: PASS
+- review type: inline gate (major story, all spikes resolved)
+- checked: ACs binary (P1–P5 each independently testable; degrade-to-plain floor exercised by forced-error test; TABLE_WARNING off for rich; captions stay legacy; build+test clean), scope clear per phase, unblocked (10-3017 confirmed done 2026-06-27 all spikes A–G passed), delegation correct
+- note: worker should implement phases independently (P1 first) and open separate PRs per phase for review; 10-3026 (auto-Thinking) depends on this for Stage 2 but Stage 1 is independent

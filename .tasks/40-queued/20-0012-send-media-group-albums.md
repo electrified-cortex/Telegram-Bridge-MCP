@@ -94,3 +94,11 @@ http:// guards).
 
 - grammY 1.43 exposes `sendMediaGroup` and the `InputMedia*` types.
 - CDN-persistence warning (from `send_file`) applies and should be surfaced.
+
+## Overseer review
+
+- reviewer: Overseer
+- date: 2026-06-28
+- verdict: PASS
+- review type: inline gate (clear feature, well-specced)
+- checked: ACs binary (album delivery, count guards, type-homogeneity error, per-item SAFE_FILE_DIR guard, caption guard, build+test clean, PR staged not merged), scope bounded to one new handler + send.ts routing, delegation correct, no open questions

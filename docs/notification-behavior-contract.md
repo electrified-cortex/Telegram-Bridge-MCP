@@ -1,235 +1,199 @@
 # TMCP Notification Behavior Contract
 
-**Status:** Draft v0.2.0 — post-swarm-review revision
-**Version:** 0.2.0
-**Created:** 2026-06-20
-**Swarm review:** 2026-06-20 (2 independent adversarial agents)
-**Task:** 10-3020a
-**Blocks:** 10-3021, 10-3022, 10-3023, 10-3024, 10-3025, 15-0004
-**Operator voices:** 76211, 76216, 76218, 76223, 76226, 76227, 76229
+**Status:** v1.0 — descriptive (reverse-engineered from implementation)
+**Derived from:** `src/session-queue.ts`, `src/tools/activity/file-state.ts`, `src/reminder-state.ts`, `src/event-endpoint.ts`, `src/service-messages.ts`
+**Updated:** 2026-06-27
 
-This document is the canonical specification for TMCP notification behavior. It defines which events MUST and MUST NOT wake an agent, how the dequeue (DQ) and notification paths interact, and the emission contract agents should depend on. It is self-contained and intended to be readable by a new agent joining TMCP work.
-
-Source files this spec is derived from:
-- `src/session-queue.ts` — session routing, enqueue, isSilentEvent logic
-- `src/event-endpoint.ts` — POST /event handler, agent_event fan-out
-- `src/service-messages.ts` — all SERVICE_MESSAGES entries and their event types
-- `src/reminder-state.ts` — reminder trigger types and fire paths
-- `src/message-store.ts` — inbound content type enumeration
-- `src/tools/activity/file-state.ts` — NotifySource classification, debounce gate
+This document canonicalizes current TMCP notification behavior as implemented. It does not prescribe changes. Gaps are flagged explicitly; fix decisions belong to Overseer.
 
 ---
 
-## 1. Design Principles (P1–P5)
+## 1. Design Principles
 
-These principles are operator-sourced and authoritative. Implementors and reviewers must apply them in order when there is ambiguity.
+Five operator-confirmed invariants govern all notification decisions. Listed in priority order.
 
-### P1 — Actionability is the filter (voice 76211)
+### P1 — Actionability is the filter
 
-> "If it's not actionable, I think that's the right thing here. If it's not a notification that the agent should react to, then they shouldn't."
-
-An event is actionable if and only if the agent has a meaningful, non-trivially-deferrable response to it — something it must do now (or very soon) that it cannot recover if it misses. Informational events, delivery confirmations, intra-bridge housekeeping, lifecycle fan-outs, and behavioral hints are all non-actionable.
+An event is actionable if and only if the agent has a non-trivially-deferrable response to it — something it must do now that it cannot recover if it misses. Informational events, delivery confirmations, lifecycle fan-outs, and behavioral hints are non-actionable.
 
 **Rule:** If a notification does not require an agent to wake and act, it MUST NOT wake. If it does, it MUST wake (or re-notify after debounce expiry).
 
-### P2 — Reactions MUST NOT wake standalone (voices 76216, 76223)
+### P2 — Reactions MUST NOT wake
 
-Reactions signal emotion or aesthetic acknowledgment — not direction. A reaction arriving while the agent is parked is irrelevant to the agent's next action. Reactions MUST NOT trigger a standalone SSE notification or activity-file touch.
+Reactions signal emotion or aesthetic acknowledgment — not direction. A reaction arriving while the agent is parked is non-actionable. Reactions MUST NOT trigger an SSE notification or activity-file touch.
 
-Reactions DO appear in the DQ. The agent sees them when already running. See P4 for the DQ batching mechanism.
+Reactions DO appear in the DQ. The agent sees them when already running. See P4.
 
 This is a confirmed, non-negotiable decision.
 
-### P3 — DQ correctness over token optimization (voice 76218)
+### P3 — DQ correctness over token optimization
 
-When a design choice pits correct DQ behavior against minimizing token cost, correct DQ behavior wins. Multiple DQ calls consuming multiple messages in sequence is acceptable. Fix obviously broken wake patterns (agent_event, behavior_nudge) but do not bend DQ semantics to save tokens.
+When a design choice pits correct DQ behavior against minimizing token cost, correct DQ behavior wins. Multiple DQ calls consuming multiple messages is acceptable. Fix broken wake patterns; do not bend DQ semantics to save tokens.
 
-### P4 — Reactions are DQ-batched via natural array accumulation (voices 76226, 76227)
+### P4 — Reactions DQ-batch via natural accumulation
 
-The DQ response is already an array. When an agent calls dequeue, it gets all accumulated items together (reactions, service messages, real messages) in one array.
+Reactions arrive with no SSE notification. They accumulate in the TemporalQueue. When the next real message (text, voice, command, etc.) arrives and triggers a wake, the agent dequeues an array that MAY include those accumulated reactions alongside the real message — if the reactions arrived before the heavyweight delimiter. Reactions after the delimiter carry to the next batch.
 
-The correct mechanism is:
-1. Reactions arrive → NO notification emitted; events accumulate in the queue.
-2. Real message (text, voice, command, etc.) arrives → notification emitted; agent wakes.
-3. Agent calls dequeue → receives array which MAY include accumulated reactions alongside the real message, IF reactions arrived before the heavyweight delimiter. Reactions arriving AFTER the heavyweight message that triggered the notification will appear in the NEXT dequeue batch (TemporalQueue batches up to and including the first heavyweight delimiter; post-delimiter events carry to the next batch). The notification suppression guarantee (P2) is preserved regardless of ordering — reactions never cause a standalone wake.
+**Current state:** Co-delivery in the same batch works correctly. Each reaction remains a separate DQ item rather than being merged. True reaction coalescing is not implemented — see Gap 2.
 
-This is not complex coalescing logic at the TMCP queue level. It is simply: suppress notification for reactions, allow them to accumulate in the queue, and the DQ array delivers them naturally when the next real message triggers a wake.
+### P5 — Reactions are NEVER confirmation signals
 
-**RESOLVED: TemporalQueue uses a single FIFO queue. `enqueueResponse` and `enqueueMessage` are aliases for `enqueue()`. There is no two-lane ordering issue. The only ordering subtlety is the heavyweight delimiter boundary described above.**
-
-### P5 — Reactions are NEVER confirmation signals (voice 76229)
-
-Agents MUST NOT interpret any reaction — including affirmative ones like 👍 or 💯 — as confirmation of intent. Reactions are agreement, flavor, or acknowledgment signals only. This is already established in existing skills/comms specs ("don't take anything as confirmation") and is reinforced here as an invariant.
-
-An agent that blocks on a reaction to confirm an action is operating incorrectly. Intent confirmation requires an explicit operator text/voice/button response.
+Agents MUST NOT interpret any reaction — including 👍 or 💯 — as confirmation of intent. Confirmation requires an explicit operator text, voice, or button response. This is a behavioral invariant; it is not currently code-enforced.
 
 ---
 
 ## 2. DQ × Notification Matrix
 
-This table enumerates every event type that can appear in the dequeue response. Every row must have a rationale. "Appears in DQ?" refers to whether the event appears in the array returned by `dequeue`. "Triggers notification/wake?" refers to whether arrival of this event causes TMCP to emit an SSE notification or activity-file touch to wake a parked agent.
+Columns: "In DQ?" = item appears in `dequeue()` array. "SSE/file wakes?" = `notifySession` / activity-file path fires. "Channel subscriber notified?" = `notifyChannelSubscriber` called.
 
-### 2.1 Operator message events (`event: "message"`, `from: "user"`)
+### 2.1 Summary table
 
-These events originate from the human operator in the Telegram chat.
-
-| Event type | DQ content type | Appears in DQ? | Triggers notification/wake? | Rationale |
-|---|---|---|---|---|
-| Operator text message | `text` | Yes | **MUST wake** | Direct operator instruction; agent must read and respond. |
-| Operator voice message (transcribed) | `voice` | Yes | **MUST wake** | Operator instruction via audio; agent must read transcription and respond. Phase-2 SSE wake fires after transcription completes (`notifySessionWaiters`). |
-| Operator voice message (pending transcription) | `voice` (text undefined) | Yes — queued but not yet released | **MUST NOT wake** (suppressed until transcription completes) | Phase-1 suppression: waking before transcription yields an empty batch. The phase-2 wake fires after `patchVoiceText` completes. |
-| Operator command | `command` | Yes | **MUST wake** | Explicit bot command (e.g. `/start`); operator expects immediate action. |
-| Operator photo | `photo` | Yes | **MUST wake** | Visual content requiring agent attention. |
-| Operator document | `doc` | Yes | **MUST wake** | File requiring agent processing or acknowledgment. |
-| Operator video | `video` | Yes | **MUST wake** | Video content requiring agent attention. |
-| Operator audio (non-voice) | `audio` | Yes | **MUST wake** | Audio content requiring agent attention. |
-| Operator sticker | `sticker` | Yes | **MUST wake** | Sticker messages are operator-directed; agent should acknowledge and interpret. |
-| Operator animation (GIF) | `animation` | Yes | **MUST wake** | Animation content is operator-directed input. |
-| Operator contact | `contact` | Yes | **MUST wake** | Structured contact data sent by operator; agent may need to process. |
-| Operator location | `location` | Yes | **MUST wake** | Geographic data sent by operator; agent may need to process. |
-| Unknown message type | `unknown` | Yes | **MUST wake** | Unrecognized Telegram message type; agent should log and acknowledge. |
-
-**Note:** All operator message types in `OPERATOR_MESSAGE_TYPES` (text, voice, command, photo, doc, video, audio, sticker, animation, contact, location, unknown) MUST wake. This set is authoritative in `src/session-queue.ts`.
-
-### 2.2 Reaction events (`event: "reaction"`, `from: "user"`)
-
-| Event type | DQ content type | Appears in DQ? | Triggers notification/wake? | Rationale |
-|---|---|---|---|---|
-| Operator reaction on any message | `reaction` | Yes — accumulated in queue, delivered in the DQ array when a real message triggers a wake (P4) | **Current behavior (BUG):** Reactions DO trigger notification via `notifySession("operator", ...)` in both `enqueueToSession` and the broadcast fallback loop in `routeToSession`. **Target behavior (P2):** Reactions MUST NOT trigger notification/wake. Fix requires suppression at both call sites (see §5.1 Finding A). | Reactions are flavor/emotion, not direction (P2). They are non-actionable standalone. Stale reactions (from messages the agent already handled) are irrelevant to current state. |
-
-Per P5: the agent MUST NOT treat any reaction (👍, 💯, ❤️, etc.) as confirmation of intent. Reactions are read-only context when the agent is already running.
-
-### 2.3 Callback query events (`event: "callback"`, `from: "user"`)
-
-| Event type | DQ content type | Appears in DQ? | Triggers notification/wake? | Rationale |
-|---|---|---|---|---|
-| Button press / callback query | `cb` | Yes | **MUST wake** | Operator clicked an inline keyboard button; this is a direct choice/approval action requiring agent response. The agent must call `answer_callback_query` to dismiss the spinner. |
-
-**Note:** Callbacks are `from: "user"` and qualify as operator actions. They are routed to the owning session (the session that sent the message with the button). They are excluded from BOTH `all` AND `operator` modes in `qualifyInbound` (i.e. `return { all: false, operator: false }`) but they ARE actionable — they represent explicit operator choices.
-
-**OPEN QUESTION:** The `qualifyInbound` function excludes `callback` from `last_received` tracking (`if (t === "reaction" || t === "callback") return { all: false, operator: false }`). Is this correct? A button press is arguably as actionable as a text message. This should be reviewed in 10-3021 to determine whether callbacks should update `last_received` for reminder tracking purposes.
-
-### 2.4 User edit events (`event: "user_edit"`, `from: "user"`)
-
-| Event type | Appears in DQ? | Triggers notification/wake? | Rationale |
+| Event type | In DQ? | SSE/file wakes? | Channel subscriber notified? |
 |---|---|---|---|
-| User edited a previously sent message | **No** — silently stored, not enqueued | **MUST NOT wake** | User edits overwrite the store silently per design. The agent already processed the original; a retroactive edit is informational only and not reliably actionable. |
+| `message` — text, voice, photo, doc, video, audio, sticker, animation, contact, location, unknown, command | Yes | YES | YES |
+| `message` — callback (button press) | Yes | YES | YES |
+| `reaction` | Yes, individually | NO | YES ⚠️ — see Gap 1 |
+| `reminder` (all trigger types: time, startup, last_sent, last_received, schedule) | Yes | YES | YES |
+| `direct_message` (inter-session DM) | Yes | YES | YES |
+| `send_callback` (async TTS result) | Yes | NO | NO |
+| `service_message` / `behavior_nudge_*` | Yes | NO — `isSilentEvent` | NO |
+| `service_message` / `agent_event` (compacting, compacted, startup, shutdown_warn, shutdown_complete) | Yes | NO — `isSilentEvent` | NO |
+| `service_message` / `post_compact_monitor_recovery` | Yes | YES — actor session only | YES |
+| `service_message` / all other subtypes (onboarding_*, session_joined, session_closed, child notifications, etc.) | Yes | YES | YES |
+| `message` — voice (phase-1, transcription pending) | Yes | NO — phase-1 suppression | YES — channel always called |
+| `user_edit` | **No** — stored silently, not enqueued | **Never** | **Never** |
 
-### 2.5 Direct message events (`event: "direct_message"`, `from: "bot"`)
+### 2.2 Wake predicates (source code)
 
-| Event type | DQ content type | Appears in DQ? | Triggers notification/wake? | Rationale |
-|---|---|---|---|---|
-| Inter-session DM from another agent | `direct_message` | Yes | **MUST wake** | A DM from a peer session is an actionable message requiring the agent's attention. `notifySession` is called with `"operator"` source. DMs qualify for `last_received` `"all"` mode but not `"operator"` mode. |
+The SSE/file notification path is gated by `isNotifyTriggerEvent` in `session-queue.ts`:
 
-**Debounce caveat:** DMs use `"operator"` source. A DM arriving during an active operator-message debounce will be suppressed. Because DMs are not in `OPERATOR_MESSAGE_TYPES`, `hasPendingUserContent` will not detect them during re-evaluation — the agent will not receive a re-evaluation notify. The DM will be delivered on next natural dequeue. A parked agent will NOT be re-woken for a suppressed DM.
-
-### 2.6 Send callback events (`event: "send_callback"`, `from: "system"`)
-
-| Event type | DQ content type | Appears in DQ? | Triggers notification/wake? | Rationale |
-|---|---|---|---|---|
-| Async TTS delivery confirmation (ok/failed/timeout) | `send_callback` | Yes | **MUST NOT wake** | Delivery outcome is a housekeeping confirmation; the agent does not need to take action on a successful delivery. On failure, the agent would typically see this during its active processing loop. The comment in `session-queue.ts` is explicit: "send_callback is bridge-internal housekeeping — no notify". This is excluded from `qualifyInbound` entirely. |
-
-### 2.7 Reminder events (`event: "reminder"`, `from: "system"`)
-
-Reminders have five trigger types, all delivered via `deliverReminderEvent`, which always calls `notifySession` with the `"reminder"` source.
-
-| Reminder trigger type | DQ content type | Appears in DQ? | Triggers notification/wake? | Rationale |
-|---|---|---|---|---|
-| `time` reminder (fixed delay) | `reminder` | Yes | **MUST wake** | Agent registered this reminder to act at a specific time; the fire is actionable. |
-| `startup` reminder | `reminder` | Yes | **MUST wake** | Agent registered instructions to act on session start; must be delivered. |
-| `last_sent` reminder | `reminder` | Yes | **MUST wake** | Agent registered a follow-up trigger after a send; the fire is actionable (e.g. "follow up if no reply after N minutes"). |
-| `last_received` reminder | `reminder` | Yes | **MUST wake** | Agent registered an inactivity trigger; fire signals the operator has been waiting too long. |
-| `schedule` reminder (cron-based) | `reminder` | Yes | **MUST wake** | Agent registered a recurring wall-clock task; fire is actionable. |
-
-**Note:** All reminder types are excluded from `qualifyInbound` (`if (event.event === "reminder") return { all: false, operator: false }`) to prevent reminder fires from updating `last_received` timestamps and creating feedback loops.
-
-### 2.8 Service message events (`event: "service_message"`, `from: "system"` or `"child"`)
-
-Service messages are bridge-injected events. Whether they wake an agent depends on their `event_type` field. The `isSilentEvent` predicate in `session-queue.ts` controls suppression.
-
-#### 2.8.1 Silent service messages (MUST NOT wake — `isSilentEvent = true`)
-
-| `event_type` | Appears in DQ? | Triggers notification/wake? | Rationale |
-|---|---|---|---|
-| `behavior_nudge_first_message` | Yes | **MUST NOT wake** | Occurs when agent first dequeues a user message; agent is already running. Silent per `isSilentEvent`. |
-| `behavior_nudge_slow_gap` | Yes | **MUST NOT wake** | Gap coaching during active session; agent already in loop. Silent per `isSilentEvent`. |
-| `behavior_nudge_typing_rate` | Yes | **MUST NOT wake** | Typing-rate coaching during active sends; agent already running. Silent per `isSilentEvent`. |
-| `behavior_nudge_question_hint` | Yes | **MUST NOT wake** | First-question hint; fires during active session. Silent per `isSilentEvent`. |
-| `behavior_nudge_question_escalation` | Yes | **MUST NOT wake** | Repeated-question escalation; fires during active session. Silent per `isSilentEvent`. |
-| `behavior_nudge_presence_rung1` | Yes | **MUST NOT wake** | Presence silence reminder (rung 1); fires during active session. Silent per `isSilentEvent`. |
-| `behavior_nudge_presence_rung2` | Yes | **MUST NOT wake** | Presence silence reminder (rung 2); fires during active session. Silent per `isSilentEvent`. |
-| `behavior_nudge_caption_duplication` | Yes | **MUST NOT wake** | Caption coaching; fires during active session. Silent per `isSilentEvent`. |
-| `behavior_nudge_reaction_semantics` | Yes | **MUST NOT wake** | Reaction semantic coaching; agent already running. Silent per `isSilentEvent` (`startsWith("behavior_nudge")`). |
-| `modality_hint_voice_received` | Yes | **MUST NOT wake** | Voice modality hint; fires when voice is dequeued (agent already running). `eventType` starts with `modality_hint_` not `behavior_nudge_` — **OPEN QUESTION:** is this event currently suppressed? The `isSilentEvent` check is `startsWith("behavior_nudge")` only. This may be a gap. See Section 5. |
-| `agent_event` | Yes | **MUST NOT wake** | Lifecycle fan-out (`compacting`, `compacted`, `startup`, `shutdown_warn`, `shutdown_complete`) delivered to ALL sessions. Receiving sessions need this for awareness only; they should not wake. Silent per `isSilentEvent`. |
-
-**Current `isSilentEvent` predicate (from `session-queue.ts`):**
+```typescript
+function isNotifyTriggerEvent(event: TimelineEvent): boolean {
+  return event.event !== "reaction";
+}
 ```
+
+`isSilentEvent` additionally gates service messages:
+
+```typescript
 const isSilentEvent =
   event.content.event_type?.startsWith("behavior_nudge") ||
   event.content.event_type === "agent_event";
 ```
 
-#### 2.8.2 Non-silent service messages (wake depends on context)
+Both predicates must pass for an event to generate an SSE wake or activity-file touch. The channel subscriber path (`notifyChannelSubscriber`) is NOT gated by either predicate — see Gap 1.
 
-| `event_type` | Appears in DQ? | Triggers notification/wake? | Rationale |
+### 2.3 Operator message events (`event: "message"`, `from: "user"`)
+
+All types in `OPERATOR_MESSAGE_TYPES` MUST wake. This set is authoritative in `session-queue.ts`.
+
+| Content type | Wakes? | Notes |
+|---|---|---|
+| `text` | YES | Direct operator instruction |
+| `voice` | YES (phase-2 only) | Phase-1 suppressed pending transcription; phase-2 fires after `patchVoiceText` |
+| `command` | YES | Explicit bot command (e.g. `/start`) |
+| `photo` | YES | Visual content |
+| `doc` | YES | File requiring processing |
+| `video` | YES | Video content |
+| `audio` | YES | Audio (non-voice) content |
+| `sticker` | YES | Operator-directed; agent should acknowledge |
+| `animation` | YES | GIF; operator-directed input |
+| `contact` | YES | Structured contact data |
+| `location` | YES | Geographic data |
+| `unknown` | YES | Unrecognized type; agent should log |
+
+### 2.4 Reaction events (`event: "reaction"`, `from: "user"`)
+
+| Aspect | Current behavior |
+|---|---|
+| In DQ? | Yes — accumulated individually; delivered in array when next real message triggers wake |
+| SSE/file wakes? | NO — `isNotifyTriggerEvent` returns `false` |
+| Channel notified? | YES — `notifyChannelSubscriber` called unconditionally (Gap 1) |
+| `last_received` updated? | No — excluded in `qualifyInbound` alongside callbacks |
+
+Per P5: agents MUST NOT treat any reaction as confirmation of intent.
+
+### 2.5 Callback query events (`event: "callback"`, `from: "user"`)
+
+Button presses are operator-directed choices. The agent must call `answer_callback_query` to dismiss the loading spinner.
+
+| Aspect | Current behavior |
+|---|---|
+| In DQ? | Yes |
+| SSE/file wakes? | YES — `isNotifyTriggerEvent` passes (callback is not a reaction) |
+| Channel notified? | YES |
+| `last_received` updated? | No — excluded in `qualifyInbound` alongside reactions |
+
+### 2.6 Direct message events (`event: "direct_message"`, `from: "bot"`)
+
+Inter-session DMs from peer agents.
+
+| Aspect | Current behavior |
+|---|---|
+| In DQ? | Yes |
+| SSE/file wakes? | YES — `notifySession` called with `"operator"` source |
+| Channel notified? | YES |
+| `last_received` updated? | `all` mode only — not `operator` mode |
+
+**Debounce caveat:** DMs use the `"operator"` source. A DM arriving during an active operator-message debounce will be suppressed. `hasPendingUserContent` does not detect DMs, so neither the proactive re-notify timer nor the debounce release path will fire for a suppressed DM. The DM is delivered on next natural dequeue; a parked agent will not be re-woken.
+
+### 2.7 Reminder events (`event: "reminder"`, `from: "system"`)
+
+All trigger types are delivered via `deliverReminderEvent`, which always calls `notifySession` with the `"reminder"` source.
+
+| Trigger type | Wakes? | Notes |
+|---|---|---|
+| `time` | YES | Fixed-delay registered by agent |
+| `startup` | YES | Instructions to act on session start |
+| `last_sent` | YES | Follow-up trigger after a send |
+| `last_received` | YES | Operator-inactivity trigger |
+| `schedule` | YES | Cron-based recurring task |
+
+All reminder types are excluded from `qualifyInbound` to prevent reminder fires from updating `last_received` timestamps and creating feedback loops.
+
+### 2.8 Service message events (`event: "service_message"`)
+
+#### 2.8.1 Silent service messages (`isSilentEvent = true`)
+
+| `event_type` | Wakes? | Rationale |
+|---|---|---|
+| `behavior_nudge_*` (all variants) | NO | Coaching messages; agent already running when these fire |
+| `agent_event` (compacting, compacted, startup, shutdown_warn, shutdown_complete) | NO | Lifecycle fan-out to all sessions; receiving sessions need awareness, not action |
+
+#### 2.8.2 Non-silent service messages
+
+| `event_type` | Wakes? | Scope | Rationale |
 |---|---|---|---|
-| `post_compact_monitor_recovery` | Yes | **MUST wake (own session only)** | Delivered exclusively to the compacting agent's own session (`resolvedActorSid`). The agent must re-arm its monitors after compaction. Not delivered to other sessions. This is NOT suppressed (correctly). |
-| `shutdown` | Yes | **MUST wake** | Server shutdown warning; agent must begin graceful teardown. **Note:** `shutdown` is not in the `VALID_KINDS` set used by the POST /event endpoint (`event-endpoint.ts`). Origin code path not identified in reviewed source. Treat as unverified until source is located. |
-| `voice_transcription_failed` | Yes | **MUST wake** | Voice message could not be transcribed; agent must inform operator or request resend. |
-| `persistent_animation_running` | Yes | **MUST wake** | An animation was running during compaction/restart; agent must decide whether to continue or cancel. Comment in source confirms this is "intentionally NOT suppressed". |
-| `governor_changed` | Yes | **MUST wake** | Routing topology changed; all sessions need awareness. Agent should read new governor. |
-| `governor_promoted` | Yes | **MUST wake** | This session is now governor; agent must take on routing responsibilities. |
-| `session_joined` | Yes | **MUST wake** | A new session joined; governor must be aware of routing implications. **Note:** Two distinct service message specs (`SESSION_JOINED` and `SESSION_JOINED_FELLOW`) share the same `event_type: 'session_joined'`. Agents MUST NOT rely on `event_type` alone to distinguish them — check message content/details fields. |
-| `session_closed` | Yes | **MUST wake** | A peer session closed; governor must handle routing changes. |
-| `session_closed_new_governor` | Yes | **MUST wake** | Combined close+governor-change; requires routing awareness update. |
-| `child_first_dequeue_confirmed` | Yes | **MUST wake** | Parent learns its sub-agent is live; may trigger follow-up dispatch work. |
-| `child_session_resolved` | Yes | **MUST wake** | Sub-agent has exited; parent must read exit status and determine next action. |
-| `duplicate_session_detected` | Yes | **MUST wake** | Security alert: two callers sharing one session identity. Requires immediate investigation. |
-| `onboarding_token_save` | Yes | **SHOULD wake** (fires once on session start, during initial dequeue) | Onboarding instruction; agent is typically not yet parked (just started). Fires at session_start → first dequeue. |
-| `onboarding_loop_pattern` | Yes | **SHOULD wake** | Monitor setup instructions; needed for agent to arm its loop. Fires at session_start. |
-| `onboarding_compaction_hint` | Yes | **SHOULD wake** | Compaction recovery guidance; needed for agent resilience. Fires at session_start. |
-| `onboarding_role` | Yes | **SHOULD wake** | Governor role assignment; agent needs this to route correctly. |
-| `onboarding_protocol` | Yes | **SHOULD wake** | Etiquette instructions on first session. |
-| `onboarding_buttons` | Yes | **SHOULD wake** | Button usage guidance on first session. |
-| `onboarding_hybrid_messaging` | Yes | **SHOULD wake** | Audio+text hybrid guidance. |
-| `onboarding_modality_priority` | Yes | **SHOULD wake** | Modality preference guidance. |
-| `onboarding_presence_signals` | Yes | **SHOULD wake** | Presence signal ordering guidance. |
-| `onboarding_no_pending_yet` | Yes | **SHOULD wake** | Tells agent to call dequeue for first message. |
-| `onboarding_participating` | Yes | **SHOULD wake** | Confirms SSE monitor armed; agent can begin its loop. |
-| `onboarding_arm_reminder` | Yes | **MUST wake** | Agent has not armed monitor 45s after listen subscription; must act to participate. |
-| `post_compact_sse_recovery` | Yes | **MUST wake (own session only)** | SSE URL expired after compaction; agent must re-arm to continue participating. |
-| `spawn_child_subagent_hint` | Yes | **MUST wake** | Agent must dispatch a sub-agent to drain the child's queue. |
-| `compression_hint_first_dm` | Yes | **SHOULD wake** | First DM compression guidance; fires during active DM session. |
-| `compression_hint_first_route` | Yes | **SHOULD wake** | First route compression guidance; fires during active routing session. |
-| `activity_file_monitor_instructions` | Yes | **MUST wake** | Concrete monitor arming instructions; agent must act to participate. |
-| `onboarding_child_token` | Yes | **SHOULD wake** | Child session token reminder on first dequeue. |
-| `onboarding_child_role` | Yes | **SHOULD wake** | Child role/context briefing on first dequeue. |
-| `onboarding_child_loop` | Yes | **SHOULD wake** | Child dequeue loop instructions. |
-| `onboarding_child_exit_protocol` | Yes | **SHOULD wake** | Child exit protocol instructions. |
+| `post_compact_monitor_recovery` | YES | Actor session only | Agent must re-arm monitors post-compaction |
+| `post_compact_sse_recovery` | YES | Own session only | SSE URL expired; agent must re-arm |
+| `voice_transcription_failed` | YES | Targeted session | Agent must inform operator or request resend |
+| `persistent_animation_running` | YES | Targeted session | Agent must decide to continue or cancel |
+| `duplicate_session_detected` | YES | Targeted session | Security alert; requires immediate investigation |
+| `governor_changed` | YES | All sessions | Routing topology changed; agents need awareness |
+| `governor_promoted` | YES | Targeted session | This session is now governor; must take routing responsibilities |
+| `session_joined` | YES | All / governor | Routing implications for multi-session topology |
+| `session_closed` | YES | All / governor | Governor must handle routing changes |
+| `session_closed_new_governor` | YES | All / governor | Combined close+governor-change |
+| `child_first_dequeue_confirmed` | YES | Parent session | Sub-agent is live; may trigger follow-up dispatch |
+| `child_session_resolved` | YES | Parent session | Sub-agent exited; parent reads exit status |
+| `spawn_child_subagent_hint` | YES | Parent session | Must dispatch sub-agent immediately |
+| `activity_file_monitor_instructions` | YES | Own session | Concrete monitor arming instructions |
+| `onboarding_arm_reminder` | YES | Own session | Agent has not armed monitor 45s after subscribe |
+| `onboarding_*` (all variants) | YES | Own session | Setup instructions at session start; agent may be parked on first fire |
+| `compression_hint_*` | YES | Own session | Guidance during active DM/routing sessions |
 
-**OPEN QUESTION:** All onboarding events and most lifecycle events currently flow through the same `deliverServiceMessage` path, which calls `notifySession` with `"service"` source when `!isSilentEvent`. The `"service"` source in the notify gate (`file-state.ts`) has special behavior: it does NOT notify if `inflightAtEnqueue` is true (agent is in dequeue), but DOES notify if the agent is parked. This means onboarding events DO wake parked agents — which is correct. However, it also means all non-silent service messages share the same debounce window with operator messages. Is per-type debounce warranted? See Section 4.4.
-
-#### 2.8.3 Child-notify service messages (`event: "service_message"`, `from: "child"`)
-
-| Event type | Appears in DQ? | Triggers notification/wake? | Rationale |
-|---|---|---|---|
-| `child/notify` events (any `event_type` set by child) | Yes | **MUST wake** | Parent receives structured notification from sub-agent. `deliverChildNotifyEvent` calls `notifySession` with `"service"` source. These are actionable inter-agent signals. |
-
-### 2.9 Summary: NotifySource classification
+### 2.9 NotifySource classification
 
 The gate in `src/tools/activity/file-state.ts` classifies events by source:
 
 | `NotifySource` | Wakes parked agent? | Wakes in-flight agent? | Used by |
 |---|---|---|---|
-| `"operator"` | Yes | Yes (suppressed by debounce if already notified) | Operator messages, callbacks, DMs, routed messages, phase-2 voice wake |
+| `"operator"` | Yes | Yes (debounce may suppress) | Operator messages, callbacks, DMs, routed messages, phase-2 voice wake |
 | `"reminder"` | Yes | Yes | All reminder fires |
-| `"approval-self"` | Yes | Yes | Self-approval workflows |
-| `"approval-governor"` | Yes | Yes | Governor approval workflows |
-| `"service"` | Yes | **No** (suppressed when `inflightDequeue`) | Non-silent service messages |
-| `"bridge-internal"` | **No** | **No** | send_callback (currently hardcoded no-notify in `deliverAsyncSendCallback`) |
+| `"service"` | Yes | **No** — suppressed when `inflightDequeue` | Non-silent service messages |
+| `"bridge-internal"` | **No** | **No** | `send_callback` — explicitly no-notify in `deliverAsyncSendCallback` |
 
-**Note:** A second in-flight guard in `notifyIfAllowed` (checks `entry.inflightDequeue` at gate time) suppresses ALL sources including `"operator"` and `"reminder"` when the agent is actively in a dequeue call. The `classify()` function only determines which sources are pre-filtered before reaching the gate. This applies to both the `"operator"` and `"reminder"` rows above.
+A second in-flight guard in `notifyIfAllowed` checks `entry.inflightDequeue` at gate time and suppresses ALL sources when the agent is actively executing a dequeue call. Source classification pre-filters before this gate.
 
 ---
 
@@ -237,182 +201,207 @@ The gate in `src/tools/activity/file-state.ts` classifies events by source:
 
 ### 3.1 Debounce policy
 
-TMCP applies a post-notify debounce to prevent notification storms. The gate is per-session and shared across SSE and activity-file channels.
+TMCP applies a per-session post-notify debounce to prevent notification storms. The gate is shared across SSE and activity-file channels.
 
-- **Default debounce window:** 300,000 ms (5 minutes) — `NOTIFY_DEBOUNCE_MS` in `file-state.ts`.
-- **Configurable range:** 1,000 ms minimum, 3,600,000 ms maximum.
-- **Behavior:** After a notify fires, subsequent notifications within the debounce window set `notifyPendingBecauseDebounce = true` but do NOT touch the file or emit SSE.
-- **Debounce release:** When the agent returns from dequeue with content, `releaseNotifyDebounce()` is called. If `notifyPendingBecauseDebounce` is true AND the queue still has pending user content, a re-evaluation notify fires immediately.
-- **Stale debounce:** If the debounce window expires before the agent dequeues, the next inbound event fires a fresh notify (no missed-wake risk for wedged agents beyond one debounce window).
-- **Timeout-only exits:** Dequeue calls that return only due to timeout (no content) do NOT release the debounce.
+| Agent state | Debounce window |
+|---|---|
+| Agent active (in dequeue) | 60 seconds post-notify |
+| Agent parked / idle | 300 seconds post-notify |
 
-**Re-evaluation scope limitation:** The re-evaluation notify uses `hasPendingUserContent()`, which checks ONLY `OPERATOR_MESSAGE_TYPES` (text, voice, command, photo, doc, video, audio, sticker, animation, contact, location, unknown). The following event types suppressed during debounce will NOT trigger re-evaluation:
-- Callbacks (button presses) — silently waiting in queue
-- Direct messages (DMs from peer agents)
-- Reminders
-
-These events accumulate in the queue and will be delivered on the agent's next natural dequeue. However, a parked agent may remain parked indefinitely if the only pending item is a DM or callback (no re-evaluation notify fires). This is a known gap — see open question in §3.2.
+After a notify fires, subsequent notifications within the window set an internal pending flag but do NOT touch the activity file or emit SSE. The debounce is shared across all `NotifySource` values — no per-source lane.
 
 ### 3.2 Re-notify timing
 
 Re-notify fires in three conditions:
-1. **Debounce release path:** Immediately after agent returns from a content-returning dequeue, if a notification was suppressed during the prior debounce window and queue still has pending user content.
-2. **Stale debounce path:** Next inbound event after `notifyDebounceUntil` has elapsed fires a fresh notify unconditionally.
-3. **Proactive timer path:** After a notify fires, a `pendingReNotifyHandle` timer is set for `debounceMs` (default 5 minutes). When it fires, if `hasPendingUserContent(sid)` is true, a re-evaluation notify fires proactively — without waiting for a new inbound event or debounce release. This ensures an agent that parks and never returns from dequeue still receives a wake within one debounce window if operator message content is still pending.
 
-**OPEN QUESTION:** The `"reminder"` source and `"service"` source are both subject to the same shared debounce gate. This means a reminder fire during an active operator conversation may be suppressed by the debounce from the operator message notify. Is this acceptable? The operator voice (76218) says "reminders must come through." If reminders are suppressed by the operator-message debounce, they will be delivered in the DQ array on the next dequeue (the agent is already running) — but a parked agent after a long conversation may miss a reminder fire if it arrives before the debounce clears. This should be evaluated in 10-3021.
+1. **Debounce release path:** Agent returns from a content-returning dequeue. If a notification was suppressed during the prior window AND `hasPendingUserContent(sid) || hasPendingReminderContent(sid)` is true, re-notify fires immediately.
 
-**Known gap:** A parked agent may remain parked indefinitely if the only pending item in the queue is a DM or callback, because `hasPendingUserContent()` does not detect these types and therefore neither the proactive re-notify timer (condition 3 above) nor the debounce re-evaluation path (condition 1 above) will fire. The DM or callback will only be delivered on the agent's next natural dequeue or when the next operator message arrives.
+2. **Stale debounce path:** Next inbound event after the window has elapsed fires a fresh notify unconditionally. No missed-wake risk beyond one debounce window for wedged agents.
 
-### 3.3 Multi-session fan-out
+3. **Proactive timer path:** After a notify fires, a `pendingReNotifyHandle` timer is set for `debounceMs`. When it fires, if `hasPendingUserContent(sid) || hasPendingReminderContent(sid)` is true, a re-evaluation notify fires proactively — without waiting for a new inbound event or debounce release.
 
-Events arriving at the bridge are routed to sessions as follows:
+Reminder-only queues ARE included in re-notify evaluation (`hasPendingReminderContent`). Dequeue calls that return only due to timeout (no content) do NOT release the debounce.
+
+**Known limitation:** Callbacks and DMs are not checked by `hasPendingUserContent`. A parked agent waiting on only a callback or DM will not be re-woken by timer — it will be delivered on next natural dequeue or when the next operator message arrives.
+
+### 3.3 EC-1 connect-notify
+
+When a new SSE consumer connects (EC-1 path), TMCP uses `hasAnyPendingContent(sid)` to determine whether to fire an immediate connect-notify. This is broader than the re-notify paths: it catches any pending queue content regardless of type, including events that arrived while the SSE connection was absent.
+
+### 3.4 Multi-session fan-out
 
 | Routing mode | Behavior | Notifies |
 |---|---|---|
 | Targeted (reply-to, reaction, callback) | Delivered to owning session only | Owner session only |
-| Ambiguous (no reply context) | Delivered to governor session if set | Governor session only |
-| Broadcast (no governor, or forced) | Delivered to ALL sessions | All sessions; self-notify suppressed via `AC-1` filter |
-| Outbound governor copy | Governor receives all outbound events via `broadcastOutbound` | Governor queue only (no notify, no SSE) |
+| Ambiguous (no reply context) | Delivered to governor session | Governor session only |
+| Broadcast (no governor, or forced) | Delivered to ALL sessions | All sessions; AC-1 self-notify suppressed |
+| Outbound governor copy (`broadcastOutbound`) | Governor receives all outbound events | Governor queue only — no notify, no channel subscriber call |
 
-**AC-1 self-notify filter:** When an event originates from a session (e.g. a bot reaction to its own message), that session is NOT notified. This prevents agents from waking themselves on their own sends. Implemented via `originatorSid` parameter in `notifySession`.
+**AC-1 self-notify filter:** Events originating from a session do NOT notify that session. Implemented via `originatorSid` in `notifySession`. Prevents agents from waking on their own sends.
 
-**`agent_event` fan-out (POST /event):** When the `/event` endpoint receives `compacting`, `compacted`, `startup`, `shutdown_warn`, or `shutdown_complete`, it fans out an `agent_event` service message to ALL sessions. These are silently enqueued (no wake). The `stopped` kind is suppressed from fan-out entirely (high-frequency noise).
+**`agent_event` fan-out:** POST /event broadcasts `agent_event` service messages to ALL sessions for lifecycle events (compacting, compacted, startup, shutdown_warn, shutdown_complete). The `stopped` kind is suppressed from fan-out entirely (high-frequency noise). `agent_event` messages are silently enqueued — no SSE wake, no channel subscriber call.
 
-**`last_received` asymmetry:** `notifyLastReceived` is called only for TARGETED routing (message with recognized owner). Governor-routed (ambiguous) and broadcast-routed messages do NOT update `last_received`. Only messages targeted to a specific session count as "received by that session" for reminder tracking purposes.
+**`last_received` asymmetry:** `notifyLastReceived` is called only for targeted routing. Governor-routed (ambiguous) and broadcast-routed messages do NOT update `last_received`. Only messages targeted to a specific session count for reminder tracking.
 
-**`broadcastOutbound` channel exception:** `broadcastOutbound` also omits `notifyChannelSubscriber` — outbound governor copies do NOT appear in channel subscriber feeds. This is an exception to the "channel = raw feed" principle from §3.4.
+### 3.5 Channel subscriber vs. SSE
 
-### 3.4 Channel subscriber vs. SSE notification
+Two notification paths run independently:
 
-Two notification paths exist:
-1. **SSE / activity file (`notifySession`):** Subject to the full debounce gate. Only fires for `NotifySource` values that pass the gate.
-2. **Channel subscriber (`notifyChannelSubscriber`):** Called for ALL events, bypassing the debounce gate. Channel consumers receive every event immediately.
+- **SSE / activity file (`notifySession`):** Subject to full debounce gate. Gated by `isNotifyTriggerEvent` and `isSilentEvent`. Enforces debounce windows.
+- **Channel subscriber (`notifyChannelSubscriber`):** Bypasses both predicates and the debounce gate. Receives all events that are not explicitly excluded (only `send_callback` and outbound governor copies are excluded). Channel consumers receive events immediately, including reactions.
 
-**OPEN QUESTION:** Should the actionability filter from this spec apply to the channel subscriber path? Currently the channel receives all events (including silent service messages and reactions) without filtering. If a channel subscriber is an agent or automation that should respect the same wake semantics, it will receive more events than the SSE path. This may be intentional (channel = raw feed) or a gap. Needs explicit policy decision.
-
----
-
-## 4. Edge Cases
-
-### 4.1 Reactions in DQ without wake
-
-When a reaction arrives while an agent is parked:
-1. `routeToSession` → `enqueueToSession` → `q.enqueue(event)` — reaction is queued.
-2. `notifySession` IS called with `"operator"` source — but see below.
-
-**OPEN QUESTION (implementation gap):** The current code in `enqueueToSession` calls `notifySession(sid, "operator", ...)` for ALL events, including reactions. This means reactions currently DO emit a notification. The `isSilentEvent` predicate is only checked in `deliverServiceMessage`, not in `enqueueToSession`. To implement P2 correctly, `enqueueToSession` must suppress notification for `event.event === "reaction"` events. This is an audit finding requiring a code fix (see Section 5, Finding A).
-
-After the fix: reactions arrive → queue → no notify → agent stays parked → real message arrives → notify → agent wakes → `dequeue()` → receives array containing both accumulated reactions and the real message.
-
-**Note:** After the P2 fix, reactions will never emit notifications and therefore cannot affect the debounce state. A flood of reactions between two real messages will not trigger the debounce — only real messages do. The debounce window is entirely reaction-transparent.
-
-### 4.2 Stale reactions
-
-A reaction to a message from 5 turns ago is semantically irrelevant to the current conversation state. However, TMCP has no concept of "staleness" at the queue level — all reactions are enqueued regardless of how old the target message is.
-
-**Policy:** Agents MUST NOT act on reactions as if they were current instructions, regardless of when they appear in the DQ array. Agents should consume reactions as context-only signals about past messages (per P2 and P5).
-
-**OPEN QUESTION:** Should TMCP implement a staleness filter at enqueue time (e.g. drop reactions to messages older than N turns or older than X minutes)? Or is this left to agent interpretation? Operator preference (voice 76216) suggests the batching behavior (P4) is the primary solution — agents will see reactions alongside the next real message, which provides natural context.
-
-### 4.3 Debounce-by-type
-
-The current debounce gate is binary: one shared window per session, applied after ANY qualifying notification fires. The operator noted (voice 76216) that different message types may warrant different debounce windows.
-
-**Example tension:** An operator sends a text message (notifies, starts 5-minute debounce). The agent processes it and parks. 30 seconds later, a `post_compact_monitor_recovery` service message arrives. It is suppressed by the debounce. The agent will see it on next dequeue, but if the agent is parked for the rest of the debounce window, the monitor recovery message has no mechanism to force a wake.
-
-**Current mitigation:** `post_compact_monitor_recovery` is the compacting agent's own event — it fires immediately after the `/event` `compacted` call, typically while the agent is still in the middle of its processing loop. In practice it arrives during active dequeue, not when parked. But this is a timing assumption, not a guarantee.
-
-**OPEN QUESTION:** Should `"reminder"` and `"service"` sources have independent debounce windows from `"operator"` sources? This would require splitting the shared gate state into per-source lanes. Given P3 (DQ correctness over token optimization), a parked agent that misses a reminder fire due to a prior operator-message debounce is a correctness issue, not just a token issue. This warrants a design decision before 10-3021 implementation.
-
-### 4.4 `modality_hint_voice_received` suppression gap
-
-The `isSilentEvent` predicate in `deliverServiceMessage` checks:
-- `event.content.event_type?.startsWith("behavior_nudge")`
-- `event.content.event_type === "agent_event"`
-
-The `modality_hint_voice_received` event type starts with `modality_hint_`, NOT `behavior_nudge_`. It is therefore NOT currently suppressed by `isSilentEvent`. This event fires when a voice message is dequeued (agent already running) — so in practice it arrives during active dequeue and the agent reads it inline. But if for any reason it arrives when the agent is parked, it would currently emit a notification.
-
-**Resolution options:**
-1. Change the prefix to `behavior_nudge_voice_modality` for consistency.
-2. Add `modality_hint_` as a second startsWith check in `isSilentEvent`.
-3. Accept current behavior (notify if parked, silent if in-flight) as correct — a voice modality hint is arguably actionable if the agent is parked.
-
-**OPEN QUESTION:** Which resolution is correct? Tagging for swarm review.
-
-### 4.5 `stopped` event suppression
-
-The `/event` endpoint suppresses fan-out for `kind: "stopped"` events: "high-frequency noise, no actionable signal." This means when an agent session reports it has stopped (e.g. via a Stop hook), no other session is notified. Only the session-stopped side-effect (`handleSessionStopped`) runs.
-
-**Policy confirmed:** `stopped` MUST NOT fan-out. High-frequency lifecycle noise.
-
-### 4.6 Compaction events: fan-out vs. own-session distinction
-
-When an agent sends `kind: "compacted"` to POST /event:
-1. ALL sessions receive an `agent_event` service message (silent — MUST NOT wake).
-2. The compacting session ITSELF receives a `post_compact_monitor_recovery` message (MUST wake own session).
-
-This two-tier design is correct and intentional:
-- Other sessions need awareness (`agent_event`) but do not need to act.
-- The compacting session needs to re-arm monitors (`post_compact_monitor_recovery`).
-
-The `agent_event` is correctly silenced. The `post_compact_monitor_recovery` is correctly NOT silenced.
+This split means the channel subscriber path receives more events than the SSE path. Whether this is intentional design (channel = raw feed) or a structural gap is addressed in Gap 1 below.
 
 ---
 
-## 5. Implementation Notes
+## 4. Gaps
 
-### 5.1 Mapping to audit findings (epic 10-3020)
+Two confirmed gaps relative to the design principles. No fix is prescribed — decisions deferred to Overseer.
 
-The following maps known audit findings to this spec. Items marked "safe to implement" may proceed against this spec without further design discussion. Items marked "needs review" require open questions to be resolved first.
+### Gap 1 — Channel subscriber notified for reactions (P2 structural violation)
 
-| Finding | Description | This spec says | Safe to implement? |
-|---|---|---|---|
-| **Finding A** | Reactions currently emit notifications (bug) | P2: reactions MUST NOT wake. Fix requires suppression at TWO call sites: (1) `enqueueToSession` (primary path — suppress `notifySession` for `event.event === "reaction"`); (2) the broadcast fallback loop in `routeToSession` (lines 280-290 of `session-queue.ts`) where `notifySession` is called directly for each session in a `for` loop — this path must ALSO skip the notify for reactions. **Additionally: Finding I (TemporalQueue audit) must be resolved before Finding A ships.** | **NEEDS FIX SCOPE EXPANSION** — P2 is confirmed, but fix requires two call sites (see above). Do not close until both are patched and Finding I is resolved. |
-| **Finding B** | `agent_event` fan-out currently wakes agents | `agent_event` is correctly listed as `isSilentEvent`. If agents are waking on it, the bug is elsewhere (e.g. global queue path). | Yes — silence is confirmed correct. Investigate if wakes are observed. |
-| **Finding C** | `behavior_nudge_*` events currently wake agents | Same as Finding B — `isSilentEvent` covers all `behavior_nudge_` prefixes. | Yes — silence is confirmed correct. |
-| **Finding D** | `send_callback` events: no notify path | Confirmed: `deliverAsyncSendCallback` already does not call `notifySession`. Correct per spec. | N/A — already correct. |
-| **Finding E** | `modality_hint_voice_received` not suppressed | OPEN QUESTION in Section 4.4. Not safe to implement without resolution. | **Needs review.** |
-| **Finding F** | Debounce suppresses reminders during active conversation | OPEN QUESTION in Section 3.2. Policy not yet decided. | **Needs review.** |
-| **Finding G** | Callback qualifying for `last_received` | OPEN QUESTION in Section 2.3. | **Needs review.** |
-| **Finding H** | Channel subscriber receives all events without filter | OPEN QUESTION in Section 3.4. | **Needs review.** |
-| **Finding I** | TemporalQueue reaction batching behavior | RESOLVED: TemporalQueue uses a single FIFO queue. `enqueueResponse` and `enqueueMessage` are aliases for `enqueue()`. There is no two-lane ordering issue. The only ordering subtlety is the heavyweight delimiter boundary described in P4. **Must be confirmed clear before Finding A ships.** | **Resolved — confirm before Finding A ships.** |
+**Location:** `enqueueToSession` and the broadcast fallback loop inside `routeToSession` in `session-queue.ts`.
 
-### 5.2 Open questions consolidated
+**Current behavior:** `notifyChannelSubscriber` is called unconditionally for all events including reactions. The `isNotifyTriggerEvent` guard applies only to the SSE/activity-file path, not to the channel subscriber call.
 
-For swarm review, the open questions from this document are enumerated here:
+**Effect:** Channel subscribers receive a notification for every reaction. P2 states reactions must not wake — but the enforcement predicate is absent from this code path. In practice, cooldown logic suppresses many downstream effects, but the guard is missing structurally, not coincidentally inactive.
 
-1. **P4 / Section 4.1 (Finding I):** RESOLVED — TemporalQueue uses a single FIFO queue; no two-lane ordering issue. See Finding I row above and P4 resolution note.
+**Status — Confirmed bug (operator confirmed, TG 80045 / Overseer review 2026-06-27):** Reactions MUST NOT wake channel subscribers. The fix is to wrap `notifyChannelSubscriber` in an `isNotifyTriggerEvent` guard at both call sites in `session-queue.ts`. Implementation task: 10-3021. Fix authorized — do not defer.
 
-2. **Section 2.3 / Finding G:** Should `callback` (button press) update `last_received` timestamps for reminder tracking? Currently excluded from both `all` and `operator` modes in `qualifyInbound`.
+### Gap 2 — P4 DQ coalescing not implemented
 
-3. **Section 3.2 / Finding F:** Can a reminder fire be suppressed by the debounce from a prior operator-message notify, leaving a parked agent un-woken? If yes, is this acceptable given P1 ("reminders must come through")?
+**Current behavior:** Reactions co-deliver in the same DQ batch as the next real message when they arrive before the TemporalQueue heavyweight delimiter. However, each reaction remains an individual DQ item in the queue. There is no merge or coalescing step at the TMCP level.
 
-4. **Section 3.4 / Finding H:** Should the actionability filter apply to the channel subscriber path, or is channel always a raw unfiltered feed?
+**Effect:** An agent receiving ten reactions before a real message sees ten separate reaction items in the dequeue array alongside the triggering message. P4 describes "DQ-batched" delivery; the batch occurs, but items are not merged. A heavy reaction storm inflates the DQ array size.
 
-5. **Section 4.4 / Finding E:** Is `modality_hint_voice_received` intentionally non-silent, or should it be added to the `isSilentEvent` predicate?
+**Status — Operator confirmed (2026-06-27):** The existing batch co-delivery behavior is correct. Reactions accumulate and deliver with the next real message. True per-item merging is not required. Not a required fix. Document as known non-ideal. TemporalQueue changes deferred to future work.
 
-6. **Section 4.1 (Finding A — implementation):** Confirm that suppressing `notifySession` for reactions in both `enqueueToSession` AND the broadcast fallback loop in `routeToSession` does not break the AC-1 self-notify filter or any other path that depends on those call sites.
+---
 
-7. **Section 3.1 / §3.2 (DM/callback re-evaluation gap):** A parked agent may remain parked indefinitely if the only pending item is a DM or callback, since `hasPendingUserContent()` does not detect these types. Policy decision needed: is this gap acceptable, or should DMs and callbacks be added to the re-evaluation check?
+## 5. Regression-Safe Behaviors
 
-### 5.3 Wake taxonomy summary (agent-readable)
+These behaviors are confirmed correct and MUST NOT change without explicit Overseer authorization.
 
-For an agent consuming TMCP events, the rule is:
+| Behavior | Location | Why it must not change |
+|---|---|---|
+| `isNotifyTriggerEvent` returns `false` for `event.event === "reaction"` | `session-queue.ts` | Core P2 enforcement for SSE/activity-file path; removing this wakes agents on every reaction |
+| `isSilentEvent` matches `behavior_nudge_*` prefix | `session-queue.ts` | Prevents coaching messages from waking parked agents |
+| `isSilentEvent` matches `agent_event` exactly | `session-queue.ts` | Prevents lifecycle fan-outs from waking every session on every compaction |
+| `send_callback` no-notify (hardcoded in `deliverAsyncSendCallback`) | `session-queue.ts` | Delivery confirmations are non-actionable housekeeping; waking on them wastes tokens |
+| `post_compact_monitor_recovery` wakes actor session only | `session-queue.ts` / `event-endpoint.ts` | Other sessions receive silent `agent_event`; only the compacting actor re-arms monitors |
+| 60-second debounce when agent is active in dequeue | `file-state.ts` | Calibrated debounce for active sessions; lowering causes notify storms |
+| 300-second debounce when agent is parked / idle | `file-state.ts` | Calibrated debounce for parked agents; lowering causes spurious wake-ups |
+| Re-notify check includes `hasPendingReminderContent(sid)` | `file-state.ts` | Ensures reminder-only queues can re-wake a parked agent after debounce expires |
+| EC-1 connect-notify uses `hasAnyPendingContent(sid)` | `file-state.ts` | Broader than re-notify check; catches callbacks, DMs, and other types missed while SSE was absent |
+| Phase-1 voice suppression (no SSE wake before transcription complete) | `session-queue.ts` | Waking before transcription yields an empty or partial batch; agent gets no useful content |
+| Phase-2 voice wake fires after `patchVoiceText` completes | `session-queue.ts` | Guarantees transcript is populated in the queue item when agent dequeues |
 
-**Wake on (MUST act):**
-- Any `event: "message"` from operator (text, voice, command, photo, doc, video, audio, sticker, animation, contact, location, unknown)
-- Any `event: "callback"` (button press)
-- Any `event: "direct_message"` (inter-agent DM)
-- Any `event: "reminder"` (all trigger types)
-- Service messages: `post_compact_monitor_recovery`, `post_compact_sse_recovery`, `shutdown`, `voice_transcription_failed`, `persistent_animation_running`, `governor_*`, `session_*`, `child_*`, `spawn_child_subagent_hint`, `onboarding_arm_reminder`, `activity_file_monitor_instructions`, `duplicate_session_detected`
-- All `onboarding_*` and `compression_hint_*` service messages — see §2.8.2 for full enumeration. Specific types: `onboarding_token_save`, `onboarding_loop_pattern`, `onboarding_compaction_hint`, `onboarding_role`, `onboarding_protocol`, `onboarding_buttons`, `onboarding_hybrid_messaging`, `onboarding_modality_priority`, `onboarding_presence_signals`, `onboarding_no_pending_yet`, `onboarding_participating`, `onboarding_child_token`, `onboarding_child_role`, `onboarding_child_loop`, `onboarding_child_exit_protocol`, `compression_hint_first_dm`, `compression_hint_first_route`
+---
 
-**Do NOT act on (read as context only):**
-- Any `event: "reaction"` — read for context; NEVER as confirmation or instruction.
-- Any `event: "send_callback"` — delivery housekeeping; no agent response needed.
-- Service messages with `event_type` matching `behavior_nudge_*` or `agent_event` — informational; read during active loop.
-- `event: "user_edit"` — never appears in DQ (not enqueued).
+## 6. Edge Cases
 
-**MUST NOT treat as confirmation:**
-- Reactions of any emoji (P5) — not 👍, not 💯, not ❤️. Confirmation requires explicit operator text, voice, or button response.
+### 6.1 Reactions in DQ but no SSE wake
+
+When a reaction arrives while the agent is parked:
+
+1. Event is enqueued in the TemporalQueue — visible in next `dequeue()` call.
+2. `isNotifyTriggerEvent(event)` returns `false` — SSE/activity-file notification suppressed.
+3. `notifyChannelSubscriber` IS called (Gap 1).
+4. Agent remains parked. No debounce state is written.
+5. Real message arrives → `isNotifyTriggerEvent` returns `true` → notify fires → agent wakes → `dequeue()` returns array containing the reaction(s) and the real message in arrival order, up to the TemporalQueue heavyweight delimiter.
+
+The agent sees the reaction in context, not as a standalone interrupt. This is the intended P4 behavior.
+
+Because reactions never write debounce state, a flood of reactions between two real messages is entirely debounce-transparent: the real message notify fires cleanly regardless of how many reactions preceded it.
+
+### 6.2 Voice message phase-1 / phase-2 suppression sequence
+
+Voice messages go through two-phase delivery to guarantee the transcript is present when the agent dequeues.
+
+**Phase-1 (transcription pending):**
+
+- Message enqueued in TemporalQueue with `text: undefined`.
+- SSE/activity-file notification suppressed — agent stays parked.
+- `notifyChannelSubscriber` IS called (channel receives all events).
+- No debounce state written.
+
+**Phase-2 (transcription complete):**
+
+- `patchVoiceText` updates the queued item with the completed transcript.
+- `notifySessionWaiters` fires the SSE/activity-file notification.
+- Agent wakes, calls `dequeue()`, receives the message with transcript populated.
+
+This two-step sequence guarantees an agent never dequeues a voice message with a missing transcript due to a premature wake. If transcription fails, a `voice_transcription_failed` service message is delivered instead (non-silent; wakes agent).
+
+### 6.3 `post_compact_monitor_recovery` — actor-only delivery
+
+When an agent sends `kind: "compacted"` to POST /event, two separate things happen:
+
+**All sessions (fan-out):**
+
+- Receive `agent_event` service message (`isSilentEvent = true`).
+- No SSE wake, no channel subscriber call.
+- Informational context only — peers know a compaction occurred.
+
+**Actor session only (`resolvedActorSid`):**
+
+- Receives `post_compact_monitor_recovery` service message.
+- NOT gated by `isSilentEvent`.
+- SSE/activity-file wake fires for the actor session only.
+- Agent must re-arm its SSE monitor and any file-state monitors post-compaction.
+
+If the actor SID cannot be resolved, the recovery message is not delivered. The actor recovers via the standard EC-1 connect-notify on the next SSE connection — `hasAnyPendingContent` catches any pending queue items.
+
+The two-tier design is correct and intentional: peers need awareness but not action; the compacting actor needs both.
+
+---
+
+## 7. Wake Taxonomy (quick reference)
+
+**MUST wake (agent must act):**
+
+- Any `event: "message"` from operator — all `OPERATOR_MESSAGE_TYPES`
+- Any `event: "callback"` — button press
+- Any `event: "direct_message"` — inter-agent DM
+- Any `event: "reminder"` — all trigger types
+- Service messages: `post_compact_monitor_recovery`, `post_compact_sse_recovery`, `voice_transcription_failed`, `persistent_animation_running`, `governor_*`, `session_*`, `child_*`, `spawn_child_subagent_hint`, `onboarding_arm_reminder`, `activity_file_monitor_instructions`, `duplicate_session_detected`
+- All `onboarding_*` and `compression_hint_*` service messages
+
+**MUST NOT wake (read as context when already running):**
+
+- Any `event: "reaction"` — read for context; NEVER as confirmation or instruction
+- Any `event: "send_callback"` — delivery housekeeping; no agent action required
+- Service messages matching `behavior_nudge_*` — behavioral coaching during active sessions
+- Service messages with `event_type === "agent_event"` — lifecycle fan-out; informational
+- `event: "user_edit"` — never appears in DQ
+
+**Never treat as confirmation:**
+
+- Reactions of any emoji (P5). Not 👍, not 💯, not ❤️. Confirmation requires explicit text, voice, or button response from the operator.
+
+---
+
+## §8 — Audit Findings Map (Epic 10-3020)
+
+Audit conducted 2026-06-20 against branch `dev` HEAD `dd803bcc`. This section maps each finding to its disposition against this spec.
+
+| # | Sev | Finding | Status | Sub-task |
+|---|-----|---------|--------|----------|
+| 1 | HIGH | `agent_event` SSE suppression staged but not committed | ✅ Resolved — `isSilentEvent` gate confirmed active in production | — |
+| 2 | HIGH | `notifyChannelSubscriber` not gated on actionability filter | ⚠️ Confirmed bug (Gap 1) — operator confirmed reactions MUST NOT wake channel subscribers. Fix: wrap `notifyChannelSubscriber` in `isNotifyTriggerEvent` guard at both call sites. Implementation task: 10-3021 | 10-3021 |
+| 3 | HIGH | Runaway dequeue guard in `dev`, not merged to `master` | ✅ Resolved — 10-0011 merged | — |
+| 4 | LOW | `timeout=0` debounce non-release — intentional | ✅ No action needed — intentional design | — |
+| 5 | MED | Re-notify timer skips reminder-only queues (§5-b gap) | ✅ Resolved — `hasPendingReminderContent` included in re-notify check (confirmed in §3 of this spec) | — |
+| 6 | LOW | `flushPendingChannelNotify` dead export (unwired) | 🔲 Open — implementation task 10-3023. Safe to implement against this spec. | 10-3023 |
+| 7 | LOW | `peekCategories` O(N) drain-re-enqueue | 🔲 Open — implementation task 10-3024. Performance optimization, no behavioral change. Safe to implement. | 10-3024 |
+| 8 | LOW | Child onboarding msgs fire before `setDequeueActive` | 🔲 Open — implementation task 10-3025. Ordering fix, no wake behavior change. Safe to implement. | 10-3025 |
+| 9 | LOW | Concurrent dequeue refcount gap | 🔲 Future work — documented, no immediate task. No spec change required. | — |
+
+**Safe to implement against this spec:** findings 6, 7, 8.
+**Requires operator decision before implementation:** finding 2 (Gap 1 fix scope confirmed — file 10-3021).
+**Resolved:** findings 1, 3, 4, 5.
+**Deferred:** finding 9.
+
+---
+
+*End of specification.*
