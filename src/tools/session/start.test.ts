@@ -1550,6 +1550,102 @@ describe("session_start tool", () => {
     expect(String(editCall[2])).not.toMatch(/🟦|🟩|🟨|🟧|🟥|🟪/);
   });
 
+  // =========================================================================
+  // Inline button callback dispatch — each type routes to the correct handler
+  // (regression coverage for 10-3070 + 10-3076)
+  // =========================================================================
+
+  it("approve_no callback: keyboard cleared on denial (fix 10-3070/10-3076)", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_no", qid: "q-deny" } }); });
+    });
+    mocks.sendMessage.mockResolvedValue({ message_id: 55 });
+
+    await call({ name: "Worker" });
+
+    // editMessageText must pass reply_markup: { inline_keyboard: [] } to clear color buttons
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42,
+      55,
+      expect.stringContaining("denied"),
+      expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
+    );
+    // Message must NOT be deleted — it's edited to show the outcome
+    expect(mocks.deleteMessage).not.toHaveBeenCalledWith(42, 55);
+  });
+
+  it("approve_{N} color button: resolves approved:true, message deleted (not edited)", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      // approve_1 → palette index 1 → 🟩
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q-color" } }); });
+    });
+    mocks.sendMessage.mockResolvedValue({ message_id: 56 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    // Approved path: message deleted, editMessageText NOT called for this msgId
+    expect(mocks.deleteMessage).toHaveBeenCalledWith(42, 56);
+    const editCalls = (mocks.editMessageText.mock.calls as unknown[][]).filter(
+      (c) => c[1] === 56,
+    );
+    expect(editCalls).toHaveLength(0);
+    // Session created with operator-chosen color
+    expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩", true);
+  });
+
+  it("approve_toggle_delegation: re-registers hook, updates keyboard, does not resolve approval", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    let hookCalls = 0;
+    mocks.registerCallbackHook.mockImplementation((_id: number, fn: (evt: unknown) => void) => {
+      hookCalls++;
+      if (hookCalls === 1) {
+        // Initial registration — fire toggle first
+        void Promise.resolve().then(() => {
+          fn({ content: { data: "approve_toggle_delegation", qid: "q-toggle" } });
+        });
+      } else {
+        // Re-registered after toggle — now fire deny to end the approval flow
+        void Promise.resolve().then(() => {
+          fn({ content: { data: "approve_no", qid: "q-deny2" } });
+        });
+      }
+    });
+    mocks.sendMessage.mockResolvedValue({ message_id: 57 });
+
+    const result = await call({ name: "Worker" });
+
+    // Toggle causes re-registration (hookCalls === 2), then deny fires
+    expect(hookCalls).toBeGreaterThanOrEqual(2);
+    // editMessageReplyMarkup called once for the toggle keyboard update
+    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledTimes(1);
+    // answerCallbackQuery called for both toggle and deny
+    expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(2);
+    // Final approval result is denial (deny button fired after toggle)
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SESSION_DENIED");
+    // Keyboard cleared in denial edit
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42,
+      57,
+      expect.stringContaining("denied"),
+      expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
+    );
+  });
+
   it("agent's color hint passed to getAvailableColors", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
