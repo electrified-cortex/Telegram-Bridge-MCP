@@ -4,7 +4,7 @@ created: 2026-06-26
 status: draft
 priority: 20
 type: Feature
-source: Operator directive — Telegram feature audit triage (2026-06-26)
+source: Telegram feature audit triage (2026-06-26)
 repo: electrified-cortex/Telegram-Bridge-MCP
 branch_target: dev
 epic: Bot API feature coverage
@@ -95,9 +95,8 @@ http:// guards).
 - grammY 1.43 exposes `sendMediaGroup` and the `InputMedia*` types.
 - CDN-persistence warning (from `send_file`) applies and should be surfaced.
 
-## Overseer review
+## Gate review
 
-- reviewer: Overseer
 - date: 2026-06-28
 - verdict: PASS
 - review type: inline gate (clear feature, well-specced)
@@ -105,7 +104,6 @@ http:// guards).
 
 ## Verification
 
-- verifier: task-verification agent (a12514fab20d4125f — round 2)
 - date: 2026-06-28
 - verdict: APPROVED
 - squash_commit: 4c18b01a

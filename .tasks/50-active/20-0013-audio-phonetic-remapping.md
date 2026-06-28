@@ -1,7 +1,7 @@
 ---
 type: feature-spec / draft
 priority: P2
-source: Operator voice TG 81092 — 2026-06-28
+source: TG 81092 — 2026-06-28
 status: queued
 relates-to: audio send, TTS pipeline
 ---
@@ -63,7 +63,7 @@ Different profiles can have different mappings for the same word — intentional
 
 Operator intent: this is a permanent capability, not a one-off fix. The map should be easy to add to.
 
-## Overseer review
+## Gate review
 
 - reviewer: gate
 - date: 2026-06-28
