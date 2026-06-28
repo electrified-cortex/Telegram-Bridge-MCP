@@ -247,7 +247,11 @@ if (mcpPort !== undefined) {
     }, 30_000);
     res.on("close", () => { clearInterval(keepaliveTimer); });
 
-    await transport.handleRequest(req, res);
+    try {
+      await transport.handleRequest(req, res);
+    } finally {
+      clearInterval(keepaliveTimer);
+    }
   });
 
   app.delete("/mcp", async (req: Request, res: Response) => {
