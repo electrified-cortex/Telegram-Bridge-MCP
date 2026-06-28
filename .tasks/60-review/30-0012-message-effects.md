@@ -108,3 +108,14 @@ place to correct if Telegram changes the constants.
 - verdict: PASS
 - review type: inline gate (polish feature, low risk)
 - checked: ACs binary (effect plays in private chat, all 6 presets verified live, stale-id fallback, last-chunk-only, plain-path forced when rich enabled, build+test clean, PR staged not merged), scope = send.ts text path + new constants module, delegation correct, no open questions; effect ID verification is worker responsibility during impl
+
+## Verification
+
+- verifier: task-verification agent (aaf517bedc7f43e16)
+- date: 2026-06-28
+- verdict: NEEDS_REVISION
+- squash_commit: 4c18b01a (code merged to dev — correct; seal pending)
+- tests: 4128/4128 pass
+- gaps:
+  1. test-plan.md missing from .worker-pod/.temp/ — process artifact required by verifier gate
+  2. AC2 unmet: no artifact evidences live-chat verification of 6 effect presets — task spec requires worker to confirm against a real private chat; PR #250 body notes this requires operator access and is flagged for pre-ship validation; Overseer review acknowledged this constraint; escalated for Overseer disposition
