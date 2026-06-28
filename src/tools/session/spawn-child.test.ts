@@ -3,6 +3,13 @@ import { parseResult, isError } from "../test-utils.js";
 import { clearChildRegistry, getParent, registerChild } from "./child-registry.js";
 import { runInSessionContext } from "../../session-context.js";
 import { getTopic, resetTopicStateForTest } from "../../topic-state.js";
+import {
+  getSessionVoiceFor,
+  getSessionSpeedFor,
+  setSessionVoice,
+  setSessionSpeed,
+  resetVoiceStateForTest,
+} from "../../voice-state.js";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -52,6 +59,7 @@ describe("session/spawn-child", () => {
     vi.clearAllMocks();
     clearChildRegistry();
     resetTopicStateForTest();
+    resetVoiceStateForTest();
     mocks.requireAuth.mockReturnValue(PARENT_SID);
     mocks.handleSessionStart.mockResolvedValue(makeStartSuccess());
     // Default: caller has no capability restriction (undefined = full)
@@ -482,5 +490,54 @@ describe("session/spawn-child", () => {
 
     expect(child1Session.name).toBe("First ①");
     expect(child2Session.name).toBe("Second ②");
+  });
+
+  // ── AC4: Voice inheritance ─────────────────────────────────────────────────
+
+  it("AC4: child inherits parent voice when parent has voice set", async () => {
+    // Set parent voice in parent session context
+    runInSessionContext(PARENT_SID, () => setSessionVoice("nova"));
+
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(getSessionVoiceFor(CHILD_SID)).toBe("nova");
+  });
+
+  it("AC4: child inherits parent voice_speed when parent has speed set", async () => {
+    runInSessionContext(PARENT_SID, () => setSessionVoice("alloy"));
+    runInSessionContext(PARENT_SID, () => setSessionSpeed(1.25));
+
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(getSessionSpeedFor(CHILD_SID)).toBe(1.25);
+  });
+
+  it("AC4: child has no voice when parent has no voice (null/default)", async () => {
+    // Parent has no voice set — resetVoiceStateForTest in beforeEach ensures this
+
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(getSessionVoiceFor(CHILD_SID)).toBeNull();
+  });
+
+  it("AC4: child has no speed when parent has no speed set", async () => {
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(getSessionSpeedFor(CHILD_SID)).toBeNull();
+  });
+
+  it("AC4: voice inheritance is independent of name/color inheritance", async () => {
+    mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Curator", color: "🔵" });
+    runInSessionContext(PARENT_SID, () => setSessionVoice("echo"));
+
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    // voice copied
+    expect(getSessionVoiceFor(CHILD_SID)).toBe("echo");
+    // name/color still inherited correctly
+    expect(mocks.handleSessionStart).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Curator",
+      color: "🔵",
+    }));
   });
 });

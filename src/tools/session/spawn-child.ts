@@ -9,6 +9,7 @@ import { handleSessionStart } from "./start.js";
 import { registerChild, getChildren } from "./child-registry.js";
 import { deliverServiceMessage } from "../../session-queue.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
+import { getSessionVoiceFor, getSessionSpeedFor, setSessionVoice, setSessionSpeed } from "../../voice-state.js";
 
 export async function handleSpawnChild({
   token,
@@ -106,6 +107,17 @@ export async function handleSpawnChild({
     if (parentSession?.name_tag !== undefined) {
       childSession.name_tag = parentSession.name_tag;
     }
+  }
+
+  // Inherit parent voice and speed so the child uses the same TTS voice.
+  // Conditional: only copy if the parent has a non-null/non-undefined voice set.
+  const parentVoice = getSessionVoiceFor(parentSid);
+  const parentSpeed = getSessionSpeedFor(parentSid);
+  if (parentVoice !== null) {
+    runInSessionContext(childSid, () => setSessionVoice(parentVoice));
+  }
+  if (parentSpeed !== null) {
+    runInSessionContext(childSid, () => setSessionSpeed(parentSpeed));
   }
 
   // Guide the parent (host) toward dispatching a background sub-agent for the

@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { getCallerSid } from "./session-context.js";
 import {
   enqueueAsyncSend,
   cancelSessionJobs,
@@ -104,14 +105,15 @@ async function flushJobs(): Promise<void> {
   // Settle all pending microtasks in the async-send-queue job chain.
   // Each await corresponds to a promise hop in the production chain:
   //   1. tailPromise.then() — enter queue slot
-  //   2. executeJob Promise.race() setup
-  //   3. runJob: await synthesizeToOgg()
-  //   4. runJob: await sendVoiceDirect()
-  //   5. executeJob/runJob: await deliverAsyncSendCallback()
-  //   6. .finally(() => jobs.delete()) — exit queue slot
-  //   7. text-send tail .then() — enter text slot
-  //   8. await fn(pendingId) — text fn executes
-  // Two sequential jobs need ~12 hops; 16 covers all test scenarios.
+  //   2. executeJob: runInSessionContext async-fn Promise unwrap
+  //   3. executeJob Promise.race() setup
+  //   4. runJob: await synthesizeToOgg()
+  //   5. runJob: await sendVoiceDirect()
+  //   6. executeJob/runJob: await deliverAsyncSendCallback()
+  //   7. .finally(() => jobs.delete()) — exit queue slot
+  //   8. text-send tail .then() — enter text slot
+  //   9. await fn(pendingId) — text fn executes
+  // Two sequential jobs need ~14 hops; 16 covers all test scenarios.
   await Promise.resolve(); // 1
   await Promise.resolve(); // 2
   await Promise.resolve(); // 3
@@ -1016,5 +1018,44 @@ describe("text-after-audio queue ordering", () => {
     expect(pid1).toBeLessThan(0);
     expect(pid2).toBeLessThan(0);
     expect(pid1).not.toBe(pid2);
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Session context propagation — getCallerSid() resolves job.sid inside runJob
+  // -------------------------------------------------------------------------
+  describe("session context propagation", () => {
+    it("getCallerSid() returns job.sid inside sendVoiceDirect when job executes", async () => {
+      let callerSidDuringSend: number | undefined;
+      mocks.sendVoiceDirect.mockImplementation(async () => {
+        callerSidDuringSend = getCallerSid();
+        return { message_id: 200 };
+      });
+
+      enqueueAsyncSend(5, makeJobParams({ sid: 5 }));
+      await flushJobs();
+
+      // After the fix, executeJob wraps the job in runInSessionContext(job.sid, ...)
+      // so getCallerSid() correctly returns the job's SID during sendVoiceDirect.
+      expect(callerSidDuringSend).toBe(5);
+    });
+
+    it("each job carries its own session context (different sids, different context)", async () => {
+      const sidsDuringSend: number[] = [];
+
+      mocks.synthesizeToOgg
+        .mockResolvedValueOnce(Buffer.from("ogg-sid1"))
+        .mockResolvedValueOnce(Buffer.from("ogg-sid2"));
+      mocks.sendVoiceDirect.mockImplementation(async () => {
+        sidsDuringSend.push(getCallerSid());
+        return { message_id: 200 };
+      });
+
+      enqueueAsyncSend(11, makeJobParams({ sid: 11, chatId: 110 }));
+      enqueueAsyncSend(22, makeJobParams({ sid: 22, chatId: 220 }));
+      await flushJobs();
+
+      expect(sidsDuringSend).toContain(11);
+      expect(sidsDuringSend).toContain(22);
+    });
   });
 });
