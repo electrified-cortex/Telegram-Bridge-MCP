@@ -707,6 +707,47 @@ export function deliverReminderEvent(
   return true;
 }
 
+/** Next synthetic event ID counter for checklist stale events (negative, distinct from reminder-state). */
+let _nextChecklistStaleId = -50_000;
+
+/**
+ * Inject a `checklist_stale` reminder event into a session queue.
+ * Called by the stale-timer module when a checklist has not been updated within `stale_after`.
+ * Returns false if the target queue does not exist.
+ */
+export function deliverChecklistStaleEvent(
+  targetSid: number,
+  message_id: number,
+  title: string,
+  pending_count: number,
+  stale_after_s: number,
+): boolean {
+  const q = _queues.get(targetSid);
+  if (!q) return false;
+
+  const text = `Checklist stale: "${title}" — ${pending_count} step(s) pending/running with no update in ${stale_after_s}s.`;
+  const event: TimelineEvent = {
+    id: _nextChecklistStaleId--,
+    timestamp: new Date().toISOString(),
+    event: "reminder",
+    from: "system",
+    content: {
+      type: "checklist_stale",
+      text,
+    },
+    sid: 0,
+  };
+  // Attach machine-readable fields for consumers without unsafe cast.
+  // EventContent allows extra properties at runtime since it's a structural interface.
+  Object.assign(event.content, { message_id, title, pending_count });
+
+  q.enqueue(event);
+  notifySession(targetSid, "reminder", isDequeueActive(targetSid));
+  notifyChannelSubscriber(targetSid, event);
+  dlog("service", `checklist stale delivered → sid=${targetSid}`, { message_id, pending_count });
+  return true;
+}
+
 /**
  * Wire the reminder-fire callback so reminder-state.ts can deliver events through
  * session-queue.ts without a circular import. Call this once at server startup

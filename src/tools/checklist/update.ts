@@ -5,6 +5,7 @@ import { escapeHtml } from "../../markdown.js";
 import { applyTopicToTitle } from "../../topic-state.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
+import { armStaleTimer, resetStaleTimer, clearStaleTimer } from "./stale-timer.js";
 
 /** Message IDs that have already received a completion reply — prevents duplicates. */
 const _completedMessageIds = new Set<number>();
@@ -90,11 +91,12 @@ function completionBadge(steps: ChecklistStep[]): string {
 // Note: the create path returns only { message_id } — there are no compact-suppressible
 // fields, so response_format is only accepted on the update path (handleUpdateChecklist).
 export async function handleSendNewChecklist({
-  title, steps, token,
+  title, steps, token, stale_after,
 }: {
   title: string;
   steps: ChecklistStep[];
   token: number;
+  stale_after?: number;
 }) {
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
@@ -111,6 +113,12 @@ export async function handleSendNewChecklist({
       _rawText: title,
     } as Record<string, unknown>);
     await getApi().pinChatMessage(chatId, msg.message_id, { disable_notification: true }).catch(() => {});
+
+    // Arm stale-reminder timer if requested (opt-in).
+    if (typeof stale_after === "number" && stale_after > 0) {
+      armStaleTimer(msg.message_id, _sid, stale_after * 1000, title, steps);
+    }
+
     return toResult({ message_id: msg.message_id });
   } catch (err) {
     return toError(err);
@@ -155,6 +163,11 @@ export async function handleUpdateChecklist({ title, steps, message_id, token, r
           _skipHeader: true,
         } as Record<string, unknown>).catch(() => {});
       }
+      // All steps terminal — stale reminder no longer relevant; clear any armed timer.
+      clearStaleTimer(message_id);
+    } else {
+      // Steps still in progress — reset stale timer so the clock restarts from this update.
+      resetStaleTimer(message_id, title, steps);
     }
     const compact = response_format === "compact";
     return toResult({ message_id: edited.message_id, ...(compact ? {} : { updated: true }) });
@@ -172,6 +185,17 @@ export function register(server: McpServer) {
         title: TITLE_INPUT,
         steps: STEPS_INPUT,
         token: TOKEN_SCHEMA,
+        stale_after: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            "Optional. If set, fires a reminder into the session dequeue queue when this many " +
+            "seconds elapse since the checklist was last updated and it still has pending/running " +
+            "steps. The reminder is suppressed when all steps reach a terminal state " +
+            "(done/failed/skipped). Opt-in — no timer is armed when this parameter is omitted.",
+          ),
       },
     },
     handleSendNewChecklist,

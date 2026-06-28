@@ -141,6 +141,8 @@ Never assume silence means approval. If unsure whether to proceed, ask via `conf
 - ` ``` ` for command output / config snippets
 - Use `reply_to_message_id` at most once per response thread — thread the first reply to a specific operator message for context, then let subsequent messages flow unthreaded
 
+> **No HTML encoding.** Do NOT HTML-encode characters in message text. Write `List<T>` not `List&lt;T&gt;`. The bridge applies MarkdownV2 formatting — HTML entities are passed through literally and will appear broken. Inside backtick code spans, angle brackets are safe without any escaping.
+
 ### Telegram Markdown limitations
 
 Telegram's Markdown does **not** support tables. Pipe-delimited tables render as garbled text. When you need tabular data, use one of these alternatives:
