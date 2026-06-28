@@ -55,3 +55,15 @@ This exercises the actual code path and would have caught a real regression if `
 - verdict: PASS
 - review type: inline gate (test-only, trivial scope)
 - checked: ACs binary (use real setDequeueActive, test passes, no regressions), scope = single test file, delegation correct, no open questions
+
+## Verification
+
+- verifier: a007ffbcc1bae531b
+- date: 2026-06-28
+- verdict: APPROVED
+- commit: 15d73e7d (squash b6040e5)
+- AC1: CONFIRMED — setDequeueActive(CHILD_SID, true) used; vi.mock approach removed
+- AC2: CONFIRMED — test still passes; production correctness unchanged
+- AC3: CONFIRMED — 4040/4040 tests pass, 166 test files
+
+Sealed-By: a007ffbcc1bae531b

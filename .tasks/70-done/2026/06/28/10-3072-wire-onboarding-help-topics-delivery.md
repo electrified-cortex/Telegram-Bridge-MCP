@@ -46,3 +46,15 @@ When the governor session starts, `ONBOARDING_HELP_TOPICS` should be delivered t
 - verdict: PASS
 - review type: inline gate (single delivery call, low blast radius)
 - checked: ACs binary (constant delivered on governor startup, scoped correctly, test confirms), delegation correct, no open questions
+
+## Verification
+
+- verifier: aab5054453a563d50
+- date: 2026-06-28
+- verdict: APPROVED
+- commit: b19957b5 (squash b6040e5)
+- AC1: CONFIRMED — ONBOARDING_HELP_TOPICS delivered via deliverServiceMessage in start.ts isFirstSession block
+- AC2: CONFIRMED — scoped to governor (isFirstSession branch); participant/child sessions excluded; negative test asserts exclusion
+- AC3: CONFIRMED — 4040/4040 tests pass, 2 new tests (positive + negative)
+
+Sealed-By: aab5054453a563d50

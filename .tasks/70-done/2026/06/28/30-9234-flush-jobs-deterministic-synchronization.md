@@ -55,3 +55,16 @@ that baseline.  Test-only change — no production code should be modified.
 - verdict: PASS
 - review type: inline gate (test-only, well-bounded)
 - checked: ACs binary (no counted awaits, deterministic failure on chain change, all tests pass, tsc clean), scope = single test file, three candidate approaches listed for worker evaluation, delegation correct, no blocking open questions
+
+## Verification
+
+- verifier: a6eea17e37dc49083
+- date: 2026-06-28
+- verdict: APPROVED
+- commit: de239ed7 (squash b6040e5)
+- AC1: CONFIRMED — flushJobs() body is entirely vi.waitFor(); zero counted awaits
+- AC2: CONFIRMED — vi.waitFor() polls deliverAsyncSendCallback.mock.calls.length with 5s timeout; fails loudly if chain changes
+- AC3: CONFIRMED — 4040/4040 tests pass (≥4003 required)
+- AC4: CONFIRMED — tsc exits 0 before vitest (&&-chained in package.json test script)
+
+Sealed-By: a6eea17e37dc49083
