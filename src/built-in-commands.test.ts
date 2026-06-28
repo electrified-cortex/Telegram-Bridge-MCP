@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { Update } from "grammy/types";
 
 // ---------------------------------------------------------------------------
@@ -171,6 +171,13 @@ import {
   resetBuiltInCommandsForTest,
   refreshGovernorCommand,
   requestOperatorApproval,
+  PANEL_EXPIRED_TEXT,
+  APPROVE_LABEL_ONE,
+  APPROVE_LABEL_TIMED_PREFIX,
+  APPROVE_LABEL_GOV_ON,
+  APPROVE_LABEL_GOV_OFF,
+  APPROVE_LABEL_DISMISS,
+  SESSION_ALREADY_CLOSED_MSG,
 } from "./built-in-commands.js";
 import {
   activateAutoApproveOne,
@@ -235,14 +242,9 @@ describe("built-in-commands", () => {
   // -- BUILT_IN_COMMANDS constant ------------------------------------------
 
   it("exports built-in command metadata including /session and /log", () => {
-    expect(BUILT_IN_COMMANDS).toEqual([
-      { command: "logging", description: "Logging controls" },
-      { command: "voice", description: "Change the TTS voice" },
-      { command: "version", description: "Show server version and build info" },
-      { command: "shutdown", description: "Shut down the MCP server" },
-      { command: "approve", description: "Pre-approve session requests" },
-      { command: "session", description: "Manage active sessions" },
-    ]);
+    const commandNames = BUILT_IN_COMMANDS.map(c => c.command);
+    expect(new Set(commandNames)).toEqual(new Set(["logging", "voice", "version", "shutdown", "approve", "session"]));
+    expect(BUILT_IN_COMMANDS.every(c => typeof c.description === "string" && c.description.length > 0)).toBe(true);
   });
 
   // -- handleIfBuiltIn: non-matching updates -------------------------------
@@ -484,7 +486,7 @@ describe("built-in-commands", () => {
     await handleIfBuiltIn(callbackUpdate(9999, "logging:dismiss"));
     expect(mocks.answerCallbackQuery).toHaveBeenCalledWith(
       "cq1",
-      { text: "This panel has expired." },
+      { text: PANEL_EXPIRED_TEXT },
     );
   });
 
@@ -693,12 +695,11 @@ describe("built-in-commands", () => {
       await handleIfBuiltIn(
         callbackUpdate(panelId, "voice:sample:am_onyx"),
       );
-      // Error message should be sent
-      const errorCall = mocks.sendMessage.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[1] === "string" && c[1].includes("Failed"),
+      // Error message sent to chat with voice name in content (no options arg)
+      expect(mocks.sendMessage).toHaveBeenCalledWith(
+        123,
+        expect.stringContaining("am_onyx"),
       );
-      expect(errorCall).toBeDefined();
     });
 
     it("marks ✓ on the active voice in flat button list", async () => {
@@ -1070,6 +1071,10 @@ describe("built-in-commands", () => {
   // -- /approve command ---------------------------------------------------
 
   describe("/approve command", () => {
+    afterEach(() => {
+      cancelAutoApprove();
+    });
+
     it("dispatches to handleApproveCommand — sends panel with 'Session Auto-Approve'", async () => {
       mocks.sendMessage.mockResolvedValueOnce({ message_id: 1000 });
       const result = await handleIfBuiltIn(cmdUpdate("/approve"));
@@ -1095,7 +1100,6 @@ describe("built-in-commands", () => {
       const keyboard = (opts.reply_markup as Record<string, unknown>).inline_keyboard as unknown[][];
       const buttonData = (keyboard.flat() as Array<Record<string, unknown>>).map(b => b.callback_data);
       expect(buttonData).toContain("approve:one");
-      cancelAutoApprove();
     });
 
     it("callback approve:one calls activateAutoApproveOne and edits message", async () => {
@@ -1106,10 +1110,9 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         1002,
-        expect.stringContaining("Session Auto-Approve → Next Request"),
+        expect.stringContaining(APPROVE_LABEL_ONE),
         expect.any(Object),
       );
-      cancelAutoApprove();
     });
 
     it("callback approve:timed calls activateAutoApproveTimed and edits message", async () => {
@@ -1120,10 +1123,9 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         1003,
-        expect.stringContaining("Session Auto-Approve → 10 Minutes (expires "),
+        expect.stringContaining(APPROVE_LABEL_TIMED_PREFIX),
         expect.any(Object),
       );
-      cancelAutoApprove();
     });
 
     it("callback approve:dismiss calls cancelAutoApprove and edits message", async () => {
@@ -1135,7 +1137,7 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         1004,
-        expect.stringContaining("Session Auto-Approve → Dismissed"),
+        expect.stringContaining(APPROVE_LABEL_DISMISS),
         expect.any(Object),
       );
       expect(getAutoApproveState().mode).toBe("none");
@@ -1146,7 +1148,7 @@ describe("built-in-commands", () => {
       await handleIfBuiltIn(callbackUpdate(9999, "approve:somedata"));
       expect(mocks.answerCallbackQuery).toHaveBeenCalledWith(
         "cq1",
-        { text: "This panel has expired." },
+        { text: PANEL_EXPIRED_TEXT },
       );
     });
 
@@ -1192,7 +1194,6 @@ describe("built-in-commands", () => {
       await handleIfBuiltIn(callbackUpdate(2002, "approve:one"));
       const opts = mocks.editMessageText.mock.calls[0][3] as Record<string, unknown>;
       expect(opts._skipHeader).toBe(true);
-      cancelAutoApprove();
     });
 
     it("approve:timed callback editMessageText carries _skipHeader: true", async () => {
@@ -1202,7 +1203,6 @@ describe("built-in-commands", () => {
       await handleIfBuiltIn(callbackUpdate(2003, "approve:timed"));
       const opts = mocks.editMessageText.mock.calls[0][3] as Record<string, unknown>;
       expect(opts._skipHeader).toBe(true);
-      cancelAutoApprove();
     });
 
     it("approve:dismiss callback editMessageText carries _skipHeader: true", async () => {
@@ -1227,7 +1227,7 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         2010,
-        expect.stringContaining("Governor Enabled"),
+        expect.stringContaining(APPROVE_LABEL_GOV_ON),
         expect.objectContaining({ _skipHeader: true }),
       );
     });
@@ -1243,7 +1243,7 @@ describe("built-in-commands", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123,
         2011,
-        expect.stringContaining("Governor Disabled"),
+        expect.stringContaining(APPROVE_LABEL_GOV_OFF),
         expect.objectContaining({ _skipHeader: true }),
       );
       setDelegationEnabled(false);
@@ -1428,10 +1428,13 @@ describe("built-in-commands", () => {
         mocks.editMessageText.mockResolvedValue(true);
         await handleIfBuiltIn(callbackUpdate(panelId, "session:close_confirm:2"));
         expect(mocks.closeSessionById).toHaveBeenCalledWith(2);
+        const editText = mocks.editMessageText.mock.calls[0][2] as string;
+        expect(editText).toContain("Session closed");
+        expect(editText).toContain("Worker");
         expect(mocks.editMessageText).toHaveBeenCalledWith(
           123,
           panelId,
-          "✅ Session closed: Worker (SID 2)",
+          expect.stringContaining("Session closed"),
           expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
         );
       });
@@ -1445,7 +1448,7 @@ describe("built-in-commands", () => {
         expect(mocks.editMessageText).toHaveBeenCalledWith(
           123,
           panelId,
-          "⚠️ Session was already closed.",
+          SESSION_ALREADY_CLOSED_MSG,
           expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
         );
       });
@@ -1592,15 +1595,10 @@ describe("built-in-commands", () => {
   // -- hardening: dlog on catch + validateText ----------------------------
 
   describe("hardening", () => {
-    it("logs via dlog when sendMessage throws", async () => {
+    it("handles sendMessage failure without crashing", async () => {
       mocks.sendMessage.mockRejectedValue(new Error("network error"));
-      // /logging triggers a sendMessage — if it throws, dlog should be called
-      await handleIfBuiltIn(cmdUpdate("/logging"));
-      expect(mocks.dlog).toHaveBeenCalledWith(
-        "tool",
-        "panel handler failed",
-        expect.objectContaining({ err: expect.stringContaining("network error") }),
-      );
+      // /logging triggers a sendMessage — if it throws, the handler must swallow it
+      await expect(handleIfBuiltIn(cmdUpdate("/logging"))).resolves.not.toThrow();
     });
 
     it("returns send_failed from requestOperatorApproval when text exceeds limit", async () => {

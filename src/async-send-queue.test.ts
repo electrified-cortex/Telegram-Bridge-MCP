@@ -9,6 +9,9 @@ import {
   releaseRecordingIndicator,
   hasInflightAudio,
   enqueueTextSend,
+  RECORDING_INDICATOR_SAFETY_MS,
+  ASYNC_FAILED_BANNER,
+  ASYNC_FAILED_BANNER_V2,
   type AsyncSendJob,
 } from "./async-send-queue.js";
 
@@ -80,21 +83,57 @@ function makeJobParams(overrides: Partial<JobInput> = {}): JobInput {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Wait for the promise chain to drain (all micro/macro tasks). */
+/**
+ * Drain the async-job promise chain by yielding 16 microtask turns.
+ *
+ * Each numbered await below tracks one promise hop in the production code.
+ * 16 hops cover the deepest scenario tested here (two sequential jobs: audio
+ * slot + text-after-audio slot).  If the production chain gains new awaits,
+ * tests that rely on this helper will start failing — that is the intended
+ * compile-time–free signal to update the count.
+ *
+ * WARN (follow-up task filed): the preferred implementation would synchronize
+ * deterministically via the `deliverAsyncSendCallback` mock latch or
+ * `vi.waitFor()`, eliminating the counted-hop fragility entirely.  The
+ * deliverAsyncSendCallback approach requires restructuring 30+ call sites;
+ * `vi.runAllMicrotasksAsync()` does not exist in vitest 4.1.9.  Both options
+ * are tracked for a future session.  AC5 second-clause waiver granted by
+ * Overseer 2026-06-28 on vitest-compatibility grounds.
+ */
 async function flushJobs(): Promise<void> {
-  // Multiple yields needed: synthesize → sendVoice → callback delivery chain
-  for (let i = 0; i < 10; i++) {
-    await Promise.resolve();
-  }
+  // Settle all pending microtasks in the async-send-queue job chain.
+  // Each await corresponds to a promise hop in the production chain:
+  //   1. tailPromise.then() — enter queue slot
+  //   2. executeJob Promise.race() setup
+  //   3. runJob: await synthesizeToOgg()
+  //   4. runJob: await sendVoiceDirect()
+  //   5. executeJob/runJob: await deliverAsyncSendCallback()
+  //   6. .finally(() => jobs.delete()) — exit queue slot
+  //   7. text-send tail .then() — enter text slot
+  //   8. await fn(pendingId) — text fn executes
+  // Two sequential jobs need ~12 hops; 16 covers all test scenarios.
+  await Promise.resolve(); // 1
+  await Promise.resolve(); // 2
+  await Promise.resolve(); // 3
+  await Promise.resolve(); // 4
+  await Promise.resolve(); // 5
+  await Promise.resolve(); // 6
+  await Promise.resolve(); // 7
+  await Promise.resolve(); // 8
+  await Promise.resolve(); // 9
+  await Promise.resolve(); // 10
+  await Promise.resolve(); // 11
+  await Promise.resolve(); // 12
+  await Promise.resolve(); // 13
+  await Promise.resolve(); // 14
+  await Promise.resolve(); // 15
+  await Promise.resolve(); // 16
 }
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-// Mirrors RECORDING_INDICATOR_SAFETY_MS from async-send-queue.ts.
-// Declared here (before the describe block) so source order matches usage order.
-const RECORDING_INDICATOR_SAFETY_MS_FOR_TEST = 120_000;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -365,7 +404,7 @@ describe("async-send-queue", () => {
       expect(mocks.sendMessage).toHaveBeenCalledOnce();
       const sendArgs = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
       // Legacy fallback is plain text — no parse_mode
-      expect(sendArgs[1]).toContain("⚠ [async failed]");
+      expect(sendArgs[1]).toContain(ASYNC_FAILED_BANNER);
       expect(sendArgs[1]).toContain("caption content");
       expect(sendArgs[2].parse_mode).toBeUndefined();
     });
@@ -384,11 +423,11 @@ describe("async-send-queue", () => {
       expect(mocks.sendMessage).toHaveBeenCalledOnce();
       const sendArgs = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
       // Banner must be V2-escaped: \[async failed\]
-      expect(sendArgs[1]).toContain("⚠ \\[async failed\\]");
+      expect(sendArgs[1]).toContain(ASYNC_FAILED_BANNER_V2);
       // Body must be freshly converted to MarkdownV2 (parentheses and dot escaped)
       expect(sendArgs[1]).toContain("Step \\(1\\) and step \\(2\\)\\.");
       // Must NOT contain unescaped literal parens from the raw text
-      expect(sendArgs[1]).not.toMatch(/⚠ \[async failed\]/);
+      expect(sendArgs[1]).not.toContain(ASYNC_FAILED_BANNER);
       expect(sendArgs[2].parse_mode).toBe("MarkdownV2");
     });
 
@@ -504,7 +543,8 @@ describe("async-send-queue", () => {
     });
 
     it("is a no-op for an unknown session", () => {
-      expect(() => { cancelSessionJobs(999); }).not.toThrow();
+      cancelSessionJobs(999);
+      expect(mocks.deliverAsyncSendCallback).not.toHaveBeenCalled();
     });
   });
 
@@ -586,8 +626,8 @@ describe("async-send-queue", () => {
         const callsAfterInterval = mocks.sendChatAction.mock.calls.filter(
           (c) => c[1] === "record_voice",
         );
-        // At minimum: initial call + 1 interval tick
-        expect(callsAfterInterval.length).toBeGreaterThanOrEqual(2);
+        // Exactly: initial call + 1 interval tick at 4 s
+        expect(callsAfterInterval).toHaveLength(2);
 
         // Finish the job so the interval is cleared and fake-timers can be restored cleanly.
         resolveJob(Buffer.from("ogg"));
@@ -784,7 +824,7 @@ describe("async-send-queue", () => {
         expect(recordingIndicatorEpochForTest(300)).toBe(epochA);
 
         // Safety timeout fires — clears the indicator unconditionally (epoch counter advances)
-        await vi.advanceTimersByTimeAsync(RECORDING_INDICATOR_SAFETY_MS_FOR_TEST);
+        await vi.advanceTimersByTimeAsync(RECORDING_INDICATOR_SAFETY_MS);
         expect(recordingIndicatorCountForTest()).toBe(0);
 
         // Job B acquires a fresh indicator — new epoch

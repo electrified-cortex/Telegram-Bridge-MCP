@@ -58,6 +58,8 @@ import {
   getPreset,
   listBuiltinPresets,
   BUILTIN_PRESETS,
+  PARSE_MODE,
+  ERR_NO_CHAT_ID,
 } from "./animation-state.js";
 
 // ---------------------------------------------------------------------------
@@ -87,7 +89,7 @@ describe("animation-state", () => {
     it("sends the first frame as a message", async () => {
       await startAnimation(1, ["🔄", "🔃"]);
 
-      expect(mocks.sendMessage).toHaveBeenCalledWith(123, "🔄", { parse_mode: "MarkdownV2", disable_notification: true });
+      expect(mocks.sendMessage).toHaveBeenCalledWith(123, "🔄", { parse_mode: PARSE_MODE, disable_notification: true });
     });
 
     it("returns the message_id of the sent message", async () => {
@@ -106,7 +108,7 @@ describe("animation-state", () => {
       const [chatId, text, opts] = mocks.sendMessage.mock.calls[0] as [number, string, unknown];
       expect(chatId).toBe(123);
       expect(text).toMatch(/\u258e/); // ▎ delimiter — confirms default frames are used
-      expect(opts).toEqual({ parse_mode: "MarkdownV2", disable_notification: true });
+      expect(opts).toEqual({ parse_mode: PARSE_MODE, disable_notification: true });
     });
 
     it("reuses existing message when starting new animation", async () => {
@@ -119,7 +121,7 @@ describe("animation-state", () => {
       await startAnimation(1, ["B"]);
       // Old message should have been edited in place, not deleted
       expect(mocks.deleteMessage).not.toHaveBeenCalled();
-      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", { parse_mode: "MarkdownV2" });
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", { parse_mode: PARSE_MODE });
       expect(getAnimationMessageId(1)).toBe(42);
     });
 
@@ -155,7 +157,7 @@ describe("animation-state", () => {
     it("throws if resolveChat returns non-number", async () => {
       mocks.resolveChat.mockReturnValueOnce("not_a_number" as unknown as number);
 
-      await expect(startAnimation(1)).rejects.toThrow("ALLOWED_USER_ID not configured");
+      await expect(startAnimation(1)).rejects.toThrow(ERR_NO_CHAT_ID);
     });
 
     it("sends with disable_notification: true by default (silent)", async () => {
@@ -165,7 +167,7 @@ describe("animation-state", () => {
     });
 
     it("sends with disable_notification: false when notify: true", async () => {
-      await startAnimation(1, ["X"], 1000, 600, false, false, true);
+      await startAnimation(1, ["X"], { intervalMs: 1000, timeoutSeconds: 600, notify: true });
       const [, , opts] = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
       expect(opts.disable_notification).toBe(false);
     });
@@ -179,15 +181,15 @@ describe("animation-state", () => {
 
       // Advance past one interval
       await vi.advanceTimersByTimeAsync(2000);
-      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", { parse_mode: "MarkdownV2" });
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", { parse_mode: PARSE_MODE });
 
       // Second interval
       await vi.advanceTimersByTimeAsync(2000);
-      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "C", { parse_mode: "MarkdownV2" });
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "C", { parse_mode: PARSE_MODE });
 
       // Third interval wraps back to first
       await vi.advanceTimersByTimeAsync(2000);
-      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "A", { parse_mode: "MarkdownV2" });
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "A", { parse_mode: PARSE_MODE });
     });
 
     it("does not cycle with single frame", async () => {
@@ -207,7 +209,7 @@ describe("animation-state", () => {
 
       // At 1000ms — should cycle
       await vi.advanceTimersByTimeAsync(800);
-      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", { parse_mode: "MarkdownV2" });
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", { parse_mode: PARSE_MODE });
     });
 
     it("skips API call for identical consecutive frames", async () => {
@@ -224,7 +226,7 @@ describe("animation-state", () => {
       // A→B: sends
       await vi.advanceTimersByTimeAsync(2000);
       expect(mocks.editMessageText).toHaveBeenCalledOnce();
-      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", { parse_mode: "MarkdownV2" });
+      expect(mocks.editMessageText).toHaveBeenCalledWith(123, 42, "B", { parse_mode: PARSE_MODE });
     });
 
     it("stops animation on editMessageText failure during cycling", async () => {
@@ -312,7 +314,7 @@ describe("animation-state", () => {
       expect(mocks.editMessageText).toHaveBeenCalledWith(
         123, 42,
         "Done\\!",
-        expect.objectContaining({ parse_mode: "MarkdownV2" }),
+        expect.objectContaining({ parse_mode: PARSE_MODE }),
       );
       expect(result).toEqual({ message_id: 42 });
     });
@@ -841,7 +843,7 @@ describe("animation-state", () => {
       mocks.sendMessage
         .mockResolvedValueOnce({ message_id: 42 })
         .mockResolvedValueOnce({ message_id: 50 });
-      await startAnimation(1, ["A"], 1000, 120, true);
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 120, persistent: true });
       const int = mocks.registerSendInterceptor.mock.calls[0][1];
 
       await int.beforeTextSend(123, "text", {});
@@ -861,7 +863,7 @@ describe("animation-state", () => {
       mocks.sendMessage
         .mockResolvedValueOnce({ message_id: 42 })
         .mockResolvedValueOnce({ message_id: 50 });
-      await startAnimation(1, ["A"], 1000, 120, true);
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 120, persistent: true });
       const int = mocks.registerSendInterceptor.mock.calls[0][1];
 
       await int.beforeFileSend();
@@ -936,7 +938,7 @@ describe("animation-state", () => {
       expect(mocks.sendMessage).toHaveBeenCalledWith(
         123,
         "A\u00A0B",
-        { parse_mode: "MarkdownV2", disable_notification: true },
+        { parse_mode: PARSE_MODE, disable_notification: true },
       );
     });
 
@@ -945,7 +947,7 @@ describe("animation-state", () => {
       expect(mocks.sendMessage).toHaveBeenCalledWith(
         123,
         "A B",
-        { parse_mode: "MarkdownV2", disable_notification: true },
+        { parse_mode: PARSE_MODE, disable_notification: true },
       );
     });
 
@@ -955,7 +957,7 @@ describe("animation-state", () => {
       expect(mocks.sendMessage).toHaveBeenCalledWith(
         123,
         "A\u00A0",
-        { parse_mode: "MarkdownV2", disable_notification: true },
+        { parse_mode: PARSE_MODE, disable_notification: true },
       );
     });
   });
@@ -997,8 +999,8 @@ describe("animation-state", () => {
 
   describe("priority stack — multi-session", () => {
     it("same priority: more recently added SID is displayed", async () => {
-      await startAnimation(1, ["A"], 1000, 60);  // SID 1, priority 0, seq 1
-      await startAnimation(2, ["B"], 1000, 60);  // SID 2, priority 0, seq 2 (more recent → wins)
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60 });  // SID 1, priority 0, seq 1
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 60 });  // SID 2, priority 0, seq 2 (more recent → wins)
 
       // SID 2 is on top (more recent), SID 1 is buried
       expect(isAnimationActive(1)).toBe(true);     // buried but active
@@ -1012,8 +1014,8 @@ describe("animation-state", () => {
     });
 
     it("higher priority: higher-priority SID stays on top regardless of insertion order", async () => {
-      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1, priority 5 → top
-      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2, priority 0 → buried
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60, priority: 5 });  // SID 1, priority 5 → top
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });  // SID 2, priority 0 → buried
 
       expect(isAnimationActive(1)).toBe(true);
       expect(isAnimationActive(2)).toBe(true);      // buried
@@ -1025,8 +1027,8 @@ describe("animation-state", () => {
     });
 
     it("cascade: top times out → buried SID takes over display", async () => {
-      await startAnimation(1, ["A"], 1000, 60);  // SID 1, seq 1 (will be buried)
-      await startAnimation(2, ["B"], 1000, 5);   // SID 2, seq 2, 5s timeout (takes top)
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60 });  // SID 1, seq 1 (will be buried)
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 5 });  // SID 2, seq 2, 5s timeout (takes top)
 
       expect(getAnimationMessageId(2)).toBe(42);
       expect(getAnimationMessageId(1)).toBeNull();
@@ -1045,8 +1047,8 @@ describe("animation-state", () => {
     });
 
     it("cancel buried entry: removes only that entry, displayed unchanged", async () => {
-      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1, high priority → top
-      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2, low priority → buried
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60, priority: 5 });  // SID 1, high priority → top
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });  // SID 2, low priority → buried
 
       expect(getAnimationMessageId(1)).toBe(42);
       expect(getAnimationMessageId(2)).toBeNull();
@@ -1065,8 +1067,8 @@ describe("animation-state", () => {
     });
 
     it("timeout while buried: entry becomes inactive, display unchanged", async () => {
-      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1, high priority → top
-      await startAnimation(2, ["B"], 1000, 3, false, false, false, 0);   // SID 2, 3s timeout → buried
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60, priority: 5 });  // SID 1, high priority → top
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 3, priority: 0 });   // SID 2, 3s timeout → buried
 
       expect(isAnimationActive(2)).toBe(true);  // buried but active
 
@@ -1080,24 +1082,24 @@ describe("animation-state", () => {
     });
 
     it("isAnimationActive returns true for buried sessions", async () => {
-      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1 top
-      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2 buried
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60, priority: 5 });  // SID 1 top
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });  // SID 2 buried
 
       expect(isAnimationActive(1)).toBe(true);  // top
       expect(isAnimationActive(2)).toBe(true);  // buried but active
     });
 
     it("getAnimationMessageId returns null for buried session", async () => {
-      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // top
-      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // buried
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60, priority: 5 });  // top
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });  // buried
 
       expect(getAnimationMessageId(1)).toBe(42);
       expect(getAnimationMessageId(2)).toBeNull();
     });
 
     it("push replaces own entry: updated priority takes effect", async () => {
-      await startAnimation(2, ["B"], 1000, 60, false, false, false, 5);  // SID 2, priority 5 → top
-      await startAnimation(1, ["A"], 1000, 60, false, false, false, 0);  // SID 1, priority 0 → buried
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 60, priority: 5 });  // SID 2, priority 5 → top
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });  // SID 1, priority 0 → buried
 
       expect(getAnimationMessageId(2)).toBe(42);
       expect(getAnimationMessageId(1)).toBeNull();
@@ -1105,7 +1107,7 @@ describe("animation-state", () => {
       mocks.editMessageText.mockClear();
 
       // SID 1 re-pushes with higher priority → takes top
-      await startAnimation(1, ["A2"], 1000, 60, false, false, false, 10);
+      await startAnimation(1, ["A2"], { intervalMs: 1000, timeoutSeconds: 60, priority: 10 });
 
       expect(getAnimationMessageId(1)).toBe(42);   // SID 1 now on top
       expect(getAnimationMessageId(2)).toBeNull(); // SID 2 now buried
@@ -1113,8 +1115,8 @@ describe("animation-state", () => {
     });
 
     it("stack empty after all entries removed: animation deleted", async () => {
-      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1 top
-      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2 buried
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60, priority: 5 });  // SID 1 top
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });  // SID 2 buried
 
       await cancelAnimation(1);  // SID 1 cancelled → cascade to SID 2
       await cancelAnimation(2);  // SID 2 now on top → cancel → stack empty
@@ -1124,8 +1126,8 @@ describe("animation-state", () => {
     });
 
     it("buried session beforeTextSend is not intercepted", async () => {
-      await startAnimation(1, ["A"], 1000, 60, false, false, false, 5);  // SID 1 top
-      await startAnimation(2, ["B"], 1000, 60, false, false, false, 0);  // SID 2 buried
+      await startAnimation(1, ["A"], { intervalMs: 1000, timeoutSeconds: 60, priority: 5 });  // SID 1 top
+      await startAnimation(2, ["B"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });  // SID 2 buried
 
       // Find SID 2's interceptor registration
       const calls = mocks.registerSendInterceptor.mock.calls as Array<[number, { beforeTextSend: (...a: unknown[]) => unknown }]>;
@@ -1146,7 +1148,7 @@ describe("animation-state", () => {
       mocks.sendMessage
         .mockResolvedValueOnce({ message_id: 42 })  // SID 2 initial
         .mockResolvedValueOnce({ message_id: 99 }); // SID 2 cascaded
-      await startAnimation(2, ["think"], 1000, 60, false, false, false, 0);
+      await startAnimation(2, ["think"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });
       expect(getAnimationMessageId(2)).toBe(42);
 
       // SID 1 at priority 1 → takes over display by editing msg 42
@@ -1178,7 +1180,7 @@ describe("animation-state", () => {
       mocks.sendMessage
         .mockResolvedValueOnce({ message_id: 42 })  // SID 2 initial
         .mockResolvedValueOnce({ message_id: 99 }); // SID 2 cascaded
-      await startAnimation(2, ["think"], 1000, 60, false, false, false, 0);
+      await startAnimation(2, ["think"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });
 
       // SID 1 at priority 1 → takes over display
       await startAnimation(1, ["work"], 1000, 60, false, false, false, 1);
@@ -1204,7 +1206,7 @@ describe("animation-state", () => {
       mocks.sendMessage
         .mockResolvedValueOnce({ message_id: 42 })  // SID 2 initial
         .mockResolvedValueOnce({ message_id: 99 }); // SID 2 cascaded after SID 1 consumes
-      await startAnimation(2, ["think"], 1000, 60, false, false, false, 0);
+      await startAnimation(2, ["think"], { intervalMs: 1000, timeoutSeconds: 60, priority: 0 });
       await startAnimation(1, ["work"], 1000, 60, false, false, false, 1);
 
       const calls = mocks.registerSendInterceptor.mock.calls as Array<[number, { beforeTextSend: (...a: unknown[]) => unknown }]>;
@@ -1240,16 +1242,19 @@ describe("animation-state", () => {
       await vi.advanceTimersByTimeAsync(WARN_MS);
 
       expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
-      const [sid, text, eventType, details] = mocks.deliverServiceMessage.mock.calls[0] as unknown as [
-        number, string, string, Record<string, unknown>,
-      ];
-      expect(sid).toBe(1);
-      expect(text).toContain("Persistent animation still active");
-      expect(eventType).toBe("persistent_animation_running");
-      expect(details.message_id).toBe(42);
-      expect(details.preset).toBeNull();
-      expect(typeof details.elapsed_seconds).toBe("number");
-      expect(details.elapsed_seconds as number).toBeGreaterThanOrEqual(600);
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        1,                                                     // sid
+        expect.stringContaining("still active"),               // text — prose dropped, event drives the contract
+        "persistent_animation_running",                        // eventType
+        expect.objectContaining({
+          message_id: 42,
+          preset: null,
+          elapsed_seconds: expect.any(Number),
+        }),
+      );
+      // Verify elapsed_seconds meets the 10-min warn threshold (≥ 600 s)
+      const firstWarnDetails = mocks.deliverServiceMessage.mock.lastCall as unknown as [number, string, string, { elapsed_seconds: number }] | undefined;
+      expect(firstWarnDetails?.[3].elapsed_seconds).toBeGreaterThanOrEqual(600);
     });
 
     it("resets and fires again at T+20min (second warning)", async () => {
@@ -1265,8 +1270,15 @@ describe("animation-state", () => {
       await vi.advanceTimersByTimeAsync(WARN_MS);
       expect(mocks.deliverServiceMessage).toHaveBeenCalledOnce();
 
-      const [, , eventType] = mocks.deliverServiceMessage.mock.calls[0] as unknown as [number, string, string, unknown];
-      expect(eventType).toBe("persistent_animation_running");
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        "persistent_animation_running",
+        expect.objectContaining({ elapsed_seconds: expect.any(Number) }),
+      );
+      // Verify elapsed_seconds meets the 20-min cumulative threshold (≥ 1200 s)
+      const secondWarnDetails = mocks.deliverServiceMessage.mock.lastCall as unknown as [number, string, string, { elapsed_seconds: number }] | undefined;
+      expect(secondWarnDetails?.[3].elapsed_seconds).toBeGreaterThanOrEqual(1200);
     });
 
     it("no warning fires when animation is cancelled before 10 min", async () => {
@@ -1325,10 +1337,12 @@ describe("animation-state", () => {
       // Second warning
       await vi.advanceTimersByTimeAsync(WARN_MS);
 
-      const [, , , details] = mocks.deliverServiceMessage.mock.calls[0] as unknown as [
-        number, string, string, Record<string, unknown>,
-      ];
-      expect(details.elapsed_seconds as number).toBeGreaterThanOrEqual(1200);
+      expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ elapsed_seconds: expect.any(Number) }),
+      );
     });
   });
 });

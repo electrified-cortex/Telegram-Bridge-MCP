@@ -33,7 +33,7 @@ vi.mock("./sse-endpoint.js", async (importOriginal) => {
   return { ...real, hasSseConnection: (sid: number) => sseEndpointMocks.hasSseConnection(sid) };
 });
 
-import { handleHttpActivityListenCheck, attachActivityListenCheckRoute } from "./activity-listen-check-endpoint.js";
+import { handleHttpActivityListenCheck, attachActivityListenCheckRoute, ERR_TOKEN_REQUIRED, ERR_INVALID_TOKEN, ERR_AUTH_FAILED } from "./activity-listen-check-endpoint.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ describe("TC-CHK1: missing token", () => {
   it("returns 401 when token is undefined", () => {
     const [status, body] = handleHttpActivityListenCheck(undefined);
     expect(status).toBe(401);
-    expect((body).error).toBe("token is required");
+    expect((body).error).toBe(ERR_TOKEN_REQUIRED);
   });
 
   it("returns 401 when token is null", () => {
@@ -71,7 +71,7 @@ describe("TC-CHK2: non-numeric token", () => {
   it("returns 401 when token is non-numeric string", () => {
     const [status, body] = handleHttpActivityListenCheck("notanumber");
     expect(status).toBe(401);
-    expect((body).error).toBe("invalid token");
+    expect((body).error).toBe(ERR_INVALID_TOKEN);
   });
 
   it("returns 401 when token is zero", () => {
@@ -85,7 +85,7 @@ describe("TC-CHK3: invalid session token", () => {
     sessionManagerMocks.validateSession.mockReturnValue(false);
     const [status, body] = handleHttpActivityListenCheck(VALID_TOKEN);
     expect(status).toBe(401);
-    expect((body).error).toBe("AUTH_FAILED");
+    expect((body).error).toBe(ERR_AUTH_FAILED);
   });
 });
 
@@ -144,7 +144,7 @@ describe("TC-CHK6: HTTP integration", () => {
     const res = await fetch(`http://127.0.0.1:${port}/activity/listen/check`);
     expect(res.status).toBe(401);
     const body = await res.json() as Record<string, unknown>;
-    expect(body.error).toBe("token is required");
+    expect(body.error).toBe(ERR_TOKEN_REQUIRED);
   });
 
   it("returns 401 AUTH_FAILED for an unknown session token", async () => {
@@ -152,7 +152,7 @@ describe("TC-CHK6: HTTP integration", () => {
     const res = await fetch(`http://127.0.0.1:${port}/activity/listen/check?token=9999999`);
     expect(res.status).toBe(401);
     const body = await res.json() as Record<string, unknown>;
-    expect(body.error).toBe("AUTH_FAILED");
+    expect(body.error).toBe(ERR_AUTH_FAILED);
   });
 
   it("returns 200 { subscribed: false } when no SSE connection is open", async () => {

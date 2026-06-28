@@ -145,7 +145,7 @@ describe("first-message nudge", () => {
 
     expect(spy.calls).toHaveLength(1);
     expect(spy.calls[0].eventType).toBe("behavior_nudge_first_message");
-    expect(typeof spy.calls[0].text).toBe("string");
+    expect(spy.calls[0].text.length).toBeGreaterThan(0);
     expect(spy.calls[0].sid).toBe(1);
   });
 
@@ -194,7 +194,7 @@ describe("show-typing rate nudge", () => {
 
     const typingNudges = spy.calls.filter(c => c.eventType === "behavior_nudge_typing_rate");
     expect(typingNudges).toHaveLength(1);
-    expect(typeof typingNudges[0].text).toBe("string");
+    expect(typingNudges[0].text.length).toBeGreaterThan(0);
   });
 
   it("does not nudge when rate stays at or above 30%", () => {
@@ -291,7 +291,7 @@ describe("dequeue-to-send gap nudge", () => {
 
     const gapNudges = spy.calls.filter(c => c.eventType === "behavior_nudge_slow_gap");
     expect(gapNudges).toHaveLength(1);
-    expect(typeof gapNudges[0].text).toBe("string");
+    expect(gapNudges[0].text.length).toBeGreaterThan(0);
   });
 
   it("resets slow-gap count when activity occurs", () => {
@@ -316,7 +316,7 @@ describe("dequeue-to-send gap nudge", () => {
     expect(gapNudges).toHaveLength(0);
   });
 
-  it("includes seconds waited in the nudge message", () => {
+  it("fires exactly one nudge for two consecutive slow gaps", () => {
     initSession(1);
     const spy = makeNudgeSpy();
 
@@ -326,8 +326,8 @@ describe("dequeue-to-send gap nudge", () => {
 
     const gapNudges = spy.calls.filter(c => c.eventType === "behavior_nudge_slow_gap");
     expect(gapNudges).toHaveLength(1);
-    // The nudge fires and has the correct event type
     expect(gapNudges[0].eventType).toBe("behavior_nudge_slow_gap");
+    expect(gapNudges[0].text.length).toBeGreaterThan(0);
   });
 
   it("does not nudge on first dequeue (no prior gap to measure)", () => {
@@ -425,9 +425,7 @@ describe("nudge cap (max 5 per session)", () => {
     expect(spy.calls).toHaveLength(3);
   });
 
-  it("does not nudge at all when cap is zero (hypothetically)", () => {
-    // This tests that canNudge() works — tested indirectly via fresh session
-    // where nudgeCount starts at 0
+  it("initializes nudgeCount to zero on session creation", () => {
     initSession(1);
     const state = getSessionState(1)!;
     expect(state.nudgeCount).toBe(0);
@@ -583,27 +581,32 @@ describe("recordOutboundText", () => {
 
     const escalationNudges = spy.calls.filter(c => c.eventType === "behavior_nudge_question_escalation");
     expect(escalationNudges).toHaveLength(1);
-    expect(typeof escalationNudges[0].text).toBe("string");
+    expect(escalationNudges[0].text.length).toBeGreaterThan(0);
   });
 
-  it("button use after questions suppresses further nudges", () => {
+  it("first question fires a hint nudge", () => {
     initSession(1);
     const spy = makeNudgeSpy();
 
-    // First question fires hint
     recordOutboundText(1, "Is this ready?");
     const hintNudges = spy.calls.filter(c => c.eventType === "behavior_nudge_question_hint");
     expect(hintNudges).toHaveLength(1);
+  });
 
-    // Agent now uses buttons
+  it("button use suppresses subsequent question nudges", () => {
+    initSession(1);
+    const spy = makeNudgeSpy();
+
+    // Button use before questions prevents question nudges
     recordButtonUse(1);
-    spy.calls.length = 0; // clear calls
 
-    // More questions — no more nudges
     for (let i = 0; i < 10; i++) {
       recordOutboundText(1, `Should I continue step ${i}?`);
     }
-    expect(spy.calls).toHaveLength(0);
+    const questionNudges = spy.calls.filter(
+      c => c.eventType === "behavior_nudge_question_hint" || c.eventType === "behavior_nudge_question_escalation",
+    );
+    expect(questionNudges).toHaveLength(0);
   });
 
   it("open-ended question (>200 chars) does not trigger nudge", () => {

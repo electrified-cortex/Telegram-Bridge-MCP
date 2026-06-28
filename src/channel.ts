@@ -28,6 +28,8 @@ import type { TimelineEvent } from "./message-store.js";
 import { isDequeueActive } from "./tools/activity/file-state.js";
 import { getDequeueDefault, setDequeueDefault, getNotifyDebounceMs } from "./session-manager.js";
 
+export const MCP_RESOURCES_UPDATED_METHOD = "notifications/resources/updated";
+
 /** Maximum dequeue wait (seconds) for sessions with an active channel subscription. */
 const CHANNEL_MAX_WAIT_S = 90;
 
@@ -111,7 +113,7 @@ function _send(entry: ChannelEntry, sid: number, event: TimelineEvent | undefine
 
   // Standard MCP notification for non-CC clients.
   entry.server.server.notification({
-    method: "notifications/resources/updated",
+    method: MCP_RESOURCES_UPDATED_METHOD,
     params: { uri },
   }).then(() => {
     entry.cooldownUntil = Date.now() + getNotifyDebounceMs(sid);

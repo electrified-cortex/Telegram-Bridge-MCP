@@ -41,6 +41,9 @@ const PERSISTENT_ANIMATION_WARN_MS =
     ? parseInt(process.env["PERSISTENT_ANIMATION_WARN_MS"] ?? "", 10)
     : 600_000;
 
+export const PARSE_MODE = "MarkdownV2" as const;
+export const ERR_NO_CHAT_ID = "ALLOWED_USER_ID not configured";
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -411,6 +414,16 @@ async function cascade(): Promise<void> {
 // Public API
 // ---------------------------------------------------------------------------
 
+/** Options for {@link startAnimation} when called in the options-object form. */
+export interface StartAnimationOptions {
+  intervalMs?: number;
+  timeoutSeconds?: number;
+  persistent?: boolean;
+  allowBreakingSpaces?: boolean;
+  notify?: boolean;
+  priority?: number;
+}
+
 /**
  * Start (or replace) a cycling animation message for the given session.
  * Returns the message_id of the displayed animation placeholder.
@@ -418,19 +431,35 @@ async function cascade(): Promise<void> {
  * Priority stack: if priority is higher than the current displayed entry,
  * this session takes the display immediately. Otherwise it is queued behind
  * higher-priority entries and becomes visible when they expire or are cancelled.
+ *
+ * The third parameter may be either a `number` (intervalMs, positional form for
+ * backwards compatibility) or a {@link StartAnimationOptions} options object.
  */
 export async function startAnimation(
   sid: number,
   frames?: string[],
-  intervalMs = 1000,
+  intervalMsOrOptions: number | StartAnimationOptions = 1000,
   timeoutSeconds = 600,
   persistent = false,
   allowBreakingSpaces = false,
   notify = false,
   priority = 0,
 ): Promise<number> {
+  // Resolve options-object form vs. legacy positional form.
+  let intervalMs: number;
+  if (typeof intervalMsOrOptions === "object") {
+    intervalMs = intervalMsOrOptions.intervalMs ?? 1000;
+    timeoutSeconds = intervalMsOrOptions.timeoutSeconds ?? 600;
+    persistent = intervalMsOrOptions.persistent ?? false;
+    allowBreakingSpaces = intervalMsOrOptions.allowBreakingSpaces ?? false;
+    notify = intervalMsOrOptions.notify ?? false;
+    priority = intervalMsOrOptions.priority ?? 0;
+  } else {
+    intervalMs = intervalMsOrOptions;
+  }
+
   const chatId = resolveChat();
-  if (typeof chatId !== "number") throw new Error("ALLOWED_USER_ID not configured");
+  if (typeof chatId !== "number") throw new Error(ERR_NO_CHAT_ID);
 
   const resolvedFrames = frames ?? [...getDefaultFrames(sid)];
 

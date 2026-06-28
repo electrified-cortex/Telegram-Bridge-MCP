@@ -16,10 +16,13 @@
 const ABS_PATH_RE =
   /[A-Za-z]:[/\\]|\/Users\/|\/home\/|\/d\/|\/c\/|\/mnt\/|\/usr\/local\//;
 
+/** Maximum length (chars) of the path snippet returned by {@link findAbsolutePath}. */
+export const MAX_SNIPPET_LENGTH = 60;
+
 /**
  * Scan `text` for an absolute filesystem path.
  *
- * Returns a short snippet starting at the first match (up to 60 chars,
+ * Returns a short snippet starting at the first match (up to {@link MAX_SNIPPET_LENGTH} chars,
  * stopping at the first whitespace or newline) so the caller can include it
  * in an error message. Returns `null` when no match is found.
  */
@@ -30,7 +33,7 @@ export function findAbsolutePath(text: string): string | null {
   // Extract a human-readable snippet starting at the match position.
   const tail = text.slice(match.index);
   const stopAt = tail.search(/[\s\n\r"'`]/);
-  const snippet = stopAt === -1 ? tail.slice(0, 60) : tail.slice(0, Math.min(stopAt, 60));
+  const snippet = stopAt === -1 ? tail.slice(0, MAX_SNIPPET_LENGTH) : tail.slice(0, Math.min(stopAt, MAX_SNIPPET_LENGTH));
   return snippet.length > 0 ? snippet : match[0];
 }
 

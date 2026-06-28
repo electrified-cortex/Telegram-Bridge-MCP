@@ -18,6 +18,9 @@ import { pauseTypingEmission, resumeTypingEmission } from "./typing-state.js";
 import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
 
+export const ASYNC_FAILED_BANNER = "⚠ [async failed]";
+export const ASYNC_FAILED_BANNER_V2 = "⚠ \\[async failed\\]";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -184,11 +187,11 @@ async function executeJob(job: AsyncSendJob): Promise<void> {
         if (rawCaptionText) {
           // Convert raw text fresh to MarkdownV2 so Telegram renders it correctly.
           // The banner brackets must also be V2-escaped (\[ and \]).
-          fallbackText = `⚠ \\[async failed\\] ${markdownToV2(rawCaptionText)}`;
+          fallbackText = `${ASYNC_FAILED_BANNER_V2} ${markdownToV2(rawCaptionText)}`;
           fallbackParseMode = "MarkdownV2";
         } else {
           // rawCaptionText unavailable — send without parse_mode (plain text).
-          fallbackText = `⚠ [async failed] ${captionText}`;
+          fallbackText = `${ASYNC_FAILED_BANNER} ${captionText}`;
           fallbackParseMode = undefined;
         }
         const fallbackMsg = await callApi(() =>
@@ -235,7 +238,7 @@ const RECORD_VOICE_INTERVAL_MS = 4_000;
  * deliberately generous — normal audio jobs complete in under 30 s, but
  * very long messages under slow TTS hosts can take longer.
  */
-const RECORDING_INDICATOR_SAFETY_MS = 120_000;
+export const RECORDING_INDICATOR_SAFETY_MS = 120_000;
 
 // ---------------------------------------------------------------------------
 // Per-chatId refcounted recording indicator

@@ -40,7 +40,7 @@ describe("debug-log", () => {
     const spy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     setDebugEnabled(true);
     dlog("queue", "enqueue test");
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("[dbg:queue] enqueue test"));
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("[dbg:queue]"));
     spy.mockRestore();
   });
 

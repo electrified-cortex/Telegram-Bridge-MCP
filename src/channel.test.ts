@@ -8,6 +8,7 @@ import {
   resetChannelCooldown,
   isChannelActive,
   INBOX_URI_RE,
+  MCP_RESOURCES_UPDATED_METHOD,
 } from "./channel.js";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ describe("channel", () => {
       notifyChannelSubscriber(SID);
       expect(notify).toHaveBeenCalledOnce();
       expect(notify).toHaveBeenCalledWith({
-        method: "notifications/resources/updated",
+        method: MCP_RESOURCES_UPDATED_METHOD,
         params: { uri: `telegram://inbox/${TOKEN}` },
       });
     });

@@ -35,7 +35,7 @@ vi.mock("./animation-state.js", () => ({
     mocks.cancelAnimation(sid, text, parseMode),
 }));
 
-import { maybeReplaceRecoveringAnimation } from "./compaction-recovery.js";
+import { maybeReplaceRecoveringAnimation, COMPACTED_NOTIFY_TEXT, COMPACTED_NOTIFY_PARSE_MODE } from "./compaction-recovery.js";
 import { getHasCompacted, setHasCompacted, clearHasCompacted } from "./session-manager.js";
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ describe("maybeReplaceRecoveringAnimation", () => {
 
     expect(result).toBe(true);
     expect(mocks.clearHasCompacted).toHaveBeenCalledWith(1);
-    expect(mocks.cancelAnimation).toHaveBeenCalledWith(1, "ℹ️ *Compacted*", "MarkdownV2");
+    expect(mocks.cancelAnimation).toHaveBeenCalledWith(1, COMPACTED_NOTIFY_TEXT, COMPACTED_NOTIFY_PARSE_MODE);
   });
 
   it("clears the flag before calling cancelAnimation to prevent double-fire on re-entry", async () => {
@@ -99,28 +99,7 @@ describe("maybeReplaceRecoveringAnimation", () => {
     await maybeReplaceRecoveringAnimation(42);
 
     expect(mocks.clearHasCompacted).toHaveBeenCalledWith(42);
-    expect(mocks.cancelAnimation).toHaveBeenCalledWith(42, "ℹ️ *Compacted*", "MarkdownV2");
+    expect(mocks.cancelAnimation).toHaveBeenCalledWith(42, COMPACTED_NOTIFY_TEXT, COMPACTED_NOTIFY_PARSE_MODE);
   });
 });
 
-describe("session-manager hasCompacted helpers", () => {
-  // These tests exercise the real session-manager functions (not mocked here)
-  // via a separate import path. Since the module is mocked above for the
-  // maybeReplaceRecoveringAnimation tests, we test the mock behaviour to verify
-  // the correct wiring (the real session-manager functions are tested in session-manager.test.ts).
-
-  it("setHasCompacted mock is callable and does not throw", () => {
-    expect(() => { setHasCompacted(1); }).not.toThrow();
-  });
-
-  it("clearHasCompacted mock is callable and does not throw", () => {
-    expect(() => { clearHasCompacted(1); }).not.toThrow();
-  });
-
-  it("getHasCompacted mock returns configured value", () => {
-    mocks.getHasCompacted.mockReturnValue(true);
-    expect(getHasCompacted(1)).toBe(true);
-    mocks.getHasCompacted.mockReturnValue(false);
-    expect(getHasCompacted(1)).toBe(false);
-  });
-});
