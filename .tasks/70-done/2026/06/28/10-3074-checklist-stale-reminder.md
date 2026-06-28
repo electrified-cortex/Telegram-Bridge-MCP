@@ -72,7 +72,7 @@ send(type: "checklist", title: "...", steps: [...], stale_after: 7200)
 - verifier: task-verification agent (ad9d9ba32197d1d9e)
 - date: 2026-06-28
 - verdict: APPROVED
-- squash_commit: (pending seal)
+- squash_commit: 7963f237
 - worker_commit: a6970857
 - tests: 4164/4164 pass
 - local_llm: UNAVAILABLE (language.cortex.lan:8080 timed out)
