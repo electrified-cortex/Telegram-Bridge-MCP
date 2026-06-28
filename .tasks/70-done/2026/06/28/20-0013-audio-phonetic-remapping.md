@@ -10,9 +10,9 @@ relates-to: audio send, TTS pipeline
 
 ## Problem
 
-TTS engines pronounce certain words incorrectly because the spelling doesn't match the intended phonetics. Example: "Zhu-Li" (proper spelling) is mispronounced by the current TTS voice. The desired pronunciation is "Joo-Lee."
+TTS engines pronounce certain words incorrectly because the spelling doesn't match the intended phonetics. Example: "nginx" is commonly mispronounced by TTS — the intended pronunciation is "engine-x."
 
-This affects any word or name that has a non-phonetic spelling: proper nouns, brand names, technical terms, foreign names, agent names, etc. The list will grow over time.
+This affects any term that has a non-phonetic spelling: brand names, technical terms, acronyms, agent names, etc. The list will grow over time.
 
 ## Feature
 
@@ -24,12 +24,12 @@ Remappings are **per-profile**, not global. Each agent/profile has its own indep
 
 Map location: Profile config — alongside other profile-level settings. Scoped to the profile, not to TMCP globally.
 
-Case-insensitive matching — output uses the replacement string as-is (e.g. key `"zhu-li"` or `"Zhu-Li"` → replacement `"Joo-Lee"` verbatim). Ordered to handle overlapping matches (longer match wins).
+Case-insensitive matching — output uses the replacement string as-is (e.g. key `"nginx"` or `"NGINX"` → replacement `"engine-x"` verbatim). Ordered to handle overlapping matches (longer match wins).
 
 Example profile entry:
 ```json
 "audio_remapping": {
-  "Zhu-Li": "Joo-Lee",
+  "nginx": "engine-x",
   "ZeroClaw": "Zero Claw"
 }
 ```
@@ -38,8 +38,8 @@ Different profiles can have different mappings for the same word — intentional
 
 ## Behavior
 
-1. Operator or agent calls `send(audio: "Say hello to Zhu-Li")`
-2. TMCP applies phonetic map: text becomes `"Say hello to Joo-Lee"` before TTS
+1. Operator or agent calls `send(audio: "nginx is serving the traffic")`
+2. TMCP applies phonetic map: text becomes `"engine-x is serving the traffic"` before TTS
 3. TTS generates audio from substituted text
 4. Caption (if provided) uses original text — NOT the substituted version
 5. Substitution is transparent to the caller
@@ -72,3 +72,15 @@ Operator intent: this is a permanent capability, not a one-off fix. The map shou
 - checked: ACs binary (config load at startup, audio-only, case-insensitive replacement-as-is, longer-match-wins, additive, debug log, empty no-op), scope bounded (no regex, no per-voice, no UI), no blocking open questions, delegation correct (Worker, self-contained in profile/config layer)
 - fixed: resolved case-handling ambiguity (replacement as-is), clarified hot-reload as non-required nice-to-have
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## Verification
+
+- verifier: task-verification agent (a7a51a9339ad931ab)
+- date: 2026-06-28
+- verdict: APPROVED
+- base_commit: 182e2c9c (operator direct commit — phonetic-remapping implementation + v7.22.0)
+- fix_commit: 42086d21 (Overseer adversarial review findings resolved)
+- tests: 4152/4152 pass
+- local_llm: PASS (qwen3:1.7b — no bugs, regressions, or scope violations found)
+- fixes: (1) empty-string key regex explosion guard; (2) typing budget uses ttsText.length; (3) dlog assertion + beforeEach mock clear in test suite
+- notes: All 6 ACs confirmed. Single-pass multi-key regex; $ safety via function callback; debug logging per substitution.

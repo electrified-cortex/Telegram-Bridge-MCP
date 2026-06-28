@@ -48,7 +48,7 @@ export interface ProfileData {
    * Per-profile phonetic substitution map. Keys are matched case-insensitively
    * against the audio text before TTS synthesis; longer keys take priority on
    * overlap. Replacement strings are used verbatim. Empty or absent map is a
-   * no-op. Example: `{ "Zhu-Li": "Joo-Lee" }`.
+   * no-op. Example: `{ "nginx": "engine-x" }`.
    */
   audio_remapping?: Record<string, string>;
 }

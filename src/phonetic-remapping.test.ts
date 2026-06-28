@@ -21,14 +21,14 @@ describe("applyPhoneticRemapping", () => {
   // ── No-op cases ─────────────────────────────────────────────────────────
 
   it("returns input unchanged when map is undefined", () => {
-    expect(applyPhoneticRemapping("Say hello to Zhu-Li", undefined)).toBe(
-      "Say hello to Zhu-Li",
+    expect(applyPhoneticRemapping("Say hello to nginx", undefined)).toBe(
+      "Say hello to nginx",
     );
   });
 
   it("returns input unchanged when map is empty", () => {
-    expect(applyPhoneticRemapping("Say hello to Zhu-Li", {})).toBe(
-      "Say hello to Zhu-Li",
+    expect(applyPhoneticRemapping("Say hello to nginx", {})).toBe(
+      "Say hello to nginx",
     );
   });
 
@@ -36,15 +36,15 @@ describe("applyPhoneticRemapping", () => {
 
   it("replaces a matching key with its replacement", () => {
     expect(
-      applyPhoneticRemapping("Say hello to Zhu-Li", { "Zhu-Li": "Joo-Lee" }),
-    ).toBe("Say hello to Joo-Lee");
+      applyPhoneticRemapping("Say hello to nginx", { "nginx": "engine-x" }),
+    ).toBe("Say hello to engine-x");
   });
 
   it("logs each substitution at debug level (AC5)", () => {
-    applyPhoneticRemapping("Say hello to Zhu-Li", { "Zhu-Li": "Joo-Lee" });
+    applyPhoneticRemapping("Say hello to nginx", { "nginx": "engine-x" });
     expect(vi.mocked(dlog)).toHaveBeenCalledWith(
       "phonetic-remapping",
-      "'Zhu-Li' → 'Joo-Lee'",
+      "'nginx' → 'engine-x'",
     );
   });
 
@@ -56,41 +56,41 @@ describe("applyPhoneticRemapping", () => {
 
   it("skips empty-string keys but applies valid keys in same map", () => {
     expect(
-      applyPhoneticRemapping("Say hello to Zhu-Li", { "": "boom", "Zhu-Li": "Joo-Lee" }),
-    ).toBe("Say hello to Joo-Lee");
+      applyPhoneticRemapping("Say hello to nginx", { "": "boom", "nginx": "engine-x" }),
+    ).toBe("Say hello to engine-x");
   });
 
   it("keeps original text when no key matches", () => {
     expect(
-      applyPhoneticRemapping("Nothing to replace here", { "Zhu-Li": "Joo-Lee" }),
+      applyPhoneticRemapping("Nothing to replace here", { "nginx": "engine-x" }),
     ).toBe("Nothing to replace here");
   });
 
   // ── Case-insensitive matching ────────────────────────────────────────────
 
-  it("matches lowercased input (zhu-li)", () => {
+  it("matches lowercased input (nginx)", () => {
     expect(
-      applyPhoneticRemapping("Say hello to zhu-li", { "Zhu-Li": "Joo-Lee" }),
-    ).toBe("Say hello to Joo-Lee");
+      applyPhoneticRemapping("Say hello to nginx", { "nginx": "engine-x" }),
+    ).toBe("Say hello to engine-x");
   });
 
-  it("matches uppercased input (ZHU-LI)", () => {
+  it("matches uppercased input (NGINX)", () => {
     expect(
-      applyPhoneticRemapping("Say hello to ZHU-LI", { "Zhu-Li": "Joo-Lee" }),
-    ).toBe("Say hello to Joo-Lee");
+      applyPhoneticRemapping("Say hello to NGINX", { "nginx": "engine-x" }),
+    ).toBe("Say hello to engine-x");
   });
 
-  it("matches mixed-case input (zHu-Li)", () => {
+  it("matches mixed-case input (nGinx)", () => {
     expect(
-      applyPhoneticRemapping("Say hello to zHu-Li", { "Zhu-Li": "Joo-Lee" }),
-    ).toBe("Say hello to Joo-Lee");
+      applyPhoneticRemapping("Say hello to nGinx", { "nginx": "engine-x" }),
+    ).toBe("Say hello to engine-x");
   });
 
   it("uses the replacement verbatim (case of replacement is preserved)", () => {
-    const result = applyPhoneticRemapping("alice said ZHU-LI", {
-      "Zhu-Li": "JOO-LEE",
+    const result = applyPhoneticRemapping("alice said NGINX", {
+      "nginx": "ENGINE-X",
     });
-    expect(result).toBe("alice said JOO-LEE");
+    expect(result).toBe("alice said ENGINE-X");
   });
 
   // ── Longer-match-wins ────────────────────────────────────────────────────
@@ -117,17 +117,17 @@ describe("applyPhoneticRemapping", () => {
   // ── Multiple substitutions in one string ─────────────────────────────────
 
   it("applies multiple distinct substitutions in one pass", () => {
-    const map = { "Zhu-Li": "Joo-Lee", "Varrick": "Vah-Rick" };
+    const map = { "nginx": "engine-x", "SQL": "sequel" };
     expect(
-      applyPhoneticRemapping("Zhu-Li and Varrick are here", map),
-    ).toBe("Joo-Lee and Vah-Rick are here");
+      applyPhoneticRemapping("nginx and SQL are here", map),
+    ).toBe("engine-x and sequel are here");
   });
 
   it("replaces all occurrences of a key in the string", () => {
-    const map = { "Zhu-Li": "Joo-Lee" };
+    const map = { "nginx": "engine-x" };
     expect(
-      applyPhoneticRemapping("Zhu-Li loves Zhu-Li", map),
-    ).toBe("Joo-Lee loves Joo-Lee");
+      applyPhoneticRemapping("nginx loves nginx", map),
+    ).toBe("engine-x loves engine-x");
   });
 
   // ── Replacement strings with $ characters ───────────────────────────────
@@ -163,7 +163,7 @@ describe("applyPhoneticRemapping", () => {
   // ── Edge cases ───────────────────────────────────────────────────────────
 
   it("handles empty input string", () => {
-    expect(applyPhoneticRemapping("", { "Zhu-Li": "Joo-Lee" })).toBe("");
+    expect(applyPhoneticRemapping("", { "nginx": "engine-x" })).toBe("");
   });
 
   it("handles map with a single empty-string value (replaces match with '')", () => {
