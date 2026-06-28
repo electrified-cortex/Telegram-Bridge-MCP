@@ -19,7 +19,7 @@ Deny button has no visible effect when clicked — prompt remains, action is not
 
 ## Context
 
-Operator was seeing repeated approval prompts (likely for `dequeue` calls triggered by duplicate monitors running simultaneously). When clicking "deny" in the approval UI, the button had no visible effect — the prompt remained, no denial occurred.
+Repeated approval prompts were appearing (likely for `dequeue` calls triggered by duplicate monitors running simultaneously). When clicking "deny" in the approval UI, the button had no visible effect — the prompt remained, no denial occurred.
 
 ## Observed Behavior
 

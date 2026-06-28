@@ -61,7 +61,7 @@ Different profiles can have different mappings for the same word — intentional
 
 ## Notes
 
-Operator intent: this is a permanent capability, not a one-off fix. The map should be easy to add to.
+Design intent: this is a permanent capability, not a one-off fix. The map should be easy to add to.
 
 ## Gate review
 
@@ -78,7 +78,7 @@ Operator intent: this is a permanent capability, not a one-off fix. The map shou
 - verifier: task-verification agent (a7a51a9339ad931ab)
 - date: 2026-06-28
 - verdict: APPROVED
-- base_commit: 182e2c9c (operator direct commit — phonetic-remapping implementation + v7.22.0)
+- base_commit: 182e2c9c (phonetic-remapping implementation + v7.22.0 bump)
 - fix_commit: 42086d21 (Overseer adversarial review findings resolved)
 - tests: 4152/4152 pass
 - local_llm: PASS (qwen3:1.7b — no bugs, regressions, or scope violations found)
