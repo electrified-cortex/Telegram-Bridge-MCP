@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createMockServer, isError, errorCode } from "../test-utils.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
 
@@ -66,6 +66,10 @@ describe("answer_callback_query tool", () => {
   });
 
   describe("remove_keyboard", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it("calls editMessageReplyMarkup with empty keyboard when remove_keyboard: true and message_id provided", async () => {
       mocks.answerCallbackQuery.mockResolvedValue(true);
       mocks.editMessageReplyMarkup.mockResolvedValue(true);
@@ -100,7 +104,6 @@ describe("answer_callback_query tool", () => {
       const result = await call({ callback_query_id: "cq2", token: 1_123_456, remove_keyboard: true, message_id: 99 });
       expect(isError(result)).toBe(false);
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("[warn] remove_keyboard failed:"));
-      stderrSpy.mockRestore();
     });
 
     it("returns MISSING_MESSAGE_ID error when remove_keyboard: true without message_id", async () => {
@@ -127,7 +130,6 @@ describe("answer_callback_query tool", () => {
       expect(isError(result)).toBe(false);
       expect(mocks.editMessageReplyMarkup).not.toHaveBeenCalled();
       expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("[warn] remove_keyboard skipped: could not resolve chat"));
-      stderrSpy.mockRestore();
     });
   });
 

@@ -659,8 +659,9 @@ export function deliverChildNotifyEvent(
   };
 
   q.enqueue(event);
-  notifySession(parentSid, "service", isDequeueActive(parentSid));
-  notifyChannelSubscriber(parentSid, event);
+  // Intentionally no SSE notify and no channel wake (TG 80273 isolation):
+  // parent reads child/notify events on its next natural dequeue without being
+  // actively woken. This isolates child-session events from parent SSE dispatch.
   dlog("service", `child_notify → sid=${parentSid}`, { eventType, callerSid });
   return true;
 }

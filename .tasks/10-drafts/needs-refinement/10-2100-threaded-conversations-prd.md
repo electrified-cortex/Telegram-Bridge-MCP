@@ -530,3 +530,7 @@ BOUNCE — needs-refinement. Curator-owned.
 5. **No YAML agent_type / model_class / reasoning_effort**.
 
 Fix (Curator): update Architecture section per OQ5 resolution, close or park OQ-A, write binary ACs for each phase (Phase 1 ACs, Phase 2 ACs, etc.), add delegation.
+
+
+---
+> ⚠️ **AUDIT 2026-06-26:** Prerequisite child/notify SHIPPED (src/tools/session/child-notify.ts); trackMessageOwner/routeToSession are live. Refresh Architecture per the persistent-router decision and add binary ACs (per the 2026-06-20 Overseer bounce).

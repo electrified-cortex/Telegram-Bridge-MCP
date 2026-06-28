@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findAbsolutePath } from "./abs-path-guard.js";
+import { findAbsolutePath, MAX_SNIPPET_LENGTH } from "./abs-path-guard.js";
 
 // ---------------------------------------------------------------------------
 // Path helpers — split to avoid the pre-commit hook trigger.
@@ -103,7 +103,7 @@ describe("findAbsolutePath — snippet shape", () => {
     const longPath = WIN_C + "A".repeat(200);
     const result = findAbsolutePath(longPath);
     expect(result).not.toBeNull();
-    expect(result!.length).toBeLessThanOrEqual(60);
+    expect(result!.length).toBeLessThanOrEqual(MAX_SNIPPET_LENGTH);
   });
 
   it("snippet stops at first space", () => {

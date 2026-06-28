@@ -43,3 +43,7 @@ Curator authors the design doc directly (hooks are Curator trust boundary). Impl
 - Memory `feedback_dont_add_scripts_where_plain_ops_work.md`.
 - Memory `project_task_pipeline_architecture.md`.
 - 15-734 (hook error disambiguation; complementary - distinct failure modes must still be distinguishable under the new gating model).
+
+
+---
+> ⚠️ **AUDIT 2026-06-26:** SCOPE — targets the workspace/hooks repo, NOT TMCP. Belongs on the workspace task board; it's only parked here.

@@ -1,7 +1,7 @@
 // Never call 'send' from send.ts handler — use telegram.js primitives directly
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, sendVoiceDirect, isRichMessagesEnabled, routeOutboundMessage } from "../telegram.js";
+import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, resolveMediaSource, sendVoiceDirect, isRichMessagesEnabled, routeOutboundMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText, getTopic } from "../topic-state.js";
 import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
@@ -17,6 +17,7 @@ import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator,
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { getSession } from "../session-manager.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
+import { detectAndExtract, writeTempVisualFile } from "../visual-attachment-pipeline.js";
 // Safety field accepted on all send paths
 const SAFETY_SCHEMA = z.enum(["disable"]).optional().describe(
   'Safety override. Pass `safety: "disable"` to bypass the absolute-path block and send the message anyway. An operator notification is emitted when this override is used.',
@@ -492,7 +493,55 @@ export function register(server: McpServer) {
           }
 
           // ── Text-only mode ───────────────────────────────────────────────
-          const textWithTopic = applyTopicToText(text ?? "", parse_mode, args.topic);
+          // ── Visual attachment pipeline (SVG / Mermaid) ───────────────────
+          // Detect and extract SVG and Mermaid blocks from the raw message text
+          // *before* topic prefix, Markdown conversion, or chunking so that:
+          // (a) the placeholder text (not the raw block) enters markdownToV2,
+          // (b) documents are sent before the prose, in order of appearance.
+          // Pre-check avoids the 3 regex scans on every plain-text send.
+          let visualText: string = text ?? "";
+          if (visualText && (visualText.includes('<svg') || visualText.includes('```mermaid'))) {
+            const { modifiedText: _vExtracted, blocks: _vBlocks } = detectAndExtract(
+              visualText,
+              { htmlMode: parse_mode === "HTML" },
+            );
+            if (_vBlocks.length > 0) {
+              // Start from modified text (placeholders inserted). Track per-block
+              // success; on failure restore the orphan placeholder to the original
+              // block content so the user never sees a broken "🖼 [SVG attached]"
+              // with no accompanying file.
+              let finalVisualText = _vExtracted;
+              for (const _vBlock of _vBlocks) {
+                let sent = false;
+                try {
+                  await showTyping(60, "upload_document");
+                  const _vPath = await writeTempVisualFile(_vBlock);
+                  const _vMedia = resolveMediaSource(_vPath);
+                  if (!("code" in _vMedia)) {
+                    await callApi(() =>
+                      getApi().sendDocument(chatId, _vMedia.source, {
+                        caption: _vBlock.placeholder,
+                        disable_notification: args.disable_notification,
+                      }),
+                    );
+                    sent = true;
+                  }
+                } catch {
+                  // Graceful: a failed attachment never blocks prose delivery
+                }
+                if (!sent) {
+                  // Replace the orphan placeholder with the original block content
+                  // so the message remains readable without the attachment.
+                  // String.replace (non-regex) replaces only the first occurrence,
+                  // which correctly maps each block to its own placeholder slot
+                  // when blocks are iterated in source order.
+                  finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
+                }
+              }
+              visualText = finalVisualText;
+            }
+          }
+          const textWithTopic = applyTopicToText(visualText, parse_mode, args.topic);
           const finalText = parse_mode === "Markdown" ? markdownToV2(textWithTopic) : textWithTopic;
           const finalMode = parse_mode === "Markdown" ? "MarkdownV2" : parse_mode;
           if (!finalText || finalText.trim().length === 0) {
@@ -551,9 +600,9 @@ export function register(server: McpServer) {
                 reply_parameters: reply_to_message_id !== undefined
                   ? { message_id: reply_to_message_id }
                   : undefined,
-                _rawText: text,
+                _rawText: visualText,
               });
-              const hasTable = containsMarkdownTable(text ?? "");
+              const hasTable = containsMarkdownTable(visualText);
               warnUnrenderableChars(_sid, finalText);
               return toResult(hasTable
                 ? { message_id: msg.message_id, ...(compact ? {} : { split_count: 1 }), info: TABLE_WARNING }
@@ -578,12 +627,12 @@ export function register(server: McpServer) {
                     i === 0 && reply_to_message_id !== undefined
                       ? { message_id: reply_to_message_id }
                       : undefined,
-                  _rawText: chunks.length === 1 ? text : undefined,
+                  _rawText: chunks.length === 1 ? visualText : undefined,
                 } as Record<string, unknown>),
               );
               message_ids.push(msg.message_id);
             }
-            const hasTable = containsMarkdownTable(text ?? "");
+            const hasTable = containsMarkdownTable(visualText);
             warnUnrenderableChars(_sid, finalText);
             if (message_ids.length === 1) {
               return toResult(hasTable ? { message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }), info: TABLE_WARNING } : { message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }) });

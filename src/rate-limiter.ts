@@ -98,12 +98,15 @@ export async function debounceSend(): Promise<void> {
   let resolve!: () => void;
   _sendLock = new Promise<void>(r => { resolve = r; });
   await ticket;
-  const gap = Date.now() - _lastSendAt;
-  if (gap < MIN_SEND_INTERVAL_MS) {
-    await delay(MIN_SEND_INTERVAL_MS - gap);
+  try {
+    const gap = Date.now() - _lastSendAt;
+    if (gap < MIN_SEND_INTERVAL_MS) {
+      await delay(MIN_SEND_INTERVAL_MS - gap);
+    }
+    _lastSendAt = Date.now();
+  } finally {
+    resolve();
   }
-  _lastSendAt = Date.now();
-  resolve();
 }
 
 // ---------------------------------------------------------------------------

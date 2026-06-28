@@ -393,6 +393,7 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
           deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_COMPACTION_HINT);
           // First session is always governor — no ternary needed.
           deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_ROLE_GOVERNOR);
+          deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_HELP_TOPICS);
           if (discarded === 0) deliverServiceMessage(session.sid, SERVICE_MESSAGES.ONBOARDING_NO_PENDING_YET);
         } else if (session.sessionsActive > 1) {
           // Sub-sessions skip all announcement, pin, SESSION_JOINED, governor re-election,

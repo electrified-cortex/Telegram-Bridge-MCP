@@ -1,258 +1,218 @@
 ---
 Created: 2026-06-11
-Updated: 2026-06-11
-Status: Draft
+Updated: 2026-06-28
+Status: Active
 Host: local
-Priority: Low
-Source: Operator (voice, 2026-06-11)
-Target: V8 (flexible — may slip to 7.11)
+Priority: High
+Source: Operator (voice, 2026-06-11) + spike findings (10-3017, 2026-06-27)
+Target: V8
+Supersedes: original 2026-06-11 draft (archived in git history)
 ---
 
-# V8 Rich Messages Markup — Bot API 10.1 Auto-Translation
+# V8 Rich Messages — Native grammY Pivot (rewritten post 10-3017 spikes)
+
+> **Spike baseline:** All decisions in this epic are grounded in live spike results from
+> task [10-3017](../50-active/10-3017-v8-rich-messages-native-pivot-spikes.md) (2026-06-27).
+> Every assumption in the original epic has been tested against the live bot.
 
 ## Objective
 
-TMCP auto-translates the Markdown that agents already write into Telegram's
-new Bot API 10.1 "Rich Messages" block format — tables, multi-level headings,
-ordered/unordered lists, collapsible detail sections, LaTeX math, location
-maps, media slideshows, and streaming draft updates — without losing a single
-capability that exists today.
+TMCP sends rich Bot API 10.1 messages by default, using **native grammY** and
+**server-side Markdown parsing** — no raw-fetch, no hand-rolled compiler.
+Agents write standard Markdown. The upgrade is invisible to callers.
 
-**Success criterion:** lose nothing, gain everything. Every message that renders
-correctly today must continue to render correctly after this change. Every new
-10.1 feature available via `sendRichMessage` / `sendRichMessageDraft` must be
-reachable through the ordinary Markdown-in, rich-message-out pipeline.
+**Success criterion:** lose nothing, gain everything.
+- Every message that renders correctly today continues to render correctly.
+- Every Bot API 10.1 rich feature reachable through ordinary `send(string: "...")`.
+- Rich is the default; legacy is the never-fail floor and the caption permanent path.
 
-Operator directive (2026-06-11, distilled): agents write standard Markdown;
-TMCP decides whether to send a legacy `parse_mode` message or a Bot API 10.1
-rich-block message. The upgrade is invisible to callers.
+## What the spikes confirmed
 
-## Scope
+| Spike | Finding |
+|:------|:--------|
+| A — Server-side markdown | `sendRichMessage({ rich_message: { markdown } })` renders H2/H3, GFM tables, lists, code blocks, bold, italic, links — **no compiler needed** |
+| B — Client rendering | Operator visual confirm: all constructs render correctly on current Telegram client |
+| C — Length limit | **32768 chars** (8× the legacy 4096 cap). `splitMessage` threshold moves to 32768. |
+| D.1 — Inline keyboard | Works on rich messages ✅ |
+| D.2 — Edit in place | `editMessageText({ rich_message })` works ✅ |
+| D.3 — Message effects | `message_effect_id` accepted on `sendRichMessage` ✅ |
+| D.4 — Reply threading | `reply_parameters` works on rich sends ✅ |
+| E — Draft streaming | `sendRichMessageDraft(draft_id, rich_message)` → `sendRichMessage` (persist). No separate finalize endpoint. ~30s draft TTL, self-expires on close. |
+| F — Caption path | `sendPhoto`/`sendVoice`/etc. do NOT accept `rich_message` — caption path stays `parse_mode` permanently |
+| G — Image embed | HTTPS URLs embed as inline images ✅. Local files: `sendPhoto`→`getFile`→URL workaround (token-exposure tradeoff; acceptable for private 1-on-1 bots) |
 
-### 1. Preserve all current functionality
+## The new contract (three-tier send architecture)
 
-The following must continue to work exactly as documented in `docs/formatting.md`
-and implemented in `src/markdown.ts` after any changes in this epic:
+Agent-facing `send` surface — **no `parse_mode`**. The three tiers:
 
-- **`resolveParseMode` pipeline** — the `Markdown` → `MarkdownV2` auto-conversion
-  entry point used by every send path. All inline constructs it handles today
-  (bold `**` / `*`, italic `_`, underline `__`, strikethrough `~~`, inline code,
-  fenced code blocks, blockquotes `>`, ATX headings `# … ######`, hyperlinks
-  `[text](url)`) must survive unchanged.
-- **`parse_mode: "MarkdownV2"` pass-through** — callers who manually escape
-  MarkdownV2 and pass the mode explicitly must not be intercepted.
-- **`parse_mode: "HTML"` pass-through** — HTML-formatted messages must not be
-  touched.
-- **Plain-text (no `parse_mode`) path** — passes through unmodified.
-- **All existing send methods** in `src/telegram.ts`: `sendMessage`, chunking
-  logic (4096-char limit), animation/sticker/document/photo sends,
-  `sendVoiceDirect` (raw-fetch pattern), reaction recording, rate-limiter
-  integration, and all downstream paths that call `resolveParseMode`.
-- **Notification tool** (`send(type: "notification")`) — including title-always-bold
-  and severity behavior.
-- **Session header injection** via `outbound-proxy.ts`.
-- **Partial/streaming mode** in `markdownToV2` (the `partial = true` flag for
-  draft updates) — must have a direct counterpart in the rich-message path.
+| Tier | Param | Meaning | Internally routes to |
+|:-----|:------|:--------|:---------------------|
+| 1 | `html` | **Passthrough** — caller provides finished HTML; grammY passes it directly to the rich message renderer (HTML mode), no TMCP processing | grammY rich message renderer (HTML mode) |
+| 2 | `markdown` | **Passthrough** — caller provides finished GFM markdown; grammY passes it directly to the rich message renderer (GFM mode; full GFM: tables, headings, lists, code blocks), no TMCP processing | grammY rich message renderer (GFM mode) |
+| 3 | `string` | **Smart path** — de facto agent path (99% of sends): `markdownToRichBlocks` auto-detects whether content is GFM markdown; if yes → grammY GFM renderer; if plain text → plain string send. Never auto-detects HTML. | `markdownToRichBlocks` smart detection (preserved unchanged) |
+| — | `audio` | TTS voice | unchanged |
 
-### 2. Bot API 10.1 features to gain
+- `string`, `html`, `markdown` are mutually exclusive; all mixable with `audio`.
+- `string` is the safe default — agents write markdown, smart detection routes correctly.
+- `html` and `markdown` are expert passthrough paths for callers who provide finished formatted content.
+- `parse_mode` — **deprecated**. Accepted for one version as a legacy alias, then removed.
+- Rich is the send default. No `RICH_MESSAGES` opt-in gate.
 
-Telegram Bot API 10.1 (released ~June 2026) introduced a new first-class rich
-message type. The full feature surface to expose through TMCP:
+> **See also:** [Regression Guard](#regression-guard) — `markdownToRichBlocks` on the `string:` path is preserved unchanged.
 
-| Feature | Bot API construct (inferred — verify at core.telegram.org/bots/api) |
-|---|---|
-| Multi-level headings (H1–H6) | `RichBlock` of type `heading` with `level` field |
-| Ordered and unordered lists | `RichBlock` of type `list` / `ordered_list` |
-| Tables | `RichBlock` of type `table` with header row and cell array |
-| Collapsible / expandable sections | `RichBlock` of type `details` (title + body blocks) |
-| LaTeX math (inline and display) | `RichBlock` of type `math` / `inline_math` |
-| Location map embed | `RichBlock` of type `location` |
-| Media slideshow | `RichBlock` of type `slideshow` |
-| Rich text paragraph | `RichBlock` of type `paragraph` with `entities` |
-| Code block (language-tagged) | `RichBlock` of type `code` with `language` |
-| Streaming / live draft | `sendRichMessageDraft` + `updateRichMessageDraft` → `finalizeRichMessageDraft` |
+## Never-fail floor (legacy is the floor, not the path)
 
-**Schema caveat:** exact field names, nesting rules, and required/optional
-properties for `InputRichMessage` and every `RichBlock` variant have NOT been
-verified against live documentation as of 2026-06-11. The API was freshly
-published. All field-level details in this epic are inferred from the Telegram
-changelog and community reports — they MUST be verified against
-`core.telegram.org/bots/api` before any implementation begins. Do not treat
-the table above as a normative schema reference.
+Rich → on `RICH_MESSAGE_UNSUPPORTED` / any rich-path error → retry with
+`sendMessage` (MarkdownV2 via `resolveParseMode`). The caller never sees the
+difference. This covers:
+- Old Telegram clients that don't support Bot API 10.1.
+- Bot API server configurations without 10.1 availability.
+- Any future API regressions.
 
-**grammY gap:** grammy `^1.43.0` (current dependency) does not expose
-`sendRichMessage` or `sendRichMessageDraft`. A grammY release that wraps 10.1
-is not yet available. The implementation must not wait for grammY.
+## Caption permanent exception
 
-### 3. Raw-fetch `sendRichMessageDirect` — bypassing grammY
+`sendPhoto`, `sendVoice`, `sendDocument`, `sendVideo`, and all other media-bearing
+methods use `caption` + `parse_mode` — **NOT `rich_message`**. This is a Telegram
+Bot API constraint (confirmed type-level + empirically in Spike F). The rich path
+does not apply to captions now or in future phases.
 
-Model the new sender directly on `sendVoiceDirect` in `src/telegram.ts`
-(~line 533). That function demonstrates the established pattern for calling
-Bot API endpoints that grammY doesn't support:
+## Draft / streaming lifecycle (corrected)
 
-- Read `BOT_TOKEN` from `process.env`.
-- Build the request body as JSON (or `FormData` if attachments are needed).
-- Call the Bot API endpoint via native `fetch`.
-- Handle error responses and map them to the existing `TelegramError` type.
-
-A new `sendRichMessageDirect(chatId, blocks, options)` function should be added
-to `src/telegram.ts` following the same conventions:
-
-- `blocks: RichBlock[]` — the compiled block array.
-- `options` — at minimum: `disable_notification`, `reply_to_message_id`,
-  session header injection point.
-- Returns `{ message_id: number }` (same shape as other senders).
-
-A companion `updateRichMessageDraftDirect` and `finalizeRichMessageDraftDirect`
-are needed to support streaming.
-
-No grammY type imports for 10.1 types — define minimal local TypeScript
-interfaces for `RichBlock` variants, verified against the live API docs.
-
-### 4. Markdown → RichBlocks compiler (core of the epic)
-
-The heart of the epic is a new compilation stage that sits between the existing
-`markdownToV2` function and the send path. Working title: `markdownToRichBlocks`.
-
-**Design:**
-
-1. Parse the input Markdown into a block AST:
-   - ATX headings `#`–`######` → heading blocks with level.
-   - Fenced code blocks → code blocks with language.
-   - GFM tables (`| col | col |` syntax) → table blocks.
-   - `<details>`/`<summary>` HTML or a Markdown convention TBD → details blocks.
-   - Ordered lists (`1. item`) and unordered lists (`- item`, `* item`) → list blocks.
-   - `$$…$$` / `$…$` LaTeX delimiters → math blocks.
-   - Remaining paragraphs → paragraph blocks with inline entity extraction (bold, italic, code, links, strikethrough, underline) using existing escape/tokenizer logic.
-
-2. Output: `RichBlock[]` ready for `sendRichMessageDirect`.
-
-3. **Graceful fallback:** if any parse step produces a construct that cannot be
-   represented in 10.1 blocks (e.g., features not yet supported), or if
-   `sendRichMessageDirect` returns an error indicating the bot lacks 10.1
-   access, fall back transparently to the today's `resolveParseMode` →
-   MarkdownV2 / HTML path. The caller never sees the difference.
-
-4. **Feature detection gate:** expose an env var or config flag
-   (e.g., `RICH_MESSAGES=true`) so operators can enable 10.1 output
-   incrementally. Default off until the path is fully validated.
-
-5. **Partial/streaming mode:** `markdownToRichBlocks(input, partial = true)`
-   must produce valid intermediate block arrays as the Markdown grows, the same
-   way `markdownToV2` handles unclosed spans today. This feeds
-   `updateRichMessageDraftDirect` for live streaming updates.
-
-### 5. Routing logic
-
-A thin router sits at the top of each outbound send path:
+Old epic was wrong. The real lifecycle:
 
 ```
-if (RICH_MESSAGES enabled && parse_mode === "Markdown" || parse_mode undefined)
-  → markdownToRichBlocks → sendRichMessageDirect
-else
-  → resolveParseMode → existing send path (unchanged)
+sendRichMessageDraft(chat_id, draft_id, rich_message)   // initial ephemeral draft (~30s TTL)
+sendRichMessageDraft(chat_id, draft_id, rich_message)   // ...call again to update in-place
+...
+sendRichMessage(chat_id, rich_message)                  // persists final message; draft disappears
 ```
 
-`parse_mode: "MarkdownV2"` and `parse_mode: "HTML"` always bypass the rich
-path — callers who opt into manual modes get what they asked for.
+- `draft_id` is a client-side integer for animation continuity — tracks which draft to replace.
+- No separate "finalize" endpoint. `sendRichMessage` IS the finalize call.
+- If the session closes before `sendRichMessage`: draft TTL expires (~30s), disappears automatically. No cleanup needed.
+- **Old names (wrong, remove):** `updateRichMessageDraftDirect`, `finalizeRichMessageDraftDirect`.
 
-The router must be added at the `send` / `sendMessage` boundary, not inside
-`resolveParseMode`, so that `resolveParseMode` remains a self-contained,
-testable function with no change to its signature or behavior.
+## Length limit change
 
-### 6. Phased rollout
+| Path | Char limit |
+|:-----|:-----------|
+| Legacy `sendMessage` | 4096 |
+| Rich `sendRichMessage` | **32768** |
+
+`splitMessage` / `LIMITS.MESSAGE_TEXT` must be updated to 32768 for the rich path.
+Chunking still needed for >32768 content (e.g., very long logs), but practically
+eliminated for normal agent responses.
+
+## Image embedding in rich
+
+- **Public HTTPS URL**: embed directly as `![alt](https://...)` in the markdown field. Renders inline. ✅
+- **Local file**: `sendPhoto(local_file)` → `getFile()` → use `https://api.telegram.org/file/bot<TOKEN>/<path>` as the `<img src>`. Token-exposure tradeoff: the bot token is embedded in message history. Acceptable for private 1-on-1 bots (this bot's primary use case); document the tradeoff.
+- **Local file (no token exposure)**: fall back to `sendPhoto` multipart on the legacy path.
+
+## What's dropped / retired
+
+| Item | Disposition |
+|:-----|:------------|
+| `sendRichMessageDirect` (raw-fetch) | **RETIRE** — native grammY replaces it |
+| `updateRichMessageDraftDirect` | **RETIRE** — never-real endpoint; use `sendRichMessageDraft` |
+| `finalizeRichMessageDraftDirect` | **RETIRE** — `sendRichMessage` is the finalize call |
+| `markdownToRichBlocks` compiler (10-3013/10-3014) | **NOT retired** — IS the `string:` path smart-detection implementation. `html`/`markdown` paths are grammY passthroughs that do not go through `markdownToRichBlocks`; on the `string:` path it is the core logic, unchanged. |
+| `RICH_MESSAGES` opt-in env var gate | **REMOVE** — rich is the default |
+| `parse_mode` param on `send` tools | **DEPRECATE** (one-version alias) → **REMOVE** |
+
+## What's kept unchanged
+
+| Item | Status |
+|:-----|:-------|
+| `resolveParseMode` pipeline | Kept — drives the never-fail floor |
+| Legacy `sendMessage` path | Kept — floor + caption path |
+| `sendPhoto`, `sendVoice`, `sendDocument`, etc. | Unchanged |
+| `sendVoiceDirect` raw-fetch | Unchanged (grammY still doesn't wrap voice in same way) |
+| Chunking logic | Kept — threshold changes to 32768 for rich path |
+| Rate-limiter integration | Unchanged |
+| Session header injection (`outbound-proxy.ts`) | Unchanged |
+| `docs/rich-message-schema.md` snapshot | Still valuable — retain |
+| `markdownToRichBlocks` on `string:` path | **Preserved unchanged** — IS the `string:` path; see Regression Guard |
+
+## Regression Guard
+
+**string: path: markdownToRichBlocks smart detection is preserved unchanged. This is not optional. Removing this from the string: path is a regression.**
+
+The `string:` parameter path must produce identical agent-message rendering to current production:
+- Smart markdown detection runs on all `string:` content.
+- If markdown detected → markdownToRichBlocks conversion → grammY GFM renderer (or equivalent).
+- If no markdown → plain text send (legacy path or rich with escaped content).
+- No agent using the `string:` path should see any change in rendered output.
+
+## Phased implementation (for task 10-3018)
 
 Each phase is independently mergeable and testable.
 
-| Phase | Deliverable |
-|---|---|
-| **Phase 1** | `sendRichMessageDirect` + `updateRichMessageDraftDirect` + `finalizeRichMessageDraftDirect` raw-fetch helpers in `src/telegram.ts`. No routing yet — callable only via internal test or an explicit `type: "rich"` action. Schema validated against live API. |
-| **Phase 2** | `markdownToRichBlocks` compiler: headings, paragraphs with inline entities, fenced code, unordered/ordered lists. Tables and details deferred. Routing gate behind `RICH_MESSAGES=true` env var. |
-| **Phase 3** | Tables, collapsible `details` blocks, LaTeX math. Update `docs/formatting.md` to document new Markdown syntax that triggers rich blocks. |
-| **Phase 4** | Streaming integration: `partial = true` path through `updateRichMessageDraftDirect` for draft messages. Tie into existing streaming/notification flows. |
-| **Phase 5** | Location map and slideshow block support (dependent on TMCP gaining corresponding send tools). Full compiler coverage. Remove `RICH_MESSAGES` gate; enable by default. Update help topics and `docs/help/` accordingly (integrates with epic 10-2107). |
+### Phase 1 — Engine swap: native grammY senders
 
-Phases 1–3 are V8 candidates. Phases 4–5 may slip to 7.11 or a subsequent
-minor if the 10.1 schema proves more complex than anticipated.
+Replace `sendRichMessageDirect` (raw-fetch) with native `api.raw.sendRichMessage` /
+`api.raw.sendRichMessageDraft` / `api.raw.editMessageText({ rich_message })` calls.
 
-### 7. Open questions and risks
+- Remove `sendRichMessageDirect`, `updateRichMessageDraftDirect`, `finalizeRichMessageDraftDirect`.
+- Add `sendRichNative(chatId, richMessage, options)` — thin wrapper over grammY.
+- Add `sendRichDraftNative(chatId, draftId, richMessage)` — wraps `sendRichMessageDraft`.
+- Keep all option pass-through: `reply_markup`, `reply_parameters`, `message_effect_id`, `disable_notification`.
+- No routing change yet — test via explicit internal calls.
 
-**Schema verification (BLOCKING for Phase 1):**
-The exact field names, required/optional fields, nesting depth limits, and
-character/size limits for `InputRichMessage`, `sendRichMessage`,
-`sendRichMessageDraft`, and all `RichBlock` subtypes have not been verified
-from the live `core.telegram.org/bots/api` documentation as of 2026-06-11.
-Implementation must begin with a documentation verification pass and produce a
-`docs/rich-message-schema.md` snapshot of the confirmed field set before any
-code is written.
+### Phase 2 — Three-tier format-by-param contract + never-fail floor
 
-**Telegram app version requirements:**
-10.1 rich messages likely require a minimum client app version to render
-correctly. Older clients may fall back to a text representation or show an
-error. TMCP cannot control what version clients run. The fallback path (Phase 2
-grace fallback) mitigates this, but the operator experience on older clients
-should be documented.
+- Replace `parse_mode` param on `send` tools with the three-tier surface: `string` / `html` / `markdown`.
+- Route (three tiers):
+  - `html` → grammY passthrough (HTML mode) — no TMCP processing.
+  - `markdown` → grammY passthrough (GFM mode) — no TMCP processing; full GFM (tables, headings, lists, code blocks).
+  - `string` → `markdownToRichBlocks` smart detection: if GFM markdown → grammY GFM renderer; if plain text → plain string send. **`markdownToRichBlocks` logic unchanged.**
+- Implement never-fail floor: catch rich-path errors → retry → `sendMessage`.
+- Deprecate `parse_mode` param (emit warning; still accepted this version).
+- Update `LIMITS.MESSAGE_TEXT` to 32768.
 
-**grammY type conflicts:**
-When grammY eventually releases 10.1 support, local `RichBlock` interface
-definitions will conflict with grammY's types. The local interfaces should be
-in a dedicated `src/types/rich-message.ts` file, easy to replace with grammY
-imports in a single edit.
+### Phase 3 — Default-on flip + docs
 
-**Streaming timing and draft lifecycle:**
-`sendRichMessageDraft` implies a draft-ID lifecycle (create → update → finalize).
-Draft IDs must be tracked per send call. If a TMCP session closes before
-`finalizeRichMessageDraftDirect` is called, the draft may linger in the client.
-Session-close cleanup logic may need updating.
+- Remove `RICH_MESSAGES` env var gate (was never real yet — but ensure no trace remains).
+- `markdownToRichBlocks`: unchanged — it IS the `string:` path. No retirement, no relocation.
+- Mark `parse_mode` param as removed (breaking, not just deprecated).
+- Update `docs/formatting.md` with the three-tier format-by-param contract.
 
-**Bot API 10.1 availability:**
-At time of writing (2026-06-11), Bot API 10.1 is newly released. The endpoint
-may not yet be available on all Telegram Bot API server configurations (e.g.,
-local bot API servers). This should be tested before Phase 1 is marked complete.
+### Phase 4 — Streaming integration
 
-**GFM table detection in existing content:**
-`markdownToV2` currently escapes `|` characters as `\|` in MarkdownV2 plain
-text. The new compiler must detect that a line block is an intentional table
-(pipe-aligned header row + separator row) vs. prose containing `|`. Misdetection
-would silently corrupt output.
+- Replace draft streaming paths: `sendRichMessageDraft` (initial + updates) → `sendRichMessage` (persist).
+- Remove `finalizeRichMessageDraftDirect` references; wire `sendRichNative` as the finalize.
+- Wire existing stream/notification flows to the new draft lifecycle.
+- Verify draft TTL / session-close behavior (no cleanup needed per Spike E).
 
-### 8. Out of scope
+### Phase 5 — Auxiliary paths + fold-in related stories
 
-- Changes to `parse_mode: "MarkdownV2"` or `parse_mode: "HTML"` behavior.
-- Changes to the voice/TTS pipeline (`sendVoiceDirect`), file send paths,
-  animation, sticker, or photo send paths — these are untouched.
-- A new MCP tool specifically for raw `RichBlock[]` composition (agents write
-  Markdown; direct block assembly is a possible future tool, not part of this epic).
-- Per-block inline keyboard / button attachments (separate backlog item).
-- Rendering on Telegram Web or desktop — TMCP sends via Bot API only; client
-  rendering is Telegram's responsibility.
-- Updating the help topic coverage or help index — that work belongs to epic
-  10-2107. Phase 5 of this epic produces the new formatting docs; 10-2107 wires
-  them into `help()`.
+- Fold in **15-0012** (copy_text buttons): confirmed working on `sendRichMessage` → implement.
+- Fold in **30-0012** (message effects): confirmed working → implement `message_effect_id` pass-through.
+- Retarget **15-0011** (link-preview options): `sendRichMessage` has NO `link_preview_options` — rich handles links internally. Document: link preview control is a legacy-only feature; rich link rendering is Telegram-managed.
+- Update `docs/help/` formatting topics (integrates with epic 10-2107).
+- Full `splitMessage` audit for rich path.
+
+## Downstream / related tasks
+
+| Task | Status | Notes |
+|:-----|:-------|:-------|
+| 10-3018 (implementation) | **UNBLOCKED** — this epic is the spec | Depends on 10-3017 (done) |
+| 15-0012 (copy_text buttons) | **Fold into 10-3018 Phase 5** | Confirmed working on rich |
+| 30-0012 (message effects) | **Fold into 10-3018 Phase 5** | Confirmed working on rich |
+| 15-0011 (link-preview options) | **RETARGET** — legacy-only | Rich has no `link_preview_options` |
 
 ## Acceptance criteria
 
-- [ ] `sendRichMessageDirect` successfully sends a 10.1 rich message via raw fetch;
-      verified against live Bot API.
-- [ ] `markdownToRichBlocks` correctly compiles headings, paragraphs, code blocks,
-      lists, and tables from standard Markdown input.
-- [ ] Every message type that renders correctly today continues to render correctly
-      with `RICH_MESSAGES=false` (default).
-- [ ] With `RICH_MESSAGES=true`, a Markdown message containing an H2, a GFM table,
-      a fenced code block, and a bullet list renders as a rich message in Telegram.
-- [ ] `parse_mode: "MarkdownV2"` and `parse_mode: "HTML"` callers are not affected.
-- [ ] Fallback to MarkdownV2 is exercised and confirmed when `sendRichMessageDirect`
-      returns a 10.1-unavailable error.
-- [ ] `docs/rich-message-schema.md` exists and contains confirmed field names from
-      the live Bot API docs.
-- [ ] `docs/formatting.md` updated to document which Markdown constructs trigger
-      rich blocks.
-- [ ] No existing tests broken; new unit tests cover `markdownToRichBlocks` for
-      each block type.
-
-## Delivery
-
-Begin with the schema verification pass (see Open Questions §7). Phase 1 raw-fetch
-helpers are a self-contained PR. Phases 2–3 build the compiler incrementally.
-Background agents are appropriate for mechanical compiler work; reviewer must
-diff the compiled block output against expected structures before merge.
+- [ ] `api.raw.sendRichMessage(...)` sends a rich message; grammY native replaces raw-fetch everywhere.
+- [ ] `send(string: "# Heading\n\n**bold**")` routes via `markdownToRichBlocks` smart detection → renders as a rich message with correct formatting in Telegram.
+- [ ] `send(string: "plain text, no markdown")` routes to plain text send (smart detection finds no markdown).
+- [ ] `send(html: "<b>bold</b>")` passes through grammY renderer (HTML mode) → sends as rich HTML.
+- [ ] `send(markdown: "# GFM heading\n\n| col | col |\n|-----|-----|\n| a | b |")` passes through grammY renderer (GFM mode) → renders table correctly.
+- [ ] Never-fail floor works: if rich fails, message delivers via legacy path.
+- [ ] Caption path unchanged: `sendPhoto(caption: "...")` uses `parse_mode`, not rich.
+- [ ] Draft streaming: `sendRichMessageDraft` → `sendRichMessage` lifecycle works end-to-end.
+- [ ] `LIMITS.MESSAGE_TEXT` updated to 32768; `splitMessage` threshold updated.
+- [ ] No existing tests broken; new tests cover rich send, floor fallback, format routing.
+- [ ] `docs/formatting.md` updated with format-by-param contract.
+- [ ] 15-0012 (copy_text) and 30-0012 (effects) implemented as part of Phase 5.
+- [ ] `parse_mode` param removed from public `send` API.

@@ -18,6 +18,10 @@ import { validateSession } from "./session-manager.js";
 import { hasSseConnection } from "./sse-endpoint.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
 
+export const ERR_TOKEN_REQUIRED = "token is required";
+export const ERR_INVALID_TOKEN = "invalid token";
+export const ERR_AUTH_FAILED = "AUTH_FAILED";
+
 /** Parse a value that may be a number or a digit-string. Returns NaN on invalid input. */
 function parseIntParam(val: unknown): number {
   if (typeof val === "number") return val;
@@ -34,16 +38,16 @@ export function handleHttpActivityListenCheck(
   rawToken: unknown,
 ): [number, Record<string, unknown>] {
   if (rawToken === undefined || rawToken === null || rawToken === "") {
-    return [401, { ok: false, error: "token is required" }];
+    return [401, { ok: false, error: ERR_TOKEN_REQUIRED }];
   }
   const tokenNum = parseIntParam(rawToken);
   if (!Number.isInteger(tokenNum) || tokenNum <= 0) {
-    return [401, { ok: false, error: "invalid token" }];
+    return [401, { ok: false, error: ERR_INVALID_TOKEN }];
   }
 
   const { sid, suffix } = decodeToken(tokenNum);
   if (!validateSession(sid, suffix)) {
-    return [401, { ok: false, error: "AUTH_FAILED" }];
+    return [401, { ok: false, error: ERR_AUTH_FAILED }];
   }
 
   return [200, { subscribed: hasSseConnection(sid) }];

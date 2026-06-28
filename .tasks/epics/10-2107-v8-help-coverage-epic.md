@@ -65,3 +65,7 @@ Operator directive (2026-05-27, distilled): every tool call should have its own 
 ## Delivery
 
 Break into per-path tasks once the coverage audit produces the gap list. Dispatch background agents for mechanical help-topic writes; Curator/BT review staged output before merge.
+
+
+---
+> ⚠️ **AUDIT 2026-06-26:** Stale metrics — docs/help/ now has ~100 files and index.md lists ~23 (not the body's '~15 of ~50'); the sub-session help gap is CLOSED. Still a valid open epic — re-baseline the numbers.

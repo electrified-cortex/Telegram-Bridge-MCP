@@ -2,7 +2,8 @@
  * Unit tests for activity/listen and activity/listen/cancel handlers.
  *
  * Covers:
- *   TC1. activity/listen — HTTP mode active → returns ok:true with filtered command and guidance fields
+ *   TC1. activity/listen — HTTP mode active → returns SSE URL, filtered command, and guidance fields;
+ *        does NOT include ok: true (AC1); delivers ACTIVITY_LISTEN_SETUP service message (AC2)
  *   TC2. activity/listen — HTTP mode not active → HTTP_MODE_REQUIRED error
  *   TC3. activity/listen — auth failure → AUTH_FAILED error
  *   TC4. activity/listen/cancel — connection open → ok:true, connection cancelled
@@ -27,6 +28,10 @@ const sseEndpointMocks = vi.hoisted(() => ({
   scheduleArmReminder: vi.fn((_sid: number, _command: string): void => {}),
 }));
 
+const sessionQueueMocks = vi.hoisted(() => ({
+  deliverServiceMessage: vi.fn((..._args: unknown[]): boolean => true),
+}));
+
 vi.mock("../../session-gate.js", () => ({
   requireAuth: (token: number | undefined) => gateMocks.requireAuth(token),
 }));
@@ -39,6 +44,11 @@ vi.mock("../../sse-endpoint.js", () => ({
   cancelSseConnection: (sid: number) => { sseEndpointMocks.cancelSseConnection(sid); },
   scheduleArmReminder: (sid: number, command: string) => { sseEndpointMocks.scheduleArmReminder(sid, command); },
 }));
+
+vi.mock("../../session-queue.js", async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>();
+  return { ...real, deliverServiceMessage: (...args: unknown[]) => sessionQueueMocks.deliverServiceMessage(...args) };
+});
 
 import { handleActivityListen } from "./listen.js";
 import { handleActivityListenCancel } from "./cancel-listen.js";
@@ -65,16 +75,18 @@ beforeEach(() => {
   httpModeMocks.getSseBaseUrl.mockReturnValue("http://127.0.0.1:3099");
   sseEndpointMocks.cancelSseConnection.mockReturnValue(undefined);
   sseEndpointMocks.scheduleArmReminder.mockReturnValue(undefined);
+  sessionQueueMocks.deliverServiceMessage.mockReturnValue(true);
 });
 
 // ── TC1: activity/listen — HTTP mode active ───────────────────────────────────
 
 describe("TC1: activity/listen — HTTP mode active", () => {
-  it("returns ok:true with filtered command and guidance fields", () => {
+  it("returns filtered command and guidance fields without ok:true (AC1)", () => {
     const result = handleActivityListen({ token: TOKEN });
     expect(isError(result as { isError?: boolean })).toBe(false);
     const body = parseResult(result);
-    expect(body.ok).toBe(true);
+    // AC1: ok field must NOT be present
+    expect(body.ok).toBeUndefined();
     expect(typeof body.sse_url).toBe("string");
     expect((body.sse_url as string)).toContain(`/sse?token=${TOKEN}`);
     // command must use the filtered script, NOT raw curl -N
@@ -86,6 +98,19 @@ describe("TC1: activity/listen — HTTP mode active", () => {
     expect((body.download_url as string)).toContain("/tools/sse-monitor.sh");
     // arm reminder must be scheduled
     expect(sseEndpointMocks.scheduleArmReminder).toHaveBeenCalledWith(SID, body.command);
+  });
+
+  it("delivers ACTIVITY_LISTEN_SETUP service message breadcrumb (AC2)", () => {
+    const result = handleActivityListen({ token: TOKEN });
+    const body = parseResult(result);
+    // AC2: setup breadcrumb must be delivered as a service message in chat
+    expect(sessionQueueMocks.deliverServiceMessage).toHaveBeenCalledOnce();
+    const [calledSid, calledText, calledEventType] = sessionQueueMocks.deliverServiceMessage.mock.calls[0] as [number, string, string];
+    expect(calledSid).toBe(SID);
+    expect(calledEventType).toBe("activity_listen_setup");
+    // The message must reference the concrete arm command and download URL
+    expect(calledText).toContain(body.command as string);
+    expect(calledText).toContain(body.download_url as string);
   });
 
   it("builds URL from base URL returned by getSseBaseUrl", () => {

@@ -49,6 +49,19 @@ import { deliverServiceMessage } from "./session-queue.js";
 import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getCallerSid, runInSessionContext } from "./session-context.js";
 import { closeSessionById } from "./session-teardown.js";
+import { getChildSids } from "./tools/session/child-registry.js";
+
+// ---------------------------------------------------------------------------
+// Exported string constants (for test assertions)
+// ---------------------------------------------------------------------------
+
+export const PANEL_EXPIRED_TEXT = "This panel has expired.";
+export const APPROVE_LABEL_ONE = "Session Auto-Approve → Next Request";
+export const APPROVE_LABEL_TIMED_PREFIX = "Session Auto-Approve → 10 Minutes (expires ";
+export const APPROVE_LABEL_GOV_ON = "Session Auto-Approve → Governor Enabled";
+export const APPROVE_LABEL_GOV_OFF = "Session Auto-Approve → Governor Disabled";
+export const APPROVE_LABEL_DISMISS = "Session Auto-Approve → Dismissed";
+export const SESSION_ALREADY_CLOSED_MSG = "⚠️ Session was already closed.";
 
 // ---------------------------------------------------------------------------
 // Tracking panel message IDs so callback_query intercept can route back
@@ -418,23 +431,23 @@ export async function handleIfBuiltIn(update: Update): Promise<boolean> {
       return true;
     }
     if (data.startsWith("governor:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: PANEL_EXPIRED_TEXT }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("approve:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: PANEL_EXPIRED_TEXT }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("logging:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: PANEL_EXPIRED_TEXT }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("session:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: PANEL_EXPIRED_TEXT }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
     if (data.startsWith("log:")) {
-      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: "This panel has expired." }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      try { await getApi().answerCallbackQuery(update.callback_query.id, { text: PANEL_EXPIRED_TEXT }); } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
       return true;
     }
   }
@@ -579,6 +592,20 @@ async function handleGovernorCallback(
       return;
     }
 
+    // CHILD_SESSIONS_CANNOT_BE_GOVERNOR
+    if (getSession(newSid)?.parent_sid !== undefined) {
+      _activePanels.delete(panelMsgId);
+      try {
+        await runInSessionContext(0, () => api.editMessageText(
+          chatId,
+          panelMsgId,
+          "⚠️ Child sessions cannot be set as primary. Close this session and promote a root session.",
+          { reply_markup: { inline_keyboard: [] } },
+        ));
+      } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      return;
+    }
+
     setGovernorSid(newSid);
 
     const newLabel = `${newGovernor.color} ${newGovernor.name}`;
@@ -621,6 +648,7 @@ function buildGovernorPanel(
     "Choose which session should be the primary:";
   const keyboard: { text: string; callback_data: string }[][] = [];
   for (const s of sessions) {
+    if (getSession(s.sid)?.parent_sid !== undefined) continue;
     const isGov = s.sid === currentSid;
     const label = `${s.color} ${s.name}${isGov ? " ✓" : ""}`;
     keyboard.push([{ text: label, callback_data: `governor:set:${s.sid}` }]);
@@ -1101,7 +1129,7 @@ async function handleApproveCallback(
   if (data === "approve:one") {
     activateAutoApproveOne();
     await api.editMessageText(chatId, panelMsgId,
-      "*Session Auto-Approve → Next Request*",
+      `*${APPROVE_LABEL_ONE}*`,
       { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   } else if (data === "approve:timed") {
@@ -1110,26 +1138,26 @@ async function handleApproveCallback(
     const d = new Date(expiresMs);
     const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     await api.editMessageText(chatId, panelMsgId,
-      `*Session Auto-Approve → 10 Minutes (expires ${hhmm})*`,
+      `*${APPROVE_LABEL_TIMED_PREFIX}${hhmm})*`,
       { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   } else if (data === "approve:delegate:on") {
     setDelegationEnabled(true);
     await api.editMessageText(chatId, panelMsgId,
-      "*Session Auto-Approve → Governor Enabled*",
+      `*${APPROVE_LABEL_GOV_ON}*`,
       { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   } else if (data === "approve:delegate:off") {
     setDelegationEnabled(false);
     await api.editMessageText(chatId, panelMsgId,
-      "*Session Auto-Approve → Governor Disabled*",
+      `*${APPROVE_LABEL_GOV_OFF}*`,
       { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   } else {
     // dismiss — cancel any active auto-approve and close panel
     cancelAutoApprove();
     await api.editMessageText(chatId, panelMsgId,
-      "*Session Auto-Approve → Dismissed*",
+      `*${APPROVE_LABEL_DISMISS}*`,
       { parse_mode: "Markdown", _skipHeader: true, reply_markup: { inline_keyboard: [] } } as Record<string, unknown>
     ).catch(() => {/* non-fatal */});
   }
@@ -1308,7 +1336,10 @@ function buildSessionListPanel(
   const text = "Active sessions:";
   const keyboard: { text: string; callback_data: string }[][] = [];
   for (const s of sessions) {
-    const label = `${s.color} ${s.name} (SID ${s.sid})`;
+    if (getSession(s.sid)?.parent_sid !== undefined) continue;
+    const childCount = getChildSids(s.sid).length;
+    const childAnnotation = childCount > 0 ? ` (${childCount} sub-session${childCount === 1 ? "" : "s"})` : "";
+    const label = `${s.color} ${s.name} (SID ${s.sid})${childAnnotation}`;
     keyboard.push([{ text: label, callback_data: `session:select:${s.sid}` }]);
   }
   keyboard.push([{ text: "✖ Cancel", callback_data: "session:cancel" }]);
@@ -1390,7 +1421,7 @@ async function handleSessionCallback(
     const closeResult = closeSessionById(sid);
     const closeMsg = closeResult.closed
       ? `✅ Session closed: ${closeResult.name || `Session ${sid}`} (SID ${sid})`
-      : "⚠️ Session was already closed.";
+      : SESSION_ALREADY_CLOSED_MSG;
     void refreshGovernorCommand();
     try {
       await runInSessionContext(0, () => api.editMessageText(
@@ -1422,6 +1453,20 @@ async function handleSessionCallback(
           chatId,
           panelMsgId,
           "⚠️ Session no longer active.",
+          { reply_markup: { inline_keyboard: [] } },
+        ));
+      } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      return;
+    }
+
+    // CHILD_SESSIONS_CANNOT_BE_GOVERNOR
+    if (getSession(sid)?.parent_sid !== undefined) {
+      _activePanels.delete(panelMsgId);
+      try {
+        await runInSessionContext(0, () => api.editMessageText(
+          chatId,
+          panelMsgId,
+          "⚠️ Child sessions cannot be set as primary. Close this session and promote a root session.",
           { reply_markup: { inline_keyboard: [] } },
         ));
       } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
@@ -1512,6 +1557,17 @@ async function renderSessionDetail(
     firstRow,
     [{ text: "← Back", callback_data: "session:back" }],
   ];
+
+  // Show active child sessions with close buttons, inserted before ← Back
+  const childSids = getChildSids(sid);
+  for (const childSid of childSids) {
+    const child = sessions.find(s => s.sid === childSid);
+    if (child) {
+      keyboard.splice(keyboard.length - 1, 0, [
+        { text: `${child.color} ${child.name} — 🗑 Close`, callback_data: `session:close:${childSid}` },
+      ]);
+    }
+  }
 
   try {
     await runInSessionContext(0, () => api.editMessageText(

@@ -123,6 +123,13 @@ export function cancelSseConnection(sid: number): void {
   // this stream's gate membership here instead.
   // Pass expected=true — this is an intentional cancel, not an unexpected drop.
   unregisterSseMonitor(sid, true);
+  // Cancel any pending arm-reminder for this sid — session is being torn down so
+  // the reminder must not fire after the session is gone.
+  const reminderTimer = _armReminderTimers.get(sid);
+  if (reminderTimer !== undefined) {
+    clearTimeout(reminderTimer);
+    _armReminderTimers.delete(sid);
+  }
   // Clear the once-per-session participation guard so a genuinely new connection
   // after a real teardown re-sends the confirmation.
   _onboardingParticipatingFired.delete(sid);

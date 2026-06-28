@@ -108,3 +108,7 @@ What should `pod-memory` be renamed to?
 ## Fix path
 
 Recommend: fix on `dev` → cherry-pick back to `release/v7.11.1` (patch commit) → apply same to `release/v7.12.0`. Then PRs can proceed.
+
+
+---
+> ⚠️ **AUDIT 2026-06-26:** PREMISE REVERSED — the memory/telegram/session.token path was deliberately RESTORED as canonical recovery (70-done 10-3031/10-3035/10-3036). The 'remove the path' goal no longer applies; most ACs are done/moot. Reconcile to the settled policy or close.

@@ -864,6 +864,20 @@ describe("session_start tool", () => {
     // eventType: "onboarding_role" already verified by find predicate — governor role assigned
   });
 
+  it("first session: injects behavior_hint_help_topics on governor startup", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 111111, name: "Primary", color: "🟦", sessionsActive: 1 });
+    mocks.getGovernorSid.mockReturnValue(1);
+
+    await call({});
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const helpTopics = calls.find((c: unknown[]) => c[0] === 1 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "behavior_hint_help_topics");
+    expect(helpTopics).toBeDefined();
+    // eventType: "behavior_hint_help_topics" verified by find predicate — help topics delivered to governor
+  });
+
   it("first session: does NOT inject onboarding_protocol at startup (delivered lazily on first user message)", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(0);
@@ -1085,6 +1099,29 @@ describe("session_start tool", () => {
 
     const calls = mocks.deliverServiceMessage.mock.calls;
     const msg = calls.find((c: unknown[]) => c[0] === 2 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "onboarding_buttons");
+    expect(msg).toBeUndefined();
+  });
+
+  it("second session (participant): does NOT inject behavior_hint_help_topics (governor-only)", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", sessionsActive: 2 });
+    mocks.getGovernorSid.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([
+        { sid: 1, name: "Primary", createdAt: "2026-03-17" },
+        { sid: 2, name: "Worker", createdAt: "2026-03-17" },
+      ]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_0", qid: "q1" } }); });
+    });
+    mocks.sendMessage.mockResolvedValueOnce({ message_id: 50 });
+
+    await call({ name: "Worker" });
+
+    const calls = mocks.deliverServiceMessage.mock.calls;
+    const msg = calls.find((c: unknown[]) => c[0] === 2 && typeof c[1] === "object" && (c[1] as Record<string, unknown>).eventType === "behavior_hint_help_topics");
     expect(msg).toBeUndefined();
   });
 

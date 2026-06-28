@@ -86,6 +86,19 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: "You are the governor. Ambiguous messages route to you. Forward to the correct session via DM with message ID — recipient calls message/get to read it. help('guide') for routing protocol.",
   },
 
+  /**
+   * Fired at governor startup to surface available help topics.
+   * Keeps scope minimal — one targeted nudge listing slugs the agent can call help() on.
+   */
+  ONBOARDING_HELP_TOPICS: {
+    eventType: "behavior_hint_help_topics" as const,
+    text: "Available help topics: call help(topic: '<slug>') on any of these slugs for the full reference.\n" +
+      "  • 'sub-sessions' — child-session vocabulary, host protocol, sub-agent orientation\n" +
+      "  • 'guide'        — routing and trust model\n" +
+      "  • 'reactions'    — reaction semantics and presence signals\n" +
+      "  • 'compression'  — inter-agent DM compression protocol",
+  },
+
   ONBOARDING_PROTOCOL: {
     eventType: "onboarding_protocol" as const,
     text: "Show-typing before replies. Use animations for longer work. Reactions acknowledge receipt; they do not trigger action. Voice is auto-saluted on dequeue. help('reactions').",
@@ -272,6 +285,21 @@ export const SERVICE_MESSAGES = deepFreeze({
 
   // ── SSE onboarding handshake ──────────────────────────────────────────────
 
+  /** Fired immediately after activity/listen succeeds. Concrete arm command for the SSE monitor. */
+  ACTIVITY_LISTEN_SETUP: {
+    eventType: "activity_listen_setup" as const,
+    /**
+     * @param command The filtered monitor arm command (e.g. `bash sse-monitor.sh '<url>'`)
+     * @param downloadUrl The URL to download sse-monitor.sh if no repo checkout is available
+     */
+    text: (command: string, downloadUrl: string) =>
+      `Arm this in the Monitor tool (persistent: true) to receive push notifications:\n` +
+      `  \`${command}\`\n\n` +
+      `No repo checkout? Download the script first:\n` +
+      `  GET ${downloadUrl}\n\n` +
+      `⚠ Do NOT use raw curl -N — the SSE stream sends \`: keepalive\` heartbeats every 30 s that would spam wake events. Always use the filtered script.`,
+  },
+
   /** Fired once when the participant's SSE monitor actually connects (filtered path confirmed). */
   ONBOARDING_PARTICIPATING: {
     eventType: "onboarding_participating" as const,
@@ -302,12 +330,21 @@ export const SERVICE_MESSAGES = deepFreeze({
 
   // ── Sub-session spawn hint ────────────────────────────────────────────────
 
-  /** Fired after session/spawn-child succeeds. Guides the host to dispatch a sub-agent. */
+  /** Fired after session/spawn-child succeeds. Guides the host to forward a task brief then dispatch a sub-agent. */
   SPAWN_CHILD_SUBAGENT_HINT: {
     eventType: "spawn_child_subagent_hint" as const,
     /** @param childSid the spawned child's SID, @param childName the child session's name, @param childToken the new sub-session token */
     text: (childSid: number, childName: string, childToken: number) =>
-      `You spawned a sub-session (sid=${childSid}, name=${childName}). Now dispatch a background sub-agent to drain its dequeue loop — pick a model class appropriate to the topic complexity. The sub-agent should call \`dequeue(token: ${childToken})\` continuously and reply via its own session token. When the topic is resolved, the sub-agent calls \`session/revoke-child\` itself.\n\nIf the sub-agent stops without giving you sufficient resolution, resume that same sub-agent with a follow-up prompt — provide the correction or demand the result.`,
+      `You spawned a sub-session (sid=${childSid}, name=${childName}).\n\n` +
+      `MUST DO IMMEDIATELY — before the child's first dequeue:\n` +
+      `  action(type: 'child/forward', token: <your_token>, child_sid: ${childSid}, message: '<task brief>')\n\n` +
+      `This is the forward-child call — it injects your task brief as the child's first inbound message. ` +
+      `Without it the child dequeues with no context and cannot act.\n\n` +
+      `THEN dispatch a background sub-agent with the child token:\n` +
+      `  Sub-agent loop: dequeue(token: ${childToken}) → handle → repeat until topic resolved.\n` +
+      `  Pick a model class appropriate to the topic complexity.\n` +
+      `  When resolved, the sub-agent calls session/revoke-child(child_token: ${childToken}) to self-despawn.\n\n` +
+      `If the sub-agent stops without sufficient resolution, resume it with a corrective follow-up prompt.`,
   },
 
   // ── Inter-agent hints ─────────────────────────────────────────────────────
@@ -415,7 +452,7 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "onboarding_subsession_spawn_breadcrumb" as const,
     text: "Sub-session routing sequence (exact action signatures):\n\n" +
       "1. Spawn:\n" +
-      "   action(type: 'session/spawn-child', token: <host_token>, name: '<topic>')\n" +
+      "   action(type: 'session/spawn-child', token: <host_token>, topic: '<topic>')\n" +
       "   → { token: <child_token>, sid: <child_sid>, display_index, ... }\n\n" +
       "2. Dispatch: launch a background sub-agent with <child_token>.\n" +
       "   Sub-agent loop: dequeue(token: <child_token>) → handle → repeat.\n\n" +

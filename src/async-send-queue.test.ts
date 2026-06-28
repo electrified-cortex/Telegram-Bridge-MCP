@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { getCallerSid } from "./session-context.js";
 import {
   enqueueAsyncSend,
   cancelSessionJobs,
@@ -9,6 +10,9 @@ import {
   releaseRecordingIndicator,
   hasInflightAudio,
   enqueueTextSend,
+  RECORDING_INDICATOR_SAFETY_MS,
+  ASYNC_FAILED_BANNER,
+  ASYNC_FAILED_BANNER_V2,
   type AsyncSendJob,
 } from "./async-send-queue.js";
 
@@ -80,21 +84,30 @@ function makeJobParams(overrides: Partial<JobInput> = {}): JobInput {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Wait for the promise chain to drain (all micro/macro tasks). */
+/**
+ * Wait for the most recent audio job to complete by polling until
+ * `deliverAsyncSendCallback` is called at least once more than before entry.
+ *
+ * This is deterministic: if production code stops calling `deliverAsyncSendCallback`
+ * (e.g. the callback is removed from the chain), the poll times out after 5 s and
+ * the test FAILS — rather than silently passing with a fixed hop count.
+ *
+ * Not suitable for `vi.useFakeTimers()` contexts where the job hasn't completed yet
+ * on entry — use inline `for (let i = 0; i < N; i++) await Promise.resolve()` loops
+ * at those call sites instead (Promise.resolve() is unaffected by fake timers).
+ */
 async function flushJobs(): Promise<void> {
-  // Multiple yields needed: synthesize → sendVoice → callback delivery chain
-  for (let i = 0; i < 10; i++) {
-    await Promise.resolve();
-  }
+  const prevCount = mocks.deliverAsyncSendCallback.mock.calls.length;
+  await vi.waitFor(
+    () => { expect(mocks.deliverAsyncSendCallback.mock.calls.length).toBeGreaterThan(prevCount); },
+    { interval: 0, timeout: 5000 },
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-// Mirrors RECORDING_INDICATOR_SAFETY_MS from async-send-queue.ts.
-// Declared here (before the describe block) so source order matches usage order.
-const RECORDING_INDICATOR_SAFETY_MS_FOR_TEST = 120_000;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -307,8 +320,9 @@ describe("async-send-queue", () => {
 
         // Advance past the timeout. Use runOnlyPendingTimersAsync (not runAllTimersAsync)
         // so the recording-indicator setInterval does not loop infinitely under fake timers.
+        // runOnlyPendingTimersAsync fires the timer AND flushes async callbacks — no extra
+        // flushJobs needed. (flushJobs uses vi.waitFor which is incompatible with fake timers.)
         await vi.runOnlyPendingTimersAsync();
-        await flushJobs();
 
         expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
         const [, payload] = mocks.deliverAsyncSendCallback.mock.calls[0] as unknown as [number, { status: string }];
@@ -330,14 +344,16 @@ describe("async-send-queue", () => {
 
         // Trigger timeout. Use runOnlyPendingTimersAsync (not runAllTimersAsync)
         // so the recording-indicator setInterval does not loop infinitely under fake timers.
+        // runOnlyPendingTimersAsync fires the timer AND flushes async callbacks — no extra
+        // flushJobs needed. (flushJobs uses vi.waitFor which is incompatible with fake timers.)
         await vi.runOnlyPendingTimersAsync();
-        await flushJobs();
 
         expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce();
 
-        // Now the stalled job fails — should be a no-op (already finalised)
+        // Now the stalled job fails — should be a no-op (already finalised).
+        // Use microtask yields (unaffected by fake timers) to let the rejection propagate.
         rejectJob(new Error("late error"));
-        await flushJobs();
+        for (let i = 0; i < 8; i++) await Promise.resolve();
 
         expect(mocks.deliverAsyncSendCallback).toHaveBeenCalledOnce(); // still only once
       } finally {
@@ -365,7 +381,7 @@ describe("async-send-queue", () => {
       expect(mocks.sendMessage).toHaveBeenCalledOnce();
       const sendArgs = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
       // Legacy fallback is plain text — no parse_mode
-      expect(sendArgs[1]).toContain("⚠ [async failed]");
+      expect(sendArgs[1]).toContain(ASYNC_FAILED_BANNER);
       expect(sendArgs[1]).toContain("caption content");
       expect(sendArgs[2].parse_mode).toBeUndefined();
     });
@@ -384,11 +400,11 @@ describe("async-send-queue", () => {
       expect(mocks.sendMessage).toHaveBeenCalledOnce();
       const sendArgs = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
       // Banner must be V2-escaped: \[async failed\]
-      expect(sendArgs[1]).toContain("⚠ \\[async failed\\]");
+      expect(sendArgs[1]).toContain(ASYNC_FAILED_BANNER_V2);
       // Body must be freshly converted to MarkdownV2 (parentheses and dot escaped)
       expect(sendArgs[1]).toContain("Step \\(1\\) and step \\(2\\)\\.");
       // Must NOT contain unescaped literal parens from the raw text
-      expect(sendArgs[1]).not.toMatch(/⚠ \[async failed\]/);
+      expect(sendArgs[1]).not.toContain(ASYNC_FAILED_BANNER);
       expect(sendArgs[2].parse_mode).toBe("MarkdownV2");
     });
 
@@ -449,8 +465,9 @@ describe("async-send-queue", () => {
       // Cancel the session — removes the session state
       cancelSessionJobs(1);
 
-      // Let things settle
-      await flushJobs();
+      // Let things settle — synthesizeToOgg is blocked (never resolves), so
+      // deliverAsyncSendCallback will never be called; can't use flushJobs() here.
+      for (let i = 0; i < 16; i++) await Promise.resolve();
 
       // No callback should have been delivered (session gone, queue gone)
       // The in-flight job1 is stalled; job2 is queued but session is deleted.
@@ -504,7 +521,8 @@ describe("async-send-queue", () => {
     });
 
     it("is a no-op for an unknown session", () => {
-      expect(() => { cancelSessionJobs(999); }).not.toThrow();
+      cancelSessionJobs(999);
+      expect(mocks.deliverAsyncSendCallback).not.toHaveBeenCalled();
     });
   });
 
@@ -542,19 +560,20 @@ describe("async-send-queue", () => {
         enqueueAsyncSend(2, makeJobParams({ sid: 2, chatId: 100 }));
 
         // Yield enough times for both jobs to start and acquire the indicator.
-        await flushJobs();
+        // (Promise.resolve() is unaffected by fake timers; flushJobs/vi.waitFor is not.)
+        for (let i = 0; i < 6; i++) await Promise.resolve();
 
         // Refcount is 2 (one shared interval), only one record_voice fired.
         expect(recordingIndicatorCountForTest()).toBe(1);
 
         // Complete job1 — refcount drops 2 → 1, interval stays active.
         resolveJob1(Buffer.from("ogg1"));
-        await flushJobs();
+        for (let i = 0; i < 16; i++) await Promise.resolve();
         expect(recordingIndicatorCountForTest()).toBe(1);
 
         // Complete job2 — refcount drops 1 → 0, interval cleared.
         resolveJob2(Buffer.from("ogg2"));
-        await flushJobs();
+        for (let i = 0; i < 16; i++) await Promise.resolve();
         expect(recordingIndicatorCountForTest()).toBe(0);
 
         // sendChatAction should have been called exactly once initially
@@ -586,12 +605,13 @@ describe("async-send-queue", () => {
         const callsAfterInterval = mocks.sendChatAction.mock.calls.filter(
           (c) => c[1] === "record_voice",
         );
-        // At minimum: initial call + 1 interval tick
-        expect(callsAfterInterval.length).toBeGreaterThanOrEqual(2);
+        // Exactly: initial call + 1 interval tick at 4 s
+        expect(callsAfterInterval).toHaveLength(2);
 
         // Finish the job so the interval is cleared and fake-timers can be restored cleanly.
+        // Use microtask yields — flushJobs/vi.waitFor is incompatible with fake timers.
         resolveJob(Buffer.from("ogg"));
-        await flushJobs();
+        for (let i = 0; i < 16; i++) await Promise.resolve();
         expect(recordingIndicatorCountForTest()).toBe(0);
       } finally {
         vi.useRealTimers();
@@ -619,8 +639,9 @@ describe("async-send-queue", () => {
 
         expect(mocks.pauseTypingEmission).toHaveBeenCalledWith(100);
 
+        // Use microtask yields — flushJobs/vi.waitFor is incompatible with fake timers.
         resolveJob(Buffer.from("ogg"));
-        await flushJobs();
+        for (let i = 0; i < 16; i++) await Promise.resolve();
       } finally {
         vi.useRealTimers();
       }
@@ -660,13 +681,14 @@ describe("async-send-queue", () => {
         expect(mocks.resumeTypingEmission).not.toHaveBeenCalled();
 
         // Complete job1 (from sid 1) — refcount 2 → 1; resume not yet called.
+        // Use microtask yields — flushJobs/vi.waitFor is incompatible with fake timers.
         resolveJob1(Buffer.from("ogg1"));
-        await flushJobs();
+        for (let i = 0; i < 16; i++) await Promise.resolve();
         expect(mocks.resumeTypingEmission).not.toHaveBeenCalled();
 
         // Complete job2 (from sid 2) — refcount 1 → 0; resume now called.
         resolveJob2(Buffer.from("ogg2"));
-        await flushJobs();
+        for (let i = 0; i < 16; i++) await Promise.resolve();
         expect(mocks.resumeTypingEmission).toHaveBeenCalledTimes(1);
         expect(mocks.resumeTypingEmission).toHaveBeenCalledWith(100);
       } finally {
@@ -784,7 +806,7 @@ describe("async-send-queue", () => {
         expect(recordingIndicatorEpochForTest(300)).toBe(epochA);
 
         // Safety timeout fires — clears the indicator unconditionally (epoch counter advances)
-        await vi.advanceTimersByTimeAsync(RECORDING_INDICATOR_SAFETY_MS_FOR_TEST);
+        await vi.advanceTimersByTimeAsync(RECORDING_INDICATOR_SAFETY_MS);
         expect(recordingIndicatorCountForTest()).toBe(0);
 
         // Job B acquires a fresh indicator — new epoch
@@ -874,14 +896,18 @@ describe("text-after-audio queue ordering", () => {
       return Promise.resolve();
     });
 
-    // Nothing delivered yet
-    await flushJobs();
+    // Nothing delivered yet — audio is still pending (synthesizeToOgg not yet called).
     expect(callOrder).toEqual([]);
 
-    // Resolve audio — triggers audio delivery, then text delivery
+    // synthesizeToOgg is called asynchronously via the queue's promise chain.
+    // Wait until it's been invoked so resolveAudio is assigned before we call it.
+    await vi.waitFor(() => { expect(mocks.synthesizeToOgg).toHaveBeenCalled(); }, { interval: 0, timeout: 5000 });
+
+    // Resolve audio — triggers audio delivery, then text delivery.
+    // A single flushJobs() is sufficient: vi.waitFor polls after all microtasks drain,
+    // so both "audio-delivered" and "text-delivered" are already pushed by then.
     resolveAudio(Buffer.from("ogg"));
     await flushJobs();
-    await flushJobs(); // extra flush: audio → fn chain needs more microtask rounds
 
     expect(callOrder[0]).toBe("audio-delivered");
     expect(callOrder[1]).toBe("text-delivered");
@@ -901,12 +927,17 @@ describe("text-after-audio queue ordering", () => {
     const fnSpy = vi.fn(async (_pid: number) => {});
     enqueueTextSend(1, fnSpy);
 
-    await flushJobs();
+    // Audio still pending — fnSpy cannot have been called yet.
     expect(fnSpy).not.toHaveBeenCalled();
 
+    // synthesizeToOgg is called asynchronously via the queue's promise chain.
+    // Wait until it's been invoked so resolveAudio is assigned before we call it.
+    await vi.waitFor(() => { expect(mocks.synthesizeToOgg).toHaveBeenCalled(); }, { interval: 0, timeout: 5000 });
+
     resolveAudio(Buffer.from("ogg"));
+    // A single flushJobs() is sufficient: vi.waitFor polls after all microtasks drain,
+    // so fnSpy is already called (chained after audio's .finally()) by then.
     await flushJobs();
-    await flushJobs(); // extra flush: audio → text fn chain
 
     expect(fnSpy).toHaveBeenCalledOnce();
     const pid = fnSpy.mock.calls[0][0];
@@ -942,8 +973,8 @@ describe("text-after-audio queue ordering", () => {
     enqueueTextSend(1, fn1);
     enqueueTextSend(1, fn2);
 
-    // Two flushes needed: audio → fn1 (flush 1), fn1 catch → fn2 (flush 2)
-    await flushJobs();
+    // A single flushJobs() is sufficient: vi.waitFor polls after all microtasks drain,
+    // so audio → fn1 (throws) → fn2 are all complete by the time it resolves.
     await flushJobs();
 
     expect(fn1).toHaveBeenCalledOnce();
@@ -976,5 +1007,44 @@ describe("text-after-audio queue ordering", () => {
     expect(pid1).toBeLessThan(0);
     expect(pid2).toBeLessThan(0);
     expect(pid1).not.toBe(pid2);
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Session context propagation — getCallerSid() resolves job.sid inside runJob
+  // -------------------------------------------------------------------------
+  describe("session context propagation", () => {
+    it("getCallerSid() returns job.sid inside sendVoiceDirect when job executes", async () => {
+      let callerSidDuringSend: number | undefined;
+      mocks.sendVoiceDirect.mockImplementation(() => {
+        callerSidDuringSend = getCallerSid();
+        return Promise.resolve({ message_id: 200 });
+      });
+
+      enqueueAsyncSend(5, makeJobParams({ sid: 5 }));
+      await flushJobs();
+
+      // After the fix, executeJob wraps the job in runInSessionContext(job.sid, ...)
+      // so getCallerSid() correctly returns the job's SID during sendVoiceDirect.
+      expect(callerSidDuringSend).toBe(5);
+    });
+
+    it("each job carries its own session context (different sids, different context)", async () => {
+      const sidsDuringSend: number[] = [];
+
+      mocks.synthesizeToOgg
+        .mockResolvedValueOnce(Buffer.from("ogg-sid1"))
+        .mockResolvedValueOnce(Buffer.from("ogg-sid2"));
+      mocks.sendVoiceDirect.mockImplementation(() => {
+        sidsDuringSend.push(getCallerSid());
+        return Promise.resolve({ message_id: 200 });
+      });
+
+      enqueueAsyncSend(11, makeJobParams({ sid: 11, chatId: 110 }));
+      enqueueAsyncSend(22, makeJobParams({ sid: 22, chatId: 220 }));
+      await flushJobs();
+
+      expect(sidsDuringSend).toContain(11);
+      expect(sidsDuringSend).toContain(22);
+    });
   });
 });

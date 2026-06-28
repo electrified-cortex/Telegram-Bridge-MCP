@@ -11,8 +11,8 @@
 import { isRecoveringAnimation, cancelAnimation } from "./animation-state.js";
 import { getHasCompacted, clearHasCompacted } from "./session-manager.js";
 
-const COMPACTED_NOTIFY_TEXT = "ℹ️ *Compacted*";
-const COMPACTED_NOTIFY_PARSE_MODE = "MarkdownV2" as const;
+export const COMPACTED_NOTIFY_TEXT = "ℹ️ *Compacted*";
+export const COMPACTED_NOTIFY_PARSE_MODE = "MarkdownV2" as const;
 
 /**
  * If a compacted event has fired for this session and the recovering animation

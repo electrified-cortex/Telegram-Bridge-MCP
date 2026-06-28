@@ -33,3 +33,7 @@ max_wait — your subscription wakes you when messages arrive. Polling an empty 
 - 10-3033 removed the broken implementation cleanly; this task re-adds the correct one
 - Do NOT restore `resetMaxWait0NudgeState` calls in activity/create.ts or activity/listen.ts (YAGNI)
 - Adversarial review must include design-validity check: does the nudge fire only on the anti-pattern?
+
+
+---
+> ⚠️ **AUDIT 2026-06-26:** Background is INCORRECT — 10-3030 was NOT removed in 7.15; it was re-shipped (broad trigger) in v7.17.0 (commit dcf6ca9d). The consecutive-empty-poll refinement (_emptyMaxWait0Count, count>=2) is still unbuilt and still wanted.

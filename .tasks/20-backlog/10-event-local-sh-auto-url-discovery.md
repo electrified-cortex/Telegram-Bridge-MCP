@@ -2,7 +2,7 @@
 id: 10-event-local-sh-auto-url-discovery
 title: "event.local.sh: auto-discover bridge URL instead of requiring manual env var"
 Created: 2026-06-09
-Status: queued
+Status: backlog
 Priority: 10
 type: improvement
 Source: operator voice 70497, 2026-06-09; backlog note

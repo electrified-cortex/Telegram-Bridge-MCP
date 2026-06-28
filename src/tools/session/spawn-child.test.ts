@@ -3,6 +3,13 @@ import { parseResult, isError } from "../test-utils.js";
 import { clearChildRegistry, getParent, registerChild } from "./child-registry.js";
 import { runInSessionContext } from "../../session-context.js";
 import { getTopic, resetTopicStateForTest } from "../../topic-state.js";
+import {
+  getSessionVoiceFor,
+  getSessionSpeedFor,
+  setSessionVoice,
+  setSessionSpeed,
+  resetVoiceStateForTest,
+} from "../../voice-state.js";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -52,16 +59,66 @@ describe("session/spawn-child", () => {
     vi.clearAllMocks();
     clearChildRegistry();
     resetTopicStateForTest();
+    resetVoiceStateForTest();
     mocks.requireAuth.mockReturnValue(PARENT_SID);
     mocks.handleSessionStart.mockResolvedValue(makeStartSuccess());
     // Default: caller has no capability restriction (undefined = full)
     mocks.getSession.mockReturnValue(undefined);
   });
 
+  // ── Topic validation (fail-fast) ──────────────────────────────────────────
+
+  it("topic-missing: returns MISSING_PARAM error when topic is not provided", async () => {
+    // TypeScript won't allow passing no topic, so cast to any to test runtime guard
+    const result = await handleSpawnChild({ token: 1123456, topic: undefined as unknown as string });
+
+    expect(isError(result)).toBe(true);
+    const parsed = parseResult(result);
+    expect(parsed.code).toBe("MISSING_PARAM");
+    expect((parsed.message as string).toLowerCase()).toContain("topic");
+    expect(mocks.handleSessionStart).not.toHaveBeenCalled();
+  });
+
+  it("topic-empty: returns MISSING_PARAM error when topic is empty string", async () => {
+    const result = await handleSpawnChild({ token: 1123456, topic: "" });
+
+    expect(isError(result)).toBe(true);
+    const parsed = parseResult(result);
+    expect(parsed.code).toBe("MISSING_PARAM");
+    expect((parsed.message as string).toLowerCase()).toContain("topic");
+    expect(mocks.handleSessionStart).not.toHaveBeenCalled();
+  });
+
+  it("topic-whitespace: returns MISSING_PARAM error when topic is whitespace-only", async () => {
+    const result = await handleSpawnChild({ token: 1123456, topic: "   " });
+
+    expect(isError(result)).toBe(true);
+    const parsed = parseResult(result);
+    expect(parsed.code).toBe("MISSING_PARAM");
+    expect((parsed.message as string).toLowerCase()).toContain("topic");
+    expect(mocks.handleSessionStart).not.toHaveBeenCalled();
+  });
+
+  it("topic-valid: non-blank topic creates child session successfully", async () => {
+    const result = await handleSpawnChild({ token: 1123456, topic: "pref-rank" });
+
+    expect(isError(result)).toBe(false);
+    const parsed = parseResult(result);
+    expect(parsed.token).toBe(CHILD_TOKEN);
+    expect(parsed.sid).toBe(CHILD_SID);
+  });
+
+  it("topic-valid: child display label uses 'topic ①' format", async () => {
+    await handleSpawnChild({ token: 1123456, topic: "pref-rank" });
+
+    const topic = runInSessionContext(CHILD_SID, () => getTopic());
+    expect(topic).toBe("pref-rank ①");
+  });
+
   // ── AC1: returns { token, sid, parent_sid } ────────────────────────────────
 
   it("AC1: returns { token, sid, parent_sid } on successful spawn", async () => {
-    const result = parseResult(await handleSpawnChild({ token: 1123456, name: "Helper" }));
+    const result = parseResult(await handleSpawnChild({ token: 1123456, topic: "Helper" }));
 
     expect(result.token).toBe(CHILD_TOKEN);
     expect(result.sid).toBe(CHILD_SID);
@@ -69,51 +126,51 @@ describe("session/spawn-child", () => {
   });
 
   it("AC1: result includes a 'hint' field pointing the host to dequeue", async () => {
-    const result = parseResult(await handleSpawnChild({ token: 1123456, name: "Helper" }));
+    const result = parseResult(await handleSpawnChild({ token: 1123456, topic: "Helper" }));
 
     expect(typeof result.hint).toBe("string");
     expect((result.hint as string).length).toBeGreaterThan(0);
   });
 
   it("AC1: registers the child SID as owned by the parent SID", async () => {
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(getParent(CHILD_SID)).toBe(PARENT_SID);
   });
 
   it("AC1: sets parent_sid on the child session record", async () => {
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(mocks.setSessionParentSid).toHaveBeenCalledWith(CHILD_SID, PARENT_SID);
   });
 
   it("AC1: sets child_capability 'gather' by default", async () => {
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(mocks.setSessionCapability).toHaveBeenCalledWith(CHILD_SID, "gather");
   });
 
   it("AC1: respects explicit child_capability override", async () => {
-    await handleSpawnChild({ token: 1123456, name: "Helper", child_capability: "full" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper", child_capability: "full" });
 
     expect(mocks.setSessionCapability).toHaveBeenCalledWith(CHILD_SID, "full");
   });
 
   it("AC1: calls handleSessionStart with inherited name, inherited color, and parentSid (color arg ignored)", async () => {
-    // getSession returns undefined → inheritedName falls back to topic name "Helper", inheritedColor = undefined
-    await handleSpawnChild({ token: 1123456, name: "Helper", color: "🟩" });
+    // getSession returns undefined → inheritedName falls back to topic "Helper", inheritedColor = undefined
+    await handleSpawnChild({ token: 1123456, topic: "Helper", color: "🟩" });
 
     expect(mocks.handleSessionStart).toHaveBeenCalledWith({ name: "Helper", color: undefined, parentSid: PARENT_SID });
   });
 
   it("AC1: calls handleSessionStart with parentSid when color is omitted", async () => {
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(mocks.handleSessionStart).toHaveBeenCalledWith({ name: "Helper", color: undefined, parentSid: PARENT_SID });
   });
 
   it("AC1: result includes display_index field (gap-fill slot 1 on first spawn)", async () => {
-    const result = parseResult(await handleSpawnChild({ token: 1123456, name: "Helper" }));
+    const result = parseResult(await handleSpawnChild({ token: 1123456, topic: "Helper" }));
 
     expect(result.display_index).toBe(1);
   });
@@ -124,7 +181,7 @@ describe("session/spawn-child", () => {
     // requireAuth returns PARENT_SID (from token 1123456, sid=1)
     // but runInSessionContext sets caller to sid=99
     const result = await runInSessionContext(99, () =>
-      handleSpawnChild({ token: 1123456, name: "Helper" }),
+      handleSpawnChild({ token: 1123456, topic: "Helper" }),
     );
 
     expect(isError(result)).toBe(true);
@@ -135,7 +192,7 @@ describe("session/spawn-child", () => {
   it("AC1b: allows spawn when token matches caller session (no mismatch)", async () => {
     // requireAuth returns PARENT_SID; context is also PARENT_SID → no UNAUTHORIZED
     const result = await runInSessionContext(PARENT_SID, () =>
-      handleSpawnChild({ token: 1123456, name: "Helper" }),
+      handleSpawnChild({ token: 1123456, topic: "Helper" }),
     );
 
     expect(isError(result)).toBe(false);
@@ -144,7 +201,7 @@ describe("session/spawn-child", () => {
 
   it("AC1b: skips UNAUTHORIZED check when no caller context is set (unit-test safety)", async () => {
     // No runInSessionContext → getCallerSid returns 0 → skip check
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(false);
   });
@@ -157,7 +214,7 @@ describe("session/spawn-child", () => {
       message: "token is required",
     });
 
-    const result = await handleSpawnChild({ token: undefined, name: "Helper" });
+    const result = await handleSpawnChild({ token: undefined, topic: "Helper" });
 
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("SID_REQUIRED");
@@ -170,7 +227,7 @@ describe("session/spawn-child", () => {
       message: "Invalid token",
     });
 
-    const result = await handleSpawnChild({ token: 9999999, name: "Helper" });
+    const result = await handleSpawnChild({ token: 9999999, topic: "Helper" });
 
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("AUTH_FAILED");
@@ -181,7 +238,7 @@ describe("session/spawn-child", () => {
   it("propagates SESSION_DENIED from handleSessionStart", async () => {
     mocks.handleSessionStart.mockResolvedValue(makeStartError("SESSION_DENIED", "Operator denied"));
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("SESSION_DENIED");
@@ -190,7 +247,7 @@ describe("session/spawn-child", () => {
   it("does not register child when handleSessionStart returns an error", async () => {
     mocks.handleSessionStart.mockResolvedValue(makeStartError("SESSION_DENIED", "denied"));
 
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(getParent(CHILD_SID)).toBeUndefined();
   });
@@ -198,7 +255,7 @@ describe("session/spawn-child", () => {
   it("propagates NAME_CONFLICT from handleSessionStart", async () => {
     mocks.handleSessionStart.mockResolvedValue(makeStartError("NAME_CONFLICT", "already exists"));
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("NAME_CONFLICT");
@@ -214,8 +271,8 @@ describe("session/spawn-child", () => {
       .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ token: child1Token, sid: 2, hint: "" }) }] })
       .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({ token: child2Token, sid: 3, hint: "" }) }] });
 
-    await handleSpawnChild({ token: 1123456, name: "Child1" });
-    await handleSpawnChild({ token: 1123456, name: "Child2" });
+    await handleSpawnChild({ token: 1123456, topic: "Child1" });
+    await handleSpawnChild({ token: 1123456, topic: "Child2" });
 
     expect(getParent(2)).toBe(PARENT_SID);
     expect(getParent(3)).toBe(PARENT_SID);
@@ -226,7 +283,7 @@ describe("session/spawn-child", () => {
   it("AC7: returns CAPABILITY_DENIED when caller has gather capability", async () => {
     mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent", child_capability: "gather" });
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("CAPABILITY_DENIED");
@@ -236,7 +293,7 @@ describe("session/spawn-child", () => {
   it("AC7: returns CAPABILITY_DENIED when caller has read-only capability", async () => {
     mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent", child_capability: "read-only" });
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("CAPABILITY_DENIED");
@@ -246,7 +303,7 @@ describe("session/spawn-child", () => {
   it("AC7: allows spawn when caller has full capability", async () => {
     mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent", child_capability: "full" });
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(false);
     expect(parseResult(result).token).toBe(CHILD_TOKEN);
@@ -255,7 +312,7 @@ describe("session/spawn-child", () => {
   it("AC7: allows spawn when caller has no explicit capability (undefined = full)", async () => {
     mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent" }); // no child_capability
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(false);
   });
@@ -263,7 +320,7 @@ describe("session/spawn-child", () => {
   it("AC7: allows spawn when session not found (no capability record)", async () => {
     mocks.getSession.mockReturnValue(undefined);
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(false);
   });
@@ -271,7 +328,7 @@ describe("session/spawn-child", () => {
   // ── AC3: sets topic chip on child session ───────────────────────────────
 
   it("AC3: topic includes circle digit so messages render as **[Helper ①]**", async () => {
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     // getTopic in the child's session context should return "Helper ①" (slot 1)
     const topic = runInSessionContext(CHILD_SID, () => getTopic());
@@ -279,7 +336,7 @@ describe("session/spawn-child", () => {
   });
 
   it("AC3: topic is keyed to the child SID, not the parent SID", async () => {
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     const childTopic = runInSessionContext(CHILD_SID, () => getTopic());
     const parentTopic = runInSessionContext(PARENT_SID, () => getTopic());
@@ -295,7 +352,7 @@ describe("session/spawn-child", () => {
       registerChild(PARENT_SID, 100 + i);
     }
 
-    const result = await handleSpawnChild({ token: 1123456, name: "TooMany" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "TooMany" });
 
     expect(isError(result)).toBe(true);
     const parsed = parseResult(result);
@@ -311,7 +368,7 @@ describe("session/spawn-child", () => {
   it("AC7: returns CAPABILITY_DENIED when caller session is itself a child (parent_sid set)", async () => {
     mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent", parent_sid: 5 });
 
-    const result = await handleSpawnChild({ token: 1123456, name: "Helper" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     expect(isError(result)).toBe(true);
     expect(parseResult(result).code).toBe("CAPABILITY_DENIED");
@@ -328,7 +385,7 @@ describe("session/spawn-child", () => {
       return undefined;
     });
 
-    await handleSpawnChild({ token: 1123456, name: "child" });
+    await handleSpawnChild({ token: 1123456, topic: "child" });
 
     expect(childSession.name_tag).toBe("Agent");
   });
@@ -336,7 +393,7 @@ describe("session/spawn-child", () => {
   it("no crash when parent has no name_tag (child spawns successfully)", async () => {
     mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Parent" }); // no name_tag field
 
-    const result = await handleSpawnChild({ token: 1123456, name: "child" });
+    const result = await handleSpawnChild({ token: 1123456, topic: "child" });
 
     expect(isError(result)).toBe(false);
     expect(parseResult(result).token).toBe(CHILD_TOKEN);
@@ -348,13 +405,29 @@ describe("session/spawn-child", () => {
       return {};
     });
 
-    await handleSpawnChild({ token: 1123456, name: "child" });
+    await handleSpawnChild({ token: 1123456, topic: "child" });
 
     expect(mocks.handleSessionStart).toHaveBeenCalledWith({
       name: "ParentName",
       color: "🔵",
       parentSid: PARENT_SID,
     });
+  });
+
+  // ── Child name_tag auto-derived from parent (no name param accepted) ─────
+
+  it("child nametag auto-derives from parent session registered name", async () => {
+    const childSession: { name_tag?: string } = {};
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === PARENT_SID) return { sid: PARENT_SID, name: "Curator", name_tag: "CuratorTag" };
+      if (sid === CHILD_SID) return childSession;
+      return undefined;
+    });
+
+    // Only topic is passed — no name param
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(childSession.name_tag).toBe("CuratorTag");
   });
 
   // ── Display name includes slot index (session-list fix) ───────────────────
@@ -366,7 +439,7 @@ describe("session/spawn-child", () => {
       return undefined;
     });
 
-    await handleSpawnChild({ token: 1123456, name: "Helper" });
+    await handleSpawnChild({ token: 1123456, topic: "Helper" });
 
     // inheritedName falls back to "Helper" (no parent session); slot 1 → "①"
     expect(childSession.name).toBe("Helper ①");
@@ -380,7 +453,7 @@ describe("session/spawn-child", () => {
       return undefined;
     });
 
-    await handleSpawnChild({ token: 1123456, name: "Research" });
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
 
     // inheritedName comes from parent: "Curator"; slot 1 → "①"
     expect(childSession.name).toBe("Curator ①");
@@ -393,7 +466,7 @@ describe("session/spawn-child", () => {
       return {};
     });
 
-    await handleSpawnChild({ token: 1123456, name: "Research" });
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
 
     expect(parentSession.name).toBe("Curator");
   });
@@ -412,10 +485,59 @@ describe("session/spawn-child", () => {
       return undefined;
     });
 
-    await handleSpawnChild({ token: 1123456, name: "First" });
-    await handleSpawnChild({ token: 1123456, name: "Second" });
+    await handleSpawnChild({ token: 1123456, topic: "First" });
+    await handleSpawnChild({ token: 1123456, topic: "Second" });
 
     expect(child1Session.name).toBe("First ①");
     expect(child2Session.name).toBe("Second ②");
+  });
+
+  // ── AC4: Voice inheritance ─────────────────────────────────────────────────
+
+  it("AC4: child inherits parent voice when parent has voice set", async () => {
+    // Set parent voice in parent session context
+    runInSessionContext(PARENT_SID, () => setSessionVoice("nova"));
+
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(getSessionVoiceFor(CHILD_SID)).toBe("nova");
+  });
+
+  it("AC4: child inherits parent voice_speed when parent has speed set", async () => {
+    runInSessionContext(PARENT_SID, () => setSessionVoice("alloy"));
+    runInSessionContext(PARENT_SID, () => setSessionSpeed(1.25));
+
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(getSessionSpeedFor(CHILD_SID)).toBe(1.25);
+  });
+
+  it("AC4: child has no voice when parent has no voice (null/default)", async () => {
+    // Parent has no voice set — resetVoiceStateForTest in beforeEach ensures this
+
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(getSessionVoiceFor(CHILD_SID)).toBeNull();
+  });
+
+  it("AC4: child has no speed when parent has no speed set", async () => {
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    expect(getSessionSpeedFor(CHILD_SID)).toBeNull();
+  });
+
+  it("AC4: voice inheritance is independent of name/color inheritance", async () => {
+    mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Curator", color: "🔵" });
+    runInSessionContext(PARENT_SID, () => setSessionVoice("echo"));
+
+    await handleSpawnChild({ token: 1123456, topic: "Research" });
+
+    // voice copied
+    expect(getSessionVoiceFor(CHILD_SID)).toBe("echo");
+    // name/color still inherited correctly
+    expect(mocks.handleSessionStart).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Curator",
+      color: "🔵",
+    }));
   });
 });

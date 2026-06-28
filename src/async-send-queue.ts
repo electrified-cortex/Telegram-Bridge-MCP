@@ -17,6 +17,10 @@ import { deliverAsyncSendCallback, type AsyncSendCallbackPayload } from "./sessi
 import { pauseTypingEmission, resumeTypingEmission } from "./typing-state.js";
 import { markdownToV2 } from "./markdown.js";
 import { dlog } from "./debug-log.js";
+import { runInSessionContext } from "./session-context.js";
+
+export const ASYNC_FAILED_BANNER = "⚠ [async failed]";
+export const ASYNC_FAILED_BANNER_V2 = "⚠ \\[async failed\\]";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -126,104 +130,110 @@ function timeoutSentinel(ms: number): Promise<never> {
 // ---------------------------------------------------------------------------
 
 async function executeJob(job: AsyncSendJob): Promise<void> {
-  const {
-    pendingId,
-    sid,
-    chatId,
-    captionText,
-    rawCaptionText,
-    disableNotification,
-    timeoutMs,
-  } = job;
+  // Run the entire job inside the session context so that outbound-proxy helpers
+  // (buildHeader, notifyBeforeFileSend, notifyAfterFileSend) resolve the correct
+  // caller SID via getCallerSid(). Without this, voice messages from sub-sessions
+  // would be sent without the session nametag in the caption.
+  return runInSessionContext(job.sid, async () => {
+    const {
+      pendingId,
+      sid,
+      chatId,
+      captionText,
+      rawCaptionText,
+      disableNotification,
+      timeoutMs,
+    } = job;
 
-  dlog("async-send", `executing pendingId=${pendingId} sid=${sid}`);
+    dlog("async-send", `executing pendingId=${pendingId} sid=${sid}`);
 
-  try {
-    // NOTE: runJob() continues executing after the timeout sentinel fires.
-    // If runJob eventually succeeds or fails, it will attempt to deliver a
-    // callback, but isFinalisedJob() guards will prevent double delivery.
-    await Promise.race([
-      runJob(job),
-      timeoutSentinel(timeoutMs),
-    ]);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    try {
+      // NOTE: runJob() continues executing after the timeout sentinel fires.
+      // If runJob eventually succeeds or fails, it will attempt to deliver a
+      // callback, but isFinalisedJob() guards will prevent double delivery.
+      await Promise.race([
+        runJob(job),
+        timeoutSentinel(timeoutMs),
+      ]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
 
-    if (msg === "ASYNC_SEND_TIMEOUT") {
-      dlog("async-send", `timeout pendingId=${pendingId} sid=${sid}`);
-      // runJob() continues executing after timeout fires; it may still send a
-      // voice message to Telegram. The agent receives status:'timeout' but the
-      // message may still arrive. This is a known limitation for the first cut.
-      if (isFinalisedJob(pendingId)) {
-        dlog("async-send", `timeout callback skipped — already finalised pendingId=${pendingId}`);
+      if (msg === "ASYNC_SEND_TIMEOUT") {
+        dlog("async-send", `timeout pendingId=${pendingId} sid=${sid}`);
+        // runJob() continues executing after timeout fires; it may still send a
+        // voice message to Telegram. The agent receives status:'timeout' but the
+        // message may still arrive. This is a known limitation for the first cut.
+        if (isFinalisedJob(pendingId)) {
+          dlog("async-send", `timeout callback skipped — already finalised pendingId=${pendingId}`);
+          return;
+        }
+        markJobFinalised(pendingId);
+        const delivered = deliverAsyncSendCallback(sid, { pendingId, status: "timeout" });
+        if (!delivered) {
+          process.stderr.write(`[async-send] timeout callback lost for pendingId=${pendingId} sid=${sid} (queue gone)\n`);
+        }
         return;
       }
-      markJobFinalised(pendingId);
-      const delivered = deliverAsyncSendCallback(sid, { pendingId, status: "timeout" });
-      if (!delivered) {
-        process.stderr.write(`[async-send] timeout callback lost for pendingId=${pendingId} sid=${sid} (queue gone)\n`);
+
+      // Other failure — try plain-text fallback if captionText is available
+      dlog("async-send", `failed pendingId=${pendingId} sid=${sid}: ${msg}`);
+
+      if (isFinalisedJob(pendingId)) {
+        dlog("async-send", `failed callback skipped — already finalised pendingId=${pendingId}`);
+        return;
       }
-      return;
-    }
 
-    // Other failure — try plain-text fallback if captionText is available
-    dlog("async-send", `failed pendingId=${pendingId} sid=${sid}: ${msg}`);
+      let textMessageId: number | undefined;
+      let textFallback = false;
 
-    if (isFinalisedJob(pendingId)) {
-      dlog("async-send", `failed callback skipped — already finalised pendingId=${pendingId}`);
-      return;
-    }
-
-    let textMessageId: number | undefined;
-    let textFallback = false;
-
-    if (rawCaptionText ?? captionText) {
-      try {
-        let fallbackText: string;
-        let fallbackParseMode: "MarkdownV2" | undefined;
-        if (rawCaptionText) {
-          // Convert raw text fresh to MarkdownV2 so Telegram renders it correctly.
-          // The banner brackets must also be V2-escaped (\[ and \]).
-          fallbackText = `⚠ \\[async failed\\] ${markdownToV2(rawCaptionText)}`;
-          fallbackParseMode = "MarkdownV2";
-        } else {
-          // rawCaptionText unavailable — send without parse_mode (plain text).
-          fallbackText = `⚠ [async failed] ${captionText}`;
-          fallbackParseMode = undefined;
+      if (rawCaptionText ?? captionText) {
+        try {
+          let fallbackText: string;
+          let fallbackParseMode: "MarkdownV2" | undefined;
+          if (rawCaptionText) {
+            // Convert raw text fresh to MarkdownV2 so Telegram renders it correctly.
+            // The banner brackets must also be V2-escaped (\[ and \]).
+            fallbackText = `${ASYNC_FAILED_BANNER_V2} ${markdownToV2(rawCaptionText)}`;
+            fallbackParseMode = "MarkdownV2";
+          } else {
+            // rawCaptionText unavailable — send without parse_mode (plain text).
+            fallbackText = `${ASYNC_FAILED_BANNER} ${captionText}`;
+            fallbackParseMode = undefined;
+          }
+          const fallbackMsg = await callApi(() =>
+            getApi().sendMessage(chatId, fallbackText, {
+              ...(fallbackParseMode ? { parse_mode: fallbackParseMode } : {}),
+              disable_notification: disableNotification,
+            }),
+          );
+          textMessageId = fallbackMsg.message_id;
+          textFallback = true;
+        } catch (fbErr) {
+          process.stderr.write(
+            `[async-send] fallback text send failed for pendingId=${pendingId}: ${String(fbErr)}\n`,
+          );
         }
-        const fallbackMsg = await callApi(() =>
-          getApi().sendMessage(chatId, fallbackText, {
-            ...(fallbackParseMode ? { parse_mode: fallbackParseMode } : {}),
-            disable_notification: disableNotification,
-          }),
-        );
-        textMessageId = fallbackMsg.message_id;
-        textFallback = true;
-      } catch (fbErr) {
-        process.stderr.write(
-          `[async-send] fallback text send failed for pendingId=${pendingId}: ${String(fbErr)}\n`,
-        );
+      }
+
+      const errorCode = (err && typeof err === "object" && "code" in err)
+        ? String((err).code)
+        : undefined;
+      const payload: AsyncSendCallbackPayload = {
+        pendingId,
+        status: "failed",
+        error: msg,
+        error_code: errorCode,
+        textFallback: textFallback || undefined,
+        textMessageId,
+      };
+
+      markJobFinalised(pendingId);
+      const delivered = deliverAsyncSendCallback(sid, payload);
+      if (!delivered) {
+        process.stderr.write(`[async-send] failed callback lost for pendingId=${pendingId} sid=${sid} (queue gone)\n`);
       }
     }
-
-    const errorCode = (err && typeof err === "object" && "code" in err)
-      ? String((err).code)
-      : undefined;
-    const payload: AsyncSendCallbackPayload = {
-      pendingId,
-      status: "failed",
-      error: msg,
-      error_code: errorCode,
-      textFallback: textFallback || undefined,
-      textMessageId,
-    };
-
-    markJobFinalised(pendingId);
-    const delivered = deliverAsyncSendCallback(sid, payload);
-    if (!delivered) {
-      process.stderr.write(`[async-send] failed callback lost for pendingId=${pendingId} sid=${sid} (queue gone)\n`);
-    }
-  }
+  }); // end runInSessionContext
 }
 
 /** Interval (ms) for re-emitting the record_voice chat action. Telegram auto-expires at ~5 s. */
@@ -235,7 +245,7 @@ const RECORD_VOICE_INTERVAL_MS = 4_000;
  * deliberately generous — normal audio jobs complete in under 30 s, but
  * very long messages under slow TTS hosts can take longer.
  */
-const RECORDING_INDICATOR_SAFETY_MS = 120_000;
+export const RECORDING_INDICATOR_SAFETY_MS = 120_000;
 
 // ---------------------------------------------------------------------------
 // Per-chatId refcounted recording indicator

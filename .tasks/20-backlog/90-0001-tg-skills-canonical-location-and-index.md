@@ -1,8 +1,8 @@
 ---
-id: "00-0001"
+id: "90-0001"
 title: "Epic: Telegram-specific skills library inside TMCP with Claude Code plugin"
 type: epic
-priority: 0
+priority: 90
 created: 2026-05-15
 delegation: Curator
 target_branch: dev
@@ -49,6 +49,6 @@ Operator request 2026-05-15 (distilled): create a Telegram-specific skills libra
 ## Operator direction (2026-06-12)
 
 Skills partially exist: telegram-participation, etiquette, subsession skill all present.
-Re-scope: de-emphasize Claude Code plugin angle (operator: "problematic, less useful than expected").
+Re-scope: de-emphasize Claude Code plugin angle (operator indicated this angle proved problematic and less useful than expected).
 Focus: ensure TG skills are in canonical location and tracked in skill index.
 Reprioritize to ~90 (low, backlog). Not urgent.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveHttpPort } from "./cli-args.js";
+import { resolveHttpPort, DEFAULT_HTTP_PORT } from "./cli-args.js";
 
 describe("resolveHttpPort", () => {
   it("returns undefined when no --http flag and no MCP_PORT", () => {
@@ -7,7 +7,7 @@ describe("resolveHttpPort", () => {
   });
 
   it("returns 3099 default when --http with no port argument", () => {
-    expect(resolveHttpPort(["node", "index.js", "--http"], {})).toBe(3099);
+    expect(resolveHttpPort(["node", "index.js", "--http"], {})).toBe(DEFAULT_HTTP_PORT);
   });
 
   it("returns explicit port when --http <port>", () => {
@@ -15,12 +15,12 @@ describe("resolveHttpPort", () => {
   });
 
   it("throws on invalid port after --http", () => {
-    expect(() => resolveHttpPort(["node", "index.js", "--http", "0"], {})).toThrow();
-    expect(() => resolveHttpPort(["node", "index.js", "--http", "99999"], {})).toThrow();
+    expect(() => resolveHttpPort(["node", "index.js", "--http", "0"], {})).toThrow(RangeError);
+    expect(() => resolveHttpPort(["node", "index.js", "--http", "99999"], {})).toThrow(RangeError);
   });
 
   it("treats --http <next-flag> as --http with default port", () => {
-    expect(resolveHttpPort(["node", "index.js", "--http", "--verbose"], {})).toBe(3099);
+    expect(resolveHttpPort(["node", "index.js", "--http", "--verbose"], {})).toBe(DEFAULT_HTTP_PORT);
   });
 
   it("falls through to MCP_PORT env when no --http", () => {
@@ -32,15 +32,15 @@ describe("resolveHttpPort", () => {
   });
 
   it("--http default takes precedence over MCP_PORT env var", () => {
-    expect(resolveHttpPort(["node", "index.js", "--http"], { MCP_PORT: "4000" })).toBe(3099);
+    expect(resolveHttpPort(["node", "index.js", "--http"], { MCP_PORT: "4000" })).toBe(DEFAULT_HTTP_PORT);
   });
 
   it("throws on invalid MCP_PORT", () => {
-    expect(() => resolveHttpPort(["node", "index.js"], { MCP_PORT: "not-a-port" })).toThrow();
-    expect(() => resolveHttpPort(["node", "index.js"], { MCP_PORT: "0" })).toThrow();
+    expect(() => resolveHttpPort(["node", "index.js"], { MCP_PORT: "not-a-port" })).toThrow(RangeError);
+    expect(() => resolveHttpPort(["node", "index.js"], { MCP_PORT: "0" })).toThrow(RangeError);
   });
 
   it("throws when --http is followed by a non-numeric non-flag value", () => {
-    expect(() => resolveHttpPort(["node", "index.js", "--http", "foo"], {})).toThrow();
+    expect(() => resolveHttpPort(["node", "index.js", "--http", "foo"], {})).toThrow(RangeError);
   });
 });
