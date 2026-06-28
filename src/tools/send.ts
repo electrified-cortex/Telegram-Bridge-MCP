@@ -24,6 +24,7 @@ const SAFETY_SCHEMA = z.enum(["disable"]).optional().describe(
 );
 // Type-routing handlers (v6 Phase 2)
 import { handleSendFile } from "./send/file.js";
+import { handleSendMediaGroup } from "./send/media-group.js";
 import { handleNotify } from "./send/notify.js";
 import { handleSendChoice } from "./send/choice.js";
 import { handleSendDirectMessage } from "./send/dm.js";
@@ -133,7 +134,7 @@ function levenshtein(a: string, b: string): number {
 const _parsedTimeout = Number(process.env.ASYNC_SEND_TIMEOUT_MS);
 const _timeoutMs = Number.isFinite(_parsedTimeout) && _parsedTimeout > 0 ? _parsedTimeout : 300_000;
 
-const SEND_TYPES = ["text", "file", "notification", "choice", "dm", "append", "animation", "checklist", "progress", "question", "stream/start", "stream/chunk", "stream/flush"] as const;
+const SEND_TYPES = ["text", "file", "album", "notification", "choice", "dm", "append", "animation", "checklist", "progress", "question", "stream/start", "stream/chunk", "stream/flush"] as const;
 type SendType = (typeof SEND_TYPES)[number];
 
 /** Backward-compat aliases — accepted but not advertised in discovery or error messages. */
@@ -199,6 +200,27 @@ export function register(server: McpServer) {
         async: z.boolean().optional().describe("Applies to audio sends only. Defaults to async when audio is present — returns message_id_pending immediately; pass false to block until TTS completes and receive real message_id. Has no effect on non-audio sends."),
         // ── file ───────────────────────────────────────────────────────────
         file: z.string().optional().describe("Local path, HTTPS URL, or file_id (for type: \"file\")"),
+        // ── album ──────────────────────────────────────────────────────────
+        files: z
+          .array(
+            z.object({
+              file: z.string().describe("Local path, HTTPS URL, or file_id"),
+              type: z
+                .enum(["photo", "video", "document", "audio"])
+                .optional()
+                .describe("Media type (auto-detected from extension if omitted)"),
+              caption: z
+                .string()
+                .optional()
+                .describe("Per-item caption (up to 1024 chars)"),
+            }),
+          )
+          .min(2)
+          .max(10)
+          .optional()
+          .describe(
+            "Array of 2–10 media items for type: \"album\". Each item requires a file path/URL/file_id; type and caption are optional. Photo and video may be mixed. Documents and audio must be grouped by type.",
+          ),
         file_type: z
           .enum(["auto", "photo", "document", "video", "audio", "voice"])
           .default("auto")
@@ -718,6 +740,14 @@ export function register(server: McpServer) {
             token: args.token,
             safety: args.safety,
           });
+
+        case "album": {
+          if (!args.files?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "album" requires a "files" array of 2–10 items.', hint: 'Provide files: [{file, type?, caption?}, ...] with 2–10 items.' });
+          return handleSendMediaGroup({
+            files: args.files,
+            token: args.token,
+          });
+        }
 
         case "notification":
           if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "notification" requires a "title" param.', hint: "Call help(topic: 'send') for the required params for this type." });
