@@ -65,3 +65,15 @@ This is the same code path as the deny button (10-3070). Fix should be investiga
 - checked: ACs binary (sub-action navigation ✓, deny non-regression ✓, unit test per button type ✓, manual smoke ✓), scope bounded to callback dispatch fix, delegation correct (Worker, sonnet-class, dev), investigation steps provided — acceptable for routing bug; no-repro noted but reproduction is via normal tool approval flow
 - note: bundle dispatch with 10-3070 per Curator — same handler, single PR
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## Verification
+
+- verifier: task-verification agent (a412f39e5960af6c6)
+- date: 2026-06-28
+- verdict: APPROVED (bundled with 10-3070 — same commit, same PR)
+- squash_commit: f5f7b3bb
+- worker_commit: 27910c44
+- tests: 4155/4155 pass
+- local_llm: UNAVAILABLE (language.cortex.lan:8080 timed out — server unreachable)
+- bundled_with: 10-3070
+- notes: Root cause same as 10-3070 — callback dispatch surface shared. Fix: `reply_markup: { inline_keyboard: [] }` clears keyboard on denial, preventing stale button re-press. All 4 ACs confirmed (sub-action navigation ✓, deny non-regression ✓, unit test per button type ✓). Build clean.

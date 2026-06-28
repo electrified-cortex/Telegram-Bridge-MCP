@@ -60,3 +60,15 @@ Clicking "Deny" should:
 - checked: 3 ACs binary (deny works, prompt dismisses, no ghost approvals); scope explicit (identify CC-level vs TMCP surface, then fix); worker-resolvable investigation; HIGH priority confirmed
 - note: add agent_type: Worker, model_class: sonnet-class, branch_target: dev to frontmatter before foreman picks up. Investigation first — if CC-level, capture repro + file upstream report; if TMCP, fix in governor deny handler.
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## Verification
+
+- verifier: task-verification agent (a412f39e5960af6c6)
+- date: 2026-06-28
+- verdict: APPROVED
+- squash_commit: f5f7b3bb
+- worker_commit: 27910c44
+- tests: 4155/4155 pass
+- local_llm: UNAVAILABLE (language.cortex.lan:8080 timed out — server unreachable)
+- bundled_with: 10-3076
+- notes: All 3 ACs confirmed with citations. Fix: `reply_markup: { inline_keyboard: [] }` added to `editMessageText` denial call in `requestApproval()`. 3 regression tests — deny clears keyboard, approve_N deletes message, toggle re-registers hook then deny. Build clean.
