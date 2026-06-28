@@ -546,6 +546,26 @@ describe("notify-debounce gate — ACs 1-10", () => {
     expect(entry.notifyDebounceUntil).toBe(oldState.notifyDebounceUntil); // debounce carried over
   });
 
+  it("10-3067 fix: replaceActivityFile carries over debounceArmedBySource", async () => {
+    // Arrange: service-armed debounce on old entry (child lifecycle event silenced operator)
+    const oldState = makeState({
+      notifyDebounceUntil: Date.now() + 300_000,
+      debounceArmedBySource: "service",
+    });
+    setActivityFile(SID, oldState);
+
+    // Act: file replaced (e.g. activity/file/create during child lifecycle)
+    const newState = makeState({ filePath: "/tmp/new-file" });
+    await replaceActivityFile(SID, newState);
+
+    // Assert: debounceArmedBySource carried over so operator bypass still works
+    const entry = getActivityFile(SID)!;
+    expect(entry.debounceArmedBySource).toBe("service");
+    // Operator message must bypass the service-armed debounce
+    const result = notifyIfAllowed(SID, "operator", false);
+    expect(result).toBe(true);
+  });
+
   it("replaceActivityFile: concurrent notifyIfAllowed reaches new entry", async () => {
     const oldState = makeState({ notifyDebounceUntil: null }); // no debounce
     setActivityFile(SID, oldState);

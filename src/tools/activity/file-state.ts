@@ -743,6 +743,7 @@ export async function replaceActivityFile(
     newState.inflightDequeue = oldEntry.inflightDequeue;
     newState.notifyDebounceUntil = oldEntry.notifyDebounceUntil;
     newState.notifyPendingBecauseDebounce = oldEntry.notifyPendingBecauseDebounce;
+    newState.debounceArmedBySource = oldEntry.debounceArmedBySource;
     newState.touchInFlight = oldEntry.touchInFlight;
     // Carry over the SSE monitor flag — registering/swapping a file must not
     // drop an already-connected SSE stream's gate membership.
