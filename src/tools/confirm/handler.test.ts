@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
   editMessageCaption: vi.fn(),
@@ -61,6 +62,7 @@ vi.mock("../../telegram.js", async (importActual) => {
     // Keep actual validateText and validateCallbackData so error-path tests work
     // sendVoiceDirect is overridden for voice-path tests
     sendVoiceDirect: (...args: unknown[]) => mocks.sendVoiceDirect(...args),
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
   };
 });
 
@@ -152,6 +154,7 @@ describe("confirm tool", () => {
     mocks.sessionQueue.pendingCount.mockReturnValue(0);
     mocks.pinChatMessage.mockResolvedValue(true);
     mocks.unpinChatMessage.mockResolvedValue(true);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 5 });
     const server = createMockServer();
     register(server);
     call = server.getHandler("confirm");
@@ -235,7 +238,7 @@ describe("confirm tool", () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
     await call({ text: "Proceed?", token: 1123456 });
-    const sendOpts = mocks.sendMessage.mock.calls[0][2];
+    const sendOpts = mocks.routeOutboundMessage.mock.calls[0][2];
     const buttons = sendOpts.reply_markup.inline_keyboard[0];
     expect(buttons[0].text).toBe("OK");
     expect(buttons[0].style).toBe("primary");
@@ -281,7 +284,7 @@ describe("confirm tool", () => {
   });
 
   it("returns error when sendMessage throws", async () => {
-    mocks.sendMessage.mockRejectedValue(new Error("Network error"));
+    mocks.routeOutboundMessage.mockRejectedValue(new Error("Network error"));
     const result = await call({ text: "Proceed?", token: 1123456});
     expect(isError(result)).toBe(true);
   });
@@ -290,7 +293,7 @@ describe("confirm tool", () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
     await call({ text: "Proceed?", reply_to: 3, token: 1123456});
-    const sendOpts = mocks.sendMessage.mock.calls[0][2];
+    const sendOpts = mocks.routeOutboundMessage.mock.calls[0][2];
     expect(sendOpts.reply_parameters).toEqual({ message_id: 3 });
   });
 
@@ -399,7 +402,7 @@ describe("confirm tool", () => {
     const data = parseResult(result);
     expect(data.code).toBe("PENDING_UPDATES");
     expect(data.pending).toBe(3);
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
   });
 
   it("enriches PENDING_UPDATES with breakdown when session queue is available", async () => {
@@ -415,7 +418,7 @@ describe("confirm tool", () => {
     expect(data.message).toContain("1 text");
     expect(data.message).toContain("2 reaction");
     expect(data.message).toContain("ignore_pending: true");
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
   });
 
   it("proceeds when ignore_pending is true despite pending updates", async () => {
@@ -702,6 +705,7 @@ describe("confirmYN tool", () => {
     mocks.validateText.mockReturnValue(null);
     mocks.validateCallbackData.mockReturnValue(null);
     mocks.validateButtonSymbolParity.mockReturnValue({ ok: true, withEmoji: [], withoutEmoji: [] });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 5 });
     const server = createMockServer();
     register(server);
     call = server.getHandler("confirmYN");
@@ -753,7 +757,7 @@ describe("confirmYN tool", () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
     await call({ text: "Proceed?", token: 1123456 });
-    const sendOpts = mocks.sendMessage.mock.calls[0][2];
+    const sendOpts = mocks.routeOutboundMessage.mock.calls[0][2];
     const yesButton = sendOpts.reply_markup.inline_keyboard[0][0];
     expect(yesButton.text).toBe("🟢 Yes");
     expect(yesButton.style).toBeUndefined();
@@ -763,7 +767,7 @@ describe("confirmYN tool", () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
     await call({ text: "Proceed?", yes_text: "✔️ Yep", no_text: "✖️ Nope", token: 1123456 });
-    const sendOpts = mocks.sendMessage.mock.calls[0][2];
+    const sendOpts = mocks.routeOutboundMessage.mock.calls[0][2];
     const buttons = sendOpts.reply_markup.inline_keyboard[0];
     expect(buttons[0].text).toBe("✔️ Yep");
     expect(buttons[1].text).toBe("✖️ Nope");

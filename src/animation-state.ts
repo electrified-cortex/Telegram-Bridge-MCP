@@ -26,6 +26,7 @@ import {
 import { recordOutgoing, getHighestMessageId, trackMessageId } from "./message-store.js";
 import { dlog } from "./debug-log.js";
 import { deliverServiceMessage } from "./session-queue.js";
+import { cancelThinkingForSid } from "./thinking-state.js";
 
 // ---------------------------------------------------------------------------
 // Watchdog configuration
@@ -460,6 +461,8 @@ export async function startAnimation(
 
   const chatId = resolveChat();
   if (typeof chatId !== "number") throw new Error(ERR_NO_CHAT_ID);
+
+  cancelThinkingForSid(sid);
 
   const resolvedFrames = frames ?? [...getDefaultFrames(sid)];
 

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, resolveChat, validateText } from "../../telegram.js";
+import { getApi, routeOutboundMessage, toResult, toError, resolveChat, validateText } from "../../telegram.js";
 import { escapeHtml } from "../../markdown.js";
 import { applyTopicToTitle } from "../../topic-state.js";
 import { requireAuth } from "../../session-gate.js";
@@ -55,12 +55,14 @@ export async function handleSendNewProgress({
     const text = renderProgress(percent, width, topicTitle, subtext);
     const textErr = validateText(text);
     if (textErr) return toError(textErr);
-    const msg = await getApi().sendMessage(chatId, text, {
+    const stripped = text.replace(/<[^>]+>/g, '');
+    const result = await routeOutboundMessage(chatId, stripped, {
       parse_mode: "HTML",
+      richMessage: { html: text },
       _rawText: title ?? "",
-    } as Record<string, unknown>);
-    await getApi().pinChatMessage(chatId, msg.message_id, { disable_notification: true }).catch(() => {});
-    return toResult({ message_id: msg.message_id });
+    });
+    await getApi().pinChatMessage(chatId, result.message_id, { disable_notification: true }).catch(() => {});
+    return toResult({ message_id: result.message_id });
   } catch (err) {
     return toError(err);
   }

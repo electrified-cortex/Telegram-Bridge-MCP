@@ -4,7 +4,7 @@ created: 2026-06-26
 status: draft
 priority: 10
 type: Story
-source: Operator deliberation — Telegram feature audit (2026-06-26)
+source: Telegram feature audit (2026-06-26)
 repo: electrified-cortex/Telegram-Bridge-MCP
 branch_target: dev
 epic: 10-3001
@@ -127,11 +127,25 @@ attachments array).
 - SVG/vector rendering — not supported by rich messages (rasterize to PNG).
 - Embedding local images in rich messages — URL-only media; stays legacy (above).
 
-## Overseer review
+## Gate review
 
-- reviewer: Overseer
 - date: 2026-06-28
 - verdict: PASS
 - review type: inline gate (major story, all spikes resolved)
 - checked: ACs binary (P1–P5 each independently testable; degrade-to-plain floor exercised by forced-error test; TABLE_WARNING off for rich; captions stay legacy; build+test clean), scope clear per phase, unblocked (10-3017 confirmed done 2026-06-27 all spikes A–G passed), delegation correct
 - note: worker should implement phases independently (P1 first) and open separate PRs per phase for review; 10-3026 (auto-Thinking) depends on this for Stage 2 but Stage 1 is independent
+
+## Verification
+
+- **Verdict**: APPROVED
+- **Date**: 2026-06-28
+- **Squash commit**: f0940b82
+- **Evidence**: 4052/4052 tests pass; all AC1-AC8 confirmed with code citations
+  - AC1: unblocked by 10-3017 spikes
+  - AC2 (P1): native grammY sendRichMessage in telegram.ts
+  - AC3 (P2): degrade-to-plain floor — integration test asserts fell_back:true
+  - AC4: rich default (LEGACY_MESSAGES kill-switch)
+  - AC5: confirm/notify/ask/choice/progress on routeOutboundMessage rich path
+  - AC6: voice caption path unchanged (legacy parse_mode preserved)
+  - AC7: TABLE_WARNING suppressed on rich path
+  - AC8: 4052 tests pass, build clean

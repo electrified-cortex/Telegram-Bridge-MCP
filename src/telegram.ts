@@ -142,6 +142,13 @@ function classifyGrammyError(err: GrammyError): TelegramError {
   if (desc.includes("message text is empty") || desc.includes("text must be non-empty"))
     return { code: "EMPTY_MESSAGE", message: "Message text is empty. Provide a non-empty string.", raw };
 
+  if (err.error_code === 400 && (desc.includes("rich") || desc.includes("not supported")))
+    return {
+      code: "RICH_MESSAGE_UNSUPPORTED",
+      message: "Rich message is not supported by this chat or Telegram version.",
+      raw,
+    };
+
   if (desc.includes("can't parse entities") || desc.includes("can't parse"))
     return {
       code: "PARSE_MODE_INVALID",
@@ -634,17 +641,15 @@ export async function sendVoiceDirect(
 }
 
 // ---------------------------------------------------------------------------
-// Rich message raw-fetch helpers (Bot API 10.1)
+// Rich message send helpers (Bot API 10.1 — native grammY)
 // ---------------------------------------------------------------------------
 
 /**
- * Sends a rich message directly via the Telegram Bot API using fetch + JSON.
- * Bypasses grammY because Bot API 10.1 rich-message support is not yet in grammY.
+ * Sends a rich message via native grammY `getApi().sendRichMessage()`.
  *
- * On non-ok API response: throws an Error augmented with TelegramError fields.
- * The `code` field is set to `RICH_MESSAGE_UNSUPPORTED` when the API returns an
- * error indicating the feature is unavailable (HTTP 400 with a "rich"-related
- * description), or `UNKNOWN` for other failures.
+ * Wraps the call with `callApi` for automatic rate-limit retry.
+ * On API error, the `GrammyError` is classified via `classifyGrammyError` and
+ * re-thrown as a TelegramError-like object so callers can inspect `err.code`.
  */
 export async function sendRichMessageDirect(
   chatId: number | string,
@@ -654,89 +659,51 @@ export async function sendRichMessageDirect(
     reply_to_message_id?: number;
     message_thread_id?: number;
     business_connection_id?: string;
+    reply_markup?: import("grammy/types").InlineKeyboardMarkup | import("grammy/types").ReplyKeyboardMarkup | import("grammy/types").ReplyKeyboardRemove | import("grammy/types").ForceReply;
+    message_effect_id?: string;
   } = {}
 ): Promise<{ message_id: number }> {
-  const token = process.env.BOT_TOKEN;
-  if (!token) throw new Error("BOT_TOKEN not set");
-
-  const body: Record<string, unknown> = {
-    chat_id: chatId,
-    rich_message: richMessage,
-  };
-  if (options.disable_notification != null)
-    body.disable_notification = options.disable_notification;
-  if (options.reply_to_message_id != null)
-    body.reply_parameters = { message_id: options.reply_to_message_id };
-  if (options.message_thread_id != null)
-    body.message_thread_id = options.message_thread_id;
-  if (options.business_connection_id != null)
-    body.business_connection_id = options.business_connection_id;
-
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendRichMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  const json = (await res.json()) as {
-    ok: boolean;
-    result?: { message_id: number };
-    description?: string;
-    error_code?: number;
-  };
-
-  if (!json.ok) {
-    const desc = json.description ?? `Telegram API error ${json.error_code}`;
-    const descLower = desc.toLowerCase();
-    const isUnsupported =
-      json.error_code === 400 &&
-      (descLower.includes("rich") || descLower.includes("not supported"));
-    const code: TelegramErrorCode = isUnsupported ? "RICH_MESSAGE_UNSUPPORTED" : "UNKNOWN";
-    const telegramErr: TelegramError = { code, message: desc, raw: desc };
-    throw Object.assign(new Error(desc), telegramErr);
+  try {
+    const result = await callApi(() =>
+      getApi().sendRichMessage(chatId, richMessage, {
+        disable_notification: options.disable_notification,
+        reply_parameters: options.reply_to_message_id != null
+          ? { message_id: options.reply_to_message_id }
+          : undefined,
+        message_thread_id: options.message_thread_id,
+        business_connection_id: options.business_connection_id,
+        reply_markup: options.reply_markup,
+        message_effect_id: options.message_effect_id,
+      })
+    );
+    return { message_id: result.message_id };
+  } catch (err) {
+    if (err instanceof GrammyError) {
+      const telegramErr = classifyGrammyError(err);
+      throw Object.assign(new Error(telegramErr.message), telegramErr);
+    }
+    throw err;
   }
-
-  if (!json.result) throw new Error("Telegram API returned ok:true but no result");
-  return { message_id: json.result.message_id };
 }
 
 /**
- * Updates an in-progress rich message draft.
+ * Streams a partial rich message draft via native grammY `getApi().sendRichMessageDraft()`.
  *
- * @remarks
- * TODO(10-3012): updateRichMessageDraftDirect — draft update API not confirmed in schema.
- * Replace when Bot API draft-update endpoint is confirmed in docs/rich-message-schema.md.
+ * The draft is ephemeral (~30 s) and shows a live preview while the message is being
+ * generated. Once complete, call `sendRichMessageDirect` to persist the final message
+ * via `sendRichMessage`. Returns `true` on success.
  */
-export function updateRichMessageDraftDirect(
-  _chatId: number | string,
-  _draftId: number,
-  _richMessage: InputRichMessage,
+export async function updateRichMessageDraftDirect(
+  chatId: number,
+  draftId: number,
+  richMessage: InputRichMessage,
   _options: {
     disable_notification?: boolean;
   } = {}
-): Promise<{ message_id: number }> {
-  // TODO(10-3012): updateRichMessageDraftDirect — draft update API not confirmed in schema.
-  // Replace when Bot API draft-update endpoint is confirmed in docs/rich-message-schema.md.
-  throw new Error("not yet implemented — updateRichMessageDraftDirect");
-}
-
-/**
- * Finalizes a rich message draft, converting it into a permanent message.
- *
- * @remarks
- * TODO(10-3012): finalizeRichMessageDraftDirect — draft finalize API not confirmed in schema.
- * Replace when Bot API draft-finalize endpoint is confirmed in docs/rich-message-schema.md.
- */
-export function finalizeRichMessageDraftDirect(
-  _chatId: number | string,
-  _draftId: number,
-  _options: {
-    disable_notification?: boolean;
-  } = {}
-): Promise<{ message_id: number }> {
-  // TODO(10-3012): finalizeRichMessageDraftDirect — draft finalize API not confirmed in schema.
-  // Replace when Bot API draft-finalize endpoint is confirmed in docs/rich-message-schema.md.
-  throw new Error("not yet implemented — finalizeRichMessageDraftDirect");
+): Promise<true> {
+  return callApi(() =>
+    getApi().sendRichMessageDraft(chatId, draftId, richMessage)
+  );
 }
 
 /** Canonical type for a Telegram reaction emoji string. */
@@ -863,14 +830,15 @@ export function toError(err: unknown) {
 
 /**
  * Feature gate for Bot API 10.1 rich-message sends.
- * Read once at module init from `RICH_MESSAGES` env var — no hot-reload.
- * Default `false` — all existing behaviour is unchanged unless opted in.
+ * Read once at module init — no hot-reload.
+ * Default `true` (rich is the default path).
+ * Set `LEGACY_MESSAGES=true` to force the legacy MarkdownV2 path (ops kill-switch).
  *
  * Private to prevent external mutation; use `isRichMessagesEnabled()` to read.
  */
-let _richMessagesEnabled: boolean = process.env.RICH_MESSAGES === "true";
+let _richMessagesEnabled: boolean = process.env.LEGACY_MESSAGES !== "true";
 
-/** Returns true when Bot API 10.1 rich-message sends are enabled. */
+/** Returns true when Bot API 10.1 rich-message sends are enabled (default: true). */
 export function isRichMessagesEnabled(): boolean {
   return _richMessagesEnabled;
 }
@@ -882,15 +850,15 @@ export function setRichMessagesEnabledForTest(enabled: boolean): void {
 
 /**
  * Routes a single outbound text message to the Bot API 10.1 rich-message path
- * or the existing send path, based on the `RICH_MESSAGES` feature flag.
+ * or the existing send path, based on the rich-messages feature flag.
  *
  * **Chunking-first policy**: callers must split long text with `splitMessage`
  * before calling this function. Only single-chunk messages are routed to rich.
  *
- * Routing rules (Epic 10-3001 §5):
- * - `RICH_MESSAGES=true` AND `parse_mode` is `"Markdown"` or `undefined`
- *   → `sendRichMessageDirect` with `{ markdown: text }`
- * - All other cases (MarkdownV2, HTML, flag off, or error fallback)
+ * Routing rules (Epic 10-3001 §5, P3 default-on):
+ * - Rich path (default): `parse_mode` is `"Markdown"` or `undefined`, OR explicit `richMessage`
+ *   → `sendRichMessageDirect` (native grammY `sendRichMessage`)
+ * - Legacy path: `LEGACY_MESSAGES=true` kill-switch, MarkdownV2/HTML, or error fallback
  *   → `resolveParseMode` → `getApi().sendMessage()` (existing proxy path)
  *
  * @param chatId   Target Telegram chat ID.
@@ -905,15 +873,16 @@ export async function routeOutboundMessage(
     parse_mode?: string;
     disable_notification?: boolean;
     reply_parameters?: { message_id: number };
+    richMessage?: import("./types/rich-message.js").InputRichMessage;  // P2: explicit rich content
     _rawText?: string;
     _skipHeader?: boolean;
     [key: string]: unknown;
   } = {},
-): Promise<{ message_id: number }> {
+): Promise<{ message_id: number; fell_back?: true }> {
   const parseMode = options.parse_mode;
   const shouldUseRich =
-    isRichMessagesEnabled() &&
-    (parseMode === "Markdown" || parseMode === undefined);
+    options.richMessage !== undefined ||   // explicit rich content always goes rich
+    (isRichMessagesEnabled() && (parseMode === "Markdown" || parseMode === undefined));
 
   if (shouldUseRich) {
     // Track notifyAfterFileSend so the before/after pair is always balanced,
@@ -928,21 +897,40 @@ export async function routeOutboundMessage(
         await import("./outbound-proxy.js");
       _notifyAfterFileSend = notifyAfterFileSend;
 
-      // Session header injection: prepend `name_tag` as Markdown inline-code
-      // so multi-session context is visible in the rendered rich message.
+      // Session header injection
       const skipHeader = options._skipHeader === true;
       const { plain: headerPlain } = buildHeader();
-      let richMarkdown = text;
-      if (headerPlain && !skipHeader) {
-        richMarkdown = `\`${headerPlain.trim()}\`\n${text}`;
+      let richContent: import("./types/rich-message.js").InputRichMessage;
+      if (options.richMessage !== undefined) {
+        // Explicit rich content: inject header tag if present
+        if (headerPlain && !skipHeader) {
+          if (options.richMessage.html !== undefined) {
+            richContent = { ...options.richMessage, html: `<code>${headerPlain.trim()}</code>\n${options.richMessage.html}` };
+          } else if (options.richMessage.markdown !== undefined) {
+            richContent = { ...options.richMessage, markdown: `\`${headerPlain.trim()}\`\n${options.richMessage.markdown}` };
+          } else {
+            richContent = options.richMessage;
+          }
+        } else {
+          richContent = options.richMessage;
+        }
+      } else {
+        // Markdown path (existing behavior)
+        let richMarkdown = text;
+        if (headerPlain && !skipHeader) {
+          richMarkdown = `\`${headerPlain.trim()}\`\n${text}`;
+        }
+        richContent = { markdown: richMarkdown };
       }
 
       // Fire outbound-proxy hooks so animation, temp-message cleanup, and
       // message-store recording all work the same as for voice/file sends.
       await notifyBeforeFileSend();
-      const result = await sendRichMessageDirect(chatId, { markdown: richMarkdown }, {
+      const result = await sendRichMessageDirect(chatId, richContent, {
         disable_notification: options.disable_notification,
         reply_to_message_id: options.reply_parameters?.message_id,
+        reply_markup: options.reply_markup as import("grammy/types").InlineKeyboardMarkup | import("grammy/types").ReplyKeyboardMarkup | import("grammy/types").ReplyKeyboardRemove | import("grammy/types").ForceReply | undefined,
+        message_effect_id: options.message_effect_id as string | undefined,
       });
       const rawText = options._rawText ?? text;
       // Clear before calling so a throw inside notifyAfterFileSend doesn't
@@ -967,9 +955,12 @@ export async function routeOutboundMessage(
   // Existing send path — the outbound proxy handles header injection,
   // animation, temp-message clearing, and message-store recording.
   const resolved = resolveParseMode(text, parseMode);
-  return getApi().sendMessage(chatId, resolved.text, {
+  const plainResult = await getApi().sendMessage(chatId, resolved.text, {
     ...options,
     parse_mode: resolved.parse_mode,
   });
+  return shouldUseRich
+    ? { message_id: plainResult.message_id, fell_back: true as const }
+    : { message_id: plainResult.message_id };
 }
 

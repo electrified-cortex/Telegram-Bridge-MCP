@@ -15,6 +15,7 @@
 import { getApi, resolveChat } from "./telegram.js";
 import { fireTempReactionRestore } from "./temp-reaction.js";
 import { getCallerSid } from "./session-context.js";
+import { cancelThinkingForSid } from "./thinking-state.js";
 
 export type TypingAction =
   | "typing"
@@ -214,6 +215,8 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
   await fireTempReactionRestore();
 
   const sid = getCallerSid();
+  // show_typing supersedes Thinking — typing means "composing now", not "received"
+  cancelThinkingForSid(sid);
   const s = _get(sid);
   const timeoutMs = timeoutSeconds * 1000;
   const newDeadline = Date.now() + timeoutMs;

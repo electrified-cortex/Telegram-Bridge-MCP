@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageReplyMarkup: vi.fn(),
   editMessageText: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("../../telegram.js", async (importActual) => {
     }),
     resolveChat: mocks.resolveChat,
     validateText: mocks.validateText,
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
   };
 });
 
@@ -66,6 +68,7 @@ describe("send_choice tool", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 9 });
     const server = createMockServer();
     register(server);
     call = server.getHandler("send_choice");
@@ -79,7 +82,7 @@ describe("send_choice tool", () => {
 
   it("sends inline keyboard with one row of two buttons by default", async () => {
     await call({ text: "Rate it", options: TWO_OPTIONS, token: 1123456});
-    expect(mocks.sendMessage).toHaveBeenCalledWith(
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
       expect.objectContaining({
@@ -95,7 +98,7 @@ describe("send_choice tool", () => {
 
   it("respects columns=1 layout", async () => {
     await call({ text: "Choose", options: TWO_OPTIONS, columns: 1, token: 1123456});
-    expect(mocks.sendMessage).toHaveBeenCalledWith(
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
       expect.objectContaining({
@@ -115,7 +118,7 @@ describe("send_choice tool", () => {
       { label: "No", value: "no", style: "danger" as const },
     ];
     await call({ text: "Confirm?", options, token: 1123456});
-    expect(mocks.sendMessage).toHaveBeenCalledWith(
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
       expect.objectContaining({
@@ -353,7 +356,7 @@ describe("send_choice tool", () => {
 
   it("passes reply_to via reply_parameters", async () => {
     await call({ text: "Reply", options: TWO_OPTIONS, reply_to: 5, token: 1123456});
-    expect(mocks.sendMessage).toHaveBeenCalledWith(
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
       expect.objectContaining({ reply_parameters: { message_id: 5 } }),
@@ -362,7 +365,7 @@ describe("send_choice tool", () => {
 
   it("passes disable_notification option", async () => {
     await call({ text: "Quiet", options: TWO_OPTIONS, disable_notification: true, token: 1123456});
-    expect(mocks.sendMessage).toHaveBeenCalledWith(
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledWith(
       42,
       expect.any(String),
       expect.objectContaining({ disable_notification: true }),
@@ -394,7 +397,7 @@ describe("send_choice tool", () => {
   });
 
   it("returns error when sendMessage API fails", async () => {
-    mocks.sendMessage.mockRejectedValue(new Error("network error"));
+    mocks.routeOutboundMessage.mockRejectedValue(new Error("network error"));
     const result = await call({ text: "Fail", options: TWO_OPTIONS, token: 1123456});
     expect(isError(result)).toBe(true);
   });

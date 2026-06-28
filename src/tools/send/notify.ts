@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, validateText, resolveChat } from "../../telegram.js";
+import { routeOutboundMessage, toResult, toError, validateText, resolveChat } from "../../telegram.js";
 import { markdownToV2, escapeV2, escapeHtml } from "../../markdown.js";
 import { applyTopicToTitle } from "../../topic-state.js";
 import { requireAuth } from "../../session-gate.js";
@@ -62,13 +62,22 @@ export async function handleNotify({
 
     const rawText = `${title}${detail ? "\n" + detail : ""}`;
 
-    const msg = await getApi().sendMessage(chatId, msgText, {
+    // Build HTML version for the rich path (header bold + body as plain or HTML).
+    const richHtmlTitle = `${prefix} <b>${escapeHtml(topicTitle)}</b>`;
+    const richHtmlParts = [richHtmlTitle];
+    if (detail) {
+      richHtmlParts.push("", parse_mode === "HTML" ? detail : escapeHtml(detail));
+    }
+    const richHtml = richHtmlParts.join("\n");
+
+    const result = await routeOutboundMessage(chatId, msgText, {
+      richMessage: { html: richHtml },
       parse_mode: finalMode,
       disable_notification,
       reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
       _rawText: rawText,
-    } as Record<string, unknown>);
-    return toResult({ message_id: msg.message_id });
+    });
+    return toResult({ message_id: result.message_id });
   } catch (err) {
     return toError(err);
   }

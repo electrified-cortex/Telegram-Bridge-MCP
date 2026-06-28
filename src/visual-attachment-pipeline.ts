@@ -171,14 +171,14 @@ export function detectAndExtract(text: string, opts?: DetectExtractOptions): Ext
   MERMAID_RE.lastIndex = 0;
   const mermaidMatches: Array<{ match: string; content: string; offset: number }> = [];
   for (const m of text.matchAll(MERMAID_RE)) {
-    mermaidMatches.push({ match: m[0], content: m[1]!, offset: m.index! });
+    mermaidMatches.push({ match: m[0], content: m[1], offset: m.index });
   }
 
   // ── Step 2: Collect SVG matches from the ORIGINAL text ───────────────────
   SVG_RE.lastIndex = 0;
   const svgMatchesRaw: Array<{ match: string; offset: number }> = [];
   for (const m of text.matchAll(SVG_RE)) {
-    svgMatchesRaw.push({ match: m[0], offset: m.index! });
+    svgMatchesRaw.push({ match: m[0], offset: m.index });
   }
 
   // ── Step 3: Exclude SVG matches inside a mermaid fence ───────────────────
@@ -244,7 +244,7 @@ export function detectAndExtract(text: string, opts?: DetectExtractOptions): Ext
   // offsets are in original-text coordinate space so no adjustment is needed.
   let modifiedText = text;
   for (let i = blockEntries.length - 1; i >= 0; i--) {
-    const { block, offset, matchLength } = blockEntries[i]!;
+    const { block, offset, matchLength } = blockEntries[i];
     modifiedText =
       modifiedText.slice(0, offset) +
       block.placeholder +

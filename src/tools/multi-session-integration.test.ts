@@ -25,6 +25,7 @@ import { createMockServer, parseResult, isError, errorCode } from "./test-utils.
 
 const hoistedMocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   ackVoice: vi.fn(),
   sendServiceMessage: vi.fn(() => Promise.resolve()),
   getMessage: vi.fn<() => TimelineEvent | undefined>(),
@@ -45,6 +46,8 @@ vi.mock("../telegram.js", async (importActual) => {
     resolveChat: () => 1,
     ackVoiceMessage: hoistedMocks.ackVoice,
     sendServiceMessage: hoistedMocks.sendServiceMessage,
+    // P3: rich is default; route text sends through this mock
+    routeOutboundMessage: (...args: unknown[]) => hoistedMocks.routeOutboundMessage(...args),
   };
 });
 
@@ -135,6 +138,8 @@ beforeEach(() => {
   resetRoutingModeForTest();
   resetDmPermissionsForTest();
   mockSendMessage.mockResolvedValue({ message_id: 1 });
+  // P3: rich is default — single-chunk Markdown routes via routeOutboundMessage
+  hoistedMocks.routeOutboundMessage.mockResolvedValue({ message_id: 1 });
 });
 
 // ===========================================================================

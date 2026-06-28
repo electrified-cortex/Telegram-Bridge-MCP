@@ -111,6 +111,19 @@ stream/flush(stream_id)
 
 ## Related tools
 
+- `help('thinking')` — **Thinking indicator** (auto-fires on dequeue; zero cost; covers the reasoning latency before any send)
 - `help('send')` — buffered send (text, audio, or both)
-- `help('append_text')` — append text to an existing message (no stream state needed)
+- `help('append_text')` — append text to an existing message (no stream state needed; token-cheap progress path)
 - `help('animation')` — looping frame animation (for progress indicators, not incremental text)
+
+## Presence during long work
+
+Use `append_text` as the token-cheap way to grow a message across real work steps:
+```
+send(text: "Working…", token: …)             → get message_id
+// step 1
+action(type: 'append_text', message_id: …, text: "\n✓ found bug")
+// step 2
+action(type: 'append_text', message_id: …, text: "\n✓ patch applied")
+```
+No stream state, no ~2.5× overhead. Best for incremental progress updates.

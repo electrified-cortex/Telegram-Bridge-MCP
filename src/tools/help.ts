@@ -111,6 +111,8 @@ const TOOL_INDEX: Record<string, string> = {
   shutdown: "Shut down the MCP server process.",
   notify_shutdown_warning: "Broadcast a shutdown warning to all active sessions.",
   events: "External HTTP event endpoint — POST /event for cross-participant signaling, metrics, and lifecycle awareness. help(topic: 'events') for full docs.",
+  "thinking/extend": "Extend or customise the auto-started Thinking indicator. One call to take over — bridge owns keep-alive and phase cycling. label: custom text. phases: bridge cycles on its own timer. hold: total seconds (1-600). See help(topic:'thinking').",
+  "thinking/close": "Explicitly close the Thinking indicator. Usually not needed — the next send auto-closes it. No-op if not active.",
 };
 
 function buildOverview(): string {
@@ -177,7 +179,7 @@ export function register(server: McpServer) {
       }
 
       // Topics with rich file-based content — skip TOOL_INDEX even if present
-      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "compaction-recovery", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions", "presence", "behavior", "audio", "modality", "events", "guidance", "activity/file", "activity/listen", "dequeue-http", "streaming"]);
+      const RICH_TOPICS = new Set(["dequeue", "shutdown", "animation", "checklist", "compression", "startup", "start", "quick_start", "compacted", "compaction-recovery", "dump", "forced-stop", "reminders", "orphaned", "stop-hook", "index", "guide", "send", "append_text", "reactions", "presence", "behavior", "audio", "modality", "events", "guidance", "activity/file", "activity/listen", "dequeue-http", "streaming", "thinking"]);
 
 
       // topic: "<tool_name>" → per-tool description (checked before file lookup)

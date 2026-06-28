@@ -23,6 +23,7 @@ import {
   resetApi,
   sendVoiceDirect,
   sendRichMessageDirect,
+  routeOutboundMessage,
   ackVoiceMessage,
   recordRateLimitHit,
   getRateLimitRemaining,
@@ -30,6 +31,14 @@ import {
   LIMITS,
   type TelegramError,
 } from "./telegram.js";
+
+// Mock outbound-proxy so routeOutboundMessage integration tests don't need
+// the real animation / message-store infrastructure.
+vi.mock("./outbound-proxy.js", () => ({
+  buildHeader: vi.fn(() => ({ plain: "", formatted: "" })),
+  notifyBeforeFileSend: vi.fn(() => Promise.resolve()),
+  notifyAfterFileSend: vi.fn(() => Promise.resolve()),
+}));
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -819,46 +828,40 @@ describe("ackVoiceMessage", () => {
 // ---------------------------------------------------------------------------
 
 describe("sendRichMessageDirect", () => {
+  let sendRichMessageSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     process.env.BOT_TOKEN = "test_rich_token";
+    resetApi();
+    sendRichMessageSpy = vi
+      .spyOn(Api.prototype, "sendRichMessage")
+      .mockResolvedValue({ message_id: 42 } as never);
   });
 
   afterEach(() => {
     delete process.env.BOT_TOKEN;
     vi.restoreAllMocks();
+    resetApi();
   });
 
   it("success path: returns { message_id } when API responds ok", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      json: () => ({ ok: true, result: { message_id: 42 } }),
-    }));
-
     const result = await sendRichMessageDirect(123, { markdown: "**hello**" });
     expect(result).toEqual({ message_id: 42 });
   });
 
-  it("non-2xx HTTP: throws when API returns ok: false (e.g. 500)", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      json: () => ({
-        ok: false,
-        error_code: 500,
-        description: "Internal Server Error",
-      }),
-    }));
-
+  it("throws when API returns a 500 GrammyError", async () => {
+    sendRichMessageSpy.mockRejectedValue(
+      makeGrammyError(500, "Internal Server Error")
+    );
     await expect(
       sendRichMessageDirect(123, { markdown: "**hello**" })
     ).rejects.toThrow();
   });
 
   it("RICH_MESSAGE_UNSUPPORTED: sets code when API returns 400 with rich-message description", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      json: () => ({
-        ok: false,
-        error_code: 400,
-        description: "rich message not supported",
-      }),
-    }));
+    sendRichMessageSpy.mockRejectedValue(
+      makeGrammyError(400, "rich message not supported")
+    );
 
     let thrown: unknown;
     try {
@@ -873,8 +876,57 @@ describe("sendRichMessageDirect", () => {
 
   it("throws BOT_TOKEN error when BOT_TOKEN is not set", async () => {
     delete process.env.BOT_TOKEN;
+    resetApi(); // Clear cached instance so getRawApi() re-checks BOT_TOKEN
     await expect(
       sendRichMessageDirect(123, { markdown: "**hello**" })
     ).rejects.toThrow(/BOT_TOKEN/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// routeOutboundMessage — degrade-to-plain integration test (AC3)
+// ---------------------------------------------------------------------------
+
+describe("routeOutboundMessage: degrade-to-plain on RICH_MESSAGE_UNSUPPORTED", () => {
+  let sendRichMessageSpy: ReturnType<typeof vi.spyOn>;
+  let sendMessageSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    process.env.BOT_TOKEN = "test_route_token";
+    resetApi();
+    // Make the rich API throw a 400 error that classifies as RICH_MESSAGE_UNSUPPORTED
+    sendRichMessageSpy = vi
+      .spyOn(Api.prototype, "sendRichMessage")
+      .mockRejectedValue(
+        makeGrammyError(400, "rich message not supported")
+      );
+    sendMessageSpy = vi
+      .spyOn(Api.prototype, "sendMessage")
+      .mockResolvedValue({ message_id: 42 } as never);
+  });
+
+  afterEach(() => {
+    delete process.env.BOT_TOKEN;
+    vi.restoreAllMocks();
+    resetApi();
+  });
+
+  it("falls back to sendMessage when rich API rejects with RICH_MESSAGE_UNSUPPORTED", async () => {
+    const result = await routeOutboundMessage(123, "## heading\n\nsome text", {
+      parse_mode: "Markdown",
+    });
+
+    expect(result.fell_back).toBe(true);
+    expect(sendMessageSpy).toHaveBeenCalled();
+    expect(sendRichMessageSpy).toHaveBeenCalled();
+  });
+
+  it("returns message_id from the fallback sendMessage call", async () => {
+    const result = await routeOutboundMessage(123, "plain fallback text", {
+      parse_mode: "Markdown",
+    });
+
+    expect(result.message_id).toBe(42);
+    expect(result.fell_back).toBe(true);
   });
 });

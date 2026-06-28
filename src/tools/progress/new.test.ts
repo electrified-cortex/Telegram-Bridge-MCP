@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   pinChatMessage: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
@@ -20,6 +21,7 @@ vi.mock("../../telegram.js", async (importActual) => {
     getApi: () => mocks,
     resolveChat: mocks.resolveChat,
     validateText: mocks.validateText,
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
   };
 });
 
@@ -38,58 +40,52 @@ describe("send_new_progress tool", () => {
     vi.clearAllMocks();
     mocks.validateSession.mockReturnValue(true);
     mocks.pinChatMessage.mockResolvedValue(true);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 42 });
     const server = createMockServer();
     register(server);
     call = server.getHandler("send_new_progress");
   });
 
   it("creates a new message and returns message_id + hint", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 42, chat: { id: 1 }, date: 0 });
     const result = await call({ percent: 50, title: "Building", token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
     expect(data.hint).toBeUndefined();
-    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledOnce();
   });
 
   it("renders title in HTML bold", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
     await call({ percent: 0, title: "Compiling", token: 1123456});
-    const [, text] = mocks.sendMessage.mock.calls[0] as [unknown, string];
-    expect(text).toContain("<b>Compiling</b>");
+    const [, , opts] = mocks.routeOutboundMessage.mock.calls[0] as [unknown, unknown, { richMessage: { html: string } }];
+    expect(opts.richMessage.html).toContain("<b>Compiling</b>");
   });
 
   it("omits title when not provided", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
     await call({ percent: 50, token: 1123456});
-    const [, text] = mocks.sendMessage.mock.calls[0] as [unknown, string];
-    expect(text).not.toContain("<b>");
+    const [, , opts] = mocks.routeOutboundMessage.mock.calls[0] as [unknown, unknown, { richMessage: { html: string } }];
+    expect(opts.richMessage.html).not.toContain("<b>");
   });
 
   it("omits title when empty string is passed", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
     await call({ percent: 50, title: "", token: 1123456});
-    const [, text] = mocks.sendMessage.mock.calls[0] as [unknown, string];
-    expect(text).not.toContain("<b>");
+    const [, , opts] = mocks.routeOutboundMessage.mock.calls[0] as [unknown, unknown, { richMessage: { html: string } }];
+    expect(opts.richMessage.html).not.toContain("<b>");
   });
 
   it("renders subtext in HTML italic", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
     await call({ percent: 50, title: "T", subtext: "12 / 24 files", token: 1123456});
-    const [, text] = mocks.sendMessage.mock.calls[0] as [unknown, string];
-    expect(text).toContain("<i>12 / 24 files</i>");
+    const [, , opts] = mocks.routeOutboundMessage.mock.calls[0] as [unknown, unknown, { richMessage: { html: string } }];
+    expect(opts.richMessage.html).toContain("<i>12 / 24 files</i>");
   });
 
   it("omits italic line when no subtext", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: 1 }, date: 0 });
     await call({ percent: 50, title: "T", token: 1123456});
-    const [, text] = mocks.sendMessage.mock.calls[0] as [unknown, string];
-    expect(text).not.toContain("<i>");
+    const [, , opts] = mocks.routeOutboundMessage.mock.calls[0] as [unknown, unknown, { richMessage: { html: string } }];
+    expect(opts.richMessage.html).not.toContain("<i>");
   });
   
   it("creates message without title using only percent", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 42, chat: { id: 1 }, date: 0 });
     const result = await call({ percent: 100, token: 1123456});
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
@@ -117,7 +113,6 @@ describe("send_new_progress tool", () => {
   });
 
   it("auto-pins the message after sending (silent)", async () => {
-    mocks.sendMessage.mockResolvedValue({ message_id: 42, chat: { id: 1 }, date: 0 });
     await call({ percent: 50, title: "Building", token: 1123456 });
     expect(mocks.pinChatMessage).toHaveBeenCalledWith(1, 42, { disable_notification: true });
   });

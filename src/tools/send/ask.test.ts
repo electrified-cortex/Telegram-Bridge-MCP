@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn(() => false),
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   ackVoiceMessage: vi.fn(),
   pinChatMessage: vi.fn(),
   resolveChat: vi.fn((): number => 42),
@@ -36,6 +37,7 @@ vi.mock("../../telegram.js", async (importActual) => {
     getApi: () => ({ sendMessage: mocks.sendMessage, pinChatMessage: mocks.pinChatMessage }),
     resolveChat: () => mocks.resolveChat(),
     ackVoiceMessage: mocks.ackVoiceMessage,
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
   };
 });
 
@@ -76,7 +78,7 @@ vi.mock("../../session-queue.js", () => ({
 
 import { register } from "./ask.js";
 
-const BASE_MSG = { message_id: 10, chat: { id: 42 }, date: 1000 };
+const _BASE_MSG = { message_id: 10, chat: { id: 42 }, date: 1000 };
 
 function makeTextEvent(messageId: number, text: string, replyTo?: number): TimelineEvent {
   return {
@@ -119,6 +121,7 @@ describe("ask tool", () => {
     mocks.validateSession.mockReturnValue(true);
     mocks.pendingCount.mockReturnValue(0);
     mocks.resolveChat.mockReturnValue(42);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.length = 0;
     mocks._waitResolvers.length = 0;
     const server = createMockServer();
@@ -127,7 +130,7 @@ describe("ask tool", () => {
   });
 
   it("sends question and returns reply text", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     // Reply must have a higher message_id than the sent question (message_id: 10)
     mocks._storeQueue.push(makeTextEvent(11, "sure"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
@@ -138,7 +141,7 @@ describe("ask tool", () => {
   });
 
   it("ignores messages with message_id <= sent message_id (stale pre-question messages)", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 }); // sent message_id: 10
     // Stale message with same message_id as the sent question — should be ignored
     mocks._storeQueue.push(makeTextEvent(10, "old voice reply"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
@@ -146,7 +149,7 @@ describe("ask tool", () => {
   });
 
   it("returns timed_out when no matching update arrives", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     // Empty queue
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     const data = parseResult(result);
@@ -154,7 +157,7 @@ describe("ask tool", () => {
   });
 
   it("returns voice transcription from pre-transcribed store event", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeVoiceEvent(11, "transcribed text"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     const data = parseResult(result);
@@ -164,14 +167,14 @@ describe("ask tool", () => {
   });
 
   it("sets 🫡 reaction on voice message dequeue", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeVoiceEvent(11, "hello"));
     await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     expect(mocks.ackVoiceMessage).toHaveBeenCalledWith(11);
   });
 
   it("returns { resolution: 'replied' } when reply_to matches the question message_id", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 }); // sent message_id: 10
     // reply_to: 10 = directly replying to the question
     mocks._storeQueue.push(makeTextEvent(11, "yes I agree", 10));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
@@ -184,7 +187,7 @@ describe("ask tool", () => {
   });
 
   it("returns { resolution: 'replied' } for voice reply_to matching question message_id", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 }); // sent message_id: 10
     mocks._storeQueue.push(makeVoiceEvent(11, "spoken reply", 10));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
     expect(isError(result)).toBe(false);
@@ -195,7 +198,7 @@ describe("ask tool", () => {
   });
 
   it("returns normal text response (not replied) when reply_to does not match", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 }); // sent message_id: 10
     // reply_to: 99 = replying to a different message, not the question
     mocks._storeQueue.push(makeTextEvent(11, "some text", 99));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
@@ -207,7 +210,7 @@ describe("ask tool", () => {
   });
 
   it("returns normal text response (not replied) when reply_to is absent", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG); // sent message_id: 10
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 }); // sent message_id: 10
     mocks._storeQueue.push(makeTextEvent(11, "plain message"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
     expect(isError(result)).toBe(false);
@@ -221,7 +224,7 @@ describe("ask tool", () => {
     const result = await call({ question: "", token: 1_123_456});
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("EMPTY_MESSAGE");
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
   });
 
   // =========================================================================
@@ -229,7 +232,7 @@ describe("ask tool", () => {
   // =========================================================================
 
   it("returns command as a break signal instead of ignoring (#4)", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeCommandEvent(11, "cancel"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456});
     const data = parseResult(result);
@@ -247,12 +250,12 @@ describe("ask tool", () => {
     const data = parseResult(result);
     expect(data.code).toBe("PENDING_UPDATES");
     expect(data.pending).toBe(5);
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
   });
 
   it("proceeds when ignore_pending is true despite pending updates", async () => {
     mocks.pendingCount.mockReturnValue(5);
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeTextEvent(11, "hello"));
     const result = await call({
       question: "Continue?",
@@ -277,12 +280,12 @@ describe("ask tool", () => {
     expect(data.message).toContain("2 text");
     expect(data.message).toContain("1 voice");
     expect(data.message).toContain("ignore_pending: true");
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
   });
 
   it("bypasses pending guard when reply_to is set", async () => {
     mocks.pendingCount.mockReturnValue(5);
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeTextEvent(11, "yes"));
     const result = await call({
       question: "Continue?",
@@ -302,7 +305,7 @@ testIdentityGate((args) => call(args), mocks.validateSession, {"question":"x"});
 
 describe("response_format: compact", () => {
   it("compact: text reply omits timed_out:false", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeTextEvent(11, "hello"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "compact" });
     expect(isError(result)).toBe(false);
@@ -312,7 +315,7 @@ describe("response_format: compact", () => {
   });
 
   it("compact: voice reply omits timed_out:false and voice:true", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeVoiceEvent(11, "transcribed"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "compact" });
     expect(isError(result)).toBe(false);
@@ -323,7 +326,7 @@ describe("response_format: compact", () => {
   });
 
   it("default: text reply includes timed_out:false", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeTextEvent(11, "hello"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "default" });
     expect(isError(result)).toBe(false);
@@ -332,7 +335,7 @@ describe("response_format: compact", () => {
   });
 
   it("default: voice reply includes timed_out:false and voice:true", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeVoiceEvent(11, "transcribed"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "default" });
     expect(isError(result)).toBe(false);
@@ -342,7 +345,7 @@ describe("response_format: compact", () => {
   });
 
   it("omitted response_format: voice reply includes timed_out:false and voice:true (backward compat)", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeVoiceEvent(11, "transcribed"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456 });
     expect(isError(result)).toBe(false);
@@ -352,7 +355,7 @@ describe("response_format: compact", () => {
   });
 
   it("compact: command response omits timed_out while command and args are present", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     mocks._storeQueue.push(makeCommandEvent(11, "cancel"));
     const result = await call({ question: "Continue?", timeout_seconds: 1, token: 1_123_456, response_format: "compact" });
     expect(isError(result)).toBe(false);
@@ -364,7 +367,7 @@ describe("response_format: compact", () => {
   });
 
   it("compact: abort (signal abort) omits timed_out:false while aborted:true is present", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     const controller = new AbortController();
     controller.abort();
     const result = await (call as (args: Record<string, unknown>, extra: Record<string, unknown>) => Promise<unknown>)(
@@ -380,7 +383,7 @@ describe("response_format: compact", () => {
 
 describe("cross-session isolation", () => {
   it("session 2 reads from its own queue, not session 1's", async () => {
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
 
     // Session 1 has a text reply in its dedicated queue
     mocks.sessionQueue1.dequeueMatch.mockImplementationOnce(
@@ -411,7 +414,7 @@ describe("cross-session isolation", () => {
   it("AC4: ask-mode question in group chat does NOT pin the message", async () => {
     // Simulate a group chat (chatId < 0)
     mocks.resolveChat.mockReturnValue(-100123);
-    mocks.sendMessage.mockResolvedValue(BASE_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
     // Resolve immediately with a text reply so the tool returns
     mocks._storeQueue.push(makeTextEvent(11, "my reply"));
     mocks.sessionQueue1.dequeueMatch.mockImplementationOnce(

@@ -85,6 +85,7 @@ import { NOTIFY_DEBOUNCE_MIN_MS, NOTIFY_DEBOUNCE_MAX_MS } from "./activity/file-
 import { handleNameTag } from "./name-tag.js";
 import { decodeToken } from "./identity-schema.js";
 import { getSession } from "../session-manager.js";
+import { handleThinkingExtend, handleThinkingClose } from "./thinking/extend.js";
 type ToolResult = ReturnType<typeof toResult>;
 
 /** Action paths explicitly permitted for `read-only` child sessions. */
@@ -264,6 +265,10 @@ export function setupActionRegistry(): void {
   // name-tag — get or set session name tag
   registerAction("name-tag", toActionHandler(handleNameTag));
   registerAction("name-tag/set", toActionHandler(handleNameTag));
+
+  // thinking — extend or close the auto-started Thinking indicator
+  registerAction("thinking/extend", toActionHandler(handleThinkingExtend));
+  registerAction("thinking/close", toActionHandler(handleThinkingClose));
 
 }
 
@@ -629,6 +634,33 @@ export function register(server: McpServer): void {
           .boolean()
           .optional()
           .describe("show-typing: If true, immediately stop the typing indicator."),
+        // thinking/extend params
+        label: z
+          .string()
+          .max(200)
+          .optional()
+          .describe(
+            "thinking/extend: Custom text shown as the draft body (e.g. 'Analyzing the codebase...'). " +
+            "Omit to keep the generic Thinking bubble."
+          ),
+        phases: z
+          .array(z.string().max(200))
+          .optional()
+          .describe(
+            "thinking/extend: Phase strings cycled by the bridge on its own timer. " +
+            "Example: ['Reading files','Running tests','Drafting']. " +
+            "Requires >= 2 phases to cycle."
+          ),
+        hold: z
+          .number()
+          .int()
+          .min(1)
+          .max(600)
+          .optional()
+          .describe(
+            "thinking/extend: Total hold duration in seconds (1-600, default 30). " +
+            "Bridge refreshes the draft autonomously within each 30s window."
+          ),
         // approve params
         ticket: z
           .string()

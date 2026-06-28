@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   clearSendInterceptor: vi.fn(),
   getHighestMessageId: vi.fn((): number => 0),
   deliverServiceMessage: vi.fn((): boolean => true),
+  cancelThinkingForSid: vi.fn(),
 }));
 
 vi.mock("./telegram.js", async (importActual) => {
@@ -44,6 +45,10 @@ vi.mock("./message-store.js", () => ({
 
 vi.mock("./session-queue.js", () => ({
   deliverServiceMessage: mocks.deliverServiceMessage,
+}));
+
+vi.mock("./thinking-state.js", () => ({
+  cancelThinkingForSid: (...args: unknown[]) => mocks.cancelThinkingForSid(...args),
 }));
 
 import { GrammyError } from "grammy";
@@ -170,6 +175,11 @@ describe("animation-state", () => {
       await startAnimation(1, ["X"], { intervalMs: 1000, timeoutSeconds: 600, notify: true });
       const [, , opts] = mocks.sendMessage.mock.calls[0] as [number, string, Record<string, unknown>];
       expect(opts.disable_notification).toBe(false);
+    });
+
+    it("cancels Thinking indicator (AC5 — animation supersedes Thinking)", async () => {
+      await startAnimation(1, ["frame1", "frame2"]);
+      expect(mocks.cancelThinkingForSid).toHaveBeenCalledWith(1);
     });
   });
 

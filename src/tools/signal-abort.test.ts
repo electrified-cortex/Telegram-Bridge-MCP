@@ -24,6 +24,7 @@ import { createMockServer, parseResult, isError, type ToolHandler } from "./test
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
   editMessageReplyMarkup: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock("../telegram.js", async (importActual) => {
     resolveChat: () => 42,
     ackVoiceMessage: mocks.ackVoiceMessage,
     sendServiceMessage: mocks.sendServiceMessage,
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
   };
 });
 
@@ -135,6 +137,7 @@ describe("signal abort — interactive tools", () => {
 
   it("SC-1: ask resolves with aborted: true when signal fires before any reply", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 10, chat: { id: 42 }, date: 0 });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
 
     const controller = new AbortController();
     const toolPromise = handlers.ask(
@@ -160,6 +163,7 @@ describe("signal abort — interactive tools", () => {
 
   it("SC-1b: ask resolves immediately when signal is already aborted before the call", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 10, chat: { id: 42 }, date: 0 });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 10 });
 
     const controller = new AbortController();
     controller.abort(); // pre-aborted
@@ -181,6 +185,7 @@ describe("signal abort — interactive tools", () => {
 
   it("SC-2: confirm resolves with timed_out: true when signal fires before button press", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 20, chat: { id: 42 }, date: 0 });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 20 });
     mocks.editMessageText.mockResolvedValue(undefined);
 
     const controller = new AbortController();
@@ -208,6 +213,7 @@ describe("signal abort — interactive tools", () => {
 
   it("SC-2b: callback hook still fires for late button press after confirm aborts", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 20, chat: { id: 42 }, date: 0 });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 20 });
     mocks.editMessageText.mockResolvedValue(undefined);
 
     const controller = new AbortController();
@@ -235,6 +241,7 @@ describe("signal abort — interactive tools", () => {
 
   it("SC-3: choose resolves with timed_out: true when signal fires before selection", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 30, chat: { id: 42 }, date: 0 });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 30 });
     mocks.editMessageText.mockResolvedValue(undefined);
 
     const controller = new AbortController();
@@ -268,6 +275,7 @@ describe("signal abort — interactive tools", () => {
 
   it("SC-4: aborting after confirm already received a button press does not crash", async () => {
     mocks.sendMessage.mockResolvedValue({ message_id: 40, chat: { id: 42 }, date: 0 });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 40 });
     mocks.editMessageText.mockResolvedValue(undefined);
 
     const controller = new AbortController();
