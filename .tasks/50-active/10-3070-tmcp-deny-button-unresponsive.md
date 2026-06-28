@@ -5,7 +5,7 @@ priority: HIGH
 category: Bug
 status: queued
 reported: 2026-06-28
-source: Operator TG 80704 (voice)
+source: TG 80704
 agent_type: Worker
 model_class: sonnet-class
 branch_target: dev
@@ -13,10 +13,9 @@ branch_target: dev
 
 # Bug: Deny Button Unresponsive in Approval UI
 
-## Operator Report
+## Report
 
-> "I'm clicking deny and it's not doing anything. So that's a bug."
-> — TG 80704 (voice), 2026-06-28
+Deny button has no visible effect when clicked — prompt remains, action is not denied. (TG 80704)
 
 ## Context
 

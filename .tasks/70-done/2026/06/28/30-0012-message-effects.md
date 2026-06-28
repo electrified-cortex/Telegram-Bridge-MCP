@@ -116,7 +116,7 @@ place to correct if Telegram changes the constants.
 - tests: 4128/4128 pass
 - notes:
   - test-plan.md present (confirmed round 2 verifier)
-  - AC2 (live-chat verification) waived by operator directive TG 81231 ("We know it works. Trust it.")
+  - AC2 (live-chat verification) waived by operator TG 81231
   - All other ACs met; Overseer push-gate APPROVED; sealed by foreman
 
 ## Push-gate approval
@@ -125,5 +125,5 @@ place to correct if Telegram changes the constants.
 - verdict: APPROVED
 - squash_commit: 4c18b01a (on dev)
 - PR: #250 (dev→master)
-- AC2 disposition: WAIVED — operator directive TG 81231 ("We know it works. Trust it.")
+- AC2 disposition: WAIVED — operator TG 81231
 - gate notes: 4128/4128 tests pass; test-plan.md present (confirmed round 2 verifier); AC2 waived by operator; all other ACs met
