@@ -71,3 +71,26 @@ After landing, manually send a `type: "text"` message containing `List<T>` and v
 - review type: adversarial re-gate (post-refinement)
 - checked: ACs 1-3 all binary (audit findings note deliverable ✓, doc instruction ✓, unit test verifying bridge passthrough ✓), Option B cleanly deferred, scope bounded to Option A doc fix, delegation complete
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## AC1 Audit Findings
+
+- auditor: worker 541a092f (a6970857)
+- date: 2026-06-28
+- result: no_encouraging_text_found
+- files checked: skill files, system prompts, worker templates, CLAUDE.md
+- conclusion: No file explicitly encourages HTML encoding. Behavior is a model training habit — documentation fix (Option A) is the correct remediation.
+
+*Note: finding was documented in commit message rather than this file; added here retroactively during seal to satisfy the binary deliverable requirement.*
+
+## Verification
+
+- verifier: task-verification agent (ad9d9ba32197d1d9e) — covered via bundled 10-3074 review + foreman AC check
+- date: 2026-06-28
+- verdict: APPROVED
+- squash_commit: (pending seal)
+- worker_commit: a6970857
+- tests: 4164/4164 pass (1 new passthrough test in send.test.ts)
+- local_llm: UNAVAILABLE (language.cortex.lan:8080 timed out)
+- overseer_gate: APPROVED (2026-06-28)
+- bundled_with: 10-3074
+- notes: AC1 audit findings note added retroactively (worker documented in commit message; moved to task file during seal). AC2: 'No HTML encoding' blockquote in docs/communication.md ✓. AC3: passthrough test — bridge does not decode HTML entities in type:'text' ✓.

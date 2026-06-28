@@ -66,3 +66,16 @@ send(type: "checklist", title: "...", steps: [...], stale_after: 7200)
 - review type: adversarial re-gate (post-refinement)
 - checked: ACs 1-8 all binary+testable (AC7: mock clock + assert enqueued; AC8: in-process mocked timer → dequeue event with correct fields), scope bounded to stale_after param + timer logic + 2 tests, delegation complete, no open questions
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## Verification
+
+- verifier: task-verification agent (ad9d9ba32197d1d9e)
+- date: 2026-06-28
+- verdict: APPROVED
+- squash_commit: (pending seal)
+- worker_commit: a6970857
+- tests: 4164/4164 pass
+- local_llm: UNAVAILABLE (language.cortex.lan:8080 timed out)
+- overseer_gate: APPROVED (2026-06-28 — all 4 design concerns cleared)
+- bundled_with: 10-3075
+- notes: All 8 ACs confirmed with citations. New stale-timer.ts module (108 lines), deliverChecklistStaleEvent in session-queue.ts, stale_after wired through send.ts + update.ts. 8 new tests via vi.useFakeTimers(). Build clean.
