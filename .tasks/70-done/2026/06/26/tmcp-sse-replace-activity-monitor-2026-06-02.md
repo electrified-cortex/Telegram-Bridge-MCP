@@ -1,8 +1,8 @@
 ---
 title: TMCP — expose SSE endpoint to replace the activity-file monitor (future direction)
 source: agent outbox 20260602T025823Z (FRICTION IDEA), 2026-06-02
-priority: MEDIUM / near-term — OPERATOR-ENDORSED (msg 65653, 2026-06-02): "consider this for TMCP soon. Maybe a 7.9 release."
-status: PLANNED direction — target TMCP v7.9. Operator's shape: "offer a different monitor script that doesn't require a file."
+priority: MEDIUM / near-term — OPERATOR-ENDORSED (2026-06-02): operator requested inclusion in TMCP near-term, targeting a v7.9 release.
+status: PLANNED direction — target TMCP v7.9. Operator's shape: offer a different monitor script that doesn't require a file.
 ---
 
 ## Idea (Agent)

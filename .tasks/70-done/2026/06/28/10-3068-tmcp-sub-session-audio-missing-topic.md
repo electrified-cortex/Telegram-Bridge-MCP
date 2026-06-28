@@ -22,7 +22,7 @@ reasoning_effort: medium
 
 When a child sub-session sends a **voice/audio (TTS) message**, the topic label is absent. For text messages from sub-sessions, the topic appears in the name tag or caption so the operator knows which sub-session is speaking. For audio messages, this label is not applied — the operator cannot tell which sub-session generated the audio.
 
-Operator verbatim (TG 80601): "audio messages from sub-sessions don't have the topic added."
+Operator (TG 80601) reported: audio messages from sub-sessions are missing the topic label.
 
 ## Current Behavior
 

@@ -21,8 +21,7 @@ reasoning_effort: high
 
 Part of epic [10-3050](../epics/10-3050-visual-content-attachments-epic.md).
 **Conditional** — only built if [10-3052](10-3052-mermaid-svg-engine-spike.md)
-finds no pure-JS library good enough. Per operator directive: *"if there is no
-library that does what we need, we will write one."*
+finds no pure-JS library good enough. Per operator directive: if no existing library meets the quality bar, build one.
 
 ## Hard scope guard
 

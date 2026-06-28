@@ -13,7 +13,7 @@ branch_target: dev
 agent_type: Worker
 model_class: sonnet-class
 reasoning_effort: high
-source: "BT-7274 / Pilot (Oren) — 2026-06-26: quickchart.io flagged as third-party data-egress red flag; wants the same capability fully local."
+source: "BT-7274 / Operator — 2026-06-26: quickchart.io flagged as third-party data-egress red flag; operator requested fully local equivalent."
 related:
   - .tasks/10-drafts/10-3053-mermaid-companion-render-pass.md
 ---

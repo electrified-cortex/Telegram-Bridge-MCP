@@ -22,7 +22,7 @@ reasoning_effort: medium
 
 When a child sub-session is active and generating traffic (dequeuing, sending messages), the parent session's SSE notification loop may go quiet — the parent stops receiving `notify` events even when there's activity it should be aware of. The parent agent is not alerted and appears unresponsive.
 
-Operator verbatim (TG 80462): "Gotta remember when a sub session is running, you currently have a bug that prevents you from getting notified and stuff."
+Operator (TG 80462) reported: parent session notifications are suppressed while a child sub-session is active — a bug that prevents the parent from receiving its own SSE notify events.
 
 ## Observed Behavior
 

@@ -22,7 +22,7 @@ reasoning_effort: medium
 
 When `session/spawn-child` creates a child session, it correctly inherits the parent's `name` and `color` — the child presents to the operator as the same participant. However, the TTS **voice** profile is not inherited. The child starts with a default (or no) voice, which is jarring: the operator hears a different voice from what they expect.
 
-Operator verbatim (TG 80450): "I would expect that sub-sessions or child sessions inherit your voice, or inherit whatever the profile's voice is, not just the name tag, but the voice as well... It's a little bit off-putting that it's not your voice, even though I know that you're a sub-session."
+Operator (TG 80450) requested: child sessions should inherit the parent's full voice profile (not just name/color), as hearing a different voice from a sub-session is jarring even when the operator knows it is a child session.
 
 ## Current Behavior
 

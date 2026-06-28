@@ -2,7 +2,7 @@
 created: 2026-06-20
 status: draft
 priority: 10
-source: operator voice (76197, 2026-06-20) — "issue last night, efficiency in dequeuing and notification"
+source: operator voice (2026-06-20) — efficiency issue reported in dequeuing and notification
 repo: electrified-cortex/Telegram-Bridge-MCP
 type: Epic
 agent_type: Worker
@@ -73,7 +73,7 @@ Epic owner: Overseer (routing) / Executor: Worker / Reviewer: Curator
 
 - The operator characterized this as an epic — sub-tasks should be filed individually
   after audit, gated, and dispatched to TMCP foreman.
-- "Endless work" and "stay hot" signals from operator suggest ongoing engagement.
+- Ongoing engagement signals from operator indicate continued interest in this area.
 
 
 ---

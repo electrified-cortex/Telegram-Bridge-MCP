@@ -37,8 +37,7 @@ These should remain **distinct and distinctly named**:
 - existing `checklist` → agent-driven **status** display (unchanged)
 - new **User Checklist** → operator-driven **interactive** checklist
 
-(Operator naming directive, 2026-06-26: "These should be distinctly different
-than what we already provide… called 'User Checklist'.")
+(Operator naming directive, 2026-06-26: these should be distinctly different from the existing checklist and named "User Checklist".)
 
 ## Feasibility study — COMPLETED 2026-06-26 → ❌ BLOCKED
 

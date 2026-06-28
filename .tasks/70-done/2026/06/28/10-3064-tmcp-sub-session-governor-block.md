@@ -16,7 +16,7 @@ reasoning_effort: medium
 **ID**: 10-3064
 **Date**: 2026-06-27
 **Priority**: High
-**Origin**: Operator TG 80387 ("I don't think I should ever give governor access to a sub session. Am I crazy?"); split from 10-3062 Gap 6
+**Origin**: Operator TG 80387 — operator requested that sub-sessions must never be promotable to governor under any circumstance; split from 10-3062 Gap 6
 
 ## Problem
 

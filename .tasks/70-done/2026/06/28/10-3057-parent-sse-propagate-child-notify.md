@@ -22,9 +22,9 @@ reasoning_effort: high
 
 Child session SSE notify events were bleeding into the parent session's SSE stream. When the operator sent a message to a child session, the parent session's SSE received a `notify` event that should not be there.
 
-**Operator TG 80273:** *"you should not be getting [child session notifications] — that actually is a bug that should be resolved."*
+**Operator TG 80273:** Operator confirmed child session notifications should not reach the parent SSE stream — this is a bug to be resolved.
 
-**Operator TG 80279:** *"The idea was that you can get notifications for like a session start and you can get one for a session end, but you shouldn't get any notifications for what happens in between."*
+**Operator TG 80279:** Operator clarified that only lifecycle events (session start/end) should reach the parent; no in-session notification traffic should bleed through to the parent.
 
 ## Required behavior
 

@@ -33,7 +33,7 @@ Child sessions currently appear as peers in the session list alongside root sess
 3. **Governor selection panel** (`/primary`) — child sessions are excluded entirely. Only root sessions are selectable as governor.
 4. **Never promotable** — child sessions must never appear as governor candidates (reinforced by 10-3064 hard-block in code).
 
-> Operator verbatim (TG 80412): "Maybe show like the number of subsessions... when I click on you, it'll show that I can close your session, but it will also show the subsessions that I can close. So it's a drill down... you never allow for a subsession to be governor."
+> Operator (TG 80412) requested: show a sub-session count on the parent entry; tapping the parent should drill down to a detail view where both the parent and its child sessions can be closed individually; sub-sessions must never appear as governor candidates.
 
 ## Scope
 
