@@ -4,7 +4,7 @@ created: 2026-06-26
 status: draft
 priority: 10
 type: Story
-source: Operator deliberation — Telegram feature audit (2026-06-26)
+source: Telegram feature audit (2026-06-26)
 repo: electrified-cortex/Telegram-Bridge-MCP
 branch_target: dev
 epic: 10-3001
@@ -127,9 +127,8 @@ attachments array).
 - SVG/vector rendering — not supported by rich messages (rasterize to PNG).
 - Embedding local images in rich messages — URL-only media; stays legacy (above).
 
-## Overseer review
+## Gate review
 
-- reviewer: Overseer
 - date: 2026-06-28
 - verdict: PASS
 - review type: inline gate (major story, all spikes resolved)
@@ -140,7 +139,6 @@ attachments array).
 
 - **Verdict**: APPROVED
 - **Date**: 2026-06-28
-- **Verifier**: task-verification agent (a6e4b7dfb9b812d47)
 - **Squash commit**: f0940b82
 - **Evidence**: 4052/4052 tests pass; all AC1-AC8 confirmed with code citations
   - AC1: unblocked by 10-3017 spikes

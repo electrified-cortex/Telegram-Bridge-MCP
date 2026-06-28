@@ -15,7 +15,7 @@ branch_target: dev
 agent_type: Worker
 model_class: sonnet-class
 reasoning_effort: high
-source: "Operator design session 2026-06-26 (streaming / presence investigation)"
+source: "design session 2026-06-26 (streaming / presence investigation)"
 ---
 
 # 10-3026 — Auto-Thinking on dequeue (native draft Thinking as base presence)
@@ -199,11 +199,25 @@ a bot can. Captured here as a **related future item**, not built in this story.
 - Reuses `showTyping`/presence infra and the async/draft machinery; the 30s cap is
   free (native). The win is large (universal dead-air fix) for a small surface.
 
-## Overseer review
+## Gate review
 
-- reviewer: Overseer
 - date: 2026-06-28
 - verdict: PASS
 - review type: inline gate (Stage 1 independently shippable)
 - checked: ACs binary (auto-Thinking on actionable dequeue, NOT on empty/timeout/service, 30s natural expiry, floor-not-cap refresh semantics, supersession taxonomy, agent extension contract, help topic deliverable, build+test), Stage 1 has no rich-pivot dependency — ships now; Stage 2 rides 10-3018
 - note: two spikes (draft early-dismissal, precedence integration) are worker-resolvable during impl — not blocking open questions
+
+## Verification
+
+- date: 2026-06-28
+- verdict: APPROVED
+- evidence:
+  - AC1: `src/tools/dequeue.ts` fires `onActionableDequeue` at all 3 batch-return paths; `thinking-state.ts` sends empty-text draft — no rich-pivot dependency
+  - AC2: timeout/empty paths return without calling `_fireThinkingIfActionable`; service messages excluded by `from !== "user"` check; dequeue-thinking.test.ts covers all exclusion cases
+  - AC3: no refresh timer scheduled in default path; comment confirms single Telegram TTL; `DEFAULT_HOLD_MS = 30_000`
+  - AC4: `holdUntil = Math.max(holdUntil, newFloor)` in both `onActionableDequeue` and `extendThinking` — floor semantics enforced
+  - AC5: allow-list wired in `outbound-proxy.ts` (send/file), `animation-state.ts` (animation), `typing-state.ts` (showTyping); edit/react/help/reads have NO `cancelThinkingForSid` calls
+  - AC6: `thinking/extend` + `thinking/close` registered in `action.ts`; phase-cycling at 8s intervals; autonomous keep-alive 4s before deadline; 2-round-trip guarantee documented in schema
+  - AC7: `docs/help/thinking.md` exists with lifecycle, taxonomy table, examples; `help('dequeue')` + `help('streaming')` cross-linked; `thinking/extend`/`thinking/close` in `TOOL_INDEX`
+  - AC8: 168 test files / 4096 tests all passing per `.worker-pod/.temp/test-results.md`; worktree clean
+- squash-commit: 9b5241cb
