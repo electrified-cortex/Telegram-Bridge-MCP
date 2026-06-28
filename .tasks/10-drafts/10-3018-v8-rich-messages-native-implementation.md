@@ -10,7 +10,7 @@ branch_target: dev
 epic: 10-3001
 depends_on:
   - 10-3017   # spikes + re-spec MUST pass first
-blocked_by: 10-3017
+blocked_by: []
 agent_type: Worker
 model_class: sonnet-class
 reasoning_effort: high
@@ -18,10 +18,9 @@ reasoning_effort: high
 
 # 10-3018 — Native rich-default send pipeline
 
-> **Blocked by [10-3017](10-3017-v8-rich-messages-native-pivot-spikes.md).**
-> Do not start until those spikes pass and the epic is re-spec'd. Several phase
-> details below are *contingent* on specific spike outcomes — each is marked
-> `⟵ gated on Spike X`. If a spike fails, revisit this story before building.
+> **Unblocked. [10-3017](../50-active/10-3017-v8-rich-messages-native-pivot-spikes.md) is complete.**
+> All spikes passed (A–G, 2026-06-27). Epic 10-3001 rewritten. Implementation may begin.
+> Phase details marked `⟵ gated on Spike X` are now confirmed — see spike findings for decisions.
 
 ## Story
 
@@ -104,16 +103,23 @@ This story implements the pivot the spikes prove out.
 - [ ] `TABLE_WARNING` no longer fires for rich sends (gated on Spike A outcome).
 - [ ] `pnpm build` clean; `pnpm test` passes; no regression in legacy fallback.
 
-## Media constraint (confirmed from Bot API docs)
+## Media constraint (confirmed — Spike G)
+
 Rich media blocks (`<img>`/`<video>`/`<audio>`, collage, slideshow) accept
 **HTTP/HTTPS URLs only** — no multipart upload, no `data:`/base64, no `file_id`,
 no `attach://` (`InputRichMessage` is a pure html/markdown string with no
-attachments array). Therefore **local/agent-generated images (screenshots,
-charts, rasterized SVG) cannot be embedded in a rich message** — the bridge has
-no public host. **Media sends stay on the legacy multipart `sendPhoto`/`send_file`
-path; rich covers the text/table/structure body only.** Possible
-already-uploaded-image-by-file-API-URL workaround is an open spike (10-3017
-Spike G) — unverified + token-exposure concern.
+attachments array).
+
+**Spike G outcome (2026-06-27, confirmed visual):**
+- **Public HTTPS URLs render inline** — embed as `![alt](https://...)` in the markdown field. ✅
+- **Local files workaround:** `sendPhoto(local_file)` → `getFile()` → use `https://api.telegram.org/file/bot<TOKEN>/<path>` as the img URL. Token-exposure tradeoff: the bot token is embedded in message history. Acceptable for this bot's private 1-on-1 use case; document the tradeoff.
+- **No token-exposure option:** fall back to `sendPhoto` multipart (legacy path) — media stays legacy permanently in that case.
+
+**Implementation guidance:**
+- Rich covers text/structure/table by default.
+- Embed public HTTPS images directly in markdown.
+- Local file embed: use `sendPhoto`→`getFile`→URL workaround; document token tradeoff.
+- If token exposure is not acceptable: stay on legacy `sendPhoto` multipart path.
 
 ## Out of scope
 - Programmatic `RichBlock[]` composition tools (agents write Markdown/HTML).
