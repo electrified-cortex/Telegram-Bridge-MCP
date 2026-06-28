@@ -187,6 +187,14 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
       }
     }
 
+    if (profile.audio_remapping !== undefined) {
+      const session = getSession(sid);
+      if (session) {
+        session.audio_remapping = profile.audio_remapping;
+        applied.audio_remapping = Object.keys(profile.audio_remapping).length;
+      }
+    }
+
     if (addedReminders.length > 0 || updatedReminders.length > 0) {
       const reminderSummary: Record<string, unknown> = {
         added: addedReminders,

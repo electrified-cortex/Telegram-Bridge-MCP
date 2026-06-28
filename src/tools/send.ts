@@ -40,6 +40,7 @@ import { handleConfirm } from "./confirm/handler.js";
 import { detectCaptionDuplication, type DuplicationResult } from "../hybrid-duplication-detector.js";
 import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/stream.js";
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../utils/timing.js";
+import { applyPhoneticRemapping } from "../phonetic-remapping.js";
 
 /** Legacy-path only: emitted when a markdown table is detected on the MarkdownV2 path.
  * GFM tables render natively on the rich path — this warning is suppressed there (P4). */
@@ -433,6 +434,9 @@ export function register(server: McpServer) {
             if (!plainText) {
               return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS.", hint: "Provide non-empty audio text for TTS." } as const);
             }
+            // Apply per-profile phonetic substitution map before TTS synthesis.
+            // Caption always uses the original `effectiveAudio` text — not the remapped version.
+            const ttsText = applyPhoneticRemapping(plainText, getSession(_sid)?.audio_remapping);
             const resolvedVoice = getSessionVoice() ?? getDefaultVoice() ?? undefined;
             const resolvedSpeed = getSessionSpeed() ?? undefined;
             let resolvedCaption: string | undefined;
@@ -470,7 +474,7 @@ export function register(server: McpServer) {
               const pendingId = enqueueAsyncSend(_sid, {
                 sid: _sid,
                 chatId,
-                audioText: plainText,
+                audioText: ttsText,
                 captionText: captionOverflow ? finalTextForSplit : resolvedCaption,
                 rawCaptionText,
                 captionOverflow,
@@ -483,7 +487,7 @@ export function register(server: McpServer) {
               deliverCaptionDuplicationNudge(_sid, dup);
               return toResult({ ok: true, message_id_pending: pendingId, status: "queued", ...(leakWarning ? { warning: leakWarning } : {}) });
             }
-            const voiceChunks = splitMessage(plainText);
+            const voiceChunks = splitMessage(ttsText);
             for (const chunk of voiceChunks) {
               const chunkErr = validateText(chunk);
               if (chunkErr) return toError(chunkErr);
