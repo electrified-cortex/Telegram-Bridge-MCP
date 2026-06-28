@@ -72,6 +72,26 @@ When your context is compacted (prior messages compressed), you may lose your SI
 
 Do **not** call a fresh `action(type: "session/start")` if you can reconnect — it wastes operator approval and creates a duplicate session announcement.
 
+## Sub-sessions (Spawning a Child Session)
+
+When a topic warrants an isolated scope, spawn a child session and hand it to a
+background sub-agent:
+
+**Initiation sequence:**
+
+1. `action(type: 'session/spawn-child', token: <your_token>, topic: '<topic label>')`
+   → returns `{ token: <child_token>, sid: <child_sid>, ... }`
+2. **Immediately** call `action(type: 'child/forward', token: <your_token>, child_sid: <child_sid>, message: '<task brief>')` — this is the `forward-child` step and is REQUIRED before the child's first dequeue. Without it the sub-agent dequeues with no context.
+3. Launch a background sub-agent with `<child_token>`; its loop is `dequeue(token: <child_token>)`.
+
+**Host duties while the child is live:**
+
+- Route relevant operator messages to the child via `child/forward`.
+- Watch for `child_session_resolved` in your own dequeue; check `exit_status`.
+- If the sub-session goes silent, revoke it: `action(type: 'session/revoke-child', token: <your_token>, child_token: <child_token>)`.
+
+Call `help(topic: 'sub-sessions')` for the full reference.
+
 ## Common Failure Modes
 
 - Replying in VS Code chat while the loop is active
@@ -79,3 +99,4 @@ Do **not** call a fresh `action(type: "session/start")` if you can reconnect —
 - Trusting stale memory over live tool state (stored SID/PIN, old test counts, outdated board state)
 - Using progress/checklist tools for presence instead of `send(type: "animation")`
 - Deleting or mass-editing user-visible messages without explicit approval
+- Spawning a child session without calling `child/forward` first — the sub-agent arrives blind

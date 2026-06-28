@@ -233,3 +233,76 @@ and follow the startup sequence). This enters the persistent Telegram event loop
 
 For detailed troubleshooting and advanced configuration, read `docs/setup.md` or call
 the `telegram-bridge-mcp://setup-guide` resource.
+
+---
+
+## Sub-sessions
+
+### Vocabulary
+
+**Sub-session**, **child session**, and **thread** all mean the same thing: a dedicated
+session scope created for a focused topic, spawned via `session/spawn-child`. The session
+that spawns it is the **host** (or **parent**). The host remains the governor; the child
+handles one topic in isolation.
+
+### Host Protocol — What to Do After `session/spawn-child`
+
+```txt
+spawn-child returns { token: <child_token>, sid: <child_sid>, ... }
+```
+
+**Step 1 — Forward a task brief (MUST, immediate)**
+
+Call `session/forward-child` (`action(type: 'child/forward')`) with the task brief
+**before** the child's first dequeue. Without this the child has no context and cannot act:
+
+```
+action(type: 'child/forward', token: <host_token>, child_sid: <child_sid>, message: '<task brief>')
+```
+
+This is the `session/forward-child` handler — it injects the brief as the child's first
+inbound message.
+
+**Step 2 — Dispatch a background sub-agent**
+
+Launch a background sub-agent with the child token returned by `spawn-child`.
+The sub-agent's loop:
+
+```
+dequeue(token: <child_token>) → handle → repeat until topic resolved
+```
+
+Pick a model class appropriate to the topic complexity.
+
+**Step 3 — Monitor for `CHILD_SESSION_RESOLVED`**
+
+When the sub-agent finishes, you receive a `child_session_resolved` event via your
+own dequeue. Check `exit_status` to determine whether the topic is fully resolved or
+needs follow-up.
+
+**Step 4 — Revoke if the child goes silent (at host's discretion)**
+
+If the child becomes stale or the sub-agent stops responding, the host may revoke it:
+
+```
+action(type: 'session/revoke-child', token: <host_token>, child_token: <child_token>)
+```
+
+The sub-agent may also self-revoke when it completes the topic.
+
+### Child Arrival — What the Sub-Agent Receives on Connect
+
+On the child session's first `dequeue`, the bridge delivers several orientation messages
+automatically:
+
+1. **Token save reminder** — confirms the child token is real; save it for the dispatch.
+2. **Role context** — topic name, parent SID, and parent name (advisory; authority is the
+   bridge session record, not this message).
+3. **Dequeue loop instruction** — `dequeue(token: <child_token>)` is the sub-agent's loop;
+   no Monitor or activity-file wiring is needed.
+4. **Exit protocol** — when the topic is resolved, emit `EXIT_STATUS: <summary>` then call
+   `session/revoke-child(child_token: <child_token>)` to self-despawn.
+5. **Task brief** — the message forwarded by the host via `child/forward` arrives in the
+   queue; this is the sub-agent's primary instruction.
+
+For the full reference, call `help(topic: 'sub-sessions')` inside an active session.
