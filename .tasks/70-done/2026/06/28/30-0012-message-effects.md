@@ -4,7 +4,7 @@ created: 2026-06-26
 status: draft
 priority: 30
 type: Feature
-source: Operator directive — Telegram feature audit triage (2026-06-26)
+source: Telegram feature audit triage (2026-06-26)
 repo: electrified-cortex/Telegram-Bridge-MCP
 branch_target: dev
 epic: Bot API feature coverage
@@ -101,10 +101,29 @@ place to correct if Telegram changes the constants.
 - grammY 1.43 `sendMessage` options include `message_effect_id` (Bot API 7.4).
 - Lowest-stakes item in the audit triage — treat as a small polish PR.
 
-## Overseer review
+## Gate review
 
-- reviewer: Overseer
 - date: 2026-06-28
 - verdict: PASS
 - review type: inline gate (polish feature, low risk)
 - checked: ACs binary (effect plays in private chat, all 6 presets verified live, stale-id fallback, last-chunk-only, plain-path forced when rich enabled, build+test clean, PR staged not merged), scope = send.ts text path + new constants module, delegation correct, no open questions; effect ID verification is worker responsibility during impl
+
+## Verification
+
+- date: 2026-06-28
+- verdict: APPROVED
+- squash_commit: 4c18b01a (code merged to dev)
+- tests: 4128/4128 pass
+- notes:
+  - test-plan.md present (confirmed round 2 verifier)
+  - AC2 (live-chat verification) waived by operator TG 81231
+  - All other ACs met; Overseer push-gate APPROVED; sealed by foreman
+
+## Push-gate approval
+
+- date: 2026-06-28
+- verdict: APPROVED
+- squash_commit: 4c18b01a (on dev)
+- PR: #250 (dev→master)
+- AC2 disposition: WAIVED — operator TG 81231
+- gate notes: 4128/4128 tests pass; test-plan.md present (confirmed round 2 verifier); AC2 waived by operator; all other ACs met

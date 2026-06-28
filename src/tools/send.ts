@@ -1,4 +1,5 @@
 // Never call 'send' from send.ts handler — use telegram.js primitives directly
+import { GrammyError } from "grammy";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, resolveMediaSource, sendVoiceDirect, isRichMessagesEnabled, routeOutboundMessage } from "../telegram.js";
@@ -22,8 +23,10 @@ import { detectAndExtract, writeTempVisualFile } from "../visual-attachment-pipe
 const SAFETY_SCHEMA = z.enum(["disable"]).optional().describe(
   'Safety override. Pass `safety: "disable"` to bypass the absolute-path block and send the message anyway. An operator notification is emitted when this override is used.',
 );
+import { MESSAGE_EFFECTS } from "../message-effects.js";
 // Type-routing handlers (v6 Phase 2)
 import { handleSendFile } from "./send/file.js";
+import { handleSendMediaGroup } from "./send/media-group.js";
 import { handleNotify } from "./send/notify.js";
 import { handleSendChoice } from "./send/choice.js";
 import { handleSendDirectMessage } from "./send/dm.js";
@@ -37,6 +40,7 @@ import { handleConfirm } from "./confirm/handler.js";
 import { detectCaptionDuplication, type DuplicationResult } from "../hybrid-duplication-detector.js";
 import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/stream.js";
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../utils/timing.js";
+import { applyPhoneticRemapping } from "../phonetic-remapping.js";
 
 /** Legacy-path only: emitted when a markdown table is detected on the MarkdownV2 path.
  * GFM tables render natively on the rich path — this warning is suppressed there (P4). */
@@ -133,7 +137,7 @@ function levenshtein(a: string, b: string): number {
 const _parsedTimeout = Number(process.env.ASYNC_SEND_TIMEOUT_MS);
 const _timeoutMs = Number.isFinite(_parsedTimeout) && _parsedTimeout > 0 ? _parsedTimeout : 300_000;
 
-const SEND_TYPES = ["text", "file", "notification", "choice", "dm", "append", "animation", "checklist", "progress", "question", "stream/start", "stream/chunk", "stream/flush"] as const;
+const SEND_TYPES = ["text", "file", "album", "notification", "choice", "dm", "append", "animation", "checklist", "progress", "question", "stream/start", "stream/chunk", "stream/flush"] as const;
 type SendType = (typeof SEND_TYPES)[number];
 
 /** Backward-compat aliases — accepted but not advertised in discovery or error messages. */
@@ -199,6 +203,27 @@ export function register(server: McpServer) {
         async: z.boolean().optional().describe("Applies to audio sends only. Defaults to async when audio is present — returns message_id_pending immediately; pass false to block until TTS completes and receive real message_id. Has no effect on non-audio sends."),
         // ── file ───────────────────────────────────────────────────────────
         file: z.string().optional().describe("Local path, HTTPS URL, or file_id (for type: \"file\")"),
+        // ── album ──────────────────────────────────────────────────────────
+        files: z
+          .array(
+            z.object({
+              file: z.string().describe("Local path, HTTPS URL, or file_id"),
+              type: z
+                .enum(["photo", "video", "document", "audio"])
+                .optional()
+                .describe("Media type (auto-detected from extension if omitted)"),
+              caption: z
+                .string()
+                .optional()
+                .describe("Per-item caption (up to 1024 chars)"),
+            }),
+          )
+          .min(2)
+          .max(10)
+          .optional()
+          .describe(
+            "Array of 2–10 media items for type: \"album\". Each item requires a file path/URL/file_id; type and caption are optional. Photo and video may be mixed. Documents and audio must be grouped by type.",
+          ),
         file_type: z
           .enum(["auto", "photo", "document", "video", "audio", "voice"])
           .default("auto")
@@ -261,6 +286,15 @@ export function register(server: McpServer) {
           .enum(["default", "compact"])
           .optional()
           .describe("Response format. \"compact\" omits inferrable fields (split: true, split_count, timed_out: false, voice: true) to reduce token usage. Defaults to \"default\"."),
+        effect: z
+          .enum(["fire", "thumbs_up", "thumbs_down", "heart", "celebrate", "poop"])
+          .optional()
+          .describe(
+            "Full-screen animation effect played when the message arrives (text sends only). " +
+            "No-op in group chats — Telegram only supports effects in private conversations. " +
+            "Applied to the last chunk on multi-chunk sends. " +
+            "Effect IDs are well-known but unverified — if Telegram rejects the ID, the message is still delivered without the effect.",
+          ),
         safety: SAFETY_SCHEMA,
       },
     },
@@ -400,6 +434,9 @@ export function register(server: McpServer) {
             if (!plainText) {
               return toError({ code: "EMPTY_MESSAGE", message: "Voice text is empty after stripping formatting for TTS.", hint: "Provide non-empty audio text for TTS." } as const);
             }
+            // Apply per-profile phonetic substitution map before TTS synthesis.
+            // Caption always uses the original `effectiveAudio` text — not the remapped version.
+            const ttsText = applyPhoneticRemapping(plainText, getSession(_sid)?.audio_remapping);
             const resolvedVoice = getSessionVoice() ?? getDefaultVoice() ?? undefined;
             const resolvedSpeed = getSessionSpeed() ?? undefined;
             let resolvedCaption: string | undefined;
@@ -437,7 +474,7 @@ export function register(server: McpServer) {
               const pendingId = enqueueAsyncSend(_sid, {
                 sid: _sid,
                 chatId,
-                audioText: plainText,
+                audioText: ttsText,
                 captionText: captionOverflow ? finalTextForSplit : resolvedCaption,
                 rawCaptionText,
                 captionOverflow,
@@ -450,13 +487,13 @@ export function register(server: McpServer) {
               deliverCaptionDuplicationNudge(_sid, dup);
               return toResult({ ok: true, message_id_pending: pendingId, status: "queued", ...(leakWarning ? { warning: leakWarning } : {}) });
             }
-            const voiceChunks = splitMessage(plainText);
+            const voiceChunks = splitMessage(ttsText);
             for (const chunk of voiceChunks) {
               const chunkErr = validateText(chunk);
               if (chunkErr) return toError(chunkErr);
             }
             // Initial typing budget: generous estimate; extended per-chunk below.
-            const typingSeconds = Math.max(5, Math.ceil(plainText.length / 20));
+            const typingSeconds = Math.max(5, Math.ceil(ttsText.length / 20));
             // RECORD_VOICE_EXTEND_SECS: how far ahead to push the deadline before
             // each synthesis+upload so the indicator never drops mid-operation.
             const RECORD_VOICE_EXTEND_SECS = 30;
@@ -609,6 +646,9 @@ export function register(server: McpServer) {
           }
           const chunks = splitMessage(finalText);
 
+          // Resolve message effect (text path only; applied to last chunk only)
+          const effectId = args.effect ? MESSAGE_EFFECTS[args.effect] : undefined;
+
           // If audio is still rendering for this session, queue text after it so
           // the operator always receives audio before the follow-up text message.
           if (hasInflightAudio(_sid)) {
@@ -648,7 +688,9 @@ export function register(server: McpServer) {
           // path. `parse_mode === undefined` is treated as Markdown (default).
           // The queued-after-audio path above is left on the existing V2 path
           // for simplicity — rich routing applies to the direct send only.
+          // Effect sends always use the plain path (rich path has no effect support).
           if (
+            !effectId &&
             isRichMessagesEnabled() &&
             parse_mode === "Markdown" &&
             chunks.length === 1
@@ -680,17 +722,40 @@ export function register(server: McpServer) {
               const chunk = chunks[i];
               const textErr = validateText(chunk);
               if (textErr) return toError(textErr);
-              const msg = await callApi(() =>
-                getApi().sendMessage(chatId, chunk, {
-                  parse_mode: finalMode,
-                  disable_notification,
-                  reply_parameters:
-                    i === 0 && reply_to_message_id !== undefined
-                      ? { message_id: reply_to_message_id }
-                      : undefined,
-                  _rawText: chunks.length === 1 ? visualText : undefined,
-                } as Record<string, unknown>),
-              );
+              // Apply effect only to the last chunk
+              const isLastChunk = i === chunks.length - 1;
+              const chunkEffectId = effectId && isLastChunk ? effectId : undefined;
+              const sendOpts = {
+                parse_mode: finalMode,
+                disable_notification,
+                reply_parameters:
+                  i === 0 && reply_to_message_id !== undefined
+                    ? { message_id: reply_to_message_id }
+                    : undefined,
+                _rawText: chunks.length === 1 ? visualText : undefined,
+                ...(chunkEffectId ? { message_effect_id: chunkEffectId } : {}),
+              } as Record<string, unknown>;
+              let msg: { message_id: number };
+              try {
+                msg = await callApi(() => getApi().sendMessage(chatId, chunk, sendOpts));
+              } catch (effectErr) {
+                // If Telegram rejected the effect ID (400), retry without it and note the drop.
+                if (chunkEffectId && effectErr instanceof GrammyError && effectErr.error_code === 400) {
+                  const retryOpts = {
+                    parse_mode: finalMode,
+                    disable_notification,
+                    reply_parameters:
+                      i === 0 && reply_to_message_id !== undefined
+                        ? { message_id: reply_to_message_id }
+                        : undefined,
+                    _rawText: chunks.length === 1 ? visualText : undefined,
+                  } as Record<string, unknown>;
+                  msg = await callApi(() => getApi().sendMessage(chatId, chunk, retryOpts));
+                  deliverServiceMessage(_sid, SERVICE_MESSAGES.EFFECT_DROPPED);
+                } else {
+                  throw effectErr;
+                }
+              }
               message_ids.push(msg.message_id);
             }
             const hasTable = containsMarkdownTable(visualText);
@@ -718,6 +783,14 @@ export function register(server: McpServer) {
             token: args.token,
             safety: args.safety,
           });
+
+        case "album": {
+          if (!args.files?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "album" requires a "files" array of 2–10 items.', hint: 'Provide files: [{file, type?, caption?}, ...] with 2–10 items.' });
+          return handleSendMediaGroup({
+            files: args.files,
+            token: args.token,
+          });
+        }
 
         case "notification":
           if (!args.title) return toError({ code: "MISSING_PARAM" as const, message: 'type: "notification" requires a "title" param.', hint: "Call help(topic: 'send') for the required params for this type." });

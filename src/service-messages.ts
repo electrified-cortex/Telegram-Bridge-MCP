@@ -604,4 +604,11 @@ export const SERVICE_MESSAGES = deepFreeze({
     text: "Rich message rendering failed — message sent as plain text.",
   },
 
+  // ── Message effect dropped ────────────────────────────────────────────────
+
+  EFFECT_DROPPED: {
+    eventType: "effect_dropped" as const,
+    text: "Message sent, but the animation effect was dropped — Telegram rejected the effect ID (may be stale or unsupported in this chat type). The message was delivered without the effect.",
+  },
+
 });

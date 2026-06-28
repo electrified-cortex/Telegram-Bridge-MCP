@@ -44,6 +44,13 @@ export interface ProfileData {
    * notifications are unaffected. Default `false`/undefined — no change.
    */
   silent_lifecycle?: boolean;
+  /**
+   * Per-profile phonetic substitution map. Keys are matched case-insensitively
+   * against the audio text before TTS synthesis; longer keys take priority on
+   * overlap. Replacement strings are used verbatim. Empty or absent map is a
+   * no-op. Example: `{ "nginx": "engine-x" }`.
+   */
+  audio_remapping?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
