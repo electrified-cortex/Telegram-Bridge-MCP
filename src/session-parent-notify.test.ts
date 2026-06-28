@@ -68,6 +68,7 @@ import {
   resetActivityFileStateForTest,
   initSseNotifyCallback,
   releaseNotifyDebounce,
+  setDequeueActive,
 } from "./tools/activity/file-state.js";
 
 import { notifySession } from "./tools/notify.js";
@@ -148,8 +149,10 @@ describe("10-3067: parent notify not silenced by child session activity", () => 
     registerSseMonitor(PARENT_SID);
     registerSseMonitor(CHILD_SID);
 
-    // isDequeueActive is mocked — simulate child in dequeue but NOT parent
-    isDequeueActiveMock.mockImplementation((sid?: number) => sid === CHILD_SID);
+    // Directly mutate _state for CHILD_SID so inflightDequeue is true for the child.
+    // notifyIfAllowed reads entry.inflightDequeue from _state directly — mocking
+    // isDequeueActive has zero effect on it.
+    setDequeueActive(CHILD_SID, true);
 
     // Operator message to parent: should NOT be suppressed by child's dequeue state
     const parentResult = notifyIfAllowed(PARENT_SID, "operator", false);
