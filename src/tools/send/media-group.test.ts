@@ -323,6 +323,21 @@ describe("handleSendMediaGroup", () => {
     expect(typingCallOrder).toBeLessThan(sendCallOrder);
   });
 
+  // ── AC: abs-path guard on per-item caption ───────────────────────────────
+
+  it("returns ABS_PATH_BLOCKED when a caption contains an absolute path", async () => {
+    const result = await handleSendMediaGroup({
+      files: [
+        { file: "/img/a.jpg", type: "photo", caption: "leaked: C:/secret/file.txt" },
+        { file: "/img/b.jpg", type: "photo" },
+      ],
+      token: TOKEN,
+    });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("ABS_PATH_BLOCKED");
+    expect(mocks.sendMediaGroup).not.toHaveBeenCalled();
+  });
+
   // ── AC: CDN warning in result ─────────────────────────────────────────────
 
   it("includes CDN warning in result", async () => {

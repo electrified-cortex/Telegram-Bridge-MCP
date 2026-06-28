@@ -20,6 +20,7 @@ import {
 } from "../../telegram.js";
 import { showTyping } from "../../typing-state.js";
 import { requireAuth } from "../../session-gate.js";
+import { findAbsolutePath, absPathBlockedError } from "../../abs-path-guard.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -135,6 +136,12 @@ export async function handleSendMediaGroup({
   for (let i = 0; i < files.length; i++) {
     const item = files[i];
     const itemType = resolvedTypes[i];
+
+    // Absolute-path guard for caption
+    if (item.caption) {
+      const absMatch = findAbsolutePath(item.caption);
+      if (absMatch) return toError(absPathBlockedError(absMatch));
+    }
 
     // Validate caption length
     if (item.caption) {

@@ -1,15 +1,11 @@
 /**
- * Telegram message effect ID presets.
- *
- * These IDs are well-known community constants but are NOT officially documented
- * by Telegram. They should be verified in a live private chat before shipping
- * to production — effects silently fail or return 400 if an ID is no longer valid.
+ * Well-known message_effect_id constants (Bot API 7.4, community-verified).
+ * Telegram does not expose a list-effects API method — these IDs are stable
+ * but undocumented. Verify each against a live private chat before shipping.
  *
  * Effects are only available in private chats; they are no-ops in groups/channels.
- *
- * Source: reverse-engineered from Telegram client behaviour; community consensus
- * as of 2025. If Telegram invalidates any ID in a future update, the stale-effect
- * fallback in send.ts will catch the 400 and deliver the message without the effect.
+ * If Telegram invalidates any ID in a future update, the stale-effect fallback
+ * in send.ts will catch the 400 and deliver the message without the effect.
  */
 export const MESSAGE_EFFECTS: Record<string, string> = {
   fire:        "5104841245755180586",
