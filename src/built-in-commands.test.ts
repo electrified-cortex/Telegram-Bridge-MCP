@@ -63,6 +63,8 @@ const mocks = vi.hoisted(() => ({
   dlog: vi.fn(),
   // shutdown.js
   elegantShutdown: vi.fn((_cause?: string): Promise<never> => new Promise(() => {})),
+  // child-registry
+  getChildSids: vi.fn((_sid: number): number[] => []),
 }));
 
 vi.mock("./telegram.js", () => ({
@@ -159,6 +161,10 @@ vi.mock("./session-teardown.js", () => ({
 
 vi.mock("./debug-log.js", () => ({
   dlog: (...args: unknown[]) => mocks.dlog(...args),
+}));
+
+vi.mock("./tools/session/child-registry.js", () => ({
+  getChildSids: (sid: number) => mocks.getChildSids(sid),
 }));
 
 
@@ -996,6 +1002,47 @@ describe("built-in-commands", () => {
         expect.anything(),
       );
     });
+
+    it("governor:set is no-op for child session (parent_sid set) — AC3", async () => {
+      const panelId = await createGovernorPanel();
+      // Session 2 is a child session
+      mocks.getSession.mockImplementation((...args: unknown[]) => {
+        const sid = args[0] as number;
+        if (sid === 2) return { sid: 2, name: "Worker", color: "🟩", createdAt: "", parent_sid: 1 };
+        return undefined;
+      });
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(panelId, "governor:set:2"));
+      expect(mocks.setGovernorSid).not.toHaveBeenCalled();
+      expect(mocks.editMessageText).toHaveBeenCalledWith(
+        123,
+        panelId,
+        expect.stringContaining("Child sessions cannot be set as primary"),
+        expect.anything(),
+      );
+    });
+
+    it("buildGovernorPanel — omits child sessions from /primary keyboard — AC8", async () => {
+      const sessionsWithChild = [
+        { sid: 1, name: "Overseer", color: "🟦", createdAt: "" },
+        { sid: 2, name: "SubWorker", color: "🟩", createdAt: "" }, // child session
+      ];
+      mocks.listSessions.mockReturnValue(sessionsWithChild);
+      mocks.activeSessionCount.mockReturnValue(2);
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.getSession.mockImplementation((...args: unknown[]) => {
+        const sid = args[0] as number;
+        if (sid === 2) return { parent_sid: 1 };
+        return {};
+      });
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 9200 });
+      await handleIfBuiltIn(cmdUpdate("/primary"));
+      const call = mocks.sendMessage.mock.calls[0];
+      const keyboard: Array<Array<{ callback_data: string }>> = call[2].reply_markup.inline_keyboard;
+      const data = keyboard.flat().map(b => b.callback_data);
+      expect(data).toContain("governor:set:1");
+      expect(data).not.toContain("governor:set:2");
+    });
   });
 
   // -- refreshGovernorCommand ----------------------------------------------
@@ -1559,6 +1606,25 @@ describe("built-in-commands", () => {
         expect(text).toMatch(/primary|governor/i);
       });
 
+      it("session:primary:{sid} — no-op for child session (parent_sid set) — AC4", async () => {
+        const panelId = await createSessionPanel();
+        // Session 2 is a child session
+        mocks.getSession.mockImplementation((...args: unknown[]) => {
+          const sid = args[0] as number;
+          if (sid === 2) return { sid: 2, name: "Worker", color: "🟩", createdAt: "", parent_sid: 1 };
+          return undefined;
+        });
+        mocks.editMessageText.mockResolvedValue(true);
+        await handleIfBuiltIn(callbackUpdate(panelId, "session:primary:2"));
+        expect(mocks.setGovernorSid).not.toHaveBeenCalled();
+        expect(mocks.editMessageText).toHaveBeenCalledWith(
+          123,
+          panelId,
+          expect.stringContaining("Child sessions cannot be set as primary"),
+          expect.anything(),
+        );
+      });
+
       it("session:back — re-renders session list", async () => {
         const panelId = await createSessionPanel();
         mocks.editMessageText.mockResolvedValue(true);
@@ -1574,6 +1640,50 @@ describe("built-in-commands", () => {
         await handleIfBuiltIn(callbackUpdate(panelId, "session:cancel"));
         expect(mocks.deleteMessage).toHaveBeenCalledWith(123, panelId);
       });
+    });
+
+    it("buildSessionListPanel — omits child sessions from top-level list — AC6", async () => {
+      const sessionsWithChild = [
+        { sid: 1, name: "Overseer", color: "🟦", createdAt: "" },
+        { sid: 2, name: "SubWorker", color: "🟩", createdAt: "" }, // child session
+      ];
+      mocks.listSessions.mockReturnValue(sessionsWithChild);
+      mocks.getSession.mockImplementation((...args: unknown[]) => {
+        const sid = args[0] as number;
+        if (sid === 2) return { parent_sid: 1 };
+        return {};
+      });
+      mocks.getChildSids.mockReturnValue([]);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 9001 });
+      await handleIfBuiltIn(cmdUpdate("/session"));
+      const call = mocks.sendMessage.mock.calls[0];
+      const keyboard: Array<Array<{ callback_data: string }>> = call[2].reply_markup.inline_keyboard;
+      const data = keyboard.flat().map(b => b.callback_data);
+      expect(data).toContain("session:select:1");
+      expect(data).not.toContain("session:select:2");
+    });
+
+    it("renderSessionDetail — parent with active child shows child close button — AC7", async () => {
+      const sessionsWithChild = [
+        { sid: 1, name: "Overseer", color: "🟦", createdAt: "" },
+        { sid: 5, name: "SubWorker", color: "🟪", createdAt: "" }, // child
+      ];
+      mocks.listSessions.mockReturnValue(sessionsWithChild);
+      mocks.getGovernorSid.mockReturnValue(2); // Overseer is not governor, so Set as Primary shows
+      mocks.getSession.mockImplementation((...args: unknown[]) => {
+        const sid = args[0] as number;
+        if (sid === 1) return { sid: 1, name: "Overseer", color: "🟦", createdAt: "", lastPollAt: undefined };
+        return undefined;
+      });
+      mocks.getChildSids.mockImplementation((sid: number) => (sid === 1 ? [5] : []));
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 9100 });
+      await handleIfBuiltIn(cmdUpdate("/session"));
+      mocks.editMessageText.mockResolvedValue(true);
+      await handleIfBuiltIn(callbackUpdate(9100, "session:select:1"));
+      const call = mocks.editMessageText.mock.calls[0];
+      const keyboard: Array<Array<{ callback_data: string }>> = call[3].reply_markup.inline_keyboard;
+      const data = keyboard.flat().map(b => b.callback_data);
+      expect(data).toContain("session:close:5");
     });
   });
 

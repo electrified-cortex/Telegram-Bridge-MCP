@@ -49,6 +49,7 @@ import { deliverServiceMessage } from "./session-queue.js";
 import { SERVICE_MESSAGES } from "./service-messages.js";
 import { getCallerSid, runInSessionContext } from "./session-context.js";
 import { closeSessionById } from "./session-teardown.js";
+import { getChildSids } from "./tools/session/child-registry.js";
 
 // ---------------------------------------------------------------------------
 // Exported string constants (for test assertions)
@@ -591,6 +592,20 @@ async function handleGovernorCallback(
       return;
     }
 
+    // CHILD_SESSIONS_CANNOT_BE_GOVERNOR
+    if (getSession(newSid)?.parent_sid !== undefined) {
+      _activePanels.delete(panelMsgId);
+      try {
+        await runInSessionContext(0, () => api.editMessageText(
+          chatId,
+          panelMsgId,
+          "⚠️ Child sessions cannot be set as primary. Close this session and promote a root session.",
+          { reply_markup: { inline_keyboard: [] } },
+        ));
+      } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      return;
+    }
+
     setGovernorSid(newSid);
 
     const newLabel = `${newGovernor.color} ${newGovernor.name}`;
@@ -633,6 +648,7 @@ function buildGovernorPanel(
     "Choose which session should be the primary:";
   const keyboard: { text: string; callback_data: string }[][] = [];
   for (const s of sessions) {
+    if (getSession(s.sid)?.parent_sid !== undefined) continue;
     const isGov = s.sid === currentSid;
     const label = `${s.color} ${s.name}${isGov ? " ✓" : ""}`;
     keyboard.push([{ text: label, callback_data: `governor:set:${s.sid}` }]);
@@ -1320,7 +1336,10 @@ function buildSessionListPanel(
   const text = "Active sessions:";
   const keyboard: { text: string; callback_data: string }[][] = [];
   for (const s of sessions) {
-    const label = `${s.color} ${s.name} (SID ${s.sid})`;
+    if (getSession(s.sid)?.parent_sid !== undefined) continue;
+    const childCount = getChildSids(s.sid).length;
+    const childAnnotation = childCount > 0 ? ` (${childCount} sub-session${childCount === 1 ? "" : "s"})` : "";
+    const label = `${s.color} ${s.name} (SID ${s.sid})${childAnnotation}`;
     keyboard.push([{ text: label, callback_data: `session:select:${s.sid}` }]);
   }
   keyboard.push([{ text: "✖ Cancel", callback_data: "session:cancel" }]);
@@ -1440,6 +1459,20 @@ async function handleSessionCallback(
       return;
     }
 
+    // CHILD_SESSIONS_CANNOT_BE_GOVERNOR
+    if (getSession(sid)?.parent_sid !== undefined) {
+      _activePanels.delete(panelMsgId);
+      try {
+        await runInSessionContext(0, () => api.editMessageText(
+          chatId,
+          panelMsgId,
+          "⚠️ Child sessions cannot be set as primary. Close this session and promote a root session.",
+          { reply_markup: { inline_keyboard: [] } },
+        ));
+      } catch (err) { dlog("tool", "panel handler failed", { err: String(err) }); }
+      return;
+    }
+
     const oldSid = getGovernorSid();
     setGovernorSid(sid);
     const newLabel = `${target.color} ${target.name}`;
@@ -1524,6 +1557,17 @@ async function renderSessionDetail(
     firstRow,
     [{ text: "← Back", callback_data: "session:back" }],
   ];
+
+  // Show active child sessions with close buttons, inserted before ← Back
+  const childSids = getChildSids(sid);
+  for (const childSid of childSids) {
+    const child = sessions.find(s => s.sid === childSid);
+    if (child) {
+      keyboard.splice(keyboard.length - 1, 0, [
+        { text: `${child.color} ${child.name} — 🗑 Close`, callback_data: `session:close:${childSid}` },
+      ]);
+    }
+  }
 
   try {
     await runInSessionContext(0, () => api.editMessageText(
