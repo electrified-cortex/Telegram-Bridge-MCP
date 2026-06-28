@@ -63,7 +63,7 @@ Clicking "Deny" should:
 
 ## Verification
 
-- verifier: task-verification agent (a412f39e5960af6c6)
+- verifier: task-verification agent
 - date: 2026-06-28
 - verdict: APPROVED
 - squash_commit: f5f7b3bb

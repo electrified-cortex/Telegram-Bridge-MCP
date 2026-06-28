@@ -68,7 +68,7 @@ This is the same code path as the deny button (10-3070). Fix should be investiga
 
 ## Verification
 
-- verifier: task-verification agent (a412f39e5960af6c6)
+- verifier: task-verification agent
 - date: 2026-06-28
 - verdict: APPROVED (bundled with 10-3070 — same commit, same PR)
 - squash_commit: f5f7b3bb
