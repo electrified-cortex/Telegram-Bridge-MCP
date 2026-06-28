@@ -399,6 +399,65 @@ describe("notify-debounce gate — ACs 1-10", () => {
     expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
   });
 
+  // ── 10-3067 AC1: service debounce does not block high-priority notify ──────
+
+  it("10-3067 AC1: operator bypasses debounce armed by service message (child lifecycle fix)", async () => {
+    setActivityFile(SID, makeState());
+
+    // Service message arms debounce (simulates CHILD_FIRST_DEQUEUE_CONFIRMED)
+    expect(notifyIfAllowed(SID, "service", false)).toBe(true);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    const touchCallsAfterService = vi.mocked(appendFile).mock.calls.length;
+
+    // Operator message MUST bypass the service-message debounce and fire immediately
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+
+    // Both notify calls triggered a file touch (two separate debounce windows)
+    expect(vi.mocked(appendFile).mock.calls.length).toBeGreaterThan(touchCallsAfterService);
+  });
+
+  it("10-3067 AC1: reminder bypasses debounce armed by service message", async () => {
+    setActivityFile(SID, makeState());
+
+    expect(notifyIfAllowed(SID, "service", false)).toBe(true);
+    // Flush the async file-touch started by step 5, so touchInFlight is cleared
+    // before the next call (step 3 check) — same pattern as the operator-bypass test.
+    for (let _f = 0; _f < 10; _f++) await Promise.resolve();
+    expect(notifyIfAllowed(SID, "reminder", false)).toBe(true);
+  });
+
+  it("10-3067 AC1: operator does NOT bypass debounce armed by another operator (burst dedup preserved)", () => {
+    setActivityFile(SID, makeState());
+
+    // First operator message arms debounce
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+    // Second rapid operator message must still be debounced
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(false);
+  });
+
+  it("10-3067 AC1: after bypassing service debounce, operator arms fresh operator debounce", () => {
+    setActivityFile(SID, makeState());
+
+    // Service arms debounce → operator bypasses it → operator arms new debounce
+    notifyIfAllowed(SID, "service", false);
+    notifyIfAllowed(SID, "operator", false); // bypasses service debounce
+
+    // Next operator message: debounced (operator-armed window, no bypass)
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(false);
+  });
+
+  it("10-3067 AC1: service message after operator bypass is still debounced by operator window", () => {
+    setActivityFile(SID, makeState());
+
+    notifyIfAllowed(SID, "service", false); // arm service debounce
+    notifyIfAllowed(SID, "operator", false); // bypass; now operator-armed debounce
+
+    // Service message within the new operator window: debounced (service cannot
+    // bypass operator-armed debounce, only operator can bypass service-armed)
+    expect(notifyIfAllowed(SID, "service", false)).toBe(false);
+  });
+
   // ── AC 10: Reconnect resets state ─────────────────────────────────────────
   it("AC10: resetNotifyGateState clears debounce mid-debounce", async () => {
     setActivityFile(SID, makeState());
@@ -929,6 +988,27 @@ describe("SSE-only monitor gate (no activity file)", () => {
 
     // SSE-only: there is no file, so appendFile must never be called.
     expect(vi.mocked(appendFile)).not.toHaveBeenCalled();
+  });
+
+  // ── 10-3067 AC1: SSE-only path — service debounce bypass ──────────────────
+
+  it("10-3067 AC1 (SSE): operator bypasses service-armed debounce, fires SSE immediately", () => {
+    registerSseMonitor(SID);
+
+    // Service message arms debounce (CHILD_FIRST_DEQUEUE_CONFIRMED scenario)
+    expect(notifyIfAllowed(SID, "service", false)).toBe(true);
+    expect(sseSpy).not.toHaveBeenCalled(); // caller fires SSE, not notifyIfAllowed
+
+    // Operator message must bypass the service debounce
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);
+  });
+
+  it("10-3067 AC1 (SSE): operator-armed debounce still blocks rapid operator burst", () => {
+    registerSseMonitor(SID);
+
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(true);  // arm
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(false); // burst: blocked
+    expect(notifyIfAllowed(SID, "operator", false)).toBe(false); // burst: blocked
   });
 
   it("burst of events → allowed once then debounced (parity with file path)", () => {

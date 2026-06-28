@@ -121,6 +121,14 @@ export interface ActivityFileState {
   notifyDebounceUntil: number | null;
   /** True when a notifiable inbound was suppressed during debounce. */
   notifyPendingBecauseDebounce: boolean;
+  /**
+   * The source that armed the current debounce window, or null when the gate is
+   * idle. Tracked so high-priority sources (operator, reminder, approval) can
+   * bypass a debounce armed by a lower-priority source (service), preventing
+   * child-session service messages from silencing operator notifications for the
+   * parent session (task 10-3067, AC1).
+   */
+  debounceArmedBySource?: NotifySource | null;
   /** True while appendNewline is in flight (including retries). */
   touchInFlight: boolean;
   /** setTimeout handle for the next bounded retry; null if none. */
@@ -420,6 +428,7 @@ export function registerSseMonitor(sid: number): void {
     inflightDequeue: false,
     notifyDebounceUntil: null,
     notifyPendingBecauseDebounce: false,
+    debounceArmedBySource: null,
     touchInFlight: false,
     pendingRetryHandle: null,
     pendingReNotifyHandle: null,
@@ -497,10 +506,26 @@ export function notifyIfAllowed(
   }
 
   // 4. Debounce check
+  //
+  // High-priority sources (operator, reminder, approval) bypass a debounce that
+  // was armed by a "service" message. This prevents child-session service messages
+  // (e.g. CHILD_FIRST_DEQUEUE_CONFIRMED) from silencing operator notifications for
+  // the parent session while the child is active (task 10-3067, AC1).
+  //
+  // A service-message-armed debounce is a burst-protection window for server-
+  // generated lifecycle events; it must NOT delay urgent operator messages.
+  // Debounces armed by operator or other high-priority sources are still enforced
+  // (preserving the existing burst-dedup behaviour for rapid operator messages).
   const now = Date.now();
   if (entry.notifyDebounceUntil !== null && entry.notifyDebounceUntil > now) {
-    entry.notifyPendingBecauseDebounce = true;
-    return false;
+    const armedByService = (entry.debounceArmedBySource ?? null) === "service";
+    const isHighPriority = source === "operator" || source === "reminder" ||
+      source === "approval-self" || source === "approval-governor";
+    if (!(armedByService && isHighPriority)) {
+      entry.notifyPendingBecauseDebounce = true;
+      return false;
+    }
+    // Fall through: high-priority source overrides a service-message debounce.
   }
 
   // 5. Notify — arm the shared gate (debounce + 5-min re-notify timer) for every
@@ -515,6 +540,7 @@ export function notifyIfAllowed(
   // longer when idle (agent is parked).
   const debounceMs = inflightAtEnqueue ? 60_000 : 300_000;
   entry.notifyDebounceUntil = now + debounceMs;
+  entry.debounceArmedBySource = source;
   entry.pendingReNotifyHandle = setTimeout(() => {
     entry.pendingReNotifyHandle = null;
     entry.notifyDebounceUntil = null; // clear gate so next message fires immediately
@@ -560,6 +586,7 @@ export function releaseNotifyDebounce(sid: number, contentReturned = true): void
   }
   entry.notifyDebounceUntil = null;
   entry.notifyPendingBecauseDebounce = false;
+  entry.debounceArmedBySource = null;
 
   if (pending && (hasPendingUserContent(sid) || hasPendingReminderContent(sid))) {
     fireRevaluationNotify(sid);
@@ -599,6 +626,7 @@ export function resetNotifyGateState(sid: number): void {
 
   entry.notifyDebounceUntil = null;
   entry.notifyPendingBecauseDebounce = false;
+  entry.debounceArmedBySource = null;
   entry.touchInFlight = false;
 }
 
@@ -634,6 +662,7 @@ export function handleSessionStopped(sid: number): { noOp: boolean } {
   // Reset all gate state
   entry.notifyDebounceUntil = null;
   entry.notifyPendingBecauseDebounce = false;
+  entry.debounceArmedBySource = null;
   entry.touchInFlight = false;
   entry.inflightDequeue = false;
 
