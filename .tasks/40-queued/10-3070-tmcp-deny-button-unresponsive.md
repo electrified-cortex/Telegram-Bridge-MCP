@@ -3,9 +3,12 @@ title: "TMCP: Deny button in session/tool approval UI is unresponsive"
 id: 10-3070
 priority: HIGH
 category: Bug
-status: draft
+status: queued
 reported: 2026-06-28
 source: Operator TG 80704 (voice)
+agent_type: Worker
+model_class: sonnet-class
+branch_target: dev
 ---
 
 # Bug: Deny Button Unresponsive in Approval UI
@@ -49,3 +52,12 @@ Clicking "Deny" should:
 1. Clicking "Deny" reliably cancels the pending action
 2. Prompt dismisses after denial
 3. No ghost approvals — denied calls must not execute
+
+## Gate review
+
+- date: 2026-06-28
+- verdict: PASS
+- review type: inline (bug/investigation — ACs binary once surface identified)
+- checked: 3 ACs binary (deny works, prompt dismisses, no ghost approvals); scope explicit (identify CC-level vs TMCP surface, then fix); worker-resolvable investigation; HIGH priority confirmed
+- note: add agent_type: Worker, model_class: sonnet-class, branch_target: dev to frontmatter before foreman picks up. Investigation first — if CC-level, capture repro + file upstream report; if TMCP, fix in governor deny handler.
+<!-- overseer-gate: PASS 2026-06-28 -->
