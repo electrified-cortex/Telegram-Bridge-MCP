@@ -54,3 +54,22 @@ delivers requirement (a) and the shared backbone on its own.
 - Detection reuses the markdown layer's fenced-code awareness
   (`containsMarkdownTable` shows the pattern); SVG is a `<svg …>…</svg>` scan.
 - The responsive-ize step is shared with 10-3053 (mermaid's rendered SVG uses it too).
+
+## Verification
+
+- First verifier (a49f29b3009360593) 2026-06-27: NEEDS_REVISION — gaps 1 (test evidence), 2 (PR gate), 3 (malformed SVG)
+- Re-verifier (a70714e9b41ed8372) 2026-06-28: NEEDS_REVISION — gaps 1+3 resolved; Gap A (test-plan.md) + Gap B (PR gate) remaining
+- Re-verifier (a20fcba900f8103b6) 2026-06-28: NEEDS_REVISION (gate only) — all 7 criteria CONFIRMED; Gap A resolved; PUSH GATE pending
+- Gate bounce 2026-06-28: FAIL-1+2 + WARN-3+4 flagged by Overseer adversarial review; sent back for fixes
+- Re-verifier (a25fd29de1ef301a5) 2026-06-28: REJECTED — dirty worktree (task doc uncommitted; fixes committed but doc not staged)
+- Re-verifier (a126637e7263a1337) 2026-06-28: NEEDS_REVISION (gate only) — all 7 confirmed, all 4 gate-bounce fixes confirmed; gate request posted; Overseer found BLOCK-1+2 + WARN-2 in bounce #2
+- Gate bounce #2 2026-06-28: BLOCK-1 (offset apples-to-oranges), BLOCK-2 (malformed guard fires on prose), WARN-2 (HTML-escape in htmlMode); fixes applied in commit d0802421
+- Re-verifier (a20fcba900f8103b7) 2026-06-28: NEEDS_REVISION (gate only) — all 7 confirmed; BLOCK-1+2+WARN-2 verified fixed; 3998/3998 pass; gap B only: PUSH GATE
+- Overseer gate #3 2026-06-28: **APPROVED** — adversarial review PASS; 4 non-blocking WARNs filed as follow-up; push authorized
+
+## Sealed
+
+- Sealed-By: Foreman 2026-06-28
+- Squash: worker/10-3051-visual-attachments-pipeline → dev
+- Commits: 5c83a080, 8c4ddfbd, 75c80258, 4e9ca048, 9bacc727, 5308af3d, d0802421, b43660b5, 458ea02a
+- Tests: 3998/3998
