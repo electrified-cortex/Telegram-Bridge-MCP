@@ -415,7 +415,7 @@ export const SERVICE_MESSAGES = deepFreeze({
     eventType: "onboarding_subsession_spawn_breadcrumb" as const,
     text: "Sub-session routing sequence (exact action signatures):\n\n" +
       "1. Spawn:\n" +
-      "   action(type: 'session/spawn-child', token: <host_token>, name: '<topic>')\n" +
+      "   action(type: 'session/spawn-child', token: <host_token>, topic: '<topic>')\n" +
       "   → { token: <child_token>, sid: <child_sid>, display_index, ... }\n\n" +
       "2. Dispatch: launch a background sub-agent with <child_token>.\n" +
       "   Sub-agent loop: dequeue(token: <child_token>) → handle → repeat.\n\n" +

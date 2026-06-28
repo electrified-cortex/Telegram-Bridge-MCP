@@ -433,12 +433,15 @@ export function register(server: McpServer): void {
           .positive()
           .optional()
           .describe("message/route: Session ID to route the message to. session/rename: SID of session to rename (governor only)."),
-        // profile/topic params
+        // profile/topic and session/spawn-child params
         topic: z
           .string()
           .max(32)
           .optional()
-          .describe("profile/topic: Short label to prepend to all outbound messages. Pass empty string to clear."),
+          .describe(
+            "profile/topic: Short label to prepend to all outbound messages. Pass empty string to clear. " +
+            "session/spawn-child: Topic for the child session (e.g. 'Refactor', 'Research'). Required and must be non-blank; the sub-session name is auto-derived from the parent.",
+          ),
         // profile/* params
         key: z
           .string()

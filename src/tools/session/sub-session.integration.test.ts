@@ -109,7 +109,7 @@ describe("AC1: spawn-child response shape", () => {
     mocks.handleSessionStart.mockResolvedValue(makeStartSuccess(pSid));
 
     const result = await runInSessionContext(pSid, () =>
-      handleSpawnChild({ token: pToken, name: "Helper" }),
+      handleSpawnChild({ token: pToken, topic: "Helper" }),
     );
 
     expect(isError(result)).toBe(false);
@@ -134,7 +134,7 @@ describe("AC1b: token/context mismatch → UNAUTHORIZED", () => {
 
     // Run in P's context but pass Q's token
     const result = await runInSessionContext(pSid, () =>
-      handleSpawnChild({ token: qToken, name: "Child" }),
+      handleSpawnChild({ token: qToken, topic: "Child" }),
     );
 
     expect(isError(result)).toBe(true);
@@ -149,7 +149,7 @@ describe("AC1b: token/context mismatch → UNAUTHORIZED", () => {
     mocks.handleSessionStart.mockResolvedValue(makeStartSuccess(pSid));
 
     const result = await runInSessionContext(pSid, () =>
-      handleSpawnChild({ token: pToken, name: "Child" }),
+      handleSpawnChild({ token: pToken, topic: "Child" }),
     );
 
     expect(isError(result)).toBe(false);
@@ -176,7 +176,7 @@ describe("AC1d: gather capability blocks session/spawn-child", () => {
     const result = await actionHandler({
       type: "session/spawn-child",
       token: gatherToken,
-      name: "SubChild",
+      topic: "SubChild",
     });
 
     expect(isError(result)).toBe(true);
@@ -196,7 +196,7 @@ describe("AC1d: gather capability blocks session/spawn-child", () => {
     mocks.handleSessionStart.mockResolvedValue(makeStartSuccess(sid));
 
     const result = await runInSessionContext(sid, () =>
-      actionHandler({ type: "session/spawn-child", token: fullToken, name: "Child" }),
+      actionHandler({ type: "session/spawn-child", token: fullToken, topic: "Child" }),
     );
 
     expect(isError(result)).toBe(false);

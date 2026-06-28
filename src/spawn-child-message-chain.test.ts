@@ -395,7 +395,7 @@ describe("AC7 — CAPABILITY_DENIED from direct handleSpawnChild call", () => {
     const parent = makeParentSession("Parent");
     getSession(parent.sid)!.child_capability = "gather";
 
-    const result = await handleSpawnChild({ token: parent.token, name: "Child" });
+    const result = await handleSpawnChild({ token: parent.token, topic: "Child" });
 
     const data = JSON.parse((result as { isError: boolean; content: { text: string }[] }).content[0].text) as { code: string };
     expect((result as { isError: boolean }).isError).toBe(true);
@@ -406,7 +406,7 @@ describe("AC7 — CAPABILITY_DENIED from direct handleSpawnChild call", () => {
     const parent = makeParentSession("Parent");
     getSession(parent.sid)!.child_capability = "read-only";
 
-    const result = await handleSpawnChild({ token: parent.token, name: "Child" });
+    const result = await handleSpawnChild({ token: parent.token, topic: "Child" });
 
     const data = JSON.parse((result as { isError: boolean; content: { text: string }[] }).content[0].text) as { code: string };
     expect((result as { isError: boolean }).isError).toBe(true);
