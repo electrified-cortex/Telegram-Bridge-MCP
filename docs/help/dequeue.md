@@ -2,9 +2,19 @@ Dequeue Loop — Heartbeat of every Telegram-enabled agent.
 
 Every code path ends with dequeue. No exceptions. Loop runs until shutdown signal.
 
+## Auto-Thinking on actionable dequeue
+
+When dequeue returns **actionable operator content** (text, voice, command, photo, etc.),
+the bridge **automatically fires the native "Thinking…" draft bubble** — zero agent effort.
+The operator sees Thinking immediately; the agent processes; the next `send` auto-closes it.
+
+- Default hold: ~30s (Telegram-native ephemerality — no timer needed).
+- To extend, customise, or close: `action(type: 'thinking/extend', ...)` / `action(type: 'thinking/close', ...)`.
+- See `help('thinking')` for lifecycle, supersession taxonomy, and agent extension API.
+
 ## Flow
 dequeue
-  → messages?  → handle → dequeue
+  → messages?  → 💭 Thinking fires → handle → send → dequeue
   → timeout    → scan for work → dequeue
   → reminder   → handle reminder → dequeue
   → error      → notify superior → dequeue

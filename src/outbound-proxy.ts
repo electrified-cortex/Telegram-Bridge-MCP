@@ -21,6 +21,7 @@ import { primarySessionCount, getSession } from "./session-manager.js";
 import { maybeReplaceRecoveringAnimation } from "./compaction-recovery.js";
 import { escapeHtml } from "./markdown.js";
 import { resolveNameTag } from "./tools/name-tag.js";
+import { cancelThinkingForSid } from "./thinking-state.js";
 
 // ---------------------------------------------------------------------------
 // Session header injection
@@ -160,6 +161,8 @@ export async function notifyBeforeFileSend(): Promise<void> {
   const sid = getCallerSid();
   clearPendingTemp();
   await clearAllTempReactions(sid);
+  // Supersede Thinking indicator (custom file/voice send cancels "Thinking…" bubble)
+  cancelThinkingForSid(sid);
   const interceptor = sid > 0 ? _interceptors.get(sid) : undefined;
   if (interceptor) await interceptor.beforeFileSend();
 }
@@ -264,6 +267,9 @@ export function createOutboundProxy(realApi: Api): Api {
             ? (headerPlain && !skipHeader ? headerPlain + rawText : rawText)
             : undefined;
 
+          // Supersede Thinking indicator (send cancels "Thinking…" bubble)
+          cancelThinkingForSid(callSid);
+
           // Animation promote: edit animation → real content
           const activeInterceptor = callSid > 0 ? _interceptors.get(callSid) : undefined;
           if (activeInterceptor) {
@@ -305,6 +311,9 @@ export function createOutboundProxy(realApi: Api): Api {
           clearPendingTemp();
           const fileSid = getCallerSid();
           await clearAllTempReactions(fileSid);
+
+          // Supersede Thinking indicator (file send cancels "Thinking…" bubble)
+          cancelThinkingForSid(fileSid);
 
           // Suspend animation (delete placeholder)
           const fileInterceptor = fileSid > 0 ? _interceptors.get(fileSid) : undefined;

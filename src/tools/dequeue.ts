@@ -19,6 +19,37 @@ import {
 } from "../reminder-state.js";
 import { getGovernorSid } from "../routing-mode.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
+import { onActionableDequeue } from "../thinking-state.js";
+
+// ---------------------------------------------------------------------------
+// Thinking indicator — actionable content detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Content types that qualify as "actionable operator content" for the
+ * auto-Thinking trigger. Mirrors OPERATOR_MESSAGE_TYPES in session-queue.ts.
+ * Only events where from="user", event="message", and content.type ∈ this set
+ * count as actionable.
+ */
+const _THINKING_TRIGGER_TYPES = new Set([
+  "text", "voice", "command", "photo", "doc", "video",
+  "audio", "sticker", "animation", "contact", "location", "unknown",
+]);
+
+/**
+ * Fire the Thinking indicator if the batch contains actionable operator content.
+ * Best-effort, fire-and-forget — never blocks the dequeue return.
+ */
+function _fireThinkingIfActionable(sid: number, batch: TimelineEvent[]): void {
+  const hasActionable = batch.some(
+    e => e.event === "message" &&
+         e.from === "user" &&
+         _THINKING_TRIGGER_TYPES.has(e.content.type),
+  );
+  if (hasActionable) {
+    void onActionableDequeue(sid).catch(() => {});
+  }
+}
 
 /** Defensive clamp for a single setTimeout call, kept below Node.js's ~2^31-1 ms overflow limit. */
 const MAX_SET_TIMEOUT_MS = 2_000_000_000;
@@ -510,6 +541,7 @@ export async function runDrainLoop(
     for (const evt of batch) ackVoice(evt);
     const result = buildBatchResult(batch);
     resyncActiveSession();
+    _fireThinkingIfActionable(sid, batch);
     dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
     // Immediate-batch return is outside the try/finally below — clear state here.
     setDequeueActive(sid, false);
@@ -589,6 +621,7 @@ export async function runDrainLoop(
           for (const evt of batch) ackVoice(evt);
           const result = buildBatchResult(batch);
           resyncActiveSession();
+          _fireThinkingIfActionable(sid, batch);
           dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
           _debounceRelease = true;
           _lastTimeoutAt.delete(sid);        // messages delivered — reset rapid-repoll window
@@ -613,6 +646,7 @@ export async function runDrainLoop(
         for (const evt of batch) ackVoice(evt);
         const result = buildBatchResult(batch);
         resyncActiveSession();
+        _fireThinkingIfActionable(sid, batch);
         dlog("queue", `dequeue returning sid=${sid} batch=${batch.length} payloadLen=${JSON.stringify(result).length}`);
         _debounceRelease = true;
         _lastTimeoutAt.delete(sid);        // messages delivered — reset rapid-repoll window
