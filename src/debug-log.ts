@@ -33,7 +33,8 @@ export type DebugCategory =
   | "animation"
   | "tool"
   | "health"
-  | "async-send";
+  | "async-send"
+  | "phonetic-remapping";
 
 export interface DebugEntry {
   id: number;           // auto-incrementing sequence number

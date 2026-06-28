@@ -77,6 +77,12 @@ export interface Session {
    * Undefined is treated as `'full'`.
    */
   child_capability?: "read-only" | "gather" | "full";
+  /**
+   * Per-session phonetic substitution map loaded from profile. Applied to audio
+   * text before TTS synthesis. Undefined when no profile with audio_remapping
+   * has been loaded.
+   */
+  audio_remapping?: Record<string, string>;
 }
 
 /** Public view returned by `listSessions` — no token suffix. */
