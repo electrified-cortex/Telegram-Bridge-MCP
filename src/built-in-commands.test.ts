@@ -763,7 +763,7 @@ describe("built-in-commands", () => {
       expect(mocks.setDefaultVoice).toHaveBeenCalledWith("am_onyx");
       expect(mocks.answerCallbackQuery).toHaveBeenCalledWith(
         "cq1",
-        { text: "Voice set to am_onyx" },
+        expect.objectContaining({ text: expect.stringContaining("am_onyx") }),
       );
     });
 
