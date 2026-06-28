@@ -293,6 +293,12 @@ function scheduleRetry(sid: number, entry: ActivityFileState, attempt: number): 
     return;
   }
 
+  // Clear any existing retry handle before scheduling a new one to prevent timer leaks.
+  if (entry.pendingRetryHandle !== null) {
+    clearTimeout(entry.pendingRetryHandle);
+    entry.pendingRetryHandle = null;
+  }
+
   entry.pendingRetryHandle = setTimeout(() => {
     void (async () => {
       entry.pendingRetryHandle = null;
