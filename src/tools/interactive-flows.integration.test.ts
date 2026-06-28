@@ -19,6 +19,7 @@ import { createMockServer, parseResult, isError, type ToolHandler } from "./test
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
   editMessageReplyMarkup: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("../telegram.js", async (importActual) => {
     }),
     resolveChat: () => 42,
     ackVoiceMessage: mocks.ackVoiceMessage,
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
   };
 });
 
@@ -130,6 +132,7 @@ describe("interactive flows — end-to-end integration", () => {
     _nextId = 100;
 
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 5 });
     mocks.answerCallbackQuery.mockResolvedValue(undefined);
     mocks.editMessageText.mockResolvedValue(undefined);
     mocks.editMessageReplyMarkup.mockResolvedValue(undefined);

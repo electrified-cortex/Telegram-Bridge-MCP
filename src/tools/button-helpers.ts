@@ -2,8 +2,8 @@
  * Shared helpers for button-based interaction tools (choose, send_choice, confirm).
  */
 
-import { getApi, ackVoiceMessage, LIMITS } from "../telegram.js";
-import { markdownToV2, resolveParseMode } from "../markdown.js";
+import { getApi, routeOutboundMessage, ackVoiceMessage, LIMITS } from "../telegram.js";
+import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText } from "../topic-state.js";
 import { dequeueMatch, waitForEnqueue, type TimelineEvent } from "../message-store.js";
 import { getSessionQueue } from "../session-queue.js";
@@ -471,13 +471,12 @@ export async function sendChoiceMessage(
 ): Promise<number> {
   const rows = buildKeyboardRows(opts.options, opts.columns);
   const textWithTopic = applyTopicToText(opts.text, opts.parseMode, opts.topicOverride);
-  const { text: finalText, parse_mode: finalMode } = resolveParseMode(textWithTopic, opts.parseMode);
-  const sent = await getApi().sendMessage(chatId, finalText, {
-    parse_mode: finalMode,
+  const result = await routeOutboundMessage(chatId, textWithTopic, {
+    parse_mode: opts.parseMode,
     reply_markup: { inline_keyboard: rows },
     disable_notification: opts.disableNotification,
     reply_parameters: opts.replyToMessageId ? { message_id: opts.replyToMessageId } : undefined,
     _rawText: opts.text,
-  } as Record<string, unknown>);
-  return sent.message_id;
+  });
+  return result.message_id;
 }

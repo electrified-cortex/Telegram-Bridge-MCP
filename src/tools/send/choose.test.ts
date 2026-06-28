@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn((_sid: number, _suffix: number) => false),
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
   editMessageCaption: vi.fn(),
@@ -63,6 +64,7 @@ vi.mock("../../telegram.js", async (importActual) => {
     // Keep actual validateText and validateCallbackData so error-path tests work
     // sendVoiceDirect is overridden for voice-path tests
     sendVoiceDirect: (...args: unknown[]) => mocks.sendVoiceDirect(...args),
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
   };
 });
 
@@ -170,6 +172,7 @@ describe("choose tool", () => {
     mocks.sessionQueue.pendingCount.mockReturnValue(0);
     mocks.pinChatMessage.mockResolvedValue(true);
     mocks.unpinChatMessage.mockResolvedValue(true);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 7 });
     const server = createMockServer();
     register(server);
     call = server.getHandler("choose");
@@ -283,7 +286,7 @@ describe("choose tool", () => {
       { label: "C", value: "c" },
     ];
     await call({ text: "Pick", options: threeOptions, columns: 3, timeout_seconds: 1, token: 1123456});
-    const [, , opts] = mocks.sendMessage.mock.calls[0];
+    const [, , opts] = mocks.routeOutboundMessage.mock.calls[0];
     // All 3 options in a single row when columns=3
     expect(opts.reply_markup.inline_keyboard[0]).toHaveLength(3);
   });
@@ -313,7 +316,7 @@ describe("choose tool", () => {
   });
 
   it("returns error when sendMessage throws", async () => {
-    mocks.sendMessage.mockRejectedValue(new Error("Network error"));
+    mocks.routeOutboundMessage.mockRejectedValue(new Error("Network error"));
     const result = await call({ text: "Pick", options: OPTIONS, token: 1123456});
     expect(isError(result)).toBe(true);
   });

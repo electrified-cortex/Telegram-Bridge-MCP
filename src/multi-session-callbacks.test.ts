@@ -26,6 +26,7 @@ import { createMockServer, parseResult, isError, type ToolHandler } from "./tool
 
 const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  routeOutboundMessage: vi.fn(),
   answerCallbackQuery: vi.fn(),
   editMessageText: vi.fn(),
   editMessageReplyMarkup: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock("./telegram.js", async (importActual) => {
     resolveChat: () => 42,
     ackVoiceMessage: mocks.ackVoiceMessage,
     sendServiceMessage: mocks.sendServiceMessage,
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
   };
 });
 
@@ -159,6 +161,7 @@ describe("multi-session callback isolation", () => {
   it("SC-1: with 2 sessions active, callback hook for SID1's message fires exactly once", async () => {
     // SID1 calls confirm while SID2 exists but is idle
     mocks.sendMessage.mockResolvedValue({ message_id: 5, chat: { id: 42 }, date: 0 });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 5 });
 
     const toolPromise = runInSessionContext(sid1, () =>
       handlers.confirm({ text: "Confirm?", ignore_pending: true, token: token1 }),
@@ -196,6 +199,9 @@ describe("multi-session callback isolation", () => {
     mocks.sendMessage
       .mockResolvedValueOnce({ message_id: 10, chat: { id: 42 }, date: 0 }) // SID1's confirm
       .mockResolvedValueOnce({ message_id: 20, chat: { id: 42 }, date: 0 }); // SID2's choose
+    mocks.routeOutboundMessage
+      .mockResolvedValueOnce({ message_id: 10 }) // SID1's confirm
+      .mockResolvedValueOnce({ message_id: 20 }); // SID2's choose
 
     const opts = [{ label: "Red", value: "red" }, { label: "Blue", value: "blue" }];
 
@@ -287,6 +293,7 @@ describe("multi-session callback isolation", () => {
     setGovernorSid(sid1);
 
     mocks.sendMessage.mockResolvedValue({ message_id: 99, chat: { id: 42 }, date: 0 });
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 99 });
 
     // SID2 sends a confirm (hook registered for msg 99, owned by SID2)
     const sid2ConfirmPromise = runInSessionContext(sid2, () =>

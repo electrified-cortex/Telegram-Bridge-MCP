@@ -597,4 +597,11 @@ export const SERVICE_MESSAGES = deepFreeze({
       "help('dequeue') for the correct loop pattern.",
   },
 
+  // ── Rich message fallback ─────────────────────────────────────────────────
+
+  RICH_FALLBACK: {
+    eventType: "rich_fallback" as const,
+    text: "Rich message rendering failed — message sent as plain text.",
+  },
+
 });

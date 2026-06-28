@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, resolveChat, toResult, toError, validateText, ackVoiceMessage } from "../../telegram.js";
+import { routeOutboundMessage, resolveChat, toResult, toError, validateText, ackVoiceMessage } from "../../telegram.js";
 import { markdownToV2 } from "../../markdown.js";
 import { applyTopicToText } from "../../topic-state.js";
 import { dequeueMatch, waitForEnqueue, pendingCount, type TimelineEvent } from "../../message-store.js";
@@ -69,11 +69,13 @@ export async function handleAsk({
 
   try {
     // Send the question
-    const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(question, "Markdown", topic)), {
+    const mdQuestion = applyTopicToText(question, "Markdown", topic);
+    const sent = await routeOutboundMessage(chatId, markdownToV2(mdQuestion), {
+      richMessage: { markdown: mdQuestion },
       parse_mode: "MarkdownV2",
       reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
       _rawText: question,
-    } as Record<string, unknown>);
+    });
 
     // Poll from the store queue for text or voice messages after our question.
     // Voice messages arrive pre-transcribed by the background poller.

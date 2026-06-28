@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, resolveChat, validateText, validateCallbackData, sendVoiceDirect } from "../../telegram.js";
+import { getApi, routeOutboundMessage, toResult, toError, resolveChat, validateText, validateCallbackData, sendVoiceDirect } from "../../telegram.js";
 import { markdownToV2 } from "../../markdown.js";
 import { applyTopicToText } from "../../topic-state.js";
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../../utils/timing.js";
@@ -163,13 +163,15 @@ export async function confirmHandler(
         cancelTypingIfSameGeneration(gen);
       }
     } else {
-      const sent = await getApi().sendMessage(chatId, markdownToV2(applyTopicToText(text, "Markdown")), {
+      const mdText = applyTopicToText(text, "Markdown");
+      const result = await routeOutboundMessage(chatId, markdownToV2(mdText), {
+        richMessage: { markdown: mdText },
         parse_mode: "MarkdownV2",
         reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
         reply_markup: replyMarkup,
         _rawText: text,
-      } as Record<string, unknown>);
-      sentMessageId = sent.message_id;
+      });
+      sentMessageId = result.message_id;
     }
 
     // Create a proxy so the rest of the function can reference sent.message_id uniformly

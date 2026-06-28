@@ -47,6 +47,9 @@ const mocks = vi.hoisted(() => ({
   releaseRecordingIndicator: vi.fn(),
   hasInflightAudio: vi.fn((_sid: number): boolean => false),
   enqueueTextSend: vi.fn((_sid: number, _fn: (pid: number) => Promise<void>): number => -2_000_000_001),
+  routeOutboundMessage: vi.fn(),
+  isRichMessagesEnabled: vi.fn((): boolean => false),
+  setRichMessagesEnabledForTest: vi.fn(),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -61,6 +64,9 @@ vi.mock("../telegram.js", async (importActual) => {
     sendVoiceDirect: (...args: unknown[]) => mocks.sendVoiceDirect(...args),
     splitMessage: (t: string) => mocks.splitMessage(t),
     callApi: (fn: () => unknown) => fn(),
+    routeOutboundMessage: (...args: unknown[]) => mocks.routeOutboundMessage(...args),
+    // isRichMessagesEnabled and setRichMessagesEnabledForTest use ...actual (real module functions)
+    // so tests can call the real setRichMessagesEnabledForTest to flip _richMessagesEnabled.
   };
 });
 
@@ -202,6 +208,8 @@ describe("send tool", () => {
     mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
     mocks.showTyping.mockResolvedValue(undefined);
     mocks.deliverServiceMessage.mockReturnValue(undefined);
+    // P3: rich is default — single-chunk Markdown goes through routeOutboundMessage
+    mocks.routeOutboundMessage.mockResolvedValue(SENT_MSG);
 
     const server = createMockServer();
     register(server);
@@ -217,7 +225,8 @@ describe("send tool", () => {
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
     expect(data.audio).toBeUndefined();
-    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    // P3: single-chunk Markdown now routes via routeOutboundMessage (rich default)
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledOnce();
     expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
   });
 
@@ -286,11 +295,23 @@ describe("send tool", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Case 7: table warning
+  // Case 7: table warning (P4: rich path — no TABLE_WARNING since GFM renders natively)
   // ---------------------------------------------------------------------------
-  it("table warning: text containing markdown table returns info field", async () => {
+  it("table warning: text containing markdown table does NOT return info on rich path (P4 — GFM native)", async () => {
     const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
     const result = await call({ text: tableText, token: TOKEN });
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_id).toBe(42);
+    // P4: GFM tables render natively in rich messages; no TABLE_WARNING on the rich path.
+    expect(data.info).toBeUndefined();
+  });
+
+  it("table warning: text containing markdown table returns TABLE_WARNING on legacy path (parse_mode: MarkdownV2)", async () => {
+    const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
+    // Force legacy path: MarkdownV2 bypasses rich routing
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    const result = await call({ text: tableText, parse_mode: "MarkdownV2", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
@@ -1471,6 +1492,8 @@ describe("send — text-after-audio gating", () => {
     mocks.markdownToV2.mockImplementation((t: string) => t);
     mocks.applyTopicToText.mockImplementation((t: string) => t);
     mocks.sendMessage.mockResolvedValue({ message_id: 42 });
+    // P3: single-chunk Markdown routes through routeOutboundMessage (rich default)
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 42 });
     mocks.hasInflightAudio.mockReturnValue(false);
     mocks.enqueueTextSend.mockReturnValue(-2_000_000_001);
 
@@ -1485,7 +1508,8 @@ describe("send — text-after-audio gating", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
-    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    // P3: rich is default, single-chunk Markdown routes via routeOutboundMessage
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledOnce();
     expect(mocks.enqueueTextSend).not.toHaveBeenCalled();
   });
 
@@ -1543,5 +1567,196 @@ describe("send — text-after-audio gating", () => {
     const [, payload] = mocks.deliverAsyncSendCallback.mock.calls[0] as [number, { status: string; error: string }];
     expect(payload.status).toBe("failed");
     expect(payload.error).toContain("Telegram API down");
+  });
+});
+
+// =============================================================================
+// P2: rich degrade-never-fail floor + html/string params
+// =============================================================================
+describe("P2: rich degrade-never-fail floor", () => {
+  let call: (args: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.resolveChat.mockReturnValue(42);
+    mocks.validateText.mockReturnValue(null);
+    mocks.splitMessage.mockImplementation((t: string) => [t]);
+    mocks.markdownToV2.mockImplementation((t: string) => t);
+    mocks.applyTopicToText.mockImplementation((t: string) => t);
+    mocks.sendMessage.mockResolvedValue({ message_id: 42 });
+    mocks.deliverServiceMessage.mockReturnValue(undefined);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 42 });
+
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("send");
+  });
+
+  it("html param: rich-fallback mechanism delivers RICH_FALLBACK service message", async () => {
+    // Tests that fell_back:true from routeOutboundMessage triggers deliverServiceMessage.
+    // Uses html param (which always tries rich, bypassing isRichMessagesEnabled gate).
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55, fell_back: true as const });
+
+    const result = await call({
+      type: "text",
+      html: "<b>rich fallback test</b>",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.routeOutboundMessage).toHaveBeenCalled();
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ eventType: "rich_fallback" }),
+    );
+  });
+
+  it("html param: no RICH_FALLBACK service message when rich succeeds (no fell_back)", async () => {
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55 });
+
+    const result = await call({
+      type: "text",
+      html: "<b>success</b>",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ eventType: "rich_fallback" }),
+    );
+  });
+
+  it("html param: delivers RICH_FALLBACK service message when rich degrades", async () => {
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55, fell_back: true as const });
+
+    const result = await call({
+      type: "text",
+      html: "<b>hello</b>",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ eventType: "rich_fallback" }),
+    );
+  });
+
+  it("html param: succeeds without RICH_FALLBACK service message when rich succeeds", async () => {
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55 });
+
+    const result = await call({
+      type: "text",
+      html: "<b>hello</b>",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ eventType: "rich_fallback" }),
+    );
+  });
+
+  it("html param: passes richMessage: { html } to routeOutboundMessage", async () => {
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55 });
+
+    await call({
+      type: "text",
+      html: "<b>hello</b>",
+      token: TOKEN,
+    });
+
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledOnce();
+    const opts = mocks.routeOutboundMessage.mock.calls[0][2] as Record<string, unknown>;
+    expect(opts.richMessage).toEqual({ html: "<b>hello</b>" });
+  });
+
+  it("string param: delivers RICH_FALLBACK service message when rich degrades", async () => {
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55, fell_back: true as const });
+
+    const result = await call({
+      type: "text",
+      string: "hello & world",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.deliverServiceMessage).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ eventType: "rich_fallback" }),
+    );
+  });
+
+  it("string param: HTML-escapes content in richMessage.html", async () => {
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55 });
+
+    await call({
+      type: "text",
+      string: "a & b < c > d",
+      token: TOKEN,
+    });
+
+    expect(mocks.routeOutboundMessage).toHaveBeenCalledOnce();
+    const opts = mocks.routeOutboundMessage.mock.calls[0][2] as Record<string, unknown>;
+    const richMsg = opts.richMessage as { html: string };
+    expect(richMsg.html).toBe("a &amp; b &lt; c &gt; d");
+  });
+
+  it("mutual exclusion: text + html returns MISSING_CONTENT error", async () => {
+    const result = await call({
+      type: "text",
+      text: "hello",
+      html: "<b>hello</b>",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_CONTENT");
+  });
+
+  it("mutual exclusion: html + string returns MISSING_CONTENT error", async () => {
+    const result = await call({
+      type: "text",
+      html: "<b>hello</b>",
+      string: "hello",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("MISSING_CONTENT");
+  });
+
+  it("html param: returns message_id and split_count: 1 on success", async () => {
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55 });
+
+    const result = await call({
+      type: "text",
+      html: "<b>hello</b>",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_id).toBe(55);
+    expect(data.split_count).toBe(1);
+  });
+
+  it("html param compact: returns message_id without split_count", async () => {
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 55 });
+
+    const result = await call({
+      type: "text",
+      html: "<b>hello</b>",
+      response_format: "compact",
+      token: TOKEN,
+    });
+
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.message_id).toBe(55);
+    expect(data.split_count).toBeUndefined();
   });
 });

@@ -38,6 +38,8 @@ import { detectCaptionDuplication, type DuplicationResult } from "../hybrid-dupl
 import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/stream.js";
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../utils/timing.js";
 
+/** Legacy-path only: emitted when a markdown table is detected on the MarkdownV2 path.
+ * GFM tables render natively on the rich path — this warning is suppressed there (P4). */
 const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
 
 const AUDIO_LEAK_PATTERNS = [
@@ -64,6 +66,8 @@ function detectAudioMarkupLeak(raw: string): { cleanAudio: string; recoveredText
 
 const MARKDOWN_TABLE_RE = /^\|.*\|$/;
 
+/** Legacy-path only: detects a markdown table in MarkdownV2-converted text.
+ * Not used on the rich path since GFM tables render natively (P4). */
 function containsMarkdownTable(text: string): boolean {
   return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
 }
@@ -182,6 +186,14 @@ export function register(server: McpServer) {
           .enum(["Markdown", "HTML", "MarkdownV2"])
           .default("Markdown")
           .describe("For text content only. Default Markdown (auto-converted)."),
+        html: z
+          .string()
+          .optional()
+          .describe("HTML content for rich message (verbatim). Mutually exclusive with text and string."),
+        string: z
+          .string()
+          .optional()
+          .describe("Literal text for rich message. HTML special characters are escaped. Mutually exclusive with text and html."),
         disable_notification: z.boolean().optional().describe("Send silently (no sound/notification)"),
         reply_to: z.number().int().min(1).optional().describe("Reply to this message ID"),
         async: z.boolean().optional().describe("Applies to audio sends only. Defaults to async when audio is present — returns message_id_pending immediately; pass false to block until TTS completes and receive real message_id. Has no effect on non-audio sends."),
@@ -313,12 +325,60 @@ export function register(server: McpServer) {
 
       switch (resolvedType) {
         case "text": {
-          if (!text && !audio) {
+          // P2: Resolve format param — text/html/string are mutually exclusive
+          const htmlContent = args.html as string | undefined;
+          const stringContent = args.string as string | undefined;
+
+          if (!text && !audio && !htmlContent && !stringContent) {
             return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Pass text, audio, or both. help('send')." });
           }
           const { parse_mode, disable_notification } = args;
           const reply_to_message_id = args.reply_to;
           const compact = args.response_format === "compact";
+
+          const formatCount = [!!text, !!htmlContent, !!stringContent].filter(Boolean).length;
+          if (formatCount > 1) {
+            return toError({ code: "MISSING_CONTENT" as const, message: "text, html, and string are mutually exclusive — provide exactly one.", hint: "Choose one format param: text (Markdown), html (verbatim HTML), or string (literal text)." });
+          }
+          // P2: parse_mode deprecation warnings when explicit rich formats are used
+          if ((htmlContent !== undefined || stringContent !== undefined) &&
+              (parse_mode === "HTML" || parse_mode === "MarkdownV2")) {
+            process.stderr.write(`[send] DEPRECATED: parse_mode is ignored when html or string is provided. Remove parse_mode.\n`);
+          }
+
+          // P2: html/string explicit rich formats — always try rich, degrade on error
+          if (htmlContent !== undefined || stringContent !== undefined) {
+            let richHtml: string;
+            let fallbackText: string;
+
+            if (htmlContent !== undefined) {
+              richHtml = applyTopicToText(htmlContent, "HTML", args.topic);
+              // Fallback: strip HTML tags for plain text
+              fallbackText = richHtml.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+            } else {
+              // string param: HTML-escape the content, then apply topic in HTML mode
+              const escaped = stringContent!.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              richHtml = applyTopicToText(escaped, "HTML", args.topic);
+              // Fallback: plain text with markdown topic (best-effort)
+              fallbackText = applyTopicToText(stringContent!, "Markdown", args.topic);
+            }
+
+            try {
+              const result = await routeOutboundMessage(chatId, fallbackText, {
+                richMessage: { html: richHtml },
+                disable_notification,
+                reply_parameters: reply_to_message_id !== undefined ? { message_id: reply_to_message_id } : undefined,
+                _rawText: htmlContent ?? stringContent!,
+              });
+              if (result.fell_back) {
+                deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
+              }
+              warnUnrenderableChars(_sid, fallbackText);
+              return toResult({ message_id: result.message_id, ...(compact ? {} : { split_count: 1 }) });
+            } catch (err) {
+              return toError(err);
+            }
+          }
 
           // ── Voice mode ───────────────────────────────────────────────────
           if (audio) {
@@ -602,11 +662,12 @@ export function register(server: McpServer) {
                   : undefined,
                 _rawText: visualText,
               });
-              const hasTable = containsMarkdownTable(visualText);
+              if (msg.fell_back) {
+                deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
+              }
+              // P4: GFM tables render natively in rich messages — no TABLE_WARNING needed.
               warnUnrenderableChars(_sid, finalText);
-              return toResult(hasTable
-                ? { message_id: msg.message_id, ...(compact ? {} : { split_count: 1 }), info: TABLE_WARNING }
-                : { message_id: msg.message_id, ...(compact ? {} : { split_count: 1 }) });
+              return toResult({ message_id: msg.message_id, ...(compact ? {} : { split_count: 1 }) });
             } catch (err) {
               return toError(err);
             }
