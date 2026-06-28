@@ -114,10 +114,10 @@ export async function handleSpawnChild({
   const parentVoice = getSessionVoiceFor(parentSid);
   const parentSpeed = getSessionSpeedFor(parentSid);
   if (parentVoice !== null) {
-    runInSessionContext(childSid, () => setSessionVoice(parentVoice));
+    runInSessionContext(childSid, () => { setSessionVoice(parentVoice); });
   }
   if (parentSpeed !== null) {
-    runInSessionContext(childSid, () => setSessionSpeed(parentSpeed));
+    runInSessionContext(childSid, () => { setSessionSpeed(parentSpeed); });
   }
 
   // Guide the parent (host) toward dispatching a background sub-agent for the

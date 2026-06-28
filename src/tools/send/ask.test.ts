@@ -78,7 +78,7 @@ vi.mock("../../session-queue.js", () => ({
 
 import { register } from "./ask.js";
 
-const BASE_MSG = { message_id: 10, chat: { id: 42 }, date: 1000 };
+const _BASE_MSG = { message_id: 10, chat: { id: 42 }, date: 1000 };
 
 function makeTextEvent(messageId: number, text: string, replyTo?: number): TimelineEvent {
   return {

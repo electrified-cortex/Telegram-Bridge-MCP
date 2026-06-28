@@ -326,8 +326,8 @@ export function register(server: McpServer) {
       switch (resolvedType) {
         case "text": {
           // P2: Resolve format param — text/html/string are mutually exclusive
-          const htmlContent = args.html as string | undefined;
-          const stringContent = args.string as string | undefined;
+          const htmlContent = args.html;
+          const stringContent = args.string;
 
           if (!text && !audio && !htmlContent && !stringContent) {
             return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Pass text, audio, or both. help('send')." });
@@ -357,10 +357,10 @@ export function register(server: McpServer) {
               fallbackText = richHtml.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
             } else {
               // string param: HTML-escape the content, then apply topic in HTML mode
-              const escaped = stringContent!.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+              const escaped = (stringContent ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
               richHtml = applyTopicToText(escaped, "HTML", args.topic);
               // Fallback: plain text with markdown topic (best-effort)
-              fallbackText = applyTopicToText(stringContent!, "Markdown", args.topic);
+              fallbackText = applyTopicToText(stringContent ?? "", "Markdown", args.topic);
             }
 
             try {
@@ -368,7 +368,7 @@ export function register(server: McpServer) {
                 richMessage: { html: richHtml },
                 disable_notification,
                 reply_parameters: reply_to_message_id !== undefined ? { message_id: reply_to_message_id } : undefined,
-                _rawText: htmlContent ?? stringContent!,
+                _rawText: htmlContent ?? stringContent ?? "",
               });
               if (result.fell_back) {
                 deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);

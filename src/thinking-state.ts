@@ -98,8 +98,8 @@ function _getOrCreate(sid: number, chatId: number): ThinkingState {
   return s;
 }
 
-function unrefTimer(t: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval>): void {
-  if (typeof t === "object" && t !== null && "unref" in t) {
+function unrefTimer(t: ReturnType<typeof setTimeout>): void {
+  if (typeof t === "object" && "unref" in t) {
     (t as { unref(): void }).unref();
   }
 }
@@ -344,12 +344,18 @@ export async function extendThinking(
       s.phaseIndex = 0;
     }
 
+    // Detect expiry BEFORE the floor bump: a session can be active but have
+    // naturally expired (holdUntil passed, no explicit cancel). The guard at
+    // `!s.active` misses this case — check the timestamp too.
+    const wasExpiredOrInactive = !s.active || s.holdUntil < now;
+
     // Floor bump (extend is always allowed to set a longer hold)
     s.holdUntil = Math.max(s.holdUntil, newHoldUntil);
     s.chatId = chatIdRaw;
 
-    if (!s.active) {
-      // Start fresh
+    if (wasExpiredOrInactive) {
+      // Start fresh — new draft ID required so the new draft is independent
+      // of any stale draftId left over from the expired session
       s.draftId = nextDraftId();
       s.active = true;
     }

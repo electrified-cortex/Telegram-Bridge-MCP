@@ -71,19 +71,19 @@ const sessionMocks = vi.hoisted(() => ({
   dequeueBatch: vi.fn((): TimelineEvent[] => []),
   pendingCount: vi.fn((): number => 0),
   waitForEnqueue: vi.fn((): Promise<void> => new Promise(() => {})), // never resolves
-  getSessionQueue: vi.fn((_sid: number) => ({
+  getSessionQueue: vi.fn((_sid: number): { dequeueBatch(): TimelineEvent[]; pendingCount(): number; waitForEnqueue(): Promise<void> } | undefined => ({
     dequeueBatch: () => sessionMocks.dequeueBatch(),
     pendingCount: () => sessionMocks.pendingCount(),
     waitForEnqueue: () => sessionMocks.waitForEnqueue(),
   })),
-  validateSession: vi.fn(() => true),
-  getDequeueDefault: vi.fn(() => 300),
+  validateSession: vi.fn((_sid: number, _suffix: number) => true),
+  getDequeueDefault: vi.fn((_sid: number) => 300),
   setActiveSession: vi.fn(),
   touchSession: vi.fn(),
   setDequeueIdle: vi.fn(),
-  getSession: vi.fn(() => ({ name: "TestSession" })),
-  takeSilenceHint: vi.fn((): string | undefined => undefined),
-  checkConnectionToken: vi.fn((): "absent" => "absent"),
+  getSession: vi.fn((_sid: number) => ({ name: "TestSession" })),
+  takeSilenceHint: vi.fn((_sid: number): string | undefined => undefined),
+  checkConnectionToken: vi.fn((_sid: number, _token: string | undefined): "absent" => "absent"),
 }));
 
 vi.mock("../session-manager.js", () => ({
@@ -165,7 +165,7 @@ function makeUserMsg(id: number, type: "text" | "voice" | "command" | "photo" | 
     timestamp: new Date().toISOString(),
     event: "message",
     from: "user",
-    content: { type, text: "msg" } as never,
+    content: { type, text: "msg" },
     _update: { update_id: id },
   };
 }
@@ -177,7 +177,7 @@ function makeServiceMsg(id: number): TimelineEvent {
     timestamp: new Date().toISOString(),
     event: "service_message",
     from: "system",
-    content: { type: "service", text: "info", event_type: "test_event" } as never,
+    content: { type: "service", text: "info", event_type: "test_event" },
     _update: { update_id: id },
   };
 }
@@ -189,7 +189,19 @@ function makeReminder(id: number): TimelineEvent {
     timestamp: new Date().toISOString(),
     event: "reminder",
     from: "system",
-    content: { type: "reminder", text: "do thing" } as never,
+    content: { type: "reminder", text: "do thing" },
+    _update: { update_id: id },
+  };
+}
+
+/** Make a user message with type "unknown" (catch-all actionable trigger type). */
+function makeUnknownMsg(id: number): TimelineEvent {
+  return {
+    id,
+    timestamp: new Date().toISOString(),
+    event: "message",
+    from: "user",
+    content: { type: "unknown", text: "msg" },
     _update: { update_id: id },
   };
 }
@@ -267,6 +279,15 @@ describe("dequeue → thinking trigger", () => {
 
   it("fires onActionableDequeue for a sticker message from user", async () => {
     sessionMocks.dequeueBatch.mockReturnValueOnce([makeUserMsg(1, "sticker")]);
+    await runDrainLoop(SID, 0, makeAbortSignal());
+    await flushMicrotasks();
+    expect(thinkingMocks.onActionableDequeue).toHaveBeenCalledWith(SID);
+  });
+
+  it("fires onActionableDequeue for a user message with type unknown", async () => {
+    // "unknown" is the catch-all for unrecognised content types and must
+    // be treated as actionable so the Thinking indicator fires.
+    sessionMocks.dequeueBatch.mockReturnValueOnce([makeUnknownMsg(1)]);
     await runDrainLoop(SID, 0, makeAbortSignal());
     await flushMicrotasks();
     expect(thinkingMocks.onActionableDequeue).toHaveBeenCalledWith(SID);

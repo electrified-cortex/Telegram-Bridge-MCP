@@ -13,7 +13,7 @@ import type { TelegramError } from "./telegram.js";
 // ---------------------------------------------------------------------------
 
 const mocks = vi.hoisted(() => ({
-  sendMessageDraft: vi.fn().mockResolvedValue(true as true),
+  sendMessageDraft: vi.fn().mockResolvedValue(true),
   resolveChat: vi.fn((): number | TelegramError => 100),
   getApi: vi.fn(),
 }));
@@ -132,10 +132,14 @@ describe("thinking-state", () => {
 
   describe("onActionableDequeue — floor bump refresh", () => {
     it("does NOT re-fire draft if holdUntil is already >= 30s from now", async () => {
-      await onActionableDequeue(SID);
+      // Set a 120s hold via extendThinking first so holdUntil is genuinely > 30s from now.
+      // With frozen time, onActionableDequeue alone would produce newFloor === holdUntil
+      // (trivially false for >) — using extendThinking ensures the guard is reached correctly.
+      await extendThinking(SID, { hold: 120 });
       expect(mocks.sendMessageDraft).toHaveBeenCalledTimes(1);
 
-      // Immediately call again (holdUntil is still ~30s from now)
+      // onActionableDequeue: newFloor = now + 30s, holdUntil = now + 120s
+      // newFloor < holdUntil → guard fires correctly (no re-fire)
       await onActionableDequeue(SID);
 
       // No re-fire: holdUntil >= now + 30s still
@@ -181,7 +185,7 @@ describe("thinking-state", () => {
     });
 
     it("is a no-op when thinking is not active", () => {
-      expect(() => cancelThinkingForSid(SID)).not.toThrow();
+      expect(() => { cancelThinkingForSid(SID); }).not.toThrow();
       expect(isThinkingActive(SID)).toBe(false);
     });
 
@@ -272,6 +276,29 @@ describe("thinking-state", () => {
       // Another cycle
       await vi.advanceTimersByTimeAsync(8100);
       expect(mocks.sendMessageDraft).toHaveBeenCalledWith(100, expect.any(Number), "Phase C");
+    });
+
+    it("extendThinking called after natural 30s expiry issues a new draftId (not reusing stale one)", async () => {
+      // Start thinking via an actionable dequeue (natural 30s hold)
+      await onActionableDequeue(SID);
+      const draftId1 = _getDraftIdForTest(SID);
+      expect(mocks.sendMessageDraft).toHaveBeenCalledTimes(1);
+
+      // Advance time past the natural 30s hold — session is now expired but still
+      // technically active (no explicit cancel). The old guard (!s.active) would miss this.
+      await vi.advanceTimersByTimeAsync(31_000);
+      mocks.sendMessageDraft.mockClear();
+
+      // extendThinking after expiry: must issue a fresh draftId, not reuse the stale one
+      const result = await extendThinking(SID, { hold: 30 });
+      expect(result.ok).toBe(true);
+
+      // A fresh draft was sent
+      expect(mocks.sendMessageDraft).toHaveBeenCalledTimes(1);
+
+      // Draft ID must differ — expired sessions get a clean slate
+      const draftId2 = _getDraftIdForTest(SID);
+      expect(draftId2).not.toBe(draftId1);
     });
   });
 

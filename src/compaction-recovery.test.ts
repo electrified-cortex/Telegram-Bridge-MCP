@@ -36,7 +36,6 @@ vi.mock("./animation-state.js", () => ({
 }));
 
 import { maybeReplaceRecoveringAnimation, COMPACTED_NOTIFY_TEXT, COMPACTED_NOTIFY_PARSE_MODE } from "./compaction-recovery.js";
-import { getHasCompacted, setHasCompacted, clearHasCompacted } from "./session-manager.js";
 
 // ---------------------------------------------------------------------------
 // Tests
