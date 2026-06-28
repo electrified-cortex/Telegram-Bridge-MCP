@@ -3,12 +3,14 @@
  *
  * Requires HTTP mode (--http flag). Returns HTTP_MODE_REQUIRED error otherwise.
  *
- * Side-effect: schedules a one-shot ONBOARDING_ARM_REMINDER (~45 s) so the
- * participant gets a gentle nudge if they receive this response but never arm
- * the Monitor. The reminder is cancelled when the SSE connection opens.
+ * Side-effects:
+ *   1. Delivers a setup breadcrumb as a service message in chat so the agent
+ *      has the concrete arm command available even after context compaction.
+ *   2. Schedules a one-shot ONBOARDING_ARM_REMINDER (~45 s) so the participant
+ *      gets a gentle nudge if they never arm the Monitor.  The reminder is
+ *      cancelled when the SSE connection opens.
  *
  * Response: {
- *   ok: true,
  *   sse_url: string,
  *   command: string,          — filtered sse-monitor.sh invocation (NOT raw curl)
  *   monitor_type: "sse",
@@ -22,6 +24,8 @@ import { requireAuth } from "../../session-gate.js";
 import { getSseBaseUrl } from "../../http-mode.js";
 import { scheduleArmReminder } from "../../sse-endpoint.js";
 import { resetMaxWait0NudgeState } from "../dequeue.js";
+import { deliverServiceMessage } from "../../session-queue.js";
+import { SERVICE_MESSAGES } from "../../service-messages.js";
 
 export function handleActivityListen(args: Record<string, unknown>) {
   const sid = requireAuth(args.token as number | undefined);
@@ -49,8 +53,15 @@ export function handleActivityListen(args: Record<string, unknown>) {
   // Arm the one-shot reminder — cancelled if the SSE connection opens in time.
   scheduleArmReminder(sid, command);
 
+  // Deliver the setup breadcrumb as a service message so the agent has the
+  // concrete arm command available in chat even after context compaction.
+  deliverServiceMessage(
+    sid,
+    SERVICE_MESSAGES.ACTIVITY_LISTEN_SETUP.text(command, downloadUrl),
+    SERVICE_MESSAGES.ACTIVITY_LISTEN_SETUP.eventType,
+  );
+
   return toResult({
-    ok: true,
     sse_url: sseUrl,
     command,
     monitor_type: "sse",

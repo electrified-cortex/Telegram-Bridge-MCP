@@ -285,6 +285,21 @@ export const SERVICE_MESSAGES = deepFreeze({
 
   // ── SSE onboarding handshake ──────────────────────────────────────────────
 
+  /** Fired immediately after activity/listen succeeds. Concrete arm command for the SSE monitor. */
+  ACTIVITY_LISTEN_SETUP: {
+    eventType: "activity_listen_setup" as const,
+    /**
+     * @param command The filtered monitor arm command (e.g. `bash sse-monitor.sh '<url>'`)
+     * @param downloadUrl The URL to download sse-monitor.sh if no repo checkout is available
+     */
+    text: (command: string, downloadUrl: string) =>
+      `Arm this in the Monitor tool (persistent: true) to receive push notifications:\n` +
+      `  \`${command}\`\n\n` +
+      `No repo checkout? Download the script first:\n` +
+      `  GET ${downloadUrl}\n\n` +
+      `⚠ Do NOT use raw curl -N — the SSE stream sends \`: keepalive\` heartbeats every 30 s that would spam wake events. Always use the filtered script.`,
+  },
+
   /** Fired once when the participant's SSE monitor actually connects (filtered path confirmed). */
   ONBOARDING_PARTICIPATING: {
     eventType: "onboarding_participating" as const,
