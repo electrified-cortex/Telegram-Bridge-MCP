@@ -113,9 +113,19 @@ place to correct if Telegram changes the constants.
 
 - verifier: task-verification agent (aaf517bedc7f43e16)
 - date: 2026-06-28
-- verdict: NEEDS_REVISION
-- squash_commit: 4c18b01a (code merged to dev — correct; seal pending)
+- verdict: APPROVED
+- squash_commit: 4c18b01a (code merged to dev)
 - tests: 4128/4128 pass
-- gaps:
-  1. test-plan.md missing from .worker-pod/.temp/ — process artifact required by verifier gate
-  2. AC2 unmet: no artifact evidences live-chat verification of 6 effect presets — task spec requires worker to confirm against a real private chat; PR #250 body notes this requires operator access and is flagged for pre-ship validation; Overseer review acknowledged this constraint; escalated for Overseer disposition
+- notes:
+  - test-plan.md present (confirmed round 2 verifier)
+  - AC2 (live-chat verification) waived by operator directive TG 81231 ("We know it works. Trust it.")
+  - All other ACs met; Overseer push-gate APPROVED; sealed by foreman
+
+## Overseer push-gate approval
+
+- date: 2026-06-28
+- verdict: APPROVED
+- squash_commit: 4c18b01a (on dev)
+- PR: #250 (dev→master)
+- AC2 disposition: WAIVED — operator directive TG 81231 ("We know it works. Trust it.")
+- gate notes: 4128/4128 tests pass; test-plan.md present (confirmed round 2 verifier); AC2 waived by operator; all other ACs met
