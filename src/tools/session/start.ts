@@ -148,7 +148,8 @@ async function requestApproval(
   });
 
   // Delete the prompt on approval (it's private UI — a public broadcast is
-  // sent separately). On denial, edit in-place to show the outcome.
+  // sent separately). On denial, edit in-place to show the outcome and clear
+  // the keyboard so lingering color-picker buttons cannot be re-pressed.
   if (decision.approved) {
     await getApi().deleteMessage(chatId, msgId).catch(() => {});
   } else {
@@ -156,7 +157,7 @@ async function requestApproval(
       chatId,
       msgId,
       `*Session denied:* ${markdownToV2(name)} ✗`,
-      { parse_mode: "MarkdownV2" },
+      { parse_mode: "MarkdownV2", reply_markup: { inline_keyboard: [] } } as Record<string, unknown>,
     ).catch(() => {});
   }
 
