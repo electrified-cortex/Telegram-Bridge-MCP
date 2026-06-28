@@ -1,4 +1,5 @@
 // Never call 'send' from send.ts handler — use telegram.js primitives directly
+import { GrammyError } from "grammy";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, resolveMediaSource, sendVoiceDirect, isRichMessagesEnabled, routeOutboundMessage } from "../telegram.js";
@@ -22,6 +23,7 @@ import { detectAndExtract, writeTempVisualFile } from "../visual-attachment-pipe
 const SAFETY_SCHEMA = z.enum(["disable"]).optional().describe(
   'Safety override. Pass `safety: "disable"` to bypass the absolute-path block and send the message anyway. An operator notification is emitted when this override is used.',
 );
+import { MESSAGE_EFFECTS } from "../message-effects.js";
 // Type-routing handlers (v6 Phase 2)
 import { handleSendFile } from "./send/file.js";
 import { handleSendMediaGroup } from "./send/media-group.js";
@@ -283,6 +285,15 @@ export function register(server: McpServer) {
           .enum(["default", "compact"])
           .optional()
           .describe("Response format. \"compact\" omits inferrable fields (split: true, split_count, timed_out: false, voice: true) to reduce token usage. Defaults to \"default\"."),
+        effect: z
+          .enum(["fire", "thumbs_up", "thumbs_down", "heart", "celebrate", "poop"])
+          .optional()
+          .describe(
+            "Full-screen animation effect played when the message arrives (text sends only). " +
+            "No-op in group chats — Telegram only supports effects in private conversations. " +
+            "Applied to the last chunk on multi-chunk sends. " +
+            "Effect IDs are well-known but unverified — if Telegram rejects the ID, the message is still delivered without the effect.",
+          ),
         safety: SAFETY_SCHEMA,
       },
     },
@@ -631,6 +642,9 @@ export function register(server: McpServer) {
           }
           const chunks = splitMessage(finalText);
 
+          // Resolve message effect (text path only; applied to last chunk only)
+          const effectId = args.effect ? MESSAGE_EFFECTS[args.effect] : undefined;
+
           // If audio is still rendering for this session, queue text after it so
           // the operator always receives audio before the follow-up text message.
           if (hasInflightAudio(_sid)) {
@@ -670,7 +684,9 @@ export function register(server: McpServer) {
           // path. `parse_mode === undefined` is treated as Markdown (default).
           // The queued-after-audio path above is left on the existing V2 path
           // for simplicity — rich routing applies to the direct send only.
+          // Effect sends always use the plain path (rich path has no effect support).
           if (
+            !effectId &&
             isRichMessagesEnabled() &&
             parse_mode === "Markdown" &&
             chunks.length === 1
@@ -702,17 +718,40 @@ export function register(server: McpServer) {
               const chunk = chunks[i];
               const textErr = validateText(chunk);
               if (textErr) return toError(textErr);
-              const msg = await callApi(() =>
-                getApi().sendMessage(chatId, chunk, {
-                  parse_mode: finalMode,
-                  disable_notification,
-                  reply_parameters:
-                    i === 0 && reply_to_message_id !== undefined
-                      ? { message_id: reply_to_message_id }
-                      : undefined,
-                  _rawText: chunks.length === 1 ? visualText : undefined,
-                } as Record<string, unknown>),
-              );
+              // Apply effect only to the last chunk
+              const isLastChunk = i === chunks.length - 1;
+              const chunkEffectId = effectId && isLastChunk ? effectId : undefined;
+              const sendOpts = {
+                parse_mode: finalMode,
+                disable_notification,
+                reply_parameters:
+                  i === 0 && reply_to_message_id !== undefined
+                    ? { message_id: reply_to_message_id }
+                    : undefined,
+                _rawText: chunks.length === 1 ? visualText : undefined,
+                ...(chunkEffectId ? { message_effect_id: chunkEffectId } : {}),
+              } as Record<string, unknown>;
+              let msg: { message_id: number };
+              try {
+                msg = await callApi(() => getApi().sendMessage(chatId, chunk, sendOpts));
+              } catch (effectErr) {
+                // If Telegram rejected the effect ID (400), retry without it and note the drop.
+                if (chunkEffectId && effectErr instanceof GrammyError && effectErr.error_code === 400) {
+                  const retryOpts = {
+                    parse_mode: finalMode,
+                    disable_notification,
+                    reply_parameters:
+                      i === 0 && reply_to_message_id !== undefined
+                        ? { message_id: reply_to_message_id }
+                        : undefined,
+                    _rawText: chunks.length === 1 ? visualText : undefined,
+                  } as Record<string, unknown>;
+                  msg = await callApi(() => getApi().sendMessage(chatId, chunk, retryOpts));
+                  deliverServiceMessage(_sid, SERVICE_MESSAGES.EFFECT_DROPPED);
+                } else {
+                  throw effectErr;
+                }
+              }
               message_ids.push(msg.message_id);
             }
             const hasTable = containsMarkdownTable(visualText);
