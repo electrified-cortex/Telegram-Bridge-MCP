@@ -496,7 +496,7 @@ describe("session/spawn-child", () => {
 
   it("AC4: child inherits parent voice when parent has voice set", async () => {
     // Set parent voice in parent session context
-    runInSessionContext(PARENT_SID, () => setSessionVoice("nova"));
+    runInSessionContext(PARENT_SID, () => { setSessionVoice("nova"); });
 
     await handleSpawnChild({ token: 1123456, topic: "Research" });
 
@@ -504,8 +504,8 @@ describe("session/spawn-child", () => {
   });
 
   it("AC4: child inherits parent voice_speed when parent has speed set", async () => {
-    runInSessionContext(PARENT_SID, () => setSessionVoice("alloy"));
-    runInSessionContext(PARENT_SID, () => setSessionSpeed(1.25));
+    runInSessionContext(PARENT_SID, () => { setSessionVoice("alloy"); });
+    runInSessionContext(PARENT_SID, () => { setSessionSpeed(1.25); });
 
     await handleSpawnChild({ token: 1123456, topic: "Research" });
 
@@ -528,7 +528,7 @@ describe("session/spawn-child", () => {
 
   it("AC4: voice inheritance is independent of name/color inheritance", async () => {
     mocks.getSession.mockReturnValue({ sid: PARENT_SID, name: "Curator", color: "🔵" });
-    runInSessionContext(PARENT_SID, () => setSessionVoice("echo"));
+    runInSessionContext(PARENT_SID, () => { setSessionVoice("echo"); });
 
     await handleSpawnChild({ token: 1123456, topic: "Research" });
 

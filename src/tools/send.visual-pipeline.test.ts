@@ -18,7 +18,7 @@ import { createMockServer, parseResult, isError } from "./test-utils.js";
 const mocks = vi.hoisted(() => ({
   // ── visual pipeline ──────────────────────────────────────────────────────
   detectAndExtract: vi.fn((t: string) => ({ modifiedText: t, blocks: [] as unknown[] })),
-  writeTempVisualFile: vi.fn(async (_block: unknown) => "/tmp/telegram-bridge-mcp/diagram-0-0.svg"),
+  writeTempVisualFile: vi.fn((_block: unknown) => "/tmp/telegram-bridge-mcp/diagram-0-0.svg"),
   resolveMediaSource: vi.fn((_path: string) => ({
     source: "/tmp/telegram-bridge-mcp/diagram-0-0.svg",
   })),
@@ -394,11 +394,11 @@ describe("send — visual attachment pipeline integration", () => {
 
   it("multiple blocks: sendDocument calls precede sendMessage call (ordering)", async () => {
     const callOrder: string[] = [];
-    mocks.sendDocument.mockImplementation(async () => {
+    mocks.sendDocument.mockImplementation(() => {
       callOrder.push("doc");
       return SENT_DOC;
     });
-    mocks.sendMessage.mockImplementation(async () => {
+    mocks.sendMessage.mockImplementation(() => {
       callOrder.push("msg");
       return SENT_MSG;
     });
@@ -477,7 +477,7 @@ describe("send — visual attachment pipeline integration", () => {
 
     await call({ text: "<svg><rect/></svg>", token: TOKEN });
 
-    const proseArg = mocks.applyTopicToText.mock.calls[0]?.[0] as string;
+    const proseArg = mocks.applyTopicToText.mock.calls[0]?.[0];
     // Orphan placeholder must not leak through
     expect(proseArg).not.toContain(block.placeholder);
     // Original block content is substituted instead
@@ -492,7 +492,7 @@ describe("send — visual attachment pipeline integration", () => {
 
     await call({ text: "<svg><rect/></svg>", token: TOKEN });
 
-    const proseArg = mocks.applyTopicToText.mock.calls[0]?.[0] as string;
+    const proseArg = mocks.applyTopicToText.mock.calls[0]?.[0];
     expect(proseArg).not.toContain(block.placeholder);
     expect(proseArg).toContain(block.content);
   });

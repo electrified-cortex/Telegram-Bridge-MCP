@@ -13,7 +13,7 @@ import type { TelegramError } from "./telegram.js";
 // ---------------------------------------------------------------------------
 
 const mocks = vi.hoisted(() => ({
-  sendMessageDraft: vi.fn().mockResolvedValue(true as true),
+  sendMessageDraft: vi.fn().mockResolvedValue(true),
   resolveChat: vi.fn((): number | TelegramError => 100),
   getApi: vi.fn(),
 }));
@@ -181,7 +181,7 @@ describe("thinking-state", () => {
     });
 
     it("is a no-op when thinking is not active", () => {
-      expect(() => cancelThinkingForSid(SID)).not.toThrow();
+      expect(() => { cancelThinkingForSid(SID); }).not.toThrow();
       expect(isThinkingActive(SID)).toBe(false);
     });
 

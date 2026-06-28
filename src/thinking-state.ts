@@ -98,8 +98,8 @@ function _getOrCreate(sid: number, chatId: number): ThinkingState {
   return s;
 }
 
-function unrefTimer(t: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval>): void {
-  if (typeof t === "object" && t !== null && "unref" in t) {
+function unrefTimer(t: ReturnType<typeof setTimeout>): void {
+  if ("unref" in t) {
     (t as { unref(): void }).unref();
   }
 }
