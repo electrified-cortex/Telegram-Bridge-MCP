@@ -177,7 +177,7 @@ vi.mock("./progress/update.js", () => ({ handleUpdateProgress: mocks.handleUpdat
 vi.mock("./commands/set.js", () => ({ handleSetCommands: vi.fn(), register: vi.fn() }));
 
 // ─── send.ts sub-handler stubs ───────────────────────────────────────────────
-vi.mock("./send/file.js", () => ({ handleSendFile: vi.fn() }));
+vi.mock("./send/file.js", () => ({ handleSendFile: vi.fn(), handleSendFileAction: vi.fn() }));
 vi.mock("./send/notify.js", () => ({ handleNotify: vi.fn() }));
 vi.mock("./send/choice.js", () => ({ handleSendChoice: vi.fn() }));
 vi.mock("./send/dm.js", () => ({ handleSendDirectMessage: vi.fn() }));

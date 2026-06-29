@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { InputFile } from "grammy";
 import {
   getApi, toResult, toError, validateCaption, resolveChat,
   callApi, resolveMediaSource, sendVoiceDirect,
@@ -12,6 +13,8 @@ import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { findAbsolutePath, absPathBlockedError } from "../../abs-path-guard.js";
 import { deliverServiceMessage } from "../../session-queue.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
+import { getAndDeleteFile } from "../../file-store.js";
+import { getSseBaseUrl } from "../../http-mode.js";
 
 // ---------------------------------------------------------------------------
 // Auto-detection
@@ -223,6 +226,115 @@ export async function handleSendFile({
   } catch (err) {
     return toError(err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// action(type: "send_file") — bridge-URL and SAFE_FILE_DIR file sending
+// ---------------------------------------------------------------------------
+
+/**
+ * Handler for `action(type: "send_file", url | file_path, ...)`.
+ *
+ * When `url` is a bridge URL (`http://localhost:<port>/files/<uuid>`), the file
+ * is retrieved from the in-memory store directly (no outbound HTTP request).
+ * When `url` is an HTTPS URL it is forwarded to Telegram directly (same as the
+ * existing `send_file` tool behaviour for HTTPS inputs).
+ * When `file_path` is provided the existing SAFE_FILE_DIR check applies.
+ */
+export async function handleSendFileAction(args: Record<string, unknown>) {
+  const _sid = requireAuth(args.token as number);
+  if (typeof _sid !== "number") return toError(_sid);
+  const chatId = resolveChat();
+  if (typeof chatId !== "number") return toError(chatId);
+
+  const url       = typeof args.url        === "string" ? args.url        : undefined;
+  const filePath  = typeof args.file_path  === "string" ? args.file_path  : undefined;
+  const caption   = typeof args.caption    === "string" ? args.caption    : undefined;
+  const fileName  = typeof args.file_name  === "string" ? args.file_name  : undefined;
+  const disableNotification = typeof args.disable_notification === "boolean" ? args.disable_notification : undefined;
+  const replyTo   = typeof args.message_id === "number" ? (args.message_id as number) : undefined;
+
+  if (!url && !filePath) {
+    return toError({
+      code: "MISSING_PARAM" as const,
+      message: "send_file requires either `url` (bridge URL or HTTPS) or `file_path` (path inside safe dir).",
+      hint: "Obtain a bridge URL by POST /files with Authorization: Bearer <token>, then pass the returned url here.",
+    });
+  }
+
+  if (url) {
+    // ── Bridge URL: read from in-memory store directly ─────────────────────
+    const base = getSseBaseUrl();
+    const bridgePrefix = base ? `${base}/files/` : null;
+    if (bridgePrefix && url.startsWith(bridgePrefix)) {
+      const uuid = url.slice(bridgePrefix.length);
+      const entry = getAndDeleteFile(uuid);
+      if (!entry) {
+        return toError({
+          code: "UNKNOWN" as const,
+          message: "File not found or expired in bridge store. The entry may have already been downloaded or its TTL elapsed.",
+          hint: "Upload the file again via POST /files to obtain a fresh URL.",
+        });
+      }
+      const resolvedName = fileName ?? "file";
+      const inputFile = new InputFile(entry.buffer, resolvedName);
+      if (caption) {
+        const capErr = validateCaption(caption);
+        if (capErr) return toError(capErr);
+      }
+      const gen = typingGeneration();
+      try {
+        await showTyping(60, "upload_document");
+        const msg = await callApi(() =>
+          getApi().sendDocument(chatId, inputFile, {
+            caption,
+            disable_notification: disableNotification,
+            reply_parameters: replyTo !== undefined ? { message_id: replyTo } : undefined,
+          }),
+        );
+        setTimeout(() => cancelTypingIfSameGeneration(gen), 1000);
+        return toResult({
+          message_id: msg.message_id,
+          file_id: msg.document.file_id,
+          file_name: msg.document.file_name,
+        });
+      } catch (err) {
+        cancelTypingIfSameGeneration(gen);
+        return toError(err);
+      }
+    }
+
+    // ── HTTPS URL: reject plain HTTP from external hosts ───────────────────
+    if (!url.startsWith("https://")) {
+      return toError({
+        code: "UNKNOWN" as const,
+        message: "Only bridge URLs (http://localhost:<port>/files/<uuid>) or HTTPS URLs are accepted. Plain HTTP from external hosts is not allowed.",
+        hint: "Upload the file to the bridge via POST /files to get a bridge URL, or host the file on HTTPS.",
+      });
+    }
+
+    // ── HTTPS URL: delegate to handleSendFile which forwards to Telegram ───
+    return handleSendFile({
+      file: url,
+      type: "auto",
+      caption,
+      parse_mode: (args.parse_mode as "Markdown" | "HTML" | "MarkdownV2" | undefined) ?? "Markdown",
+      disable_notification: disableNotification,
+      reply_to: replyTo,
+      token: args.token as number,
+    });
+  }
+
+  // ── file_path: SAFE_FILE_DIR check via handleSendFile ─────────────────────
+  return handleSendFile({
+    file: filePath!,
+    type: "auto",
+    caption,
+    parse_mode: (args.parse_mode as "Markdown" | "HTML" | "MarkdownV2" | undefined) ?? "Markdown",
+    disable_notification: disableNotification,
+    reply_to: replyTo,
+    token: args.token as number,
+  });
 }
 
 export function register(server: McpServer) {

@@ -86,6 +86,7 @@ import { handleNameTag } from "./name-tag.js";
 import { decodeToken } from "./identity-schema.js";
 import { getSession } from "../session-manager.js";
 import { handleThinkingExtend, handleThinkingClose } from "./thinking/extend.js";
+import { handleSendFileAction } from "./send/file.js";
 type ToolResult = ReturnType<typeof toResult>;
 
 /** Action paths explicitly permitted for `read-only` child sessions. */
@@ -270,6 +271,10 @@ export function setupActionRegistry(): void {
   registerAction("thinking/extend", toActionHandler(handleThinkingExtend));
   registerAction("thinking/close", toActionHandler(handleThinkingClose));
 
+  // send_file — send a file via bridge URL (http://localhost:<port>/files/<uuid>)
+  // or a SAFE_FILE_DIR path; bypasses the SAFE_FILE_DIR restriction for bridge URLs.
+  registerAction("send_file", toActionHandler(handleSendFileAction));
+
 }
 
 const DESCRIPTION =
@@ -421,7 +426,11 @@ export function register(server: McpServer): void {
         url: z
           .string()
           .optional()
-          .describe("acknowledge: URL to open in the user's browser (for games)."),
+          .describe(
+            "acknowledge: URL to open in the user's browser (for games). " +
+            "send_file: Bridge URL (http://localhost:<port>/files/<uuid>) returned by POST /files, " +
+            "or an HTTPS URL the bridge forwards directly to Telegram.",
+          ),
         cache_time: z
           .number()
           .int()
@@ -742,11 +751,14 @@ export function register(server: McpServer): void {
           .enum(["chat", "default"])
           .optional()
           .describe('commands/set: "chat" scopes commands to active chat (default). "default" sets globally.'),
-        // activity/file/* params
+        // activity/file/* params and send_file param
         file_path: z
           .string()
           .optional()
-          .describe("activity/file/create, activity/file/edit: Absolute path to the activity file. Omit to let TMCP generate one in data/activity/."),
+          .describe(
+            "activity/file/create, activity/file/edit: Absolute path to the activity file. Omit to let TMCP generate one in data/activity/. " +
+            "send_file: Local file path inside the safe temp directory (alternative to `url`).",
+          ),
         // session/revoke-child param
         child_token: z
           .number()

@@ -108,3 +108,13 @@ Base: `dev` at current HEAD
 - fixed: corrected Base branch from `main` → `dev` in worker notes
 - notes: (1) Worker must ensure 401 is returned on invalid/missing token for POST /files (happy-path ACs don't cover auth rejection — add a unit test). (2) Express/Fastify ambiguity in worker notes is acceptable — worker discovers from src/server.ts. (3) In-memory store acceptable for v1 — TTL eviction prevents unbounded growth. (4) TMCP harness-agnostic rule applies to any new MCP tool descriptions.
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## Verification
+
+- **verified-by**: foreman (post-gate adversarial review + Overseer gate APPROVED)
+- **date**: 2026-06-28
+- **verdict**: PASS
+- **squash_commit**: TBD
+- **gate-holds-cleared**: auth-before-body (security: isValidAuthHeader moved before readBodyBuffer in POST /files handler); structured VOICE_RESTRICTED throw in sendVoiceDirect
+- **tests**: 4194/4194 passing (171 source files, HEAD c04bca65)
+- **notes**: file-store.ts (new in-memory TTL store), file-transfer-endpoint.ts (POST/GET /files with 401→400→store flow), send/file.ts (new), download/file.ts (bridge_url field), tools/action.ts (send_file registered). Auth-before-body gate-hold fixed per Overseer GATE FINAL directive.

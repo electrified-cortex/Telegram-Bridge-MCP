@@ -571,7 +571,11 @@ export async function sendVoiceDirect(
     const resolved = realpathSync(voice); // realpathSync resolves symlinks; resolve() is lexical only
     const safeRelative = path.relative(SAFE_FILE_DIR, resolved);
     if (safeRelative.startsWith("..") || path.isAbsolute(safeRelative)) {
-      throw new Error(`Local file read restricted to ${SAFE_FILE_DIR}. Refusing to read: ${resolved}`);
+      // Throw a structured TelegramError so callers receive a classifiable error code
+      // rather than an unclassified UNKNOWN from a plain thrown Error.
+      // toError() recognises objects with `code` + `message` and maps them correctly.
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw { code: "VOICE_RESTRICTED" as const, message: `Local file read restricted to ${SAFE_FILE_DIR}. Use the bridge upload endpoint (/files) to stage files outside the safe directory.` } satisfies TelegramError;
     }
     const data = readFileSync(resolved);
     form.append("voice", new Blob([data], { type: "audio/ogg" }), "voice.ogg");
