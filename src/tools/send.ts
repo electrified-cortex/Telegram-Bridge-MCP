@@ -42,6 +42,13 @@ import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../utils/timing.js";
 import { applyPhoneticRemapping } from "../phonetic-remapping.js";
 
+const MARKDOWN_TABLE_RE = /^\|.*\|$/;
+
+/** Returns true when text contains at least one markdown table row. */
+function containsMarkdownTable(text: string): boolean {
+  return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
+}
+
 const AUDIO_LEAK_PATTERNS = [
   /<\/audio>/i,
   /<parameter\s+name=/i,
@@ -187,7 +194,11 @@ export function register(server: McpServer) {
         string: z
           .string()
           .optional()
-          .describe("Literal text for rich message. HTML special characters are escaped. Mutually exclusive with text and html."),
+          .describe("Literal text for rich message. HTML special characters are escaped. Mutually exclusive with text, html, and markdown."),
+        markdown: z
+          .string()
+          .optional()
+          .describe("Markdown content for rich rendering (GFM). Tables, bold, italic, and code render natively. Mutually exclusive with text, html, and string. Use for structured content with tables or explicit rich formatting."),
         disable_notification: z.boolean().optional().describe("Send silently (no sound/notification)"),
         reply_to: z.number().int().min(1).optional().describe("Reply to this message ID"),
         async: z.boolean().optional().describe("Applies to audio sends only. Defaults to async when audio is present — returns message_id_pending immediately; pass false to block until TTS completes and receive real message_id. Has no effect on non-audio sends."),
@@ -352,28 +363,49 @@ export function register(server: McpServer) {
 
       switch (resolvedType) {
         case "text": {
-          // P2: Resolve format param — text/html/string are mutually exclusive
+          // Resolve format params — text/markdown/html/string are mutually exclusive
           const htmlContent = args.html;
           const stringContent = args.string;
+          const markdownContent = args.markdown;
 
-          if (!text && !audio && !htmlContent && !stringContent) {
-            return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Pass text, audio, or both. help('send')." });
+          if (!text && !audio && !htmlContent && !stringContent && !markdownContent) {
+            return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text', 'markdown', or 'audio' is required.", hint: "Pass text, markdown, audio, or a combination. help('send')." });
           }
           const { parse_mode, disable_notification } = args;
           const reply_to_message_id = args.reply_to;
           const compact = args.response_format === "compact";
 
-          const formatCount = [!!text, !!htmlContent, !!stringContent].filter(Boolean).length;
+          const formatCount = [!!text, !!htmlContent, !!stringContent, !!markdownContent].filter(Boolean).length;
           if (formatCount > 1) {
-            return toError({ code: "MISSING_CONTENT" as const, message: "text, html, and string are mutually exclusive — provide exactly one.", hint: "Choose one format param: text (Markdown), html (verbatim HTML), or string (literal text)." });
+            return toError({ code: "MISSING_CONTENT" as const, message: "text, markdown, html, and string are mutually exclusive — provide exactly one.", hint: "Choose one format param: text (MarkdownV2), markdown (GFM rich), html (verbatim HTML), or string (literal text)." });
           }
-          // P2: parse_mode deprecation warnings when explicit rich formats are used
-          if ((htmlContent !== undefined || stringContent !== undefined) &&
+          // parse_mode deprecation when explicit rich formats are used
+          if ((htmlContent !== undefined || stringContent !== undefined || markdownContent !== undefined) &&
               (parse_mode === "HTML" || parse_mode === "MarkdownV2")) {
-            process.stderr.write(`[send] DEPRECATED: parse_mode is ignored when html or string is provided. Remove parse_mode.\n`);
+            process.stderr.write(`[send] DEPRECATED: parse_mode is ignored when html, string, or markdown is provided. Remove parse_mode.\n`);
           }
 
-          // P2: html/string explicit rich formats — always try rich, degrade on error
+          // markdown: explicit GFM rich param — tables and formatting render natively
+          if (markdownContent !== undefined) {
+            const richMd = applyTopicToText(markdownContent, "Markdown", args.topic);
+            try {
+              const result = await routeOutboundMessage(chatId, markdownContent, {
+                richMessage: { markdown: richMd },
+                disable_notification,
+                reply_parameters: reply_to_message_id !== undefined ? { message_id: reply_to_message_id } : undefined,
+                _rawText: markdownContent,
+              });
+              if (result.fell_back) {
+                deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
+              }
+              warnUnrenderableChars(_sid, markdownContent);
+              return toResult({ message_id: result.message_id, ...(compact ? {} : { split_count: 1 }) });
+            } catch (err) {
+              return toError(err);
+            }
+          }
+
+          // html/string explicit rich formats — always try rich, degrade on error
           if (htmlContent !== undefined || stringContent !== undefined) {
             let richHtml: string;
             let fallbackText: string;
@@ -641,6 +673,27 @@ export function register(server: McpServer) {
 
           // Resolve message effect (text path only; applied to last chunk only)
           const effectId = args.effect ? MESSAGE_EFFECTS[args.effect] : undefined;
+
+          // Auto-upgrade: if text: contains a markdown table, route via GFM rich path
+          // so the table renders natively. Applies only to single-chunk, no-effect sends
+          // (multi-chunk and effect sends fall through to the MarkdownV2 loop below).
+          if (!effectId && !hasInflightAudio(_sid) && chunks.length === 1 && containsMarkdownTable(visualText)) {
+            try {
+              const result = await routeOutboundMessage(chatId, textWithTopic, {
+                richMessage: { markdown: textWithTopic },
+                disable_notification,
+                reply_parameters: reply_to_message_id !== undefined ? { message_id: reply_to_message_id } : undefined,
+                _rawText: visualText,
+              });
+              if (result.fell_back) {
+                deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
+              }
+              warnUnrenderableChars(_sid, visualText);
+              return toResult({ message_id: result.message_id, ...(compact ? {} : { split_count: 1 }) });
+            } catch {
+              // Fallback: let it continue to the MarkdownV2 path below
+            }
+          }
 
           // If audio is still rendering for this session, queue text after it so
           // the operator always receives audio before the follow-up text message.
