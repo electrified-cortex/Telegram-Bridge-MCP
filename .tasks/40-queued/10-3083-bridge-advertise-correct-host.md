@@ -13,7 +13,7 @@ model_class: sonnet-class
 reasoning_effort: medium
 ---
 
-# 10-3080: Bridge Advertises Incorrect Host in activity/listen
+# 10-3083: Bridge Advertises Incorrect Host in activity/listen
 
 ## Problem
 
@@ -67,4 +67,14 @@ Typical values:
 
 Branch: `worker/tmcp-p4-advertise-host`
 Directory: `.git/.wt/tmcp-p4-advertise-host`
-Base: `main` at current HEAD
+Base: `dev` at current HEAD
+
+## Gate review
+
+- reviewer: gate
+- date: 2026-06-28
+- verdict: PASS
+- review type: adversarial gate
+- checked: ACs 1-5 binary+testable; backward compat explicitly addressed (absent env var → unchanged behavior); scope bounded to 1 env var + URL construction; doc update and skill workaround note acknowledged; delegation correct (Worker, sonnet-class, medium)
+- fixed: corrected body heading 10-3080→10-3083; base branch main→dev
+<!-- overseer-gate: PASS 2026-06-28 -->

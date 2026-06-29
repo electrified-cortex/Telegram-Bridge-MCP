@@ -13,7 +13,7 @@ model_class: sonnet-class
 reasoning_effort: medium
 ---
 
-# 10-3079: Nametag Missing on Rich/File Messages
+# 10-3082: Nametag Missing on Rich/File Messages
 
 ## Problem
 
@@ -74,4 +74,14 @@ Investigation-first task. Worker must:
 
 Branch: `worker/tmcp-p4-nametag-rich-messages`
 Directory: `.git/.wt/tmcp-p4-nametag-rich-messages`
-Base: `main` at current HEAD
+Base: `dev` at current HEAD
+
+## Gate review
+
+- reviewer: gate
+- date: 2026-06-28
+- verdict: PASS
+- review type: adversarial gate
+- checked: ACs 1-4 binary+testable (investigation note as AC1 is a deliverable, not process — accepted); AC5 smoke test is validation-only; scope bounded to nametag injection path + confirmed send types; three known failure modes documented (good for worker); delegation correct (Worker, sonnet-class, medium)
+- fixed: corrected body heading 10-3079→10-3082; base branch main→dev
+<!-- overseer-gate: PASS 2026-06-28 -->
