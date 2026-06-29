@@ -12,6 +12,7 @@
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { SAFE_FILE_DIR } from "./telegram.js";
+import { renderMermaidToSvg } from "./mermaid-render.js";
 
 // ---------------------------------------------------------------------------
 // Detection patterns
@@ -332,4 +333,43 @@ export async function writeTempVisualFile(block: VisualBlock): Promise<string> {
   const filePath = join(SAFE_FILE_DIR, block.filename);
   await writeFile(filePath, block.content, { encoding: "utf-8" });
   return filePath;
+}
+
+// ---------------------------------------------------------------------------
+// Mermaid companion render
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempts to render a mermaid VisualBlock to a companion SVG.
+ * Returns a new VisualBlock for the companion `.svg` file, or null on failure.
+ * The caller is responsible for writing the companion file to disk.
+ *
+ * The `ts` and `companionIndex` parameters are accepted for call-site
+ * consistency; the SVG filename is derived from `block.filename` by replacing
+ * the `.mmd` extension with `.svg`.
+ */
+export async function renderMermaidCompanion(
+  block: VisualBlock,
+  _ts: number,
+  _companionIndex: number,
+): Promise<(VisualBlock & { companionCaption: string }) | null> {
+  try {
+    const svg = await renderMermaidToSvg(block.content);
+    if (svg === null) return null;
+
+    const responsiveSvg = responsivizeSvg(svg);
+    const filename = block.filename.replace(/\.mmd$/, ".svg");
+
+    return {
+      type: "svg",
+      content: responsiveSvg,
+      filename,
+      placeholder: block.placeholder,
+      companionCaption: `📊 rendered from ${block.filename}`,
+    };
+  } catch {
+    // Graceful: any unexpected error (e.g. responsivizeSvg edge case) → null,
+    // caller ships .mmd alone (AC4).
+    return null;
+  }
 }

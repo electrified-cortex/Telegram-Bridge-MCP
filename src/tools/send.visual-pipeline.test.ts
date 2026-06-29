@@ -23,6 +23,10 @@ const mocks = vi.hoisted(() => ({
   // ── visual pipeline ──────────────────────────────────────────────────────
   detectAndExtract: vi.fn((t: string) => ({ modifiedText: t, blocks: [] as unknown[] })),
   writeTempVisualFile: vi.fn((_block: unknown) => Promise.resolve("/tmp/telegram-bridge-mcp/diagram-0-0.svg")),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  renderMermaidCompanion: vi.fn<(_block: unknown, _ts: number, _idx: number) => Promise<any>>(
+    (_block, _ts, _idx) => Promise.resolve(null),
+  ),
   resolveMediaSource: vi.fn((_path: string) => ({
     source: "/tmp/telegram-bridge-mcp/diagram-0-0.svg",
   })),
@@ -78,6 +82,8 @@ vi.mock("../visual-attachment-pipeline.js", () => ({
   // _opts is accepted but ignored — the mock is not mode-aware
   detectAndExtract: (t: string, _opts?: unknown) => mocks.detectAndExtract(t),
   writeTempVisualFile: (block: unknown) => mocks.writeTempVisualFile(block),
+  renderMermaidCompanion: (block: unknown, ts: number, idx: number) =>
+    mocks.renderMermaidCompanion(block, ts, idx),
 }));
 
 // ── Telegram mock (extends the base with sendDocument + resolveMediaSource) ──
@@ -262,6 +268,12 @@ describe("send — visual attachment pipeline integration", () => {
     mocks.detectAndExtract.mockImplementation((t: string) => ({ modifiedText: t, blocks: [] }));
     mocks.writeTempVisualFile.mockResolvedValue("/tmp/telegram-bridge-mcp/diagram-0-0.svg");
     mocks.resolveMediaSource.mockReturnValue({ source: "/tmp/telegram-bridge-mcp/diagram-0-0.svg" });
+    // Companion render default: returns null (no companion) — preserves all existing test behaviour
+    mocks.renderMermaidCompanion.mockResolvedValue(null);
+    // Explicitly reset persistent implementations that BLOCK-1 test overrides
+    // (vi.clearAllMocks only clears call history, not implementations)
+    mocks.hasInflightAudio.mockReturnValue(false);
+    mocks.enqueueTextSend.mockImplementation((_sid: number, _fn: (pid: number) => Promise<void>): number => -2_000_000_001);
 
     const server = createMockServer();
     register(server);
@@ -653,5 +665,139 @@ describe("send — visual attachment pipeline integration", () => {
     const proseArg = mocks.sendMessage.mock.calls[0]?.[1];
     expect(proseArg).toContain(block.placeholder);
     expect(proseArg).not.toContain(block.content);
+  });
+
+  // ── AC1: Mermaid block → companion SVG rendered and queued ───────────────
+
+  it("AC1: mermaid block with successful render → companion SVG and .mmd both sent", async () => {
+    const mmdBlock = makeMmdBlock();
+    const companionBlock = {
+      type: "svg" as const,
+      content: '<svg width="100%"><rect/></svg>',
+      placeholder: mmdBlock.placeholder,
+      filename: "diagram-1-0.svg",
+      companionCaption: "📊 rendered from diagram-1-0.mmd",
+    };
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: mmdBlock.placeholder,
+      blocks: [mmdBlock],
+    });
+    // Render returns companion on first call (for .mmd block)
+    mocks.renderMermaidCompanion.mockResolvedValue(companionBlock);
+    mocks.writeTempVisualFile
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-0.mmd") // .mmd
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-0.svg"); // companion
+
+    const result = await call({ text: "```mermaid\ngraph TD\nA-->B\n```", token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    // Both .mmd and companion SVG should be sent (2 documents total)
+    // In follow-up delivery for 2 docs: prose first, then 2 sendDocument calls
+    expect(mocks.sendDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it("AC1: companion SVG caption is the companionCaption, not the placeholder", async () => {
+    const mmdBlock = makeMmdBlock();
+    const companionCaption = "📊 rendered from diagram-1-0.mmd";
+    const companionBlock = {
+      type: "svg" as const,
+      content: '<svg width="100%"><rect/></svg>',
+      placeholder: mmdBlock.placeholder,
+      filename: "diagram-1-0.svg",
+      companionCaption,
+    };
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: `${mmdBlock.placeholder} text`,
+      blocks: [mmdBlock],
+    });
+    mocks.renderMermaidCompanion.mockResolvedValue(companionBlock);
+    mocks.writeTempVisualFile
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-0.mmd")
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-0.svg");
+    mocks.resolveMediaSource
+      .mockReturnValueOnce({ source: "/tmp/telegram-bridge-mcp/diagram-1-0.mmd" })
+      .mockReturnValueOnce({ source: "/tmp/telegram-bridge-mcp/diagram-1-0.svg" });
+
+    await call({ text: "```mermaid\ngraph TD\nA-->B\n```", token: TOKEN });
+
+    // Find the sendDocument call whose source matches the companion SVG path
+    const svgCall = mocks.sendDocument.mock.calls.find(
+      (c: unknown[]) => (c[1] as string) === "/tmp/telegram-bridge-mcp/diagram-1-0.svg",
+    ) as [number, string, { caption?: string }] | undefined;
+    expect(svgCall).toBeDefined();
+    expect(svgCall![2]?.caption).toBe(companionCaption);
+  });
+
+  // ── AC2: mermaid block already accompanied by SVG → no render ────────────
+
+  it("AC2: mermaid block whose stem already has a matching SVG block → renderMermaidCompanion NOT called", async () => {
+    // Both blocks share the stem "diagram-1-0"
+    const mmdBlock = makeMmdBlock(0); // filename: diagram-1-0.mmd
+    const svgBlock = makeSvgBlock(0); // filename: diagram-1-0.svg — matching stem
+
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: `${mmdBlock.placeholder} ${svgBlock.placeholder}`,
+      blocks: [mmdBlock, svgBlock],
+    });
+    mocks.writeTempVisualFile
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-0.mmd")
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-0.svg");
+
+    await call({ text: "```mermaid\ngraph TD\nA-->B\n``` <svg/></svg>", token: TOKEN });
+
+    // Companion render must NOT have been invoked (pre-existing SVG companion detected)
+    expect(mocks.renderMermaidCompanion).not.toHaveBeenCalled();
+  });
+
+  // ── AC4: render failure → .mmd still delivered ────────────────────────────
+
+  it("AC4: renderMermaidCompanion throws → .mmd still in pendingDocs, result not error", async () => {
+    const mmdBlock = makeMmdBlock();
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: mmdBlock.placeholder,
+      blocks: [mmdBlock],
+    });
+    mocks.renderMermaidCompanion.mockRejectedValue(new Error("render engine failed"));
+    mocks.writeTempVisualFile.mockResolvedValue("/tmp/telegram-bridge-mcp/diagram-1-0.mmd");
+
+    const result = await call({ text: "```mermaid\ngraph TD\nA-->B\n```", token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    // .mmd must still be sent (graceful fallback — AC4 non-negotiable)
+    expect(mocks.sendDocument).toHaveBeenCalled();
+    const captionArg = (mocks.sendDocument.mock.calls[0] as [number, string, { caption?: string }])[2]?.caption;
+    expect(captionArg).toBe(mmdBlock.placeholder);
+  });
+
+  it("AC4: renderMermaidCompanion returns null → .mmd still sent, no extra document", async () => {
+    const mmdBlock = makeMmdBlock();
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: mmdBlock.placeholder,
+      blocks: [mmdBlock],
+    });
+    // Default: renderMermaidCompanion returns null — already set in beforeEach
+
+    const result = await call({ text: "```mermaid\ngraph TD\nA-->B\n```", token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    // Only .mmd sent (no companion)
+    expect(mocks.sendDocument).toHaveBeenCalledOnce();
+  });
+
+  // ── AC5: showTyping extended across render ─────────────────────────────────
+
+  it("AC5: showTyping(30, upload_document) called during mermaid companion render", async () => {
+    const mmdBlock = makeMmdBlock();
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: mmdBlock.placeholder,
+      blocks: [mmdBlock],
+    });
+
+    await call({ text: "```mermaid\ngraph TD\nA-->B\n```", token: TOKEN });
+
+    const renderTypingCalls = mocks.showTyping.mock.calls.filter(
+      (c: unknown[]) => c[0] === 30 && c[1] === "upload_document",
+    );
+    expect(renderTypingCalls).toHaveLength(1);
   });
 });
