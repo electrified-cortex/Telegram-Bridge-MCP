@@ -2,6 +2,15 @@
 
 ## In-branch
 
+### Fixed (v7.22.8)
+
+- **`profile/audio-remap/set` null guard (BK-1)**: added early `INVALID_INPUT` return when `word` or `replacement` is falsy — prevents `undefined` from being silently stored as key `"undefined"` in `session.audio_remapping` when optional schema fields are omitted
+- **`profile/audio-remap` case-insensitive key normalization (BK-3)**: `set` now stores new entries under the lowercased key; a mixed-case word with the same phonetics as an existing lowercase entry updates that entry in place; a mixed-case word with **distinct phonetics** creates a verbatim exception entry alongside the normalized one. `remove` resolves the effective key by verbatim match first, then normalized fallback — so `remove("Foo")` correctly finds and deletes a `"foo"` entry, and `remove("FOO")` targets a verbatim `"FOO"` exception without touching `"foo"`.
+
+### Changed (v7.22.8)
+
+- **Test fixtures in `src/tools/profile/` (W-6)**: replaced all real product names and phonetic spellings (`nginx`, `engine-x`, `sql`, `sequel`, `api`, `ay-pee-eye`, `ssl`, `es-es-el`) with synthetic words (`zorp`, `ZOR-pee`, `flibble`, `FLIB-ul`, `quux`, `kyoox`) in `audio-remap.test.ts`, `apply.test.ts`, and `save.test.ts`; new test cases added for null guard, lowercase normalization, same-phonetics update-in-place, case-sensitive exception entry, and case-insensitive remove fallback
+
 ### Changed
 
 - **rename: notify-lockout terminology renamed to notify-debounce throughout** — `notifyLockedUntil`→`notifyDebounceUntil`, `notifyPendingBecauseLocked`→`notifyPendingBecauseDebounce`, `releaseNotifyLockout`→`releaseNotifyDebounce`, `getNotifyLockoutMs`/`setNotifyLockoutMs`→`getNotifyDebounceMs`/`setNotifyDebounceMs`; constants `LOCKOUT_*`→`NOTIFY_DEBOUNCE_*`; `profile/kick-lockout` action path renamed to `profile/notify-debounce` (old path kept as backward-compat alias); `src/tools/profile/kick-lockout.ts` renamed to `notify-debounce.ts`. Pure terminology change — no behavior or numeric value changes.

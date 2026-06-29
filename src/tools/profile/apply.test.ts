@@ -489,31 +489,31 @@ describe("applyProfile — audio_remapping (load side)", () => {
   it("applies audio_remapping from profile to session and reports entry count", () => {
     const session: Record<string, unknown> = {};
     mocks.getSession.mockReturnValue(session);
-    const result = applyProfile(42, { audio_remapping: { "nginx": "engine-x", "sql": "sequel" } });
+    const result = applyProfile(42, { audio_remapping: { "zorp": "ZOR-pee", "flibble": "FLIB-ul" } });
     expect("applied" in result).toBe(true);
-    expect(session.audio_remapping).toEqual({ "nginx": "engine-x", "sql": "sequel" });
+    expect(session.audio_remapping).toEqual({ "zorp": "ZOR-pee", "flibble": "FLIB-ul" });
     expect((result as { applied: Record<string, unknown> }).applied.audio_remapping).toBe(2);
   });
 
   it("replaces any existing session audio_remapping with the loaded profile map", () => {
     const session: Record<string, unknown> = { audio_remapping: { "old": "value" } };
     mocks.getSession.mockReturnValue(session);
-    applyProfile(42, { audio_remapping: { "nginx": "engine-x" } });
-    expect(session.audio_remapping).toEqual({ "nginx": "engine-x" });
+    applyProfile(42, { audio_remapping: { "zorp": "ZOR-pee" } });
+    expect(session.audio_remapping).toEqual({ "zorp": "ZOR-pee" });
   });
 
   it("leaves session audio_remapping untouched when not in profile", () => {
-    const session: Record<string, unknown> = { audio_remapping: { "nginx": "engine-x" } };
+    const session: Record<string, unknown> = { audio_remapping: { "zorp": "ZOR-pee" } };
     mocks.getSession.mockReturnValue(session);
     const result = applyProfile(42, { voice: "alloy" }); // no audio_remapping
     expect("applied" in result).toBe(true);
-    expect(session.audio_remapping).toEqual({ "nginx": "engine-x" });
+    expect(session.audio_remapping).toEqual({ "zorp": "ZOR-pee" });
     expect((result as { applied: Record<string, unknown> }).applied.audio_remapping).toBeUndefined();
   });
 
   it("skips silently when getSession returns undefined", () => {
     mocks.getSession.mockReturnValue(undefined);
-    const result = applyProfile(42, { audio_remapping: { "nginx": "engine-x" } });
+    const result = applyProfile(42, { audio_remapping: { "zorp": "ZOR-pee" } });
     expect("applied" in result).toBe(true);
     expect((result as { applied: Record<string, unknown> }).applied.audio_remapping).toBeUndefined();
   });

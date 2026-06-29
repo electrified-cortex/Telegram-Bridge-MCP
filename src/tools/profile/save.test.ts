@@ -292,12 +292,12 @@ describe("save_profile tool", () => {
 
   it("AC7: persists audio_remapping in saved profile when session has it set", async () => {
     mocks.writeProfile.mockReset();
-    mocks.getSession.mockReturnValue({ audio_remapping: { "nginx": "engine-x" } });
+    mocks.getSession.mockReturnValue({ audio_remapping: { "zorp": "ZOR-pee" } });
     const result = await call({ key: "Test", token: 1123456 });
     expect(isError(result)).toBe(false);
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     expect(written).toHaveProperty("audio_remapping");
-    expect((written.audio_remapping as Record<string, string>)["nginx"]).toBe("engine-x");
+    expect((written.audio_remapping as Record<string, string>)["zorp"]).toBe("ZOR-pee");
     const data = parseResult(result);
     expect(data.sections).toContain("audio_remapping");
   });

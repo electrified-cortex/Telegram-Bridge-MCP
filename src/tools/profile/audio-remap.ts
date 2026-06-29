@@ -27,14 +27,43 @@ export function handleAudioRemapSet({
   const _sid = requireAuth(token);
   if (typeof _sid !== "number") return toError(_sid);
 
+  // BK-1: Guard against undefined/empty values that may slip past optional schema validation.
+  if (!word || !replacement) {
+    return toError({ code: "INVALID_INPUT" as const, message: "word and replacement are required." });
+  }
+
   const session = getSession(_sid);
   if (!session) return toError({ code: "SESSION_NOT_FOUND" as const, message: "Session not found." });
 
   if (!session.audio_remapping) session.audio_remapping = {};
-  const previous = session.audio_remapping[word] ?? null;
-  session.audio_remapping[word] = replacement;
 
-  return toResult({ word, replacement, previous, set: true });
+  // BK-3: Case-insensitive key normalization.
+  const normalizedWord = word.toLowerCase();
+
+  // Case 1: exact key already stored (covers verbatim / case-sensitive exception entries).
+  if (word in session.audio_remapping) {
+    const previous = session.audio_remapping[word];
+    session.audio_remapping[word] = replacement;
+    return toResult({ word, replacement, previous, set: true });
+  }
+
+  // Case 2: normalized key exists.
+  if (normalizedWord in session.audio_remapping) {
+    const existingReplacement = session.audio_remapping[normalizedWord];
+    if (word === normalizedWord || existingReplacement === replacement) {
+      // Same phonetics, or word is already lowercase → update normalized key in place.
+      const previous = existingReplacement;
+      session.audio_remapping[normalizedWord] = replacement;
+      return toResult({ word: normalizedWord, replacement, previous, set: true });
+    }
+    // Different casing AND different phonetics → case-sensitive exception entry.
+    session.audio_remapping[word] = replacement;
+    return toResult({ word, replacement, previous: null, set: true });
+  }
+
+  // Case 3: no existing entry → store as lowercase.
+  session.audio_remapping[normalizedWord] = replacement;
+  return toResult({ word: normalizedWord, replacement, previous: null, set: true });
 }
 
 export function handleAudioRemapRemove({
@@ -50,16 +79,24 @@ export function handleAudioRemapRemove({
   const session = getSession(_sid);
   if (!session) return toError({ code: "SESSION_NOT_FOUND" as const, message: "Session not found." });
 
-  if (!session.audio_remapping || !(word in session.audio_remapping)) {
+  // BK-3: Resolve key case-insensitively (verbatim first, then normalized).
+  const map = session.audio_remapping;
+  const normalizedWord = word.toLowerCase();
+  const effectiveKey =
+    map && word in map ? word :
+    map && normalizedWord in map ? normalizedWord :
+    null;
+
+  if (!effectiveKey || !map) {
     return toError({ code: "NOT_FOUND" as const, message: `No audio remapping entry for "${word}".` });
   }
 
-  const previous = session.audio_remapping[word];
+  const previous = map[effectiveKey];
   // Rebuild the map without the removed key (avoids no-dynamic-delete lint rule).
-  const { [word]: _removed, ...rest } = session.audio_remapping;
+  const { [effectiveKey]: _removed, ...rest } = map;
   session.audio_remapping = Object.keys(rest).length > 0 ? rest : undefined;
 
-  return toResult({ word, previous, removed: true });
+  return toResult({ word: effectiveKey, previous, removed: true });
 }
 
 export function handleAudioRemapList({ token }: { token: number }) {
