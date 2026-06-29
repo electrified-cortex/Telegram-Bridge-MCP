@@ -42,11 +42,12 @@ import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../utils/timing.js";
 import { applyPhoneticRemapping } from "../phonetic-remapping.js";
 
-const MARKDOWN_TABLE_RE = /^\|.*\|$/;
+/** Matches the GFM table separator row: cells of dashes/colons between pipes, e.g. `|---|---|` or `| :--- | ---: |`. */
+const MARKDOWN_TABLE_SEPARATOR_RE = /^\|(\s*:?-+:?\s*\|)+\s*$/;
 
-/** Returns true when text contains at least one markdown table row. */
+/** Returns true when text contains a GFM table separator row, indicating a markdown table is present. */
 function containsMarkdownTable(text: string): boolean {
-  return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
+  return text.split("\n").some((line) => MARKDOWN_TABLE_SEPARATOR_RE.test(line.trim()));
 }
 
 const AUDIO_LEAK_PATTERNS = [
