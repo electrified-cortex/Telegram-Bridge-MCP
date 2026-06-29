@@ -75,3 +75,12 @@ Render fails / unsupported diagram type → ship the `.mmd` alone (+ optional no
 - date: 2026-06-29
 - verdict: GATED PASS — Overseer
 - notes: 7 binary ACs, all testable. 10-3052 (engine) confirmed done (70-done/2026/06/27). 10-3051 shipped. Both hard dependencies satisfied — unblocked. Graceful fallback (AC4) defined. Pure-JS/in-process engine constraint (AC6) enforceable at review. Responsive SVG spec explicit.
+
+## Verification
+
+- date: 2026-06-29
+- verdict: APPROVED
+- verifier: local-llm-gate (gemma4:e2b via LM Gateway, model=local:deep)
+- squash-commit: a25d8d1
+- notes: All 7 ACs verified. LLM gate found no blocking bugs. AC1 (SVG+mmd queued, SVG-first) ✓, AC2 (stem-match companion check) ✓, AC3 (responsivizeSvg applied) ✓, AC4 (graceful null fallback) ✓, AC5 (showTyping upload_document) ✓, AC6 (beautiful-mermaid pure-JS) ✓, AC7 (caption threading all 4 sendDocument sites) ✓. Build PASS, lint PASS, 4278/4278 tests PASS. No scope creep. No behavioral regressions in SVG path.
+- sealed-by: foreman (TOKEN EMERGENCY — local LLM gate substituted for Sonnet verifier per operator directive 2026-06-29)
