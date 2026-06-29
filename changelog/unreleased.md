@@ -1,6 +1,21 @@
 # [Unreleased]
 
+## v7.22.9
+
+### Fixed
+
+- **`send` table guard (`TABLE_NOT_RENDERED`)**: any `send(type: "text")` call that contains a GFM markdown table but cannot route to the GFM rich path now returns an explicit `TABLE_NOT_RENDERED` error instead of silently delivering an un-rendered table. Affected paths: effect sends, in-flight-audio sends, and multi-chunk sends. The existing GFM rich-path auto-upgrade (single-chunk, no effect, no in-flight audio) is unaffected and continues to render tables natively. Resolves the false-success regression introduced when `TABLE_WARNING` was removed in v7.22.4.
+
 ## In-branch
+
+### Fixed (v7.22.8)
+
+- **`profile/audio-remap/set` null guard (BK-1)**: added early `INVALID_INPUT` return when `word` or `replacement` is falsy — prevents `undefined` from being silently stored as key `"undefined"` in `session.audio_remapping` when optional schema fields are omitted
+- **`profile/audio-remap` case-insensitive key normalization (BK-3)**: `set` now stores new entries under the lowercased key; a mixed-case word with the same phonetics as an existing lowercase entry updates that entry in place; a mixed-case word with **distinct phonetics** creates a verbatim exception entry alongside the normalized one. `remove` resolves the effective key by verbatim match first, then normalized fallback — so `remove("Foo")` correctly finds and deletes a `"foo"` entry, and `remove("FOO")` targets a verbatim `"FOO"` exception without touching `"foo"`.
+
+### Changed (v7.22.8)
+
+- **Test fixtures in `src/tools/profile/` (W-6)**: replaced all real product names and phonetic spellings (`nginx`, `engine-x`, `sql`, `sequel`, `api`, `ay-pee-eye`, `ssl`, `es-es-el`) with synthetic words (`zorp`, `ZOR-pee`, `flibble`, `FLIB-ul`, `quux`, `kyoox`) in `audio-remap.test.ts`, `apply.test.ts`, and `save.test.ts`; new test cases added for null guard, lowercase normalization, same-phonetics update-in-place, case-sensitive exception entry, and case-insensitive remove fallback
 
 ### Changed
 

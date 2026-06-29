@@ -1,8 +1,8 @@
 // Never call 'send' from send.ts handler — use telegram.js primitives directly
-import { GrammyError } from "grammy";
+import { GrammyError, InputFile } from "grammy";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, resolveMediaSource, sendVoiceDirect, isRichMessagesEnabled, routeOutboundMessage } from "../telegram.js";
+import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, resolveMediaSource, sendVoiceDirect, routeOutboundMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText, getTopic } from "../topic-state.js";
 import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
@@ -18,7 +18,7 @@ import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator,
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { getSession } from "../session-manager.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
-import { detectAndExtract, writeTempVisualFile } from "../visual-attachment-pipeline.js";
+import { detectAndExtract, writeTempVisualFile, renderMermaidCompanion, type DeliveryMode, type VisualBlock } from "../visual-attachment-pipeline.js";
 // Safety field accepted on all send paths
 const SAFETY_SCHEMA = z.enum(["disable"]).optional().describe(
   'Safety override. Pass `safety: "disable"` to bypass the absolute-path block and send the message anyway. An operator notification is emitted when this override is used.',
@@ -42,9 +42,13 @@ import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../utils/timing.js";
 import { applyPhoneticRemapping } from "../phonetic-remapping.js";
 
-/** Legacy-path only: emitted when a markdown table is detected on the MarkdownV2 path.
- * GFM tables render natively on the rich path — this warning is suppressed there (P4). */
-const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
+/** Matches the GFM table separator row: cells of dashes/colons between pipes, e.g. `|---|---|` or `| :--- | ---: |`. */
+const MARKDOWN_TABLE_SEPARATOR_RE = /^\|(\s*:?-+:?\s*\|)+\s*$/;
+
+/** Returns true when text contains a GFM table separator row, indicating a markdown table is present. */
+function containsMarkdownTable(text: string): boolean {
+  return text.split("\n").some((line) => MARKDOWN_TABLE_SEPARATOR_RE.test(line.trim()));
+}
 
 const AUDIO_LEAK_PATTERNS = [
   /<\/audio>/i,
@@ -68,13 +72,7 @@ function detectAudioMarkupLeak(raw: string): { cleanAudio: string; recoveredText
   return { cleanAudio, recoveredText: textMatch ? textMatch[1].trim() : null, leaked: true };
 }
 
-const MARKDOWN_TABLE_RE = /^\|.*\|$/;
 
-/** Legacy-path only: detects a markdown table in MarkdownV2-converted text.
- * Not used on the rich path since GFM tables render natively (P4). */
-function containsMarkdownTable(text: string): boolean {
-  return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
-}
 
 // Disabled by default — flip to true to re-enable if genuine render bugs reappear.
 export let UNRENDERABLE_WARNING_ENABLED = false;
@@ -197,7 +195,11 @@ export function register(server: McpServer) {
         string: z
           .string()
           .optional()
-          .describe("Literal text for rich message. HTML special characters are escaped. Mutually exclusive with text and html."),
+          .describe("Literal text for rich message. HTML special characters are escaped. Mutually exclusive with text, html, and markdown."),
+        markdown: z
+          .string()
+          .optional()
+          .describe("Markdown content for rich rendering (GFM). Tables, bold, italic, and code render natively. Mutually exclusive with text, html, and string. Use for structured content with tables or explicit rich formatting."),
         disable_notification: z.boolean().optional().describe("Send silently (no sound/notification)"),
         reply_to: z.number().int().min(1).optional().describe("Reply to this message ID"),
         async: z.boolean().optional().describe("Applies to audio sends only. Defaults to async when audio is present — returns message_id_pending immediately; pass false to block until TTS completes and receive real message_id. Has no effect on non-audio sends."),
@@ -362,28 +364,49 @@ export function register(server: McpServer) {
 
       switch (resolvedType) {
         case "text": {
-          // P2: Resolve format param — text/html/string are mutually exclusive
+          // Resolve format params — text/markdown/html/string are mutually exclusive
           const htmlContent = args.html;
           const stringContent = args.string;
+          const markdownContent = args.markdown;
 
-          if (!text && !audio && !htmlContent && !stringContent) {
-            return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text' or 'audio' is required.", hint: "Pass text, audio, or both. help('send')." });
+          if (!text && !audio && !htmlContent && !stringContent && !markdownContent) {
+            return toError({ code: "MISSING_CONTENT" as const, message: "At least one of 'text', 'markdown', or 'audio' is required.", hint: "Pass text, markdown, audio, or a combination. help('send')." });
           }
           const { parse_mode, disable_notification } = args;
           const reply_to_message_id = args.reply_to;
           const compact = args.response_format === "compact";
 
-          const formatCount = [!!text, !!htmlContent, !!stringContent].filter(Boolean).length;
+          const formatCount = [!!text, !!htmlContent, !!stringContent, !!markdownContent].filter(Boolean).length;
           if (formatCount > 1) {
-            return toError({ code: "MISSING_CONTENT" as const, message: "text, html, and string are mutually exclusive — provide exactly one.", hint: "Choose one format param: text (Markdown), html (verbatim HTML), or string (literal text)." });
+            return toError({ code: "MISSING_CONTENT" as const, message: "text, markdown, html, and string are mutually exclusive — provide exactly one.", hint: "Choose one format param: text (MarkdownV2), markdown (GFM rich), html (verbatim HTML), or string (literal text)." });
           }
-          // P2: parse_mode deprecation warnings when explicit rich formats are used
-          if ((htmlContent !== undefined || stringContent !== undefined) &&
+          // parse_mode deprecation when explicit rich formats are used
+          if ((htmlContent !== undefined || stringContent !== undefined || markdownContent !== undefined) &&
               (parse_mode === "HTML" || parse_mode === "MarkdownV2")) {
-            process.stderr.write(`[send] DEPRECATED: parse_mode is ignored when html or string is provided. Remove parse_mode.\n`);
+            process.stderr.write(`[send] DEPRECATED: parse_mode is ignored when html, string, or markdown is provided. Remove parse_mode.\n`);
           }
 
-          // P2: html/string explicit rich formats — always try rich, degrade on error
+          // markdown: explicit GFM rich param — tables and formatting render natively
+          if (markdownContent !== undefined) {
+            const richMd = applyTopicToText(markdownContent, "Markdown", args.topic);
+            try {
+              const result = await routeOutboundMessage(chatId, markdownContent, {
+                richMessage: { markdown: richMd },
+                disable_notification,
+                reply_parameters: reply_to_message_id !== undefined ? { message_id: reply_to_message_id } : undefined,
+                _rawText: markdownContent,
+              });
+              if (result.fell_back) {
+                deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
+              }
+              warnUnrenderableChars(_sid, markdownContent);
+              return toResult({ message_id: result.message_id, ...(compact ? {} : { split_count: 1 }) });
+            } catch (err) {
+              return toError(err);
+            }
+          }
+
+          // html/string explicit rich formats — always try rich, degrade on error
           if (htmlContent !== undefined || stringContent !== undefined) {
             let richHtml: string;
             let fallbackText: string;
@@ -593,49 +616,131 @@ export function register(server: McpServer) {
           }
 
           // ── Text-only mode ───────────────────────────────────────────────
-          // ── Visual attachment pipeline (SVG / Mermaid) ───────────────────
-          // Detect and extract SVG and Mermaid blocks from the raw message text
+          // ── Visual attachment pipeline (SVG / Mermaid) — Phase 1: Prepare ─
+          // Detect and extract SVG/Mermaid blocks from the raw message text
           // *before* topic prefix, Markdown conversion, or chunking so that:
           // (a) the placeholder text (not the raw block) enters markdownToV2,
-          // (b) documents are sent before the prose, in order of appearance.
+          // (b) delivery mode is determined before placeholders are embedded,
+          // (c) prose is always delivered BEFORE (or simultaneously with) attachments.
+          //
+          // Delivery modes:
+          //   "same-message" — single block, prose fits in caption limit →
+          //     attachment + prose in one Telegram message (prose sent as caption).
+          //   "follow-up"    — default → prose sent first (sendMessage), then
+          //     attachments sent immediately after (sendDocument per block).
+          //
           // Pre-check avoids the 3 regex scans on every plain-text send.
           let visualText: string = text ?? "";
+          // Documents prepared in Phase 1; sent in Phase 2 (after prose).
+          // caption overrides block.placeholder for companion docs (e.g. rendered SVG).
+          const _pendingDocs: Array<{ block: VisualBlock; source: string | InputFile; caption?: string }> = [];
+          let _visualDeliveryMode: DeliveryMode = "follow-up";
+
           if (visualText && (visualText.includes('<svg') || visualText.includes('```mermaid'))) {
-            const { modifiedText: _vExtracted, blocks: _vBlocks } = detectAndExtract(
+            // Phase 1a: First-pass detect (follow-up wording) to count blocks and
+            // measure the modified text length — both inform the delivery-mode decision.
+            const _firstPass = detectAndExtract(
               visualText,
-              { htmlMode: parse_mode === "HTML" },
+              { htmlMode: parse_mode === "HTML", deliveryMode: "follow-up" },
             );
-            if (_vBlocks.length > 0) {
-              // Start from modified text (placeholders inserted). Track per-block
-              // success; on failure restore the orphan placeholder to the original
-              // block content so the user never sees a broken "🖼 [SVG attached]"
-              // with no accompanying file.
+
+            if (_firstPass.blocks.length > 0) {
+              // Delivery mode: same-message when a single block's modified text
+              // fits within Telegram's 1 024-character caption limit.
+              const _CAPTION_LIMIT = 1024;
+              _visualDeliveryMode =
+                _firstPass.blocks.length === 1 && _firstPass.modifiedText.length <= _CAPTION_LIMIT
+                  ? "same-message"
+                  : "follow-up";
+
+              // Phase 1b: Re-detect with the chosen delivery mode to embed the
+              // correct placeholder wording ("see attachment" vs "see following …").
+              const { modifiedText: _vExtracted, blocks: _vBlocks } =
+                _visualDeliveryMode === "same-message"
+                  ? detectAndExtract(visualText, { htmlMode: parse_mode === "HTML", deliveryMode: "same-message" })
+                  : _firstPass;
+
+              // Phase 1c: Write temp files + resolve media. No API calls yet —
+              // documents are queued in _pendingDocs and sent after the prose.
+              // On failure: restore the orphan placeholder → original block content
+              // before prose send so the message remains readable without the attachment.
+              //
+              // Mermaid blocks: after writing the .mmd source file, attempt to render
+              // a companion SVG via renderMermaidCompanion. If render succeeds, the
+              // companion SVG is queued BEFORE the .mmd (SVG-first for operator UX).
+              // Both are always attempted; render failure silently falls back to .mmd alone.
               let finalVisualText = _vExtracted;
               for (const _vBlock of _vBlocks) {
-                let sent = false;
-                try {
-                  await showTyping(60, "upload_document");
-                  const _vPath = await writeTempVisualFile(_vBlock);
-                  const _vMedia = resolveMediaSource(_vPath);
-                  if (!("code" in _vMedia)) {
-                    await callApi(() =>
-                      getApi().sendDocument(chatId, _vMedia.source, {
-                        caption: _vBlock.placeholder,
-                        disable_notification: args.disable_notification,
-                      }),
-                    );
-                    sent = true;
+                if (_vBlock.type === "mermaid") {
+                  // Companion check: skip render if an SVG block with matching stem
+                  // is already present in the same detection pass (e.g. agent supplied both).
+                  const _mmdStem = _vBlock.filename.replace(/\.mmd$/, "");
+                  const _hasCompanion = _vBlocks.some(
+                    b => b.type === "svg" && b.filename.replace(/\.svg$/, "") === _mmdStem,
+                  );
+
+                  let prepared = false;
+                  try {
+                    await showTyping(60, "upload_document");
+                    const _mmdPath = await writeTempVisualFile(_vBlock);
+                    const _mmdMedia = resolveMediaSource(_mmdPath);
+                    if ("code" in _mmdMedia) throw new Error(_mmdMedia.message);
+
+                    // Companion render (unless a pre-existing SVG companion was detected)
+                    if (!_hasCompanion) {
+                      try {
+                        await showTyping(30, "upload_document"); // extend typing across render
+                        const _companion = await renderMermaidCompanion(_vBlock, 0, 0);
+                        if (_companion !== null) {
+                          const _svgPath = await writeTempVisualFile(_companion);
+                          const _svgMedia = resolveMediaSource(_svgPath);
+                          if (!("code" in _svgMedia)) {
+                            // SVG queued first so operator sees the rendered diagram immediately
+                            _pendingDocs.push({
+                              block: _companion,
+                              source: _svgMedia.source,
+                              caption: _companion.companionCaption,
+                            });
+                          }
+                        }
+                      } catch {
+                        // Graceful: render failure → ship .mmd alone (non-negotiable AC4)
+                      }
+                    }
+
+                    // .mmd always queued (source always delivered alongside companion)
+                    _pendingDocs.push({ block: _vBlock, source: _mmdMedia.source });
+                    prepared = true;
+                  } catch {
+                    // Graceful: preparation failure falls through to placeholder restore
                   }
-                } catch {
-                  // Graceful: a failed attachment never blocks prose delivery
-                }
-                if (!sent) {
-                  // Replace the orphan placeholder with the original block content
-                  // so the message remains readable without the attachment.
-                  // String.replace (non-regex) replaces only the first occurrence,
-                  // which correctly maps each block to its own placeholder slot
-                  // when blocks are iterated in source order.
-                  finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
+                  if (!prepared) {
+                    // Replace orphan placeholder with original block content
+                    // so the prose remains readable without the attachment.
+                    finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
+                  }
+                } else {
+                  // SVG and other block types: existing behaviour unchanged
+                  let prepared = false;
+                  try {
+                    await showTyping(60, "upload_document");
+                    const _vPath = await writeTempVisualFile(_vBlock);
+                    const _vMedia = resolveMediaSource(_vPath);
+                    if (!("code" in _vMedia)) {
+                      _pendingDocs.push({ block: _vBlock, source: _vMedia.source });
+                      prepared = true;
+                    }
+                  } catch {
+                    // Graceful: a preparation failure falls through to placeholder restore
+                  }
+                  if (!prepared) {
+                    // Replace orphan placeholder with original block content
+                    // so the prose remains readable without the attachment.
+                    // String.replace (non-regex) targets only the first occurrence,
+                    // correctly mapping each block to its own placeholder slot
+                    // when blocks are iterated in source order.
+                    finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
+                  }
                 }
               }
               visualText = finalVisualText;
@@ -651,6 +756,86 @@ export function register(server: McpServer) {
 
           // Resolve message effect (text path only; applied to last chunk only)
           const effectId = args.effect ? MESSAGE_EFFECTS[args.effect] : undefined;
+
+          // Guard: table on a path that cannot use the GFM rich renderer → fail loud.
+          // Effect sends, in-flight-audio sends, and multi-chunk sends all bypass the GFM
+          // path, so a table would be silently unrendered. Return an explicit error so the
+          // caller can shorten the message or remove the effect instead of receiving false
+          // success. The GFM path below (single-chunk, no effect, no in-flight audio) is
+          // unaffected by this guard.
+          if (containsMarkdownTable(visualText) && (effectId || hasInflightAudio(_sid) || chunks.length > 1)) {
+            return toError({
+              code: "TABLE_NOT_RENDERED" as const,
+              message:
+                "Message contains a markdown table that cannot be rendered on this send path. " +
+                "Tables require the GFM rich path (single-chunk, no effect, no in-flight audio). " +
+                "Shorten the message so the table fits in one chunk, or remove the effect to allow table rendering.",
+            });
+          }
+
+          // Auto-upgrade: if text: contains a markdown table, route via GFM rich path
+          // so the table renders natively. Applies only to single-chunk, no-effect sends
+          // (multi-chunk and effect sends are blocked by the guard above).
+          if (!effectId && !hasInflightAudio(_sid) && chunks.length === 1 && containsMarkdownTable(visualText)) {
+            try {
+              const result = await routeOutboundMessage(chatId, textWithTopic, {
+                richMessage: { markdown: textWithTopic },
+                disable_notification,
+                reply_parameters: reply_to_message_id !== undefined ? { message_id: reply_to_message_id } : undefined,
+                _rawText: visualText,
+              });
+              if (result.fell_back) {
+                deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
+              }
+              warnUnrenderableChars(_sid, visualText);
+              // Phase 2 (GFM path): send pending documents after prose (follow-up delivery).
+              for (const { block: _gdBlock, source: _gdSrc, caption: _gdCap } of _pendingDocs) {
+                try {
+                  await callApi(() =>
+                    getApi().sendDocument(chatId, _gdSrc, {
+                      caption: _gdCap ?? _gdBlock.placeholder,
+                      disable_notification,
+                    }),
+                  );
+                } catch { /* Silent: prose already delivered */ }
+              }
+              return toResult({ message_id: result.message_id, ...(compact ? {} : { split_count: 1 }) });
+            } catch {
+              // Fallback: let it continue to the MarkdownV2 path below
+            }
+          }
+
+          // ── Same-message visual delivery ────────────────────────────────────
+          // When delivery mode is "same-message": send the prose as the document
+          // caption so both arrive in a single Telegram message.
+          // Conditions: single block, single chunk, no effect, no in-flight audio.
+          if (
+            _visualDeliveryMode === "same-message" &&
+            _pendingDocs.length === 1 &&
+            !effectId &&
+            !hasInflightAudio(_sid) &&
+            chunks.length === 1
+          ) {
+            const { source: _smSrc } = _pendingDocs[0];
+            try {
+              const _smMsg = await callApi(() =>
+                getApi().sendDocument(chatId, _smSrc, {
+                  caption: finalText,
+                  parse_mode: finalMode,
+                  disable_notification,
+                  reply_parameters:
+                    reply_to_message_id !== undefined
+                      ? { message_id: reply_to_message_id }
+                      : undefined,
+                }),
+              );
+              warnUnrenderableChars(_sid, finalText);
+              return toResult({ message_id: _smMsg.message_id, ...(compact ? {} : { split_count: 1 }) });
+            } catch {
+              // Same-message send failed: fall through to follow-up delivery.
+              // _pendingDocs is kept so the document is retried after prose.
+            }
+          }
 
           // If audio is still rendering for this session, queue text after it so
           // the operator always receives audio before the follow-up text message.
@@ -677,6 +862,17 @@ export function register(server: McpServer) {
                   ? { pendingId: pid, status: "ok" as const, messageId: ids[0] }
                   : { pendingId: pid, status: "ok" as const, messageIds: ids };
                 deliverAsyncSendCallback(queuedSid, payload);
+                // Phase 2 — flush visual blocks queued by Phase 1c (after prose is delivered)
+                for (const { block: _qaBlock, source: _qaSrc, caption: _qaCap } of _pendingDocs) {
+                  try {
+                    await callApi(() =>
+                      getApi().sendDocument(queuedChatId, _qaSrc, {
+                        caption: _qaCap ?? _qaBlock.placeholder,
+                        disable_notification,
+                      }),
+                    );
+                  } catch { /* Graceful: failed attachment does not abort the already-sent prose */ }
+                }
               } catch (err) {
                 const errMsg = err instanceof Error ? err.message : String(err);
                 deliverAsyncSendCallback(queuedSid, { pendingId: pid, status: "failed", error: errMsg });
@@ -685,39 +881,9 @@ export function register(server: McpServer) {
             return toResult({ ok: true, message_id_pending: pendingId, status: "queued_after_audio" });
           }
 
-          // ── Rich-message routing (Bot API 10.1 opt-in) ──────────────────
-          // Chunking-first policy: only route single-chunk Markdown messages to
-          // the rich path. Multi-chunk messages always use the existing split
-          // path. `parse_mode === undefined` is treated as Markdown (default).
-          // The queued-after-audio path above is left on the existing V2 path
-          // for simplicity — rich routing applies to the direct send only.
-          // Effect sends always use the plain path (rich path has no effect support).
-          if (
-            !effectId &&
-            isRichMessagesEnabled() &&
-            parse_mode === "Markdown" &&
-            chunks.length === 1
-          ) {
-            try {
-              const msg = await routeOutboundMessage(chatId, textWithTopic, {
-                parse_mode,
-                disable_notification,
-                reply_parameters: reply_to_message_id !== undefined
-                  ? { message_id: reply_to_message_id }
-                  : undefined,
-                _rawText: visualText,
-              });
-              if (msg.fell_back) {
-                deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
-              }
-              // P4: GFM tables render natively in rich messages — no TABLE_WARNING needed.
-              warnUnrenderableChars(_sid, finalText);
-              return toResult({ message_id: msg.message_id, ...(compact ? {} : { split_count: 1 }) });
-            } catch (err) {
-              return toError(err);
-            }
-          }
-          // ────────────────────────────────────────────────────────────────
+          // Plain Markdown text: falls through to legacy MarkdownV2 chunk loop below.
+          // (Rich-message routing for plain text was disabled — GFM sendRichMessage renders
+          // differently on mobile. Rich path is now reserved for explicit html:/string: params.)
 
           try {
             const message_ids: number[] = [];
@@ -761,15 +927,67 @@ export function register(server: McpServer) {
               }
               message_ids.push(msg.message_id);
             }
-            const hasTable = containsMarkdownTable(visualText);
             warnUnrenderableChars(_sid, finalText);
-            if (message_ids.length === 1) {
-              return toResult(hasTable ? { message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }), info: TABLE_WARNING } : { message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }) });
+            // Phase 2 (follow-up delivery): send pending documents AFTER prose.
+            for (const { block: _fdBlock, source: _fdSrc, caption: _fdCap } of _pendingDocs) {
+              try {
+                await callApi(() =>
+                  getApi().sendDocument(chatId, _fdSrc, {
+                    caption: _fdCap ?? _fdBlock.placeholder,
+                    disable_notification,
+                  }),
+                );
+              } catch { /* Silent: prose already delivered */ }
             }
-            return toResult(hasTable
-              ? { message_ids, ...(compact ? {} : { split_count: message_ids.length }), info: TABLE_WARNING }
-              : { message_ids, ...(compact ? {} : { split_count: message_ids.length }) });
+            if (message_ids.length === 1) {
+              return toResult({ message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }) });
+            }
+            return toResult({ message_ids, ...(compact ? {} : { split_count: message_ids.length }) });
           } catch (err) {
+            // Cascade: if MarkdownV2 parsing fails, retry all chunks as plain text
+            // using the original unescaped text so backslashes don't leak through.
+            if (
+              finalMode === "MarkdownV2" &&
+              err instanceof GrammyError &&
+              err.message.toLowerCase().includes("can't parse entities")
+            ) {
+              try {
+                const plainChunks = splitMessage(visualText);
+                const plain_ids: number[] = [];
+                for (let i = 0; i < plainChunks.length; i++) {
+                  const pc = plainChunks[i];
+                  const pcErr = validateText(pc);
+                  if (pcErr) return toError(pcErr);
+                  const plainOpts = {
+                    disable_notification,
+                    reply_parameters:
+                      i === 0 && reply_to_message_id !== undefined
+                        ? { message_id: reply_to_message_id }
+                        : undefined,
+                    _rawText: plainChunks.length === 1 ? visualText : undefined,
+                  } as Record<string, unknown>;
+                  const m = await callApi(() => getApi().sendMessage(chatId, pc, plainOpts));
+                  plain_ids.push(m.message_id);
+                }
+                // Phase 2 (follow-up, MarkdownV2 fallback): send pending documents after prose.
+                for (const { block: _fpBlock, source: _fpSrc, caption: _fpCap } of _pendingDocs) {
+                  try {
+                    await callApi(() =>
+                      getApi().sendDocument(chatId, _fpSrc, {
+                        caption: _fpCap ?? _fpBlock.placeholder,
+                        disable_notification,
+                      }),
+                    );
+                  } catch { /* Silent: prose already delivered */ }
+                }
+                if (plain_ids.length === 1) {
+                  return toResult({ message_id: plain_ids[0], ...(compact ? {} : { split_count: 1 }) });
+                }
+                return toResult({ message_ids: plain_ids, ...(compact ? {} : { split_count: plain_ids.length }) });
+              } catch (plainErr) {
+                return toError(plainErr);
+              }
+            }
             return toError(err);
           }
         }

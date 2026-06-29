@@ -12,6 +12,7 @@
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { SAFE_FILE_DIR } from "./telegram.js";
+import { renderMermaidToSvg } from "./mermaid-render.js";
 
 // ---------------------------------------------------------------------------
 // Detection patterns
@@ -75,6 +76,18 @@ export interface ExtractResult {
   blocks: VisualBlock[];
 }
 
+/**
+ * Delivery mode for visual attachments.
+ *
+ * - `"same-message"`: prose and attachment are in the **same** Telegram message
+ *   (prose sent as the document caption). Placeholder wording reflects this:
+ *   "see attachment" / "see diagram".
+ * - `"follow-up"` (default): prose sent first as a text message, attachment
+ *   sent immediately after as a separate document. Placeholder wording is a
+ *   forward reference: "see following attachment" / "see following diagram".
+ */
+export type DeliveryMode = "same-message" | "follow-up";
+
 export interface DetectExtractOptions {
   /**
    * When true, the malformed-SVG fallback wraps content in HTML
@@ -82,6 +95,16 @@ export interface DetectExtractOptions {
    * correctly when the message is sent with `parse_mode: "HTML"`.
    */
   htmlMode?: boolean;
+  /**
+   * Controls placeholder wording embedded into the outbound text.
+   *
+   * - `"same-message"` → "see attachment" / "see diagram" (same-message reference)
+   * - `"follow-up"` (default) → "see following attachment" / "see following diagram" (forward reference)
+   *
+   * Must be determined **before** calling `detectAndExtract` so that the correct
+   * wording is embedded once and the delivery actually matches the chosen mode.
+   */
+  deliveryMode?: DeliveryMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +188,7 @@ export function responsivizeSvg(svgContent: string): string {
 export function detectAndExtract(text: string, opts?: DetectExtractOptions): ExtractResult {
   let index = 0;
   const ts = Date.now();
+  const deliveryMode: DeliveryMode = opts?.deliveryMode ?? "follow-up";
 
   // ── Step 1: Collect all mermaid matches from the ORIGINAL text ────────────
   // matchAll gives us offsets in the original coordinate space.
@@ -203,7 +227,12 @@ export function detectAndExtract(text: string, opts?: DetectExtractOptions): Ext
     // Unique placeholder per block so orphan-restore in the send layer can
     // reliably target exactly one occurrence even when multiple same-type
     // blocks coexist and some succeed while others fail.
-    const placeholder = `📊 [diagram attached·${blockIndex}]`;
+    // Wording reflects delivery mode: same-message = current reference,
+    // follow-up = forward reference to the next message.
+    const placeholder =
+      deliveryMode === "same-message"
+        ? `\n\`\`\`\n📊 [see diagram·${blockIndex}]\n\`\`\``
+        : `\n\`\`\`\n📊 [see following diagram·${blockIndex}]\n\`\`\``;
     blockEntries.push({
       block: {
         type: "mermaid",
@@ -220,7 +249,12 @@ export function detectAndExtract(text: string, opts?: DetectExtractOptions): Ext
     const blockIndex = index++;
     const filename = `diagram-${ts}-${blockIndex}.svg`;
     // Unique placeholder per block (same rationale as mermaid above).
-    const placeholder = `🖼 [SVG attached·${blockIndex}]`;
+    // Wording reflects delivery mode: same-message = current reference,
+    // follow-up = forward reference to the next message.
+    const placeholder =
+      deliveryMode === "same-message"
+        ? `\n\`\`\`\n🖼 [see attachment·${blockIndex}]\n\`\`\``
+        : `\n\`\`\`\n🖼 [see following attachment·${blockIndex}]\n\`\`\``;
     let content: string;
     try {
       content = responsivizeSvg(match);
@@ -299,4 +333,43 @@ export async function writeTempVisualFile(block: VisualBlock): Promise<string> {
   const filePath = join(SAFE_FILE_DIR, block.filename);
   await writeFile(filePath, block.content, { encoding: "utf-8" });
   return filePath;
+}
+
+// ---------------------------------------------------------------------------
+// Mermaid companion render
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempts to render a mermaid VisualBlock to a companion SVG.
+ * Returns a new VisualBlock for the companion `.svg` file, or null on failure.
+ * The caller is responsible for writing the companion file to disk.
+ *
+ * The `ts` and `companionIndex` parameters are accepted for call-site
+ * consistency; the SVG filename is derived from `block.filename` by replacing
+ * the `.mmd` extension with `.svg`.
+ */
+export async function renderMermaidCompanion(
+  block: VisualBlock,
+  _ts: number,
+  _companionIndex: number,
+): Promise<(VisualBlock & { companionCaption: string }) | null> {
+  try {
+    const svg = await renderMermaidToSvg(block.content);
+    if (svg === null) return null;
+
+    const responsiveSvg = responsivizeSvg(svg);
+    const filename = block.filename.replace(/\.mmd$/, ".svg");
+
+    return {
+      type: "svg",
+      content: responsiveSvg,
+      filename,
+      placeholder: block.placeholder,
+      companionCaption: `📊 rendered from ${block.filename}`,
+    };
+  } catch {
+    // Graceful: any unexpected error (e.g. responsivizeSvg edge case) → null,
+    // caller ships .mmd alone (AC4).
+    return null;
+  }
 }

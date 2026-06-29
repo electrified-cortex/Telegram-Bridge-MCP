@@ -884,22 +884,19 @@ describe("sendRichMessageDirect", () => {
 });
 
 // ---------------------------------------------------------------------------
-// routeOutboundMessage — degrade-to-plain integration test (AC3)
+// routeOutboundMessage — plain Markdown goes directly to sendMessage (rich path disabled for text:)
 // ---------------------------------------------------------------------------
 
-describe("routeOutboundMessage: degrade-to-plain on RICH_MESSAGE_UNSUPPORTED", () => {
+describe("routeOutboundMessage: plain Markdown uses legacy sendMessage path", () => {
   let sendRichMessageSpy: ReturnType<typeof vi.spyOn>;
   let sendMessageSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     process.env.BOT_TOKEN = "test_route_token";
     resetApi();
-    // Make the rich API throw a 400 error that classifies as RICH_MESSAGE_UNSUPPORTED
     sendRichMessageSpy = vi
       .spyOn(Api.prototype, "sendRichMessage")
-      .mockRejectedValue(
-        makeGrammyError(400, "rich message not supported")
-      );
+      .mockResolvedValue({ message_id: 99 } as never);
     sendMessageSpy = vi
       .spyOn(Api.prototype, "sendMessage")
       .mockResolvedValue({ message_id: 42 } as never);
@@ -911,22 +908,23 @@ describe("routeOutboundMessage: degrade-to-plain on RICH_MESSAGE_UNSUPPORTED", (
     resetApi();
   });
 
-  it("falls back to sendMessage when rich API rejects with RICH_MESSAGE_UNSUPPORTED", async () => {
+  it("calls sendMessage directly (not sendRichMessage) for plain Markdown text", async () => {
     const result = await routeOutboundMessage(123, "## heading\n\nsome text", {
       parse_mode: "Markdown",
     });
 
-    expect(result.fell_back).toBe(true);
+    // Rich path disabled for plain text — fell_back is not set
+    expect(result.fell_back).toBeUndefined();
     expect(sendMessageSpy).toHaveBeenCalled();
-    expect(sendRichMessageSpy).toHaveBeenCalled();
+    expect(sendRichMessageSpy).not.toHaveBeenCalled();
   });
 
-  it("returns message_id from the fallback sendMessage call", async () => {
-    const result = await routeOutboundMessage(123, "plain fallback text", {
+  it("returns message_id from sendMessage call", async () => {
+    const result = await routeOutboundMessage(123, "plain text", {
       parse_mode: "Markdown",
     });
 
     expect(result.message_id).toBe(42);
-    expect(result.fell_back).toBe(true);
+    expect(result.fell_back).toBeUndefined();
   });
 });

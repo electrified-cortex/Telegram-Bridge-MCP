@@ -286,15 +286,15 @@ describe("message effects (30-0012)", () => {
     expect(opts.message_effect_id).toBe(MESSAGE_EFFECTS["heart"]);
   });
 
-  it("uses rich path when rich messages enabled and no effect", async () => {
+  it("uses legacy MarkdownV2 path (sendMessage) when no effect — rich path disabled for plain text", async () => {
     mocks.isRichMessagesEnabled.mockReturnValue(true);
-    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 77, fell_back: false });
+    mocks.sendMessage.mockResolvedValue({ message_id: 77 });
 
     await call({ text: "hello", token: TOKEN });
 
-    // No effect → rich path should be tried
-    expect(mocks.routeOutboundMessage).toHaveBeenCalledOnce();
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    // No effect → falls through to legacy MarkdownV2 chunk loop (rich path disabled for text:)
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
   });
 
   // ── AC: message still delivered on fallback ───────────────────────────────

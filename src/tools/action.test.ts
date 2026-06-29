@@ -63,6 +63,9 @@ const mocks = vi.hoisted(() => ({
   handleUpdateChecklist: vi.fn(),
   handleUpdateProgress: vi.fn(),
   handleCloseSessionSignal: vi.fn(),
+  handleAudioRemapSet: vi.fn(),
+  handleAudioRemapRemove: vi.fn(),
+  handleAudioRemapList: vi.fn(),
 }));
 
 vi.mock("../action-registry.js", () => ({
@@ -124,6 +127,11 @@ vi.mock("./profile/topic.js", () => ({ handleSetTopic: mocks.handleSetTopic, reg
 vi.mock("./profile/save.js", () => ({ handleSaveProfile: mocks.handleSaveProfile, register: vi.fn() }));
 vi.mock("./profile/load.js", () => ({ handleLoadProfile: mocks.handleLoadProfile, register: vi.fn() }));
 vi.mock("./profile/import.js", () => ({ handleImportProfile: mocks.handleImportProfile, register: vi.fn() }));
+vi.mock("./profile/audio-remap.js", () => ({
+  handleAudioRemapSet: mocks.handleAudioRemapSet,
+  handleAudioRemapRemove: mocks.handleAudioRemapRemove,
+  handleAudioRemapList: mocks.handleAudioRemapList,
+}));
 vi.mock("./reminder/set.js", () => ({ handleSetReminder: mocks.handleSetReminder, register: vi.fn() }));
 vi.mock("./reminder/cancel.js", () => ({ handleCancelReminder: mocks.handleCancelReminder, register: vi.fn() }));
 vi.mock("./reminder/list.js", () => ({ handleListReminders: mocks.handleListReminders, register: vi.fn() }));
@@ -343,6 +351,9 @@ describe("action tool", () => {
       expect(registeredPaths).toContain("reminder/enable");
       expect(registeredPaths).toContain("reminder/sleep");
       expect(registeredPaths).toContain("profile/dequeue-default");
+      expect(registeredPaths).toContain("profile/audio-remap/set");
+      expect(registeredPaths).toContain("profile/audio-remap/remove");
+      expect(registeredPaths).toContain("profile/audio-remap/list");
       expect(registeredPaths).toContain("animation/default");
       expect(registeredPaths).toContain("logging/toggle");
     });

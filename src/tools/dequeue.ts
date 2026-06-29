@@ -19,7 +19,7 @@ import {
 } from "../reminder-state.js";
 import { getGovernorSid } from "../routing-mode.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
-import { onActionableDequeue } from "../thinking-state.js";
+
 
 // ---------------------------------------------------------------------------
 // Thinking indicator — actionable content detection
@@ -47,19 +47,11 @@ const _THINKING_TRIGGER_TYPES = new Set([
  *
  * Best-effort, fire-and-forget — never blocks the dequeue return.
  */
-function _fireThinkingIfActionable(sid: number, batch: TimelineEvent[]): void {
-  const hasActionable = batch.some(
-    e =>
-      // Operator messages (text, voice, command, photo, etc.)
-      (e.event === "message" && e.from === "user" && _THINKING_TRIGGER_TYPES.has(e.content.type)) ||
-      // Agent DMs from other sessions
-      e.event === "direct_message" ||
-      // Reminders that produce actionable work
-      e.event === "reminder",
-  );
-  if (hasActionable) {
-    void onActionableDequeue(sid).catch(() => {});
-  }
+function _fireThinkingIfActionable(_sid: number, _batch: TimelineEvent[]): void {
+  // Auto-thinking disabled: the sendMessageDraft approach produced unwanted
+  // visual artifacts. Thinking state is still available for manual agent use
+  // via extendThinking / the thinking/extend + thinking/close tools.
+  // Re-enable here once a proper visual design is agreed on.
 }
 
 /** Defensive clamp for a single setTimeout call, kept below Node.js's ~2^31-1 ms overflow limit. */

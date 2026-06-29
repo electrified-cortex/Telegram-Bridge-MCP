@@ -187,9 +187,6 @@ const TOKEN = 1_123_456; // sid=1, suffix=123456
 const SENT_MSG = { message_id: 42 };
 const SENT_VOICE_MSG = { message_id: 43 };
 
-const TABLE_WARNING =
-  "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
-
 describe("send tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
 
@@ -208,7 +205,7 @@ describe("send tool", () => {
     mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
     mocks.showTyping.mockResolvedValue(undefined);
     mocks.deliverServiceMessage.mockReturnValue(undefined);
-    // P3: rich is default — single-chunk Markdown goes through routeOutboundMessage
+    // routeOutboundMessage used by html:/string: rich paths
     mocks.routeOutboundMessage.mockResolvedValue(SENT_MSG);
 
     const server = createMockServer();
@@ -225,8 +222,9 @@ describe("send tool", () => {
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
     expect(data.audio).toBeUndefined();
-    // P3: single-chunk Markdown now routes via routeOutboundMessage (rich default)
-    expect(mocks.routeOutboundMessage).toHaveBeenCalledOnce();
+    // Legacy MarkdownV2 path: sendMessage called directly (rich routing disabled for plain text)
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
     expect(mocks.sendVoiceDirect).not.toHaveBeenCalled();
   });
 
@@ -307,15 +305,51 @@ describe("send tool", () => {
     expect(data.info).toBeUndefined();
   });
 
-  it("table warning: text containing markdown table returns TABLE_WARNING on legacy path (parse_mode: MarkdownV2)", async () => {
+  it("table warning: text containing markdown table sends without info (TABLE_WARNING removed — tables render as-is)", async () => {
     const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
-    // Force legacy path: MarkdownV2 bypasses rich routing
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     const result = await call({ text: tableText, parse_mode: "MarkdownV2", token: TOKEN });
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
-    expect(data.info).toBe(TABLE_WARNING);
+    // No table warning — removed; use html:/string: params for structured tables.
+    expect(data.info).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Case 7b: TABLE_NOT_RENDERED guard — non-GFM paths return explicit error
+  // ---------------------------------------------------------------------------
+  it("TABLE_NOT_RENDERED: table + effect returns explicit error (not false success)", async () => {
+    const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
+    const result = await call({ text: tableText, effect: "fire", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
+    // No send should have occurred
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("TABLE_NOT_RENDERED: table + in-flight audio returns explicit error (not false success)", async () => {
+    const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
+    mocks.hasInflightAudio.mockReturnValueOnce(true);
+    const result = await call({ text: tableText, token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
+    // No send should have occurred
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.enqueueTextSend).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("TABLE_NOT_RENDERED: table in multi-chunk send returns explicit error (not false success)", async () => {
+    const tableText = "| A | B |\n| - | - |\n| 1 | 2 |\n\nFollowing prose that causes a second chunk.";
+    mocks.splitMessage.mockReturnValue([tableText.slice(0, 20), tableText.slice(20)]);
+    const result = await call({ text: tableText, token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
+    // No send should have occurred
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
@@ -1506,7 +1540,7 @@ describe("send — text-after-audio gating", () => {
     mocks.markdownToV2.mockImplementation((t: string) => t);
     mocks.applyTopicToText.mockImplementation((t: string) => t);
     mocks.sendMessage.mockResolvedValue({ message_id: 42 });
-    // P3: single-chunk Markdown routes through routeOutboundMessage (rich default)
+    // routeOutboundMessage still used by html:/string: paths
     mocks.routeOutboundMessage.mockResolvedValue({ message_id: 42 });
     mocks.hasInflightAudio.mockReturnValue(false);
     mocks.enqueueTextSend.mockReturnValue(-2_000_000_001);
@@ -1522,8 +1556,9 @@ describe("send — text-after-audio gating", () => {
     expect(isError(result)).toBe(false);
     const data = parseResult(result);
     expect(data.message_id).toBe(42);
-    // P3: rich is default, single-chunk Markdown routes via routeOutboundMessage
-    expect(mocks.routeOutboundMessage).toHaveBeenCalledOnce();
+    // Legacy MarkdownV2 path: sendMessage called directly (rich routing disabled for plain text)
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
     expect(mocks.enqueueTextSend).not.toHaveBeenCalled();
   });
 
