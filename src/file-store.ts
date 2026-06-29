@@ -40,7 +40,7 @@ export function startEviction(intervalMs = 60_000): void {
     }
   }, intervalMs);
   // Allow process to exit cleanly even if the interval is still armed.
-  _evictionInterval.unref?.();
+  _evictionInterval.unref();
 }
 
 /** Stop the eviction loop. Called on server shutdown to avoid test leaks. */

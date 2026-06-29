@@ -57,9 +57,9 @@ async function readBodyBuffer(req: Request): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer | string) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("end", () => { resolve(Buffer.concat(chunks)); });
     req.on("error", reject);
   });
 }
@@ -72,12 +72,12 @@ async function readBodyBuffer(req: Request): Promise<Buffer> {
  * Core logic for POST /files.
  * Returns [statusCode, responseBody].
  */
-export async function handlePostFiles(
+export function handlePostFiles(
   authHeader: string | undefined,
   contentType: string | undefined,
   body: Buffer,
   baseUrl: string | null,
-): Promise<[number, Record<string, unknown>]> {
+): [number, Record<string, unknown>] {
   if (!isValidAuthHeader(authHeader)) {
     return [401, { ok: false, error: "Unauthorized" }];
   }
@@ -124,7 +124,7 @@ export function attachFileTransferRoutes(app: Express): void {
           return;
         }
         const body = await readBodyBuffer(req);
-        const [status, payload] = await handlePostFiles(
+        const [status, payload] = handlePostFiles(
           req.headers["authorization"],
           typeof req.headers["content-type"] === "string" ? req.headers["content-type"] : undefined,
           body,
