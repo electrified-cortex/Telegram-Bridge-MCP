@@ -87,6 +87,7 @@ import { decodeToken } from "./identity-schema.js";
 import { getSession } from "../session-manager.js";
 import { handleThinkingExtend, handleThinkingClose } from "./thinking/extend.js";
 import { handleSendFileAction } from "./send/file.js";
+import { handleAudioRemapSet, handleAudioRemapRemove, handleAudioRemapList } from "./profile/audio-remap.js";
 type ToolResult = ReturnType<typeof toResult>;
 
 /** Action paths explicitly permitted for `read-only` child sessions. */
@@ -188,6 +189,9 @@ export function setupActionRegistry(): void {
   registerAction("profile/notify-debounce", toActionHandler(handleNotifyDebounce));
   registerAction("profile/kick-lockout", toActionHandler(handleNotifyDebounce)); // backward-compat alias for profile/notify-debounce
   registerAction("profile/kick-debounce", toActionHandler(handleKickDebounce));
+  registerAction("profile/audio-remap/set", toActionHandler(handleAudioRemapSet));
+  registerAction("profile/audio-remap/remove", toActionHandler(handleAudioRemapRemove));
+  registerAction("profile/audio-remap/list", toActionHandler(handleAudioRemapList));
   registerAction("animation/default", toActionHandler(handleSetDefaultAnimation));
   registerAction("logging/toggle", toActionHandler(handleToggleLogging));
 
@@ -497,6 +501,21 @@ export function register(server: McpServer): void {
           .max(64)
           .optional()
           .describe("name-tag/set or profile/import: Custom name tag string. Replaces the auto-default (<color> <name>). No newlines. Max 64 chars."),
+        // profile/audio-remap params
+        word: z
+          .string()
+          .optional()
+          .describe(
+            "profile/audio-remap/set: Word or phrase to remap for TTS (case-insensitive match). " +
+            "profile/audio-remap/remove: Word or phrase key to remove from the remapping map.",
+          ),
+        replacement: z
+          .string()
+          .optional()
+          .describe(
+            "profile/audio-remap/set: Phonetic replacement text spoken instead of `word` during TTS synthesis. " +
+            "Caption and visible text are unaffected — only the audio path is rewritten.",
+          ),
         // reminder/schedule params
         cron: z
           .string()

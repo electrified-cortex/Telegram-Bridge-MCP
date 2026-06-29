@@ -4,7 +4,7 @@ import { testIdentityGate } from "../test-helpers/identity-gate.js";
 
 const mocks = vi.hoisted(() => ({
   validateSession: vi.fn((): boolean => false),
-  getSession: vi.fn((): { name_tag?: string; suppress_pending_hint?: boolean } | undefined => undefined),
+  getSession: vi.fn((): { name_tag?: string; suppress_pending_hint?: boolean; audio_remapping?: Record<string, string> } | undefined => undefined),
   getSessionVoiceFor: vi.fn((): string | null => null),
   getSessionSpeedFor: vi.fn((): number | null => null),
   hasSessionDefault: vi.fn((): boolean => false),
@@ -286,6 +286,28 @@ describe("save_profile tool", () => {
     await call({ key: "Test", token: 1123456 });
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     expect(written).not.toHaveProperty("silent_lifecycle");
+  });
+
+  // ── AC7: audio_remapping persistence ───────────────────────────────────────
+
+  it("AC7: persists audio_remapping in saved profile when session has it set", async () => {
+    mocks.writeProfile.mockReset();
+    mocks.getSession.mockReturnValue({ audio_remapping: { "nginx": "engine-x" } });
+    const result = await call({ key: "Test", token: 1123456 });
+    expect(isError(result)).toBe(false);
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).toHaveProperty("audio_remapping");
+    expect((written.audio_remapping as Record<string, string>)["nginx"]).toBe("engine-x");
+    const data = parseResult(result);
+    expect(data.sections).toContain("audio_remapping");
+  });
+
+  it("AC7: does NOT persist audio_remapping when session field is undefined", async () => {
+    mocks.writeProfile.mockReset();
+    mocks.getSession.mockReturnValue({ name_tag: undefined });
+    await call({ key: "Test", token: 1123456 });
+    const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
+    expect(written).not.toHaveProperty("audio_remapping");
   });
 
   testIdentityGate((args) => call(args), mocks.validateSession, {"key":"Test"}, false);

@@ -108,6 +108,11 @@ export function handleSaveProfile({ key, token, autoload = false, silent_lifecyc
     sections.push("silent_lifecycle");
   }
 
+  if (sessionObj?.audio_remapping !== undefined) {
+    data.audio_remapping = sessionObj.audio_remapping;
+    sections.push("audio_remapping");
+  }
+
   let path: string;
   try {
     path = resolveProfilePath(key);
