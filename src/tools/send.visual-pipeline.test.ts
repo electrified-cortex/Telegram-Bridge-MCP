@@ -4,8 +4,12 @@
  * Verifies that SVG and Mermaid blocks detected by `detectAndExtract` are:
  * 1. Written to disk via `writeTempVisualFile`
  * 2. Sent as Telegram documents via `sendDocument`
- * 3. Replaced with placeholders in the prose that is then sent via `sendMessage`
- * 4. Ordered correctly (documents before prose)
+ * 3. Replaced with placeholders in the prose
+ * 4. Ordered correctly:
+ *    - Same-message delivery (single block, short text): `sendDocument` with prose
+ *      as caption, no separate `sendMessage`.
+ *    - Follow-up delivery (multiple blocks or long text): `sendMessage` prose FIRST,
+ *      then `sendDocument` per block — attachment NEVER precedes prose.
  *
  * This file mirrors the mock setup of `send.test.ts` exactly, adding:
  * - `sendDocument` mock in `getApi()` return
@@ -291,7 +295,9 @@ describe("send — visual attachment pipeline integration", () => {
 
   // ── SVG block detected ────────────────────────────────────────────────────
 
-  it("SVG block: sends document then prose, result has message_id from prose", async () => {
+  it("SVG block (same-message): sendDocument called with prose as caption; no separate sendMessage", async () => {
+    // Single block + short modified text → same-message delivery:
+    // prose is sent as the document caption, no independent sendMessage call.
     const block = makeSvgBlock();
     mocks.detectAndExtract.mockReturnValue({
       modifiedText: block.placeholder,
@@ -305,10 +311,11 @@ describe("send — visual attachment pipeline integration", () => {
     expect(mocks.writeTempVisualFile).toHaveBeenCalledWith(block);
     expect(mocks.resolveMediaSource).toHaveBeenCalledOnce();
     expect(mocks.sendDocument).toHaveBeenCalledOnce();
-    // Prose is then sent with the placeholder text
-    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    // Same-message: no separate prose sendMessage
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    // Result comes from sendDocument (message_id=10), not sendMessage (42)
     const data = parseResult(result);
-    expect(data.message_id).toBe(42);
+    expect(data.message_id).toBe(10);
   });
 
   it("SVG block: sendDocument receives the resolved media source as the file", async () => {
@@ -348,7 +355,8 @@ describe("send — visual attachment pipeline integration", () => {
 
   // ── Mermaid block detected ────────────────────────────────────────────────
 
-  it("Mermaid block: sends document then prose", async () => {
+  it("Mermaid block (same-message): sendDocument called with prose as caption; no separate sendMessage", async () => {
+    // Single block + short modified text → same-message delivery.
     const block = makeMmdBlock();
     mocks.detectAndExtract.mockReturnValue({
       modifiedText: block.placeholder,
@@ -359,7 +367,8 @@ describe("send — visual attachment pipeline integration", () => {
 
     expect(isError(result)).toBe(false);
     expect(mocks.sendDocument).toHaveBeenCalledOnce();
-    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    // Same-message: no separate prose sendMessage
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("Mermaid block: sendDocument caption is the mermaid placeholder", async () => {
@@ -392,7 +401,38 @@ describe("send — visual attachment pipeline integration", () => {
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
   });
 
-  it("multiple blocks: sendDocument calls precede sendMessage call (ordering)", async () => {
+  // ── D-1 Ordering ─────────────────────────────────────────────────────────────
+
+  it("D-1 ordering — follow-up (multiple blocks): sendMessage prose FIRST, then sendDocument per block", async () => {
+    // Multiple blocks → follow-up delivery: prose must arrive BEFORE attachments.
+    const callOrder: string[] = [];
+    mocks.sendDocument.mockImplementation(() => {
+      callOrder.push("doc");
+      return Promise.resolve(SENT_DOC);
+    });
+    mocks.sendMessage.mockImplementation(() => {
+      callOrder.push("msg");
+      return Promise.resolve(SENT_MSG);
+    });
+
+    const block1 = makeSvgBlock(0);
+    const block2 = makeSvgBlock(1);
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: `${block1.placeholder} ${block2.placeholder}`,
+      blocks: [block1, block2],
+    });
+    mocks.writeTempVisualFile
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-0.svg")
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-1.svg");
+
+    await call({ text: "<svg/><svg/>", token: TOKEN });
+
+    // Prose MUST arrive before all attachments (D-1 canonical rule)
+    expect(callOrder).toEqual(["msg", "doc", "doc"]);
+  });
+
+  it("D-1 ordering — same-message (single block): only sendDocument called (prose is the caption)", async () => {
+    // Single short block → same-message delivery: one sendDocument call, no sendMessage.
     const callOrder: string[] = [];
     mocks.sendDocument.mockImplementation(() => {
       callOrder.push("doc");
@@ -408,7 +448,56 @@ describe("send — visual attachment pipeline integration", () => {
 
     await call({ text: "<svg><rect/></svg>", token: TOKEN });
 
-    expect(callOrder).toEqual(["doc", "msg"]);
+    // Same-message: prose delivered as document caption — no separate sendMessage
+    expect(callOrder).toEqual(["doc"]);
+  });
+
+  // ── D-3 Placeholder wording in delivered prose ────────────────────────────
+
+  it("D-3 same-message: sendDocument caption contains prose text (full prose as caption)", async () => {
+    // Same-message delivery: the prose is sent as the document caption.
+    // The block placeholder IS the prose (since detectAndExtract mock returns
+    // modifiedText = block.placeholder, and all text transforms are identity).
+    const block = makeSvgBlock();
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: block.placeholder,
+      blocks: [block],
+    });
+
+    await call({ text: "<svg><rect/></svg>", token: TOKEN });
+
+    // In same-message mode, sendDocument caption = the full transformed prose text.
+    expect(mocks.sendDocument).toHaveBeenCalledOnce();
+    const [, , opts] = mocks.sendDocument.mock.calls[0] as [number, string, { caption?: string; parse_mode?: string }];
+    expect(opts?.caption).toBe(block.placeholder); // prose = placeholder (identity transforms)
+    expect(opts?.parse_mode).toBe("MarkdownV2");   // default parse_mode path
+    // No separate prose sendMessage
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("D-3 follow-up: sendMessage prose sent first, then sendDocument with block placeholder as caption", async () => {
+    // Multiple blocks → follow-up delivery. The prose message contains placeholders,
+    // and each sendDocument receives its own block placeholder as the caption.
+    const block1 = makeSvgBlock(0);
+    const block2 = makeMmdBlock(1);
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: `${block1.placeholder}\n${block2.placeholder}`,
+      blocks: [block1, block2],
+    });
+    mocks.writeTempVisualFile
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-0.svg")
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/diagram-1-1.mmd");
+
+    await call({ text: "<svg/>\n```mermaid\ngraph TD\n```", token: TOKEN });
+
+    // Prose FIRST (follow-up delivery)
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    // Each document sent after prose, each with its own placeholder as caption
+    expect(mocks.sendDocument).toHaveBeenCalledTimes(2);
+    const doc0opts = mocks.sendDocument.mock.calls[0]?.[2] as { caption?: string };
+    const doc1opts = mocks.sendDocument.mock.calls[1]?.[2] as { caption?: string };
+    expect(doc0opts?.caption).toBe(block1.placeholder);
+    expect(doc1opts?.caption).toBe(block2.placeholder);
   });
 
   // ── disable_notification propagation ─────────────────────────────────────
@@ -530,5 +619,39 @@ describe("send — visual attachment pipeline integration", () => {
       (c: unknown[]) => c[0] === 60 && c[1] === "upload_document",
     );
     expect(uploadDocCalls).toHaveLength(2);
+  });
+
+  // ── BLOCK-1: in-flight audio must NOT silently drop visual blocks ─────────
+
+  it("BLOCK-1: in-flight audio — sendDocument still flushed after prose in queued lambda", async () => {
+    const block = makeSvgBlock();
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: block.placeholder,
+      blocks: [block],
+    });
+    mocks.sendDocument.mockResolvedValue(SENT_DOC);
+
+    // Simulate in-flight audio: enqueueTextSend captures the lambda without running it
+    let capturedFn: ((pid: number) => Promise<void>) | undefined;
+    mocks.hasInflightAudio.mockReturnValue(true);
+    mocks.enqueueTextSend.mockImplementation((_sid: number, fn: (pid: number) => Promise<void>) => {
+      capturedFn = fn;
+      return -2_000_000_001;
+    });
+
+    await call({ text: "<svg><rect/></svg>", token: TOKEN });
+
+    // Lambda must have been enqueued (in-flight audio path taken)
+    expect(capturedFn).toBeDefined();
+
+    // Drain the queue: simulate audio finishing and lambda executing
+    await capturedFn!(-2_000_000_001);
+
+    // BLOCK-1 regression: document must NOT be silently dropped
+    expect(mocks.sendDocument).toHaveBeenCalled();
+    // Prose must contain the placeholder, not the raw block content
+    const proseArg = mocks.sendMessage.mock.calls[0]?.[1];
+    expect(proseArg).toContain(block.placeholder);
+    expect(proseArg).not.toContain(block.content);
   });
 });

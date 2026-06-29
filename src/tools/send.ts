@@ -1,5 +1,5 @@
 // Never call 'send' from send.ts handler — use telegram.js primitives directly
-import { GrammyError } from "grammy";
+import { GrammyError, InputFile } from "grammy";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, resolveMediaSource, sendVoiceDirect, routeOutboundMessage } from "../telegram.js";
@@ -18,7 +18,7 @@ import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator,
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { getSession } from "../session-manager.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
-import { detectAndExtract, writeTempVisualFile } from "../visual-attachment-pipeline.js";
+import { detectAndExtract, writeTempVisualFile, type DeliveryMode, type VisualBlock } from "../visual-attachment-pipeline.js";
 // Safety field accepted on all send paths
 const SAFETY_SCHEMA = z.enum(["disable"]).optional().describe(
   'Safety override. Pass `safety: "disable"` to bypass the absolute-path block and send the message anyway. An operator notification is emitted when this override is used.',
@@ -616,47 +616,72 @@ export function register(server: McpServer) {
           }
 
           // ── Text-only mode ───────────────────────────────────────────────
-          // ── Visual attachment pipeline (SVG / Mermaid) ───────────────────
-          // Detect and extract SVG and Mermaid blocks from the raw message text
+          // ── Visual attachment pipeline (SVG / Mermaid) — Phase 1: Prepare ─
+          // Detect and extract SVG/Mermaid blocks from the raw message text
           // *before* topic prefix, Markdown conversion, or chunking so that:
           // (a) the placeholder text (not the raw block) enters markdownToV2,
-          // (b) documents are sent before the prose, in order of appearance.
+          // (b) delivery mode is determined before placeholders are embedded,
+          // (c) prose is always delivered BEFORE (or simultaneously with) attachments.
+          //
+          // Delivery modes:
+          //   "same-message" — single block, prose fits in caption limit →
+          //     attachment + prose in one Telegram message (prose sent as caption).
+          //   "follow-up"    — default → prose sent first (sendMessage), then
+          //     attachments sent immediately after (sendDocument per block).
+          //
           // Pre-check avoids the 3 regex scans on every plain-text send.
           let visualText: string = text ?? "";
+          // Documents prepared in Phase 1; sent in Phase 2 (after prose).
+          const _pendingDocs: Array<{ block: VisualBlock; source: string | InputFile }> = [];
+          let _visualDeliveryMode: DeliveryMode = "follow-up";
+
           if (visualText && (visualText.includes('<svg') || visualText.includes('```mermaid'))) {
-            const { modifiedText: _vExtracted, blocks: _vBlocks } = detectAndExtract(
+            // Phase 1a: First-pass detect (follow-up wording) to count blocks and
+            // measure the modified text length — both inform the delivery-mode decision.
+            const _firstPass = detectAndExtract(
               visualText,
-              { htmlMode: parse_mode === "HTML" },
+              { htmlMode: parse_mode === "HTML", deliveryMode: "follow-up" },
             );
-            if (_vBlocks.length > 0) {
-              // Start from modified text (placeholders inserted). Track per-block
-              // success; on failure restore the orphan placeholder to the original
-              // block content so the user never sees a broken "🖼 [SVG attached]"
-              // with no accompanying file.
+
+            if (_firstPass.blocks.length > 0) {
+              // Delivery mode: same-message when a single block's modified text
+              // fits within Telegram's 1 024-character caption limit.
+              const _CAPTION_LIMIT = 1024;
+              _visualDeliveryMode =
+                _firstPass.blocks.length === 1 && _firstPass.modifiedText.length <= _CAPTION_LIMIT
+                  ? "same-message"
+                  : "follow-up";
+
+              // Phase 1b: Re-detect with the chosen delivery mode to embed the
+              // correct placeholder wording ("see attachment" vs "see following …").
+              const { modifiedText: _vExtracted, blocks: _vBlocks } =
+                _visualDeliveryMode === "same-message"
+                  ? detectAndExtract(visualText, { htmlMode: parse_mode === "HTML", deliveryMode: "same-message" })
+                  : _firstPass;
+
+              // Phase 1c: Write temp files + resolve media. No API calls yet —
+              // documents are queued in _pendingDocs and sent after the prose.
+              // On failure: restore the orphan placeholder → original block content
+              // before prose send so the message remains readable without the attachment.
               let finalVisualText = _vExtracted;
               for (const _vBlock of _vBlocks) {
-                let sent = false;
+                let prepared = false;
                 try {
                   await showTyping(60, "upload_document");
                   const _vPath = await writeTempVisualFile(_vBlock);
                   const _vMedia = resolveMediaSource(_vPath);
                   if (!("code" in _vMedia)) {
-                    await callApi(() =>
-                      getApi().sendDocument(chatId, _vMedia.source, {
-                        caption: _vBlock.placeholder,
-                        disable_notification: args.disable_notification,
-                      }),
-                    );
-                    sent = true;
+                    _pendingDocs.push({ block: _vBlock, source: _vMedia.source });
+                    prepared = true;
                   }
                 } catch {
-                  // Graceful: a failed attachment never blocks prose delivery
+                  // Graceful: a preparation failure falls through to placeholder restore
                 }
-                if (!sent) {
-                  // Replace the orphan placeholder with the original block content
-                  // so the message remains readable without the attachment.
-                  // String.replace (non-regex) replaces only the first occurrence,
-                  // which correctly maps each block to its own placeholder slot
+                if (!prepared) {
+                  // Replace orphan placeholder with original block content
+                  // so the prose remains readable without the attachment.
+                  // String.replace (non-regex) targets only the first occurrence,
+                  // correctly mapping each block to its own placeholder slot
                   // when blocks are iterated in source order.
                   finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
                 }
@@ -706,9 +731,52 @@ export function register(server: McpServer) {
                 deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
               }
               warnUnrenderableChars(_sid, visualText);
+              // Phase 2 (GFM path): send pending documents after prose (follow-up delivery).
+              for (const { block: _gdBlock, source: _gdSrc } of _pendingDocs) {
+                try {
+                  await callApi(() =>
+                    getApi().sendDocument(chatId, _gdSrc, {
+                      caption: _gdBlock.placeholder,
+                      disable_notification,
+                    }),
+                  );
+                } catch { /* Silent: prose already delivered */ }
+              }
               return toResult({ message_id: result.message_id, ...(compact ? {} : { split_count: 1 }) });
             } catch {
               // Fallback: let it continue to the MarkdownV2 path below
+            }
+          }
+
+          // ── Same-message visual delivery ────────────────────────────────────
+          // When delivery mode is "same-message": send the prose as the document
+          // caption so both arrive in a single Telegram message.
+          // Conditions: single block, single chunk, no effect, no in-flight audio.
+          if (
+            _visualDeliveryMode === "same-message" &&
+            _pendingDocs.length === 1 &&
+            !effectId &&
+            !hasInflightAudio(_sid) &&
+            chunks.length === 1
+          ) {
+            const { source: _smSrc } = _pendingDocs[0];
+            try {
+              const _smMsg = await callApi(() =>
+                getApi().sendDocument(chatId, _smSrc, {
+                  caption: finalText,
+                  parse_mode: finalMode || undefined,
+                  disable_notification,
+                  reply_parameters:
+                    reply_to_message_id !== undefined
+                      ? { message_id: reply_to_message_id }
+                      : undefined,
+                }),
+              );
+              warnUnrenderableChars(_sid, finalText);
+              return toResult({ message_id: _smMsg.message_id, ...(compact ? {} : { split_count: 1 }) });
+            } catch {
+              // Same-message send failed: fall through to follow-up delivery.
+              // _pendingDocs is kept so the document is retried after prose.
             }
           }
 
@@ -737,6 +805,17 @@ export function register(server: McpServer) {
                   ? { pendingId: pid, status: "ok" as const, messageId: ids[0] }
                   : { pendingId: pid, status: "ok" as const, messageIds: ids };
                 deliverAsyncSendCallback(queuedSid, payload);
+                // Phase 2 — flush visual blocks queued by Phase 1c (after prose is delivered)
+                for (const { block: _qaBlock, source: _qaSrc } of _pendingDocs) {
+                  try {
+                    await callApi(() =>
+                      getApi().sendDocument(queuedChatId, _qaSrc, {
+                        caption: _qaBlock.placeholder,
+                        disable_notification,
+                      }),
+                    );
+                  } catch { /* Graceful: failed attachment does not abort the already-sent prose */ }
+                }
               } catch (err) {
                 const errMsg = err instanceof Error ? err.message : String(err);
                 deliverAsyncSendCallback(queuedSid, { pendingId: pid, status: "failed", error: errMsg });
@@ -792,6 +871,17 @@ export function register(server: McpServer) {
               message_ids.push(msg.message_id);
             }
             warnUnrenderableChars(_sid, finalText);
+            // Phase 2 (follow-up delivery): send pending documents AFTER prose.
+            for (const { block: _fdBlock, source: _fdSrc } of _pendingDocs) {
+              try {
+                await callApi(() =>
+                  getApi().sendDocument(chatId, _fdSrc, {
+                    caption: _fdBlock.placeholder,
+                    disable_notification,
+                  }),
+                );
+              } catch { /* Silent: prose already delivered */ }
+            }
             if (message_ids.length === 1) {
               return toResult({ message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }) });
             }
@@ -821,6 +911,17 @@ export function register(server: McpServer) {
                   } as Record<string, unknown>;
                   const m = await callApi(() => getApi().sendMessage(chatId, pc, plainOpts));
                   plain_ids.push(m.message_id);
+                }
+                // Phase 2 (follow-up, MarkdownV2 fallback): send pending documents after prose.
+                for (const { block: _fpBlock, source: _fpSrc } of _pendingDocs) {
+                  try {
+                    await callApi(() =>
+                      getApi().sendDocument(chatId, _fpSrc, {
+                        caption: _fpBlock.placeholder,
+                        disable_notification,
+                      }),
+                    );
+                  } catch { /* Silent: prose already delivered */ }
                 }
                 if (plain_ids.length === 1) {
                   return toResult({ message_id: plain_ids[0], ...(compact ? {} : { split_count: 1 }) });

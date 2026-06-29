@@ -111,7 +111,8 @@ describe("detectAndExtract — SVG", () => {
     const { modifiedText, blocks } = detectAndExtract(text);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("svg");
-    expect(modifiedText).toContain("🖼 [SVG attached·0]");
+    // Default deliveryMode is "follow-up" → forward-reference wording
+    expect(modifiedText).toContain("🖼 [see following attachment·0]");
     expect(modifiedText).not.toContain("<svg");
     expect(modifiedText).toContain("Here is a diagram:");
     expect(modifiedText).toContain("End.");
@@ -151,18 +152,23 @@ describe("detectAndExtract — SVG", () => {
     expect(modifiedText).toContain("Pretty cool!");
   });
 
-  it("uses 🖼 [SVG attached·N] as the placeholder (unique per block index)", () => {
+  it("uses follow-up wording (🖼 [see following attachment·N]) as default placeholder", () => {
     const { blocks } = detectAndExtract('<svg><g/></svg>');
-    expect(blocks[0].placeholder).toBe("🖼 [SVG attached·0]");
+    expect(blocks[0].placeholder).toBe("🖼 [see following attachment·0]");
+  });
+
+  it("uses same-message wording (🖼 [see attachment·N]) when deliveryMode is same-message", () => {
+    const { blocks } = detectAndExtract('<svg><g/></svg>', { deliveryMode: "same-message" });
+    expect(blocks[0].placeholder).toBe("🖼 [see attachment·0]");
   });
 
   it("each SVG block gets a unique placeholder distinguished by its index", () => {
     const text = '<svg><a/></svg> text <svg><b/></svg>';
     const { modifiedText, blocks } = detectAndExtract(text);
-    expect(blocks[0].placeholder).toBe("🖼 [SVG attached·0]");
-    expect(blocks[1].placeholder).toBe("🖼 [SVG attached·1]");
-    expect(modifiedText).toContain("🖼 [SVG attached·0]");
-    expect(modifiedText).toContain("🖼 [SVG attached·1]");
+    expect(blocks[0].placeholder).toBe("🖼 [see following attachment·0]");
+    expect(blocks[1].placeholder).toBe("🖼 [see following attachment·1]");
+    expect(modifiedText).toContain("🖼 [see following attachment·0]");
+    expect(modifiedText).toContain("🖼 [see following attachment·1]");
   });
 });
 
@@ -176,7 +182,8 @@ describe("detectAndExtract — Mermaid", () => {
     const { modifiedText, blocks } = detectAndExtract(text);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("mermaid");
-    expect(modifiedText).toContain("📊 [diagram attached·0]");
+    // Default deliveryMode is "follow-up" → forward-reference wording
+    expect(modifiedText).toContain("📊 [see following diagram·0]");
     expect(modifiedText).toContain("Before");
     expect(modifiedText).toContain("After");
     expect(modifiedText).not.toContain("```mermaid");
@@ -197,20 +204,26 @@ describe("detectAndExtract — Mermaid", () => {
     expect(blocks[0].filename).toMatch(/\.mmd$/);
   });
 
-  it("uses 📊 [diagram attached·N] as the placeholder (unique per block index)", () => {
+  it("uses follow-up wording (📊 [see following diagram·N]) as default placeholder", () => {
     const text = "```mermaid\ngraph TD\nA-->B\n```";
     const { blocks } = detectAndExtract(text);
-    expect(blocks[0].placeholder).toBe("📊 [diagram attached·0]");
+    expect(blocks[0].placeholder).toBe("📊 [see following diagram·0]");
+  });
+
+  it("uses same-message wording (📊 [see diagram·N]) when deliveryMode is same-message", () => {
+    const text = "```mermaid\ngraph TD\nA-->B\n```";
+    const { blocks } = detectAndExtract(text, { deliveryMode: "same-message" });
+    expect(blocks[0].placeholder).toBe("📊 [see diagram·0]");
   });
 
   it("each mermaid block gets a unique placeholder distinguished by its index", () => {
     const text =
       "```mermaid\ngraph LR\nA-->B\n```\nSome prose\n```mermaid\nsequenceDiagram\nA->>B: Hi\n```";
     const { modifiedText, blocks } = detectAndExtract(text);
-    expect(blocks[0].placeholder).toBe("📊 [diagram attached·0]");
-    expect(blocks[1].placeholder).toBe("📊 [diagram attached·1]");
-    expect(modifiedText).toContain("📊 [diagram attached·0]");
-    expect(modifiedText).toContain("📊 [diagram attached·1]");
+    expect(blocks[0].placeholder).toBe("📊 [see following diagram·0]");
+    expect(blocks[1].placeholder).toBe("📊 [see following diagram·1]");
+    expect(modifiedText).toContain("📊 [see following diagram·0]");
+    expect(modifiedText).toContain("📊 [see following diagram·1]");
   });
 
   it("detects multiple mermaid blocks independently", () => {
@@ -334,7 +347,7 @@ describe("detectAndExtract — graceful malformed SVG", () => {
     const { blocks, modifiedText } = detectAndExtract(text);
     // Structural match succeeds
     expect(blocks).toHaveLength(1);
-    expect(modifiedText).toContain("🖼 [SVG attached·0]");
+    expect(modifiedText).toContain("🖼 [see following attachment·0]");
   });
 
   it("empty text returns empty blocks and same text", () => {
@@ -355,8 +368,8 @@ describe("detectAndExtract — graceful malformed SVG", () => {
     // Exactly one block extracted (the complete SVG)
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("svg");
-    // The SVG block is replaced with its placeholder
-    expect(modifiedText).toContain("🖼 [SVG attached·");
+    // The SVG block is replaced with its placeholder (follow-up wording by default)
+    expect(modifiedText).toContain("🖼 [see following attachment·");
     // The prose <svg> mention is NOT wrapped in a code fence
     expect(modifiedText).toContain("The <svg> element is used for vector graphics.");
     expect(modifiedText).not.toContain("```xml");
@@ -390,9 +403,10 @@ describe("detectAndExtract — mixed SVG and Mermaid", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks.some(b => b.type === "svg")).toBe(true);
     expect(blocks.some(b => b.type === "mermaid")).toBe(true);
-    // Mermaid runs first (index 0), SVG runs second (index 1).
-    expect(modifiedText).toContain("🖼 [SVG attached·1]");
-    expect(modifiedText).toContain("📊 [diagram attached·0]");
+    // Mermaid is indexed first (index 0), SVG second (index 1) due to indexing order.
+    // Default deliveryMode is "follow-up" → forward-reference wording.
+    expect(modifiedText).toContain("🖼 [see following attachment·1]");
+    expect(modifiedText).toContain("📊 [see following diagram·0]");
     expect(modifiedText).toContain("Some prose");
     // All placeholders are unique across types
     const placeholders = blocks.map(b => b.placeholder);
@@ -474,6 +488,117 @@ describe("detectAndExtract — mixed SVG and Mermaid", () => {
     // All placeholders unique
     const placeholders = blocks.map(b => b.placeholder);
     expect(new Set(placeholders).size).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-2: Formatting preservation — slice substitution
+// ---------------------------------------------------------------------------
+// The substitution must be character-for-character identical to the input
+// outside the replaced block's exact span. These tests confirm zero collateral
+// changes to surrounding Markdown syntax, punctuation, and whitespace.
+
+describe("detectAndExtract — D-2 formatting preservation (slice substitution)", () => {
+  it("D-2: SVG extraction leaves bold/italic/code markup outside the block unchanged", () => {
+    const text = "**bold** before\n<svg><rect/></svg>\n*italic* and `code` after";
+    const { modifiedText, blocks } = detectAndExtract(text);
+    expect(blocks).toHaveLength(1);
+    const expected = `**bold** before\n${blocks[0].placeholder}\n*italic* and \`code\` after`;
+    expect(modifiedText).toBe(expected);
+  });
+
+  it("D-2: Mermaid extraction leaves blockquote and newlines outside the block unchanged", () => {
+    const text = "> A blockquote\n```mermaid\ngraph TD\nA-->B\n```\n> Another line";
+    const { modifiedText, blocks } = detectAndExtract(text);
+    expect(blocks).toHaveLength(1);
+    const expected = `> A blockquote\n${blocks[0].placeholder}\n> Another line`;
+    expect(modifiedText).toBe(expected);
+  });
+
+  it("D-2: multiple blocks — each substitution is independent, no cross-contamination", () => {
+    const text =
+      "__bold1__\n<svg><a/></svg>\n~~strike~~\n```mermaid\nsequenceDiagram\nA->>B: Hi\n```\n||spoiler||";
+    const { modifiedText, blocks } = detectAndExtract(text);
+    expect(blocks).toHaveLength(2);
+    // Characters outside both blocks must be preserved exactly
+    expect(modifiedText).toContain("__bold1__");
+    expect(modifiedText).toContain("~~strike~~");
+    expect(modifiedText).toContain("||spoiler||");
+    // Each block replaced by its placeholder only — no extra whitespace injected
+    const svgBlock = blocks.find(b => b.type === "svg")!;
+    const mmdBlock = blocks.find(b => b.type === "mermaid")!;
+    const expectedLines = [
+      "__bold1__",
+      svgBlock.placeholder,
+      "~~strike~~",
+      mmdBlock.placeholder,
+      "||spoiler||",
+    ];
+    expect(modifiedText).toBe(expectedLines.join("\n"));
+  });
+
+  it("D-2: no trailing newline added or removed after SVG block", () => {
+    const svgBlock = '<svg><rect/></svg>';
+    const text = `Before\n${svgBlock}\nAfter`;
+    const { modifiedText, blocks } = detectAndExtract(text);
+    expect(blocks).toHaveLength(1);
+    expect(modifiedText).toBe(`Before\n${blocks[0].placeholder}\nAfter`);
+  });
+
+  it("D-2: leading/trailing spaces around SVG are preserved (not trimmed)", () => {
+    const text = 'Intro  \n<svg><g/></svg>\n  Outro';
+    const { modifiedText, blocks } = detectAndExtract(text);
+    expect(blocks).toHaveLength(1);
+    expect(modifiedText).toBe(`Intro  \n${blocks[0].placeholder}\n  Outro`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-3: Delivery-mode wording
+// ---------------------------------------------------------------------------
+// The placeholder text must reflect the chosen delivery mode BEFORE it is
+// embedded, so what the user reads matches how the message was actually sent.
+
+describe("detectAndExtract — D-3 delivery mode wording", () => {
+  it("D-3: same-message SVG placeholder contains 'see attachment' (no 'following')", () => {
+    const { blocks } = detectAndExtract('<svg><rect/></svg>', { deliveryMode: "same-message" });
+    expect(blocks[0].placeholder).toContain("see attachment");
+    expect(blocks[0].placeholder).not.toContain("following");
+  });
+
+  it("D-3: follow-up SVG placeholder contains 'see following attachment'", () => {
+    const { blocks } = detectAndExtract('<svg><rect/></svg>', { deliveryMode: "follow-up" });
+    expect(blocks[0].placeholder).toContain("see following attachment");
+  });
+
+  it("D-3: same-message Mermaid placeholder contains 'see diagram' (no 'following')", () => {
+    const text = "```mermaid\ngraph TD\nA-->B\n```";
+    const { blocks } = detectAndExtract(text, { deliveryMode: "same-message" });
+    expect(blocks[0].placeholder).toContain("see diagram");
+    expect(blocks[0].placeholder).not.toContain("following");
+  });
+
+  it("D-3: follow-up Mermaid placeholder contains 'see following diagram'", () => {
+    const text = "```mermaid\ngraph TD\nA-->B\n```";
+    const { blocks } = detectAndExtract(text, { deliveryMode: "follow-up" });
+    expect(blocks[0].placeholder).toContain("see following diagram");
+  });
+
+  it("D-3: omitting deliveryMode defaults to follow-up wording", () => {
+    const { blocks: svgBlocks } = detectAndExtract('<svg><rect/></svg>');
+    expect(svgBlocks[0].placeholder).toContain("see following");
+
+    const { blocks: mmdBlocks } = detectAndExtract("```mermaid\ngraph TD\nA-->B\n```");
+    expect(mmdBlocks[0].placeholder).toContain("see following");
+  });
+
+  it("D-3: placeholder wording is embedded into modifiedText (not the raw block content)", () => {
+    const text = "Intro\n<svg><rect/></svg>\nOutro";
+    const { modifiedText, blocks } = detectAndExtract(text, { deliveryMode: "same-message" });
+    expect(modifiedText).toContain(blocks[0].placeholder);
+    expect(blocks[0].placeholder).not.toContain("following");
+    // modifiedText must not contain the raw SVG
+    expect(modifiedText).not.toContain("<svg");
   });
 });
 
