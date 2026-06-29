@@ -230,8 +230,8 @@ export function detectAndExtract(text: string, opts?: DetectExtractOptions): Ext
     // follow-up = forward reference to the next message.
     const placeholder =
       deliveryMode === "same-message"
-        ? `\`\`\`📊 [see diagram·${blockIndex}]\`\`\``
-        : `\`\`\`📊 [see following diagram·${blockIndex}]\`\`\``;
+        ? `\n\`\`\`\n📊 [see diagram·${blockIndex}]\n\`\`\``
+        : `\n\`\`\`\n📊 [see following diagram·${blockIndex}]\n\`\`\``;
     blockEntries.push({
       block: {
         type: "mermaid",
@@ -252,8 +252,8 @@ export function detectAndExtract(text: string, opts?: DetectExtractOptions): Ext
     // follow-up = forward reference to the next message.
     const placeholder =
       deliveryMode === "same-message"
-        ? `\`\`\`🖼 [see attachment·${blockIndex}]\`\`\``
-        : `\`\`\`🖼 [see following attachment·${blockIndex}]\`\`\``;
+        ? `\n\`\`\`\n🖼 [see attachment·${blockIndex}]\n\`\`\``
+        : `\n\`\`\`\n🖼 [see following attachment·${blockIndex}]\n\`\`\``;
     let content: string;
     try {
       content = responsivizeSvg(match);
