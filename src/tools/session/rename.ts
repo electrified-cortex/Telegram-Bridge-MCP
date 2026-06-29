@@ -7,7 +7,9 @@ import { getGovernorSid } from "../../routing-mode.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { requestOperatorApproval } from "../../built-in-commands.js";
 
-const VALID_NAME_RE = /^[a-zA-Z0-9 ]+$/;
+// Letters, digits, spaces, and hyphens (e.g. "Scout-7"). Matches session/start so a
+// hyphenated name round-trips consistently to its profile key.
+const VALID_NAME_RE = /^[a-zA-Z0-9 -]+$/;
 
 const DESCRIPTION =
   "Rename the current session (or another session if governor). " +
