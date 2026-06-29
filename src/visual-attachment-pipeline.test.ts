@@ -695,7 +695,7 @@ describe("renderMermaidCompanion", () => {
   const mmdBlock: VisualBlock = {
     type: "mermaid",
     content: "graph TD\nA-->B",
-    placeholder: "📊 [see following diagram·0]",
+    placeholder: "```📊 [see following diagram·0]```",
     filename: "diagram-1234567890-0.mmd",
   };
 
