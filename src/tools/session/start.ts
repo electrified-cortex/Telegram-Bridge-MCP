@@ -250,11 +250,13 @@ export async function handleSessionStart({ name, color, refresh, token, autoload
         });
       }
 
-      // Names must be alphanumeric (letters, digits, spaces only)
-      if (effectiveName && !/^[a-zA-Z0-9 ]+$/.test(effectiveName)) {
+      // Names must be alphanumeric plus spaces and hyphens (e.g. "Scout-7", "Unit-12").
+      // Hyphens are filesystem-safe (resolveProfilePath blocks traversal/separators),
+      // so a hyphenated name round-trips to a matching profile key without stripping.
+      if (effectiveName && !/^[a-zA-Z0-9 -]+$/.test(effectiveName)) {
         return toError({
           code: "INVALID_NAME",
-          message: `Session name "${effectiveName}" contains invalid characters. Use letters, digits, and spaces only.`,
+          message: `Session name "${effectiveName}" contains invalid characters. Use letters, digits, spaces, and hyphens only.`,
         });
       }
 

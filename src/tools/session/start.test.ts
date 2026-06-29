@@ -726,6 +726,18 @@ describe("session_start tool", () => {
     expect(mocks.createSession).toHaveBeenCalledWith("Scout Alpha", undefined, false);
   });
 
+  it("accepts name with hyphens (e.g. Scout-7) → round-trips without stripping", async () => {
+    mocks.activeSessionCount.mockReturnValue(0);
+    mocks.createSession.mockReturnValue({ sid: 1, suffix: 100001, name: "Scout-7", sessionsActive: 1 });
+    mocks.listSessions.mockReturnValue([]);
+
+    const result = await call({ name: "Scout-7" });
+
+    expect(isError(result)).toBe(false);
+    // Hyphen preserved verbatim — not stripped to "Scout7" (10-3088 regression).
+    expect(mocks.createSession).toHaveBeenCalledWith("Scout-7", undefined, false);
+  });
+
   it("trims whitespace before validation — leading/trailing spaces are allowed", async () => {
     mocks.activeSessionCount.mockReturnValue(0);
     mocks.createSession.mockReturnValue({ sid: 1, suffix: 100001, name: "Scout", sessionsActive: 1 });
