@@ -620,4 +620,38 @@ describe("send — visual attachment pipeline integration", () => {
     );
     expect(uploadDocCalls).toHaveLength(2);
   });
+
+  // ── BLOCK-1: in-flight audio must NOT silently drop visual blocks ─────────
+
+  it("BLOCK-1: in-flight audio — sendDocument still flushed after prose in queued lambda", async () => {
+    const block = makeSvgBlock();
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: block.placeholder,
+      blocks: [block],
+    });
+    mocks.sendDocument.mockResolvedValue(SENT_DOC);
+
+    // Simulate in-flight audio: enqueueTextSend captures the lambda without running it
+    let capturedFn: ((pid: number) => Promise<void>) | undefined;
+    mocks.hasInflightAudio.mockReturnValue(true);
+    mocks.enqueueTextSend.mockImplementation((_sid: number, fn: (pid: number) => Promise<void>) => {
+      capturedFn = fn;
+      return -2_000_000_001;
+    });
+
+    await call({ text: "<svg><rect/></svg>", token: TOKEN });
+
+    // Lambda must have been enqueued (in-flight audio path taken)
+    expect(capturedFn).toBeDefined();
+
+    // Drain the queue: simulate audio finishing and lambda executing
+    await capturedFn!(-2_000_000_001);
+
+    // BLOCK-1 regression: document must NOT be silently dropped
+    expect(mocks.sendDocument).toHaveBeenCalled();
+    // Prose must contain the placeholder, not the raw block content
+    const proseArg = mocks.sendMessage.mock.calls[0]?.[1];
+    expect(proseArg).toContain(block.placeholder);
+    expect(proseArg).not.toContain(block.content);
+  });
 });

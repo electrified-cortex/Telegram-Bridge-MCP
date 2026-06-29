@@ -783,6 +783,17 @@ export function register(server: McpServer) {
                   ? { pendingId: pid, status: "ok" as const, messageId: ids[0] }
                   : { pendingId: pid, status: "ok" as const, messageIds: ids };
                 deliverAsyncSendCallback(queuedSid, payload);
+                // Phase 2 — flush visual blocks queued by Phase 1c (after prose is delivered)
+                for (const { block: _qaBlock, source: _qaSrc } of _pendingDocs) {
+                  try {
+                    await callApi(() =>
+                      getApi().sendDocument(queuedChatId, _qaSrc, {
+                        caption: _qaBlock.placeholder,
+                        disable_notification,
+                      }),
+                    );
+                  } catch { /* Graceful: failed attachment does not abort the already-sent prose */ }
+                }
               } catch (err) {
                 const errMsg = err instanceof Error ? err.message : String(err);
                 deliverAsyncSendCallback(queuedSid, { pendingId: pid, status: "failed", error: errMsg });
