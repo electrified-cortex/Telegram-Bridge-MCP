@@ -246,6 +246,17 @@ describe("confirm tool", () => {
     expect(buttons[1].style).toBeUndefined();
   });
 
+  it("does NOT use the rich path — renders at normal size, not GFM tiny-text (10-3079)", async () => {
+    mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.pollButtonOrTextOrVoice.mockResolvedValue(makeButtonResult("confirm_yes"));
+    await call({ text: "Proceed?", token: 1123456 });
+    const sendOpts = mocks.routeOutboundMessage.mock.calls[0][2];
+    // No richMessage → legacy MarkdownV2 path → normal-size text (visually identical
+    // to a plain message), avoiding the GFM "tiny text on mobile" regression.
+    expect(sendOpts.richMessage).toBeUndefined();
+    expect(sendOpts.parse_mode).toBe("MarkdownV2");
+  });
+
   it("returns timed_out:true when no response arrives", async () => {
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
     mocks.pollButtonOrTextOrVoice.mockResolvedValue(null);

@@ -164,8 +164,11 @@ export async function confirmHandler(
       }
     } else {
       const mdText = applyTopicToText(text, "Markdown");
+      // Do NOT pass richMessage here: the GFM sendRichMessage path renders as
+      // "tiny text" on mobile (10-3079). Confirm/question prompts go through the
+      // legacy MarkdownV2 path so they render at normal size — visually identical
+      // to a plain text message.
       const result = await routeOutboundMessage(chatId, markdownToV2(mdText), {
-        richMessage: { markdown: mdText },
         parse_mode: "MarkdownV2",
         reply_parameters: reply_to_message_id ? { message_id: reply_to_message_id } : undefined,
         reply_markup: replyMarkup,
