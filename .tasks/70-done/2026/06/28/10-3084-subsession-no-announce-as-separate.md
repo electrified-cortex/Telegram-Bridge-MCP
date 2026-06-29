@@ -71,3 +71,12 @@ Base: `dev` at current HEAD
 - checked: ACs 1-5 binary+testable; root-session backward compat explicitly called out in AC4; scope bounded to spawn-child announce path; suppression condition clear (child vs root); delegation correct (Worker, sonnet-class, medium)
 - fixed: base branch main→dev
 <!-- overseer-gate: PASS 2026-06-28 -->
+## Verification
+
+- **verdict**: APPROVED
+- **verifier**: Overseer (push-gate)
+- **date**: 2026-06-28
+- **worker_commit**: 71ae16dd (+ foreman fix 71dc0c05)
+- **squash_commit**: TBD
+- **tests**: 4189/4189 (171 test files — branch HEAD 71dc0c05)
+- **LLM pre-pass**: gateway timed out — independent adversarial review substituted; PASS

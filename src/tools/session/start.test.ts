@@ -3234,4 +3234,128 @@ describe("token path convention — save_token_to field", () => {
     // Internal service messages (onboarding) are NOT suppressed
     expect(mocks.deliverServiceMessage).toHaveBeenCalled();
   });
+
+  // =========================================================================
+  // Child session path — Assignments 10-3084 + 10-3085
+  // =========================================================================
+
+  describe("child session path (parentSid provided)", () => {
+    // Shared setup helper for child session tests
+    function setupChildMocks(color = "🟩") {
+      mocks.activeSessionCount.mockReturnValue(1); // parent already exists
+      mocks.createSession.mockReturnValue({
+        sid: 2,
+        suffix: 200002,
+        name: "ChildSession",
+        color,
+        sessionsActive: 2,
+      });
+      mocks.listSessions.mockReturnValue([
+        { sid: 1, name: "Parent", color: "🟩" },
+        { sid: 2, name: "ChildSession", color },
+      ]);
+    }
+
+    // ── 10-3084: No session_joined announcement for child sessions ────────────
+
+    it("10-3084: does not emit session_joined to any session when parentSid is set", async () => {
+      setupChildMocks();
+
+      await handleSessionStart({ name: "ChildSession", color: "🟩", parentSid: 1 });
+
+      const sessionJoinedCalls = mocks.deliverServiceMessage.mock.calls.filter(
+        (c: unknown[]) => c[2] === "session_joined",
+      );
+      expect(sessionJoinedCalls.length).toBe(0);
+    });
+
+    it("10-3084: does not send online announcement to Telegram when parentSid is set", async () => {
+      setupChildMocks();
+
+      await handleSessionStart({ name: "ChildSession", color: "🟩", parentSid: 1 });
+
+      const onlineCalls = mocks.sendMessage.mock.calls.filter(
+        (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+      );
+      expect(onlineCalls.length).toBe(0);
+    });
+
+    it("10-3084: root session (no parentSid) still emits session_joined normally", async () => {
+      mocks.activeSessionCount.mockReturnValue(1);
+      mocks.createSession.mockReturnValue({
+        sid: 2,
+        suffix: 200002,
+        name: "Worker",
+        color: "🟩",
+        sessionsActive: 2,
+      });
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.listSessions
+        .mockReturnValueOnce([{ sid: 1, name: "Primary" }])
+        .mockReturnValue([
+          { sid: 1, name: "Primary" },
+          { sid: 2, name: "Worker" },
+        ]);
+      mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 55 });
+
+      await handleSessionStart({ name: "Worker", color: "🟩" });
+
+      const sessionJoinedCalls = mocks.deliverServiceMessage.mock.calls.filter(
+        (c: unknown[]) => c[2] === "session_joined",
+      );
+      expect(sessionJoinedCalls.length).toBeGreaterThan(0);
+    });
+
+    // ── 10-3085: No color picker / approval dialog for child sessions ─────────
+
+    it("10-3085: does not surface approval dialog when parentSid is set", async () => {
+      setupChildMocks();
+
+      await handleSessionStart({ name: "ChildSession", color: "🟩", parentSid: 1 });
+
+      // Approval dialog sends a message with "requesting access" or color buttons
+      const approvalCalls = mocks.sendMessage.mock.calls.filter(
+        (c: unknown[]) => String(c[1]).includes("requesting access"),
+      );
+      expect(approvalCalls.length).toBe(0);
+      // registerCallbackHook is set up for approval buttons — must NOT be called for child
+      expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
+    });
+
+    it("10-3085: child session inherits the supplied color (parent color) without approval", async () => {
+      setupChildMocks("🟦");
+
+      await handleSessionStart({ name: "ChildSession", color: "🟦", parentSid: 1 });
+
+      // createSession called with the inherited color and forceColor: true (parentSid path)
+      expect(mocks.createSession).toHaveBeenCalledWith("ChildSession", "🟦", true);
+    });
+
+    it("10-3085: child session with no color creates session with undefined color and forceColor: true", async () => {
+      setupChildMocks(undefined as unknown as string);
+      mocks.createSession.mockReturnValue({
+        sid: 2,
+        suffix: 200002,
+        name: "ChildSession",
+        color: undefined,
+        sessionsActive: 2,
+      });
+
+      await handleSessionStart({ name: "ChildSession", parentSid: 1 });
+
+      expect(mocks.createSession).toHaveBeenCalledWith("ChildSession", undefined, true);
+    });
+
+    it("10-3085: handleSessionStart succeeds for child session without operator interaction", async () => {
+      setupChildMocks();
+
+      const result = await handleSessionStart({ name: "ChildSession", color: "🟩", parentSid: 1 });
+
+      expect(isError(result)).toBe(false);
+      const parsed = parseResult(result);
+      expect(typeof parsed.token).toBe("number");
+      expect(parsed.sid).toBe(2);
+    });
+  });
 });

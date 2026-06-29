@@ -27,6 +27,7 @@
  */
 
 import { getApi, resolveChat } from "./telegram.js";
+import { isTypingActiveSid } from "./typing-state.js";
 
 // ---------------------------------------------------------------------------
 // Configuration constants
@@ -248,6 +249,11 @@ export async function onActionableDequeue(sid: number): Promise<void> {
   try {
     const chatIdRaw = resolveChat();
     if (typeof chatIdRaw !== "number") return; // ALLOWED_USER_ID not configured
+
+    // Priority guard (10-3087): Typing and Recording are stronger indicators than
+    // Thinking. If the same SID already has an active typing/recording/upload action,
+    // skip the thinking fire entirely — it would be a no-op per the canonical spec.
+    if (isTypingActiveSid(sid)) return;
 
     const now = Date.now();
     const newFloor = now + DEFAULT_HOLD_MS;

@@ -2,11 +2,25 @@ Dequeue Loop — Heartbeat of every Telegram-enabled agent.
 
 Every code path ends with dequeue. No exceptions. Loop runs until shutdown signal.
 
-## Auto-Thinking on actionable dequeue
+## Auto-Thinking on meaningful dequeue
 
-When dequeue returns **actionable operator content** (text, voice, command, photo, etc.),
-the bridge **automatically fires the native "Thinking…" draft bubble** — zero agent effort.
-The operator sees Thinking immediately; the agent processes; the next `send` auto-closes it.
+When dequeue returns **any meaningful work**, the bridge **automatically fires the native
+"Thinking…" draft bubble** — zero agent effort. The operator sees Thinking immediately;
+the agent processes; the next `send` auto-closes it.
+
+**Qualifying triggers (bridge auto-fires thinking for all of these):**
+- Operator messages (text, voice, command, photo, etc.)
+- Agent DMs (`direct_message` events from other sessions)
+- Reminders that produce actionable work (`reminder` events)
+
+**Priority model (same SID):**
+- Recording / Typing = strong indicators — override Thinking (highest priority)
+- Thinking = weak indicator (lowest priority)
+- Thinking is a no-op if recording or typing is already active for that SID
+
+**Cancel rule:** Thinking is automatically canceled the moment the same SID sends text,
+audio, or a file (`outbound-proxy` cancel-on-send). No explicit agent action needed —
+the next `send` cleans it up. Cross-SID animation states are independent.
 
 - Default hold: ~30s (Telegram-native ephemerality — no timer needed).
 - To extend, customise, or close: `action(type: 'thinking/extend', ...)` / `action(type: 'thinking/close', ...)`.
@@ -15,8 +29,9 @@ The operator sees Thinking immediately; the agent processes; the next `send` aut
 ## Flow
 dequeue
   → messages?  → 💭 Thinking fires → handle → send → dequeue
+  → DM?        → 💭 Thinking fires → handle → send → dequeue
+  → reminder   → 💭 Thinking fires → handle → dequeue
   → timeout    → scan for work → dequeue
-  → reminder   → handle reminder → dequeue
   → error      → notify superior → dequeue
 
 ## Rules
