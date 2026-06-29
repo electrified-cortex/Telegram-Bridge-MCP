@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { TelegramError } from "../../telegram.js";
 import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   pinChatMessage: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  deliverProgressStaleEvent: vi.fn((..._args: any[]) => true),
 }));
 
 vi.mock("../../telegram.js", async (importActual) => {
@@ -31,7 +33,13 @@ vi.mock("../../session-manager.js", () => ({
   validateSession: mocks.validateSession,
 }));
 
-import { register, renderProgress } from "./new.js";
+vi.mock("../../session-queue.js", () => ({
+  deliverProgressStaleEvent: (sid: number, message_id: number, title: string, percent: number, stale_after_s: number) =>
+    mocks.deliverProgressStaleEvent(sid, message_id, title, percent, stale_after_s),
+}));
+
+import { register, renderProgress, handleSendNewProgress } from "./new.js";
+import { resetStaleTimerStateForTest } from "./stale-timer.js";
 
 describe("send_new_progress tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
@@ -168,5 +176,45 @@ describe("renderProgress", () => {
     expect(text).not.toContain("<i>sub</i>");
     // escapeHtml replaces angle brackets
     expect(text).toContain("&lt;b&gt;Title&lt;/b&gt;");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stale progress timer — integration via handleSendNewProgress
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stale progress timer — integration via handleSendNewProgress", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.pinChatMessage.mockResolvedValue(true);
+    mocks.routeOutboundMessage.mockResolvedValue({ message_id: 42 });
+    resetStaleTimerStateForTest();
+  });
+
+  afterEach(() => {
+    resetStaleTimerStateForTest();
+    vi.useRealTimers();
+  });
+
+  it("stale_after not set → no timer, reminder never fires", async () => {
+    await handleSendNewProgress({ percent: 50, title: "Deploy", token: 1123456 });
+    vi.advanceTimersByTime(120_000);
+    expect(mocks.deliverProgressStaleEvent).not.toHaveBeenCalled();
+  });
+
+  it("stale_after set → reminder fires after threshold elapses", async () => {
+    await handleSendNewProgress({ percent: 25, title: "Deploy", token: 1123456, stale_after: 60 });
+    vi.advanceTimersByTime(59_000);
+    expect(mocks.deliverProgressStaleEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2_000); // 61s total
+    expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledOnce();
+    const callArgs = mocks.deliverProgressStaleEvent.mock.calls[0];
+    expect(callArgs[1]).toBe(42);         // message_id (returned by routeOutboundMessage)
+    expect(callArgs[2]).toBe("Deploy");   // title
+    expect(callArgs[3]).toBe(25);         // percent
+    expect(callArgs[4]).toBe(60);         // stale_after_s
+    expect(typeof callArgs[0]).toBe("number"); // sid
   });
 });

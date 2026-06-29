@@ -431,8 +431,7 @@ describe("stale checklist timer — armStaleTimer direct", () => {
     expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
     vi.advanceTimersByTime(2_000); // total: 61 s
     expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledOnce();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const callArgs = mocks.deliverChecklistStaleEvent.mock.calls[0] as any[];
+    const callArgs = mocks.deliverChecklistStaleEvent.mock.calls[0];
     expect(callArgs[0]).toBe(1);  // sid
     expect(callArgs[1]).toBe(42); // message_id
     expect(callArgs[2]).toBe("My Task"); // title
@@ -498,8 +497,7 @@ describe("stale checklist timer — integration via handleSendNewChecklist", () 
     expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
     vi.advanceTimersByTime(2_000); // 61s total
     expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledOnce();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const callArgs = mocks.deliverChecklistStaleEvent.mock.calls[0] as any[];
+    const callArgs = mocks.deliverChecklistStaleEvent.mock.calls[0];
     expect(callArgs[1]).toBe(42);          // message_id
     expect(callArgs[2]).toBe("CI Pipeline"); // title
     expect(callArgs[3]).toBe(2);           // pending_count

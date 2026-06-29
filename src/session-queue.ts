@@ -710,6 +710,9 @@ export function deliverReminderEvent(
 /** Next synthetic event ID counter for checklist stale events (negative, distinct from reminder-state). */
 let _nextChecklistStaleId = -50_000;
 
+/** Next synthetic event ID counter for progress stale events. */
+let _nextProgressStaleId = -60_000;
+
 /**
  * Inject a `checklist_stale` reminder event into a session queue.
  * Called by the stale-timer module when a checklist has not been updated within `stale_after`.
@@ -745,6 +748,45 @@ export function deliverChecklistStaleEvent(
   notifySession(targetSid, "reminder", isDequeueActive(targetSid));
   notifyChannelSubscriber(targetSid, event);
   dlog("service", `checklist stale delivered → sid=${targetSid}`, { message_id, pending_count });
+  return true;
+}
+
+/**
+ * Inject a `progress_stale` reminder event into a session queue.
+ * Called by the progress stale-timer module when a progress bar has not been
+ * updated within `stale_after` and is still below 100%.
+ * Returns false if the target queue does not exist.
+ */
+export function deliverProgressStaleEvent(
+  targetSid: number,
+  message_id: number,
+  title: string,
+  percent: number,
+  stale_after_s: number,
+): boolean {
+  const q = _queues.get(targetSid);
+  if (!q) return false;
+
+  const text = `Progress stale: "${title}" — ${percent}% with no update in ${stale_after_s}s.`;
+  const event: TimelineEvent = {
+    id: _nextProgressStaleId--,
+    timestamp: new Date().toISOString(),
+    event: "reminder",
+    from: "system",
+    content: {
+      type: "progress_stale",
+      text,
+    },
+    sid: 0,
+  };
+  // Attach machine-readable fields for consumers without unsafe cast.
+  // EventContent allows extra properties at runtime since it's a structural interface.
+  Object.assign(event.content, { message_id, title, percent });
+
+  q.enqueue(event);
+  notifySession(targetSid, "reminder", isDequeueActive(targetSid));
+  notifyChannelSubscriber(targetSid, event);
+  dlog("service", `progress stale delivered → sid=${targetSid}`, { message_id, percent });
   return true;
 }
 
@@ -822,6 +864,8 @@ export function resetSessionQueuesForTest(): void {
   _nextDmId = -1;
   _nextServiceId = -100_000;
   _nextAsyncCallbackId = -10_000_000;
+  _nextChecklistStaleId = -50_000;
+  _nextProgressStaleId = -60_000;
 }
 
 /** Exported for testing: returns whether an event qualifies as a last_received trigger. */

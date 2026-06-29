@@ -71,7 +71,7 @@ describe("save_profile tool", () => {
     expect(written.animation_default).toEqual(["`[working]`"]);
   });
 
-  it("saved reminders never contain id field", async () => {
+  it("saves reminder id field when present", async () => {
     mocks.listReminders.mockReturnValue([
       { id: "abc123def456789", text: "Check CI", delay_seconds: 0, recurring: false },
       { id: "xyz987", text: "Stand by", delay_seconds: 300, recurring: true },
@@ -80,12 +80,11 @@ describe("save_profile tool", () => {
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     const reminders = written.reminders as Array<Record<string, unknown>>;
     expect(reminders).toHaveLength(2);
-    for (const r of reminders) {
-      expect(r).not.toHaveProperty("id");
-    }
+    expect(reminders[0]).toHaveProperty("id", "abc123def456789");
+    expect(reminders[1]).toHaveProperty("id", "xyz987");
   });
 
-  it("includes reminder text, delay_seconds, and recurring in save", async () => {
+  it("includes reminder id, text, delay_seconds, and recurring in save", async () => {
     mocks.listReminders.mockReturnValue([
       { id: "abc123", text: "Check CI", delay_seconds: 60, recurring: true, trigger: "time" },
     ]);
@@ -93,7 +92,7 @@ describe("save_profile tool", () => {
     const written = mocks.writeProfile.mock.calls[0][1] as Record<string, unknown>;
     const reminders = written.reminders as Array<Record<string, unknown>>;
     // trigger="time" is the default and not saved to avoid clutter
-    expect(reminders[0]).toEqual({ text: "Check CI", delay_seconds: 60, recurring: true });
+    expect(reminders[0]).toEqual({ id: "abc123", text: "Check CI", delay_seconds: 60, recurring: true });
   });
 
   it("saves startup trigger reminders with trigger field included", async () => {

@@ -66,7 +66,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
         if (trigger === "startup") {
           // Startup reminder — delay_seconds not required
           const recurring = (rd.recurring as boolean | undefined) ?? false;
-          const reminderId = reminderContentHash(r.text, recurring, "startup");
+          const reminderId = (rd.id as string | undefined) ?? reminderContentHash(r.text, recurring, "startup");
           const alreadyExists = existing.some(e => e.id === reminderId);
           const added = addReminder({
             id: reminderId,
@@ -87,7 +87,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           const delay_seconds = rd.delay_seconds as number | undefined;
           if (typeof delay_seconds !== "number" || isNaN(delay_seconds)) continue;
           const recurring = (rd.recurring as boolean | undefined) ?? false;
-          const reminderId = reminderContentHash(r.text, recurring, "last_sent");
+          const reminderId = (rd.id as string | undefined) ?? reminderContentHash(r.text, recurring, "last_sent");
           const alreadyExists = existing.some(e => e.id === reminderId);
           if (!alreadyExists) {
             addReminder({
@@ -109,7 +109,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           const recurring = (rd.recurring as boolean | undefined) ?? false;
           const mode = (rd.mode as "all" | "operator" | undefined) ?? "all";
           const only_if_silent = rd.only_if_silent as boolean | undefined;
-          const reminderId = reminderContentHash(r.text, recurring, "last_received", mode, only_if_silent);
+          const reminderId = (rd.id as string | undefined) ?? reminderContentHash(r.text, recurring, "last_received", mode, only_if_silent);
           const alreadyExists = existing.some(e => e.id === reminderId);
           if (!alreadyExists) {
             addReminder({
@@ -135,7 +135,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           // FIX 2: resolve + validate TZ on the apply path (same as schedule.ts handler)
           const resolvedTz = rawTz !== undefined ? resolveIana(rawTz) : resolveIana(process.env.TZ ?? "UTC");
           if (!validateIana(resolvedTz)) continue; // skip if TZ is invalid
-          const reminderId = reminderContentHash(r.text, true, "schedule");
+          const reminderId = (rd.id as string | undefined) ?? reminderContentHash(r.text, true, "schedule");
           // dedup guard — check for existing reminder by ID before re-adding
           const alreadyExists = existing.some(e => e.id === reminderId);
           if (alreadyExists) {
@@ -151,7 +151,7 @@ export function applyProfile(sid: number, profile: ProfileData): ApplyResult | A
           const delay_seconds = rd.delay_seconds as number | undefined;
           if (typeof delay_seconds !== "number" || isNaN(delay_seconds)) continue;
           const recurring = (rd.recurring as boolean | undefined) ?? false;
-          const reminderId = reminderContentHash(r.text, recurring, "time");
+          const reminderId = (rd.id as string | undefined) ?? reminderContentHash(r.text, recurring, "time");
           const alreadyExists = existing.some(e => e.id === reminderId);
           const added = addReminder({
             id: reminderId,

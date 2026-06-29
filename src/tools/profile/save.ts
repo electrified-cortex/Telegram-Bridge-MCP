@@ -72,6 +72,7 @@ export function handleSaveProfile({ key, token, autoload = false, silent_lifecyc
         };
       }
       return {
+        ...(r.id ? { id: r.id } : {}),
         text: r.text,
         ...(r.trigger !== "startup" ? { delay_seconds: r.delay_seconds } : {}),
         recurring: r.recurring,
