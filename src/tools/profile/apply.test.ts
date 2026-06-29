@@ -477,6 +477,49 @@ describe("applyProfile — silent_lifecycle (AC1)", () => {
 });
 
 // =============================================================================
+// audio_remapping round-trip: save → load restores the map
+// =============================================================================
+
+describe("applyProfile — audio_remapping (load side)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listReminders.mockReturnValue([]);
+  });
+
+  it("applies audio_remapping from profile to session and reports entry count", () => {
+    const session: Record<string, unknown> = {};
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { audio_remapping: { "nginx": "engine-x", "sql": "sequel" } });
+    expect("applied" in result).toBe(true);
+    expect(session.audio_remapping).toEqual({ "nginx": "engine-x", "sql": "sequel" });
+    expect((result as { applied: Record<string, unknown> }).applied.audio_remapping).toBe(2);
+  });
+
+  it("replaces any existing session audio_remapping with the loaded profile map", () => {
+    const session: Record<string, unknown> = { audio_remapping: { "old": "value" } };
+    mocks.getSession.mockReturnValue(session);
+    applyProfile(42, { audio_remapping: { "nginx": "engine-x" } });
+    expect(session.audio_remapping).toEqual({ "nginx": "engine-x" });
+  });
+
+  it("leaves session audio_remapping untouched when not in profile", () => {
+    const session: Record<string, unknown> = { audio_remapping: { "nginx": "engine-x" } };
+    mocks.getSession.mockReturnValue(session);
+    const result = applyProfile(42, { voice: "alloy" }); // no audio_remapping
+    expect("applied" in result).toBe(true);
+    expect(session.audio_remapping).toEqual({ "nginx": "engine-x" });
+    expect((result as { applied: Record<string, unknown> }).applied.audio_remapping).toBeUndefined();
+  });
+
+  it("skips silently when getSession returns undefined", () => {
+    mocks.getSession.mockReturnValue(undefined);
+    const result = applyProfile(42, { audio_remapping: { "nginx": "engine-x" } });
+    expect("applied" in result).toBe(true);
+    expect((result as { applied: Record<string, unknown> }).applied.audio_remapping).toBeUndefined();
+  });
+});
+
+// =============================================================================
 // 10-3079: profile/save reminder id round-trip
 // =============================================================================
 
