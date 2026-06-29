@@ -2,7 +2,7 @@
 import { GrammyError } from "grammy";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, resolveMediaSource, sendVoiceDirect, isRichMessagesEnabled, routeOutboundMessage } from "../telegram.js";
+import { getApi, toResult, toError, validateText, resolveChat, splitMessage, callApi, resolveMediaSource, sendVoiceDirect, routeOutboundMessage } from "../telegram.js";
 import { markdownToV2 } from "../markdown.js";
 import { applyTopicToText, getTopic } from "../topic-state.js";
 import { showTyping, typingGeneration, cancelTypingIfSameGeneration } from "../typing-state.js";
@@ -42,10 +42,6 @@ import { handleStreamStart, handleStreamChunk, handleStreamFlush } from "./send/
 import { delay, POST_VOICE_SEND_DELAY_MS } from "../utils/timing.js";
 import { applyPhoneticRemapping } from "../phonetic-remapping.js";
 
-/** Legacy-path only: emitted when a markdown table is detected on the MarkdownV2 path.
- * GFM tables render natively on the rich path — this warning is suppressed there (P4). */
-const TABLE_WARNING = "Message sent. Note: markdown tables were detected but not formatted — Telegram does not support table rendering.";
-
 const AUDIO_LEAK_PATTERNS = [
   /<\/audio>/i,
   /<parameter\s+name=/i,
@@ -68,13 +64,7 @@ function detectAudioMarkupLeak(raw: string): { cleanAudio: string; recoveredText
   return { cleanAudio, recoveredText: textMatch ? textMatch[1].trim() : null, leaked: true };
 }
 
-const MARKDOWN_TABLE_RE = /^\|.*\|$/;
 
-/** Legacy-path only: detects a markdown table in MarkdownV2-converted text.
- * Not used on the rich path since GFM tables render natively (P4). */
-function containsMarkdownTable(text: string): boolean {
-  return text.split("\n").some((line) => MARKDOWN_TABLE_RE.test(line.trim()));
-}
 
 // Disabled by default — flip to true to re-enable if genuine render bugs reappear.
 export let UNRENDERABLE_WARNING_ENABLED = false;
@@ -685,39 +675,9 @@ export function register(server: McpServer) {
             return toResult({ ok: true, message_id_pending: pendingId, status: "queued_after_audio" });
           }
 
-          // ── Rich-message routing (Bot API 10.1 opt-in) ──────────────────
-          // Chunking-first policy: only route single-chunk Markdown messages to
-          // the rich path. Multi-chunk messages always use the existing split
-          // path. `parse_mode === undefined` is treated as Markdown (default).
-          // The queued-after-audio path above is left on the existing V2 path
-          // for simplicity — rich routing applies to the direct send only.
-          // Effect sends always use the plain path (rich path has no effect support).
-          if (
-            !effectId &&
-            isRichMessagesEnabled() &&
-            parse_mode === "Markdown" &&
-            chunks.length === 1
-          ) {
-            try {
-              const msg = await routeOutboundMessage(chatId, textWithTopic, {
-                parse_mode,
-                disable_notification,
-                reply_parameters: reply_to_message_id !== undefined
-                  ? { message_id: reply_to_message_id }
-                  : undefined,
-                _rawText: visualText,
-              });
-              if (msg.fell_back) {
-                deliverServiceMessage(_sid, SERVICE_MESSAGES.RICH_FALLBACK);
-              }
-              // P4: GFM tables render natively in rich messages — no TABLE_WARNING needed.
-              warnUnrenderableChars(_sid, finalText);
-              return toResult({ message_id: msg.message_id, ...(compact ? {} : { split_count: 1 }) });
-            } catch (err) {
-              return toError(err);
-            }
-          }
-          // ────────────────────────────────────────────────────────────────
+          // Plain Markdown text: falls through to legacy MarkdownV2 chunk loop below.
+          // (Rich-message routing for plain text was disabled — GFM sendRichMessage renders
+          // differently on mobile. Rich path is now reserved for explicit html:/string: params.)
 
           try {
             const message_ids: number[] = [];
@@ -761,15 +721,45 @@ export function register(server: McpServer) {
               }
               message_ids.push(msg.message_id);
             }
-            const hasTable = containsMarkdownTable(visualText);
             warnUnrenderableChars(_sid, finalText);
             if (message_ids.length === 1) {
-              return toResult(hasTable ? { message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }), info: TABLE_WARNING } : { message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }) });
+              return toResult({ message_id: message_ids[0], ...(compact ? {} : { split_count: 1 }) });
             }
-            return toResult(hasTable
-              ? { message_ids, ...(compact ? {} : { split_count: message_ids.length }), info: TABLE_WARNING }
-              : { message_ids, ...(compact ? {} : { split_count: message_ids.length }) });
+            return toResult({ message_ids, ...(compact ? {} : { split_count: message_ids.length }) });
           } catch (err) {
+            // Cascade: if MarkdownV2 parsing fails, retry all chunks as plain text
+            // using the original unescaped text so backslashes don't leak through.
+            if (
+              finalMode === "MarkdownV2" &&
+              err instanceof GrammyError &&
+              err.message.toLowerCase().includes("can't parse entities")
+            ) {
+              try {
+                const plainChunks = splitMessage(visualText);
+                const plain_ids: number[] = [];
+                for (let i = 0; i < plainChunks.length; i++) {
+                  const pc = plainChunks[i];
+                  const pcErr = validateText(pc);
+                  if (pcErr) return toError(pcErr);
+                  const plainOpts = {
+                    disable_notification,
+                    reply_parameters:
+                      i === 0 && reply_to_message_id !== undefined
+                        ? { message_id: reply_to_message_id }
+                        : undefined,
+                    _rawText: plainChunks.length === 1 ? visualText : undefined,
+                  } as Record<string, unknown>;
+                  const m = await callApi(() => getApi().sendMessage(chatId, pc, plainOpts));
+                  plain_ids.push(m.message_id);
+                }
+                if (plain_ids.length === 1) {
+                  return toResult({ message_id: plain_ids[0], ...(compact ? {} : { split_count: 1 }) });
+                }
+                return toResult({ message_ids: plain_ids, ...(compact ? {} : { split_count: plain_ids.length }) });
+              } catch (plainErr) {
+                return toError(plainErr);
+              }
+            }
             return toError(err);
           }
         }
