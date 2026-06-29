@@ -114,7 +114,7 @@ Base: `dev` at current HEAD
 - **verified-by**: foreman (post-gate adversarial review + Overseer gate APPROVED)
 - **date**: 2026-06-28
 - **verdict**: PASS
-- **squash_commit**: TBD
+- **squash_commit**: 17d8410c
 - **gate-holds-cleared**: auth-before-body (security: isValidAuthHeader moved before readBodyBuffer in POST /files handler); structured VOICE_RESTRICTED throw in sendVoiceDirect
 - **tests**: 4194/4194 passing (171 source files, HEAD c04bca65)
 - **notes**: file-store.ts (new in-memory TTL store), file-transfer-endpoint.ts (POST/GET /files with 401→400→store flow), send/file.ts (new), download/file.ts (bridge_url field), tools/action.ts (send_file registered). Auth-before-body gate-hold fixed per Overseer GATE FINAL directive.
