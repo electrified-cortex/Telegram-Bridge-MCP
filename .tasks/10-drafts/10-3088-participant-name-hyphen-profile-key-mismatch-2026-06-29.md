@@ -20,7 +20,7 @@ All agents whose canonical name includes a hyphen cannot reliably use profile
 persistence (`profile/save`, `profile/load`). Voice, animation presets, reminders
 and audio remapping are lost or unavailable on reconnect.
 
-Known affected: `Zhu-Li`, `BT-7274` (any hyphenated session name).
+Known affected: any agent whose canonical session name contains a hyphen.
 
 ## Acceptance Criteria
 
