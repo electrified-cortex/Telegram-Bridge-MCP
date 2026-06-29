@@ -161,19 +161,19 @@ describe("detectAndExtract — SVG", () => {
 
   it("uses follow-up wording (🖼 [see following attachment·N]) as default placeholder", () => {
     const { blocks } = detectAndExtract('<svg><g/></svg>');
-    expect(blocks[0].placeholder).toBe("🖼 [see following attachment·0]");
+    expect(blocks[0].placeholder).toBe("```🖼 [see following attachment·0]```");
   });
 
   it("uses same-message wording (🖼 [see attachment·N]) when deliveryMode is same-message", () => {
     const { blocks } = detectAndExtract('<svg><g/></svg>', { deliveryMode: "same-message" });
-    expect(blocks[0].placeholder).toBe("🖼 [see attachment·0]");
+    expect(blocks[0].placeholder).toBe("```🖼 [see attachment·0]```");
   });
 
   it("each SVG block gets a unique placeholder distinguished by its index", () => {
     const text = '<svg><a/></svg> text <svg><b/></svg>';
     const { modifiedText, blocks } = detectAndExtract(text);
-    expect(blocks[0].placeholder).toBe("🖼 [see following attachment·0]");
-    expect(blocks[1].placeholder).toBe("🖼 [see following attachment·1]");
+    expect(blocks[0].placeholder).toBe("```🖼 [see following attachment·0]```");
+    expect(blocks[1].placeholder).toBe("```🖼 [see following attachment·1]```");
     expect(modifiedText).toContain("🖼 [see following attachment·0]");
     expect(modifiedText).toContain("🖼 [see following attachment·1]");
   });
@@ -214,21 +214,21 @@ describe("detectAndExtract — Mermaid", () => {
   it("uses follow-up wording (📊 [see following diagram·N]) as default placeholder", () => {
     const text = "```mermaid\ngraph TD\nA-->B\n```";
     const { blocks } = detectAndExtract(text);
-    expect(blocks[0].placeholder).toBe("📊 [see following diagram·0]");
+    expect(blocks[0].placeholder).toBe("```📊 [see following diagram·0]```");
   });
 
   it("uses same-message wording (📊 [see diagram·N]) when deliveryMode is same-message", () => {
     const text = "```mermaid\ngraph TD\nA-->B\n```";
     const { blocks } = detectAndExtract(text, { deliveryMode: "same-message" });
-    expect(blocks[0].placeholder).toBe("📊 [see diagram·0]");
+    expect(blocks[0].placeholder).toBe("```📊 [see diagram·0]```");
   });
 
   it("each mermaid block gets a unique placeholder distinguished by its index", () => {
     const text =
       "```mermaid\ngraph LR\nA-->B\n```\nSome prose\n```mermaid\nsequenceDiagram\nA->>B: Hi\n```";
     const { modifiedText, blocks } = detectAndExtract(text);
-    expect(blocks[0].placeholder).toBe("📊 [see following diagram·0]");
-    expect(blocks[1].placeholder).toBe("📊 [see following diagram·1]");
+    expect(blocks[0].placeholder).toBe("```📊 [see following diagram·0]```");
+    expect(blocks[1].placeholder).toBe("```📊 [see following diagram·1]```");
     expect(modifiedText).toContain("📊 [see following diagram·0]");
     expect(modifiedText).toContain("📊 [see following diagram·1]");
   });
