@@ -55,8 +55,9 @@ export function handleAudioRemapRemove({
   }
 
   const previous = session.audio_remapping[word];
-  delete session.audio_remapping[word];
-  if (Object.keys(session.audio_remapping).length === 0) session.audio_remapping = undefined;
+  // Rebuild the map without the removed key (avoids no-dynamic-delete lint rule).
+  const { [word]: _removed, ...rest } = session.audio_remapping;
+  session.audio_remapping = Object.keys(rest).length > 0 ? rest : undefined;
 
   return toResult({ word, previous, removed: true });
 }
