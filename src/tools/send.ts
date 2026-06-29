@@ -675,9 +675,25 @@ export function register(server: McpServer) {
           // Resolve message effect (text path only; applied to last chunk only)
           const effectId = args.effect ? MESSAGE_EFFECTS[args.effect] : undefined;
 
+          // Guard: table on a path that cannot use the GFM rich renderer → fail loud.
+          // Effect sends, in-flight-audio sends, and multi-chunk sends all bypass the GFM
+          // path, so a table would be silently unrendered. Return an explicit error so the
+          // caller can shorten the message or remove the effect instead of receiving false
+          // success. The GFM path below (single-chunk, no effect, no in-flight audio) is
+          // unaffected by this guard.
+          if (containsMarkdownTable(visualText) && (effectId || hasInflightAudio(_sid) || chunks.length > 1)) {
+            return toError({
+              code: "TABLE_NOT_RENDERED" as const,
+              message:
+                "Message contains a markdown table that cannot be rendered on this send path. " +
+                "Tables require the GFM rich path (single-chunk, no effect, no in-flight audio). " +
+                "Shorten the message so the table fits in one chunk, or remove the effect to allow table rendering.",
+            });
+          }
+
           // Auto-upgrade: if text: contains a markdown table, route via GFM rich path
           // so the table renders natively. Applies only to single-chunk, no-effect sends
-          // (multi-chunk and effect sends fall through to the MarkdownV2 loop below).
+          // (multi-chunk and effect sends are blocked by the guard above).
           if (!effectId && !hasInflightAudio(_sid) && chunks.length === 1 && containsMarkdownTable(visualText)) {
             try {
               const result = await routeOutboundMessage(chatId, textWithTopic, {

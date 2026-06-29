@@ -1,5 +1,11 @@
 # [Unreleased]
 
+## v7.22.9
+
+### Fixed
+
+- **`send` table guard (`TABLE_NOT_RENDERED`)**: any `send(type: "text")` call that contains a GFM markdown table but cannot route to the GFM rich path now returns an explicit `TABLE_NOT_RENDERED` error instead of silently delivering an un-rendered table. Affected paths: effect sends, in-flight-audio sends, and multi-chunk sends. The existing GFM rich-path auto-upgrade (single-chunk, no effect, no in-flight audio) is unaffected and continues to render tables natively. Resolves the false-success regression introduced when `TABLE_WARNING` was removed in v7.22.4.
+
 ## In-branch
 
 ### Fixed (v7.22.8)

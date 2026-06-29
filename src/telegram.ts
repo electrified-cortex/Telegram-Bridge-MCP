@@ -108,6 +108,7 @@ export type TelegramErrorCode =
   | "INVALID_COLOR"
   | "UNKNOWN_PRESET"
   | "RICH_MESSAGE_UNSUPPORTED"
+  | "TABLE_NOT_RENDERED"
   | "UNKNOWN";
 
 export interface TelegramError {

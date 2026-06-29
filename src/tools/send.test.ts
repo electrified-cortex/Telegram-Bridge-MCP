@@ -317,6 +317,42 @@ describe("send tool", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Case 7b: TABLE_NOT_RENDERED guard — non-GFM paths return explicit error
+  // ---------------------------------------------------------------------------
+  it("TABLE_NOT_RENDERED: table + effect returns explicit error (not false success)", async () => {
+    const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
+    const result = await call({ text: tableText, effect: "fire", token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
+    // No send should have occurred
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("TABLE_NOT_RENDERED: table + in-flight audio returns explicit error (not false success)", async () => {
+    const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
+    mocks.hasInflightAudio.mockReturnValueOnce(true);
+    const result = await call({ text: tableText, token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
+    // No send should have occurred
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.enqueueTextSend).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("TABLE_NOT_RENDERED: table in multi-chunk send returns explicit error (not false success)", async () => {
+    const tableText = "| A | B |\n| - | - |\n| 1 | 2 |\n\nFollowing prose that causes a second chunk.";
+    mocks.splitMessage.mockReturnValue([tableText.slice(0, 20), tableText.slice(20)]);
+    const result = await call({ text: tableText, token: TOKEN });
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
+    // No send should have occurred
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
   // Auth gate
   // ---------------------------------------------------------------------------
   it("returns SID_REQUIRED when token is missing", async () => {
