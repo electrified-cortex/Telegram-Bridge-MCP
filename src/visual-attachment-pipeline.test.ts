@@ -1,12 +1,13 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Mock fs/promises and telegram.ts before importing the module under test
+// Mock fs/promises, telegram.ts, and mermaid-render.ts before importing
 // ---------------------------------------------------------------------------
 
 const mocks = vi.hoisted(() => ({
   writeFile: vi.fn(),
   mkdir: vi.fn(),
+  renderMermaidToSvg: vi.fn<(source: string) => Promise<string | null>>(),
 }));
 
 vi.mock("fs/promises", () => ({
@@ -18,11 +19,17 @@ vi.mock("./telegram.js", () => ({
   SAFE_FILE_DIR: "/tmp/telegram-bridge-mcp",
 }));
 
+// Mock the render engine so unit tests for this module don't spin up beautiful-mermaid
+vi.mock("./mermaid-render.js", () => ({
+  renderMermaidToSvg: (source: string) => mocks.renderMermaidToSvg(source),
+}));
+
 import { join } from "path";
 import {
   detectAndExtract,
   responsivizeSvg,
   writeTempVisualFile,
+  renderMermaidCompanion,
   type VisualBlock,
 } from "./visual-attachment-pipeline.js";
 
@@ -672,5 +679,105 @@ describe("writeTempVisualFile", () => {
     await writeTempVisualFile(block);
     const [, writtenContent] = mocks.writeFile.mock.calls[0] as [string, string, unknown];
     expect(writtenContent).toBe(svgContent);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderMermaidCompanion
+// ---------------------------------------------------------------------------
+
+/** Minimal valid SVG (>= 200 bytes) for test fixtures. */
+function makeValidSvg(width = "400", height = "300"): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${"x".repeat(200)}</svg>`;
+}
+
+describe("renderMermaidCompanion", () => {
+  const mmdBlock: VisualBlock = {
+    type: "mermaid",
+    content: "graph TD\nA-->B",
+    placeholder: "```📊 [see following diagram·0]```",
+    filename: "diagram-1234567890-0.mmd",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.renderMermaidToSvg.mockResolvedValue(null); // default: render fails
+  });
+
+  // AC1 — mermaid block renders companion SVG
+
+  it("AC1: returns a companion VisualBlock when renderMermaidToSvg returns valid SVG", async () => {
+    const rawSvg = makeValidSvg();
+    mocks.renderMermaidToSvg.mockResolvedValue(rawSvg);
+
+    const companion = await renderMermaidCompanion(mmdBlock, 0, 0);
+
+    expect(companion).not.toBeNull();
+    expect(companion!.type).toBe("svg");
+  });
+
+  it("AC1: companion filename replaces .mmd extension with .svg", async () => {
+    mocks.renderMermaidToSvg.mockResolvedValue(makeValidSvg());
+
+    const companion = await renderMermaidCompanion(mmdBlock, 0, 0);
+
+    expect(companion!.filename).toBe("diagram-1234567890-0.svg");
+  });
+
+  it("AC1: companion placeholder matches the source mermaid block's placeholder", async () => {
+    mocks.renderMermaidToSvg.mockResolvedValue(makeValidSvg());
+
+    const companion = await renderMermaidCompanion(mmdBlock, 0, 0);
+
+    expect(companion!.placeholder).toBe(mmdBlock.placeholder);
+  });
+
+  it("AC1: companion caption references the source .mmd filename", async () => {
+    mocks.renderMermaidToSvg.mockResolvedValue(makeValidSvg());
+
+    const companion = await renderMermaidCompanion(mmdBlock, 0, 0);
+
+    expect(companion!.companionCaption).toContain(mmdBlock.filename);
+    expect(companion!.companionCaption).toContain("rendered from");
+  });
+
+  // AC3 — responsivizeSvg applied to companion output
+
+  it("AC3: companion content has width=\"100%\" (responsivizeSvg applied)", async () => {
+    // Raw SVG from engine has fixed pixel dimensions
+    const rawSvg = makeValidSvg("600", "400");
+    mocks.renderMermaidToSvg.mockResolvedValue(rawSvg);
+
+    const companion = await renderMermaidCompanion(mmdBlock, 0, 0);
+
+    // responsivizeSvg replaces fixed width with 100%
+    expect(companion!.content).toContain('width="100%"');
+    expect(companion!.content).not.toContain('width="600"');
+  });
+
+  it("AC3: companion content has viewBox derived from engine SVG dimensions", async () => {
+    const rawSvg = makeValidSvg("600", "400");
+    mocks.renderMermaidToSvg.mockResolvedValue(rawSvg);
+
+    const companion = await renderMermaidCompanion(mmdBlock, 0, 0);
+
+    expect(companion!.content).toContain('viewBox="0 0 600 400"');
+  });
+
+  // AC4 — render failure → null returned (caller ships .mmd alone)
+
+  it("AC4: returns null when renderMermaidToSvg returns null (partial SVG / unsupported type)", async () => {
+    mocks.renderMermaidToSvg.mockResolvedValue(null);
+
+    const companion = await renderMermaidCompanion(mmdBlock, 0, 0);
+
+    expect(companion).toBeNull();
+  });
+
+  it("AC4: returns null (does not throw) when renderMermaidToSvg throws", async () => {
+    mocks.renderMermaidToSvg.mockRejectedValue(new Error("engine error"));
+
+    // Should not throw — graceful null
+    await expect(renderMermaidCompanion(mmdBlock, 0, 0)).resolves.toBeNull();
   });
 });

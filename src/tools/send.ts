@@ -18,7 +18,7 @@ import { enqueueAsyncSend, acquireRecordingIndicator, releaseRecordingIndicator,
 import { getFirstUseHint, appendHintToResult, markFirstUseHintSeen } from "../first-use-hints.js";
 import { getSession } from "../session-manager.js";
 import { SERVICE_MESSAGES } from "../service-messages.js";
-import { detectAndExtract, writeTempVisualFile, type DeliveryMode, type VisualBlock } from "../visual-attachment-pipeline.js";
+import { detectAndExtract, writeTempVisualFile, renderMermaidCompanion, type DeliveryMode, type VisualBlock } from "../visual-attachment-pipeline.js";
 // Safety field accepted on all send paths
 const SAFETY_SCHEMA = z.enum(["disable"]).optional().describe(
   'Safety override. Pass `safety: "disable"` to bypass the absolute-path block and send the message anyway. An operator notification is emitted when this override is used.',
@@ -632,7 +632,8 @@ export function register(server: McpServer) {
           // Pre-check avoids the 3 regex scans on every plain-text send.
           let visualText: string = text ?? "";
           // Documents prepared in Phase 1; sent in Phase 2 (after prose).
-          const _pendingDocs: Array<{ block: VisualBlock; source: string | InputFile }> = [];
+          // caption overrides block.placeholder for companion docs (e.g. rendered SVG).
+          const _pendingDocs: Array<{ block: VisualBlock; source: string | InputFile; caption?: string }> = [];
           let _visualDeliveryMode: DeliveryMode = "follow-up";
 
           if (visualText && (visualText.includes('<svg') || visualText.includes('```mermaid'))) {
@@ -663,27 +664,83 @@ export function register(server: McpServer) {
               // documents are queued in _pendingDocs and sent after the prose.
               // On failure: restore the orphan placeholder → original block content
               // before prose send so the message remains readable without the attachment.
+              //
+              // Mermaid blocks: after writing the .mmd source file, attempt to render
+              // a companion SVG via renderMermaidCompanion. If render succeeds, the
+              // companion SVG is queued BEFORE the .mmd (SVG-first for operator UX).
+              // Both are always attempted; render failure silently falls back to .mmd alone.
               let finalVisualText = _vExtracted;
               for (const _vBlock of _vBlocks) {
-                let prepared = false;
-                try {
-                  await showTyping(60, "upload_document");
-                  const _vPath = await writeTempVisualFile(_vBlock);
-                  const _vMedia = resolveMediaSource(_vPath);
-                  if (!("code" in _vMedia)) {
-                    _pendingDocs.push({ block: _vBlock, source: _vMedia.source });
+                if (_vBlock.type === "mermaid") {
+                  // Companion check: skip render if an SVG block with matching stem
+                  // is already present in the same detection pass (e.g. agent supplied both).
+                  const _mmdStem = _vBlock.filename.replace(/\.mmd$/, "");
+                  const _hasCompanion = _vBlocks.some(
+                    b => b.type === "svg" && b.filename.replace(/\.svg$/, "") === _mmdStem,
+                  );
+
+                  let prepared = false;
+                  try {
+                    await showTyping(60, "upload_document");
+                    const _mmdPath = await writeTempVisualFile(_vBlock);
+                    const _mmdMedia = resolveMediaSource(_mmdPath);
+                    if ("code" in _mmdMedia) throw new Error(_mmdMedia.message);
+
+                    // Companion render (unless a pre-existing SVG companion was detected)
+                    if (!_hasCompanion) {
+                      try {
+                        await showTyping(30, "upload_document"); // extend typing across render
+                        const _companion = await renderMermaidCompanion(_vBlock, 0, 0);
+                        if (_companion !== null) {
+                          const _svgPath = await writeTempVisualFile(_companion);
+                          const _svgMedia = resolveMediaSource(_svgPath);
+                          if (!("code" in _svgMedia)) {
+                            // SVG queued first so operator sees the rendered diagram immediately
+                            _pendingDocs.push({
+                              block: _companion,
+                              source: _svgMedia.source,
+                              caption: _companion.companionCaption,
+                            });
+                          }
+                        }
+                      } catch {
+                        // Graceful: render failure → ship .mmd alone (non-negotiable AC4)
+                      }
+                    }
+
+                    // .mmd always queued (source always delivered alongside companion)
+                    _pendingDocs.push({ block: _vBlock, source: _mmdMedia.source });
                     prepared = true;
+                  } catch {
+                    // Graceful: preparation failure falls through to placeholder restore
                   }
-                } catch {
-                  // Graceful: a preparation failure falls through to placeholder restore
-                }
-                if (!prepared) {
-                  // Replace orphan placeholder with original block content
-                  // so the prose remains readable without the attachment.
-                  // String.replace (non-regex) targets only the first occurrence,
-                  // correctly mapping each block to its own placeholder slot
-                  // when blocks are iterated in source order.
-                  finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
+                  if (!prepared) {
+                    // Replace orphan placeholder with original block content
+                    // so the prose remains readable without the attachment.
+                    finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
+                  }
+                } else {
+                  // SVG and other block types: existing behaviour unchanged
+                  let prepared = false;
+                  try {
+                    await showTyping(60, "upload_document");
+                    const _vPath = await writeTempVisualFile(_vBlock);
+                    const _vMedia = resolveMediaSource(_vPath);
+                    if (!("code" in _vMedia)) {
+                      _pendingDocs.push({ block: _vBlock, source: _vMedia.source });
+                      prepared = true;
+                    }
+                  } catch {
+                    // Graceful: a preparation failure falls through to placeholder restore
+                  }
+                  if (!prepared) {
+                    // Replace orphan placeholder with original block content
+                    // so the prose remains readable without the attachment.
+                    // String.replace (non-regex) targets only the first occurrence,
+                    // correctly mapping each block to its own placeholder slot
+                    // when blocks are iterated in source order.
+                    finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
+                  }
                 }
               }
               visualText = finalVisualText;
@@ -732,11 +789,11 @@ export function register(server: McpServer) {
               }
               warnUnrenderableChars(_sid, visualText);
               // Phase 2 (GFM path): send pending documents after prose (follow-up delivery).
-              for (const { block: _gdBlock, source: _gdSrc } of _pendingDocs) {
+              for (const { block: _gdBlock, source: _gdSrc, caption: _gdCap } of _pendingDocs) {
                 try {
                   await callApi(() =>
                     getApi().sendDocument(chatId, _gdSrc, {
-                      caption: _gdBlock.placeholder,
+                      caption: _gdCap ?? _gdBlock.placeholder,
                       disable_notification,
                     }),
                   );
@@ -806,11 +863,11 @@ export function register(server: McpServer) {
                   : { pendingId: pid, status: "ok" as const, messageIds: ids };
                 deliverAsyncSendCallback(queuedSid, payload);
                 // Phase 2 — flush visual blocks queued by Phase 1c (after prose is delivered)
-                for (const { block: _qaBlock, source: _qaSrc } of _pendingDocs) {
+                for (const { block: _qaBlock, source: _qaSrc, caption: _qaCap } of _pendingDocs) {
                   try {
                     await callApi(() =>
                       getApi().sendDocument(queuedChatId, _qaSrc, {
-                        caption: _qaBlock.placeholder,
+                        caption: _qaCap ?? _qaBlock.placeholder,
                         disable_notification,
                       }),
                     );
@@ -872,11 +929,11 @@ export function register(server: McpServer) {
             }
             warnUnrenderableChars(_sid, finalText);
             // Phase 2 (follow-up delivery): send pending documents AFTER prose.
-            for (const { block: _fdBlock, source: _fdSrc } of _pendingDocs) {
+            for (const { block: _fdBlock, source: _fdSrc, caption: _fdCap } of _pendingDocs) {
               try {
                 await callApi(() =>
                   getApi().sendDocument(chatId, _fdSrc, {
-                    caption: _fdBlock.placeholder,
+                    caption: _fdCap ?? _fdBlock.placeholder,
                     disable_notification,
                   }),
                 );
@@ -913,11 +970,11 @@ export function register(server: McpServer) {
                   plain_ids.push(m.message_id);
                 }
                 // Phase 2 (follow-up, MarkdownV2 fallback): send pending documents after prose.
-                for (const { block: _fpBlock, source: _fpSrc } of _pendingDocs) {
+                for (const { block: _fpBlock, source: _fpSrc, caption: _fpCap } of _pendingDocs) {
                   try {
                     await callApi(() =>
                       getApi().sendDocument(chatId, _fpSrc, {
-                        caption: _fpBlock.placeholder,
+                        caption: _fpCap ?? _fpBlock.placeholder,
                         disable_notification,
                       }),
                     );
