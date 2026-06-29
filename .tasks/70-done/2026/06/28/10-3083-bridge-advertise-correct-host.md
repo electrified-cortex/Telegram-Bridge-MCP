@@ -78,3 +78,15 @@ Base: `dev` at current HEAD
 - checked: ACs 1-5 binary+testable; backward compat explicitly addressed (absent env var → unchanged behavior); scope bounded to 1 env var + URL construction; doc update and skill workaround note acknowledged; delegation correct (Worker, sonnet-class, medium)
 - fixed: corrected body heading 10-3080→10-3083; base branch main→dev
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## Verification
+
+- **verdict**: APPROVED
+- **verifier**: Overseer (push-gate, bundled with 10-3082)
+- **date**: 2026-06-28
+- **worker_commit**: 784af1b2 (+ foreman IPv6 fix eb869881)
+- **squash_commit**: TBD
+- **tests**: 4185/4185 (171 test files — branch HEAD eb869881)
+- **ACs**: 1 PASS (BRIDGE_ADVERTISE_HOST substitutes host in SSE URL); 2 PASS (unset/empty preserves existing behavior); 3 PASS (.env.example documented); 4 PASS (telegram-participation SKILL.md R5 updated); 5 PASS (build clean, tests pass); smoke test validation-only
+- **notes**: foreman hardened regex to handle IPv6 literal hosts [::1] — original pattern [^/:] would corrupt IPv6 URLs
+- **LLM pre-pass**: gateway timed out — independent adversarial review substituted

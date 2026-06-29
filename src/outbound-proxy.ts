@@ -325,13 +325,18 @@ export function createOutboundProxy(realApi: Api): Api {
             const optsArg = args[2] as Record<string, unknown> | undefined;
             let parseMode = optsArg?.parse_mode as string | undefined;
             const { formatted: captionHeaderFormatted } = buildHeader(parseMode);
-            if (captionHeaderFormatted && optsArg?.caption) {
+            if (captionHeaderFormatted) {
+              // Ensure opts object exists (args[2] may be undefined for bare file sends)
+              if (!args[2]) args[2] = {};
               if (!parseMode) {
                 (args[2] as Record<string, unknown>).parse_mode = "Markdown";
                 parseMode = "Markdown";
               }
-              (args[2] as Record<string, unknown>).caption =
-                captionHeaderFormatted + (optsArg.caption as string);
+              const currentCaption = (args[2] as Record<string, unknown>).caption as string | undefined;
+              // Prepend nametag to existing caption, or create caption from nametag alone
+              (args[2] as Record<string, unknown>).caption = currentCaption
+                ? captionHeaderFormatted + currentCaption
+                : captionHeaderFormatted.trimEnd();
             }
 
             const msg = await fn(...args);

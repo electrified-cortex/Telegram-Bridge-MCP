@@ -4,6 +4,7 @@
  * Covers:
  *   TC1. activity/listen — HTTP mode active → returns SSE URL, filtered command, and guidance fields;
  *        does NOT include ok: true (AC1); delivers ACTIVITY_LISTEN_SETUP service message (AC2)
+ *   TC1b. activity/listen — BRIDGE_ADVERTISE_HOST → host substituted in SSE URL (10-3083)
  *   TC2. activity/listen — HTTP mode not active → HTTP_MODE_REQUIRED error
  *   TC3. activity/listen — auth failure → AUTH_FAILED error
  *   TC4. activity/listen/cancel — connection open → ok:true, connection cancelled
@@ -11,7 +12,7 @@
  *   TC6. activity/listen/cancel — auth failure → AUTH_FAILED error
  */
 
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 
@@ -119,6 +120,59 @@ describe("TC1: activity/listen — HTTP mode active", () => {
     const body = parseResult(result);
     expect(body.sse_url).toBe(`http://192.168.1.10:5000/sse?token=${TOKEN}`);
     expect(body.download_url).toBe(`http://192.168.1.10:5000/tools/sse-monitor.sh`);
+  });
+});
+
+// ── TC1b: activity/listen — BRIDGE_ADVERTISE_HOST substitution ──────────────
+
+describe("TC1b: activity/listen — BRIDGE_ADVERTISE_HOST substitution (10-3083)", () => {
+  afterEach(() => {
+    delete process.env.BRIDGE_ADVERTISE_HOST;
+  });
+
+  it("replaces 0.0.0.0 host with BRIDGE_ADVERTISE_HOST when set", () => {
+    httpModeMocks.getSseBaseUrl.mockReturnValue("http://0.0.0.0:3099");
+    process.env.BRIDGE_ADVERTISE_HOST = "127.0.0.1";
+    const result = handleActivityListen({ token: TOKEN });
+    const body = parseResult(result);
+    expect(body.sse_url).toBe(`http://127.0.0.1:3099/sse?token=${TOKEN}`);
+    expect(body.download_url).toBe(`http://127.0.0.1:3099/tools/sse-monitor.sh`);
+    expect((body.command as string)).toContain("127.0.0.1");
+    expect((body.command as string)).not.toContain("0.0.0.0");
+  });
+
+  it("uses BRIDGE_ADVERTISE_HOST=bridge for container deployments", () => {
+    httpModeMocks.getSseBaseUrl.mockReturnValue("http://0.0.0.0:3099");
+    process.env.BRIDGE_ADVERTISE_HOST = "bridge";
+    const result = handleActivityListen({ token: TOKEN });
+    const body = parseResult(result);
+    expect(body.sse_url).toBe(`http://bridge:3099/sse?token=${TOKEN}`);
+    expect(body.download_url).toBe(`http://bridge:3099/tools/sse-monitor.sh`);
+  });
+
+  it("preserves existing behavior when BRIDGE_ADVERTISE_HOST is unset", () => {
+    httpModeMocks.getSseBaseUrl.mockReturnValue("http://0.0.0.0:3099");
+    // No BRIDGE_ADVERTISE_HOST set
+    const result = handleActivityListen({ token: TOKEN });
+    const body = parseResult(result);
+    expect(body.sse_url).toBe(`http://0.0.0.0:3099/sse?token=${TOKEN}`);
+  });
+
+  it("ignores empty BRIDGE_ADVERTISE_HOST (backward compat)", () => {
+    httpModeMocks.getSseBaseUrl.mockReturnValue("http://0.0.0.0:3099");
+    process.env.BRIDGE_ADVERTISE_HOST = "";
+    const result = handleActivityListen({ token: TOKEN });
+    const body = parseResult(result);
+    expect(body.sse_url).toBe(`http://0.0.0.0:3099/sse?token=${TOKEN}`);
+  });
+
+  it("applies substitution to any host, not just 0.0.0.0", () => {
+    httpModeMocks.getSseBaseUrl.mockReturnValue("http://192.168.1.10:5000");
+    process.env.BRIDGE_ADVERTISE_HOST = "myhost";
+    const result = handleActivityListen({ token: TOKEN });
+    const body = parseResult(result);
+    expect(body.sse_url).toBe(`http://myhost:5000/sse?token=${TOKEN}`);
+    expect(body.download_url).toBe(`http://myhost:5000/tools/sse-monitor.sh`);
   });
 });
 

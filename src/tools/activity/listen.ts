@@ -31,13 +31,24 @@ export function handleActivityListen(args: Record<string, unknown>) {
   const sid = requireAuth(args.token as number | undefined);
   if (typeof sid !== "number") return toError(sid);
 
-  const baseUrl = getSseBaseUrl();
-  if (baseUrl === null) {
+  const rawBaseUrl = getSseBaseUrl();
+  if (rawBaseUrl === null) {
     return toError({
       code: "HTTP_MODE_REQUIRED",
       message: "activity/listen requires HTTP mode. Start TMCP with --http to enable SSE endpoints.",
     });
   }
+
+  // Apply BRIDGE_ADVERTISE_HOST substitution: replace the bound host (e.g.
+  // 0.0.0.0) with the address agents should actually connect to.
+  // When unset or empty, the raw bind address is used unchanged (backward compat).
+  const advertiseHost = process.env.BRIDGE_ADVERTISE_HOST?.trim();
+  // Regex handles both IPv4/hostname hosts and IPv6 literal hosts (e.g. [::1]).
+  // IPv6 literals are enclosed in brackets; [^/:] alone would stop at the first ':'
+  // inside the bracket, corrupting the replacement. The alternation handles both forms.
+  const baseUrl = advertiseHost
+    ? rawBaseUrl.replace(/^(https?:\/\/)(\[[^\]]+\]|[^/:]+)/, `$1${advertiseHost}`)
+    : rawBaseUrl;
 
   const sseUrl = `${baseUrl}/sse?token=${args.token as number}`;
   const downloadUrl = `${baseUrl}/tools/sse-monitor.sh`;
