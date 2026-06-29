@@ -475,3 +475,59 @@ describe("applyProfile — silent_lifecycle (AC1)", () => {
     expect((result as { applied: Record<string, unknown> }).applied.silent_lifecycle).toBeUndefined();
   });
 });
+
+// =============================================================================
+// 10-3079: profile/save reminder id round-trip
+// =============================================================================
+
+describe("applyProfile — reminder id round-trip (10-3079)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listReminders.mockReturnValue([]);
+    mocks.addReminder.mockImplementation(
+      (r: { id: string; text: string; delay_seconds: number; recurring: boolean; trigger?: string }) => ({
+        ...r,
+        state: "deferred",
+        created_at: Date.now(),
+        activated_at: null,
+      }),
+    );
+  });
+
+  it("uses saved id for time reminder rather than re-hashing", () => {
+    applyProfile(1, {
+      reminders: [{ id: "my-named-reminder", text: "Check CI", recurring: false, delay_seconds: 60 }],
+    });
+    expect(mocks.addReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "my-named-reminder" }),
+    );
+  });
+
+  it("uses saved id for startup reminder rather than re-hashing", () => {
+    applyProfile(1, {
+      reminders: [{ id: "boot-reminder", trigger: "startup", text: "Resume tasks", recurring: true }],
+    });
+    expect(mocks.addReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "boot-reminder" }),
+    );
+  });
+
+  it("falls back to content hash when no id is present in saved profile", () => {
+    applyProfile(1, {
+      reminders: [{ text: "Fallback check", recurring: false, delay_seconds: 120 }],
+    });
+    const expectedId = contentHash("Fallback check", false, "time");
+    expect(mocks.addReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expectedId }),
+    );
+  });
+
+  it("dedup uses saved id: skips addReminder when last_sent reminder already exists by saved id", () => {
+    mocks.listReminders.mockReturnValue([{ id: "my-named-last-sent" }]);
+    applyProfile(1, {
+      reminders: [{ id: "my-named-last-sent", trigger: "last_sent", text: "Follow up", recurring: false, delay_seconds: 300 }],
+    });
+    // last_sent branch skips addReminder entirely when the id already exists
+    expect(mocks.addReminder).not.toHaveBeenCalled();
+  });
+});

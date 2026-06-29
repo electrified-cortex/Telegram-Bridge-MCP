@@ -261,7 +261,7 @@ export function register(server: McpServer) {
         // ── checklist ──────────────────────────────────────────────────────
         steps: z.array(STEP_SCHEMA).optional().describe("Checklist steps (for type: \"checklist\")"),
         stale_after: z.number().int().min(1).optional().describe(
-          "Seconds after which a stale reminder fires if checklist steps remain pending/running (for type: \"checklist\"). Opt-in — no timer when omitted.",
+          "Seconds after which a stale reminder fires if checklist steps remain pending/running (for type: \"checklist\") or the progress bar is still below 100% (for type: \"progress\"). Opt-in — no timer when omitted.",
         ),
         // ── progress ───────────────────────────────────────────────────────
         percent: z.number().int().min(0, { message: "percent must be 0\u2013100. Call help(topic: 'send') for progress usage." }).max(100, { message: "percent must be 0\u2013100. Call help(topic: 'send') for progress usage." }).optional().describe("Progress percentage 0\u2013100 (for type: \"progress\")"),
@@ -895,6 +895,7 @@ export function register(server: McpServer) {
               subtext: args.subtext,
               width: args.width,
               token: args.token,
+              stale_after: args.stale_after,
             }),
             getFirstUseHint(_sid, "send:progress"),
           );

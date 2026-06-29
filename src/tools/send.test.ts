@@ -670,7 +670,7 @@ describe("send type routing", () => {
     // The text arrives at applyTopicToText unmodified — check no decoding happens
     // at the input stage (before any Markdown conversion or Telegram send).
     const applyTopicCalls = mocks.applyTopicToText.mock.calls;
-    const rawText: string = (applyTopicCalls[0]?.[0] as string | undefined) ?? "";
+    const rawText: string = (applyTopicCalls[0]?.[0]) ?? "";
     expect(rawText).toContain("&lt;T&gt;");
     expect(rawText).not.toContain("<T>"); // ensure no entity decoding occurred
   });

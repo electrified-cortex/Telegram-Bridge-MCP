@@ -64,7 +64,7 @@ export function armStaleTimer(
   steps: ChecklistStep[],
 ): void {
   clearStaleTimer(message_id); // cancel any existing timer for this message_id
-  const timer = setTimeout(() => fireStaleReminder(message_id), stale_after_ms);
+  const timer = setTimeout(() => { fireStaleReminder(message_id); }, stale_after_ms);
   _timers.set(message_id, { timer, sid, stale_after_ms, title, steps });
 }
 
@@ -84,7 +84,7 @@ export function resetStaleTimer(
   const entry = _timers.get(message_id);
   if (!entry) return; // stale_after was never set — nothing to reset
   clearTimeout(entry.timer);
-  const timer = setTimeout(() => fireStaleReminder(message_id), entry.stale_after_ms);
+  const timer = setTimeout(() => { fireStaleReminder(message_id); }, entry.stale_after_ms);
   _timers.set(message_id, { ...entry, timer, title, steps });
 }
 

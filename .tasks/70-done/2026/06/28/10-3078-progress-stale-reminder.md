@@ -60,3 +60,15 @@ live on dev. This task wires it into the progress bar path.
 - checked: ACs 1-8 all binary+testable, scope bounded to progress path + session-queue, delegation complete (Worker, sonnet-class, dev), stale-timer.ts already live (low implementation risk), terminal state clearly defined (percent === 100), no open questions
 - note: mirror of proven 10-3074 pattern; implementation notes are sufficient to constrain the worker
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## Verification
+
+- **verdict**: APPROVED
+- **verifier**: Overseer (push-gate)
+- **date**: 2026-06-28
+- **worker_commit**: 6d8212c2
+- **squash_commit**: TBD (seal commit)
+- **tests**: 4179/4179 (171 test files — confirmed by foreman on branch HEAD 6d8212c2)
+- **revision**: Bug 1 (BLOCKER) — `resetStaleTimer` title param fixed to `string | undefined`, `entry.title = title ?? entry.title` prevents overwrite with empty string. Bug 2 — schedule-trigger branch in save.ts adds `...(r.id ? { id: r.id } : {})` like other branches.
+- **LLM pre-pass**: unavailable (gateway timeout) — flagged per protocol; Overseer gate substituted
+- **ACs**: 1-8 all PASS

@@ -5,6 +5,7 @@ import { applyTopicToTitle } from "../../topic-state.js";
 import { renderProgress } from "./new.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
+import { clearStaleTimer, resetStaleTimer } from "./stale-timer.js";
 
 /** Message IDs that have already received a completion reply — prevents duplicates. */
 const _completedMessageIds = new Set<number>();
@@ -56,6 +57,12 @@ export async function handleUpdateProgress({ message_id, percent, title, subtext
           _skipHeader: true,
         } as Record<string, unknown>).catch(() => {});
       }
+      // Terminal state — clear any armed stale timer so no spurious reminder fires.
+      clearStaleTimer(message_id);
+    } else {
+      // Still in progress — reset stale timer so the clock restarts from this update.
+      // Pass title as-is (undefined when omitted) — stale-timer preserves the stored title.
+      resetStaleTimer(message_id, title, percent);
     }
     return toResult({ message_id: edited.message_id });
   } catch (err) {
