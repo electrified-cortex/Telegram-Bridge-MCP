@@ -16,13 +16,12 @@
 # - Pin exact versions in production when feasible; v24.13.0+ includes Jan 2026 security patches
 # - Monitor nodejs-sec mailing list: https://groups.google.com/forum/#!forum/nodejs-sec
 
-# ── Stage 1: production dependencies (native modules compiled here) ───────────
+# ── Stage 1: production dependencies (prebuilt native binaries, no compile) ───
 FROM node:26-slim AS deps
 
-# Build tools needed for native modules (onnxruntime-node, opusscript, sharp)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
+# No build toolchain (TMCP is a python-free zone). Native deps install via
+# `--ignore-scripts` (see the pnpm install line below) — every one ships or resolves
+# a PREBUILT binary, so nothing compiles and no python/make/g++/git is needed.
 
 # corepack was removed from Node.js distributions in v25+; install pnpm directly.
 # Version pinned to match package.json "packageManager".
@@ -30,14 +29,19 @@ RUN npm install -g pnpm@11.9.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod
+# --ignore-scripts: every native dependency ships/resolves a PREBUILT binary
+# (onnxruntime-node bundles its .node, sharp uses @img/sharp-<platform>, opusscript
+# is pure JS), so no build script needs to run. This keeps the image python-free
+# (no node-gyp), avoids onnxruntime's cmake/git source fallback, and is more secure
+# (no arbitrary install scripts). pnpm 11 would otherwise hard-fail with
+# ERR_PNPM_IGNORED_BUILDS on unapproved build scripts.
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # ── Stage 2: TypeScript build ─────────────────────────────────────────────────
 FROM node:26-slim AS build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
+# No build toolchain — prebuilt native binaries only (see Stage 1 note). tsc is
+# pure JS and needs no python/make/g++.
 
 # corepack was removed from Node.js distributions in v25+; install pnpm directly.
 # Version pinned to match package.json "packageManager".
@@ -45,7 +49,9 @@ RUN npm install -g pnpm@11.9.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# --ignore-scripts (see Stage 1): no build scripts run; the build below is pure
+# tsc (no esbuild/vite needed), so prebuilt binaries are sufficient.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY tsconfig.json ./
 COPY src/ ./src/
@@ -61,7 +67,7 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends \
 
 WORKDIR /app
 
-# Prod node_modules (pre-compiled native modules from stage 1)
+# Prod node_modules (prebuilt native binaries from stage 1 — no compilation)
 COPY --from=deps /app/node_modules ./node_modules
 
 # Compiled JS output
