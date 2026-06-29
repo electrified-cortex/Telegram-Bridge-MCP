@@ -77,6 +77,6 @@ Base: `dev` at current HEAD
 - **verifier**: Overseer (push-gate)
 - **date**: 2026-06-28
 - **worker_commit**: 71ae16dd (+ foreman fix 71dc0c05)
-- **squash_commit**: TBD
+- **squash_commit**: 74b8c6aa
 - **tests**: 4189/4189 (171 test files — branch HEAD 71dc0c05)
 - **LLM pre-pass**: gateway timed out — independent adversarial review substituted; PASS
