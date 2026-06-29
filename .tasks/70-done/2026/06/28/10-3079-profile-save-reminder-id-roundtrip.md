@@ -76,7 +76,7 @@ a saved id or a generated hash — no other changes needed.
 - **verifier**: Overseer (push-gate, bundled with 10-3078)
 - **date**: 2026-06-28
 - **worker_commit**: 6d8212c2
-- **squash_commit**: TBD (seal commit)
+- **squash_commit**: af1606b9
 - **tests**: 4179/4179 (171 test files — confirmed by foreman on branch HEAD 6d8212c2)
 - **ACs**: 1-5 all PASS — id preserved in save.ts (all branches), apply.ts uses saved id via `?? reminderContentHash(...)` in all 5 trigger branches, round-trip test added
 - **LLM pre-pass**: unavailable (gateway timeout) — flagged per protocol; Overseer gate substituted
