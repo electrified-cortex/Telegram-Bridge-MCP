@@ -250,4 +250,15 @@ describe("stale progress timer — integration via handleUpdateProgress", () => 
     vi.advanceTimersByTime(26_000); // now 61s since last update — stale
     expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledOnce();
   });
+
+  it("omitting title on update preserves original title in stale event", async () => {
+    // Arm with an initial title, then update WITHOUT title — stale event must carry original
+    armStaleTimer(55, 1, 60_000, "Original Title", 20);
+    // Update without title (title param absent/undefined) — must NOT overwrite stored title
+    await handleUpdateProgress({ message_id: 55, percent: 50, token: 1123456 });
+    vi.advanceTimersByTime(61_000); // past stale_after
+    expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledOnce();
+    const callArgs = mocks.deliverProgressStaleEvent.mock.calls[0];
+    expect(callArgs[2]).toBe("Original Title"); // title must survive the title-less update
+  });
 });

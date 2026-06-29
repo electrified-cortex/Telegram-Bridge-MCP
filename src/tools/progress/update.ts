@@ -61,7 +61,8 @@ export async function handleUpdateProgress({ message_id, percent, title, subtext
       clearStaleTimer(message_id);
     } else {
       // Still in progress — reset stale timer so the clock restarts from this update.
-      resetStaleTimer(message_id, title ?? "", percent);
+      // Pass title as-is (undefined when omitted) — stale-timer preserves the stored title.
+      resetStaleTimer(message_id, title, percent);
     }
     return toResult({ message_id: edited.message_id });
   } catch (err) {

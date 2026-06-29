@@ -61,19 +61,19 @@ export function armStaleTimer(
  * No-op if `stale_after` was never set for this `message_id`.
  *
  * @param message_id  Progress bar Telegram message ID
- * @param title       Updated title
+ * @param title       Updated title — omit (undefined) to preserve the stored title
  * @param percent     Updated percent (used for suppression at fire time)
  */
 export function resetStaleTimer(
   message_id: number,
-  title: string,
+  title: string | undefined,
   percent: number,
 ): void {
   const entry = _timers.get(message_id);
   if (!entry) return; // stale_after was never set — nothing to reset
   clearTimeout(entry.timer);
   const timer = setTimeout(() => { fireStaleReminder(message_id); }, entry.stale_after_ms);
-  _timers.set(message_id, { ...entry, timer, title, percent });
+  _timers.set(message_id, { ...entry, timer, title: title ?? entry.title, percent });
 }
 
 /**
