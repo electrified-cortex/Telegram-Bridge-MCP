@@ -26,18 +26,26 @@ Operator directive (TG 81370): "I want the canonical behavior established now."
 
 ## Expected behavior
 
-The dequeue/guide documentation explicitly states the full canonical state machine
-for the thinking animation (same-agent scope — layering rules only apply across
-different agents):
+The dequeue/guide documentation explicitly states the full canonical priority model
+for same-SID animation states:
 
-1. **Start thinking**: fire immediately when meaningful work is dequeued — operator
-   message, agent DM, or work-triggering reminder. Not operator-only.
-2. **Cancel thinking**: as soon as the SAME agent sends a text message OR sends a
-   voice/audio recording, the thinking animation is canceled. Thinking is a precursor
-   state, not a persistent one.
+**Priority hierarchy (same SID):**
+- **Recording** / **Typing** = strong indicators (highest priority)
+- **Thinking** = weak indicator (lowest priority)
 
-The bridge must enforce rule 2 automatically: any `send()` call from the same SID
-must cancel an active thinking animation before proceeding.
+Rules:
+1. **Start thinking**: fire when a real message is dequeued AND nothing else is in
+   flight for that SID (no typing, no recording, no higher-priority animation).
+2. **Thinking is a no-op if stronger state is active**: if the agent is already typing
+   or recording, thinking must NOT fire or override.
+3. **Cancel thinking**: as soon as the SAME SID starts typing (sends text) or
+   recording (sends audio), thinking is immediately canceled. Thinking never overrides
+   or persists alongside typing/recording.
+
+Different SIDs have independent animation states — layering and priority rules are
+per-SID only. This task does not change cross-SID behavior.
+
+The bridge must enforce rules 2 and 3 automatically in the send path.
 
 ## Acceptance Criteria
 
