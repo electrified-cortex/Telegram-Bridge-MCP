@@ -3333,7 +3333,7 @@ describe("token path convention — save_token_to field", () => {
     });
 
     it("10-3085: child session with no color creates session with undefined color and forceColor: true", async () => {
-      setupChildMocks(undefined as unknown as string);
+      setupChildMocks(undefined);
       mocks.createSession.mockReturnValue({
         sid: 2,
         suffix: 200002,

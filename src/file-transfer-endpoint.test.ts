@@ -73,58 +73,58 @@ describe("POST /files handler", () => {
 
   // ── 401: missing / invalid token (AC 8) ─────────────────────────────────
 
-  it("returns 401 when Authorization header is absent", async () => {
+  it("returns 401 when Authorization header is absent", () => {
     const body = makeBuffer();
-    const [status, payload] = await handlePostFiles(NO_BEARER, "application/octet-stream", body, "http://127.0.0.1:3000");
+    const [status, payload] = handlePostFiles(NO_BEARER, "application/octet-stream", body, "http://127.0.0.1:3000");
     expect(status).toBe(401);
     expect(payload).toMatchObject({ ok: false, error: expect.any(String) });
   });
 
-  it("returns 401 when token is invalid (session not found)", async () => {
+  it("returns 401 when token is invalid (session not found)", () => {
     mocks.validateSession.mockReturnValue(false);
     const body = makeBuffer();
-    const [status, payload] = await handlePostFiles(INVALID_BEARER, "application/octet-stream", body, "http://127.0.0.1:3000");
+    const [status, payload] = handlePostFiles(INVALID_BEARER, "application/octet-stream", body, "http://127.0.0.1:3000");
     expect(status).toBe(401);
     expect(payload).toMatchObject({ ok: false, error: expect.any(String) });
   });
 
-  it("returns 401 when Authorization header is not a Bearer token", async () => {
+  it("returns 401 when Authorization header is not a Bearer token", () => {
     const body = makeBuffer();
-    const [status, payload] = await handlePostFiles("Basic abc123", "application/octet-stream", body, "http://127.0.0.1:3000");
+    const [status, payload] = handlePostFiles("Basic abc123", "application/octet-stream", body, "http://127.0.0.1:3000");
     expect(status).toBe(401);
     expect((payload as { ok: boolean }).ok).toBe(false);
   });
 
-  it("returns 401 when Bearer token is non-numeric", async () => {
+  it("returns 401 when Bearer token is non-numeric", () => {
     const body = makeBuffer();
-    const [status, payload] = await handlePostFiles("Bearer not_a_number", "application/octet-stream", body, "http://127.0.0.1:3000");
+    const [status, payload] = handlePostFiles("Bearer not_a_number", "application/octet-stream", body, "http://127.0.0.1:3000");
     expect(status).toBe(401);
     expect((payload as { ok: boolean }).ok).toBe(false);
   });
 
   // ── 400: empty body ──────────────────────────────────────────────────────
 
-  it("returns 400 when body is empty", async () => {
-    const [status, payload] = await handlePostFiles(VALID_BEARER, "application/octet-stream", Buffer.alloc(0), "http://127.0.0.1:3000");
+  it("returns 400 when body is empty", () => {
+    const [status, payload] = handlePostFiles(VALID_BEARER, "application/octet-stream", Buffer.alloc(0), "http://127.0.0.1:3000");
     expect(status).toBe(400);
     expect((payload as { ok: boolean }).ok).toBe(false);
   });
 
   // ── 200: successful upload ───────────────────────────────────────────────
 
-  it("returns 200 with url and expires_in on valid upload", async () => {
+  it("returns 200 with url and expires_in on valid upload", () => {
     const body = makeBuffer("test file content");
-    const [status, payload] = await handlePostFiles(VALID_BEARER, "image/png", body, "http://127.0.0.1:3000");
+    const [status, payload] = handlePostFiles(VALID_BEARER, "image/png", body, "http://127.0.0.1:3000");
     expect(status).toBe(200);
     const p = payload as { url: string; expires_in: number };
     expect(p.expires_in).toBe(300);
     expect(p.url).toMatch(/^http:\/\/127\.0\.0\.1:3000\/files\/[0-9a-f-]{36}$/);
   });
 
-  it("stores the file and makes it retrievable via the returned URL", async () => {
+  it("stores the file and makes it retrievable via the returned URL", () => {
     const content = "unique file content";
     const body = Buffer.from(content, "utf-8");
-    const [status, payload] = await handlePostFiles(VALID_BEARER, "text/plain", body, "http://127.0.0.1:3000");
+    const [status, payload] = handlePostFiles(VALID_BEARER, "text/plain", body, "http://127.0.0.1:3000");
     expect(status).toBe(200);
 
     // Extract UUID from URL
@@ -139,9 +139,9 @@ describe("POST /files handler", () => {
     expect(getResult.contentType).toBe("text/plain");
   });
 
-  it("uses fallback base URL when baseUrl is null", async () => {
+  it("uses fallback base URL when baseUrl is null", () => {
     const body = makeBuffer("data");
-    const [status, payload] = await handlePostFiles(VALID_BEARER, "application/octet-stream", body, null);
+    const [status, payload] = handlePostFiles(VALID_BEARER, "application/octet-stream", body, null);
     expect(status).toBe(200);
     const p = payload as { url: string };
     expect(p.url).toMatch(/^http:\/\/127\.0\.0\.1\/files\//);

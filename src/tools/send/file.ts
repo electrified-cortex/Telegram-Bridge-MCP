@@ -252,7 +252,7 @@ export async function handleSendFileAction(args: Record<string, unknown>) {
   const caption   = typeof args.caption    === "string" ? args.caption    : undefined;
   const fileName  = typeof args.file_name  === "string" ? args.file_name  : undefined;
   const disableNotification = typeof args.disable_notification === "boolean" ? args.disable_notification : undefined;
-  const replyTo   = typeof args.message_id === "number" ? (args.message_id as number) : undefined;
+  const replyTo   = typeof args.message_id === "number" ? args.message_id : undefined;
 
   if (!url && !filePath) {
     return toError({
@@ -326,8 +326,12 @@ export async function handleSendFileAction(args: Record<string, unknown>) {
   }
 
   // ── file_path: SAFE_FILE_DIR check via handleSendFile ─────────────────────
+  // filePath is guaranteed non-null here: the !url && !filePath guard above exits early.
+  if (!filePath) {
+    return toError({ code: "MISSING_PARAM" as const, message: "file_path is required when url is not provided.", hint: "" });
+  }
   return handleSendFile({
-    file: filePath!,
+    file: filePath,
     type: "auto",
     caption,
     parse_mode: (args.parse_mode as "Markdown" | "HTML" | "MarkdownV2" | undefined) ?? "Markdown",
