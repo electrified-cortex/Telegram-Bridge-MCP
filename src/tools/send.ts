@@ -764,7 +764,7 @@ export function register(server: McpServer) {
               const _smMsg = await callApi(() =>
                 getApi().sendDocument(chatId, _smSrc, {
                   caption: finalText,
-                  parse_mode: finalMode || undefined,
+                  parse_mode: finalMode,
                   disable_notification,
                   reply_parameters:
                     reply_to_message_id !== undefined
