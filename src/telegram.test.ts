@@ -927,4 +927,22 @@ describe("routeOutboundMessage: plain Markdown uses legacy sendMessage path", ()
     expect(result.message_id).toBe(42);
     expect(result.fell_back).toBeUndefined();
   });
+
+  it("does NOT take the rich path for a falsy-but-defined richMessage (false/null)", async () => {
+    // Regression: the rich gate is Boolean(options.richMessage), not `!== undefined`.
+    // A falsy-but-defined value (false/null/0/"") is not a valid InputRichMessage and
+    // must route straight to the legacy sendMessage path — never sendRichMessage.
+    for (const bad of [false, null, 0, ""]) {
+      sendRichMessageSpy.mockClear();
+      sendMessageSpy.mockClear();
+      const result = await routeOutboundMessage(123, "plain text", {
+        parse_mode: "Markdown",
+        richMessage: bad as never,
+      });
+      expect(sendRichMessageSpy).not.toHaveBeenCalled();
+      expect(sendMessageSpy).toHaveBeenCalled();
+      expect(result.fell_back).toBeUndefined();
+      expect(result.message_id).toBe(42);
+    }
+  });
 });

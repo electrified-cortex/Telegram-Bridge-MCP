@@ -885,11 +885,14 @@ export async function routeOutboundMessage(
   } = {},
 ): Promise<{ message_id: number; fell_back?: true }> {
   const parseMode = options.parse_mode;
-  // Rich path: only for explicit richMessage (html:/string: params).
+  // Rich path: only for an actual richMessage object (html:/markdown:/string: params).
   // Plain-text Markdown sends use the legacy MarkdownV2 path so they render
   // consistently across all Telegram clients (mobile/desktop). The GFM
   // sendRichMessage path renders differently on mobile — "tiny text" regression.
-  const shouldUseRich = options.richMessage !== undefined;
+  // Truthy (not `!== undefined`): a falsy-but-defined value (false/null/0/"") is not
+  // a valid InputRichMessage and must NOT enter the rich path — otherwise it would
+  // throw inside sendRichMessageDirect and waste a failed attempt before falling back.
+  const shouldUseRich = Boolean(options.richMessage);
 
   if (shouldUseRich) {
     // Track notifyAfterFileSend so the before/after pair is always balanced,
