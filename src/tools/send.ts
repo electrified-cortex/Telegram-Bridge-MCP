@@ -260,6 +260,9 @@ export function register(server: McpServer) {
         priority: z.number().int().default(0).describe("Animation priority level"),
         // ── checklist ──────────────────────────────────────────────────────
         steps: z.array(STEP_SCHEMA).optional().describe("Checklist steps (for type: \"checklist\")"),
+        stale_after: z.number().int().min(1).optional().describe(
+          "Seconds after which a stale reminder fires if checklist steps remain pending/running (for type: \"checklist\") or the progress bar is still below 100% (for type: \"progress\"). Opt-in — no timer when omitted.",
+        ),
         // ── progress ───────────────────────────────────────────────────────
         percent: z.number().int().min(0, { message: "percent must be 0\u2013100. Call help(topic: 'send') for progress usage." }).max(100, { message: "percent must be 0\u2013100. Call help(topic: 'send') for progress usage." }).optional().describe("Progress percentage 0\u2013100 (for type: \"progress\")"),
         width: z.number().int().min(1).max(40).default(10).describe("Progress bar width (default 10)"),
@@ -878,7 +881,7 @@ export function register(server: McpServer) {
             if (!checklistTitle) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "title" param.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
             if (!args.steps?.length) return toError({ code: "MISSING_PARAM" as const, message: 'type: "checklist" requires a "steps" array.', hint: "type: \"checklist\" requires title (string) and steps (array). Call help(topic: 'send')." });
             return appendHintToResult(
-              await handleSendNewChecklist({ title: checklistTitle, steps: args.steps, token: args.token }),
+              await handleSendNewChecklist({ title: checklistTitle, steps: args.steps, token: args.token, stale_after: args.stale_after }),
               getFirstUseHint(_sid, "send:checklist"),
             );
           }
@@ -892,6 +895,7 @@ export function register(server: McpServer) {
               subtext: args.subtext,
               width: args.width,
               token: args.token,
+              stale_after: args.stale_after,
             }),
             getFirstUseHint(_sid, "send:progress"),
           );

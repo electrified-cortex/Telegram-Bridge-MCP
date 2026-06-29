@@ -29,7 +29,7 @@ import { onActionableDequeue } from "../thinking-state.js";
  * Content types that qualify as "actionable operator content" for the
  * auto-Thinking trigger. Mirrors OPERATOR_MESSAGE_TYPES in session-queue.ts.
  * Only events where from="user", event="message", and content.type ∈ this set
- * count as actionable.
+ * count as actionable operator messages.
  */
 const _THINKING_TRIGGER_TYPES = new Set([
   "text", "voice", "command", "photo", "doc", "video",
@@ -37,14 +37,25 @@ const _THINKING_TRIGGER_TYPES = new Set([
 ]);
 
 /**
- * Fire the Thinking indicator if the batch contains actionable operator content.
+ * Fire the Thinking indicator if the batch contains any meaningful work:
+ * - Actionable operator messages (user-originated message events)
+ * - Agent DMs (direct_message events from other sessions)
+ * - Reminders that produce actionable work (reminder events)
+ *
+ * Thinking is auto-canceled by the outbound-proxy cancel-on-send when the
+ * same SID sends text, audio, or a file. No agent action needed.
+ *
  * Best-effort, fire-and-forget — never blocks the dequeue return.
  */
 function _fireThinkingIfActionable(sid: number, batch: TimelineEvent[]): void {
   const hasActionable = batch.some(
-    e => e.event === "message" &&
-         e.from === "user" &&
-         _THINKING_TRIGGER_TYPES.has(e.content.type),
+    e =>
+      // Operator messages (text, voice, command, photo, etc.)
+      (e.event === "message" && e.from === "user" && _THINKING_TRIGGER_TYPES.has(e.content.type)) ||
+      // Agent DMs from other sessions
+      e.event === "direct_message" ||
+      // Reminders that produce actionable work
+      e.event === "reminder",
   );
   if (hasActionable) {
     void onActionableDequeue(sid).catch(() => {});

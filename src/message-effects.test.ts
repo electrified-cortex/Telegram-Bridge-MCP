@@ -120,7 +120,7 @@ vi.mock("./visual-attachment-pipeline.js", () => ({
   writeTempVisualFile: vi.fn(),
 }));
 
-vi.mock("./tools/send/file.js", () => ({ handleSendFile: vi.fn() }));
+vi.mock("./tools/send/file.js", () => ({ handleSendFile: vi.fn(), handleSendFileAction: vi.fn() }));
 vi.mock("./tools/send/media-group.js", () => ({ handleSendMediaGroup: vi.fn() }));
 vi.mock("./tools/send/notify.js", () => ({ handleNotify: vi.fn() }));
 vi.mock("./tools/send/choice.js", () => ({ handleSendChoice: vi.fn() }));

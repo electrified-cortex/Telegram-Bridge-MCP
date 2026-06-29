@@ -64,6 +64,7 @@ export function handleSaveProfile({ key, token, autoload = false, silent_lifecyc
       // G-4/G-B: schedule reminders serialize cron+tz only; skip delay_seconds, next_fire_ms, timeoutHandle
       if (r.trigger === "schedule") {
         return {
+          ...(r.id ? { id: r.id } : {}),
           trigger: "schedule" as const,
           text: r.text,
           cron: r.cron,
@@ -72,6 +73,7 @@ export function handleSaveProfile({ key, token, autoload = false, silent_lifecyc
         };
       }
       return {
+        ...(r.id ? { id: r.id } : {}),
         text: r.text,
         ...(r.trigger !== "startup" ? { delay_seconds: r.delay_seconds } : {}),
         recurring: r.recurring,

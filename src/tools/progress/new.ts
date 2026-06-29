@@ -5,6 +5,7 @@ import { escapeHtml } from "../../markdown.js";
 import { applyTopicToTitle } from "../../topic-state.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
+import { armStaleTimer } from "./stale-timer.js";
 
 const FILLED = "▓";
 const EMPTY = "░";
@@ -38,16 +39,17 @@ const DESCRIPTION =
   "Multiple concurrent progress bars are supported — each is tracked by its own message_id.";
 
 export async function handleSendNewProgress({
-  percent, title, subtext, width = DEFAULT_WIDTH, token,
+  percent, title, subtext, width = DEFAULT_WIDTH, token, stale_after,
 }: {
   percent: number;
   title?: string;
   subtext?: string;
   width?: number;
   token: number;
+  stale_after?: number;
 }) {
-  const _sid = requireAuth(token);
-  if (typeof _sid !== "number") return toError(_sid);
+  const sid = requireAuth(token);
+  if (typeof sid !== "number") return toError(sid);
   const chatId = resolveChat();
   if (typeof chatId !== "number") return toError(chatId);
   try {
@@ -62,6 +64,12 @@ export async function handleSendNewProgress({
       _rawText: title ?? "",
     });
     await getApi().pinChatMessage(chatId, result.message_id, { disable_notification: true }).catch(() => {});
+
+    // Arm stale-reminder timer if requested (opt-in).
+    if (typeof stale_after === "number" && stale_after > 0) {
+      armStaleTimer(result.message_id, sid, stale_after * 1000, title ?? "", percent);
+    }
+
     return toResult({ message_id: result.message_id });
   } catch (err) {
     return toError(err);
@@ -95,8 +103,18 @@ export function register(server: McpServer) {
           .max(40)
           .default(DEFAULT_WIDTH)
           .describe(`Bar width in characters. Default ${DEFAULT_WIDTH}.`),
-              token: TOKEN_SCHEMA,
-},
+        stale_after: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            "Optional. If set, fires a reminder into the session dequeue queue when this many " +
+            "seconds elapse since the progress bar was last updated and it is still below 100%. " +
+            "Opt-in — no timer is armed when this parameter is omitted.",
+          ),
+        token: TOKEN_SCHEMA,
+      },
     },
     handleSendNewProgress,
   );

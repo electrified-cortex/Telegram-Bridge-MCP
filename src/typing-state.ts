@@ -280,3 +280,13 @@ export async function showTyping(timeoutSeconds: number, action: TypingAction = 
 export function isTypingActive(): boolean {
   return !!_get(getCallerSid()).timer;
 }
+
+/**
+ * True when the typing (or recording/upload) indicator is currently active
+ * for the given SID. Used by the thinking-state module to implement the
+ * priority rule: Typing/Recording > Thinking — skip thinking if stronger
+ * state is already active for the same SID.
+ */
+export function isTypingActiveSid(sid: number): boolean {
+  return !!_states.get(sid)?.timer;
+}

@@ -45,7 +45,7 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 **SSE-primary transport.** Arm SSE as the SOLE transport when it is available. File-watch is a break-glass FALLBACK, armed ONLY when SSE is unavailable. Do NOT co-arm both — SSE is reliable (bridge >= v7.11.0), and arming both double-fires every event (one SSE notify + one file-watch kick). [Changed 2026-06-14 per operator: stop the double-kick; SSE proven, file-watch fallback only.]
 
 **Step 1 — SSE:** `action(type: 'activity/listen')`.
-- Returns `ok: true` → HTTP mode active. **Host-rewrite first:** inspect the `command` in the response — if it contains `0.0.0.0`, replace it based on your environment:
+- Returns `ok: true` → HTTP mode active. Inspect the `command` in the response. If `BRIDGE_ADVERTISE_HOST` is configured on the bridge, the URL already uses the correct connect host — arm immediately. Otherwise, **host-rewrite first:** if the URL contains `0.0.0.0`, replace it based on your environment:
   - **Container pod** (running inside Docker on agents host — BT, Zhu-Li, etc.): replace with `bridge`
   - **Host pod** (running directly on host OS — Curator, Overseer, etc.): replace with `127.0.0.1`
   - Rule of thumb: if your pod root is under `/opt/stacks/`, use `bridge`; if under a user home dir, use `127.0.0.1`.

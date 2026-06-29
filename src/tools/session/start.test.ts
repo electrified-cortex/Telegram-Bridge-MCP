@@ -1550,6 +1550,102 @@ describe("session_start tool", () => {
     expect(String(editCall[2])).not.toMatch(/🟦|🟩|🟨|🟧|🟥|🟪/);
   });
 
+  // =========================================================================
+  // Inline button callback dispatch — each type routes to the correct handler
+  // (regression coverage for 10-3070 + 10-3076)
+  // =========================================================================
+
+  it("approve_no callback: keyboard cleared on denial (fix 10-3070/10-3076)", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_no", qid: "q-deny" } }); });
+    });
+    mocks.sendMessage.mockResolvedValue({ message_id: 55 });
+
+    await call({ name: "Worker" });
+
+    // editMessageText must pass reply_markup: { inline_keyboard: [] } to clear color buttons
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42,
+      55,
+      expect.stringContaining("denied"),
+      expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
+    );
+    // Message must NOT be deleted — it's edited to show the outcome
+    expect(mocks.deleteMessage).not.toHaveBeenCalledWith(42, 55);
+  });
+
+  it("approve_{N} color button: resolves approved:true, message deleted (not edited)", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions
+      .mockReturnValueOnce([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }])
+      .mockReturnValue([]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    mocks.registerCallbackHook.mockImplementationOnce((_id: number, fn: (evt: unknown) => void) => {
+      // approve_1 → palette index 1 → 🟩
+      void Promise.resolve().then(() => { fn({ content: { data: "approve_1", qid: "q-color" } }); });
+    });
+    mocks.sendMessage.mockResolvedValue({ message_id: 56 });
+    mocks.createSession.mockReturnValue({ sid: 2, suffix: 200002, name: "Worker", color: "🟩", sessionsActive: 2 });
+
+    await call({ name: "Worker" });
+
+    // Approved path: message deleted, editMessageText NOT called for this msgId
+    expect(mocks.deleteMessage).toHaveBeenCalledWith(42, 56);
+    const editCalls = (mocks.editMessageText.mock.calls as unknown[][]).filter(
+      (c) => c[1] === 56,
+    );
+    expect(editCalls).toHaveLength(0);
+    // Session created with operator-chosen color
+    expect(mocks.createSession).toHaveBeenCalledWith("Worker", "🟩", true);
+  });
+
+  it("approve_toggle_delegation: re-registers hook, updates keyboard, does not resolve approval", async () => {
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.activeSessionCount.mockReturnValue(1);
+    mocks.listSessions.mockReturnValue([{ sid: 1, name: "Primary", createdAt: "2026-03-17" }]);
+    mocks.getAvailableColors.mockReturnValue(["🟦", "🟩"]);
+    let hookCalls = 0;
+    mocks.registerCallbackHook.mockImplementation((_id: number, fn: (evt: unknown) => void) => {
+      hookCalls++;
+      if (hookCalls === 1) {
+        // Initial registration — fire toggle first
+        void Promise.resolve().then(() => {
+          fn({ content: { data: "approve_toggle_delegation", qid: "q-toggle" } });
+        });
+      } else {
+        // Re-registered after toggle — now fire deny to end the approval flow
+        void Promise.resolve().then(() => {
+          fn({ content: { data: "approve_no", qid: "q-deny2" } });
+        });
+      }
+    });
+    mocks.sendMessage.mockResolvedValue({ message_id: 57 });
+
+    const result = await call({ name: "Worker" });
+
+    // Toggle causes re-registration (hookCalls === 2), then deny fires
+    expect(hookCalls).toBeGreaterThanOrEqual(2);
+    // editMessageReplyMarkup called once for the toggle keyboard update
+    expect(mocks.editMessageReplyMarkup).toHaveBeenCalledTimes(1);
+    // answerCallbackQuery called for both toggle and deny
+    expect(mocks.answerCallbackQuery).toHaveBeenCalledTimes(2);
+    // Final approval result is denial (deny button fired after toggle)
+    expect(isError(result)).toBe(true);
+    expect(errorCode(result)).toBe("SESSION_DENIED");
+    // Keyboard cleared in denial edit
+    expect(mocks.editMessageText).toHaveBeenCalledWith(
+      42,
+      57,
+      expect.stringContaining("denied"),
+      expect.objectContaining({ reply_markup: { inline_keyboard: [] } }),
+    );
+  });
+
   it("agent's color hint passed to getAvailableColors", async () => {
     mocks.pendingCount.mockReturnValue(0);
     mocks.activeSessionCount.mockReturnValue(1);
@@ -3137,5 +3233,129 @@ describe("token path convention — save_token_to field", () => {
 
     // Internal service messages (onboarding) are NOT suppressed
     expect(mocks.deliverServiceMessage).toHaveBeenCalled();
+  });
+
+  // =========================================================================
+  // Child session path — Assignments 10-3084 + 10-3085
+  // =========================================================================
+
+  describe("child session path (parentSid provided)", () => {
+    // Shared setup helper for child session tests
+    function setupChildMocks(color = "🟩") {
+      mocks.activeSessionCount.mockReturnValue(1); // parent already exists
+      mocks.createSession.mockReturnValue({
+        sid: 2,
+        suffix: 200002,
+        name: "ChildSession",
+        color,
+        sessionsActive: 2,
+      });
+      mocks.listSessions.mockReturnValue([
+        { sid: 1, name: "Parent", color: "🟩" },
+        { sid: 2, name: "ChildSession", color },
+      ]);
+    }
+
+    // ── 10-3084: No session_joined announcement for child sessions ────────────
+
+    it("10-3084: does not emit session_joined to any session when parentSid is set", async () => {
+      setupChildMocks();
+
+      await handleSessionStart({ name: "ChildSession", color: "🟩", parentSid: 1 });
+
+      const sessionJoinedCalls = mocks.deliverServiceMessage.mock.calls.filter(
+        (c: unknown[]) => c[2] === "session_joined",
+      );
+      expect(sessionJoinedCalls.length).toBe(0);
+    });
+
+    it("10-3084: does not send online announcement to Telegram when parentSid is set", async () => {
+      setupChildMocks();
+
+      await handleSessionStart({ name: "ChildSession", color: "🟩", parentSid: 1 });
+
+      const onlineCalls = mocks.sendMessage.mock.calls.filter(
+        (c: unknown[]) => String(c[1]).includes("🟢 Online"),
+      );
+      expect(onlineCalls.length).toBe(0);
+    });
+
+    it("10-3084: root session (no parentSid) still emits session_joined normally", async () => {
+      mocks.activeSessionCount.mockReturnValue(1);
+      mocks.createSession.mockReturnValue({
+        sid: 2,
+        suffix: 200002,
+        name: "Worker",
+        color: "🟩",
+        sessionsActive: 2,
+      });
+      mocks.getGovernorSid.mockReturnValue(1);
+      mocks.listSessions
+        .mockReturnValueOnce([{ sid: 1, name: "Primary" }])
+        .mockReturnValue([
+          { sid: 1, name: "Primary" },
+          { sid: 2, name: "Worker" },
+        ]);
+      mocks.checkAndConsumeAutoApprove.mockReturnValueOnce(true);
+      mocks.sendMessage.mockResolvedValueOnce({ message_id: 55 });
+
+      await handleSessionStart({ name: "Worker", color: "🟩" });
+
+      const sessionJoinedCalls = mocks.deliverServiceMessage.mock.calls.filter(
+        (c: unknown[]) => c[2] === "session_joined",
+      );
+      expect(sessionJoinedCalls.length).toBeGreaterThan(0);
+    });
+
+    // ── 10-3085: No color picker / approval dialog for child sessions ─────────
+
+    it("10-3085: does not surface approval dialog when parentSid is set", async () => {
+      setupChildMocks();
+
+      await handleSessionStart({ name: "ChildSession", color: "🟩", parentSid: 1 });
+
+      // Approval dialog sends a message with "requesting access" or color buttons
+      const approvalCalls = mocks.sendMessage.mock.calls.filter(
+        (c: unknown[]) => String(c[1]).includes("requesting access"),
+      );
+      expect(approvalCalls.length).toBe(0);
+      // registerCallbackHook is set up for approval buttons — must NOT be called for child
+      expect(mocks.registerCallbackHook).not.toHaveBeenCalled();
+    });
+
+    it("10-3085: child session inherits the supplied color (parent color) without approval", async () => {
+      setupChildMocks("🟦");
+
+      await handleSessionStart({ name: "ChildSession", color: "🟦", parentSid: 1 });
+
+      // createSession called with the inherited color and forceColor: true (parentSid path)
+      expect(mocks.createSession).toHaveBeenCalledWith("ChildSession", "🟦", true);
+    });
+
+    it("10-3085: child session with no color creates session with undefined color and forceColor: true", async () => {
+      setupChildMocks(undefined as unknown as string);
+      mocks.createSession.mockReturnValue({
+        sid: 2,
+        suffix: 200002,
+        name: "ChildSession",
+        color: undefined,
+        sessionsActive: 2,
+      });
+
+      await handleSessionStart({ name: "ChildSession", parentSid: 1 });
+
+      expect(mocks.createSession).toHaveBeenCalledWith("ChildSession", undefined, true);
+    });
+
+    it("10-3085: handleSessionStart succeeds for child session without operator interaction", async () => {
+      setupChildMocks();
+
+      const result = await handleSessionStart({ name: "ChildSession", color: "🟩", parentSid: 1 });
+
+      expect(isError(result)).toBe(false);
+      const parsed = parseResult(result);
+      expect(typeof parsed.token).toBe("number");
+      expect(parsed.sid).toBe(2);
+    });
   });
 });

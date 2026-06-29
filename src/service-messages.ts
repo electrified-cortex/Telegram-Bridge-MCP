@@ -341,7 +341,9 @@ export const SERVICE_MESSAGES = deepFreeze({
       `This is the forward-child call — it injects your task brief as the child's first inbound message. ` +
       `Without it the child dequeues with no context and cannot act.\n\n` +
       `THEN dispatch a background sub-agent with the child token:\n` +
-      `  Sub-agent loop: dequeue(token: ${childToken}) → handle → repeat until topic resolved.\n` +
+      `  1. Sub-agent startup (once): action(type: 'profile/dequeue-default', token: ${childToken}, timeout: 1800)\n` +
+      `     Sets a long blocking wait as the session default — no per-call max_wait needed.\n` +
+      `  2. Sub-agent loop: dequeue(token: ${childToken}) → handle → repeat until topic resolved.\n` +
       `  Pick a model class appropriate to the topic complexity.\n` +
       `  When resolved, the sub-agent calls session/revoke-child(child_token: ${childToken}) to self-despawn.\n\n` +
       `If the sub-agent stops without sufficient resolution, resume it with a corrective follow-up prompt.`,

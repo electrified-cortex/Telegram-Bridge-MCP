@@ -661,6 +661,20 @@ describe("send type routing", () => {
     expect(isError(result)).toBe(false);
   });
 
+  it("type: text — HTML entities are passed through literally, not decoded (List&lt;T&gt; stays as-is)", async () => {
+    // The bridge uses MarkdownV2, not HTML. HTML entities must NOT be decoded —
+    // List&lt;T&gt; in the input must appear as-is in the outbound pipeline.
+    // Agents must write List<T>, not List&lt;T&gt;.
+    const result = await call({ type: "text", text: "Use List&lt;T&gt; correctly", token: TOKEN });
+    expect(isError(result)).toBe(false);
+    // The text arrives at applyTopicToText unmodified — check no decoding happens
+    // at the input stage (before any Markdown conversion or Telegram send).
+    const applyTopicCalls = mocks.applyTopicToText.mock.calls;
+    const rawText: string = (applyTopicCalls[0]?.[0]) ?? "";
+    expect(rawText).toContain("&lt;T&gt;");
+    expect(rawText).not.toContain("<T>"); // ensure no entity decoding occurred
+  });
+
   it("type: text with no text or audio returns MISSING_CONTENT", async () => {
     const result = await call({ type: "text", token: TOKEN });
     expect(isError(result)).toBe(true);

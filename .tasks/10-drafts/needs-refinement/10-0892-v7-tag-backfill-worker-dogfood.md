@@ -1,58 +1,60 @@
-# 10-0892 — Backfill v7.x git tags as Worker dogfood
+---
+title: "TMCP: Backfill v7.x git tags as Worker dogfood task"
+id: 10-0892
+priority: P10
+status: draft
+category: DevOps / Release
+filed: 2026-05-10
+source: TG (operator 2026-05-10)
+repo: electrified-cortex/Telegram-Bridge-MCP
+branch_target: N/A — tags only, no code change
+agent_type: Worker
+model_class: sonnet-class
+reasoning_effort: low
+---
 
-## Priority
+## Refinement history
 
-10 (low — no rush per operator 2026-05-10)
+- Overseer bounce 2026-06-01: REJECT — no delegation, push-to-origin AC violates sandbox, optional/required ambiguous.
+- Fixed 2026-06-28: delegation frontmatter added, push removed from required ACs (operator pushes), optional clearly separated.
+
+# Backfill v7.x Git Tags
 
 ## Context
 
-v7 releases (v7.0.0, v7.0.1, v7.1.0, v7.2.0, v7.2.1, v7.2.2, v7.3, v7.4) all
-shipped via PR merge to master but no git tags were created. Latest
-tag is v5.0.1 despite codebase being on v7.4.1. v7.4.1 itself was
-tagged manually 2026-05-10 from Curator.
+v7 releases (v7.0.0–v7.4) shipped via PR merge to master but no git tags were created at release time. Latest tag was v5.0.1 until v7.4.1 was manually tagged 2026-05-10. This task backfills the missing annotated tags.
 
-Operator (2026-05-10): "Get our new worker to do it when everything
-is dialed in. We can use that as our dogfood."
+Operator (2026-05-10): "Get our new worker to do it when everything is dialed in. We can use that as dogfood."
 
-## What's wanted
+## Commits to tag
 
-Backfill annotated git tags for each missing v7.x release by
-identifying the corresponding `release: vX.Y.Z` merge commit on
-master and tagging it with appropriate notes. Push tags. Optionally
-create GitHub releases pointing at each tag.
+| Version | Commit | PR |
+|---|---|---|
+| v7.0.0 | f0a1f703 | #136 |
+| v7.0.1 | 5701d007 | #151 |
+| v7.1.0 | 8b012d8a | #155 |
+| v7.2.0 | e8e019dc | #158 |
+| v7.2.1 | fc952828 | #160 |
+| v7.2.2 | 9866cfbd | #161 |
+| v7.3 | 4747c989 | #164 |
+| v7.4 | fd635289 | #167 |
 
-## Acceptance criteria
+v7.4.1 already tagged at ab1d4139 — skip.
 
-- v7.0.0, v7.0.1, v7.1.0, v7.2.0, v7.2.1, v7.2.2, v7.3, v7.4 each
-  have an annotated tag at the corresponding release merge commit
-  on master.
-- Tags pushed to origin.
-- Optional: GitHub releases created with notes summarized from the
-  release commit body or PR description.
+## Required Acceptance Criteria
 
-## Why this is dogfood
+1. [ ] Annotated tags created locally for each commit in the table above (tag name = version string, e.g. `v7.0.0`)
+2. [ ] Tag message summarizes the corresponding PR description or release commit body (one line each)
+3. [ ] Worker reports the full `git tag -l "v7.*"` output to confirm all 8 tags present
+4. [ ] No existing tags overwritten
 
-The task is bounded, mechanical, well-defined, and operates on a
-single repo — ideal first real run for the ephemeral Worker once
-the engineering chain (specs + skills) is dialed in. Single
-worktree, no external state, deterministic outcome.
+## Out of scope (operator action)
+
+- `git push origin --tags` — operator pushes after reviewing Worker output
+- GitHub release pages — separate optional task if operator wants them
 
 ## Notes
 
-- Filed 2026-05-10 from Curator session.
-- Source commits to tag (one per version) — Curator can list at
-  hand-off time:
-  - v7.0.0 → f0a1f703 (#136)
-  - v7.0.1 → 5701d007 (#151)
-  - v7.1.0 → 8b012d8a (#155)
-  - v7.2.0 → e8e019dc (#158)
-  - v7.2.1 → fc952828 (#160)
-  - v7.2.2 → 9866cfbd (#161)
-  - v7.3 → 4747c989 (#164)
-  - v7.4 → fd635289 (#167)
-- v7.4.1 already tagged manually by Curator (ab1d4139).
-
-## Overseer bounce (2026-06-01)
-- verdict: REJECT — spec is a planning note, not executable
-- finding: No delegation assignment. "Tags pushed to origin" requires push access (violates sandbox). Optional GitHub releases AC is inside the AC block making definition-of-done ambiguous.
-- action: Add delegation, remove push-to-origin AC (sandbox can't push), clarify optional vs required ACs.
+- This is bounded, mechanical, and deterministic — ideal Worker dogfood
+- All commits are on master; no branch gymnastics needed
+- Worker must NOT push — create tags locally and report for operator review

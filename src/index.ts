@@ -34,6 +34,8 @@ import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
 import { attachActivitySelftestRoute } from "./activity-selftest-endpoint.js";
 import { attachActivityListenCheckRoute } from "./activity-listen-check-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
+import { attachFileTransferRoutes } from "./file-transfer-endpoint.js";
+import { startEviction, stopEviction } from "./file-store.js";
 import { delay, GRACEFUL_SHUTDOWN_TIMEOUT_MS } from "./utils/timing.js";
 import { initReminderFireCallback } from "./session-queue.js";
 
@@ -91,6 +93,8 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
     _shuttingDown = true;
     stopPoller();
     const shutdownSequence = (async () => {
+      // Stop file-store eviction interval (avoids keeping the process alive)
+      stopEviction();
       // Close all HTTP transports
       for (const [sid, t] of httpTransports) {
         try { await t.close(); } catch { /* best effort */ }
@@ -166,6 +170,8 @@ if (mcpPort !== undefined) {
   attachSseRoute(app);
   attachActivitySelftestRoute(app);
   attachActivityListenCheckRoute(app);
+  attachFileTransferRoutes(app);
+  startEviction();
 
   /** Normalize header that may be string | string[] | undefined → string | undefined */
   const getSessionId = (req: Request): string | undefined => {

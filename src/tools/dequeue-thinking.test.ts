@@ -4,9 +4,10 @@
  * Verifies that the auto-Thinking indicator fires (or does NOT fire) based
  * on the content type of the dequeue batch:
  *   - AC: Actionable operator content (text/voice/command/photo/…) → fires
+ *   - AC: Agent DM events (direct_message) → fires
+ *   - AC: Reminder events → fires
  *   - AC: Service-message-only batch → does NOT fire
  *   - AC: Empty / timed-out dequeue → does NOT fire
- *   - AC: Reminder events → does NOT fire
  *
  * Harness-agnostic: SIM payloads ASCII-only, no real Telegram IDs.
  */
@@ -194,6 +195,18 @@ function makeReminder(id: number): TimelineEvent {
   };
 }
 
+/** Make a direct_message event (agent DM from another session). */
+function makeDmEvent(id: number): TimelineEvent {
+  return {
+    id,
+    timestamp: new Date().toISOString(),
+    event: "direct_message",
+    from: "system",
+    content: { type: "text", text: "dm from agent" },
+    _update: { update_id: id },
+  };
+}
+
 /** Make a user message with type "unknown" (catch-all actionable trigger type). */
 function makeUnknownMsg(id: number): TimelineEvent {
   return {
@@ -303,17 +316,24 @@ describe("dequeue → thinking trigger", () => {
     expect(thinkingMocks.onActionableDequeue).toHaveBeenCalledWith(SID);
   });
 
+  it("fires onActionableDequeue for a reminder event (actionable work)", async () => {
+    sessionMocks.dequeueBatch.mockReturnValueOnce([makeReminder(1)]);
+    await runDrainLoop(SID, 0, makeAbortSignal());
+    await flushMicrotasks();
+    expect(thinkingMocks.onActionableDequeue).toHaveBeenCalledWith(SID);
+  });
+
+  it("fires onActionableDequeue for a direct_message event (agent DM)", async () => {
+    sessionMocks.dequeueBatch.mockReturnValueOnce([makeDmEvent(1)]);
+    await runDrainLoop(SID, 0, makeAbortSignal());
+    await flushMicrotasks();
+    expect(thinkingMocks.onActionableDequeue).toHaveBeenCalledWith(SID);
+  });
+
   // ── AC: Non-actionable batches do NOT fire thinking ─────────────────────
 
   it("does NOT fire onActionableDequeue for service-message-only batch", async () => {
     sessionMocks.dequeueBatch.mockReturnValueOnce([makeServiceMsg(1)]);
-    await runDrainLoop(SID, 0, makeAbortSignal());
-    await flushMicrotasks();
-    expect(thinkingMocks.onActionableDequeue).not.toHaveBeenCalled();
-  });
-
-  it("does NOT fire onActionableDequeue for reminder-only batch", async () => {
-    sessionMocks.dequeueBatch.mockReturnValueOnce([makeReminder(1)]);
     await runDrainLoop(SID, 0, makeAbortSignal());
     await flushMicrotasks();
     expect(thinkingMocks.onActionableDequeue).not.toHaveBeenCalled();

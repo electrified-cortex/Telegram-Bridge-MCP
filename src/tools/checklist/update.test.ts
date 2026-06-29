@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { TelegramError } from "../../telegram.js";
 import { createMockServer, parseResult, isError, errorCode } from "../test-utils.js";
 import { testIdentityGate } from "../test-helpers/identity-gate.js";
@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   unpinChatMessage: vi.fn(),
   resolveChat: vi.fn((): number | TelegramError => 1),
   validateText: vi.fn((): TelegramError | null => null),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  deliverChecklistStaleEvent: vi.fn((..._args: any[]) => true),
 }));
 
 vi.mock("../../telegram.js", async (importActual) => {
@@ -31,7 +33,13 @@ vi.mock("../../session-manager.js", () => ({
   validateSession: mocks.validateSession,
 }));
 
-import { register, resetCompletionTrackingForTest, handleUpdateChecklist } from "./update.js";
+vi.mock("../../session-queue.js", () => ({
+  deliverChecklistStaleEvent: (sid: number, message_id: number, title: string, pending_count: number, stale_after_s: number) =>
+    mocks.deliverChecklistStaleEvent(sid, message_id, title, pending_count, stale_after_s),
+}));
+
+import { register, resetCompletionTrackingForTest, handleUpdateChecklist, handleSendNewChecklist } from "./update.js";
+import { armStaleTimer, resetStaleTimer, resetStaleTimerStateForTest } from "./stale-timer.js";
 
 const STEPS = [
   { label: "Install deps", status: "done" },
@@ -388,5 +396,144 @@ describe("update_checklist tool", () => {
       const data = parseResult(result);
       expect(data.updated).toBe(true);
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stale checklist timer — unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PENDING_STEPS = [
+  { label: "Build", status: "running" as const },
+  { label: "Deploy", status: "pending" as const },
+];
+
+const TERMINAL_STEPS = [
+  { label: "Build", status: "done" as const },
+  { label: "Deploy", status: "skipped" as const },
+];
+
+describe("stale checklist timer — armStaleTimer direct", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mocks.deliverChecklistStaleEvent.mockClear();
+    resetStaleTimerStateForTest();
+  });
+
+  afterEach(() => {
+    resetStaleTimerStateForTest();
+    vi.useRealTimers();
+  });
+
+  it("fires reminder after stale_after elapses with non-terminal steps", () => {
+    armStaleTimer(42, 1, 60_000, "My Task", PENDING_STEPS);
+    vi.advanceTimersByTime(59_000);
+    expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2_000); // total: 61 s
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledOnce();
+    const callArgs = mocks.deliverChecklistStaleEvent.mock.calls[0];
+    expect(callArgs[0]).toBe(1);  // sid
+    expect(callArgs[1]).toBe(42); // message_id
+    expect(callArgs[2]).toBe("My Task"); // title
+    expect(callArgs[3]).toBe(2);  // pending_count
+  });
+
+  it("suppresses reminder when all steps are terminal at fire time", () => {
+    armStaleTimer(43, 1, 60_000, "Done Task", TERMINAL_STEPS);
+    vi.advanceTimersByTime(61_000);
+    expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
+  });
+
+  it("resetStaleTimer delays reminder by stale_after from the reset point", () => {
+    armStaleTimer(44, 1, 60_000, "Active Task", PENDING_STEPS);
+    vi.advanceTimersByTime(30_000); // 30s elapsed
+    resetStaleTimer(44, "Active Task", PENDING_STEPS); // resets clock
+    vi.advanceTimersByTime(30_000); // 30s since reset — NOT stale yet (need 60s)
+    expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(31_000); // now 61s since reset — stale
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledOnce();
+  });
+
+  it("fires only once — no repeat fire after the timer expires", () => {
+    armStaleTimer(45, 1, 60_000, "Task", PENDING_STEPS);
+    vi.advanceTimersByTime(61_000);
+    vi.advanceTimersByTime(61_000); // second interval — no second fire
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("stale checklist timer — integration via handleSendNewChecklist", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.pinChatMessage.mockResolvedValue(true);
+    mocks.unpinChatMessage.mockResolvedValue(true);
+    resetCompletionTrackingForTest();
+    resetStaleTimerStateForTest();
+  });
+
+  afterEach(() => {
+    resetStaleTimerStateForTest();
+    vi.useRealTimers();
+  });
+
+  it("stale_after not set → no timer, no reminder ever fires", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 10, chat: { id: 1 }, date: 0 });
+    await handleSendNewChecklist({ title: "CI", steps: PENDING_STEPS, token: 1123456 });
+    vi.advanceTimersByTime(120_000);
+    expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
+  });
+
+  it("stale_after set → reminder fires after stale_after elapses", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 42, chat: { id: 1 }, date: 0 });
+    await handleSendNewChecklist({
+      title: "CI Pipeline",
+      steps: PENDING_STEPS,
+      token: 1123456,
+      stale_after: 60,
+    });
+    vi.advanceTimersByTime(59_000);
+    expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2_000); // 61s total
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledOnce();
+    const callArgs = mocks.deliverChecklistStaleEvent.mock.calls[0];
+    expect(callArgs[1]).toBe(42);          // message_id
+    expect(callArgs[2]).toBe("CI Pipeline"); // title
+    expect(callArgs[3]).toBe(2);           // pending_count
+    expect(typeof callArgs[0]).toBe("number"); // sid
+  });
+
+  it("handleUpdateChecklist resets the stale timer", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 55, chat: { id: 1 }, date: 0 });
+    mocks.editMessageText.mockResolvedValue({ message_id: 55 });
+    await handleSendNewChecklist({
+      title: "Long Task",
+      steps: PENDING_STEPS,
+      token: 1123456,
+      stale_after: 60,
+    });
+    vi.advanceTimersByTime(30_000); // 30s elapsed
+    // Update resets the clock
+    await handleUpdateChecklist({ title: "Long Task", steps: PENDING_STEPS, message_id: 55, token: 1123456 });
+    vi.advanceTimersByTime(35_000); // only 35s since last update — not stale
+    expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(26_000); // now 61s since last update — stale
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledOnce();
+  });
+
+  it("handleUpdateChecklist with all-terminal steps clears the stale timer", async () => {
+    mocks.sendMessage.mockResolvedValue({ message_id: 66, chat: { id: 1 }, date: 0 });
+    mocks.editMessageText.mockResolvedValue({ message_id: 66 });
+    await handleSendNewChecklist({
+      title: "Finishing Task",
+      steps: PENDING_STEPS,
+      token: 1123456,
+      stale_after: 60,
+    });
+    // Update to all-terminal — timer should be cleared
+    await handleUpdateChecklist({ title: "Finishing Task", steps: TERMINAL_STEPS, message_id: 66, token: 1123456 });
+    vi.advanceTimersByTime(120_000); // advance well past stale_after
+    expect(mocks.deliverChecklistStaleEvent).not.toHaveBeenCalled();
   });
 });

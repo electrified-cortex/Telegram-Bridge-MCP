@@ -687,7 +687,7 @@ describe("outbound-proxy", () => {
       expect(opts.parse_mode).toBe("HTML");
     });
 
-    it("omits caption header when no caption provided (sendPhoto)", async () => {
+    it("injects nametag as caption when no caption provided (sendPhoto) — 10-3082 fix", async () => {
       mocks.activeSessionCount.mockReturnValue(2);
       mocks.getCallerSid.mockReturnValue(1);
       mocks.getSession.mockReturnValue({ name: "Scout" });
@@ -698,7 +698,24 @@ describe("outbound-proxy", () => {
       await (p as unknown as FakeApi).sendPhoto(42, "file_id_123", {});
 
       expect(raw.sendPhoto).toHaveBeenCalled();
-      // No caption in opts means nothing was injected
+      // 10-3082: nametag must be injected as caption even when no caption was provided
+      const [, , opts] = raw.sendPhoto.mock.calls[0] as [number, string, Record<string, unknown>];
+      expect(opts.caption).toBe("`Scout`");
+      expect(opts.parse_mode).toBe("Markdown");
+    });
+
+    it("omits caption header when no caption provided in single-session mode (sendPhoto)", async () => {
+      mocks.activeSessionCount.mockReturnValue(1);
+      mocks.getCallerSid.mockReturnValue(1);
+      mocks.getSession.mockReturnValue({ name: "Scout" });
+
+      const raw = fakeApi();
+      raw.sendPhoto.mockResolvedValue({ message_id: 10, photo: [{ file_id: "f1" }] });
+      const p = proxy(raw);
+      await (p as unknown as FakeApi).sendPhoto(42, "file_id_123", {});
+
+      expect(raw.sendPhoto).toHaveBeenCalled();
+      // Single session: no header injection
       const [, , opts] = raw.sendPhoto.mock.calls[0] as [number, string, Record<string, unknown>];
       expect(opts.caption).toBeUndefined();
     });

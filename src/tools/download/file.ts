@@ -7,6 +7,8 @@ import { getApi, toResult, toError } from "../../telegram.js";
 import { cancelTyping, showTyping } from "../../typing-state.js";
 import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
+import { putFile } from "../../file-store.js";
+import { getSseBaseUrl } from "../../http-mode.js";
 
 /** Text-based MIME types and extensions that are safe to read as UTF-8 */
 const TEXT_MIME_PREFIXES = ["text/"];
@@ -104,6 +106,17 @@ export async function handleDownloadFile({ file_id, file_name, mime_type, token 
       text = bytes.toString("utf-8");
     }
 
+    // 6. Store in bridge file store and return a bridge URL (HTTP mode only).
+    //    Agents can use this URL with action(type: "send_file", url: ...) to
+    //    re-send the downloaded file to Telegram without local-path restrictions.
+    const sseBase = getSseBaseUrl();
+    let bridge_url: string | undefined;
+    if (sseBase) {
+      const ct = mime_type ?? "application/octet-stream";
+      const uuid = putFile(bytes, ct);
+      bridge_url = `${sseBase}/files/${uuid}`;
+    }
+
     cancelTyping();
     return toResult({
       local_path: localPath,
@@ -111,6 +124,7 @@ export async function handleDownloadFile({ file_id, file_name, mime_type, token 
       mime_type: mime_type ?? null,
       file_size: fileSize,
       ...(text !== undefined ? { text } : {}),
+      ...(bridge_url !== undefined ? { bridge_url } : {}),
     });
   } catch (err) {
     cancelTyping();

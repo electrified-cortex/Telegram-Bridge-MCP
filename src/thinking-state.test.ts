@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   sendMessageDraft: vi.fn().mockResolvedValue(true),
   resolveChat: vi.fn((): number | TelegramError => 100),
   getApi: vi.fn(),
+  isTypingActiveSid: vi.fn().mockReturnValue(false),
 }));
 
 // Set up getApi to return the mock object
@@ -29,6 +30,10 @@ vi.mock("./telegram.js", async (importActual) => {
     resolveChat: () => mocks.resolveChat(),
   };
 });
+
+vi.mock("./typing-state.js", () => ({
+  isTypingActiveSid: (sid: number) => mocks.isTypingActiveSid(sid),
+}));
 
 import {
   onActionableDequeue,
@@ -396,6 +401,36 @@ describe("thinking-state", () => {
 
       cancelThinkingForSid(SID_A);
       cancelThinkingForSid(SID_B);
+    });
+  });
+
+  // ── AC10: Typing/Recording priority guard (10-3087) ─────────────────────
+  // Thinking is a weak indicator — it must NOT fire if typing or recording
+  // is already active for the same SID.
+
+  describe("typing/recording priority guard", () => {
+    it("does NOT fire thinking when typing is already active for same SID", async () => {
+      // Simulate active typing for SID
+      mocks.isTypingActiveSid.mockReturnValue(true);
+
+      await onActionableDequeue(SID);
+
+      // Thinking must not have fired — no draft sent
+      expect(mocks.sendMessageDraft).not.toHaveBeenCalled();
+      expect(isThinkingActive(SID)).toBe(false);
+
+      mocks.isTypingActiveSid.mockReturnValue(false);
+    });
+
+    it("fires thinking normally when typing is NOT active for same SID", async () => {
+      mocks.isTypingActiveSid.mockReturnValue(false);
+
+      await onActionableDequeue(SID);
+
+      expect(mocks.sendMessageDraft).toHaveBeenCalled();
+      expect(isThinkingActive(SID)).toBe(true);
+
+      cancelThinkingForSid(SID);
     });
   });
 });

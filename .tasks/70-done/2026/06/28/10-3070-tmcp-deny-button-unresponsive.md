@@ -5,7 +5,7 @@ priority: HIGH
 category: Bug
 status: queued
 reported: 2026-06-28
-source: Operator TG 80704 (voice)
+source: TG 80704
 agent_type: Worker
 model_class: sonnet-class
 branch_target: dev
@@ -13,14 +13,13 @@ branch_target: dev
 
 # Bug: Deny Button Unresponsive in Approval UI
 
-## Operator Report
+## Report
 
-> "I'm clicking deny and it's not doing anything. So that's a bug."
-> — TG 80704 (voice), 2026-06-28
+Deny button has no visible effect when clicked — prompt remains, action is not denied. (TG 80704)
 
 ## Context
 
-Operator was seeing repeated approval prompts (likely for `dequeue` calls triggered by duplicate monitors running simultaneously). When clicking "deny" in the approval UI, the button had no visible effect — the prompt remained, no denial occurred.
+Repeated approval prompts were appearing (likely for `dequeue` calls triggered by duplicate monitors running simultaneously). When clicking "deny" in the approval UI, the button had no visible effect — the prompt remained, no denial occurred.
 
 ## Observed Behavior
 
@@ -61,3 +60,15 @@ Clicking "Deny" should:
 - checked: 3 ACs binary (deny works, prompt dismisses, no ghost approvals); scope explicit (identify CC-level vs TMCP surface, then fix); worker-resolvable investigation; HIGH priority confirmed
 - note: add agent_type: Worker, model_class: sonnet-class, branch_target: dev to frontmatter before foreman picks up. Investigation first — if CC-level, capture repro + file upstream report; if TMCP, fix in governor deny handler.
 <!-- overseer-gate: PASS 2026-06-28 -->
+
+## Verification
+
+- verifier: task-verification agent
+- date: 2026-06-28
+- verdict: APPROVED
+- squash_commit: f5f7b3bb
+- worker_commit: 27910c44
+- tests: 4155/4155 pass
+- local_llm: UNAVAILABLE (language.cortex.lan:8080 timed out — server unreachable)
+- bundled_with: 10-3076
+- notes: All 3 ACs confirmed with citations. Fix: `reply_markup: { inline_keyboard: [] }` added to `editMessageText` denial call in `requestApproval()`. 3 regression tests — deny clears keyboard, approve_N deletes message, toggle re-registers hook then deny. Build clean.
