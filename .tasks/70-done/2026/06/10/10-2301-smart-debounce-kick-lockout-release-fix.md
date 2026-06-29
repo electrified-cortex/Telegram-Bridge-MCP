@@ -1,6 +1,6 @@
 ---
 id: 10-2301-smart-debounce-kick-lockout-release-fix
-title: "BT-2301 Smart-debounce: release lockout on timeout-exit dequeue + full spec verify"
+title: "Unit-12-2301 Smart-debounce: release lockout on timeout-exit dequeue + full spec verify"
 Created: 2026-06-10
 Status: done
 Priority: 10
@@ -10,7 +10,7 @@ Spec: tasks/10-drafts/activity-aware-kick-timing-2026-05-17.md
 Stamp: Overseer-pass-2026-06-10
 ---
 
-# BT-2301 — Smart-debounce kick lockout: release on timeout exits + spec verification
+# Unit-12-2301 — Smart-debounce kick lockout: release on timeout exits + spec verification
 
 ## Context
 
@@ -21,7 +21,7 @@ for the content-returning dequeue path. One gap remains:
 TIMED OUT holds a stale lockout. A reminder due in that window gets suppressed by kickIfAllowed
 (file-state.ts:325-328) and the agent is not woken. The mis-delivery only occurs when the agent
 has a dequeue timeout shorter than the reminder fire window (~6s), but it is real and
-observable at BT.
+observable at Unit-12.
 
 Operator authorized fix: **release the lockout on ALL dequeue exits, including timeout exits.**
 (The original rationale for skipping timeout exits — rate-limiting "wedged" agents — is thin;

@@ -13,7 +13,7 @@ The `activity_file_monitor_instructions` service message ships relative paths:
 - Windows: `tools/monitor.ps1 "<activity_file>"`
 - Linux/macOS: `tools/monitor.sh "<activity_file>"`
 
-All pods run with CWD set to their own pod root, not the TMCP repo. Relative path resolution fails with exit 127 on first Monitor arm. Curator hit this at boot 2026-05-23; BT only works because a prior sync vendored `tools/monitor.sh` into the BT pod root.
+All pods run with CWD set to their own pod root, not the TMCP repo. Relative path resolution fails with exit 127 on first Monitor arm. Curator hit this at boot 2026-05-23; Unit-12 only works because a prior sync vendored `tools/monitor.sh` into the Unit-12 pod root.
 
 ## Acceptance Criteria
 

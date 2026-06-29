@@ -4,7 +4,7 @@ title: CRITICAL — Reminder fire mechanism failure — deferred reminder never 
 type: bug
 severity: critical
 status: pending
-filed_by: BT
+filed_by: Unit-12
 filed_at: 2026-05-23T21:00:00Z
 target_repo: electrified-cortex/Telegram-Bridge-MCP
 delegation: Worker-claimable
@@ -26,7 +26,7 @@ A real reminder (`pickup-lenora-230`) reached `fires_in_seconds: 0` while in `st
 
 ## Source
 
-BT filed at: the agents host (`<host>:<deploy-root>/bt/.bt-pod/outbox/bug-bridge-reminder-fire-failure.md`)
+Unit-12 filed at: the agents host (`<host>:<deploy-root>/unit12/.unit12-pod/outbox/bug-bridge-reminder-fire-failure.md`)
 
 ## Investigation needed
 

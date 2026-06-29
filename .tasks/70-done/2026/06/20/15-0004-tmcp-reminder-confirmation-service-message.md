@@ -5,11 +5,11 @@ type: feature
 status: draft
 created: 2026-06-15
 priority: high
-source: Operator voice msg 75128, Curator Task #6, BT backlog (DEFECT 1 + DEFECT 3)
+source: Operator voice msg 75128, Curator Task #6, Unit-12 backlog (DEFECT 1 + DEFECT 3)
 delegation: TMCP maintainer (electrified-cortex/Telegram-Bridge-MCP/)
 related:
-  - BT DEFECT 1: annual-cron loop footgun
-  - BT DEFECT 3: CronCreate durable:true silently session-only
+  - Unit-12 DEFECT 1: annual-cron loop footgun
+  - Unit-12 DEFECT 3: CronCreate durable:true silently session-only
   - Curator spec: .curator-pod/tasks/00-ideas/tmcp-reminder-confirmation-service-message-2026-06-15.md
 signed-by: Curator (Task #6 assignment)
 ---
@@ -24,7 +24,7 @@ When agents call `reminder/set` or `reminder/schedule`, the tool response is min
 - When it will actually fire next (far-future risk)
 - Whether a recurring pattern will roll forward unexpectedly (annual-cron footgun)
 
-This causes silent defects (BT DEFECT 1, DEFECT 3): agents set annual-pinned recurring
+This causes silent defects (Unit-12 DEFECT 1, DEFECT 3): agents set annual-pinned recurring
 reminders that silently re-arm a year out, or rely on CronCreate durable:true which
 doesn't persist cross-restart.
 

@@ -15,7 +15,7 @@ reasoning_effort: medium
 
 ## Context
 
-Durable agents (Curator, BT) repeatedly "go dark" during multi-tool bursts — a recurring Law-5 presence failure that caps Invisibility, Presence, and Compounding on the super-agent rubric. A memory rule has failed 3+ times; the fix must be STRUCTURAL (fires automatically, can't be skipped), not another reminder.
+Durable agents (Curator, Unit-12) repeatedly "go dark" during multi-tool bursts — a recurring Law-5 presence failure that caps Invisibility, Presence, and Compounding on the super-agent rubric. A memory rule has failed 3+ times; the fix must be STRUCTURAL (fires automatically, can't be skipped), not another reminder.
 
 The clean structural fix is a PreToolUse hook firing a `working` animation on every tool call. The infrastructure ALREADY EXISTS but is not wired:
 
@@ -37,7 +37,7 @@ Make presence structural fleet-wide by enabling the hook→animation path:
 2. A PreToolUse tool event causes a `working` animation to appear, with zero agent action required.
 3. DEBOUNCED — fire at most ONE animation per work-burst. The hook/endpoint MUST NOT re-fire while an animation is already active for the session (check `hasActiveAnimation` server-side, or a per-session cooldown). Presence shows once at burst start and self-clears on its timeout. Firing on EVERY tool call is explicitly WRONG: it floods the bridge and TANKS Invisibility (the dimension this is meant to raise). The first tool after silence fires it; subsequent calls within the window are no-ops.
 4. The pod token file holds the current session token after startup (no staleness).
-5. Deploy touches the LOCAL bridge only — does NOT bounce BT's separate container bridge.
+5. Deploy touches the LOCAL bridge only — does NOT bounce Unit-12's separate container bridge.
 6. `tsc --noEmit` passes; `npm run build` succeeds.
 
 ## Proposed approach (reference — Curator diagnosed + drafted; Worker verifies, owns, deploys)
@@ -72,7 +72,7 @@ Not a governance path beyond the pod hook. Rollback = revert `index.ts` + the `e
 
 ## Notes
 
-- This is Curator's #1 super-agent score-lever — it uncaps Invisibility/Presence (currently capping the score at ~2.6/5). It also benefits BT and every pod: fleet-wide structural presence.
+- This is Curator's #1 super-agent score-lever — it uncaps Invisibility/Presence (currently capping the score at ~2.6/5). It also benefits Unit-12 and every pod: fleet-wide structural presence.
 - Curator diagnosed this end-to-end but, per role, does not self-build/deploy bridge code — Worker implements, verifies, and does the careful local-only deploy.
 
 ## Overseer review
