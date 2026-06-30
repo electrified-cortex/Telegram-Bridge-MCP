@@ -14,7 +14,7 @@ vi.mock("./telegram.js", async (importOriginal) => {
   return { ...real, resolveChat: vi.fn().mockReturnValue(12345) };
 });
 
-import { attachSseRoute, notifySseSubscriber, cancelSseConnection } from "./sse-endpoint.js";
+import { attachSseRoute, notifySseSubscriber, cancelSseConnection, closeAllSseConnections } from "./sse-endpoint.js";
 import { notifySession } from "./tools/notify.js";
 import { resetActivityFileStateForTest, isSseMonitorActive } from "./tools/activity/file-state.js";
 import { createSession, resetSessions, getDequeueDefault, setDequeueDefault } from "./session-manager.js";
@@ -356,6 +356,33 @@ describe("GET /sse", () => {
 
       // After cleanup, notifySseSubscriber should be a no-op (sid gone from _connections).
       expect(() => { notifySseSubscriber(sid); }).not.toThrow();
+    });
+  });
+
+  describe("shutdown: closeAllSseConnections", () => {
+    it("sends 'data: cancelled' to an open connection and clears it (graceful Ctrl-C/SIGTERM)", async () => {
+      const collectPromise = collectRawLines(
+        `http://127.0.0.1:${port}/sse?token=${token}`,
+        1,
+        3000,
+        (p) => p.trim() === "data: cancelled",
+      );
+      // Let the connection register in _connections.
+      await new Promise(r => setTimeout(r, 80));
+
+      // Simulate process shutdown closing all SSE streams gracefully.
+      closeAllSseConnections();
+      await new Promise(r => setTimeout(r, 80));
+
+      const lines = await collectPromise;
+      // Client received a clean cancel event instead of a connection-refused/EOF.
+      expect(lines).toContain("data: cancelled");
+      // Connection removed from the registry → notify is now a no-op.
+      expect(() => { notifySseSubscriber(sid); }).not.toThrow();
+    });
+
+    it("is a no-op when there are no open connections", () => {
+      expect(() => { closeAllSseConnections(); }).not.toThrow();
     });
   });
 
