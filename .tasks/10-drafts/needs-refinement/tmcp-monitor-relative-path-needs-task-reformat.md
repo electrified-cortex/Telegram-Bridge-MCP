@@ -9,7 +9,7 @@ metadata:
 
 When TMCP returns the `activity_file_monitor_instructions` service message, the script path is *relative* (`tools/monitor.ps1`, `tools/monitor.sh`). The Curator pod template (`electrified-cortex/pods/.assistant-pod/`) ships no `tools/` directory, so a fresh boot hits exit 127 the first time it tries to arm the activity-file monitor.
 
-**Why:** TMCP onboarding text was written assuming the caller's CWD is the TMCP repo. BT happens to work because earlier sync-work copied `tools/monitor.sh` into BT's pod root (vendored). Curator's pod root has no such copy, so the relative path resolves to a missing file.
+**Why:** TMCP onboarding text was written assuming the caller's CWD is the TMCP repo. Unit-12 happens to work because earlier sync-work copied `tools/monitor.sh` into Unit-12's pod root (vendored). Curator's pod root has no such copy, so the relative path resolves to a missing file.
 
 **How to apply:**
 

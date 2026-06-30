@@ -1,7 +1,7 @@
 # Defect: SSE activity subscription not released on bridge shutdown
 
 **Reported:** 2026-06-28
-**Reporter:** Ops (observed during deliberate TMCP version bump on bt-bridge)
+**Reporter:** Ops (observed during deliberate TMCP version bump on unit12-bridge)
 **Severity:** Low / UX
 
 ## Description

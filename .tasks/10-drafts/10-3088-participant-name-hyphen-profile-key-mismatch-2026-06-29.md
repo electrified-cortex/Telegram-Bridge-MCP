@@ -7,11 +7,11 @@
 
 ## Problem
 
-TMCP participant session names containing hyphens (e.g., `Zhu-Li`, `BT-7274`) produce
+TMCP participant session names containing hyphens (e.g., `Scout-7`, `Unit-12`) produce
 a profile key that strips or rejects the hyphen, resulting in a mismatch:
 
-- Agent registers with name `Zhu-Li`
-- Profile is saved/loaded under key `ZhuLi` (hyphen stripped) or key creation fails
+- Agent registers with name `Scout-7`
+- Profile is saved/loaded under key `Scout7` (hyphen stripped) or key creation fails
 - Agent cannot load its own profile because the stored key does not match the name
 
 ## Impact
@@ -24,8 +24,8 @@ Known affected: any agent whose canonical session name contains a hyphen.
 
 ## Acceptance Criteria
 
-- AC-1: `profile/save` with `key: "Zhu-Li"` stores without error
-- AC-2: `profile/load` with `key: "Zhu-Li"` retrieves the correct profile
+- AC-1: `profile/save` with `key: "Scout-7"` stores without error
+- AC-2: `profile/load` with `key: "Scout-7"` retrieves the correct profile
 - AC-3: Hyphen is preserved verbatim in the key (no stripping, no normalization)
 - AC-4: Existing profile keys without hyphens are unaffected
 - AC-5: Round-trip test: save key with hyphen, load same key, assert identity

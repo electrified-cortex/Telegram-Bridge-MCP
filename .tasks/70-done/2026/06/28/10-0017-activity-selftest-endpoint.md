@@ -2,7 +2,7 @@
 created: 2026-06-27
 status: draft
 priority: 10
-source: comms-hardening-tomorrow (BT-7274 analysis)
+source: comms-hardening-tomorrow (Unit-12 analysis)
 repo: electrified-cortex/Telegram-Bridge-MCP
 type: Feature
 agent_type: Worker
@@ -14,7 +14,7 @@ reasoning_effort: medium
 
 ## Context
 
-BT's comms-permanence-hardening analysis (BT-7274) identified that SSE subscription health cannot be verified solo — the AC-1 self-notify filter (implemented in 10-0004) blocks agents from receiving their own injected events. The current workaround requires the operator to send a real message to confirm SSE receipt.
+Unit-12's comms-permanence-hardening analysis (Unit-12) identified that SSE subscription health cannot be verified solo — the AC-1 self-notify filter (implemented in 10-0004) blocks agents from receiving their own injected events. The current workaround requires the operator to send a real message to confirm SSE receipt.
 
 This task builds the structural fix: a server-side endpoint that injects a synthetic operator-sourced notify into the caller's own SSE stream, bypassing AC-1. With this endpoint, any agent can run a self-contained SSE liveness check without operator participation.
 

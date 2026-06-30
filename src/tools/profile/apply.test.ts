@@ -229,7 +229,7 @@ describe("applyProfile — reminder guard behavior", () => {
   });
 });
 
-describe("applyProfile — last_received/last_sent loop fix (BT-7274)", () => {
+describe("applyProfile — last_received/last_sent loop fix (Unit-12)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listReminders.mockReturnValue([]);

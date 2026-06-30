@@ -3,7 +3,7 @@ id: task-7-reminders-kick-activity-monitor
 title: Fix TMCP reminders not kicking activity file monitor
 status: review
 created: 2026-05-27
-source: Overseer bug report (BT confirmed not hard-blocked, normal priority)
+source: Overseer bug report (Unit-12 confirmed not hard-blocked, normal priority)
 target-file: src/tools/dequeue.ts
 delegation: Worker (after Overseer review)
 completed: 2026-05-27

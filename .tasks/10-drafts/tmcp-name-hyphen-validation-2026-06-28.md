@@ -12,7 +12,7 @@ delegation: foreman
 
 ## Bug
 
-TMCP's name validation (used in `session/start` and related calls) rejects hyphens (`-`). Agent names like `Zhu-Li` or compound identifiers with hyphens fail validation. Hyphens should be allowed.
+TMCP's name validation (used in `session/start` and related calls) rejects hyphens (`-`). Agent names like `Scout-7` or compound identifiers with hyphens fail validation. Hyphens should be allowed.
 
 ## Expected
 
@@ -28,6 +28,6 @@ Name validation logic — likely in `session/start` handler or a shared name-val
 
 ## Acceptance Criteria
 
-- [ ] A name containing one or more hyphens (e.g. `Zhu-Li`) is accepted by `session/start` without error.
+- [ ] A name containing one or more hyphens (e.g. `Scout-7`) is accepted by `session/start` without error.
 - [ ] Existing valid-name tests still pass.
 - [ ] New test: name with hyphen → accepted; name with hyphen → round-trips correctly in session listing.

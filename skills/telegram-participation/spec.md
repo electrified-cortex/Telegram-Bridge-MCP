@@ -111,7 +111,7 @@ Single call: `dequeue()`. Handle any queued updates. If a `post_compact_monitor_
 
 ### R4 — Post-connect setup
 
-1. **Profile load (first):** `action(type: 'profile/load', key: '<agent-name>')`. Use the pod's own identifier (e.g. `bt`, `curator`, `zhuli`, `overseer`). MUST use the agent's own key — never another session's key. Idempotent; safe after compaction. Ensures voice, animation, and reminder settings are loaded before any further setup.
+1. **Profile load (first):** `action(type: 'profile/load', key: '<agent-name>')`. Use the pod's own identifier (e.g. `unit12`, `curator`, `scout7`, `overseer`). MUST use the agent's own key — never another session's key. Idempotent; safe after compaction. Ensures voice, animation, and reminder settings are loaded before any further setup.
 2. **Boot animation:** `send(type: 'animation', preset: 'working', timeout: 60, token)`. Fires the earliest visible presence signal — operator sees activity within seconds of session anchor instead of waiting through silent setup. 60s temporary; auto-clears or is superseded by the first real send. MUST fire after Step 1 (profile/load provides the session's voice/animation settings).
 3. **Setup delegation:** `help('startup')` — activity monitor arm and dequeue defaults. Profile load is now handled in Step 1.
 

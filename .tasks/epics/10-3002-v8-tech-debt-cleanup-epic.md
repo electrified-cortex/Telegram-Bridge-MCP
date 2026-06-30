@@ -19,7 +19,7 @@ making the existing code honest, clean, and maintainable.
 
 This is a deployment-of-agents epic. Work is parallelizable across many
 independent concerns and should be dispatched to multiple background agents,
-with curator/BT review before any merge.
+with curator/Unit-12 review before any merge.
 
 Operator directive (2026-06-13, distilled): TMCP is feature-stable. V8 should
 feel like a major release not because of new features alone but because the
@@ -295,7 +295,7 @@ largely independent workstream. Recommended dispatch:
 | Agent G | §8 (security audit) — Opus level, adversarial mandate |
 
 Each agent produces a PR (worktree for §5; direct commit for others unless
-multi-file). Curator/BT reviews before any merge. All PRs must pass `pnpm test`
+multi-file). Curator/Unit-12 reviews before any merge. All PRs must pass `pnpm test`
 and `pnpm lint`.
 
 ---

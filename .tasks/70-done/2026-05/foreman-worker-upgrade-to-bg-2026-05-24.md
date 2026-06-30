@@ -120,7 +120,7 @@ Update both pods' `spec.md` to reference the new lifecycle:
 ## Out of scope (filed elsewhere)
 
 - Reaping stale foreman/worker copies in non-canonical locations — separate cleanup spec.
-- Adopting the same pattern in `.bt-pod/` and `.zhuli-pod/` — Telegram-class pods, separate workstream.
+- Adopting the same pattern in `.unit12-pod/` and `.scout7-pod/` — Telegram-class pods, separate workstream.
 - Curator/Overseer pod migrations — Overseer is already migrated; Curator can stay TTY-attached (bypassPermissions, foreground) for the operator's local development. No `--bg` migration needed for Curator unless operator changes the dev pattern.
 
 ## Acceptance criteria
@@ -157,7 +157,7 @@ Spec drafted. Available for clarification or v0.2 if Overseer's gate review surf
 **Checked:**
 
 - ACs 1-7: binary and testable (spawn writes ids, exit terminates cleanly, --continue recovers context, spec.md updated)
-- Scope: bounded to canonical stations path only; stale copies, bt/zhuli pods, and Curator explicitly out of scope
+- Scope: bounded to canonical stations path only; stale copies, unit12/scout7 pods, and Curator explicitly out of scope
 - Delegation: Overseer-driven — correct; I am executing this directly, not routing to foreman
 - Reference implementation: .overseer-pod/ is the validated prototype; R1/R2 are effectively port operations
 - Open questions Q1/Q2/Q3: implementation-time verification items, all explicitly called out; not blocking pre-flight

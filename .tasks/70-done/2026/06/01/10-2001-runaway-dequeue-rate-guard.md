@@ -86,7 +86,7 @@ None.
 
 ## Rollback
 
-Not a governance path (no hook, no `.claude/`, no agent spec). Rollback = revert the `dequeue.ts` change. Deploy = `npm run build` + restart the bridge; LOCAL bridge only — do NOT bounce BT's separate container bridge.
+Not a governance path (no hook, no `.claude/`, no agent spec). Rollback = revert the `dequeue.ts` change. Deploy = `npm run build` + restart the bridge; LOCAL bridge only — do NOT bounce Unit-12's separate container bridge.
 
 ## Notes
 

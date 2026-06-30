@@ -13,7 +13,7 @@ branch_target: dev
 agent_type: Worker
 model_class: sonnet-class
 reasoning_effort: high
-source: "BT-7274 / Operator — 2026-06-26: quickchart.io flagged as third-party data-egress red flag; operator requested fully local equivalent."
+source: "Unit-12 / Operator — 2026-06-26: quickchart.io flagged as third-party data-egress red flag; operator requested fully local equivalent."
 related:
   - .tasks/10-drafts/10-3053-mermaid-companion-render-pass.md
 ---
@@ -60,7 +60,7 @@ to kroki/build-our-own). A chart renderer is a thin wrapper:
 
 - **Easy mode (default, 80% case):** a simplified shape, nothing else —
   ```json
-  { "title": "BT Session Activity", "type": "line",
+  { "title": "Unit-12 Session Activity", "type": "line",
     "xLabels": ["12 AM","1 AM","2 AM"],
     "series": [ { "label": "Log entries / 30min", "data": [0,5,28] } ] }
   ```
@@ -80,7 +80,7 @@ the SVG-vs-easy-install tension must be resolved first:
 
 - **`node-canvas` (Cairo)** supports SVG surfaces → real SVG markup, but has
   finicky native build deps (Cairo/Pango) that may not build cleanly in-container.
-- **`@napi-rs/canvas` (skia, prebuilt — already in the npx cache per BT)** installs
+- **`@napi-rs/canvas` (skia, prebuilt — already in the npx cache per Unit-12)** installs
   easily but is **raster/PNG-only** (no SVG export).
 - **`skia-canvas`** is canvas + SVG export with prebuilt binaries — a middle option.
 
@@ -128,7 +128,7 @@ Either way the hard constraint holds: **local, no browser, no network.**
   install impact in the PR.
 - Show the `upload_document` chat action across render + attach (shared with epic).
 
-## Decisions (BT open questions, resolved/recommended)
+## Decisions (Unit-12 open questions, resolved/recommended)
 
 - **OQ1 (engine):** prefer the `chartjs-node-canvas` wrapper for speed-to-ship,
   **gated on the SVG spike** — its SVG path depends on the canvas backend. If SVG
@@ -163,6 +163,6 @@ Either way the hard constraint holds: **local, no browser, no network.**
 
 ## Notes
 
-- Pairs with the same fleet-drive cluster BT referenced: S-IM native file/attachment
+- Pairs with the same fleet-drive cluster Unit-12 referenced: S-IM native file/attachment
   send, and the TMCP diagram detect/render/attach (this epic). This story is the
   "make the chart image" half; 10-3051/10-3053 are the "send the image" half.

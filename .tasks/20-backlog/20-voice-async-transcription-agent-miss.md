@@ -1,6 +1,6 @@
 # Bug: Voice message missed when agent quiet during async transcription
 
-**Reported:** 2026-05-27 (operator + BT observation)
+**Reported:** 2026-05-27 (operator + Unit-12 observation)
 **Priority:** 20
 **Area:** Voice / transcription / activity-file kick
 
@@ -19,28 +19,28 @@ Agent goes unresponsive to a voice message. When investigated, the agent is aliv
 ## Investigation needed
 
 - Confirm whether TMCP touches the activity file on transcription completion (not just on message arrival)
-- Check BT's session logs around the incident for kick timing vs message timestamps
+- Check Unit-12's session logs around the incident for kick timing vs message timestamps
 - Reproduce: send voice message to a quiet agent, observe whether it wakes on transcription complete
 
 ## Fix direction
 
 Ensure activity file is touched (or a dequeue event emitted) when voice transcription completes, not only when the raw message arrives.
 
-## BT diagnostic (2026-05-28T05:32 UTC)
+## Unit-12 diagnostic (2026-05-28T05:32 UTC)
 
-BT confirmed: voice messages DO generate activity kicks in normal operation. The two "Hello?" incidents were:
-1. Compaction recovery silence — BT was re-arming monitors, not dark
-2. Batch-drain delay — 5 messages pending, BT was processing before responding
+Unit-12 confirmed: voice messages DO generate activity kicks in normal operation. The two "Hello?" incidents were:
+1. Compaction recovery silence — Unit-12 was re-arming monitors, not dark
+2. Batch-drain delay — 5 messages pending, Unit-12 was processing before responding
 3. One TTS `fetch failed` at ~10 PM — audio didn't deliver, no text fallback (TTS infra failure, not kick issue)
 
-BT did NOT observe a confirmed missing-kick case, but notes the pattern is theoretically possible: if the kick fires before transcription completes, dequeue returns a non-content event, agent moves on, and voice content is missed until next organic wake.
+Unit-12 did NOT observe a confirmed missing-kick case, but notes the pattern is theoretically possible: if the kick fires before transcription completes, dequeue returns a non-content event, agent moves on, and voice content is missed until next organic wake.
 
-**BT recommendation:** Check TMCP logs for `transcription_complete` events that fired significantly after `message_received`, with no subsequent activity-file kick.
+**Unit-12 recommendation:** Check TMCP logs for `transcription_complete` events that fired significantly after `message_received`, with no subsequent activity-file kick.
 
 The "Hello?" incidents appear to be UX perception issues (compaction gap + batch drain) rather than confirmed transcription-kick bugs. Bug status: **unconfirmed — possible edge case.**
 
 ## Source
 
 - Operator voice 62932 — `tasks/00-ideas/voice-async-transcription-sleep-bug-voice-62932-2026-05-27.md`
-- BT outbox report: the agents host (`<deploy-root>/bt/.bt-pod/outbox/20260528T053206Z-96c22cc3.txt`)
+- Unit-12 outbox report: the agents host (`<deploy-root>/unit12/.unit12-pod/outbox/20260528T053206Z-96c22cc3.txt`)
 

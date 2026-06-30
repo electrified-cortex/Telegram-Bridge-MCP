@@ -16,7 +16,7 @@ Spec: tasks/10-drafts/notification-wake-contract-SPEC.md §5-a
 
 `LOCKOUT_DEFAULT_MS = 300_000` at `src/tools/activity/file-state.ts:67` is **suppression-only** — it prevents duplicate notifications for 5 min after a notification fires. It does NOT proactively re-notify after 5 min of inactivity with pending content. A stopped agent with pending queue content and no new inbound messages gets: initial notification → silence forever.
 
-Note: divergence D (timed_out exits not releasing lockout) was **already fixed by BT-2301** (see `dequeue.ts:511`). Do not re-fix it.
+Note: divergence D (timed_out exits not releasing lockout) was **already fixed by Unit-12-2301** (see `dequeue.ts:511`). Do not re-fix it.
 
 Note: divergence E (`hasPendingUserContent` excludes reminders) is deferred to §5-b. Add a `// TODO §5-b: include reminder types once §5-b lands` comment at the re-notify condition site. Do not change the function.
 
@@ -66,7 +66,7 @@ Tests go in `src/tools/activity/file-state.test.ts`. Use `vi.useFakeTimers()` + 
 - Configuring lockout duration per profile.
 - TMCP-side monitor liveness/backstop detection (20-backlog).
 - `hasPendingUserContent` reminder counting (10-2304; leave TODO comment).
-- Divergence D (already fixed by BT-2301 — do not touch).
+- Divergence D (already fixed by Unit-12-2301 — do not touch).
 
 ## Notes
 

@@ -34,7 +34,7 @@ Operator approval dialog (up to 120s). Approved → store token; R3. Denied/time
 
 ## R4 — Post-connect setup
 
-`action(type: 'profile/load', key: '<agent-name>')` — load own profile (voice, animation, reminders). Use the pod's own identifier (e.g. `bt`, `curator`, `zhuli`, `overseer`). Idempotent; safe after compaction.
+`action(type: 'profile/load', key: '<agent-name>')` — load own profile (voice, animation, reminders). Use the pod's own identifier (e.g. `unit12`, `curator`, `scout7`, `overseer`). Idempotent; safe after compaction.
 
 `send(type: 'animation', preset: 'working', timeout: 60, token: <token>)` — fire next, before any further setup, so the operator sees a presence signal during the remainder of boot. 60s temp auto-clears.
 
@@ -46,7 +46,7 @@ Then `help('startup')` — covers monitor arm and dequeue defaults.
 
 **Step 1 — SSE:** `action(type: 'activity/listen')`.
 - Returns `ok: true` → HTTP mode active. Inspect the `command` in the response. If `BRIDGE_ADVERTISE_HOST` is configured on the bridge, the URL already uses the correct connect host — arm immediately. Otherwise, **host-rewrite first:** if the URL contains `0.0.0.0`, replace it based on your environment:
-  - **Container pod** (running inside Docker on agents host — BT, Zhu-Li, etc.): replace with `bridge`
+  - **Container pod** (running inside Docker on agents host — Unit-12, Scout-7, etc.): replace with `bridge`
   - **Host pod** (running directly on host OS — Curator, Overseer, etc.): replace with `127.0.0.1`
   - Rule of thumb: if your pod root is under `/opt/stacks/`, use `bridge`; if under a user home dir, use `127.0.0.1`.
   Arm: `Monitor(command: "<rewritten command>", persistent: true, description: "Telegram SSE notifier")`. Retain the task ID. **SSE is now your SOLE transport — SKIP Step 2 and proceed to R6. Do NOT arm file-watch.**

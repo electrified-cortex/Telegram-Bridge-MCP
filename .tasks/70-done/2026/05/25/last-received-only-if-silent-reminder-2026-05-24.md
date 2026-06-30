@@ -44,7 +44,7 @@ State machine:
 
 ## Use case
 
-"If operator sends BT a question and BT replies, do not nudge. If operator sends BT a question and BT goes silent without replying, nudge after N seconds."
+"If operator sends Unit-12 a question and Unit-12 replies, do not nudge. If operator sends Unit-12 a question and Unit-12 goes silent without replying, nudge after N seconds."
 
 This matches the typical "have you forgotten about this?" pattern.
 

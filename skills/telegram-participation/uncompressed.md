@@ -72,7 +72,7 @@ Call once at startup; handle any queued updates. If a `post_compact_monitor_reco
 action(type: 'profile/load', key: '<agent-name>')
 ```
 
-Load the agent's own profile — voice, animation presets, reminders. Use the pod's own identifier (e.g. `bt`, `curator`, `zhuli`, `overseer`). MUST use the agent's own key; never another session's key. Idempotent — safe to re-call after compaction. Must run after R2 (session anchor complete) and before the monitor arm.
+Load the agent's own profile — voice, animation presets, reminders. Use the pod's own identifier (e.g. `unit12`, `curator`, `scout7`, `overseer`). MUST use the agent's own key; never another session's key. Idempotent — safe to re-call after compaction. Must run after R2 (session anchor complete) and before the monitor arm.
 
 **Step 2 — Boot animation:**
 

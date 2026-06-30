@@ -64,7 +64,7 @@ Operator directive (2026-05-27, distilled): every tool call should have its own 
 
 ## Delivery
 
-Break into per-path tasks once the coverage audit produces the gap list. Dispatch background agents for mechanical help-topic writes; Curator/BT review staged output before merge.
+Break into per-path tasks once the coverage audit produces the gap list. Dispatch background agents for mechanical help-topic writes; Curator/Unit-12 review staged output before merge.
 
 
 ---
