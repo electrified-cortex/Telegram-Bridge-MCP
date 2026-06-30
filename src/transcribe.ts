@@ -12,6 +12,7 @@
 
 import { pipeline, env, type AutomaticSpeechRecognitionPipeline } from "@huggingface/transformers";
 import { getApi, resolveChat, trySetMessageReaction, type ReactionEmoji } from "./telegram.js";
+import { fetchWithRetry } from "./fetch-retry.js";
 
 const RE_TRAILING_SLASHES = /\/+$/;
 
@@ -105,7 +106,7 @@ export async function transcribeVoice(fileId: string): Promise<string> {
 
   // 2. Download the audio bytes
   const url = `https://api.telegram.org/file/bot${token}/${fileInfo.file_path}`;
-  const res = await fetch(url);
+  const res = await fetchWithRetry(url);
   if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText}`);
   const audioBytes = Buffer.from(await res.arrayBuffer());
 

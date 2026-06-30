@@ -89,9 +89,10 @@ describe("download_file tool", () => {
     // Binary PDF — no text property
     expect(data.text).toBeUndefined();
 
-    // Correct download URL used
+    // Correct download URL used (via fetchWithRetry, which injects an abort signal)
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.telegram.org/file/bottesttoken123/documents/AgAD_abc.pdf"
+      "https://api.telegram.org/file/bottesttoken123/documents/AgAD_abc.pdf",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
 
