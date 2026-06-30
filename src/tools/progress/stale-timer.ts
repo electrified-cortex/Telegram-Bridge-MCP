@@ -22,8 +22,12 @@ const _timers = new Map<number, StaleTimerEntry>();
 function fireStaleReminder(message_id: number): void {
   const entry = _timers.get(message_id);
   if (!entry) return;
-  _timers.delete(message_id);
-  if (entry.percent >= 100) return; // suppressed — progress is complete
+  if (entry.percent >= 100) {
+    // Progress complete — stop nagging and discard the timer.
+    clearTimeout(entry.timer);
+    _timers.delete(message_id);
+    return;
+  }
   deliverProgressStaleEvent(
     entry.sid,
     message_id,
@@ -31,6 +35,11 @@ function fireStaleReminder(message_id: number): void {
     entry.percent,
     Math.round(entry.stale_after_ms / 1000),
   );
+  // RECURRING: re-arm for another interval so the agent keeps getting nagged
+  // (e.g. at 10 min, then 20 min, …) until the bar reaches 100% (clearStaleTimer /
+  // suppress), is advanced (resetStaleTimer reschedules from the update), or removed.
+  const timer = setTimeout(() => { fireStaleReminder(message_id); }, entry.stale_after_ms);
+  _timers.set(message_id, { ...entry, timer });
 }
 
 /**
