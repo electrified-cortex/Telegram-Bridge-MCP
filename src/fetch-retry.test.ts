@@ -15,7 +15,7 @@ const makeResponse = (status = 200): Response =>
 describe("fetchWithRetry", () => {
   it("returns the response on first success (no retry)", async () => {
     const res = makeResponse();
-    const fetchFn = spyFetch(async () => res);
+    const fetchFn = spyFetch(() => Promise.resolve(res));
 
     const out = await fetchWithRetry("https://api.telegram.org/file/x");
 
@@ -26,10 +26,9 @@ describe("fetchWithRetry", () => {
   it("retries once then succeeds (default = 2 attempts)", async () => {
     const good = makeResponse();
     let n = 0;
-    const fetchFn = spyFetch(async () => {
-      if (n++ === 0) throw new TypeError("fetch failed");
-      return good;
-    });
+    const fetchFn = spyFetch(() =>
+      n++ === 0 ? Promise.reject(new TypeError("fetch failed")) : Promise.resolve(good),
+    );
 
     const out = await fetchWithRetry("https://x/file");
 
@@ -39,9 +38,7 @@ describe("fetchWithRetry", () => {
 
   it("throws the last error after all attempts fail (default 2 attempts)", async () => {
     const err = new TypeError("fetch failed");
-    const fetchFn = spyFetch(async () => {
-      throw err;
-    });
+    const fetchFn = spyFetch(() => Promise.reject(err));
 
     await expect(fetchWithRetry("https://x/file")).rejects.toBe(err);
     expect(fetchFn).toHaveBeenCalledTimes(2);
@@ -49,7 +46,7 @@ describe("fetchWithRetry", () => {
 
   it("does NOT retry an HTTP-error response (4xx/5xx is returned, not thrown)", async () => {
     const res500 = makeResponse(500);
-    const fetchFn = spyFetch(async () => res500);
+    const fetchFn = spyFetch(() => Promise.resolve(res500));
 
     const out = await fetchWithRetry("https://x/file");
 
@@ -61,10 +58,11 @@ describe("fetchWithRetry", () => {
   it("uses a fresh AbortController (distinct signal) per attempt", async () => {
     const signals: (AbortSignal | null)[] = [];
     let n = 0;
-    spyFetch(async (_url, init) => {
+    spyFetch((_url, init) => {
       signals.push(init?.signal ?? null);
-      if (n++ === 0) throw new TypeError("transient");
-      return makeResponse();
+      return n++ === 0
+        ? Promise.reject(new TypeError("transient"))
+        : Promise.resolve(makeResponse());
     });
 
     await fetchWithRetry("https://x/file");
@@ -80,9 +78,9 @@ describe("fetchWithRetry", () => {
     const fetchFn = spyFetch(
       (_url, init) =>
         new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () =>
-            reject(new DOMException("The operation was aborted.", "AbortError")),
-          );
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
         }),
     );
 
@@ -93,9 +91,7 @@ describe("fetchWithRetry", () => {
   });
 
   it("honors a custom attempts count", async () => {
-    const fetchFn = spyFetch(async () => {
-      throw new TypeError("x");
-    });
+    const fetchFn = spyFetch(() => Promise.reject(new TypeError("x")));
 
     await expect(
       fetchWithRetry("https://x/file", undefined, { attempts: 3 }),
@@ -104,7 +100,7 @@ describe("fetchWithRetry", () => {
   });
 
   it("passes caller init through while injecting the abort signal", async () => {
-    const fetchFn = spyFetch(async () => makeResponse());
+    const fetchFn = spyFetch(() => Promise.resolve(makeResponse()));
 
     await fetchWithRetry("https://x/file", { headers: { "x-test": "1" } });
 
@@ -115,14 +111,16 @@ describe("fetchWithRetry", () => {
 
   it("clears the per-attempt timer on success (no late abort fires)", async () => {
     let captured: AbortSignal | undefined;
-    const fetchFn = spyFetch(async (_url, init) => {
+    const fetchFn = spyFetch((_url, init) => {
       captured = init?.signal ?? undefined;
-      return makeResponse();
+      return Promise.resolve(makeResponse());
     });
 
     await fetchWithRetry("https://x/file", undefined, { perAttemptTimeoutMs: 20 });
     // Wait past the timeout window: if clearTimeout failed, abort would fire late.
-    await new Promise((r) => setTimeout(r, 45));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 45);
+    });
 
     expect(captured?.aborted).toBe(false);
     expect(fetchFn).toHaveBeenCalledTimes(1);

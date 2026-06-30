@@ -45,7 +45,9 @@ export async function fetchWithRetry(
 
   for (let i = 0; i < attempts; i++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), perAttemptTimeoutMs);
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, perAttemptTimeoutMs);
     try {
       return await fetch(url, { ...init, signal: controller.signal });
     } catch (err) {
