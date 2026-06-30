@@ -33,8 +33,12 @@ function countPending(steps: ChecklistStep[]): number {
 function fireStaleReminder(message_id: number): void {
   const entry = _timers.get(message_id);
   if (!entry) return;
-  _timers.delete(message_id);
-  if (isAllTerminal(entry.steps)) return; // suppressed — all steps are terminal
+  if (isAllTerminal(entry.steps)) {
+    // All steps reached a terminal state — stop nagging and discard the timer.
+    clearTimeout(entry.timer);
+    _timers.delete(message_id);
+    return;
+  }
   const pending_count = countPending(entry.steps);
   deliverChecklistStaleEvent(
     entry.sid,
@@ -43,6 +47,11 @@ function fireStaleReminder(message_id: number): void {
     pending_count,
     Math.round(entry.stale_after_ms / 1000),
   );
+  // RECURRING: re-arm for another interval so the agent keeps getting nagged
+  // (e.g. at 10 min, then 20 min, …) until the checklist is modified
+  // (resetStaleTimer), completed (clearStaleTimer / all-terminal), or removed.
+  const timer = setTimeout(() => { fireStaleReminder(message_id); }, entry.stale_after_ms);
+  _timers.set(message_id, { ...entry, timer });
 }
 
 /**

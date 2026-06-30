@@ -201,10 +201,23 @@ describe("stale progress timer — armStaleTimer direct", () => {
     expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledOnce();
   });
 
-  it("fires only once — no repeat fire after the timer expires", () => {
+  it("nags RECURRINGLY — re-fires each interval until 100% (e.g. 10 min, then 20 min, …)", () => {
     armStaleTimer(45, 1, 60_000, "Task", 50);
-    vi.advanceTimersByTime(61_000);
-    vi.advanceTimersByTime(61_000); // second interval — no second fire
+    vi.advanceTimersByTime(61_000); // first nag ("minute 10")
+    expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000); // second interval, still < 100% ("minute 20")
+    expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(60_000); // keeps nagging while incomplete
+    expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops nagging once progress is updated to 100%", () => {
+    armStaleTimer(46, 1, 60_000, "Task", 50);
+    vi.advanceTimersByTime(61_000); // first nag
+    expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledTimes(1);
+    resetStaleTimer(46, "Task", 100); // bar completed via update
+    vi.advanceTimersByTime(61_000); // fire sees 100% → suppress + stop
+    vi.advanceTimersByTime(180_000); // really stopped — no further nags
     expect(mocks.deliverProgressStaleEvent).toHaveBeenCalledTimes(1);
   });
 });

@@ -454,11 +454,35 @@ describe("stale checklist timer — armStaleTimer direct", () => {
     expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledOnce();
   });
 
-  it("fires only once — no repeat fire after the timer expires", () => {
+  it("nags RECURRINGLY — re-fires each interval until fixed (e.g. 10 min, then 20 min, …)", () => {
     armStaleTimer(45, 1, 60_000, "Task", PENDING_STEPS);
-    vi.advanceTimersByTime(61_000);
-    vi.advanceTimersByTime(61_000); // second interval — no second fire
+    vi.advanceTimersByTime(61_000); // first nag ("minute 10")
     expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000); // second interval, still not fixed ("minute 20")
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(60_000); // keeps nagging while unfixed
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops nagging once the checklist is updated to all-terminal", () => {
+    armStaleTimer(46, 1, 60_000, "Task", PENDING_STEPS);
+    vi.advanceTimersByTime(61_000); // first nag
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(1);
+    resetStaleTimer(46, "Task", TERMINAL_STEPS); // checklist finished via update
+    vi.advanceTimersByTime(61_000); // fire sees all-terminal → suppress + stop
+    vi.advanceTimersByTime(180_000); // really stopped — no further nags
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("a modification resets the nag clock (no nag until a fresh interval elapses)", () => {
+    armStaleTimer(47, 1, 60_000, "Task", PENDING_STEPS);
+    vi.advanceTimersByTime(61_000); // first nag fires
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(1);
+    resetStaleTimer(47, "Task", PENDING_STEPS); // agent touched it (still pending)
+    vi.advanceTimersByTime(59_000); // not yet stale since the reset
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(2_000); // 61s since reset → next nag
+    expect(mocks.deliverChecklistStaleEvent).toHaveBeenCalledTimes(2);
   });
 });
 
