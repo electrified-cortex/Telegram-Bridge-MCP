@@ -30,7 +30,7 @@ import { enableLogging, isLoggingEnabled, rollLog, logEvent as logLocalEvent, fl
 import { attachEventRoute } from "./event-endpoint.js";
 import { attachDequeueRoute } from "./dequeue-endpoint.js";
 import { attachHookRoutes } from "./hook-animation.js";
-import { attachSseRoute, notifySseSubscriber } from "./sse-endpoint.js";
+import { attachSseRoute, notifySseSubscriber, closeAllSseConnections } from "./sse-endpoint.js";
 import { attachActivitySelftestRoute } from "./activity-selftest-endpoint.js";
 import { attachActivityListenCheckRoute } from "./activity-listen-check-endpoint.js";
 import { setSseBaseUrl } from "./http-mode.js";
@@ -95,6 +95,12 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
     const shutdownSequence = (async () => {
       // Stop file-store eviction interval (avoids keeping the process alive)
       stopEviction();
+      // Gracefully cancel all active SSE activity subscriptions FIRST, before the
+      // HTTP server stops accepting connections. Each subscriber receives
+      // `data: cancelled` so sse-monitor.sh clients exit cleanly instead of
+      // hitting a connection-refused/EOF (exit 255 → manual re-arm). Covers
+      // SIGTERM and SIGINT/Ctrl-C — the bridge-process-level shutdown gap.
+      try { closeAllSseConnections(); } catch { /* best effort */ }
       // Close all HTTP transports
       for (const [sid, t] of httpTransports) {
         try { await t.close(); } catch { /* best effort */ }

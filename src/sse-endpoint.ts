@@ -143,6 +143,28 @@ export function cancelSseConnection(sid: number): void {
   process.stderr.write(`[sse] connection cancelled sid=${sid}\n`);
 }
 
+/**
+ * Gracefully close ALL open SSE connections.
+ *
+ * Emits `data: cancelled` to every active subscriber (via cancelSseConnection)
+ * so sse-monitor.sh clients exit cleanly instead of seeing a connection-refused
+ * / EOF error (which makes the monitor exit 255 and need manual re-arm).
+ *
+ * Called from the process shutdown sequence (SIGTERM / SIGINT, incl. Ctrl-C)
+ * BEFORE the HTTP server stops accepting connections, so the cancel writes land.
+ * Idempotent — a no-op when there are no active connections.
+ */
+export function closeAllSseConnections(): void {
+  // Snapshot keys first: cancelSseConnection mutates _connections during iteration.
+  const sids = [..._connections.keys()];
+  for (const sid of sids) {
+    cancelSseConnection(sid);
+  }
+  if (sids.length > 0) {
+    process.stderr.write(`[sse] closed ${sids.length} connection(s) on shutdown\n`);
+  }
+}
+
 export function attachSseRoute(app: Express): void {
   // ── GET /tools/sse-monitor.sh — serve the filtered SSE monitor script ──────
   // Read-only, no auth required. Allows participants without a repo checkout to
