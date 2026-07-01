@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getActiveSession: vi.fn(() => 0),
   validateSession: vi.fn((_sid?: number, _suffix?: number) => true),
   sendMessage: vi.fn(),
+  sendDocument: vi.fn(),
   sendVoiceDirect: vi.fn(),
   resolveChat: vi.fn((): number => 42),
   validateText: vi.fn((_t?: string): null | { code: string; message: string } => null),
@@ -50,6 +51,16 @@ const mocks = vi.hoisted(() => ({
   routeOutboundMessage: vi.fn(),
   isRichMessagesEnabled: vi.fn((): boolean => false),
   setRichMessagesEnabledForTest: vi.fn(),
+  writeFile: vi.fn(),
+  mkdir: vi.fn(),
+}));
+
+// 10-3058: constrained-send-path tests now let table extraction actually run
+// (real detectAndExtract — this file does not mock ../visual-attachment-pipeline.js),
+// so writeTempVisualFile's fs/promises calls must be mocked to avoid real disk I/O.
+vi.mock("fs/promises", () => ({
+  writeFile: (...args: unknown[]) => mocks.writeFile(...args),
+  mkdir: (...args: unknown[]) => mocks.mkdir(...args),
 }));
 
 vi.mock("../telegram.js", async (importActual) => {
@@ -58,6 +69,7 @@ vi.mock("../telegram.js", async (importActual) => {
     ...actual,
     getApi: () => ({
       sendMessage: mocks.sendMessage,
+      sendDocument: mocks.sendDocument,
     }),
     resolveChat: () => mocks.resolveChat(),
     validateText: (t: string) => mocks.validateText(t),
@@ -186,6 +198,7 @@ import { register } from "./send.js";
 const TOKEN = 1_123_456; // sid=1, suffix=123456
 const SENT_MSG = { message_id: 42 };
 const SENT_VOICE_MSG = { message_id: 43 };
+const SENT_DOC = { message_id: 44 };
 
 describe("send tool", () => {
   let call: (args: Record<string, unknown>) => Promise<unknown>;
@@ -202,7 +215,10 @@ describe("send tool", () => {
     mocks.splitMessage.mockImplementation((t: string) => [t]);
     mocks.synthesizeToOgg.mockResolvedValue(Buffer.from("ogg"));
     mocks.sendMessage.mockResolvedValue(SENT_MSG);
+    mocks.sendDocument.mockResolvedValue(SENT_DOC);
     mocks.sendVoiceDirect.mockResolvedValue(SENT_VOICE_MSG);
+    mocks.writeFile.mockResolvedValue(undefined);
+    mocks.mkdir.mockResolvedValue(undefined);
     mocks.showTyping.mockResolvedValue(undefined);
     mocks.deliverServiceMessage.mockReturnValue(undefined);
     // routeOutboundMessage used by html:/string: rich paths
@@ -317,38 +333,92 @@ describe("send tool", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Case 7b: TABLE_NOT_RENDERED guard — non-GFM paths return explicit error
+  // Case 7b: 10-3058 "Gate trigger — constrained send path" — a table on a send
+  // path that can't use the GFM rich renderer (effect / in-flight audio /
+  // multi-chunk) is now EXTRACTED to an attachment instead of failing loud.
+  // These tests exercise the REAL detectAndExtract (this file does not mock
+  // ../visual-attachment-pipeline.js) with fs/promises + sendDocument mocked
+  // above so Phase 1c's write/resolve/send steps don't touch real disk or
+  // require a real Telegram API.
   // ---------------------------------------------------------------------------
-  it("TABLE_NOT_RENDERED: table + effect returns explicit error (not false success)", async () => {
+  it("10-3058: table + effect → extracted as attachment, delivered (not TABLE_NOT_RENDERED)", async () => {
     const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
     const result = await call({ text: tableText, effect: "fire", token: TOKEN });
-    expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
-    // No send should have occurred
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
-    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
+    expect(isError(result)).toBe(false);
+    // Effect blocks the same-message/GFM paths, so prose falls to the plain
+    // sendMessage chunk loop — but with the table already extracted, replaced
+    // by a placeholder.
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    const [, proseText] = mocks.sendMessage.mock.calls[0] as [number, string, unknown];
+    expect(proseText).not.toContain("| A | B |");
+    // Table delivered as a follow-up document attachment (Phase 2)
+    expect(mocks.sendDocument).toHaveBeenCalledOnce();
+    const [, , docOpts] = mocks.sendDocument.mock.calls[0] as [number, string, { caption?: string }];
+    expect(docOpts?.caption).toBe("📋 table·0");
   });
 
-  it("TABLE_NOT_RENDERED: table + in-flight audio returns explicit error (not false success)", async () => {
+  it("10-3058: table + in-flight audio → extracted as attachment, delivered after queued audio (not TABLE_NOT_RENDERED)", async () => {
     const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
+    // The production fix caches hasInflightAudio(_sid) into a single value for
+    // the whole request (see `_hasInflightAudio` in send.ts) — exactly one real
+    // call happens, so `mockReturnValueOnce` is correct here and, importantly,
+    // auto-reverts to the shared `() => false` default afterward instead of
+    // leaking a sticky `true` into later tests/describe blocks that share this
+    // module-level mock (this file only clears call history between tests via
+    // `vi.clearAllMocks()`, not implementations).
     mocks.hasInflightAudio.mockReturnValueOnce(true);
+    let capturedFn: ((pid: number) => Promise<void>) | undefined;
+    mocks.enqueueTextSend.mockImplementation((_sid: number, fn: (pid: number) => Promise<void>) => {
+      capturedFn = fn;
+      return -2_000_000_003;
+    });
+
     const result = await call({ text: tableText, token: TOKEN });
-    expect(isError(result)).toBe(true);
-    expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
-    // No send should have occurred
+    expect(isError(result)).toBe(false);
+    const data = parseResult(result);
+    expect(data.status).toBe("queued_after_audio");
+    // Not synchronously sent — queued for after the in-flight audio finishes
     expect(mocks.sendMessage).not.toHaveBeenCalled();
-    expect(mocks.enqueueTextSend).not.toHaveBeenCalled();
-    expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
+    expect(mocks.enqueueTextSend).toHaveBeenCalledOnce();
+
+    // Run the queued callback: prose (placeholder, not raw table) then the
+    // extracted attachment, in that order.
+    expect(capturedFn).toBeDefined();
+    await capturedFn!(-2_000_000_003);
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    const [, proseText] = mocks.sendMessage.mock.calls[0] as [number, string, unknown];
+    expect(proseText).not.toContain("| A | B |");
+    expect(mocks.sendDocument).toHaveBeenCalledOnce();
   });
 
-  it("TABLE_NOT_RENDERED: table in multi-chunk send returns explicit error (not false success)", async () => {
+  it("10-3058: table in multi-chunk send → extracted as attachment, delivered (not TABLE_NOT_RENDERED)", async () => {
     const tableText = "| A | B |\n| - | - |\n| 1 | 2 |\n\nFollowing prose that causes a second chunk.";
     mocks.splitMessage.mockReturnValue([tableText.slice(0, 20), tableText.slice(20)]);
     const result = await call({ text: tableText, token: TOKEN });
+    expect(isError(result)).toBe(false);
+    // Prose delivered (however many chunks the mocked splitMessage produces)
+    expect(mocks.sendMessage).toHaveBeenCalled();
+    // Table delivered as a follow-up document attachment
+    expect(mocks.sendDocument).toHaveBeenCalledOnce();
+  });
+
+  it("10-3058: residual guard — oversized table + effect still fails loud (extraction attempted, doesn't fit)", async () => {
+    // Constrained path (effect) forces an extraction attempt, but the prose
+    // alone (without the table) still exceeds 4096 chars — the residual guard
+    // inside detectAndExtract blocks extraction, so the table stays embedded
+    // and the pre-existing fail-loud guard still fires. Mirrors the AC4 fixture
+    // in visual-attachment-pipeline.test.ts.
+    const massiveProse = "y".repeat(5000);
+    const tableBlock =
+      "| Column A | Column B | Column C |\n" +
+      "| -------- | -------- | -------- |\n" +
+      "| row 1 a  | row 1 b  | row 1 c  |\n";
+    const tableText = massiveProse + "\n" + tableBlock;
+    const result = await call({ text: tableText, effect: "fire", token: TOKEN });
     expect(isError(result)).toBe(true);
     expect(errorCode(result)).toBe("TABLE_NOT_RENDERED");
-    // No send should have occurred
     expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.sendDocument).not.toHaveBeenCalled();
     expect(mocks.routeOutboundMessage).not.toHaveBeenCalled();
   });
 

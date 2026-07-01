@@ -610,6 +610,251 @@ describe("detectAndExtract — D-3 delivery mode wording", () => {
 });
 
 // ---------------------------------------------------------------------------
+// detectAndExtract — table detection (10-3058)
+// ---------------------------------------------------------------------------
+// AC1: Gate trigger — oversized table → extraction
+// AC3: No false positive — table ≤ 4096 chars → NOT extracted
+// AC4: Residual guard — rest still oversized → no extraction
+// AC5: Attachment content verbatim
+// AC6: Formatting preservation
+// AC8: Placeholder wording (same-message vs follow-up)
+// AC9: Multi-table — each extracted independently
+
+describe("detectAndExtract — table detection (10-3058)", () => {
+  // A well-formed 3-column, 5-row GFM table (7 rows × 35 chars = 245 chars total).
+  const TABLE_BLOCK =
+    "| Column A | Column B | Column C |\n" +
+    "| -------- | -------- | -------- |\n" +
+    "| row 1 a  | row 1 b  | row 1 c  |\n" +
+    "| row 2 a  | row 2 b  | row 2 c  |\n" +
+    "| row 3 a  | row 3 b  | row 3 c  |\n" +
+    "| row 4 a  | row 4 b  | row 4 c  |\n" +
+    "| row 5 a  | row 5 b  | row 5 c  |\n";
+
+  // A second smaller GFM table for multi-table tests.
+  const TABLE_BLOCK_B =
+    "| X | Y |\n" +
+    "| - | - |\n" +
+    "| 1 | 2 |\n" +
+    "| 3 | 4 |\n";
+
+  // Prose alone does NOT exceed 4096 chars.
+  // TABLE_BLOCK ≈ 245 chars; placeholder ≈ 35 chars.
+  // Range for prose: (3851, 4061] ensures text > 4096 AND modifiedText ≤ 4096.
+  const PROSE_FILLER = "x".repeat(3900);
+
+  // ── AC1: Gate trigger — oversized table ──────────────────────────────────
+
+  it("AC1: table + message > 4096 chars → table extracted, placeholder substituted", () => {
+    const text = PROSE_FILLER + "\n" + TABLE_BLOCK;
+    expect(text.length).toBeGreaterThan(4096);
+
+    const { modifiedText, blocks } = detectAndExtract(text);
+
+    const tableBlocks = blocks.filter(b => b.type === "table");
+    expect(tableBlocks).toHaveLength(1);
+    // Placeholder present in modifiedText
+    expect(modifiedText).toContain("📋 [see following table·");
+    // Table content no longer in prose
+    expect(modifiedText).not.toContain("| Column A |");
+    // Residual fits within limit
+    expect(modifiedText.length).toBeLessThanOrEqual(4096);
+  });
+
+  it("AC1: prose outside the table is preserved when table is extracted", () => {
+    const text = PROSE_FILLER + "\n" + TABLE_BLOCK;
+
+    const { modifiedText } = detectAndExtract(text);
+
+    expect(modifiedText).toContain(PROSE_FILLER.slice(0, 50));
+    expect(modifiedText).toContain(PROSE_FILLER.slice(-50));
+  });
+
+  // ── AC3: No false positive — table ≤ 4096 chars ──────────────────────────
+
+  it("AC3: table in a short message (≤ 4096 chars) → NOT extracted, text returned unchanged", () => {
+    const text = "Here is my data:\n\n" + TABLE_BLOCK + "\nThat is all.";
+    expect(text.length).toBeLessThanOrEqual(4096);
+
+    const { modifiedText, blocks } = detectAndExtract(text);
+
+    expect(blocks.filter(b => b.type === "table")).toHaveLength(0);
+    expect(modifiedText).toBe(text);
+  });
+
+  it("AC3: table alone (way under 4096 chars) is never extracted", () => {
+    const { modifiedText, blocks } = detectAndExtract(TABLE_BLOCK);
+
+    expect(blocks.filter(b => b.type === "table")).toHaveLength(0);
+    expect(modifiedText).toBe(TABLE_BLOCK);
+  });
+
+  // ── AC4: Residual guard — rest still oversized ────────────────────────────
+
+  it("AC4: extracting the table still leaves prose > 4096 chars → no extraction, text unchanged", () => {
+    // 5000-char prose + table: removing the table still leaves >4096 chars
+    const massiveProse = "y".repeat(5000);
+    const text = massiveProse + "\n" + TABLE_BLOCK;
+    expect(text.length).toBeGreaterThan(4096);
+
+    const { modifiedText, blocks } = detectAndExtract(text);
+
+    // Residual guard: extraction doesn't help → no table blocks extracted
+    expect(blocks.filter(b => b.type === "table")).toHaveLength(0);
+    // Text is unchanged (fail-loud path)
+    expect(modifiedText).toBe(text);
+  });
+
+  // ── AC2: Gate trigger — constrained send path (forceTableExtraction) ─────
+
+  it("AC2: small table (≤ 4096 chars) + forceTableExtraction: true → extracted despite fitting", () => {
+    // Same short text as the AC3 "no false positive" fixture, but with the new
+    // option set — proves forceTableExtraction bypasses the oversized-message
+    // gate on its own, independent of send.ts's effect/audio/multi-chunk logic.
+    const text = "Here is my data:\n\n" + TABLE_BLOCK + "\nThat is all.";
+    expect(text.length).toBeLessThanOrEqual(4096);
+
+    const { modifiedText, blocks } = detectAndExtract(text, { forceTableExtraction: true });
+
+    const tableBlocks = blocks.filter(b => b.type === "table");
+    expect(tableBlocks).toHaveLength(1);
+    expect(modifiedText).toContain("📋 [see following table·");
+    expect(modifiedText).not.toContain("| Column A |");
+  });
+
+  it("AC2: forceTableExtraction: false (default) + small table → NOT extracted (unchanged from today)", () => {
+    const text = "Here is my data:\n\n" + TABLE_BLOCK + "\nThat is all.";
+
+    const { modifiedText, blocks } = detectAndExtract(text, { forceTableExtraction: false });
+
+    expect(blocks.filter(b => b.type === "table")).toHaveLength(0);
+    expect(modifiedText).toBe(text);
+  });
+
+  it("AC2: forceTableExtraction: true + residual guard still fails → NOT extracted (residual guard wins even when forced)", () => {
+    // Mirrors the AC4 fixture: removing the table still leaves > 4096 chars.
+    // Proves the residual guard is a hard floor regardless of why extraction
+    // was attempted (size-triggered or forced by a constrained send path).
+    const massiveProse = "y".repeat(5000);
+    const text = massiveProse + "\n" + TABLE_BLOCK;
+
+    const { modifiedText, blocks } = detectAndExtract(text, { forceTableExtraction: true });
+
+    expect(blocks.filter(b => b.type === "table")).toHaveLength(0);
+    expect(modifiedText).toBe(text);
+  });
+
+  // ── AC5: Attachment content verbatim ─────────────────────────────────────
+
+  it("AC5: extracted table block content equals the original table text verbatim", () => {
+    const text = PROSE_FILLER + "\n" + TABLE_BLOCK;
+
+    const { blocks } = detectAndExtract(text);
+
+    const tableBlock = blocks.find(b => b.type === "table");
+    expect(tableBlock).toBeDefined();
+    expect(tableBlock!.content).toBe(TABLE_BLOCK);
+  });
+
+  // ── AC6: Formatting preservation ─────────────────────────────────────────
+
+  it("AC6: prose outside the table span is character-for-character identical after extraction", () => {
+    const prefix = "**Bold heading**\n\n";
+    const suffix = "\n*italic footer*";
+    // prose = 3900 chars; total = 18 + 3900 + 1 + 245 + 16 = 4180 > 4096 ✓
+    // modifiedText = 18 + 3900 + 1 + 35 + 16 = 3970 ≤ 4096 ✓
+    const innerProse = "x".repeat(3900);
+    const text = prefix + innerProse + "\n" + TABLE_BLOCK + suffix;
+
+    const { modifiedText, blocks } = detectAndExtract(text);
+
+    expect(blocks.filter(b => b.type === "table")).toHaveLength(1);
+    const expected = prefix + innerProse + "\n" + blocks.find(b => b.type === "table")!.placeholder + suffix;
+    expect(modifiedText).toBe(expected);
+  });
+
+  // ── AC8: Placeholder wording ─────────────────────────────────────────────
+
+  it("AC8: follow-up (default) placeholder uses block-level fence with 'see following table'", () => {
+    const text = PROSE_FILLER + "\n" + TABLE_BLOCK;
+
+    const { blocks } = detectAndExtract(text); // default = follow-up
+
+    const tableBlock = blocks.find(b => b.type === "table")!;
+    expect(tableBlock.placeholder).toBe("\n```\n📋 [see following table·0]\n```");
+  });
+
+  it("AC8: same-message placeholder uses block-level fence with 'see table' (no 'following')", () => {
+    const text = PROSE_FILLER + "\n" + TABLE_BLOCK;
+
+    const { blocks } = detectAndExtract(text, { deliveryMode: "same-message" });
+
+    const tableBlock = blocks.find(b => b.type === "table")!;
+    expect(tableBlock.placeholder).toBe("\n```\n📋 [see table·0]\n```");
+    expect(tableBlock.placeholder).not.toContain("following");
+  });
+
+  it("AC8: follow-up placeholder is embedded into modifiedText at the table's location", () => {
+    const text = PROSE_FILLER + "\n" + TABLE_BLOCK;
+
+    const { modifiedText, blocks } = detectAndExtract(text, { deliveryMode: "follow-up" });
+
+    const tableBlock = blocks.find(b => b.type === "table")!;
+    expect(modifiedText).toContain(tableBlock.placeholder);
+    expect(modifiedText).toContain("📋 [see following table·0]");
+  });
+
+  // ── AC9: Multi-table ─────────────────────────────────────────────────────
+
+  it("AC9: 2 tables in an oversized message → each extracted independently as separate blocks", () => {
+    // Both tables together are large enough to push text > 4096 but
+    // removing them brings text within limit.
+    const text = TABLE_BLOCK + "\n" + PROSE_FILLER + "\n" + TABLE_BLOCK_B;
+    expect(text.length).toBeGreaterThan(4096);
+
+    const { modifiedText, blocks } = detectAndExtract(text);
+
+    const tableBlocks = blocks.filter(b => b.type === "table");
+    expect(tableBlocks).toHaveLength(2);
+    // Each table has a unique placeholder (distinct index)
+    expect(tableBlocks[0].placeholder).not.toBe(tableBlocks[1].placeholder);
+    // Each table has a unique filename
+    expect(tableBlocks[0].filename).not.toBe(tableBlocks[1].filename);
+    // Both tables removed from modifiedText
+    expect(modifiedText).not.toContain("| Column A |");
+    expect(modifiedText).not.toContain("| X | Y |");
+    // Content is verbatim
+    expect(tableBlocks[0].content).toBe(TABLE_BLOCK);
+    expect(tableBlocks[1].content).toBe(TABLE_BLOCK_B);
+  });
+
+  it("AC9: multi-table filenames follow the table-${ts}-${index}.md pattern", () => {
+    const text = TABLE_BLOCK + "\n" + PROSE_FILLER + "\n" + TABLE_BLOCK_B;
+
+    const { blocks } = detectAndExtract(text);
+
+    const tableBlocks = blocks.filter(b => b.type === "table");
+    expect(tableBlocks).toHaveLength(2);
+    expect(tableBlocks[0].filename).toMatch(/^table-\d+-\d+\.md$/);
+    expect(tableBlocks[1].filename).toMatch(/^table-\d+-\d+\.md$/);
+  });
+
+  // ── Filename format ───────────────────────────────────────────────────────
+
+  it("table block filename has .md extension and table-${ts}-${index} structure", () => {
+    const text = PROSE_FILLER + "\n" + TABLE_BLOCK;
+
+    const { blocks } = detectAndExtract(text);
+
+    const tableBlock = blocks.find(b => b.type === "table")!;
+    expect(tableBlock.filename).toMatch(/^table-\d+-\d+\.md$/);
+  });
+
+  // ── Pipeline position (AC10) — confirmed by these tests calling detectAndExtract directly ──
+  // If table detection were a bolt-on (outside detectAndExtract), these tests would fail.
+});
+
+// ---------------------------------------------------------------------------
 // writeTempVisualFile
 // ---------------------------------------------------------------------------
 
