@@ -9,6 +9,7 @@ import { requireAuth } from "../../session-gate.js";
 import { TOKEN_SCHEMA } from "../identity-schema.js";
 import { putFile } from "../../file-store.js";
 import { getSseBaseUrl } from "../../http-mode.js";
+import { fetchWithRetry } from "../../fetch-retry.js";
 
 /** Text-based MIME types and extensions that are safe to read as UTF-8 */
 const TEXT_MIME_PREFIXES = ["text/"];
@@ -82,7 +83,7 @@ export async function handleDownloadFile({ file_id, file_name, mime_type, token 
 
     // 2. Download bytes
     const url = `https://api.telegram.org/file/bot${botToken}/${fileInfo.file_path}`;
-    const res = await fetch(url);
+    const res = await fetchWithRetry(url);
     if (!res.ok) {
       return toError({ code: "UNKNOWN" as const, message: `Download failed: ${res.status} ${res.statusText}` });
     }
