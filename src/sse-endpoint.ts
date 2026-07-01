@@ -19,7 +19,7 @@ import type { Request, Response, Express } from "express";
 import { decodeToken } from "./tools/identity-schema.js";
 import { validateSession, getDequeueDefault, setDequeueDefault } from "./session-manager.js";
 import { registerSseMonitor, unregisterSseMonitor, resetNotifyGateState } from "./tools/activity/file-state.js";
-import { resetDequeuePatternNudgeForSession } from "./tools/dequeue.js";
+import { resetDequeuePatternNudgeForSession, resetColdDequeueState } from "./tools/dequeue.js";
 import { hasAnyPendingContent, deliverServiceMessage } from "./session-queue.js";
 import { SERVICE_MESSAGES } from "./service-messages.js";
 import { DIGITS_ONLY } from "./utils/patterns.js";
@@ -223,6 +223,8 @@ export function attachSseRoute(app: Express): void {
     // Re-arm the dequeue-pattern nudge — fresh subscription means the agent
     // may need to be reminded again if the bad polling pattern recurs (10-3028).
     resetDequeuePatternNudgeForSession(sid);
+    // Re-arm the cold-dequeue detector for the same reason (30-2205).
+    resetColdDequeueState(sid);
     // Clear any stale debounce from the prior connection so the fresh connection
     // starts with an unblocked gate (F-3: stale debounce on reconnect).
     resetNotifyGateState(sid);

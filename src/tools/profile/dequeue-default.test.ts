@@ -57,6 +57,7 @@ vi.mock("../activity/file-state.js", () => ({
   notifyIfAllowed: vi.fn(),
   isSseMonitorActive: vi.fn((_sid: number): boolean => false),
   isActivityFileActive: vi.fn((_sid: number): boolean => false),
+  getFirstNotifyTimestamp: vi.fn((_sid: number): number | null => null),
 }));
 
 vi.mock("../../service-messages.js", () => ({

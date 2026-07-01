@@ -27,7 +27,7 @@ import {
   getActivityFile,
   clearActivityFile,
 } from "./file-state.js";
-import { resetMaxWait0NudgeState } from "../dequeue.js";
+import { resetMaxWait0NudgeState, resetColdDequeueState } from "../dequeue.js";
 
 /**
  * One-time event: when an activity file is registered, set the session's
@@ -113,6 +113,8 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
 
     // Reset max_wait:0 nudge state — fresh grace window for the new subscription (agent-supplied path).
     resetMaxWait0NudgeState(sid);
+    // Reset the cold-dequeue detector for the same reason (30-2205).
+    resetColdDequeueState(sid);
 
     // One-time event: when an activity file is registered, set the session's
     // dequeue default to 90 s so the agent's loop interleaves with crons and
@@ -165,6 +167,8 @@ export async function handleActivityFileCreate(args: Record<string, unknown>) {
 
   // Reset max_wait:0 nudge state — fresh grace window for the new subscription (TMCP-generated path).
   resetMaxWait0NudgeState(sid);
+  // Reset the cold-dequeue detector for the same reason (30-2205).
+  resetColdDequeueState(sid);
 
   // Cap dequeue max_wait to 90 s once a file is registered. A monitor on
   // the file provides the external wake; longer holds only delay reminder

@@ -39,6 +39,7 @@ const fileStateMocks = vi.hoisted(() => ({
   releaseNotifyDebounce: vi.fn(),
   isSseMonitorActive: vi.fn((_sid: number): boolean => false),
   isActivityFileActive: vi.fn((_sid: number): boolean => false),
+  getFirstNotifyTimestamp: vi.fn((_sid: number): number | null => null),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
@@ -48,6 +49,7 @@ vi.mock("./activity/file-state.js", () => ({
   notifyIfAllowed: vi.fn(),
   isSseMonitorActive: (sid: number) => fileStateMocks.isSseMonitorActive(sid),
   isActivityFileActive: (sid: number) => fileStateMocks.isActivityFileActive(sid),
+  getFirstNotifyTimestamp: (sid: number) => fileStateMocks.getFirstNotifyTimestamp(sid),
 }));
 
 // ---------------------------------------------------------------------------
