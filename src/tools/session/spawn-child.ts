@@ -34,6 +34,8 @@ export async function handleSpawnChild({
     });
   }
 
+  const trimmedTopic = topic.trim();
+
   // Verify token belongs to the authenticated caller's session context.
   const callerSid = getCallerSid();
   if (callerSid > 0 && parentSid !== callerSid) {
@@ -80,7 +82,7 @@ export async function handleSpawnChild({
   // Inherit parent's name and color. Sub-sessions present as the parent so the
   // operator sees one participant with multiple topic chips.
   // Name is auto-derived from the parent session — callers must NOT supply it.
-  const inheritedName = parentSession?.name ?? topic;
+  const inheritedName = parentSession?.name ?? trimmedTopic;
   const inheritedColor = parentSession?.color;
 
   // Create the child session (bypasses approval, announcement, pin, SESSION_JOINED, host onboarding).
@@ -97,7 +99,7 @@ export async function handleSpawnChild({
 
   // Set the topic chip: "TopicName ①" — visible as **[TopicName ①]** in Telegram.
   const circleDigit = String.fromCodePoint(0x245F + displayIndex);
-  runInSessionContext(childSid, () => { setTopic(`${topic} ${circleDigit}`); });
+  runInSessionContext(childSid, () => { setTopic(`${trimmedTopic} ${circleDigit}`); });
 
   // Apply the slot index marker to the subsession's session-list display name
   // and inherit the parent's name_tag so the child presents identically in Telegram.
@@ -124,9 +126,9 @@ export async function handleSpawnChild({
   // new sub-session. Lands in the parent's next dequeue, not the child's.
   deliverServiceMessage(
     parentSid,
-    SERVICE_MESSAGES.SPAWN_CHILD_SUBAGENT_HINT.text(childSid, topic, data.token),
+    SERVICE_MESSAGES.SPAWN_CHILD_SUBAGENT_HINT.text(childSid, trimmedTopic, data.token),
     SERVICE_MESSAGES.SPAWN_CHILD_SUBAGENT_HINT.eventType,
-    { child_sid: childSid, child_name: topic },
+    { child_sid: childSid, child_name: trimmedTopic },
   );
 
   return {

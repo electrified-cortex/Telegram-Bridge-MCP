@@ -35,7 +35,7 @@ import { removeSilenceState } from "./silence-detector.js";
 import { clearActivityFile, isSseMonitorActive } from "./tools/activity/file-state.js";
 import { cancelSseConnection } from "./sse-endpoint.js";
 import { unregisterChannelSubscriber } from "./channel.js";
-import { removeDequeueRateState, removeMaxWait0State, removeDequeuePatternNudgeState } from "./tools/dequeue.js";
+import { removeDequeueRateState, removeMaxWait0State, removeDequeuePatternNudgeState, removeColdDequeueState } from "./tools/dequeue.js";
 import { clearOnceOnSend } from "./outbound-proxy.js";
 import { getChildSids, unregisterChild } from "./tools/session/child-registry.js";
 import { cleanupSessionQuestionPins } from "./question-pin-state.js";
@@ -117,6 +117,7 @@ export function closeSessionById(sid: number): { closed: boolean; sid: number; n
   removeDequeueRateState(sid);
   removeMaxWait0State(sid);
   removeDequeuePatternNudgeState(sid);
+  removeColdDequeueState(sid);
   // Clear any pending once-on-send notifier registered by health-check (dangling ref on teardown).
   clearOnceOnSend(sid);
   if (getActiveSession() === sid) setActiveSession(0);

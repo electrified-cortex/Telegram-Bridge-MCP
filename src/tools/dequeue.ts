@@ -7,7 +7,7 @@ import {
   type TimelineEvent,
 } from "../message-store.js";
 import { setActiveSession, touchSession, getDequeueDefault, setDequeueIdle, getSession, takeSilenceHint, checkConnectionToken } from "../session-manager.js";
-import { setDequeueActive, releaseNotifyDebounce, isSseMonitorActive, isActivityFileActive } from "./activity/file-state.js";
+import { setDequeueActive, releaseNotifyDebounce, isSseMonitorActive, isActivityFileActive, getFirstNotifyTimestamp } from "./activity/file-state.js";
 import { resetChannelCooldown, flushPendingChannelNotify } from "../channel.js";
 import { getSessionQueue, getMessageOwner, peekSessionCategories, deliverServiceMessage } from "../session-queue.js";
 import { getAnimationStatus } from "../animation-state.js";
@@ -293,6 +293,192 @@ function checkMaxWait0Nudge(sid: number): void {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Cold-dequeue pattern detection (30-2205) — telemetry-only this pass
+// ---------------------------------------------------------------------------
+//
+// Agents that only dequeue in reaction to a monitor wake ("file-kick") are
+// cold-looping: every turn pays a wake-to-agent round trip instead of keeping
+// a blocking dequeue() in flight. Cold signature (per spec): a content-return
+// arrives within COLD_KICK_WINDOW_MS of a recorded kick AND resolved in under
+// COLD_BLOCKED_FOR_MS — i.e. the content was already sitting in the queue
+// when the kick fired, rather than the call having been genuinely blocking.
+//
+// Telemetry-only for now: detections are logged via dlog, not delivered live.
+// Flipping COLD_DEQUEUE_LIVE_NUDGE to true is the entire follow-up needed to
+// go live once detection accuracy is verified (explicit spec requirement).
+
+/** Window (ms) after a recorded kick within which a dequeue return counts as "cold". */
+const COLD_KICK_WINDOW_MS = 2_000;
+
+/** Max time (ms) a content-returning call may have blocked and still count as "cold". */
+const COLD_BLOCKED_FOR_MS = 100;
+
+/** Sliding window size for the cold/hot classification ratio. */
+const COLD_SAMPLE_WINDOW = 20;
+
+/** Cold-sample ratio (exclusive) over the window that triggers a nudge. */
+const COLD_RATIO_THRESHOLD = 0.8;
+
+/** Cycles to watch after a nudge for a shift to hot behavior (heed-tracking). */
+const COLD_HEED_CYCLES = 10;
+
+/** Hard cap on nudge fires per session (initial + one re-nudge). */
+const COLD_MAX_FIRES = 2;
+
+/**
+ * Gate for delivering the live service message. Kept false this pass —
+ * detections are logged (see maybeFireColdDequeueNudge) but not delivered,
+ * per the spec's explicit telemetry-only requirement for the initial rollout.
+ */
+const COLD_DEQUEUE_LIVE_NUDGE = false;
+
+/** Per-session cold-dequeue detector state. */
+interface ColdDequeueState {
+  /** Sliding window of the last COLD_SAMPLE_WINDOW classified cycles (true = cold). */
+  samples: boolean[];
+  /**
+   * Kick timestamp already classified for the current notify epoch — dedups a
+   * burst of several queued messages (one kick, multiple drain calls) down to
+   * a single sample. Relies on distinct kicks not landing on the same
+   * millisecond; at Date.now() resolution this holds in practice for
+   * independent inbound events. Tests simulating repeated cold cycles must
+   * vary the mocked kick timestamp (or advance fake time) between cycles —
+   * otherwise every cycle after the first is mistaken for a burst
+   * continuation of the first and never classified.
+   */
+  lastClassifiedKickTs: number | null;
+  /** Nudge fire count this session (0..COLD_MAX_FIRES). */
+  fireCount: number;
+  /** Classified cycles elapsed since the last fire (heed-tracking window). */
+  cyclesSinceFire: number;
+  /** Set once the agent shifts to hot dequeue after a fire — stops future fires. */
+  resolved: boolean;
+}
+
+const _coldDequeueState = new Map<number, ColdDequeueState>();
+
+function defaultColdDequeueState(): ColdDequeueState {
+  return { samples: [], lastClassifiedKickTs: null, fireCount: 0, cyclesSinceFire: 0, resolved: false };
+}
+
+/**
+ * Reset the per-session cold-dequeue detector state.
+ * Call when a subscription is (re-)armed (SSE reconnect, activity/file/create,
+ * activity/listen) so the detector gets a fresh grace window per subscription
+ * lifetime, matching the sibling dequeue-pattern and max-wait-0 nudges.
+ */
+export function resetColdDequeueState(sid: number): void {
+  _coldDequeueState.delete(sid);
+}
+
+/** Remove per-session cold-dequeue state on session close (prevents unbounded Map growth). */
+export function removeColdDequeueState(sid: number): void {
+  _coldDequeueState.delete(sid);
+}
+
+/** Exported for test reset only — do not call in production code. */
+export function _resetColdDequeueStateForTest(): void {
+  _coldDequeueState.clear();
+}
+
+/** Exported for test seeding only — do not call in production code. */
+export function _seedColdDequeueStateForTest(sid: number, state: Partial<ColdDequeueState>): void {
+  _coldDequeueState.set(sid, { ...defaultColdDequeueState(), ...state });
+}
+
+/** Exported for test inspection only — returns true if any per-session state exists for sid. */
+export function hasColdDequeueStateForSession(sid: number): boolean {
+  return _coldDequeueState.has(sid);
+}
+
+/** Exported for test inspection only — snapshot of a session's detector state, or undefined. */
+export function _getColdDequeueStateForTest(sid: number): ColdDequeueState | undefined {
+  const state = _coldDequeueState.get(sid);
+  return state ? { ...state, samples: [...state.samples] } : undefined;
+}
+
+/**
+ * Log (telemetry-only) or deliver the cold-dequeue nudge, subject to the
+ * fire-count cap and heed-tracking grace window.
+ */
+function maybeFireColdDequeueNudge(sid: number, state: ColdDequeueState): void {
+  if (state.resolved || state.fireCount >= COLD_MAX_FIRES) return;
+  if (state.samples.length < COLD_SAMPLE_WINDOW) return;
+  if (state.fireCount > 0 && state.cyclesSinceFire < COLD_HEED_CYCLES) return; // still in heed window
+
+  const coldCount = state.samples.filter(Boolean).length;
+  const ratio = coldCount / state.samples.length;
+  if (ratio <= COLD_RATIO_THRESHOLD) return;
+
+  state.fireCount++;
+  state.cyclesSinceFire = 0;
+
+  dlog(
+    "queue",
+    `cold-dequeue pattern detected sid=${sid} ratio=${ratio.toFixed(2)} fireCount=${state.fireCount}`,
+    { sid, ratio, fireCount: state.fireCount },
+  );
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- deliberate static kill-switch (see COLD_DEQUEUE_LIVE_NUDGE), flip to true to go live
+  if (COLD_DEQUEUE_LIVE_NUDGE) {
+    deliverServiceMessage(
+      sid,
+      SERVICE_MESSAGES.BEHAVIOR_NUDGE_COLD_DEQUEUE_PATTERN.text,
+      SERVICE_MESSAGES.BEHAVIOR_NUDGE_COLD_DEQUEUE_PATTERN.eventType,
+    );
+  }
+}
+
+/**
+ * Classify a content-returning dequeue call as cold or hot and update the
+ * per-session sliding window, heed-tracking, and fire-count state.
+ *
+ * Only called from content-returning return sites in runDrainLoop — the cold
+ * signature (kick correlation + block duration) is only meaningful when
+ * content was actually delivered. Must run BEFORE releaseNotifyDebounce for
+ * this sid so getFirstNotifyTimestamp still reflects the pre-release kick
+ * timestamp for the batch being returned.
+ *
+ * No active monitor → polling without a subscription is valid; no-op (matches
+ * the sibling dequeue-pattern and max-wait-0 nudges).
+ *
+ * Never throws. Never alters dequeue semantics or latency.
+ */
+function checkColdDequeuePattern(sid: number, now: number, blockedForMs: number): void {
+  if (sid <= 0) return;
+  if (!isSseMonitorActive(sid) && !isActivityFileActive(sid)) return;
+
+  const kickTs = getFirstNotifyTimestamp(sid);
+  const state = _coldDequeueState.get(sid) ?? defaultColdDequeueState();
+
+  // Burst suppression: getFirstNotifyTimestamp stays fixed until the whole
+  // pending batch drains, so several messages queued under one kick produce
+  // several drain calls sharing the same kickTs. Only the first is classified;
+  // the rest are follow-up drains of an already-observed wake, not independent
+  // cold/hot signals (AC: "burst-aware suppression").
+  if (kickTs !== null && kickTs === state.lastClassifiedKickTs) {
+    _coldDequeueState.set(sid, state);
+    return;
+  }
+
+  const cold = kickTs !== null && (now - kickTs) < COLD_KICK_WINDOW_MS && blockedForMs < COLD_BLOCKED_FOR_MS;
+  state.samples.push(cold);
+  if (state.samples.length > COLD_SAMPLE_WINDOW) state.samples.shift();
+  if (kickTs !== null) state.lastClassifiedKickTs = kickTs;
+
+  // Heed-tracking: once a fire has happened, watch the next COLD_HEED_CYCLES
+  // classified cycles for a shift to hot behavior.
+  if (state.fireCount > 0 && !state.resolved) {
+    state.cyclesSinceFire++;
+    if (!cold) {
+      state.resolved = true; // shifted to hot within the window → resolved, no re-fire
+    }
+  }
+
+  maybeFireColdDequeueNudge(sid, state);
+  _coldDequeueState.set(sid, state);
+}
+
 /** Auto-salute voice messages on dequeue so the user knows we received them. */
 function ackVoice(event: TimelineEvent): void {
   if (event.from !== "user" || event.content.type !== "voice") return;
@@ -396,6 +582,10 @@ export async function runDrainLoop(
       message: `Session ${sid} has ended. Call action(type: 'session/start', ...) to open a new session if needed.`,
     };
   }
+
+  // Captured for dequeue_blocked_for (30-2205 cold-dequeue detection) — internal
+  // only, not part of the public response. Covers the immediate-batch path too.
+  const _callStart = Date.now();
 
   // Count every dequeue attempt (including idle/empty polls) for runaway-loop detection.
   checkDequeueRate(sid, Date.now());
@@ -551,6 +741,10 @@ export async function runDrainLoop(
     _lastTimeoutAt.delete(sid);        // messages delivered — reset rapid-repoll window
     _dequeueAfterTimeoutCount.delete(sid);
     _maxWait0State.delete(sid);        // drain counter resets — not an idle poll anymore
+    // Must run before releaseNotifyDebounce (next line) — it reads the
+    // pre-release kick timestamp for this batch (30-2205).
+    const _immediateNow = Date.now();
+    checkColdDequeuePattern(sid, _immediateNow, _immediateNow - _callStart);
     releaseNotifyDebounce(sid, true); // content-returning exit
     resetChannelCooldown(sid);
     return result;
@@ -630,6 +824,9 @@ export async function runDrainLoop(
           _lastTimeoutAt.delete(sid);        // messages delivered — reset rapid-repoll window
           _dequeueAfterTimeoutCount.delete(sid);
           _maxWait0State.delete(sid);        // drain counter resets — not an idle poll anymore
+          // releaseNotifyDebounce for this exit runs later, in the shared
+          // finally block below — this still runs first (30-2205).
+          checkColdDequeuePattern(sid, now, now - _callStart);
           return result;
         }
       }
@@ -655,6 +852,11 @@ export async function runDrainLoop(
         _lastTimeoutAt.delete(sid);        // messages delivered — reset rapid-repoll window
         _dequeueAfterTimeoutCount.delete(sid);
         _maxWait0State.delete(sid);        // drain counter resets — not an idle poll anymore
+        // releaseNotifyDebounce for this exit runs later, in the shared
+        // finally block below — this still runs first (30-2205). Fresh
+        // timestamp: the blocking wait above means the outer `now` is stale.
+        const _wakeNow = Date.now();
+        checkColdDequeuePattern(sid, _wakeNow, _wakeNow - _callStart);
         return result;
       }
     }

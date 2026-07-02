@@ -115,6 +115,26 @@ describe("session/spawn-child", () => {
     expect(topic).toBe("pref-rank ①");
   });
 
+  it("topic-valid: padded topic is trimmed before use in the chip label", async () => {
+    await handleSpawnChild({ token: 1123456, topic: "  pref-rank  " });
+
+    const topic = runInSessionContext(CHILD_SID, () => getTopic());
+    expect(topic).toBe("pref-rank ①");
+  });
+
+  it("topic-valid: padded topic is trimmed before use in the session display name", async () => {
+    const childSession: { name?: string } = {};
+    mocks.getSession.mockImplementation((sid: number) => {
+      if (sid === CHILD_SID) return childSession;
+      return undefined;
+    });
+
+    // No parent session → inheritedName falls back to the (trimmed) topic.
+    await handleSpawnChild({ token: 1123456, topic: "  pref-rank  " });
+
+    expect(childSession.name).toBe("pref-rank ①");
+  });
+
   // ── AC1: returns { token, sid, parent_sid } ────────────────────────────────
 
   it("AC1: returns { token, sid, parent_sid } on successful spawn", async () => {

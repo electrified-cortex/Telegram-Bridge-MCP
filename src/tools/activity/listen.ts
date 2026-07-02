@@ -23,7 +23,7 @@ import { toResult, toError } from "../../telegram.js";
 import { requireAuth } from "../../session-gate.js";
 import { getSseBaseUrl } from "../../http-mode.js";
 import { scheduleArmReminder } from "../../sse-endpoint.js";
-import { resetMaxWait0NudgeState } from "../dequeue.js";
+import { resetMaxWait0NudgeState, resetColdDequeueState } from "../dequeue.js";
 import { deliverServiceMessage } from "../../session-queue.js";
 import { SERVICE_MESSAGES } from "../../service-messages.js";
 
@@ -60,6 +60,8 @@ export function handleActivityListen(args: Record<string, unknown>) {
 
   // Reset per-session max_wait:0 nudge state — fresh grace window for the new subscription.
   resetMaxWait0NudgeState(sid);
+  // Reset the cold-dequeue detector for the same reason (30-2205).
+  resetColdDequeueState(sid);
 
   // Arm the one-shot reminder — cancelled if the SSE connection opens in time.
   scheduleArmReminder(sid, command);

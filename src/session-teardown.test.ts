@@ -70,6 +70,9 @@ const mocks = vi.hoisted(() => ({
 
   // tools/dequeue.js (additional — 10-3028)
   removeDequeuePatternNudgeState: vi.fn(),
+
+  // tools/dequeue.js (additional — 30-2205)
+  removeColdDequeueState: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -149,6 +152,7 @@ vi.mock("./tools/dequeue.js", () => ({
   removeDequeueRateState: vi.fn(),
   removeMaxWait0State: vi.fn(),
   removeDequeuePatternNudgeState: (...args: unknown[]) => mocks.removeDequeuePatternNudgeState(...args),
+  removeColdDequeueState: (...args: unknown[]) => mocks.removeColdDequeueState(...args),
 }));
 vi.mock("./tools/session/child-registry.js", () => ({
   getChildSids: (...args: unknown[]) => mocks.getChildSids(...args),
@@ -523,6 +527,26 @@ describe("session-teardown — 10-3028 cleanup on session close", () => {
     closeSessionById(TEST_SID);
 
     expect(mocks.removeDequeuePatternNudgeState).not.toHaveBeenCalled();
+  });
+
+  it("calls removeColdDequeueState with the correct sid on session teardown (30-2205)", () => {
+    closeSessionById(TEST_SID);
+
+    expect(mocks.removeColdDequeueState).toHaveBeenCalledWith(TEST_SID);
+  });
+
+  it("calls removeColdDequeueState exactly once per closeSessionById call", () => {
+    closeSessionById(TEST_SID);
+
+    expect(mocks.removeColdDequeueState).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call removeColdDequeueState when session does not exist (closeSession returns false)", () => {
+    mocks.closeSession.mockReturnValue(false);
+
+    closeSessionById(TEST_SID);
+
+    expect(mocks.removeColdDequeueState).not.toHaveBeenCalled();
   });
 });
 

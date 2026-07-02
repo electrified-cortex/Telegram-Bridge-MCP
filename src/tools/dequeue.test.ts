@@ -32,6 +32,7 @@ const fileStateMocks = vi.hoisted(() => ({
   notifyIfAllowed: vi.fn((_sid: number, _source: string, _inflight: boolean) => {}),
   isSseMonitorActive: vi.fn((_sid: number): boolean => false),
   isActivityFileActive: vi.fn((_sid: number): boolean => false),
+  getFirstNotifyTimestamp: vi.fn((_sid: number): number | null => null),
 }));
 
 vi.mock("./activity/file-state.js", () => ({
@@ -41,6 +42,7 @@ vi.mock("./activity/file-state.js", () => ({
   notifyIfAllowed: (sid: number, source: string, inflight: boolean) => { fileStateMocks.notifyIfAllowed(sid, source, inflight); },
   isSseMonitorActive: (sid: number) => fileStateMocks.isSseMonitorActive(sid),
   isActivityFileActive: (sid: number) => fileStateMocks.isActivityFileActive(sid),
+  getFirstNotifyTimestamp: (sid: number) => fileStateMocks.getFirstNotifyTimestamp(sid),
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -129,6 +131,10 @@ vi.mock("../service-messages.js", () => ({
       eventType: "behavior_nudge_max_wait_zero_with_subscription",
       text: "⚠️ drain-and-idle anti-pattern nudge",
     },
+    BEHAVIOR_NUDGE_COLD_DEQUEUE_PATTERN: {
+      eventType: "behavior_nudge_cold_dequeue_pattern",
+      text: "COLD DEQUEUE PATTERN: cold-looping detected.",
+    },
   },
 }));
 
@@ -171,7 +177,12 @@ vi.mock("../reminder-state.js", () => ({
 
 
 
-import { register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest, _resetDequeueRateForTest, _resetDequeuePatternNudgeForTest, resetDequeuePatternNudgeForSession, _resetMaxWait0StateForTest } from "./dequeue.js";
+import {
+  register, _resetTimeoutHintForTest, _resetFirstDequeueHintForTest, _resetActivityFileHintForTest,
+  _resetDequeueRateForTest, _resetDequeuePatternNudgeForTest, resetDequeuePatternNudgeForSession, _resetMaxWait0StateForTest,
+  resetColdDequeueState, removeColdDequeueState, _resetColdDequeueStateForTest, _seedColdDequeueStateForTest,
+  hasColdDequeueStateForSession, _getColdDequeueStateForTest,
+} from "./dequeue.js";
 
 function makeEvent(id: number, text: string, event = "message" as string): TimelineEvent {
   return {
@@ -2167,5 +2178,261 @@ describe("checkMaxWait0Nudge (drain-and-idle anti-pattern nudge)", () => {
       expect.stringContaining("drain-and-idle"),
       "behavior_nudge_max_wait_zero_with_subscription",
     );
+  });
+});
+
+// =============================================================================
+// Cold-dequeue pattern detection (30-2205) — telemetry-only
+// =============================================================================
+describe("cold-dequeue pattern detection (30-2205)", () => {
+  let call: (args: Record<string, unknown>, extra?: Record<string, unknown>) => Promise<unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    _resetColdDequeueStateForTest();
+    _resetDequeueRateForTest();
+    _resetDequeuePatternNudgeForTest();
+    _resetTimeoutHintForTest();
+    _resetActivityFileHintForTest();
+    _resetMaxWait0StateForTest();
+    mocks.validateSession.mockReturnValue(true);
+    mocks.getDequeueDefault.mockReturnValue(300);
+    reminderMocks.getSoonestDeferredMs.mockReturnValue(null);
+    reminderMocks.getSoonestScheduleFireMs.mockReturnValue(null);
+    mocks.pendingCount.mockReturnValue(0);
+    mocks.peekSessionCategories.mockReturnValue(undefined);
+    mocks.checkConnectionToken.mockReturnValue("absent");
+    mocks.getGovernorSid.mockReturnValue(0);
+    // Monitor active by default in this block — the detector is a no-op without one.
+    fileStateMocks.isSseMonitorActive.mockReturnValue(true);
+    fileStateMocks.isActivityFileActive.mockReturnValue(false);
+    fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(null);
+    mocks.getSessionQueue.mockImplementation(() => ({
+      dequeueBatch: () => mocks.dequeueBatch(),
+      pendingCount: () => mocks.pendingCount(),
+      waitForEnqueue: () => mocks.waitForEnqueue(),
+    }));
+    mocks.waitForEnqueue.mockImplementation(
+      () => new Promise<void>((r) => setTimeout(r, 100)),
+    );
+    mocks.dequeueBatch.mockReturnValue([]);
+    const server = createMockServer();
+    register(server);
+    call = server.getHandler("dequeue");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Drives one immediate-batch-return dequeue call for sid=1 (token 1_123_456). */
+  async function dequeueContent(token = 1_123_456): Promise<unknown> {
+    return call({ token });
+  }
+
+  it("20 consecutive cold-signature cycles trigger a nudge (telemetry-only, no live send)", async () => {
+    for (let i = 0; i < 20; i++) {
+      // Each cycle gets its own kick timestamp (10s apart) — required so the
+      // burst-suppression dedup (which keys on kick-timestamp equality) treats
+      // each cycle as an independent kick rather than a burst continuation.
+      vi.setSystemTime(i * 10_000);
+      const now = Date.now();
+      fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(now - 500); // kicked 500ms ago
+      mocks.dequeueBatch.mockReturnValueOnce([makeEvent(i, `msg${i}`)]);
+      await dequeueContent();
+    }
+
+    const state = _getColdDequeueStateForTest(1);
+    expect(state?.samples.length).toBe(20);
+    expect(state?.samples.every(Boolean)).toBe(true);
+    expect(state?.fireCount).toBe(1);
+    // Telemetry-only: detection happened internally but no live nudge is sent.
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_cold_dequeue_pattern",
+    );
+  });
+
+  it("does not classify or fire when no monitor is active (polling without a subscription is valid)", async () => {
+    fileStateMocks.isSseMonitorActive.mockReturnValue(false);
+    fileStateMocks.isActivityFileActive.mockReturnValue(false);
+
+    for (let i = 0; i < 20; i++) {
+      vi.setSystemTime(i * 10_000);
+      const now = Date.now();
+      fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(now - 500);
+      mocks.dequeueBatch.mockReturnValueOnce([makeEvent(i, `msg${i}`)]);
+      await dequeueContent();
+    }
+
+    expect(hasColdDequeueStateForSession(1)).toBe(false);
+  });
+
+  it("classifies as hot when the kick is 2s or older (boundary: exclusive window)", async () => {
+    vi.setSystemTime(10_000);
+    fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(10_000 - 2_000); // exactly 2000ms ago
+    mocks.dequeueBatch.mockReturnValueOnce([makeEvent(1, "msg")]);
+    await dequeueContent();
+
+    expect(_getColdDequeueStateForTest(1)?.samples).toEqual([false]);
+  });
+
+  it("classifies as hot when the call blocked 100ms or more, even with a recent kick", async () => {
+    vi.setSystemTime(5_000);
+    fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(5_000 - 500); // kicked 500ms ago — within window
+    const evt = makeEvent(1, "delayed msg");
+    // Empty first, then a batch after the wait resolves — forces the inner-loop
+    // (blocking) return path instead of the immediate-batch path.
+    mocks.dequeueBatch.mockReturnValueOnce([]).mockReturnValueOnce([evt]);
+    mocks.waitForEnqueue.mockImplementationOnce(() => new Promise<void>((r) => setTimeout(r, 150)));
+
+    const p = call({ timeout: 5, token: 1_123_456 });
+    await vi.advanceTimersByTimeAsync(150);
+    await p;
+
+    // Blocked ~150ms (>= COLD_BLOCKED_FOR_MS) → not cold despite the recent kick.
+    expect(_getColdDequeueStateForTest(1)?.samples).toEqual([false]);
+  });
+
+  it("burst suppression: one kick, multiple rapid drains → only one sample recorded", async () => {
+    vi.setSystemTime(1_000);
+    // Fixed kick timestamp shared across the whole burst — models
+    // getFirstNotifyTimestamp staying pinned until the batch fully drains.
+    fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(900);
+
+    for (let i = 0; i < 5; i++) {
+      mocks.dequeueBatch.mockReturnValueOnce([makeEvent(i, `burst${i}`)]);
+      await dequeueContent();
+    }
+
+    const state = _getColdDequeueStateForTest(1);
+    expect(state?.samples).toEqual([true]);
+  });
+
+  it("does not fire when the cold ratio stays at or below the threshold", async () => {
+    for (let i = 0; i < 20; i++) {
+      vi.setSystemTime(i * 10_000);
+      const now = Date.now();
+      // Alternate cold/hot cycles → 50% ratio, below the >0.8 threshold.
+      fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(i % 2 === 0 ? now - 500 : null);
+      mocks.dequeueBatch.mockReturnValueOnce([makeEvent(i, `msg${i}`)]);
+      await dequeueContent();
+    }
+
+    const state = _getColdDequeueStateForTest(1);
+    expect(state?.samples.length).toBe(20);
+    expect(state?.samples.filter(Boolean).length).toBe(10);
+    expect(state?.fireCount).toBe(0);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_cold_dequeue_pattern",
+    );
+  });
+
+  it("does not fire at exactly the 0.8 ratio boundary (16/20 cold — threshold is exclusive)", async () => {
+    for (let i = 0; i < 20; i++) {
+      vi.setSystemTime(i * 10_000);
+      const now = Date.now();
+      // 16 cold + 4 hot = exactly 0.8 — spec threshold is ">0.8", so this must not fire.
+      fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(i % 5 === 0 ? null : now - 500);
+      mocks.dequeueBatch.mockReturnValueOnce([makeEvent(i, `msg${i}`)]);
+      await dequeueContent();
+    }
+
+    const state = _getColdDequeueStateForTest(1);
+    expect(state?.samples.length).toBe(20);
+    expect(state?.samples.filter(Boolean).length).toBe(16); // exactly 0.8
+    expect(state?.fireCount).toBe(0);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_cold_dequeue_pattern",
+    );
+  });
+
+  it("resolves and does not re-fire after a hot cycle within the heed window", async () => {
+    // Seed: already fired once, a few cycles into the 10-cycle heed window, all cold so far.
+    _seedColdDequeueStateForTest(1, {
+      samples: Array(20).fill(true),
+      lastClassifiedKickTs: 100,
+      fireCount: 1,
+      cyclesSinceFire: 3,
+      resolved: false,
+    });
+
+    // Next cycle is hot (no kick) — the agent shifted to hot dequeue.
+    vi.setSystemTime(50_000);
+    fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(null);
+    mocks.dequeueBatch.mockReturnValueOnce([makeEvent(1, "hot msg")]);
+    await dequeueContent();
+
+    expect(_getColdDequeueStateForTest(1)?.resolved).toBe(true);
+
+    // Even if the ratio climbs back above threshold afterward, no second fire.
+    for (let i = 0; i < 20; i++) {
+      vi.setSystemTime(60_000 + i * 10_000);
+      const now = Date.now();
+      fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(now - 500);
+      mocks.dequeueBatch.mockReturnValueOnce([makeEvent(100 + i, `cold${i}`)]);
+      await dequeueContent();
+    }
+
+    expect(_getColdDequeueStateForTest(1)?.fireCount).toBe(1);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_cold_dequeue_pattern",
+    );
+  });
+
+  it("fires a second nudge if not corrected within the heed window, then goes permanently silent", async () => {
+    // Seed: already fired once, one cycle short of the 10-cycle heed boundary, still all cold.
+    _seedColdDequeueStateForTest(1, {
+      samples: Array(20).fill(true),
+      lastClassifiedKickTs: 100,
+      fireCount: 1,
+      cyclesSinceFire: 9,
+      resolved: false,
+    });
+
+    // 10th post-fire cycle, still cold, ratio still 1.0 → second (re-)nudge fires.
+    vi.setSystemTime(50_000);
+    let now = Date.now();
+    fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(now - 500);
+    mocks.dequeueBatch.mockReturnValueOnce([makeEvent(1, "cold10")]);
+    await dequeueContent();
+
+    let state = _getColdDequeueStateForTest(1);
+    expect(state?.fireCount).toBe(2);
+    expect(state?.cyclesSinceFire).toBe(0);
+
+    // Continue cold-looping — max fires (2) reached, must stay silent for the rest of the session.
+    for (let i = 0; i < 20; i++) {
+      vi.setSystemTime(60_000 + i * 10_000);
+      now = Date.now();
+      fileStateMocks.getFirstNotifyTimestamp.mockReturnValue(now - 500);
+      mocks.dequeueBatch.mockReturnValueOnce([makeEvent(200 + i, `cold${i}`)]);
+      await dequeueContent();
+    }
+
+    state = _getColdDequeueStateForTest(1);
+    expect(state?.fireCount).toBe(2);
+    expect(mocks.deliverServiceMessage).not.toHaveBeenCalledWith(
+      1, expect.any(String), "behavior_nudge_cold_dequeue_pattern",
+    );
+  });
+
+  it("resetColdDequeueState clears existing state (re-arm on resubscribe)", () => {
+    _seedColdDequeueStateForTest(1, { samples: [true, true], fireCount: 1 });
+    expect(hasColdDequeueStateForSession(1)).toBe(true);
+
+    resetColdDequeueState(1);
+
+    expect(hasColdDequeueStateForSession(1)).toBe(false);
+  });
+
+  it("removeColdDequeueState clears existing state (session teardown)", () => {
+    _seedColdDequeueStateForTest(2, { samples: [true], fireCount: 0 });
+    expect(hasColdDequeueStateForSession(2)).toBe(true);
+
+    removeColdDequeueState(2);
+
+    expect(hasColdDequeueStateForSession(2)).toBe(false);
   });
 });

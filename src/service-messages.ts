@@ -599,6 +599,21 @@ export const SERVICE_MESSAGES = deepFreeze({
       "help('dequeue') for the correct loop pattern.",
   },
 
+  /**
+   * Fired when a session's last 20 dequeue cycles show a cold-looping pattern:
+   * dequeue arriving within 2s of a monitor kick with near-zero block time,
+   * i.e. the agent is not keeping a blocking dequeue() in flight. Telemetry-only
+   * for now (30-2205) — detections are logged via dlog, not yet delivered live.
+   */
+  BEHAVIOR_NUDGE_COLD_DEQUEUE_PATTERN: {
+    eventType: "behavior_nudge_cold_dequeue_pattern" as const,
+    text: "COLD DEQUEUE PATTERN: You are only calling dequeue() in reaction to a wake " +
+      "signal instead of keeping a blocking dequeue() in flight. Each cold cycle costs " +
+      "a wake-to-agent round trip (~20-25s). End every turn with dequeue(token) so you " +
+      "are already waiting when the next message arrives. help('dequeue') for the " +
+      "correct loop pattern.",
+  },
+
   // ── Rich message fallback ─────────────────────────────────────────────────
 
   RICH_FALLBACK: {
