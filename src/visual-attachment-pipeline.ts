@@ -55,12 +55,26 @@ const MALFORMED_SVG_CANDIDATE_RE = /<svg\b[\s\S]*?(?=<svg\b|$)/gi;
  */
 const MERMAID_RE = /```mermaid[ \t]*\n([\s\S]*?)```/g;
 
+/**
+ * Matches a GFM markdown table block: a header row, followed by a separator
+ * row (cells containing only dashes, colons, and spaces), followed by zero or
+ * more data rows. All rows must be pipe-delimited and end with a newline.
+ *
+ * Uses multiline `^` anchoring so the match only fires at the start of a line.
+ * The data-row repetition is greedy: it consumes all consecutive pipe rows
+ * after the separator.
+ */
+const TABLE_RE = /^(\|[^\n]+\|\n)(\|(?:[-: ]+\|)+\n)((?:\|[^\n]+\|\n)*)/gm;
+
+/** Telegram's per-message character limit; tables exceeding this trigger extraction. */
+const MAX_MESSAGE_LENGTH = 4096;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface VisualBlock {
-  type: "svg" | "mermaid";
+  type: "svg" | "mermaid" | "table";
   /** Content to write to disk (SVG is already responsivized). */
   content: string;
   /** Text substituted into the outbound message in place of the block. */
@@ -105,6 +119,17 @@ export interface DetectExtractOptions {
    * wording is embedded once and the delivery actually matches the chosen mode.
    */
   deliveryMode?: DeliveryMode;
+  /**
+   * When true, table blocks are extracted regardless of the oversized-message
+   * length gate (`text.length > MAX_MESSAGE_LENGTH`) — used when the caller
+   * already knows the send path can't render a table inline for a reason
+   * unrelated to size (an effect flag, in-flight audio, or a message that will
+   * span multiple chunks). The residual guard still applies: if removing the
+   * table(s) still leaves the prose over the limit, extraction does not
+   * proceed regardless of this flag (10-3058 "Gate trigger — constrained send
+   * path" AC).
+   */
+  forceTableExtraction?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +292,60 @@ export function detectAndExtract(text: string, opts?: DetectExtractOptions): Ext
       offset,
       matchLength: match.length,
     });
+  }
+
+  // ── Step 4b: Collect and conditionally extract table blocks ─────────────────
+  // Tables are extracted when EITHER:
+  //  - the message is oversized (> MAX_MESSAGE_LENGTH), or
+  //  - the caller passed `forceTableExtraction` (the send path can't render a
+  //    table inline for a reason unrelated to size — an effect flag, in-flight
+  //    audio, or predicted multi-chunk splitting; 10-3058 "Gate trigger —
+  //    constrained send path" AC)
+  // AND replacing all table blocks with placeholders brings the text within limit.
+  // Residual guard: if extraction still leaves the prose too long, skip — let the
+  // existing TABLE_NOT_RENDERED fail-loud guard handle it. This guard applies
+  // regardless of which condition triggered the extraction attempt.
+  TABLE_RE.lastIndex = 0;
+  const tableMatches: Array<{ match: string; offset: number }> = [];
+  for (const m of text.matchAll(TABLE_RE)) {
+    tableMatches.push({ match: m[0], offset: m.index });
+  }
+
+  if (tableMatches.length > 0 && (opts?.forceTableExtraction || text.length > MAX_MESSAGE_LENGTH)) {
+    // Assign block indices starting after all mermaid and SVG blocks.
+    const tableBaseIndex = index;
+    const sortedTables = [...tableMatches].sort((a, b) => a.offset - b.offset);
+
+    // Pre-compute placeholder strings and filenames for each table.
+    const tableBlockData = sortedTables.map((t, i) => {
+      const blockIndex = tableBaseIndex + i;
+      const placeholder =
+        deliveryMode === "same-message"
+          ? `\n\`\`\`\n📋 [see table·${blockIndex}]\n\`\`\``
+          : `\n\`\`\`\n📋 [see following table·${blockIndex}]\n\`\`\``;
+      return { ...t, blockIndex, placeholder, filename: `table-${ts}-${blockIndex}.md` };
+    });
+
+    // Residual guard: simulate the extraction to see if the prose fits.
+    // Apply in reverse order so that earlier offsets remain valid.
+    let tentativeText = text;
+    for (let i = tableBlockData.length - 1; i >= 0; i--) {
+      const { match, offset, placeholder } = tableBlockData[i];
+      tentativeText =
+        tentativeText.slice(0, offset) + placeholder + tentativeText.slice(offset + match.length);
+    }
+
+    // Commit only when the residual fits within Telegram's character limit.
+    if (tentativeText.length <= MAX_MESSAGE_LENGTH) {
+      for (const { match, offset, placeholder, filename } of tableBlockData) {
+        blockEntries.push({
+          block: { type: "table", content: match, placeholder, filename },
+          offset,
+          matchLength: match.length,
+        });
+        index++;
+      }
+    }
   }
 
   // ── Step 5: Sort by original-text offset → correct document order ─────────

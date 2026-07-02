@@ -21,7 +21,7 @@ import { createMockServer, parseResult, isError } from "./test-utils.js";
 
 const mocks = vi.hoisted(() => ({
   // ── visual pipeline ──────────────────────────────────────────────────────
-  detectAndExtract: vi.fn((t: string) => ({ modifiedText: t, blocks: [] as unknown[] })),
+  detectAndExtract: vi.fn((t: string, _opts?: unknown) => ({ modifiedText: t, blocks: [] as unknown[] })),
   writeTempVisualFile: vi.fn((_block: unknown) => Promise.resolve("/tmp/telegram-bridge-mcp/diagram-0-0.svg")),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   renderMermaidCompanion: vi.fn<(_block: unknown, _ts: number, _idx: number) => Promise<any>>(
@@ -79,8 +79,12 @@ const mocks = vi.hoisted(() => ({
 
 // ── Visual pipeline mock ─────────────────────────────────────────────────────
 vi.mock("../visual-attachment-pipeline.js", () => ({
-  // _opts is accepted but ignored — the mock is not mode-aware
-  detectAndExtract: (t: string, _opts?: unknown) => mocks.detectAndExtract(t),
+  // opts is forwarded (not just accepted) so tests can assert on it — e.g. that
+  // send.ts computes and passes `forceTableExtraction` correctly (10-3058).
+  // The mock's return value is still controlled solely via
+  // `mocks.detectAndExtract.mockReturnValue(...)` per test; forwarding opts
+  // does not make the mock itself mode-aware.
+  detectAndExtract: (t: string, opts?: unknown) => mocks.detectAndExtract(t, opts),
   writeTempVisualFile: (block: unknown) => mocks.writeTempVisualFile(block),
   renderMermaidCompanion: (block: unknown, ts: number, idx: number) =>
     mocks.renderMermaidCompanion(block, ts, idx),
@@ -299,7 +303,10 @@ describe("send — visual attachment pipeline integration", () => {
     // Pre-check passes (text contains '<svg'), pipeline runs but finds 0 blocks.
     const result = await call({ text: "Use <svg> for diagrams.", token: TOKEN });
     expect(isError(result)).toBe(false);
-    expect(mocks.detectAndExtract).toHaveBeenCalledWith("Use <svg> for diagrams.");
+    expect(mocks.detectAndExtract).toHaveBeenCalledWith(
+      "Use <svg> for diagrams.",
+      expect.objectContaining({ deliveryMode: "follow-up" }),
+    );
     expect(mocks.writeTempVisualFile).not.toHaveBeenCalled();
     expect(mocks.sendDocument).not.toHaveBeenCalled();
     expect(mocks.sendMessage).toHaveBeenCalledOnce();
@@ -799,5 +806,176 @@ describe("send — visual attachment pipeline integration", () => {
       (c: unknown[]) => c[0] === 30 && c[1] === "upload_document",
     );
     expect(renderTypingCalls).toHaveLength(1);
+  });
+
+  // ── Table block integration (10-3058) ────────────────────────────────────
+  // Text that triggers containsMarkdownTable (the pre-check in send.ts).
+  // detectAndExtract is mocked to return the table block we want to test.
+
+  // Helper: a table block fixture (type: "table")
+  function makeTableBlock(index = 0) {
+    return {
+      type: "table" as const,
+      content: "| A | B |\n| - | - |\n| 1 | 2 |\n",
+      placeholder: `\n\`\`\`\n📋 [see following table·${index}]\n\`\`\``,
+      filename: `table-123456789-${index}.md`,
+    };
+  }
+
+  // A text containing a GFM table separator row — triggers containsMarkdownTable
+  const TABLE_TEXT = "Summary:\n| A | B |\n| - | - |\n| 1 | 2 |";
+
+  it("10-3058: table text triggers the pipeline pre-check — detectAndExtract called", async () => {
+    // A markdown table separator row in the text triggers containsMarkdownTable,
+    // which gates the visual pipeline (same as <svg> and ```mermaid checks).
+    const result = await call({ text: TABLE_TEXT, token: TOKEN });
+    expect(isError(result)).toBe(false);
+    // Pre-check fires → detectAndExtract is called (even if no blocks returned)
+    expect(mocks.detectAndExtract).toHaveBeenCalled();
+  });
+
+  it("10-3058: table block (follow-up) — prose sent FIRST via sendMessage, then sendDocument", async () => {
+    // AC7: ordering — prose must precede the attachment in all modes
+    const block = makeTableBlock();
+    // Force follow-up: modifiedText.length > 1024 (caption limit)
+    const longModText = "x".repeat(1100) + block.placeholder;
+    mocks.detectAndExtract.mockReturnValue({ modifiedText: longModText, blocks: [block] });
+    mocks.writeTempVisualFile.mockResolvedValue("/tmp/telegram-bridge-mcp/table-123456789-0.md");
+    mocks.resolveMediaSource.mockReturnValue({ source: "/tmp/telegram-bridge-mcp/table-123456789-0.md" });
+
+    const callOrder: string[] = [];
+    mocks.sendMessage.mockImplementation(() => { callOrder.push("msg"); return Promise.resolve(SENT_MSG); });
+    mocks.sendDocument.mockImplementation(() => { callOrder.push("doc"); return Promise.resolve(SENT_DOC); });
+
+    await call({ text: TABLE_TEXT, token: TOKEN });
+
+    // Prose FIRST, document AFTER (AC7)
+    expect(callOrder).toEqual(["msg", "doc"]);
+    expect(mocks.sendDocument).toHaveBeenCalledOnce();
+  });
+
+  it("10-3058: table block caption is '📋 table·N' in follow-up delivery", async () => {
+    // AC7/AC8: sendDocument receives the table caption (not the placeholder)
+    const block = makeTableBlock(0);
+    const longModText = "x".repeat(1100) + block.placeholder;
+    mocks.detectAndExtract.mockReturnValue({ modifiedText: longModText, blocks: [block] });
+    mocks.writeTempVisualFile.mockResolvedValue("/tmp/telegram-bridge-mcp/table-123456789-0.md");
+    mocks.resolveMediaSource.mockReturnValue({ source: "/tmp/telegram-bridge-mcp/table-123456789-0.md" });
+
+    await call({ text: TABLE_TEXT, token: TOKEN });
+
+    const [, , opts] = mocks.sendDocument.mock.calls[0] as [number, string, { caption?: string }];
+    expect(opts?.caption).toBe("📋 table·0");
+  });
+
+  it("10-3058: table block — writeTempVisualFile called with the table block", async () => {
+    // AC11: reuse of writeTempVisualFile for table blocks (same infrastructure as SVG/mermaid)
+    const block = makeTableBlock();
+    const longModText = "x".repeat(1100) + block.placeholder;
+    mocks.detectAndExtract.mockReturnValue({ modifiedText: longModText, blocks: [block] });
+
+    await call({ text: TABLE_TEXT, token: TOKEN });
+
+    expect(mocks.writeTempVisualFile).toHaveBeenCalledOnce();
+    expect(mocks.writeTempVisualFile).toHaveBeenCalledWith(block);
+  });
+
+  it("10-3058: table block same-message: sendDocument called once with prose as caption", async () => {
+    // AC8: same-message delivery uses prose as caption (single-block short text)
+    const block = makeTableBlock();
+    // Short modifiedText → same-message delivery
+    mocks.detectAndExtract.mockReturnValue({ modifiedText: block.placeholder, blocks: [block] });
+    mocks.writeTempVisualFile.mockResolvedValue("/tmp/telegram-bridge-mcp/table-123456789-0.md");
+    mocks.resolveMediaSource.mockReturnValue({ source: "/tmp/telegram-bridge-mcp/table-123456789-0.md" });
+
+    const result = await call({ text: TABLE_TEXT, token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    // Same-message: no separate prose sendMessage
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.sendDocument).toHaveBeenCalledOnce();
+  });
+
+  it("10-3058: two table blocks → each sent as a separate document (AC9 pipeline side)", async () => {
+    const block0 = makeTableBlock(0);
+    const block1 = makeTableBlock(1);
+    // 2 blocks → force follow-up delivery
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: block0.placeholder + " " + block1.placeholder,
+      blocks: [block0, block1],
+    });
+    mocks.writeTempVisualFile
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/table-123456789-0.md")
+      .mockResolvedValueOnce("/tmp/telegram-bridge-mcp/table-123456789-1.md");
+    mocks.resolveMediaSource
+      .mockReturnValueOnce({ source: "/tmp/telegram-bridge-mcp/table-123456789-0.md" })
+      .mockReturnValueOnce({ source: "/tmp/telegram-bridge-mcp/table-123456789-1.md" });
+
+    await call({ text: TABLE_TEXT, token: TOKEN });
+
+    expect(mocks.writeTempVisualFile).toHaveBeenCalledTimes(2);
+    expect(mocks.sendDocument).toHaveBeenCalledTimes(2);
+    // Prose sent first (follow-up ordering)
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  it("10-3058: graceful — table block writeTempVisualFile rejects → prose still sent", async () => {
+    // Same graceful failure behaviour as SVG/mermaid
+    const block = makeTableBlock();
+    const longModText = "x".repeat(1100) + block.placeholder;
+    mocks.detectAndExtract.mockReturnValue({ modifiedText: longModText, blocks: [block] });
+    mocks.writeTempVisualFile.mockRejectedValue(new Error("disk full"));
+
+    const result = await call({ text: TABLE_TEXT, token: TOKEN });
+
+    expect(isError(result)).toBe(false);
+    expect(mocks.sendDocument).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  // ── forceTableExtraction wiring (10-3058 "Gate trigger — constrained send
+  // path") ─────────────────────────────────────────────────────────────────
+  // These tests assert on the OPTIONS send.ts passes to detectAndExtract,
+  // decoupled from the real regex/extraction engine (covered separately in
+  // visual-attachment-pipeline.test.ts) — proving send.ts computes and
+  // forwards `forceTableExtraction` correctly for each trigger condition.
+  // detectAndExtract's mock implementation ignores opts (default passthrough,
+  // zero blocks) — these tests only inspect what it was CALLED WITH, not what
+  // it returns.
+
+  it("10-3058: unconstrained small table → forceTableExtraction: false, single detectAndExtract call", async () => {
+    await call({ text: TABLE_TEXT, token: TOKEN });
+    expect(mocks.detectAndExtract).toHaveBeenCalledOnce();
+    const [, opts] = mocks.detectAndExtract.mock.calls[0] as [string, { forceTableExtraction?: boolean }];
+    expect(opts?.forceTableExtraction).toBe(false);
+  });
+
+  it("10-3058: effect flag → forceTableExtraction: true", async () => {
+    await call({ text: TABLE_TEXT, effect: "fire", token: TOKEN });
+    expect(mocks.detectAndExtract).toHaveBeenCalled();
+    const [, opts] = mocks.detectAndExtract.mock.calls[0] as [string, { forceTableExtraction?: boolean }];
+    expect(opts?.forceTableExtraction).toBe(true);
+  });
+
+  it("10-3058: in-flight audio → forceTableExtraction: true", async () => {
+    mocks.hasInflightAudio.mockReturnValueOnce(true);
+    await call({ text: TABLE_TEXT, token: TOKEN });
+    expect(mocks.detectAndExtract).toHaveBeenCalled();
+    const [, opts] = mocks.detectAndExtract.mock.calls[0] as [string, { forceTableExtraction?: boolean }];
+    expect(opts?.forceTableExtraction).toBe(true);
+  });
+
+  it("10-3058: predicted multi-chunk → re-detects with forceTableExtraction: true (first pass unforced)", async () => {
+    // Simulate "this message would need 2 chunks" for the predicted-multi-chunk
+    // check (send.ts runs applyTopicToText/markdownToV2/splitMessage on the
+    // first pass's modifiedText before deciding whether to force a re-detect).
+    mocks.splitMessage.mockReturnValue(["chunk1", "chunk2"]);
+    await call({ text: TABLE_TEXT, token: TOKEN });
+    expect(mocks.detectAndExtract.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const [, firstOpts] = mocks.detectAndExtract.mock.calls[0] as [string, { forceTableExtraction?: boolean }];
+    expect(firstOpts?.forceTableExtraction).toBe(false);
+    const lastCallArgs = mocks.detectAndExtract.mock.calls[mocks.detectAndExtract.mock.calls.length - 1];
+    const [, lastOpts] = lastCallArgs as [string, { forceTableExtraction?: boolean }];
+    expect(lastOpts?.forceTableExtraction).toBe(true);
   });
 });

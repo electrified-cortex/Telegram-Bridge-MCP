@@ -636,13 +636,65 @@ export function register(server: McpServer) {
           const _pendingDocs: Array<{ block: VisualBlock; source: string | InputFile; caption?: string }> = [];
           let _visualDeliveryMode: DeliveryMode = "follow-up";
 
-          if (visualText && (visualText.includes('<svg') || visualText.includes('```mermaid'))) {
+          // Resolve message effect early (text path only; applied to last chunk only).
+          // Moved up from its original spot further below — args.effect/MESSAGE_EFFECTS
+          // don't depend on anything computed in between, and the constrained-send-path
+          // pre-check immediately below needs it before Phase 1 runs.
+          const effectId = args.effect ? MESSAGE_EFFECTS[args.effect] : undefined;
+          // Cache in-flight-audio state ONCE and reuse it everywhere below (the
+          // pre-check here, the fail-loud guard, the auto-upgrade condition, the
+          // same-message condition, and the queue-after-audio check). Re-invoking
+          // hasInflightAudio(_sid) at each site is a live-state read; adding the
+          // pre-check as a new, earlier call site would otherwise let that snapshot
+          // drift from what the later checks observe (and, more concretely, tests
+          // that stub a single `mockReturnValueOnce` would see it consumed by the
+          // earlier pre-check instead of the intended later call). One snapshot for
+          // the whole request is deliberate and matches the effectId pattern above.
+          const _hasInflightAudio = hasInflightAudio(_sid);
+
+          // ── Constrained-send-path pre-check (10-3058 "Gate trigger — constrained
+          // send path") ────────────────────────────────────────────────────────────
+          // Effect flag, in-flight audio, and predicted multi-chunk splitting all
+          // block the GFM rich-render path a table needs (see the fail-loud guard
+          // further below). When any apply, force table extraction in Phase 1
+          // regardless of the oversized-message length gate, so the table is
+          // delivered as a follow-up attachment instead of failing loud.
+          let _forceTableExtraction = Boolean(effectId) || _hasInflightAudio;
+
+          if (visualText && (visualText.includes('<svg') || visualText.includes('```mermaid') || containsMarkdownTable(visualText))) {
             // Phase 1a: First-pass detect (follow-up wording) to count blocks and
             // measure the modified text length — both inform the delivery-mode decision.
-            const _firstPass = detectAndExtract(
+            let _firstPass = detectAndExtract(
               visualText,
-              { htmlMode: parse_mode === "HTML", deliveryMode: "follow-up" },
+              { htmlMode: parse_mode === "HTML", deliveryMode: "follow-up", forceTableExtraction: _forceTableExtraction },
             );
+
+            // Predicted-multi-chunk check: only needed when not already forced by
+            // effect/audio above, and only when a table is still present after this
+            // first pass (i.e. it wasn't oversized-triggered either). Predicts against
+            // `_firstPass.modifiedText` — SVG/mermaid blocks are extracted
+            // unconditionally by Phase 1a regardless of `forceTableExtraction`, so
+            // this is already normalized (placeholders, not raw markup) — rather than
+            // the fully raw `visualText`, so a large SVG/mermaid source embedded
+            // alongside a small table doesn't falsely inflate the prediction. Mirrors
+            // the real chunk computation further below (same applyTopicToText /
+            // markdownToV2 / splitMessage pipeline, all pure/sync) since the real
+            // chunk count is only known after this phase fully completes. If the
+            // prediction flips the decision, re-run detectAndExtract on the ORIGINAL
+            // `visualText` with the flag now forced (same re-detect pattern already
+            // used below for the same-message wording pass).
+            if (!_forceTableExtraction && containsMarkdownTable(_firstPass.modifiedText)) {
+              const _preTopicText = applyTopicToText(_firstPass.modifiedText, parse_mode, args.topic);
+              const _preFinalText = parse_mode === "Markdown" ? markdownToV2(_preTopicText) : _preTopicText;
+              const _predictedMultiChunk = splitMessage(_preFinalText).length > 1;
+              if (_predictedMultiChunk) {
+                _forceTableExtraction = true;
+                _firstPass = detectAndExtract(
+                  visualText,
+                  { htmlMode: parse_mode === "HTML", deliveryMode: "follow-up", forceTableExtraction: true },
+                );
+              }
+            }
 
             if (_firstPass.blocks.length > 0) {
               // Delivery mode: same-message when a single block's modified text
@@ -657,7 +709,7 @@ export function register(server: McpServer) {
               // correct placeholder wording ("see attachment" vs "see following …").
               const { modifiedText: _vExtracted, blocks: _vBlocks } =
                 _visualDeliveryMode === "same-message"
-                  ? detectAndExtract(visualText, { htmlMode: parse_mode === "HTML", deliveryMode: "same-message" })
+                  ? detectAndExtract(visualText, { htmlMode: parse_mode === "HTML", deliveryMode: "same-message", forceTableExtraction: _forceTableExtraction })
                   : _firstPass;
 
               // Phase 1c: Write temp files + resolve media. No API calls yet —
@@ -719,6 +771,27 @@ export function register(server: McpServer) {
                     // so the prose remains readable without the attachment.
                     finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
                   }
+                } else if (_vBlock.type === "table") {
+                  // Table block: write .md file and queue as pending document.
+                  // No companion render needed — the .md file IS the deliverable.
+                  let prepared = false;
+                  try {
+                    await showTyping(60, "upload_document");
+                    const _tPath = await writeTempVisualFile(_vBlock);
+                    const _tMedia = resolveMediaSource(_tPath);
+                    if (!("code" in _tMedia)) {
+                      // Derive index from placeholder for the caption label.
+                      const _tIdxMatch = /·(\d+)/.exec(_vBlock.placeholder);
+                      const _tCaption = `📋 table·${_tIdxMatch ? _tIdxMatch[1] : "0"}`;
+                      _pendingDocs.push({ block: _vBlock, source: _tMedia.source, caption: _tCaption });
+                      prepared = true;
+                    }
+                  } catch {
+                    // Graceful: preparation failure falls through to placeholder restore
+                  }
+                  if (!prepared) {
+                    finalVisualText = finalVisualText.replace(_vBlock.placeholder, _vBlock.content);
+                  }
                 } else {
                   // SVG and other block types: existing behaviour unchanged
                   let prepared = false;
@@ -754,16 +827,23 @@ export function register(server: McpServer) {
           }
           const chunks = splitMessage(finalText);
 
-          // Resolve message effect (text path only; applied to last chunk only)
-          const effectId = args.effect ? MESSAGE_EFFECTS[args.effect] : undefined;
-
           // Guard: table on a path that cannot use the GFM rich renderer → fail loud.
           // Effect sends, in-flight-audio sends, and multi-chunk sends all bypass the GFM
           // path, so a table would be silently unrendered. Return an explicit error so the
           // caller can shorten the message or remove the effect instead of receiving false
           // success. The GFM path below (single-chunk, no effect, no in-flight audio) is
           // unaffected by this guard.
-          if (containsMarkdownTable(visualText) && (effectId || hasInflightAudio(_sid) || chunks.length > 1)) {
+          //
+          // This now doubles as the 10-3058 residual guard for the constrained-send-path
+          // trigger: effectId/hasInflightAudio/multi-chunk force Phase 1 above to attempt
+          // table extraction (see `_forceTableExtraction`). When extraction succeeds,
+          // `visualText` no longer contains table syntax (replaced by a placeholder), so
+          // `containsMarkdownTable(visualText)` is false here and this guard does not fire
+          // — the extracted attachment is delivered instead. When extraction was attempted
+          // but the residual guard inside `detectAndExtract` blocked it (removing the
+          // table(s) still leaves the prose oversized), the table is still present here and
+          // this guard correctly still fails loud.
+          if (containsMarkdownTable(visualText) && (effectId || _hasInflightAudio || chunks.length > 1)) {
             return toError({
               code: "TABLE_NOT_RENDERED" as const,
               message:
@@ -776,7 +856,7 @@ export function register(server: McpServer) {
           // Auto-upgrade: if text: contains a markdown table, route via GFM rich path
           // so the table renders natively. Applies only to single-chunk, no-effect sends
           // (multi-chunk and effect sends are blocked by the guard above).
-          if (!effectId && !hasInflightAudio(_sid) && chunks.length === 1 && containsMarkdownTable(visualText)) {
+          if (!effectId && !_hasInflightAudio && chunks.length === 1 && containsMarkdownTable(visualText)) {
             try {
               const result = await routeOutboundMessage(chatId, textWithTopic, {
                 richMessage: { markdown: textWithTopic },
@@ -813,7 +893,7 @@ export function register(server: McpServer) {
             _visualDeliveryMode === "same-message" &&
             _pendingDocs.length === 1 &&
             !effectId &&
-            !hasInflightAudio(_sid) &&
+            !_hasInflightAudio &&
             chunks.length === 1
           ) {
             const { source: _smSrc } = _pendingDocs[0];
@@ -839,7 +919,7 @@ export function register(server: McpServer) {
 
           // If audio is still rendering for this session, queue text after it so
           // the operator always receives audio before the follow-up text message.
-          if (hasInflightAudio(_sid)) {
+          if (_hasInflightAudio) {
             const queuedSid = _sid;
             const queuedChatId = chatId;
             const pendingId = enqueueTextSend(queuedSid, async (pid) => {
