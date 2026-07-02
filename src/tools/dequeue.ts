@@ -419,6 +419,7 @@ function maybeFireColdDequeueNudge(sid: number, state: ColdDequeueState): void {
     `cold-dequeue pattern detected sid=${sid} ratio=${ratio.toFixed(2)} fireCount=${state.fireCount}`,
     { sid, ratio, fireCount: state.fireCount },
   );
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- deliberate static kill-switch (see COLD_DEQUEUE_LIVE_NUDGE), flip to true to go live
   if (COLD_DEQUEUE_LIVE_NUDGE) {
     deliverServiceMessage(
       sid,
