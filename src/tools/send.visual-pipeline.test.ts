@@ -674,6 +674,109 @@ describe("send — visual attachment pipeline integration", () => {
     expect(proseArg).not.toContain(block.content);
   });
 
+  // ── CONCURRENCY: hasInflightAudio must be read LIVE, not from a pre-Phase-1c
+  // snapshot ──────────────────────────────────────────────────────────────
+  //
+  // Every other test in this file (including BLOCK-1 above) mocks
+  // `hasInflightAudio` with a STATIC return value for the whole test. A
+  // send.ts regression that cached `hasInflightAudio(_sid)` into one
+  // snapshot BEFORE Phase 1c's async work (typing indicators, temp-file
+  // writes, mermaid companion rendering) and reused that snapshot at every
+  // post-Phase-1c decision site would pass every one of those tests
+  // identically — none of them prove the value is re-read after it changes
+  // mid-request. These two tests close that gap: `hasInflightAudio`'s mock
+  // return value is flipped as a SIDE EFFECT of `writeTempVisualFile`
+  // resolving (genuine Phase 1c async work, awaited at send.ts's SVG
+  // branch), and the assertions target decision sites that run strictly
+  // AFTER that await — the same-message condition and the queue-after-audio
+  // check — proving they observe the NEW value, not the pre-Phase-1c one.
+
+  it("CONCURRENCY-1: hasInflightAudio flips false→true during Phase 1c async write — later sites see the NEW value", async () => {
+    const block = makeSvgBlock();
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: block.placeholder,
+      blocks: [block],
+    });
+
+    // Starts false (pre-Phase-1c pre-check at send.ts:759 legitimately reads
+    // false — this is the one intentional single-point-in-time read, before
+    // any async work has run).
+    mocks.hasInflightAudio.mockReturnValue(false);
+
+    // Flip happens as writeTempVisualFile's awaited promise resolves — i.e.
+    // genuinely during Phase 1c's async work, not before the request starts
+    // and not via a second call into the tool.
+    mocks.writeTempVisualFile.mockImplementation((_block: unknown) => {
+      mocks.hasInflightAudio.mockReturnValue(true);
+      return Promise.resolve("/tmp/telegram-bridge-mcp/diagram-0-0.svg");
+    });
+
+    // Capture the queued lambda (same pattern as BLOCK-1) so we can confirm
+    // the pending doc isn't silently dropped once queued.
+    let capturedFn: ((pid: number) => Promise<void>) | undefined;
+    mocks.enqueueTextSend.mockImplementation((_sid: number, fn: (pid: number) => Promise<void>) => {
+      capturedFn = fn;
+      return -2_000_000_001;
+    });
+
+    const result = await call({ text: "<svg><rect/></svg>", token: TOKEN });
+
+    // Queue-after-audio site (send.ts:1080) must observe the FLIPPED true —
+    // a cached pre-Phase-1c false would instead fall through to a
+    // synchronous send and never reach this branch at all.
+    const parsed = parseResult(result);
+    expect(parsed.status).toBe("queued_after_audio");
+    expect(capturedFn).toBeDefined();
+
+    // Same-message site (send.ts:1030) must also observe the flipped true —
+    // a cached false would have taken the synchronous same-message
+    // sendDocument-as-caption path instead of falling through to queuing.
+    expect(mocks.sendDocument).not.toHaveBeenCalled();
+    expect(mocks.enqueueTextSend).toHaveBeenCalledOnce();
+
+    // Drain the queue: confirm the pending SVG doc was NOT silently dropped
+    // once the live-read fix routed the request through queuing.
+    await capturedFn!(-2_000_000_001);
+    expect(mocks.sendDocument).toHaveBeenCalled();
+  });
+
+  it("CONCURRENCY-2: hasInflightAudio flips true→false during Phase 1c async write — later sites see the NEW value", async () => {
+    const block = makeSvgBlock();
+    mocks.detectAndExtract.mockReturnValue({
+      modifiedText: block.placeholder,
+      blocks: [block],
+    });
+
+    // Starts true (pre-Phase-1c pre-check reads true; harmless here — it
+    // only affects table-forcing behavior, and this text has no table).
+    mocks.hasInflightAudio.mockReturnValue(true);
+
+    // Flip happens as writeTempVisualFile's awaited promise resolves.
+    mocks.writeTempVisualFile.mockImplementation((_block: unknown) => {
+      mocks.hasInflightAudio.mockReturnValue(false);
+      return Promise.resolve("/tmp/telegram-bridge-mcp/diagram-0-0.svg");
+    });
+
+    const result = await call({ text: "<svg><rect/></svg>", token: TOKEN });
+
+    // Same-message site (send.ts:1030) must observe the flipped false and
+    // take the synchronous send path — a cached pre-Phase-1c true would
+    // instead have skipped this and fallen through to queue-after-audio.
+    expect(mocks.sendDocument).toHaveBeenCalledOnce();
+    const [docChatId, docSource, docOpts] = mocks.sendDocument.mock.calls[0] as [number, unknown, { caption?: string }];
+    expect(docChatId).toBe(42);
+    expect(docSource).toBe("/tmp/telegram-bridge-mcp/diagram-0-0.svg");
+    expect(docOpts.caption).toBeDefined();
+
+    const parsed = parseResult(result);
+    expect(parsed.message_id).toBe(SENT_DOC.message_id);
+    expect(parsed.status).not.toBe("queued_after_audio");
+
+    // Queue-after-audio site must never fire — the function already
+    // returned synchronously via the same-message path.
+    expect(mocks.enqueueTextSend).not.toHaveBeenCalled();
+  });
+
   // ── AC1: Mermaid block → companion SVG rendered and queued ───────────────
 
   it("AC1: mermaid block with successful render → companion SVG and .mmd both sent", async () => {
