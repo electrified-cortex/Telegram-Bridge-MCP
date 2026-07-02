@@ -641,16 +641,25 @@ export function register(server: McpServer) {
           // don't depend on anything computed in between, and the constrained-send-path
           // pre-check immediately below needs it before Phase 1 runs.
           const effectId = args.effect ? MESSAGE_EFFECTS[args.effect] : undefined;
-          // Cache in-flight-audio state ONCE and reuse it everywhere below (the
-          // pre-check here, the fail-loud guard, the auto-upgrade condition, the
-          // same-message condition, and the queue-after-audio check). Re-invoking
-          // hasInflightAudio(_sid) at each site is a live-state read; adding the
-          // pre-check as a new, earlier call site would otherwise let that snapshot
-          // drift from what the later checks observe (and, more concretely, tests
-          // that stub a single `mockReturnValueOnce` would see it consumed by the
-          // earlier pre-check instead of the intended later call). One snapshot for
-          // the whole request is deliberate and matches the effectId pattern above.
-          const _hasInflightAudio = hasInflightAudio(_sid);
+          // CORRECTNESS (fixed post-10-3058, was a live production bug): read
+          // in-flight-audio state FRESH at each decision site, never cache it
+          // across the request. Phase 1c below does real async work (typing
+          // indicators, temp-file writes, and — for mermaid — companion SVG
+          // rendering that can take seconds), during which the actual
+          // in-flight-audio state can genuinely change. A single snapshot taken
+          // before that work would silently go stale and could steer the
+          // "audio before follow-up text" ordering guarantee wrong for ANY
+          // svg/mermaid send, not just tables. hasInflightAudio(_sid) is a
+          // cheap synchronous state read — there is no performance reason to
+          // cache it, only a correctness reason not to.
+          //
+          // Only this ONE pre-check read (immediately below, before any async
+          // work has run) is a single call — it reflects state as of this
+          // point in time, nothing is cached beyond it. That's safe because no
+          // time has passed yet. Every other decision site (the fail-loud
+          // guard, the auto-upgrade condition, the same-message condition, and
+          // the queue-after-audio check — all AFTER Phase 1c's async work)
+          // calls hasInflightAudio(_sid) live, on its own line.
 
           // ── Constrained-send-path pre-check (10-3058 "Gate trigger — constrained
           // send path") ────────────────────────────────────────────────────────────
@@ -659,7 +668,7 @@ export function register(server: McpServer) {
           // further below). When any apply, force table extraction in Phase 1
           // regardless of the oversized-message length gate, so the table is
           // delivered as a follow-up attachment instead of failing loud.
-          let _forceTableExtraction = Boolean(effectId) || _hasInflightAudio;
+          let _forceTableExtraction = Boolean(effectId) || hasInflightAudio(_sid);
 
           if (visualText && (visualText.includes('<svg') || visualText.includes('```mermaid') || containsMarkdownTable(visualText))) {
             // Phase 1a: First-pass detect (follow-up wording) to count blocks and
@@ -843,7 +852,7 @@ export function register(server: McpServer) {
           // but the residual guard inside `detectAndExtract` blocked it (removing the
           // table(s) still leaves the prose oversized), the table is still present here and
           // this guard correctly still fails loud.
-          if (containsMarkdownTable(visualText) && (effectId || _hasInflightAudio || chunks.length > 1)) {
+          if (containsMarkdownTable(visualText) && (effectId || hasInflightAudio(_sid) || chunks.length > 1)) {
             return toError({
               code: "TABLE_NOT_RENDERED" as const,
               message:
@@ -856,7 +865,7 @@ export function register(server: McpServer) {
           // Auto-upgrade: if text: contains a markdown table, route via GFM rich path
           // so the table renders natively. Applies only to single-chunk, no-effect sends
           // (multi-chunk and effect sends are blocked by the guard above).
-          if (!effectId && !_hasInflightAudio && chunks.length === 1 && containsMarkdownTable(visualText)) {
+          if (!effectId && !hasInflightAudio(_sid) && chunks.length === 1 && containsMarkdownTable(visualText)) {
             try {
               const result = await routeOutboundMessage(chatId, textWithTopic, {
                 richMessage: { markdown: textWithTopic },
@@ -893,7 +902,7 @@ export function register(server: McpServer) {
             _visualDeliveryMode === "same-message" &&
             _pendingDocs.length === 1 &&
             !effectId &&
-            !_hasInflightAudio &&
+            !hasInflightAudio(_sid) &&
             chunks.length === 1
           ) {
             const { source: _smSrc } = _pendingDocs[0];
@@ -919,7 +928,7 @@ export function register(server: McpServer) {
 
           // If audio is still rendering for this session, queue text after it so
           // the operator always receives audio before the follow-up text message.
-          if (_hasInflightAudio) {
+          if (hasInflightAudio(_sid)) {
             const queuedSid = _sid;
             const queuedChatId = chatId;
             const pendingId = enqueueTextSend(queuedSid, async (pid) => {

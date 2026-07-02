@@ -359,14 +359,15 @@ describe("send tool", () => {
 
   it("10-3058: table + in-flight audio → extracted as attachment, delivered after queued audio (not TABLE_NOT_RENDERED)", async () => {
     const tableText = "| A | B |\n| - | - |\n| 1 | 2 |";
-    // The production fix caches hasInflightAudio(_sid) into a single value for
-    // the whole request (see `_hasInflightAudio` in send.ts) — exactly one real
-    // call happens, so `mockReturnValueOnce` is correct here and, importantly,
-    // auto-reverts to the shared `() => false` default afterward instead of
-    // leaking a sticky `true` into later tests/describe blocks that share this
-    // module-level mock (this file only clears call history between tests via
-    // `vi.clearAllMocks()`, not implementations).
-    mocks.hasInflightAudio.mockReturnValueOnce(true);
+    // hasInflightAudio(_sid) is read LIVE at each decision site in send.ts (not
+    // cached/snapshotted — see the correctness comment there), so this scenario
+    // simulates audio genuinely in-flight for the whole request with a
+    // persistent mockReturnValue, matching the convention used elsewhere in
+    // this file (mockReturnValue(false) at line ~1615 restores the default for
+    // later tests — this file only clears call history between tests via
+    // `vi.clearAllMocks()`, not implementations, so any persistent mock here
+    // must be paired with a reset for tests that come after).
+    mocks.hasInflightAudio.mockReturnValue(true);
     let capturedFn: ((pid: number) => Promise<void>) | undefined;
     mocks.enqueueTextSend.mockImplementation((_sid: number, fn: (pid: number) => Promise<void>) => {
       capturedFn = fn;
@@ -389,6 +390,10 @@ describe("send tool", () => {
     const [, proseText] = mocks.sendMessage.mock.calls[0] as [number, string, unknown];
     expect(proseText).not.toContain("| A | B |");
     expect(mocks.sendDocument).toHaveBeenCalledOnce();
+    // Restore the shared default for subsequent tests — this mock persists
+    // across tests within the file (vi.clearAllMocks() clears call history,
+    // not implementations).
+    mocks.hasInflightAudio.mockReturnValue(false);
   });
 
   it("10-3058: table in multi-chunk send → extracted as attachment, delivered (not TABLE_NOT_RENDERED)", async () => {
